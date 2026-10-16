@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software or methodology, please cite it as below.
+type: software
+authors:
+  - family-names: "Project Team"
+    given-names: "AI Network Anomaly"
+    email: "example@institution.edu"
+title: "AI-Based Network Anomaly Detection Using Machine Learning and Network Traffic Behavior Analysis"
+abstract: "Educational/research project building a reproducible ML pipeline for network anomaly detection using UNSW-NB15, Random Forest, and Isolation Forest with documented evaluation protocols."
+version: 0.1.0
+license: Apache-2.0
+repository-code: "https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN"
+date-released: 2026-10-16
+keywords:
+  - network anomaly detection
+  - machine learning
+  - UNSW-NB15
+  - Random Forest
+  - Isolation Forest
+  - reproducibility

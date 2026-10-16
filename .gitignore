@@ -1,0 +1,48 @@
+# Git exclusions
+
+# Dataset — do NOT commit UNSW-NB15 or large files
+data/raw/*
+data/interim/*
+data/processed/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# Artifacts / models / outputs
+artifacts/*.joblib
+artifacts/*.pkl
+artifacts/*.png
+artifacts/*.csv
+!artifacts/.gitkeep
+
+reports/figures/*.png
+reports/figures/*.pdf
+
+# Environment / secrets
+.env
+.env.local
+.venv/
+env/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Jupyter / notebooks outputs (optional; can allow if needed)
+**/.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/
