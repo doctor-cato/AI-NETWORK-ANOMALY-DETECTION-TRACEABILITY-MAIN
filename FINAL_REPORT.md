@@ -10,12 +10,12 @@
 ## 2. File/tài liệu quan trọng đã tạo (58 file, 1733 dòng chèn)
 - `README.md` — tiếng Anh, đầy đủ các phần yêu cầu (title, problem, dataset, methodology, architecture, metrics, repo structure, setup, installation, data prep, run checks, reproducibility, limitations, ethics, team/tasks, roadmap, citation, license, acknowledgements). Phân biệt rõ `planned` / `implemented` / `verified`; không bịa kết quả benchmark.
 - `LICENSE` — toàn văn Apache License 2.0 chính thức (lấy từ `apache.org/licenses/LICENSE-2.0.txt`), có copyright placeholder `2026 [Project Team...]`; không phải MIT.
-- `docs/` — 15 tài liệu bắt buộc: `PROJECT_CHARTER.md`, `PROBLEM_STATEMENT.md`, `REQUIREMENTS.md`, `DATASET.md`, `METHODOLOGY.md`, `ARCHITECTURE.md` (có sơ đồ Mermaid), `EXPERIMENT_PLAN.md`, `EVALUATION.md`, `REPRODUCIBILITY.md`, `ETHICS_AND_PRIVACY.md`, `REPORT_OUTLINE.md`, `PRESENTATION_OUTLINE.md`, `TEAM_TASKS.md`, `DEVELOPMENT_PLAN.md`, `FUTURE_WORK.md`, `CHANGELOG.md`.
+- `docs/` — 15 tài liệu bắt buộc: `PROJECT_CHARTER.md`, `PROBLEM_STATEMENT.md`, `REQUIREMENTS.md`, `DATASET.md`, `METHODOLOGY.md`, `ARCHITECTURE.md` (có sơ đồ Mermaid), `EXPERIMENT_PLAN.md`, `EVALUATION.md`, `REPRODUCIBILITY.md`, `ETHICS_AND_PRIVACY.md`, `REPORT_OUTLINE.md`, `PRESENTATION_OUTLINE.md`, `TEAM_TASKS.md`, `DEVELOPMENT_PLAN.md`, `FUTURE_WORK.md`. *(Không có `CHANGELOG.md` — đã xóa theo yêu cầu)*
 - `src/network_anomaly/` — cấu trúc module: `config.py`, `data/`, `preprocessing/`, `features/`, `models/` (random_forest.py, isolation_forest.py), `evaluation/metrics.py`, `inference/pipeline.py`, `visualization/plots.py`; `__init__.py` và subpackage init có nội dung thực.
 - `scripts/` — `check_environment.py`, `validate_data.py`, `run_experiments.py`, `create_issues.py`, `create_milestones.py`, `verify_import.py`.
 - `tests/unit/` + `tests/integration/` — `test_basic.py`, `test_pipeline.py`; fixture rõ ràng là synthetic.
 - `notebooks/README.md` — liệt kê 5 notebook dự kiến (EDA, preprocessing, RF experiment, IF evaluation, inference demo).
-- Config gốc: `pyproject.toml`, `requirements.txt`, `.gitignore`, `.editorconfig`, `.env.example`, `Makefile`, `CITATION.cff`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`.
+- Config gốc: `pyproject.toml`, `requirements.txt`, `.gitignore`, `.editorconfig`, `CITATION.cff`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`. *(Các file `.env.example`, `CHANGELOG.md`, `Makefile` đã xóa theo yêu cầu thiết lập; tham chiếu Make đã thay bằng lệnh `pip`/`python`)*
 - GitHub templates: `bug_report.yml`, `feature_request.yml`, `config.yml`; `pull_request_template.md`; `.github/workflows/ci.yml`; `.github/dependabot.yml`.
 - `data/raw/`, `interim/`, `processed/` — chỉ có `.gitkeep`; không có dataset UNSW-NB15 trong Git.
 

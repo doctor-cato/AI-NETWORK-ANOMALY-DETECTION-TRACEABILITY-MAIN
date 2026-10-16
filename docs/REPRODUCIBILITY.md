@@ -9,17 +9,17 @@
 
 ## Random seeds
 
-- Default seed: 42 (configurable via `config.py` / `.env`)
+- Default seed: 42 (configurable via `config.py`; không có `.env.example` — cấu hình qua biến môi trường hoặc `pyproject.toml`)
 - Set for: NumPy (`np.random.seed`), Python (`random.seed`), scikit-learn (`random_state`)
 
 ## Running experiments
 
-- `make install` — install dependencies
-- `make check-data` — run validation script on `data/raw/`
-- `make run-baseline` — train Random Forest
-- `make run-evaluate` — evaluate saved model
-- `make run-inference` — inference on new input
-- `make test` — run unit and integration tests
+- `pip install -e .` — cài đặt phụ thuộc từ `pyproject.toml`
+- `python -m pytest` — chạy kiểm thử đơn vị và tích hợp
+- Kiểm tra dữ liệu: `python scripts/check_data.py` (hoặc `python -c "import checks"`) khi có script
+- Huấn luyện baseline (tương lai): `python scripts/train_rf.py` (chưa triển khai)
+- Đánh giá (tương lai): `python scripts/evaluate.py` (chưa triển khai)
+- Suy luận (tương lai): `python scripts/inference.py --input data/new.csv` (chưa triển khai)
 
 ## Config and artifacts
 
