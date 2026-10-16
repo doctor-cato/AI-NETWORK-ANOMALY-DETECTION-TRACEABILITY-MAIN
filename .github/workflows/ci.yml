@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          pip install -e .
+      - name: Check environment
+        run: python scripts/check_environment.py
+      - name: Check syntax / imports
+        run: python -m py_compile src/network_anomaly/config.py src/network_anomaly/models/random_forest.py src/network_anomaly/models/isolation_forest.py
+      - name: Unit tests (light)
+        run: python -m pytest tests/unit/test_basic.py -q --tb=short
+      - name: Validate data script — skip if dataset not downloaded; fail if invalid
+        run: |
+          if [ -f "data/raw/UNSW-NB15.csv" ] || [ -f "data/raw/UNSW-NB15_training_set.csv" ]; then
+            echo "Dataset found — running validation (must pass)."
+            python scripts/validate_data.py
+          else
+            echo "SKIP (intentional): UNSW-NB15 not downloaded. Download per docs/DATASET.md to enable full validation."
+            exit 0
+          fi
