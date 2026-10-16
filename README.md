@@ -111,7 +111,6 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 ├── CITATION.cff
 ├── pyproject.toml
 ├── requirements.txt
-├── Makefile
 ├── .gitignore
 ├── docs/
 │   ├── PROJECT_CHARTER.md
@@ -149,7 +148,7 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 
 - Python 3.11+ (recommended 3.12)
 - Dependencies pinned in `pyproject.toml` and `requirements.txt`
-- Install: `make install` or `pip install -e .`
+- Cài: `pip install -e .` (hoặc `python -m venv .venv` rồi `pip install -e .`)
 - Check environment: `python scripts/check_environment.py`
 - Check syntax / imports: `python -m py_compile src/network_anomaly/config.py ...`
 
@@ -181,23 +180,23 @@ Dataset không được commit; xem `docs/DATASET.md` để biết chi tiết ng
 ## Cách chạy kiểm tra
 
 ```bash
-make check-env
-make check-data      # dự kiến; cần tải dataset trước
+python scripts/check_environment.py
+python scripts/validate_data.py        # dự kiến; cần tải dataset trước
 python -m pytest tests/unit/test_basic.py -q
 ```
 
 ---
 
-## How to train / evaluate (planned — requires dataset)
+## Cách huấn luyện / đánh giá (đã dự kiến — cần dataset)
 
 ```bash
-# Planned commands (not fully verified until dataset available):
-make run-baseline    # Random Forest
-make run-evaluate    # Metrics + confusion matrix
-make run-inference   # New data prediction
+# Lệnh dự kiến (chưa kiểm chứng đầy đủ cho đến khi có dataset):
+python -c "from network_anomaly.models.random_forest import build_model; print('RF OK')"
+python -m pytest tests/integration/test_pipeline.py -q
+# Sau khi huấn luyện: python src/network_anomaly/inference/pipeline.py <input>
 ```
 
-Actual execution depends on dataset download and experiment tracking (see `docs/REPRODUCIBILITY.md`).
+Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực nghiệm (xem `docs/REPRODUCIBILITY.md`).
 
 ---
 

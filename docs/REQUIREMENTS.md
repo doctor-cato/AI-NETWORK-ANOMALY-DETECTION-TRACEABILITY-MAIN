@@ -11,7 +11,7 @@
 | F05 | Evaluate with Precision, Recall, F1, Macro-F1, confusion matrix, FPR | Evaluation module outputs metrics |
 | F06 | Document Isolation Forest evaluation protocol separately (unsupervised score → threshold) | `docs/METHODOLOGY.md`; evaluation notes |
 | F07 | Provide inference pipeline for new input data | `src/network_anomaly/inference/` module; demo script |
-| F08 | Provide reproducible run instructions | `REPRODUCIBILITY.md`; Makefile target `run-experiment` |
+| F08 | Cung cấp hướng dẫn chạy thực nghiệm có thể tái lập | `REPRODUCIBILITY.md`; `python scripts/run_experiments.py` (hoặc tương đương) |
 
 ## Non-functional requirements
 
@@ -19,7 +19,7 @@
 |---|---|---|
 | N01 | Code organized under `src/network_anomaly/`; logic callable from notebooks/scripts | Directory structure verified |
 | N02 | Python 3.11+ compatible; dependencies pinned | `pyproject.toml`; `requirements.txt` |
-| N03 | No hardcoded absolute paths; use relative paths or config | `config.py`; `.env.example` |
+| N03 | Không dùng đường dẫn tuyệt đối cố định; dùng đường dẫn tương đối hoặc config | `config.py`; tài liệu cấu hình môi trường |
 | N04 | No secrets, API keys, or personal data in repo | `.gitignore`; `SECURITY.md`; audit |
 | N05 | CI checks basic import and light tests without dataset | `.github/workflows/ci.yml` |
 | N06 | License clearly stated (Apache 2.0) and not MIT | `LICENSE`; `README.md`; `CITATION.cff` |
