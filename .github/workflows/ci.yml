@@ -22,13 +22,6 @@ jobs:
       - name: Check syntax / imports
         run: python -m py_compile src/network_anomaly/config.py src/network_anomaly/models/random_forest.py src/network_anomaly/models/isolation_forest.py
       - name: Unit tests (light)
-        run: python -m pytest tests/unit/test_basic.py -q --tb=short
+        run: python -m pytest tests/unit -q --tb=short
       - name: Validate data script — skip if dataset not downloaded; fail if invalid
-        run: |
-          if [ -f "data/raw/UNSW-NB15.csv" ] || [ -f "data/raw/UNSW-NB15_training_set.csv" ]; then
-            echo "Dataset found — running validation (must pass)."
-            python scripts/validate_data.py
-          else
-            echo "SKIP (intentional): UNSW-NB15 not downloaded. Download per docs/DATASET.md to enable full validation."
-            exit 0
-          fi
+        run: python scripts/validate_data.py

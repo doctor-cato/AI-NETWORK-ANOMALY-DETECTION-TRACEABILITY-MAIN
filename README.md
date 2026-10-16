@@ -108,7 +108,6 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 .
 ├── README.md
 ├── LICENSE (Apache 2.0 — full text; not MIT)
-├── CITATION.cff
 ├── pyproject.toml
 ├── requirements.txt
 ├── .gitignore
@@ -139,7 +138,7 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 ├── tests/unit/ + integration/
 ├── reports/figures/ + artifacts/ (not committed when large)
 ├── data/raw/, interim/, processed/ (dataset not committed)
-└── .github/ (issue templates, PR template, CI, dependabot)
+└── .github/ (issue templates, PR template, CI)
 ```
 
 ---
@@ -147,10 +146,10 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 ## Environment setup
 
 - Python 3.11+ (recommended 3.12)
-- Dependencies pinned in `pyproject.toml` and `requirements.txt`
+- Dependencies dùng giới hạn phiên bản tối thiểu (`>=`) trong `pyproject.toml` và `requirements.txt`; chưa có lockfile. Ghi phiên bản thực tế bằng `python -m pip freeze` khi tái lập.
 - Cài: `pip install -e .` (hoặc `python -m venv .venv` rồi `pip install -e .`)
 - Check environment: `python scripts/check_environment.py`
-- Check syntax / imports: `python -m py_compile src/network_anomaly/config.py ...`
+- Check syntax: `python -m py_compile src/network_anomaly/config.py`; kiểm tra import riêng bằng `python -c "import network_anomaly"`.
 
 ---
 
@@ -226,7 +225,7 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 ## Khả năng tái lập (xem `docs/REPRODUCIBILITY.md`)
 
 - Random seed: 42 (configurable)
-- Environment versions pinned
+- Dependencies hiện chưa khóa phiên bản; lưu phiên bản môi trường thực tế cho từng lần chạy
 - Split before fit; pipeline saved
 - Each experiment should save: seed, config, metrics, confusion matrix, version info
 - Dataset version and checksum to be recorded after download
@@ -291,7 +290,7 @@ Issues are planned / created for key tasks; see `.github/ISSUE_TEMPLATE/` for fo
 }
 ```
 
-Also see `CITATION.cff`.
+Thông tin trích dẫn hiện nằm trong khối BibTeX ở trên.
 
 ---
 
@@ -313,4 +312,4 @@ Apache License 2.0 — full text in `LICENSE`. Copyright placeholder included; r
 
 - Issues: https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues
 - PR template: `.github/pull_request_template.md`
-- Contributing guidelines: `CONTRIBUTING.md`
+- Khi đóng góp: mô tả phạm vi, lệnh kiểm chứng và giới hạn trong PR theo template hiện có.

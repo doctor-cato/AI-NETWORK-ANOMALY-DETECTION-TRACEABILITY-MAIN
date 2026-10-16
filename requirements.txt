@@ -1,4 +1,4 @@
-# Requirements — pinned for reproducibility
+# Minimum dependency versions; not a lockfile
 # Install with: pip install -r requirements.txt
 pandas>=2.2.0
 numpy>=1.26.0

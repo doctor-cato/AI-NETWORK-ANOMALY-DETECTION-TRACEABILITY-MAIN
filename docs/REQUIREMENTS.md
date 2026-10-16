@@ -18,11 +18,11 @@
 | ID | Requirement | Verification |
 |---|---|---|
 | N01 | Code organized under `src/network_anomaly/`; logic callable from notebooks/scripts | Directory structure verified |
-| N02 | Python 3.11+ compatible; dependencies pinned | `pyproject.toml`; `requirements.txt` |
+| N02 | Python 3.11+; giới hạn dependency tối thiểu, lưu phiên bản môi trường thực tế khi tái lập | `pyproject.toml`; `requirements.txt`; `docs/REPRODUCIBILITY.md` |
 | N03 | Không dùng đường dẫn tuyệt đối cố định; dùng đường dẫn tương đối hoặc config | `config.py`; tài liệu cấu hình môi trường |
-| N04 | No secrets, API keys, or personal data in repo | `.gitignore`; `SECURITY.md`; audit |
+| N04 | No secrets, API keys, or personal data in repo | `.gitignore`; kiểm tra diff và file trước commit |
 | N05 | CI checks basic import and light tests without dataset | `.github/workflows/ci.yml` |
-| N06 | License clearly stated (Apache 2.0) and not MIT | `LICENSE`; `README.md`; `CITATION.cff` |
+| N06 | Repository dùng Apache-2.0; xác minh nghĩa vụ riêng của dependency/assets | `LICENSE`; `README.md` |
 | N07 | Documentation distinguishes planned / implemented / verified | `README.md`; milestone descriptions |
 
 ## Acceptance criteria (per milestone)
