@@ -1,107 +1,140 @@
-# Báo cáo cuối — AI Network Anomaly Detection (Repository Setup)
+# Báo cáo migration workflow và audit quản lý dự án
 
-## 1. Repository và branch đã thao tác
-- Repository: `https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN`
-- Branch: `main`
-- Remote: `origin` → `https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN.git`
-- Trạng thái trước: repo rỗng (chỉ có `.git`, thư mục `docs` trống, không có commit).
-- Commit tạo: `06a3ec0` (root-commit) đã push lên `main`.
+Ngày kiểm tra: 2026-10-17
+Repository: `doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN`
 
-## 2. File/tài liệu quan trọng đã tạo (58 file, 1733 dòng chèn)
-- `README.md` — tiếng Anh, đầy đủ các phần yêu cầu (title, problem, dataset, methodology, architecture, metrics, repo structure, setup, installation, data prep, run checks, reproducibility, limitations, ethics, team/tasks, roadmap, citation, license, acknowledgements). Phân biệt rõ `planned` / `implemented` / `verified`; không bịa kết quả benchmark.
-- `LICENSE` — toàn văn Apache License 2.0 chính thức (lấy từ `apache.org/licenses/LICENSE-2.0.txt`), có copyright placeholder `2026 [Project Team...]`; không phải MIT.
-- `docs/` — 15 tài liệu bắt buộc: `PROJECT_CHARTER.md`, `PROBLEM_STATEMENT.md`, `REQUIREMENTS.md`, `DATASET.md`, `METHODOLOGY.md`, `ARCHITECTURE.md` (có sơ đồ Mermaid), `EXPERIMENT_PLAN.md`, `EVALUATION.md`, `REPRODUCIBILITY.md`, `ETHICS_AND_PRIVACY.md`, `REPORT_OUTLINE.md`, `PRESENTATION_OUTLINE.md`, `TEAM_TASKS.md`, `DEVELOPMENT_PLAN.md`, `FUTURE_WORK.md`. *(Không có `CHANGELOG.md` — đã xóa theo yêu cầu)*
-- `src/network_anomaly/` — cấu trúc module: `config.py`, `data/`, `preprocessing/`, `features/`, `models/` (random_forest.py, isolation_forest.py), `evaluation/metrics.py`, `inference/pipeline.py`, `visualization/plots.py`; `__init__.py` và subpackage init có nội dung thực.
-- `scripts/` — `check_environment.py`, `validate_data.py`, `run_experiments.py`, `create_issues.py`, `create_milestones.py`, `verify_import.py`.
-- `tests/unit/` + `tests/integration/` — `test_basic.py`, `test_pipeline.py`; fixture rõ ràng là synthetic.
-- `notebooks/README.md` — liệt kê 5 notebook dự kiến (EDA, preprocessing, RF experiment, IF evaluation, inference demo).
-- Config gốc: `pyproject.toml`, `requirements.txt`, `.gitignore`, `.editorconfig`, `CITATION.cff`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`. *(Các file `.env.example`, `CHANGELOG.md`, `Makefile` đã xóa theo yêu cầu thiết lập; tham chiếu Make đã thay bằng lệnh `pip`/`python`)*
-- GitHub templates: `bug_report.yml`, `feature_request.yml`, `config.yml`; `pull_request_template.md`; `.github/workflows/ci.yml`; `.github/dependabot.yml`.
-- `data/raw/`, `interim/`, `processed/` — chỉ có `.gitkeep`; không có dataset UNSW-NB15 trong Git.
+## 1. Trạng thái Git
 
-## 3. License áp dụng và xác nhận không dùng MIT
-- File `LICENSE`: toàn văn Apache 2.0, không rút gọn.
-- `README.md` dòng 7: `- **License:** Apache License 2.0 (not MIT)`.
-- `README.md` dòng 243: `- No MIT license used (Apache 2.0 applied).`
-- `pyproject.toml`: `license = {text = "Apache-2.0"}`.
-- `CITATION.cff`: `license: Apache-2.0`.
-- Kiểm tra `Select-String README.md -Pattern "MIT"` chỉ tìm thấy từ trong câu phủ nhận MIT; không có nội dung MIT thực.
-- Không có MIT trong `README`, `badge`, `metadata`.
-- Lưu ý rõ: license mã nguồn dự án không tự động thay đổi license của dataset bên thứ ba (`docs/DATASET.md`, `README.md`).
+Trước lượt xuất bản cuối của phiên làm việc:
 
-## 4. Milestones thực tế đã tạo
-Tạo qua `gh api repos/.../milestones` (6 milestone, vì `gh milestone` subcommand không có trong phiên bản này):
-- M0 — Repository Foundation and Project Design (số 1, open)
-- M1 — Dataset Acquisition and Exploratory Data Analysis (số 2, open)
-- M2 — Preprocessing and Baseline Models (số 3, open)
-- M3 — Anomaly Detection and Model Evaluation (số 4, open)
-- M4 — Inference, Demo and Integration (số 5, open)
-- M5 — Final Report, Presentation and Release (số 6, open)
-Link kiểm tra: `gh api repos/doctor-cato/.../milestones --paginate` trả về 6 dòng (1–6).
+- Nhánh làm việc tạm: `dev`.
+- `main` và `origin/main`: `9b8ac74`.
+- Migration workflow đã được commit ở `61d0a62` nhưng chưa push.
+- Tám file sửa P2 chưa commit, tập trung vào CI, validator dữ liệu, test và tài liệu.
 
-## 5. Issues thực tế đã tạo (19 active + 1 đã đóng test = 20 total)
-Tạo bằng `gh issue create` qua script `scripts/create_issues.py`; phân loại theo nhóm yêu cầu:
-1. Project scope (m0) — `type:feature`, `priority:high`
-2. Repo structure/env (m0) — `type:feature`, `priority:high`
-3. Dataset sourcing (m1) — `type:feature`, `priority:high`
-4. Validate schema/labels (m1) — `type:feature`, `priority:high`
-5. EDA (m1) — `type:research`, `priority:high`
-6. Leakage audit (m1) — `type:research`, `priority:high`
-7. Preprocessing pipeline (m2) — `type:feature`, `priority:high`
-8. Baseline (m2) — `type:feature`, `priority:medium`
-9. Random Forest (m2) — `type:feature`, `priority:high`
-10. Isolation Forest + protocol (m3) — `type:feature`, `priority:medium`
-11. Metrics/comparison (m3) — `type:feature`, `priority:high`
-12. Error analysis (m3) — `type:research`, `priority:medium`
-13. Reproducibility (m3) — `type:feature`, `priority:medium`
-14. Inference pipeline (m4) — `type:feature`, `priority:medium`
-15. Demo/visualization (m4) — `type:feature`, `priority:medium`
-16. Unit/integration tests (m4) — `type:testing`, `priority:medium`
-17. Documentation alignment (m5) — `type:docs`, `priority:medium`
-18. Report/presentation outline (m5) — `type:docs`, `priority:high`
-19. Final verification/release (m5) — `type:testing`, `priority:high`
-Mỗi issue có tiêu đề hành động, mô tả, checklist ngầm (acceptance criteria), liên kết milestone qua `--milestone`, label phù hợp. Không có issue chung chung như "Improve AI". Issue #1 (test milestone link) đã đóng `not planned`. Tất cả 19 còn lại là `OPEN`.
+Trạng thái sau migration và sửa P2, trước commit chỉ cập nhật báo cáo này:
 
-## 6. Các kiểm tra đã chạy và kết quả
-- **Cấu trúc file:** `docs/` có 15 file `.md`; `src/network_anomaly/` có module cấu trúc; `tests/`, `scripts/`, `.github/` đầy đủ. **PASS**
-- **Python syntax:** `py_compile` thành công cho `config.py`, `random_forest.py`, `evaluation/metrics.py`, `validate_data.py`. **PASS**
-- **Import module:** `python scripts/verify_import.py` → `PASS import`. Trước đó lỗi do chưa `pip install -e .`; đã cài đặt và xác minh lại. **PASS**
-- **Git diff --check:** không có lỗi whitespace (`HEAD` đã commit). **PASS**
-- `.gitignore`: `data/raw/*` được loại trừ; `.gitkeep` giữ lại; `artifacts/`, `env/` cũng loại. **PASS**
-- **License nhất quán:** `LICENSE`, `README.md`, `pyproject.toml`, `CITATION.cff` đều ghi Apache-2.0; không có MIT. **PASS**
-- **Milestones:** 6 milestone tồn tại (mở). **PASS**
-- **Issues:** 19 open + 1 closed; có label và milestone link. **PASS**
-- **Không bịa kết quả:** README không chứa accuracy/F1 số; `docs/EVALUATION.md` và `METHODOLOGY.md` mô tả rõ quy trình đánh giá riêng cho RF và IF; không tuyên bố zero-day, không tuyên bố device tracing, không tuyên bố production. **PASS**
-- **CI workflow:** `.github/workflows/ci.yml` định nghĩa `test` job cài `pip install -e .`, chạy `check_environment.py`, `py_compile`, `pytest tests/unit/test_basic.py`, và `validate_data.py || true`. Không yêu cầu dataset lớn/GPU/secret. **PASS**
-- **Không mất dữ liệu:** chỉ thêm file mới; không xóa/ghi đè file cũ (repo trước đó rỗng). **PASS**
-- **Khó khăn nhỏ:** `gh milestone list` không có sẵn trong phiên bản `gh 2.96.0`; đã dùng `gh api` thay thế. Issue milestone link cần dùng tên milestone thay vì số; đã điều chỉnh script và tạo thành công.
+- Nhánh duy nhất đang dùng: `main`.
+- Commit code/workflow được kiểm toán trên `main`: `f11ccba`.
+- Commit migration: `61d0a62 feat(workflow): Add portable Codex repository workflows`.
+- Commit sửa P2: `f11ccba fix(validation): enforce dataset CSV checks`.
+- Nhánh local `dev` đã xóa; remote không có nhánh `dev`.
+- Không force push, reset, clean hoặc rewrite history.
 
-## 7. Những gì đã commit/push
-- Commit: `06a3ec0` (root-commit)
-- Push: `main` → `origin/main`
-- Link commit: có thể xem qua GitHub (repo công khai)
-- Không `amend`, không `force-push`, không xóa lịch sử.
+## 2. Workflow OpenCode tìm thấy
 
-## 8. Hạng mục còn thiếu hoặc bị chặn
-- **Chưa hoàn thành (dự kiến M1–M3):** tải và kiểm tra UNSW-NB15 thật; EDA thực tế; huấn luyện RF có kết quả thực nghiệm; triển khai IF nếu thời gian cho phép; tạo notebook thực nghiệm; ghi số liệu thật vào `reports/`.
-- **Bị chặn (không phải lỗi, chỉ phụ thuộc):** đào tạo mô hình cần dataset; không thể chạy `make run-baseline` thực sự cho đến khi người dùng tải dữ liệu theo `docs/DATASET.md`. Script `run_experiments.py` và `validate_data.py` đã xử lý trạng thái này bằng cách báo `NOT FOUND` / `NOT IMPLEMENTED` rõ ràng thay vì im lặng hoặc giả vờ thành công.
-- **Tài liệu:** `REPORT_OUTLINE.md` và `PRESENTATION_OUTLINE.md` đã có khung; nội dung kết quả phải được điền sau khi có thực nghiệm (đúng với quy tắc không bịa).
+Bốn workflow đang hoạt động trong `.agents/workflows/`:
 
-## 9. Quyết định thiết kế quan trọng và lý do
-- **Apache 2.0 thay vì MIT:** theo yêu cầu bắt buộc trong nhiệm vụ; tránh vi phạm giấy phép.
-- **Không commit dataset:** UNSW-NB15 ~2.5 GB; cũng để tôn trọng điều kiện sử dụng và tránh repo quá lớn.
-- **Pipeline tách biệt (RF / IF):** do mục tiêu học và cách đánh giá khác nhau (supervised vs unsupervised, threshold selection khác). `docs/METHODOLOGY.md` và `docs/EVALUATION.md` mô tả rõ, không so sánh trực tiếp bằng cùng một cách đánh giá ниглупо.
-- **Code trong `src/`, notebook chỉ cho EDA/demo:** đảm bảo logic cốt lõi tái lập từ module Python, không phụ thuộc notebook duy nhất.
-- **Fixture synthetic cho test:** cho phép kiểm tra pipeline mà không cần dataset thật; rõ ràng không phải dữ liệu UNSW-NB15.
-- **Milestones 6 (M0–M5), Issues ~19:** đủ cho nhóm 3 người trong 5–6 tuần; không chia nhỏ quá mức.
-- **CI nhẹ:** không tải dữ liệu lớn; không cần GPU; phù hợp kiểm tra cơ bản.
+- `plan.md`: phân tích yêu cầu, phạm vi, dependency, rủi ro và kế hoạch kiểm chứng.
+- `implement.md`: thay đổi tối thiểu theo kế hoạch, bảo vệ thay đổi của người dùng.
+- `verify.md`: chạy kiểm tra thực tế và phân loại PASS, FAIL, SKIPPED, NOT VERIFIED.
+- `review.md`: review độc lập, ưu tiên bug, regression, security, compatibility và thiếu test.
 
-## 10. Bước tiếp theo theo thứ tự dependency
-1. **M1:** Tải UNSW-NB15 → `data/raw/` → chạy `python scripts/validate_data.py` → EDA → ghi kết quả vào `docs/DATASET.md` và `REPRODUCIBILITY.md` (checksum, phiên bản).
-2. **M1 → M2:** Chốt quy trình chia tập + preprocessing (fit trên train, lưu pipeline) → xây dựng `Random Forest` → ghi kết quả thực nghiệm (seed, cấu hình, metrics) vào `reports/` và `artifacts/`.
-3. **M2 → M3:** Nếu thời gian cho phép, triển khai `Isolation Forest` → chọn ngưỡng trên validation → đánh giá trên test với protocol riêng → đối chiếu bằng bảng so sánh có giải thích rõ ràng → phân tích false positive/negative.
-4. **M3 → M4:** Hoàn thiện `inference/pipeline.py` + demo + visualization → chạy test tích hợp → kiểm tra CI.
-5. **M4 → M5:** Điền nội dung vào `REPORT_OUTLINE.md`, tạo slide theo `PRESENTATION_OUTLINE.md`, kiểm tra cuối kỳ (license, milestones, issues, CI, không bịa số liệu), push cập nhật.
+Các rule và hướng dẫn dùng chung nằm trong `.agents/rules/`, `.agents/README.md` và
+`.agents/skills/README.md`. Không tìm thấy bằng chứng cần loại bỏ workflow nào trong bốn workflow cốt lõi.
 
----
-*Báo cáo này phân biệt rõ giữa đã tạo file, đã commit/push, đã chạy kiểm tra, và công việc mới chỉ được lên kế hoạch. Không có tuyên bố thành công giả hoặc benchmark giả.*
+## 3. Mapping OpenCode → Codex
+
+| Thành phần hiện có | Cách Codex sử dụng | Quyết định |
+|---|---|---|
+| `.agents/workflows/*.md` | Tài liệu quy trình chi tiết | Giữ nguyên đường dẫn để OpenCode tiếp tục dùng |
+| Rule dùng chung | `AGENTS.md` ở root | Tập trung guardrail lâu dài, giảm lặp giữa workflow |
+| PLAN/IMPLEMENT/VERIFY/REVIEW | `.agents/skills/repo-workflow/SKILL.md` | Tạo một skill Codex tái sử dụng, định nghĩa input/output và chuyển trạng thái |
+| Kiểm tra cấu trúc thủ công | `check_workflows.py` | Tự động kiểm tra metadata, link local và trạng thái verification |
+| Agent riêng của OpenCode | Subagent Codex khi tác vụ độc lập và đủ phức tạp | Không giả định cú pháp agent/command riêng của OpenCode tương thích |
+
+Không cài plugin, MCP hoặc dependency mới. Cấu trúc `.agents/` được tái sử dụng thay vì sao chép
+một cây cấu hình Codex riêng.
+
+## 4. Cải thiện workflow
+
+- `AGENTS.md` chứa quy tắc chung về phạm vi ML, Git, bảo vệ dữ liệu và kiểm chứng.
+- Skill `repo-workflow` định nghĩa rõ input, output và điều kiện chuyển
+  PLAN → IMPLEMENT → VERIFY → REVIEW.
+- VERIFY hoặc REVIEW có finding sẽ quay lại IMPLEMENT với phạm vi cụ thể; workflow giới hạn vòng lặp
+  và dừng bằng trạng thái rõ ràng thay vì lặp vô hạn.
+- REVIEW yêu cầu bằng chứng độc lập và không tự sửa khi được giao review-only.
+- Lệnh kiểm tra dùng Python để chạy được trên Windows; không phụ thuộc Bash/Make.
+- Không workflow nào tự commit hoặc push khi chưa có yêu cầu trực tiếp.
+
+## 5. File migration và sửa P2
+
+Các file workflow được tạo hoặc cập nhật trong `61d0a62`:
+
+- `AGENTS.md`
+- `.agents/README.md`
+- `.agents/rules/coding-standards.md`
+- `.agents/skills/README.md`
+- `.agents/skills/repo-workflow/SKILL.md`
+- `.agents/skills/repo-workflow/scripts/check_workflows.py`
+- `.agents/workflows/plan.md`
+- `.agents/workflows/implement.md`
+- `.agents/workflows/verify.md`
+- `.agents/workflows/review.md`
+- `.gitignore`
+
+Các file sửa P2 trong `f11ccba`:
+
+- `.github/workflows/ci.yml`
+- `README.md`
+- `docs/DATASET.md`
+- `docs/REPRODUCIBILITY.md`
+- `docs/REQUIREMENTS.md`
+- `requirements.txt`
+- `scripts/validate_data.py`
+- `tests/unit/test_validate_data.py`
+
+Validator hiện stream CSV, kiểm tra UTF-8, header, cột bắt buộc, hàng dữ liệu và độ rộng hàng;
+CI truyền đúng exit code khi dữ liệu có mặt nhưng không hợp lệ. Khi không có dataset, validator báo
+SKIPPED rõ ràng và không tuyên bố đã kiểm chứng UNSW-NB15 thật.
+
+## 6. Kết quả kiểm chứng
+
+| Hạng mục | Kết quả | Bằng chứng/phạm vi |
+|---|---|---|
+| Cấu trúc workflow và metadata skill | PASS | `check_workflows.py` |
+| Link local trong workflow | PASS | `check_workflows.py` |
+| Environment imports | PASS | `scripts/check_environment.py` |
+| Python compile/import mục tiêu | PASS | `python -m py_compile ...` |
+| Unit Test | PASS | 22 test, gồm 19 test validator và 3 smoke test cấu hình/constructor |
+| GitHub Actions tại `f11ccba` | PASS | Run `38946563304` |
+| Dataset thật | SKIPPED | UNSW-NB15 chưa được tải, đúng ràng buộc nhiệm vụ |
+| Runtime discovery trong phiên Codex khác | NOT VERIFIED | Chỉ có thể xác nhận cấu trúc skill hợp lệ trong môi trường hiện tại |
+| Hành vi subagent trên mọi Codex host | NOT VERIFIED | Phụ thuộc khả năng host và cách người dùng giao việc |
+| Pipeline ML end-to-end | NOT VERIFIED | Chưa được phép triển khai hoặc huấn luyện trong giai đoạn setup |
+
+Dry-run an toàn của PLAN, VERIFY và REVIEW đã được thực hiện trên thay đổi workflow/P2; không huấn luyện
+mô hình, không tải dataset và không sửa pipeline ML.
+
+## 7. Audit Issues và Milestones
+
+- Đã đọc 20 issue: 19 mở (#2–#20) và một issue test đã đóng (#1).
+- Đã kiểm tra 6 milestone M0–M5.
+- Không thay đổi issue number, state, labels, assignees hoặc milestone assignment.
+- Không tạo, đóng hoặc xóa issue/milestone.
+- Đã mở rộng cả 19 issue đang mở bằng hai phần theo nội dung thực tế:
+  `Trạng thái hiện tại (2026-10-17)` và `Trình tự thực hiện đề xuất`.
+- Đã sửa mô tả lỗi thời ở #5, #14 và #17 để phản ánh validator, tài liệu reproducibility,
+  22 Unit Test và CI hiện tại.
+- Dependency graph không có vòng lặp; Isolation Forest #11 vẫn là tùy chọn và không chặn đường core.
+- Bản sao trước cập nhật, proposal và bản đọc lại sau cập nhật được lưu trong thư mục audit local đã ignore.
+
+Các issue chịu ảnh hưởng trực tiếp từ sửa P2:
+
+- #5 — kiểm tra schema, nhãn và chất lượng UNSW-NB15.
+- #14 — Traceability và Reproducibility.
+- #17 — Unit Test và Integration Test.
+- #20 — xác minh tổng thể và điều kiện bàn giao.
+
+## 8. Hạn chế và trạng thái sẵn sàng
+
+Codex đã sẵn sàng thay OpenCode cho bốn workflow PLAN, IMPLEMENT, VERIFY và REVIEW ở cấp repository.
+OpenCode vẫn có thể dùng các file workflow cũ tại cùng đường dẫn. Cấu trúc này không giả định Codex hiểu
+cú pháp command hoặc agent riêng của OpenCode.
+
+Repository đã sẵn sàng cho giai đoạn setup và phân công công việc qua Issues. Hệ thống ML chưa sẵn sàng
+bàn giao: chưa có UNSW-NB15 thật, preprocessing/training/evaluation artifact, Inference hoặc demo. Random
+Forest vẫn là baseline bắt buộc; Isolation Forest là hướng mở rộng tùy chọn.
+
+Working tree sau commit/push không có thay đổi tracked chưa commit. Các snapshot audit local được giữ ngoài
+Git theo `.gitignore` để có thể đối chiếu hoặc khôi phục nội dung quản lý dự án.
