@@ -25,6 +25,7 @@ reports/figures/*.pdf
 env/
 venv/
 __pycache__/
+.pytest_cache/
 *.pyc
 *.pyo
 *.egg-info/
@@ -46,3 +47,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Local session audit evidence (preserve on disk; not project source)
+/AUDIT_REPORT.md
+/AUDIT_LEDGER.md
+/docs/audits/codex-migration-2026-10-17/

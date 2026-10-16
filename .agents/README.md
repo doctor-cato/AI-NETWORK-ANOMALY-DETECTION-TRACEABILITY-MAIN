@@ -13,11 +13,11 @@ Thư mục này là hướng dẫn cho AI coding agent khi làm việc trên rep
 - `rules/coding-standards.md` — thực hành code, dependency, test, lỗi.
 - `rules/ml-experiment-rules.md` — quy tắc thí nghiệm ML (leakage, split, metric, dữ liệu thật).
 - `workflows/plan.md` → `implement.md` → `verify.md` → `review.md` — quy trình 4 bước.
-- `skills/` — 4 skill tích hợp nhẹ, tham chiếu nguồn toàn cục `C:\Users\Admin\.agents\skills/`.
+- `skills/` — skill Codex `repo-workflow` và 4 tham chiếu tích hợp OpenCode được giữ lại.
 
 ## Quy trình sử dụng
 
-Plan → Implement → Verify → Review. Không sửa code trước khi đọc yêu cầu và tài liệu dự án (`README.md`, `docs/METHODOLOGY.md`, `docs/EVALUATION.md`).
+Plan → Implement → Verify → Review theo phạm vi được giao. Đọc yêu cầu, `README.md` và chỉ tài liệu liên quan trước khi sửa; đọc `docs/METHODOLOGY.md` và `docs/EVALUATION.md` khi tác vụ liên quan ML. PLAN-only/REVIEW-only không tự chuyển sang sửa file.
 
 Phân biệt rõ:
 - `planned` = chưa triển khai / chưa có dataset.
@@ -26,3 +26,20 @@ Phân biệt rõ:
 - `experimentally validated` = đã chạy trên UNSW-NB15 thật và ghi kết quả.
 
 Không tạo thêm milestone/issue, không thêm tài liệu chỉ để tăng số file, không triển khai Autoencoder/Transformer/GNN/post-quantum.
+
+## Dùng trong Codex
+
+Codex đọc [AGENTS.md](../AGENTS.md) ở root và khám phá [repo-workflow](skills/repo-workflow/SKILL.md) qua `SKILL.md`. Bốn workflow ở trên vẫn dùng chung với OpenCode; không có cú pháp slash-command riêng cần mô phỏng.
+
+Ví dụ prompt (thay phạm vi bằng task thực):
+
+- `Dùng $repo-workflow PLAN: lên kế hoạch kiểm tra tài liệu workflow; không sửa file.`
+- `Dùng $repo-workflow IMPLEMENT: thực hiện kế hoạch vừa thống nhất, rồi VERIFY và REVIEW; không commit/push.`
+- `Dùng $repo-workflow VERIFY: kiểm tra thay đổi workflow hiện tại; không sửa code.`
+- `Dùng $repo-workflow REVIEW: review working-tree diff và file mới; chỉ báo findings, không sửa.`
+
+Gõ prompt trực tiếp trong Codex; trong PowerShell giữ `$repo-workflow` trong chuỗi nháy đơn để tránh nội suy biến. Nếu skill chưa xuất hiện sau thay đổi, mở lại session. Có thể yêu cầu đọc trực tiếp `skills/repo-workflow/SKILL.md` trong thư mục này; đây là fallback thủ công, không phải bằng chứng auto-discovery.
+
+Skill chỉ đọc bước cần dùng, định nghĩa input/output và điều kiện chuyển giao; hướng dẫn chung ở root/rules không cần sao chép vào mỗi bước. Lỗi quay về IMPLEMENT khi được phép; lỗi tái diễn sau hai lượt sửa phải báo điều kiện tiếp tục.
+
+OpenCode tiếp tục đọc `.agents/workflows/*.md`, rules và `INTEGRATION.md` như trước. Cấu hình OpenCode toàn cục/permission không được nhập vào Codex. Chưa có bằng chứng runtime OpenCode tự nạp các Markdown này; cần đọc/chỉ định file theo cách đã dùng trong OpenCode.
