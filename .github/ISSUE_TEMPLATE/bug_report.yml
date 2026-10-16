@@ -1,0 +1,20 @@
+name: Báo cáo lỗi
+about: Báo cáo vấn đề với code, xử lý dữ liệu hoặc tài liệu
+body:
+  - type: form
+    fields:
+      - id: description
+        label: Vấn đề là gì?
+        type: textarea
+      - id: steps
+        label: Các bước tái hiện
+        type: textarea
+      - id: expected
+        label: Hành vi mong đợi
+        type: textarea
+      - id: environment
+        label: Môi trường (phiên bản Python, hệ điều hành)
+        type: input
+      - id: dataset_status
+        label: Trạng thái dataset (đã tải / chưa tải / dùng fixture)
+        type: input

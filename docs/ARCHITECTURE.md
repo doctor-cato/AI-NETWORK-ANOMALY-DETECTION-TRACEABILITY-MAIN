@@ -1,30 +1,30 @@
-# Architecture — Data Flow and Modules
+# Kiến trúc — Luồng dữ liệu và các mô-đun
 
 ```mermaid
 graph LR
-    A[Raw UNSW-NB15<br/>data/raw/] --> B[Validate & Inspect]
-    B --> C[EDA / Leakage Audit]
-    C --> D[Split train/val/test]
-    D --> E[Preprocessing Pipeline<br/>fit on train]
-    E --> F[Model Training<br/>Random Forest / Isolation Forest]
-    F --> G[Evaluation<br/>metrics + confusion matrix]
-    G --> H[Error Analysis
-    H --> I[Inference Pipeline<br/>new input -> prediction]
-    I --> J[Demo / Report]
+    A[UNSW-NB15 thô<br/>data/raw/] --> B[Kiểm tra & kiểm tra sơ bộ]
+    B --> C[EDA / Kiểm tra rò rỉ dữ liệu]
+    C --> D[Chia train/val/test]
+    D --> E[Pipeline tiền xử lý<br/>fit trên train]
+    E --> F[Huấn luyện mô hình<br/>Random Forest / Isolation Forest]
+    F --> G[Đánh giá<br/>metrics + confusion matrix]
+    G --> H[Phân tích lỗi]
+    H --> I[Pipeline suy luận<br/>dữ liệu mới -> dự đoán]
+    I --> J[Demo / Báo cáo]
 ```
 
-## Module description
+## Mô tả mô-đun
 
-| Module | Path | Role |
+| Mô-đun | Đường dẫn | Vai trò |
 |---|---|---|
-| Config | `src/network_anomaly/config.py` | Paths, seeds, hyperparameter defaults |
-| Data validation | `scripts/validate_data.py` | Load, schema check, summary |
-| Preprocessing | `src/network_anomaly/preprocessing/` | Pipeline objects; encoding; scaling |
-| Features | `src/network_anomaly/features/` | Feature selection / engineering rules (documented, not over-engineered) |
-| Models — Random Forest | `src/network_anomaly/models/random_forest.py` | Supervised classifier |
-| Models — Isolation Forest | `src/network_anomaly/models/isolation_forest.py` | Unsupervised detector (if implemented) |
-| Evaluation | `src/network_anomaly/evaluation/` | Metrics, confusion matrix, error analysis |
-| Inference | `src/network_anomaly/inference/` | Load artifacts; predict new data |
-| Visualization | `src/network_anomaly/visualization/` | Plots for EDA, metrics, error analysis |
+| Config | `src/network_anomaly/config.py` | Đường dẫn, seed, giá trị mặc định siêu tham số |
+| Kiểm tra dữ liệu | `scripts/validate_data.py` | Đọc, kiểm tra schema, tóm tắt |
+| Tiền xử lý | `src/network_anomaly/preprocessing/` | Đối tượng pipeline; mã hóa; chuẩn hóa |
+| Đặc trưng | `src/network_anomaly/features/` | Quy tắc chọn / xây dựng đặc trưng (đã ghi, không quá phức tạp) |
+| Mô hình — Random Forest | `src/network_anomaly/models/random_forest.py` | Phân loại giám sát |
+| Mô hình — Isolation Forest | `src/network_anomaly/models/isolation_forest.py` | Phát hiện bất thường không giám sát (nếu triển khai) |
+| Đánh giá | `src/network_anomaly/evaluation/` | Metrics, confusion matrix, phân tích lỗi |
+| Suy luận | `src/network_anomaly/inference/` | Tải artifact; dự đoán dữ liệu mới |
+| Trực quan hóa | `src/network_anomaly/visualization/` | Biểu đồ cho EDA, metrics, phân tích lỗi |
 
-Updated: 2026-10-16
+Cập nhật: 2026-10-16

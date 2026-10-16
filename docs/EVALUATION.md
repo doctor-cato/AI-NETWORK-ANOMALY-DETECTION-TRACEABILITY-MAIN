@@ -1,42 +1,42 @@
-# Evaluation — Metrics, Interpretation, Error Analysis
+# Đánh giá — Metric, Giải thích, Phân tích lỗi
 
-## Evaluation protocol per model
+## Protocol đánh giá theo mô hình
 
-### Random Forest (supervised)
+### Random Forest (giám sát)
 
-- Train on labeled train set.
-- Predict on validation and test sets using fitted pipeline.
-- Compute: Precision, Recall, F1 (binary or per-class), Macro-F1, confusion matrix, FPR.
-- Confusion matrix interpreted with clear axis labels.
+- Huấn luyện trên tập train có nhãn.
+- Dự đoán trên validation và test bằng pipeline đã fit.
+- Tính: Precision, Recall, F1 (nhị phân hoặc theo lớp), Macro-F1, confusion matrix, FPR.
+- Confusion matrix phải có nhãn trục rõ ràng.
 
-### Isolation Forest (unsupervised — if implemented)
+### Isolation Forest (không giám sát — nếu triển khai)
 
-- Train on unlabeled (or labeled-ignored) train set.
-- Produce anomaly scores on validation set.
-- Select threshold (document method: e.g., contamination estimate = expected anomaly ratio, or score quantile).
-- Predict on test with selected threshold.
-- Compute same metrics; clearly state threshold selection process.
-- Note: metrics are comparable only after both protocols documented.
+- Huấn luyện trên tập train không nhãn (hoặc bỏ qua nhãn).
+- Tạo điểm bất thường trên tập validation.
+- Chọn ngưỡng (ghi rõ phương pháp: ví dụ ước lượng contamination = tỷ lệ bất thường dự kiến, hoặc chứng lượng điểm).
+- Dự đoán trên test với ngưỡng đã chọn.
+- Tính các metric giống trên; ghi rõ quá trình chọn ngưỡng.
+- Lưu ý: các metric chỉ so sánh được khi cả hai protocol đã được ghi rõ.
 
-## Metrics definitions (repeated from METHODOLOGY for clarity)
+## Định nghĩa metric (lặp lại từ METHODOLOGY cho rõ ràng)
 
 - Precision = TP / (TP + FP)
 - Recall = TP / (TP + FN)
 - F1 = 2 * P * R / (P + R)
-- Macro-F1 = mean(per-class F1)
-- Confusion matrix: clearly labeled axes
-- FPR = FP / (FP + TN) — report when meaningful
+- Macro-F1 = trung bình F1 theo từng lớp
+- Confusion matrix: trục phải ghi rõ nhãn
+- FPR = FP / (FP + TN) — báo cáo khi có ý nghĩa
 
-## Error analysis
+## Phân tích lỗi
 
-- False positives: normal connections flagged; describe possible causes (similar features to anomalies; feature encoding issues; class overlap).
-- False negatives: anomalies missed; describe possible causes (anomaly types underrepresented; feature not captured; threshold too conservative).
-- Data limitations: imbalance, missing values, duplicates, identity leakage.
-- Model limitations: Random Forest may overfit if depth unbounded; Isolation Forest assumes normal data clusters differently from anomalies; neither claims zero-day detection without proof.
+- Dương tính giả: kết nối bình thường bị đánh dấu bất thường; mô tả nguyên nhân có thể (đặc trưng tương tự bất thường; vấn đề mã hóa đặc trưng; chồng chéo lớp).
+- Âm tính giả: bất thường bị bỏ sót; mô tả nguyên nhân có thể (loại bất thường thiếu dữ liệu; chưa bắt được đặc trưng; ngưỡng quá bảo thủ).
+- Hạn chế dữ liệu: mất cân bằng, giá trị thiếu, bản ghi trùng, rò rỉ định danh.
+- Hạn chế mô hình: Random Forest có thể overfit nếu độ sâu không giới hạn; Isolation Forest giả định dữ liệu bình thường phân cụm khác với bất thường; không tuyên bố phát hiện zero-day không có chứng cứ.
 
-## No unverified benchmark claims
+## Không tuyên bố benchmark chưa kiểm chứng
 
-- This repository does not claim specific accuracy, F1-score, or benchmark results until real experiments complete and results are recorded with seed/version.
-- All results labeled: planned / implemented / verified.
+- Repo này không tuyên bố độ chính xác, F1 cụ thể, hoặc kết quả benchmark cho đến khi thực nghiệm thật hoàn thành và kết quả được ghi cùng seed/phiên bản.
+- Mọi kết quả phải ghi rõ: planned / implemented / verified.
 
-Updated: 2026-10-16
+Cập nhật: 2026-10-16

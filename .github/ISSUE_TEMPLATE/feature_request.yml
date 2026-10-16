@@ -1,0 +1,17 @@
+name: Đề xuất tính năng
+about: Đề xuất tính năng hoặc cải tiến mới (không dùng cho công việc bắt buộc ở M0–M5)
+body:
+  - type: form
+    fields:
+      - id: description
+        label: Bạn muốn thêm gì?
+        type: textarea
+      - id: scope
+        label: Đây có thuộc phạm vi bắt buộc (M0–M5) hay công việc tương lai?
+        type: dropdown
+        options:
+          - Phạm vi bắt buộc
+          - Công việc tương lai / cải tiến
+      - id: deliverables
+        label: Kết quả mong đợi / file cần tạo
+        type: textarea

@@ -16,65 +16,65 @@
 - **English:** AI-Based Network Anomaly Detection Using Machine Learning and Network Traffic Behavior Analysis
 - **Vietnamese:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
 
-## Short description
+## Tóm tắt ngắn
 
-Build a reproducible machine-learning pipeline that uses UNSW-NB15 network-traffic data to detect anomalous connections. The project provides a supervised Random Forest baseline, documents an Isolation Forest unsupervised evaluation protocol (separate from supervised evaluation), records metrics transparently, and includes inference and demo components — without claiming unverified zero-day detection, production deployment, or fabricated benchmark results.
+Xây dựng một pipeline học máy tái lập được sử dụng dữ liệu lưu lượng mạng UNSW-NB15 để phát hiện các kết nối bất thường. Dự án cung cấp baseline Random Forest giám sát, ghi rõ protocol đánh giá riêng cho Isolation Forest không giám sát (nếu khả thi), ghi metric một cách minh bạch, và bao gồm thành phần suy luận và demo — không tuyên bố phát hiện zero-day chưa kiểm chứng, triển khai production, hoặc kết quả benchmark giả mạo.
 
 ---
 
-## Problem statement and motivation
+## Phát biểu vấn đề và động lực
 
-Network traffic contains both normal and abnormal connection patterns. Detecting anomalies supports security awareness, but evaluation must be transparent, reproducible, and limited to verified evidence. This assignment demonstrates a structured ML pipeline for a 5–6 week course project.
+Lưu lượng mạng chứa cả mẫu kết nối bình thường và bất thường. Việc phát hiện bất thường hỗ trợ nhận thức bảo mật, nhưng đánh giá phải minh bạch, tái lập và giới hạn ở bằng chứng đã xác minh. Bài tập này minh họa một pipeline ML có cấu trúc cho dự án 5–6 tuần.
 
-## Objectives (mandatory — see `docs/PROJECT_CHARTER.md`)
+## Mục tiêu (bắt buộc — xem `docs/PROJECT_CHARTER.md`)
 
-1. Analyze anomaly detection in network traffic and define the target.
-2. Use UNSW-NB15 as primary dataset; verify schema and labels.
-3. Check data quality; handle missing values; avoid target leakage.
-4. Design reproducible train/val/test split.
-5. Build Random Forest baseline with documented pipeline.
-6. Build Isolation Forest as unsupervised method if feasible; document separate evaluation protocol.
-7. Compare using Precision, Recall, F1, Macro-F1, confusion matrix, FPR — with protocols clearly described per model.
-8. Analyze false positives / false negatives; document limitations.
-9. Provide inference pipeline and minimal demo.
-10. Deliver reproducible scripts/notebooks, architecture, documentation, and presentation outline.
+1. Phân tích phát hiện bất thường trong lưu lượng mạng và xác định mục tiêu.
+2. Sử dụng UNSW-NB15 làm bộ dữ liệu chính; kiểm tra schema và nhãn.
+3. Kiểm tra chất lượng dữ liệu; xử lý giá trị thiếu; tránh rò rỉ dữ liệu (target leakage).
+4. Thiết kế chia train/val/test tái lập.
+5. Xây dựng baseline Random Forest với pipeline đã ghi.
+6. Xây dựng Isolation Forest theo phương pháp không giám sát nếu khả thi; ghi protocol đánh giá riêng.
+7. So sánh bằng Precision, Recall, F1, Macro-F1, confusion matrix, FPR — với protocol rõ ràng cho từng mô hình.
+8. Phân tích dương tính giả / âm tính giả; ghi rõ hạn chế.
+9. Cung cấp pipeline suy luận và demo tối thiểu.
+10. Đưa ra script/notebook tái lập, kiến trúc, tài liệu và dàn ý trình bày.
 
 ## Scope and non-goals
 
-### In scope
-- Problem analysis; dataset sourcing; EDA; preprocessing; split; RF; IF (if time); evaluation; error analysis; inference; documentation.
+### Trong phạm vi
+- Phân tích vấn đề; nguồn dữ liệu; EDA; tiền xử lý; chia dữ liệu; RF; IF (nếu có thời gian); đánh giá; phân tích lỗi; suy luận; tài liệu.
 
-### Explicitly out of scope (documented in `docs/FUTURE_WORK.md`; do NOT implement now)
+### Rõ ràng ngoài phạm vi (đã ghi trong `docs/FUTURE_WORK.md`; KHÔNG triển khai ngay)
 - Autoencoder, LSTM, Transformer, GNN.
-- Zero-day detection claims without experimental proof.
-- Device identity / attacker tracing from behavior vectors.
-- Vector behavior encoding / adaptive key rotation.
-- Automatic blocking / isolation / counter-attack.
-- Production deployment / distributed processing.
+- Tuyên bố phát hiện zero-day không có chứng cứ thực nghiệm.
+- Truy vết danh tính thiết bị / hành vi từ vector đặc trưng.
+- Mã hóa hành vi vector / xoay khóa thích ứng.
+- Chặn tự động / cô lập / phản công tự động.
+- Triển khai production / xử lý phân tán.
 
 ---
 
-## Dataset
+## Bộ dữ liệu
 
-- **Name:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
-- **Source reference:** Official UNSW dataset portal (link to be confirmed when downloading; see `docs/DATASET.md`)
-- **Status:** Not downloaded / not committed (planned)
-- **Download instructions:** See `docs/DATASET.md`; place files in `data/raw/`; run `python scripts/validate_data.py`
-- **Checksum / version:** Not yet verified; to be recorded after download in `docs/REPRODUCIBILITY.md`
-- **Usage conditions:** For academic/research use; do not redistribute original data without confirming terms
-- **Fixture data:** `tests/` uses synthetic fixtures clearly marked as test-only, not UNSW-NB15
+- **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
+- **Tham chiếu nguồn:** Cổng dữ liệu chính thức UNSW (liên kết sẽ xác nhận khi tải; xem `docs/DATASET.md`)
+- **Trạng thái:** Chưa tải / chưa commit (đã dự kiến)
+- **Hướng dẫn tải:** Xem `docs/DATASET.md`; đặt file vào `data/raw/`; chạy `python scripts/validate_data.py`
+- **Checksum / phiên bản:** Chưa xác minh; sẽ ghi sau khi tải trong `docs/REPRODUCIBILITY.md`
+- **Điều kiện sử dụng:** Học thuật / nghiên cứu; không phân phối lại dữ liệu gốc mà không xác nhận điều khoản
+- **Dữ liệu fixture:** `tests/` dùng fixture tổng hợp rõ ràng là test-only, không phải UNSW-NB15
 
 ---
 
-## Methodology (high-level — see `docs/METHODOLOGY.md`)
+## Phương pháp (tổng quan — xem `docs/METHODOLOGY.md`)
 
-1. Load and verify dataset.
-2. EDA + leakage audit (identity columns, duplicates, missing values, class distribution).
-3. Train/val/test split (before any fit).
-4. Preprocessing pipeline (fit on train only; save artifacts).
-5. Random Forest (supervised) — train, predict, compute Precision/Recall/F1/Macro-F1/confusion matrix/FPR.
-6. Isolation Forest (unsupervised) — score production; threshold selection on validation set; then evaluate on test with documented protocol.
-7. Note: Isolation Forest uses a different evaluation setup from supervised RF. Metrics are comparable numerically only after both protocols are clearly described.
+1. Đọc và kiểm tra dữ liệu.
+2. EDA + kiểm tra rò rỉ dữ liệu (cột định danh, bản ghi trùng, giá trị thiếu, phân bố lớp).
+3. Chia train/val/test (trước mọi fitting).
+4. Pipeline tiền xử lý (fit trên train; lưu artifact).
+5. Random Forest (giám sát) — huấn luyện, dự đoán, tính Precision/Recall/F1/Macro-F1/confusion matrix/FPR.
+6. Isolation Forest (không giám sát) — sản xuất điểm bất thường; chọn ngưỡng trên validation; đánh giá với protocol riêng.
+7. Lưu ý: Isolation Forest có setup đánh giá khác với RF giám sát. Các metric chỉ so sánh được khi cả hai protocol được mô tả rõ ràng.
 
 ---
 
@@ -155,10 +155,10 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 
 ---
 
-## Installation
+## Cài đặt
 
 ```bash
-# Clone or use existing repo
+# Clone hoặc dùng repo hiện có
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e .
@@ -166,23 +166,23 @@ pip install -e .
 
 ---
 
-## How to prepare data
+## Cách chuẩn bị dữ liệu
 
 ```bash
-# Download UNSW-NB15 from official source (see docs/DATASET.md)
-# Place CSV(s) in data/raw/
+# Tải UNSW-NB15 từ nguồn chính thức (xem docs/DATASET.md)
+# Đặt CSV vào data/raw/
 python scripts/validate_data.py
 ```
 
-Dataset not committed; see `docs/DATASET.md` for source details and usage conditions.
+Dataset không được commit; xem `docs/DATASET.md` để biết chi tiết nguồn và điều kiện sử dụng.
 
 ---
 
-## How to run checks
+## Cách chạy kiểm tra
 
 ```bash
 make check-env
-make check-data      # planned; expects dataset download
+make check-data      # dự kiến; cần tải dataset trước
 python -m pytest tests/unit/test_basic.py -q
 ```
 
@@ -224,7 +224,7 @@ Actual execution depends on dataset download and experiment tracking (see `docs/
 
 ---
 
-## Reproducibility (see `docs/REPRODUCIBILITY.md`)
+## Khả năng tái lập (xem `docs/REPRODUCIBILITY.md`)
 
 - Random seed: 42 (configurable)
 - Environment versions pinned
@@ -234,12 +234,12 @@ Actual execution depends on dataset download and experiment tracking (see `docs/
 
 ---
 
-## Limitations and honest statements
+## Hạn chế và tuyên bố trung thực
 
-- Dataset download and full verification not yet completed (planned, not verified).
-- Random Forest results depend on actual data quality; metrics not fabricated.
-- Isolation Forest evaluation uses a different protocol than supervised evaluation; direct comparison requires explicit explanation.
-- No claim of zero-day detection; no claim of production deployment; no claim of attacker identification.
+- Tải dataset và xác minh đầy đủ chưa hoàn thành (đã dự kiến, chưa xác minh).
+- Kết quả Random Forest phụ thuộc vào chất lượng dữ liệu thực tế; metric không bị giả mạo.
+- Đánh giá Isolation Forest dùng protocol khác đánh giá giám sát; so sánh trực tiếp cần giải thích rõ.
+- Không tuyên bố phát hiện zero-day; không tuyên bố triển khai production; không tuyên bố truy vết danh tính kẻ tấn công.
 - No MIT license used (Apache 2.0 applied).
 - This is an educational project; results should not be treated as production security guarantees.
 

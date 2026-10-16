@@ -1,52 +1,52 @@
-# Methodology — Baseline, Random Forest, Isolation Forest
+# Phương pháp — Baseline, Random Forest, Isolation Forest
 
-## Overall pipeline
+## Luồng tổng thể
 
-1. Data loading (after download to `data/raw/`)
-2. Schema / label verification (`scripts/validate_data.py`)
-3. Exploration (EDA notebook) — class distribution, missing values, duplicates, leakage audit
-4. Train/val/test split (stratified if supervised; time/session-aware if needed; documented in `REPRODUCIBILITY.md`)
-5. Preprocessing (fit on train only): encoding, scaling, feature selection; save pipeline
-6. Model training (Random Forest or Isolation Forest with documented config)
-7. Evaluation (protocol differs by model; see below)
-8. Error analysis (false positives / false negatives; document limitations)
-9. Inference (load pipeline + model; apply to new input)
+1. Đọc dữ liệu (sau khi tải về `data/raw/`)
+2. Kiểm tra schema / nhãn (`scripts/validate_data.py`)
+3. Khám phá (notebook EDA) — phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra rò rỉ dữ liệu
+4. Chia train/val/test (stratified nếu giám sát; có nhận thức thời gian/phien nếu cần; ghi trong `REPRODUCIBILITY.md`)
+5. Tiền xử lý (fit chỉ trên train): mã hóa, chuẩn hóa, chọn đặc trưng; lưu pipeline
+6. Huấn luyện mô hình (Random Forest hoặc Isolation Forest với config đã ghi)
+7. Đánh giá (protocol khác nhau theo mô hình; xem bên dưới)
+8. Phân tích lỗi (dương tính giả / âm tính giả; ghi rõ hạn chế)
+9. Suy luận (tải pipeline + mô hình; áp dụng cho dữ liệu mới)
 
-## Random Forest (supervised baseline)
+## Random Forest (baseline giám sát)
 
-- Type: supervised classification (binary or multi-class depending on defined objective)
-- Training: labeled training set; hyperparameters documented (`n_estimators`, `max_depth`, `random_state`)
-- Evaluation: standard supervised metrics — Precision, Recall, F1-score (per class), Macro-F1, confusion matrix, False Positive Rate (FPR) when meaningful
-- Confusion matrix interpretation: true negatives / false positives (normal misclassified as anomaly) / false negatives (anomaly missed) / true positives
-- Data leakage prevention: no feature derived from target; split before any fit; identity columns audited and either excluded or handled with care
+- Loại: phân loại giám sát (nhị phân hoặc đa lớp tùy mục tiêu)
+- Huấn luyện: tập huấn luyện có nhãn; siêu tham số đã ghi (`n_estimators`, `max_depth`, `random_state`)
+- Đánh giá: các metric giám sát chuẩn — Precision, Recall, F1 per class, Macro-F1, confusion matrix, False Positive Rate (FPR) khi có ý nghĩa
+- Giải thích confusion matrix: âm tính đúng / dương tính giả (bình thường bị phân loại nhầm là bất thường) / âm tính giả (bất thường bị bỏ sót) / dương tính đúng
+- Ngăn rò rỉ dữ liệu: không tạo đặc trưng từ nhãn; chia trước mọi fitting; kiểm tra cột định danh và xử lý cẩn thận
 
-## Isolation Forest (unsupervised anomaly detection — if implemented)
+## Isolation Forest (phát hiện bất thường không giám sát — nếu triển khai)
 
-- Type: unsupervised; learns normal data distribution; scores deviation
-- Training: training set (labeled data used only to provide context; model does not use labels during fit)
-- Evaluation protocol (must be documented separately from supervised evaluation):
-  - Produce anomaly scores for validation/test sets
-  - Select threshold on validation set (e.g., based on contamination estimate or score quantile)
-  - Apply threshold to test set to obtain predicted labels
-  - Compare predictions to ground-truth labels using Precision, Recall, F1, Macro-F1, FPR
-  - Document threshold selection method and its impact on metrics
-- Important: direct comparison with Random Forest requires explicit explanation because Random Forest uses labels during training and evaluates with standard supervised protocol, while Isolation Forest uses score-based thresholding and evaluates after threshold selection. Metrics are comparable numerically only after both protocols are clearly described.
+- Loại: không giám sát; học phân phối dữ liệu bình thường; chấm điểm độ lệch
+- Huấn luyện: tập huấn luyện (nhãn chỉ dùng để cung cấp ngữ cảnh; mô hình không dùng nhãn khi fit)
+- Protocol đánh giá (phải ghi riêng biệt với đánh giá giám sát):
+  - Tạo điểm bất thường cho tập validation/test
+  - Chọn ngưỡng trên tập validation (ví dụ: dựa trên ước lượng contamination hoặc chứng lượng điểm)
+  - Áp dụng ngưỡng cho tập test để có nhãn dự đoán
+  - So sánh dự đoán với nhãn thực tế bằng Precision, Recall, F1, Macro-F1, FPR
+  - Ghi rõ phương pháp chọn ngưỡng và tác động đến metric
+- Quan trọng: so sánh trực tiếp với Random Forest cần giải thích rõ vì RF dùng nhãn khi huấn luyện và đánh giá theo protocol giám sát, trong khi IF dùng chấm điểm và chọn ngưỡng rồi đánh giá. Các metric chỉ so sánh được khi cả hai protocol được mô tả rõ ràng.
 
-## Preprocessing rules (to avoid leakage)
+## Quy tắc tiền xử lý (tránh rò rỉ)
 
-- Split train / val / test before any preprocessing fit.
-- Fit scaler/encoder/selector on train only.
-- Transform val/test with fitted objects.
-- Save fitted objects with model artifacts.
-- Document which columns are included/excluded and why (leakage audit result).
+- Chia train / val / test trước mọi fitting tiền xử lý.
+- Fit scaler/encoder/selector chỉ trên train.
+- Transform val/test bằng đối tượng đã fit.
+- Lưu đối tượng đã fit cùng artifact mô hình.
+- Ghi rõ cột nào được bao gồm / loại bỏ và lý do (kết quả kiểm tra rò rỉ).
 
-## Metrics definitions
+## Định nghĩa metric
 
 - Precision = TP / (TP + FP)
 - Recall = TP / (TP + FN)
 - F1 = 2 * Precision * Recall / (Precision + Recall)
-- Macro-F1 = average of per-class F1 scores
-- Confusion matrix: rows/columns must be clearly labeled (normal / anomaly)
-- FPR = FP / (FP + TN) — only reported when meaningful for the use case
+- Macro-F1 = trung bình điểm F1 theo từng lớp
+- Confusion matrix: hàng/cột phải ghi rõ nhãn (bình thường / bất thường)
+- FPR = FP / (FP + TN) — chỉ báo cáo khi có ý nghĩa cho trường hợp sử dụng
 
-Updated: 2026-10-16
+Cập nhật: 2026-10-16

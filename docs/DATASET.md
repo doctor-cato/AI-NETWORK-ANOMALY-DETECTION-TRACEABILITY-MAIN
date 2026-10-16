@@ -1,47 +1,47 @@
-# Dataset — UNSW-NB15
+# Bộ dữ liệu — UNSW-NB15
 
-## Source
+## Nguồn
 
-- **Name:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
-- **Primary sources (planned references; verify at time of download):**
-  - UNSW Canberra Cyber Center dataset portal
-  - Research paper / documentation from UNSW (recorded in references)
-- **Access:** Public for research/academic use; check current license/terms before redistribution.
-- **Access date / verification:** Not yet verified at write time (2026-10-16). Plan to confirm before first training run.
-- **Checksum / file integrity:** Not yet verified. Plan to record SHA-256 or MD5 after download if available from source.
+- **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
+- **Nguồn chính (tham chiếu dự kiến; xác minh khi tải):**
+  - Cổng dữ liệu UNSW Canberra Cyber Center
+  - Bài báo / tài liệu từ UNSW (đã ghi trong tài liệu tham khảo)
+- **Truy cập:** Công khai cho nghiên cứu / học thuật; kiểm tra giấy phép / điều khoản hiện tại trước khi phân phối lại.
+- **Ngày truy cập / xác minh:** Chưa xác minh tại thời điểm viết (2026-10-16). Dự kiến xác nhận trước lần chạy huấn luyện đầu tiên.
+- **Checksum / tính toàn vẹn file:** Chưa xác minh. Dự kiến ghi SHA-256 hoặc MD5 sau khi tải nếu có từ nguồn.
 
-## Structure (planned; verify after download)
+## Cấu trúc (dự kiến; xác minh sau khi tải)
 
-- CSV files (e.g., UNSW-NB15.csv, UNSW-NB15_training_set.csv, UNSW-NB15_testing_set.csv depending on release version).
-- Columns include: src_ip, dst_ip, sport, dport, proto, service, duration, state, sbytes, dbytes, sttl, dttl, sloss, dloss, sload, dload, spkts, dpkts, swin, dwin, stcpb, dtcpb, sresb, dresb, stime, atime, ltim, ct_flw_http_mthd, ct_flw_http_done, ct_src_ltm, ct_src_dport_ltm, ct_dst_sm, ct_dst_sport_ltm, ct_dst_ltm, ct_src_dport_ltm, is_ftp_login, ct_ftp_cmd, ct_ftp_subcmd, ct_flw_http_mthd, label (or similar).
-- Label values: typically 0 = normal, 1 = anomaly; some versions include attack categories (e.g., Fuzzers, Analysis, Backdoors, DoS, Exploits, Generic, Reconnaissance, Shellcode, Worms).
+- File CSV (ví dụ: UNSW-NB15.csv, UNSW-NB15_training_set.csv, UNSW-NB15_testing_set.csv tùy phiên bản phát hành).
+- Các cột gồm: src_ip, dst_ip, sport, dport, proto, service, duration, state, sbytes, dbytes, sttl, dttl, sloss, dloss, sload, dload, spkts, dpkts, swin, dwin, stcpb, dtcpb, sresb, dresb, stime, atime, ltim, ct_flw_http_mthd, ct_flw_http_done, ct_src_ltm, ct_src_dport_ltm, ct_dst_sm, ct_dst_sport_ltm, ct_dst_ltm, ct_src_dport_ltm, is_ftp_login, ct_ftp_cmd, ct_ftp_subcmd, ct_flw_http_mthd, label (hoặc tương tự).
+- Giá trị nhãn: thường 0 = bình thường, 1 = bất thường; một số phiên bản có danh mục tấn công (ví dụ: Fuzzers, Analysis, Backdoors, DoS, Exploits, Generic, Reconnaissance, Shellcode, Worms).
 
-## Usage license / conditions
+## Giấy phép / điều kiện sử dụng
 
-- UNSW-NB15 is provided for research/academic purposes. Do not redistribute derived datasets that include the original data without confirming terms.
-- This repository does NOT include UNSW-NB15 files because of size (~2.5 GB compressed, larger uncompressed) and licensing conditions.
-- Users must download from official source, place files in `data/raw/`, and verify schema before running experiments.
+- UNSW-NB15 được cung cấp cho mục đích nghiên cứu / học thuật. Không phân phối lại bộ dữ liệu dẫn xuất chứa dữ liệu gốc without confirming terms.
+- Repo này KHÔNG chứa file UNSW-NB15 do kích thước (~2,5 GB nén, lớn hơn khi giải nén) và điều kiện cấp phép.
+- Người dùng phải tải từ nguồn chính thức, đặt vào `data/raw/`, và kiểm tra schema trước khi chạy thực nghiệm.
 
-## Download instructions (planned)
+## Hướng dẫn tải (dự kiến)
 
-1. Visit official UNSW dataset portal (link to be confirmed in `REPRODUCIBILITY.md` after verification).
-2. Download dataset package (CSV or CSV + label files).
-3. Verify file names and structure against documentation.
-4. Place files in `data/raw/`.
-5. Run `python scripts/validate_data.py` to check schema and basic statistics.
-6. Note version and checksum in `REPRODUCIBILITY.md`.
+1. Truy cập cổng dữ liệu chính thức UNSW (liên kết sẽ xác nhận trong `REPRODUCIBILITY.md` sau khi kiểm tra).
+2. Tải gói dữ liệu (CSV hoặc CSV + file nhãn).
+3. Kiểm tra tên file và cấu trúc theo tài liệu.
+4. Đặt file vào `data/raw/`.
+5. Chạy `python scripts/validate_data.py` để kiểm tra schema và thống kê cơ bản.
+6. Ghi phiên bản và checksum vào `REPRODUCIBILITY.md`.
 
-## Data limitations (must document before training)
+## Hạn chế dữ liệu (phải ghi trước khi huấn luyện)
 
-- Class imbalance expected (normal >> anomalies in some versions).
-- Possible missing values; must check per column.
-- Possible duplicate rows; must check and document removal rule.
-- Identity columns (source/destination IP, ports, timestamps) can cause leakage if used directly or if split is not by time/session; must audit and document selection/removal.
-- Feature encoding needed for categorical variables (protocol, service, state, TCP flags).
+- Mất cân bằng lớp được dự kiến (bình thường >> bất thường ở một số phiên bản).
+- Có thể có giá trị thiếu; phải kiểm tra từng cột.
+- Có thể có bản ghi trùng; phải kiểm tra và ghi quy tắc loại bỏ.
+- Các cột định danh (IP nguồn / đích, port, thời gian) có thể gây rò rỉ nếu dùng trực tiếp hoặc nếu chia không theo thời gian / phiên; phải kiểm tra và ghi lại việc chọn / loại bỏ.
+- Cần mã hóa đặc trưng cho biến phân loại (giao thức, dịch vụ, trạng thái, cờ TCP).
 
-## Fixture data for testing
+## Dữ liệu fixture cho kiểm thử
 
-- `tests/` uses synthetic fixtures (`tests/unit/fixture_small.csv`) to verify pipeline components without requiring the full dataset.
-- Fixture is clearly marked as synthetic, not UNSW-NB15.
+- `tests/` dùng fixture tổng hợp (`tests/unit/fixture_small.csv`) để kiểm tra các thành phần pipeline mà không cần bộ dữ liệu đầy đủ.
+- Fixture được đánh dấu rõ là tổng hợp, không phải UNSW-NB15.
 
-Updated: 2026-10-16 — download instructions and checksum verification planned; not verified yet.
+Cập nhật: 2026-10-16 — hướng dẫn tải và xác minh checksum được dự kiến; chưa xác minh.

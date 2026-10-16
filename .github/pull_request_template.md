@@ -1,15 +1,15 @@
-## Summary
-Brief description of change.
+## Tóm tắt
+Mô tả ngắn về thay đổi.
 
-## Related issue
-Fixes #(issue number) or relates to milestone.
+## Liên quan đến Issue
+Khắc phục # (số issue) hoặc liên quan đến milestone.
 
-## Changes
-- What was changed and why.
-- Any new docs / tests added.
+## Thay đổi
+- Đã thay đổi gì và lý do.
+- Tài liệu / kiểm thử mới đã thêm (nếu có).
 
-## Verification
-- [ ] CI passes (import / basic tests)
-- [ ] No dataset needed for this change (if applicable)
-- [ ] No secrets or hardcoded paths added
-- [ ] Documentation updated if behavior changed
+## Kiểm chứng
+- [ ] CI qua (import / test cơ bản)
+- [ ] Không cần dataset cho thay đổi này (nếu áp dụng)
+- [ ] Không thêm secret hoặc đường dẫn hardcoded
+- [ ] Tài liệu đã cập nhật nếu hành vi thay đổi
