@@ -19,9 +19,11 @@ python scripts/validate_data.py
 python scripts/run_experiments.py --step baseline   # exit 3 = NOT IMPLEMENTED
 ```
 
-Validator tự kiểm tra cả `data/raw/UNSW-NB15.csv` và `data/raw/UNSW-NB15_training_set.csv` nếu tồn tại. File có tên khác: `python scripts/validate_data.py --file <ten-file.csv>`. Có thể truyền đường dẫn tuyệt đối. Chỉ file mặc định chưa có mới được SKIPPED với exit 0; `--file` trỏ đến file thiếu hoặc CSV không hợp lệ phải thất bại.
-
-Phạm vi validation hiện tại: header có `label` và `proto`, tên cột không trống/trùng, có dữ liệu, cấu trúc/số cột các bản ghi nhất quán và UTF-8 đọc được. CSV không header chưa hỗ trợ. Kiểu dữ liệu, giá trị nhãn, missing values, duplicates và leakage chưa được xác minh đầy đủ.
+Validator mặc định tìm `data/raw/UNSW_NB15_training-set.csv` và
+`data/raw/UNSW_NB15_testing-set.csv`; khi cả hai thiếu, in SKIPPED và exit 0.
+Đó không phải bằng chứng dữ liệu thật đã đạt. `--file` chỉ định tên file dưới
+`data/raw/` hoặc đường dẫn rõ ràng; file thiếu và dữ liệu sai trả exit 1.
+Profile kiểm tra 45 cột, kiểu dữ liệu, nhãn, attack category, missing và duplicate. Báo cáo trên cặp CSV đã đối chiếu mirror nằm trong `reports/data_quality/unsw_nb15_validation.json`. Leakage audit thuộc #7.
 
 Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test constructor của RF/IF không chứng minh fit/predict hoặc kết quả trên UNSW-NB15. SKIPPED và fixture không thay thế thực nghiệm thật.
 
@@ -42,6 +44,20 @@ Khi được giao triển khai, mỗi lần chạy cần lưu: run ID, commit, c
 
 ## Ghi nhận dataset
 
-UNSW-NB15 chưa được tải/xác minh trong giai đoạn Setup & Audit. Khi tải ở nhiệm vụ riêng, ghi nguồn, điều kiện sử dụng, ngày tải, biến thể, tên file và SHA-256. Hướng dẫn nguồn ở `docs/DATASET.md`; không tuyên bố có benchmark trước khi thực nghiệm thật hoàn thành.
+Manifest version-control tại `data/UNSW_NB15_MANIFEST.json` ghi nguồn chính thức,
+mirror revision-pinned, thời điểm UTC, kích thước, SHA-256 và các nguồn đối chiếu.
+UNSW không công bố SHA-256 và endpoint SharePoint yêu cầu xác thực trong lần kiểm tra,
+vì vậy manifest không gọi checksum local là checksum chính thức.
+
+```text
+python scripts/fetch_unsw_nb15.py
+python scripts/dataset_manifest.py verify
+python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
+```
+
+Script fetch tải vào thư mục tạm, kiểm tra HTTP response, size và SHA-256 trước khi
+đưa byte không đổi vào `data/raw/`. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo
+thật lưu aggregate row/schema/label/missing/duplicate và checksum, không chứa dòng raw.
+Fixture test chỉ kiểm tra hành vi validator.
 
 Cập nhật: 2026-10-17.

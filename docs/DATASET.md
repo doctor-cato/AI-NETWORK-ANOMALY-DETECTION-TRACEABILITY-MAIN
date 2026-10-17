@@ -1,45 +1,75 @@
-# Bộ dữ liệu — UNSW-NB15
+# UNSW-NB15: nguồn và đầu vào M1 (#4, #5)
 
-## Nguồn
+## Biến thể và bằng chứng nguồn
 
-- **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
-- **Nguồn chính:** [trang UNSW-NB15 của UNSW Canberra](https://research.unsw.edu.au/projects/unsw-nb15-dataset).
-- **Truy cập:** UNSW nêu quyền sử dụng miễn phí cho nghiên cứu học thuật; mục đích thương mại cần thỏa thuận với tác giả. Kiểm tra điều khoản tại thời điểm tải và không phân phối lại dữ liệu gốc khi chưa xác nhận quyền.
-- **Ngày truy cập nguồn:** 2026-10-17. Dataset chưa được tải hoặc xác minh trong repository này.
-- **Checksum / tính toàn vẹn file:** Chưa xác minh. Dự kiến ghi SHA-256 hoặc MD5 sau khi tải nếu có từ nguồn.
+Dự án dùng hai partition được trang UNSW công bố:
+`UNSW_NB15_training-set.csv` (175.341 bản ghi) và
+`UNSW_NB15_testing-set.csv` (82.332 bản ghi). Bốn file nguồn đầy đủ và các bản
+parquet 49 cột là biến thể khác, không thuộc profile validation này.
 
-## Cấu trúc (dự kiến; xác minh sau khi tải)
+Ngày 2026-10-17, trang UNSW truy cập được nhưng link tải SharePoint yêu cầu
+forms-based authentication và trả HTTP 403 cho truy cập ẩn danh. UNSW không công bố
+SHA-256 cho hai partition. Dự án lấy byte từ mirror GitHub tại revision cố định
+`44bbd02b9e70f74dd915218d5eb702f125341ffc`, rồi đối chiếu độc lập:
 
-- File CSV (ví dụ: UNSW-NB15.csv, UNSW-NB15_training_set.csv, UNSW-NB15_testing_set.csv tùy phiên bản phát hành).
-- Các cột gồm: src_ip, dst_ip, sport, dport, proto, service, duration, state, sbytes, dbytes, sttl, dttl, sloss, dloss, sload, dload, spkts, dpkts, swin, dwin, stcpb, dtcpb, sresb, dresb, stime, atime, ltim, ct_flw_http_mthd, ct_flw_http_done, ct_src_ltm, ct_src_dport_ltm, ct_dst_sm, ct_dst_sport_ltm, ct_dst_ltm, ct_src_dport_ltm, is_ftp_login, ct_ftp_cmd, ct_ftp_subcmd, ct_flw_http_mthd, label (hoặc tương tự).
-- Giá trị nhãn: thường 0 = bình thường, 1 = bất thường; một số phiên bản có danh mục tấn công (ví dụ: Fuzzers, Analysis, Backdoors, DoS, Exploits, Generic, Reconnaissance, Shellcode, Worms).
+- Kaggle `quohuysgu/unsw-nb15` v1 và `pankaj4321/unswnb15` v1: cả hai file trùng byte.
+- Hugging Face `Mouwiya/UNSW-NB15` revision
+  `8ad6b19373f143086a66f52b0d6035a6959d83a9`: training CSV trùng SHA-256;
+  nguồn này không có testing CSV.
+- Zenodo record 3768048 bị loại: file dùng tab, không có header và nội dung train/test
+  nằm dưới tên ngược với partition UNSW.
 
-## Giấy phép / điều kiện sử dụng
+Chi tiết URL, thời điểm UTC, revision, kích thước, checksum và giới hạn provenance nằm
+trong `data/UNSW_NB15_MANIFEST.json`. Đây là checksum do dự án tính và được các mirror
+corroborate, không phải checksum do UNSW xác nhận.
 
-- UNSW-NB15 được cung cấp cho mục đích nghiên cứu / học thuật. Không phân phối lại bộ dữ liệu dẫn xuất chứa dữ liệu gốc without confirming terms.
-- Repo này KHÔNG chứa file UNSW-NB15 do kích thước (~2,5 GB nén, lớn hơn khi giải nén) và điều kiện cấp phép.
-- Người dùng phải tải từ nguồn chính thức, đặt vào `data/raw/`, và kiểm tra schema trước khi chạy thực nghiệm.
+UNSW nêu dữ liệu được dùng miễn phí cho nghiên cứu học thuật; sử dụng thương mại cần
+thỏa thuận với tác giả và phải trích dẫn các công trình trên trang nguồn. Metadata
+license của mirror không thay thế điều khoản UNSW. Dataset không thuộc Apache-2.0 của
+mã nguồn.
 
-## Hướng dẫn tải
+## Tải tái lập
 
-1. Truy cập [trang UNSW-NB15 chính thức](https://research.unsw.edu.au/projects/unsw-nb15-dataset), đọc điều khoản và chọn biến thể CSV phù hợp.
-2. Tải gói dữ liệu (CSV hoặc CSV + file nhãn).
-3. Kiểm tra tên file và cấu trúc theo tài liệu.
-4. Đặt file vào `data/raw/`.
-5. Chạy `python scripts/validate_data.py`: tự kiểm tra mọi file hiện có trong hai tên `UNSW-NB15.csv`, `UNSW-NB15_training_set.csv`. Tên khác dùng `python scripts/validate_data.py --file <ten-file.csv>`. Script chỉ kiểm tra cấu trúc CSV: header có `label` và `proto`, tên cột không trống/trùng, có bản ghi và số cột mỗi bản ghi khớp header. Không yêu cầu IP vì biến thể dữ liệu có thể khác nhau; CSV không có header chưa được hỗ trợ. Kiểm tra đầy đủ kiểu dữ liệu, giá trị nhãn, missing values, duplicates và leakage còn là công việc tương lai.
-6. Ghi phiên bản và checksum vào `REPRODUCIBILITY.md`. Khi không có file mặc định, script báo SKIPPED và exit 0; file được chỉ định qua `--file` mà thiếu hoặc CSV không hợp lệ phải exit khác 0. Không coi SKIPPED là validation dữ liệu thật PASS.
+```text
+python scripts/fetch_unsw_nb15.py
+python scripts/dataset_manifest.py verify
+python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
+```
 
-## Hạn chế dữ liệu (phải ghi trước khi huấn luyện)
+`fetch_unsw_nb15.py` tải từng file vào thư mục tạm, yêu cầu HTTP 200, từ chối HTML
+và Git LFS pointer, kiểm tra kích thước và SHA-256, rồi mới sao chép byte không đổi vào
+`data/raw/`. File đã tồn tại chỉ được giữ nếu khớp manifest. Script dùng mirror
+revision-pinned vì endpoint chính thức cần đăng nhập.
 
-- Mất cân bằng lớp được dự kiến (bình thường >> bất thường ở một số phiên bản).
-- Có thể có giá trị thiếu; phải kiểm tra từng cột.
-- Có thể có bản ghi trùng; phải kiểm tra và ghi quy tắc loại bỏ.
-- Các cột định danh (IP nguồn / đích, port, thời gian) có thể gây rò rỉ nếu dùng trực tiếp hoặc nếu chia không theo thời gian / phiên; phải kiểm tra và ghi lại việc chọn / loại bỏ.
-- Cần mã hóa đặc trưng cho biến phân loại (giao thức, dịch vụ, trạng thái, cờ TCP).
+`data/raw/*` nằm ngoài Git. Kiểm tra bằng:
 
-## Dữ liệu fixture cho kiểm thử
+```text
+git check-ignore data/raw/UNSW_NB15_training-set.csv data/raw/UNSW_NB15_testing-set.csv
+git status --short
+```
 
-- `tests/unit/test_validate_data.py` tạo CSV fixture tổng hợp trong thư mục tạm để kiểm tra validation; không có file fixture dataset thật trong Git.
-- Các test model hiện tại chỉ kiểm tra config/constructor; chưa kiểm chứng training hoặc pipeline trên UNSW-NB15. Fixture CSV không thay thế thực nghiệm dữ liệu thật.
+Không dùng `git add -f` cho CSV. Manifest và báo cáo tổng hợp không chứa dòng dữ liệu
+gốc nên được version-control để reviewer tái kiểm tra cùng byte.
 
-Cập nhật: 2026-10-17 — nguồn đã được đối chiếu; dataset, checksum và schema cụ thể vẫn chưa được xác minh trong repository.
+## Profile validation
+
+`scripts/validate_data.py` kiểm tra UTF-8 BOM, đúng 45 cột theo thứ tự, độ rộng hàng,
+kiểu số/text, số hữu hạn, nhãn binary `0/1`, các trường bắt buộc và tính nhất quán:
+`label=0` phải có `attack_cat=Normal`, còn `label=1` phải là category khác. Khi
+dùng manifest, validator kiểm tra size, SHA-256 và số bản ghi chính thức.
+
+Báo cáo riêng cho mỗi split gồm số hàng/cột, schema, phân bố nhãn và attack category,
+missing theo cột, duplicate sau khi bỏ cột định danh `id`, invalid labels và tỷ lệ lớp.
+Sai schema/hash/size/row count/nhãn/kiểu/cấu trúc là lỗi chặn (exit 1). Missing feature
+không bắt buộc và duplicate là cảnh báo; validator không xóa, điền, chuẩn hóa hay thay
+đổi dữ liệu.
+
+Kết quả thực ngày 2026-10-17 nằm tại
+`reports/data_quality/unsw_nb15_validation.json`: cả hai split khớp manifest, schema
+45 cột, số hàng 175.341/82.332, không missing, không invalid label và không mâu thuẫn
+label/category. Duplicate bỏ qua `id` lần lượt là 67.601 và 26.387; đây là đầu vào
+cho leakage audit ở issue sau, không bị tự động xóa trong #5.
+
+Khi cả hai CSV vắng mặt, validator in `SKIPPED` và exit 0 theo contract M0; trạng thái
+đó không phải PASS. Fixture tổng hợp chỉ kiểm tra hành vi validator, không thay thế báo
+cáo dữ liệu thật.

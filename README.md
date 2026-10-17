@@ -2,7 +2,7 @@
 
 **Ngôn ngữ tài liệu:** Tiếng Việt | **Tên dự án:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
 
-**Trạng thái:** Nền tảng repository M0 đã triển khai: cấu trúc, tài liệu, exit-code contract cho các bước dự kiến và CI matrix Python 3.11/3.12 × Ubuntu/Windows. `FINAL_REPORT.md` ghi bằng chứng kiểm chứng M0 mang tính lịch sử, không phải claim CI cho mọi commit sau đó. Dataset chưa tải; thực nghiệm dự kiến ở M1–M3; không có kết quả bịa đặt. Xem `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
+**Trạng thái:** Nền tảng repository M0 đã triển khai: cấu trúc, tài liệu, exit-code contract cho các bước dự kiến và CI matrix Python 3.11/3.12 × Ubuntu/Windows. `FINAL_REPORT.md` ghi bằng chứng kiểm chứng M0 mang tính lịch sử, không phải claim CI cho mọi commit sau đó. Cặp partition UNSW-NB15 đã được tải local, đối chiếu mirror, xác minh manifest và validation ở M1; raw CSV vẫn ngoài Git. Thực nghiệm mô hình chưa chạy. Xem `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
 
 - **License:** Apache License 2.0 (not MIT)
 - **Repository:** https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN
@@ -63,9 +63,9 @@ Ma trận yêu cầu → issue → deliverable → acceptance criteria → cách
 
 - **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
 - **Tham chiếu nguồn:** [trang UNSW-NB15 chính thức](https://research.unsw.edu.au/projects/unsw-nb15-dataset); xem `docs/DATASET.md`
-- **Trạng thái:** Chưa tải / chưa commit (đã dự kiến)
-- **Hướng dẫn tải:** Xem `docs/DATASET.md`; đặt file vào `data/raw/`; chạy `python scripts/validate_data.py`
-- **Checksum / phiên bản:** Chưa xác minh; sẽ ghi sau khi tải trong `docs/REPRODUCIBILITY.md`
+- **Trạng thái:** Đã xác minh local; raw CSV không commit
+- **Hướng dẫn tải:** `python scripts/fetch_unsw_nb15.py`; xem `docs/DATASET.md`
+- **Checksum / phiên bản:** `data/UNSW_NB15_MANIFEST.json`; báo cáo thật ở `reports/data_quality/unsw_nb15_validation.json`
 - **Điều kiện sử dụng:** Học thuật / nghiên cứu; không phân phối lại dữ liệu gốc mà không xác nhận điều khoản
 - **Dữ liệu fixture:** `tests/` dùng fixture tổng hợp rõ ràng là test-only, không phải UNSW-NB15
 
@@ -179,9 +179,10 @@ Trên macOS/Linux, thay dòng kích hoạt bằng `source .venv/bin/activate`.
 ## Cách chuẩn bị dữ liệu
 
 ```bash
-# Tải UNSW-NB15 từ nguồn chính thức (xem docs/DATASET.md)
-# Đặt CSV vào data/raw/ (thư mục đã có sẵn trong repo, chỉ chứa .gitkeep)
-python scripts/validate_data.py
+# Tải mirror revision-pinned sau khi đọc giới hạn provenance trong docs/DATASET.md
+python scripts/fetch_unsw_nb15.py
+python scripts/dataset_manifest.py verify
+python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
 ```
 
 Dataset không được commit; xem `docs/DATASET.md` để biết chi tiết nguồn và điều kiện sử dụng.
@@ -221,7 +222,7 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 ## Tests
 
 - Unit config/model: `tests/unit/test_basic.py`
-- Unit validator (fixture tổng hợp + exit code): `tests/unit/test_validate_data.py`
+- Unit validator/manifest (fixture tổng hợp + exit code): `tests/unit/test_validate_data.py`
 - Unit exit-code contract của experiment runner: `tests/unit/test_run_experiments.py`
 - Integration (smoke): `tests/integration/test_pipeline.py`
 - CI chạy toàn bộ `tests/` trên Ubuntu và Windows, Python 3.11 và 3.12, không cần dataset (`.github/workflows/ci.yml`)
@@ -250,13 +251,13 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 - Dependencies hiện chưa khóa phiên bản; lưu phiên bản môi trường thực tế cho từng lần chạy
 - Split before fit; pipeline saved
 - Each experiment should save: seed, config, metrics, confusion matrix, version info
-- Dataset version and checksum to be recorded after download
+- Dataset version and checksum are recorded in `data/UNSW_NB15_MANIFEST.json`
 
 ---
 
 ## Hạn chế và tuyên bố trung thực
 
-- Tải dataset và xác minh đầy đủ chưa hoàn thành (đã dự kiến, chưa xác minh).
+- Provenance đạt mức đối chiếu nhiều mirror; UNSW không công bố SHA-256 và endpoint chính thức yêu cầu đăng nhập khi kiểm tra.
 - Kết quả Random Forest phụ thuộc vào chất lượng dữ liệu thực tế; metric không bị giả mạo.
 - Đánh giá Isolation Forest dùng protocol khác đánh giá giám sát; so sánh trực tiếp cần giải thích rõ.
 - Không tuyên bố phát hiện zero-day; không tuyên bố triển khai production; không tuyên bố truy vết danh tính kẻ tấn công.
