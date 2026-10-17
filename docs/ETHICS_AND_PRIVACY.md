@@ -1,21 +1,21 @@
-# Ethics and Privacy
+# Đạo đức và quyền riêng tư
 
-## Data usage
+## Sử dụng dữ liệu
 
-- UNSW-NB15 is intended for academic/research use. Users must respect the dataset's terms and not redistribute the original data without confirmation.
-- This repository contains only instructions and code; dataset not included.
-- No personal data (names, addresses, private network content) is embedded in code or documentation.
+- UNSW-NB15 dành cho mục đích học thuật/nghiên cứu. Người dùng phải tôn trọng điều khoản của dataset và không phân phối lại dữ liệu gốc khi chưa xác nhận quyền.
+- Repository này chỉ chứa hướng dẫn và mã nguồn; không kèm dataset.
+- Mã nguồn và tài liệu không nhúng dữ liệu cá nhân như tên, địa chỉ hoặc nội dung mạng riêng tư.
 
-## Privacy protection
+## Bảo vệ quyền riêng tư
 
-- Network traffic data can contain sensitive information (IPs, ports, protocols). When handling real data, anonymize or restrict access; do not commit raw traffic with identifying info.
-- This project does not attempt to identify individuals or specific devices; it classifies connection behavior.
-- No inference about specific attackers or identities is claimed.
+- Dữ liệu lưu lượng mạng có thể chứa thông tin nhạy cảm như IP, port và protocol. Khi xử lý dữ liệu thật, phải ẩn danh hoặc giới hạn quyền truy cập; không commit lưu lượng thô có thông tin nhận dạng.
+- Dự án phân loại hành vi kết nối, không cố nhận diện cá nhân hoặc thiết bị cụ thể.
+- Không đưa ra suy luận về kẻ tấn công hay danh tính cụ thể.
 
-## Safe use and limitations
+## Sử dụng an toàn và giới hạn
 
-- This is an educational/research system. Do not deploy as a security control without additional validation, auditing, and expert review.
-- The model does not guarantee zero-day detection; any claim of such requires controlled experiments not yet performed.
-- Results should be interpreted with awareness of false positives and data limitations.
+- Đây là hệ thống phục vụ học tập/nghiên cứu. Không triển khai như một biện pháp kiểm soát an ninh nếu chưa có kiểm chứng, audit và đánh giá chuyên gia bổ sung.
+- Mô hình không bảo đảm phát hiện zero-day; mọi tuyên bố như vậy cần thực nghiệm có kiểm soát, hiện chưa được thực hiện.
+- Cần diễn giải kết quả cùng với nguy cơ false positive và các giới hạn dữ liệu.
 
-Updated: 2026-10-16
+Cập nhật: 2026-10-17

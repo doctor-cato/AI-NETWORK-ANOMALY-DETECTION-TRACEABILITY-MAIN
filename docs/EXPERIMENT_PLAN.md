@@ -1,30 +1,30 @@
-# Experiment Plan
+# Kế hoạch thực nghiệm
 
-## Hypotheses
+## Giả thuyết
 
-- H1: Random Forest achieves usable supervised detection on UNSW-NB15 after proper preprocessing and split.
-- H2: Isolation Forest can detect anomalies without labels, but evaluation requires threshold selection and yields different metric profiles than supervised evaluation.
+- H1: Random Forest cho kết quả phát hiện giám sát có thể sử dụng trên UNSW-NB15 sau khi preprocessing và chia tập đúng cách.
+- H2: Isolation Forest có thể phát hiện bất thường không cần nhãn, nhưng đánh giá cần chọn threshold và cho profile metric khác đánh giá giám sát.
 
-## Variables
+## Biến số
 
-- Independent: model type (RF vs IF), preprocessing choices (encoding, selected features), split strategy, random seed.
-- Dependent: Precision, Recall, F1, Macro-F1, confusion matrix, FPR.
+- Độc lập: loại mô hình (RF hoặc IF), lựa chọn preprocessing (encoding, đặc trưng được chọn), chiến lược split, random seed.
+- Phụ thuộc: Precision, Recall, F1, Macro-F1, confusion matrix, FPR.
 
 ## Baseline
 
-- Random Forest with default/limited hyperparameters as baseline.
-- Comparison point: documented metrics with seed and version.
+- Dùng Random Forest với hyperparameter mặc định/giới hạn làm baseline.
+- Mốc so sánh là metric đã ghi cùng seed và phiên bản.
 
-## Metrics recording
+## Ghi nhận metric
 
-- Each run saves: seed, dataset version, feature list, model config, metrics per class and macro, confusion matrix as CSV/PNG, time, environment info.
-- Results stored in `reports/figures/` and `artifacts/` (not committed if large; config saved).
+- Mỗi lượt chạy lưu seed, phiên bản dataset, danh sách feature, cấu hình model, metric theo lớp và macro, confusion matrix dạng CSV/PNG, thời gian và thông tin môi trường.
+- Kết quả đặt tại `reports/figures/` và `artifacts/` (không commit nếu lớn; vẫn lưu config).
 
 ## Protocol
 
-- Split first, then preprocess; save pipeline.
-- Random seed fixed (e.g., 42) for reproducible splits and model init.
-- Run multiple seeds if time permits; report mean/std if performed.
-- Document any deviation (e.g., if Isolation Forest not implemented due to time).
+- Split trước rồi mới preprocessing; lưu pipeline.
+- Cố định random seed (ví dụ 42) để split và khởi tạo model tái lập được.
+- Chạy nhiều seed nếu thời gian cho phép; chỉ báo mean/std khi thực sự đã chạy.
+- Ghi mọi sai khác, ví dụ Isolation Forest chưa triển khai do thiếu thời gian.
 
-Updated: 2026-10-16
+Cập nhật: 2026-10-17

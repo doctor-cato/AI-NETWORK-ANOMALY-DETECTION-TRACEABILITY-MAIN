@@ -1,16 +1,16 @@
-# Report Outline (PDF / document for course assignment)
+# Dàn ý báo cáo (PDF / tài liệu bài tập)
 
-1. Title page — project title, authors, institution, date, license
-2. Abstract — problem, method, key results (to be filled after experiments), limitations
-3. Introduction — motivation, problem statement, objectives, non-goals
-4. Dataset — UNSW-NB15 source, structure, download instructions, version, limitations
-5. Methodology — pipeline, split strategy, preprocessing, Random Forest, Isolation Forest (if implemented), evaluation protocols clearly separated
-6. Experimental Setup — environment, seeds, hyperparameters, metrics definitions
-7. Results — metrics, confusion matrices (images), comparison table, error analysis
-8. Discussion — interpretation, false positives/negatives, data limitations, comparison validity (note different evaluation protocols if both models used)
-9. Conclusion — summary, what works, what is limited, next steps
-10. References — dataset sources, scikit-learn, papers
-11. Appendices — configuration files, pipeline diagrams, reproducibility steps
+1. Trang tiêu đề — tên dự án, tác giả, cơ sở đào tạo, ngày, license.
+2. Tóm tắt — vấn đề, phương pháp, kết quả chính (bổ sung sau thực nghiệm), giới hạn.
+3. Giới thiệu — động lực, phát biểu vấn đề, mục tiêu, ngoài mục tiêu.
+4. Dataset — nguồn UNSW-NB15, cấu trúc, hướng dẫn tải, phiên bản, giới hạn.
+5. Phương pháp — pipeline, chiến lược split, preprocessing, Random Forest, Isolation Forest (nếu triển khai), protocol đánh giá tách bạch.
+6. Thiết lập thực nghiệm — môi trường, seed, hyperparameter, định nghĩa metric.
+7. Kết quả — metric, confusion matrix, bảng so sánh, error analysis.
+8. Thảo luận — diễn giải, false positive/negative, giới hạn dữ liệu, giá trị so sánh.
+9. Kết luận — tóm tắt, phần hoạt động, giới hạn, bước tiếp theo.
+10. Tài liệu tham khảo — nguồn dataset, scikit-learn, bài báo.
+11. Phụ lục — file config, sơ đồ pipeline, bước tái lập.
 
 ## Gói nộp bộ (submission package)
 
@@ -26,4 +26,4 @@ Yêu cầu nộp bài gồm mã nguồn, tài liệu và dữ liệu. Ràng bu�
 - Kiểm tra trước khi nộp: `python scripts/check_environment.py`, `python -m pytest tests -q`,
   `git diff --check`, và CI xanh trên đúng commit.
 
-Updated: 2026-10-17 — to be filled with verified results after M3.
+Cập nhật: 2026-10-17 — chỉ điền kết quả đã xác minh sau M3.

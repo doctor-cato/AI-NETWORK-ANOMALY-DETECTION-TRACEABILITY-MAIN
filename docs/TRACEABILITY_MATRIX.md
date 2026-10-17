@@ -7,8 +7,9 @@ không phải bằng chứng chức năng chạy được.
 Quy ước trạng thái: `PASS` = đã chạy lệnh và đạt · `SKIPPED` = cố ý bỏ qua vì thiếu dataset ·
 `NOT VERIFIED` = chưa chạy / chưa đủ bằng chứng · `OPTIONAL` = không chặn core.
 
-Trạng thái trong bảng là kết quả local trên máy Windows (Python 3.14.6) của lượt hoàn thiện M0, cộng với CI
-run `38999810930` trên commit `8504556` (ubuntu/windows × Python 3.11/3.12, 4/4 job PASS).
+Trạng thái trong bảng là kết quả lịch sử của lượt hoàn thiện M0: local trên máy Windows (Python 3.14.6),
+cộng với CI run `38999810930` trên commit `8504556` (ubuntu/windows × Python 3.11/3.12, 4/4 job PASS).
+Kết quả này không tự chứng minh CI của các commit được tạo hoặc rewrite sau `8504556`.
 
 ## A. Yêu cầu lõi (core) — bắt buộc để chấp nhận
 
@@ -80,4 +81,4 @@ không thay thế thực nghiệm thật.
 Mọi thay đổi phạm vi phải cập nhật bảng này và ghi vào `docs/PROJECT_CHARTER.md` mục "Key design decisions".
 Không mở rộng sang deep learning, production hoặc phát hiện zero-day.
 
-Cập nhật: 2026-10-17 (M0)
+Cập nhật: 2026-10-17 (audit tài liệu; bằng chứng M0 giữ nguyên là lịch sử)

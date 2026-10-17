@@ -14,7 +14,7 @@ Chọn 4 skill chất lượng, đã kiểm tra nội dung (SKILL.md) — không
 
 | Skill | Nguồn toàn cục | Mục đích trong repo |
 |---|---|---|
-| python-pro | `.agents/skills/python-pro/` | Python 3.12+, code chất lượng cho RF/IF pipeline |
+| python-pro | `.agents/skills/python-pro/` | Python 3.11+, code chất lượng cho RF/IF pipeline |
 | scikit-learn | `.agents/skills/scikit-learn/` | ML pipeline, preprocessing, evaluation với sklearn |
 | pytest-skill | `.agents/skills/pytest-skill/` | Test fixtures cho synthetic và pipeline integration |
 | git-workflow-and-versioning | `.agents/skills/git-workflow-and-versioning/` | Atomic commits, branch sạch, không force-push |

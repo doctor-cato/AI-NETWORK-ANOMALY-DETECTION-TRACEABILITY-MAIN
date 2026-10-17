@@ -1,65 +1,64 @@
-# Project Charter — AI-Based Network Anomaly Detection
+# Hiến chương dự án — phát hiện bất thường mạng bằng học máy
 
-## Project identification
+## Nhận diện dự án
 
-- **Vi ngữ (Vietnamese):** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
-- **English title:** AI-Based Network Anomaly Detection Using Machine Learning and Network Traffic Behavior Analysis
+- **Tên tiếng Việt:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
 - **Repository:** https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN
 - **License:** Apache License 2.0 (NOT MIT)
 - **Runtime target:** Python 3.11+ (CI kiểm tra 3.11 và 3.12); scikit-learn 1.5+; pandas 2.2+; NumPy 1.26+ (xem `requirements.txt`)
 
-## Objectives
+## Mục tiêu
 
 Mục tiêu 1–5 và 7–10 là **bắt buộc** (core). Mục tiêu 6 (Isolation Forest) là **tùy chọn**: thiếu kết quả IF
 không chặn chấp nhận core, và chỉ thực hiện sau khi baseline Random Forest đã có kết quả thật.
 
-1. Analyze the anomaly-detection problem in network traffic and define the detection target. (bắt buộc)
-2. Use UNSW-NB15 as the primary dataset; verify schema, labels, and class distribution. (bắt buộc)
-3. Check data quality, handle missing values, encode features appropriately, and avoid target leakage. (bắt buộc)
-4. Design a reproducible train/validation/test split without data leakage. (bắt buộc)
-5. Build a Random Forest baseline with documented pipeline and configuration. (bắt buộc — baseline chính)
-6. Build Isolation Forest as an unsupervised anomaly-detection method if feasible with data and time. (TÙY CHỌN)
-7. Compare models using Precision, Recall, F1-score, Macro-F1, confusion matrix, and False Positive Rate, describing the evaluation protocol clearly for each model because their label setups and thresholds differ. (bắt buộc cho RF; IF nếu có)
-8. Analyze false positives/negatives, data limitations, and model constraints. (bắt buộc)
-9. Provide an inference pipeline and a minimal demo. (bắt buộc)
-10. Deliver reproducible experiment scripts/notebooks, documentation, architecture diagram, and presentation outline. (bắt buộc)
+1. Phân tích phát hiện bất thường trong lưu lượng mạng và xác định đối tượng phát hiện. (bắt buộc)
+2. Dùng UNSW-NB15 làm dataset chính; xác minh schema, nhãn và phân bố lớp. (bắt buộc)
+3. Kiểm tra chất lượng dữ liệu, xử lý missing value, encode feature phù hợp và tránh target leakage. (bắt buộc)
+4. Thiết kế train/validation/test split tái lập được, không rò rỉ dữ liệu. (bắt buộc)
+5. Xây dựng baseline Random Forest với pipeline và config đã ghi. (bắt buộc — baseline chính)
+6. Xây dựng Isolation Forest như phương pháp phát hiện không giám sát nếu đủ dữ liệu và thời gian. (TÙY CHỌN)
+7. So sánh model bằng Precision, Recall, F1-score, Macro-F1, confusion matrix và False Positive Rate, mô tả protocol rõ cho từng model do nhãn và threshold khác nhau. (bắt buộc cho RF; IF nếu có)
+8. Phân tích false positive/negative, giới hạn dữ liệu và ràng buộc model. (bắt buộc)
+9. Cung cấp pipeline inference và demo tối thiểu. (bắt buộc)
+10. Cung cấp script/notebook thực nghiệm tái lập được, tài liệu, sơ đồ kiến trúc và dàn ý trình bày. (bắt buộc)
 
 Ma trận yêu cầu → issue → deliverable → cách kiểm chứng: `docs/TRACEABILITY_MATRIX.md`.
 
-## Scope and non-goals
+## Phạm vi và ngoài mục tiêu
 
-### In scope (mandatory)
-- Problem analysis; UNSW-NB15 sourcing; EDA; preprocessing; train/val/test split; Random Forest; evaluation; error analysis; inference; demo; documentation; report outline; presentation outline.
+### Trong phạm vi (bắt buộc)
+- Phân tích vấn đề; nguồn UNSW-NB15; EDA; preprocessing; train/val/test split; Random Forest; evaluation; error analysis; inference; demo; tài liệu; dàn ý báo cáo; dàn ý trình bày.
 - Isolation Forest **chỉ khi khả thi** và **không chặn** chấp nhận core.
 
-### Explicitly out of scope (do NOT implement now; document only in docs/FUTURE_WORK.md or an enhancement issue)
+### Rõ ràng ngoài phạm vi (không triển khai lúc này; chỉ ghi trong `docs/FUTURE_WORK.md` hoặc issue mở rộng)
 - Autoencoder, LSTM, Transformer, GNN.
-- Zero-day detection claims without experimental proof.
-- Device identity / attacker tracing from behavior vectors.
-- Vector behavior encoding and adaptive key-rotation mechanism.
-- Post-quantum cryptography of any traffic or feature representation.
-- Automatic blocking, isolation, or counter-attack of devices.
-- Production deployment, distributed processing, or enterprise network monitoring.
+- Tuyên bố phát hiện zero-day khi chưa có bằng chứng thực nghiệm.
+- Truy vết danh tính thiết bị / kẻ tấn công từ behavior vector.
+- Mã hóa behavior vector và cơ chế adaptive key rotation.
+- Post-quantum cryptography cho lưu lượng hoặc biểu diễn đặc trưng.
+- Chặn, cô lập hoặc phản công thiết bị tự động.
+- Triển khai production, xử lý phân tán hoặc giám sát mạng doanh nghiệp.
 
-## Success criteria (verifiable)
+## Tiêu chí thành công (có thể kiểm chứng)
 
-- [ ] Repository structure matches design; all mandatory docs exist.
-- [ ] README distinguishes planned / implemented / verified; no fabricated metrics.
-- [ ] Data validation script passes on fixture data; UNSW-NB15 load instructions documented.
-- [ ] Preprocessing pipeline can be reconstructed from `docs/REPRODUCIBILITY.md` and `config.py`.
-- [ ] Random Forest model trains and evaluates with recorded seed, metrics, confusion matrix.
-- [ ] Isolation Forest evaluation protocol is documented separately from supervised evaluation.
-- [ ] No MIT content in LICENSE or README; Apache 2.0 full text present.
-- [ ] Milestones M0–M5 exist; 15–22 issues exist with labels and milestone links.
-- [ ] CI runs basic import/test checks without requiring large dataset or GPU.
-- [ ] No hardcoded absolute paths, no secrets, no unverified benchmark claims.
+- [ ] Cấu trúc repository khớp thiết kế; có đủ tài liệu bắt buộc.
+- [ ] README phân biệt planned / implemented / verified; không có metric bịa đặt.
+- [ ] Script validation dữ liệu đạt với fixture; đã ghi hướng dẫn tải UNSW-NB15.
+- [ ] Có thể dựng lại pipeline preprocessing từ `docs/REPRODUCIBILITY.md` và `config.py`.
+- [ ] Model Random Forest train và evaluation cùng seed, metric, confusion matrix đã ghi.
+- [ ] Protocol evaluation Isolation Forest được ghi riêng với evaluation giám sát.
+- [ ] Không có nội dung MIT trong LICENSE hoặc README; có đủ Apache 2.0.
+- [ ] Có milestone M0–M5; issue có label và liên kết milestone.
+- [ ] CI chạy kiểm tra import/test cơ bản, không cần dataset lớn hoặc GPU.
+- [ ] Không hardcode đường dẫn tuyệt đối, không secret, không claim benchmark chưa xác minh.
 
-## Risk and limitation notes
+## Ghi chú rủi ro và giới hạn
 
-- Dataset size/availability: UNSW-NB15 is ~2.5 GB compressed; not committed to Git.
-- Isolation Forest requires different evaluation (unsupervised score → threshold → pseudo-label); direct comparison with supervised F1 requires explicit threshold selection and label agreement explanation.
-- Time budget: 5–6 weeks; complex deep-learning extensions deferred.
-- Data quality risks: missing values, duplicate rows, leakage-prone identity columns.
+- Kích thước/khả dụng dataset: UNSW-NB15 khoảng 2,5 GB nén; không commit vào Git.
+- Isolation Forest cần evaluation khác (score không giám sát → threshold → pseudo-label); so sánh trực tiếp với F1 giám sát cần giải thích rõ threshold và sự khớp nhãn.
+- Ngân sách thời gian: 5–6 tuần; các hướng deep-learning phức tạp để sau.
+- Rủi ro chất lượng dữ liệu: missing value, dòng trùng, cột định danh dễ gây leakage.
 
 ## Time plan (5–6 weeks)
 

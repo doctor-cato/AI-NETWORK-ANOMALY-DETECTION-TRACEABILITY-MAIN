@@ -9,7 +9,8 @@ Repository: `doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN`
 
 ## 1. Trạng thái Git
 
-Nhánh làm việc: `main`. Không tạo nhánh tạm, không force push, không reset/clean, không rewrite history.
+Snapshot của lượt M0: nhánh làm việc `main`. Không tạo nhánh tạm, không force push, không reset/clean,
+không rewrite history trong **lượt M0**.
 
 Mốc trước lượt M0:
 
@@ -23,6 +24,10 @@ Mốc sau lượt M0:
 - `8504556` `fix(repo): address review findings on the M0 exit-code contract` (review round cho #2 và #3).
 - `origin/main` = `8504556` sau khi push; CI run `38999810930` PASS 4/4 job.
 - Lịch sử trước đó giữ nguyên; nhánh `dev` từng có đã bị xóa ở lượt trước, remote không có nhánh `dev`.
+
+> **Bổ sung trạng thái sau báo cáo.** Lịch sử đã được bảo trì sau lượt M0; `main` hiện có thể đã trỏ tới
+> commit khác `8504556`. Bằng chứng CI trong báo cáo này chỉ áp dụng cho commit được nêu, không tự áp dụng
+> cho HEAD hiện tại. Kiểm tra Git và CI trực tiếp trước khi dùng làm bằng chứng phát hành hoặc thực nghiệm.
 
 ## 2. Workflow OpenCode tìm thấy
 

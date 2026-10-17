@@ -1,17 +1,17 @@
-# Presentation Outline — 10–12 slides
+# Dàn ý trình bày — 10–12 slide
 
-1. Title — project name, team, institution
-2. Problem — network anomaly detection; why it matters; scope
-3. Dataset — UNSW-NB15; structure; download and verification status
-4. Methodology — pipeline diagram; split; preprocessing; Random Forest; Isolation Forest protocol (separate evaluation)
-5. Experimental design — seeds; metrics; protocol differences noted
-6. Results — metrics table; confusion matrix visualization; comparison (with clear protocol explanation)
-7. Error analysis — false positives, false negatives, limitations
-8. Inference / demo — how new input is processed; sample output
-9. Discussion — interpretations; data quality impact; model limits
-10. Conclusion — achievements; what remains; links to future work
-11. References and acknowledgments
-12. Appendix / backup — architecture diagram, config
+1. Tiêu đề — tên dự án, nhóm, cơ sở đào tạo.
+2. Vấn đề — phát hiện bất thường mạng; ý nghĩa; phạm vi.
+3. Dataset — UNSW-NB15; cấu trúc; trạng thái tải và xác minh.
+4. Phương pháp — sơ đồ pipeline; split; preprocessing; Random Forest; protocol Isolation Forest (đánh giá riêng).
+5. Thiết kế thực nghiệm — seed; metric; khác biệt protocol.
+6. Kết quả — bảng metric; trực quan confusion matrix; so sánh cùng giải thích protocol.
+7. Phân tích lỗi — false positive, false negative, giới hạn.
+8. Inference / demo — xử lý đầu vào mới và đầu ra mẫu.
+9. Thảo luận — diễn giải; tác động chất lượng dữ liệu; giới hạn model.
+10. Kết luận — phần đã đạt, phần còn lại, liên kết công việc tương lai.
+11. Tài liệu tham khảo và lời cảm ơn.
+12. Phụ lục / dự phòng — sơ đồ kiến trúc, config.
 
 ## Chuẩn bị thuyết trình và vấn đáp cá nhân
 
@@ -33,4 +33,4 @@ Yêu cầu của giảng viên gồm cả phần chuẩn bị trình bày, khôn
 Mọi câu trả lời về kết quả phải trỏ về artifact hoặc `docs/TRACEABILITY_MATRIX.md`. Câu nào chưa có bằng
 chứng thì trả lời "chưa kiểm chứng, sẽ bổ sung ở #<issue>", không ước lượng số liệu tại chỗ.
 
-Updated: 2026-10-17
+Cập nhật: 2026-10-17

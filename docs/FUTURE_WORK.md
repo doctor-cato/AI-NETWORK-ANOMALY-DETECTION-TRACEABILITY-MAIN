@@ -1,25 +1,25 @@
-# Future Work — Not in Mandatory Scope
+# Công việc tương lai — ngoài phạm vi bắt buộc
 
-These items are proposed extensions for future work; they are NOT implemented and NOT required for this course assignment. They are documented to avoid confusion and to guide enhancement issues only.
+Các mục dưới đây là hướng mở rộng cho tương lai; chúng **chưa được triển khai** và **không bắt buộc** cho bài tập hiện tại. Tài liệu này chỉ nhằm tránh nhầm lẫn và định hướng các issue mở rộng.
 
-## Proposed (unimplemented)
+## Đề xuất chưa triển khai
 
-- Autoencoder-based anomaly detection
-- LSTM / sequence modeling for temporal traffic patterns
-- Transformer-based feature extraction
-- Graph Neural Network (GNN) for network topology analysis
-- Zero-day detection with controlled experimental evidence
-- Device identity / attacker tracing from behavior vectors
-- Vector behavior encoding and adaptive key rotation
-- Post-quantum cryptography applied to traffic or feature representations
-- Trace Engine: correlating flows into per-device or per-attacker identity traces
-- Automatic blocking, isolation, or counter-attack mechanisms
-- Production deployment, distributed processing, enterprise monitoring
+- Phát hiện bất thường dựa trên Autoencoder.
+- LSTM / mô hình chuỗi cho mẫu lưu lượng theo thời gian.
+- Trích xuất đặc trưng bằng Transformer.
+- Graph Neural Network (GNN) để phân tích topology mạng.
+- Phát hiện zero-day với bằng chứng thực nghiệm có kiểm soát.
+- Truy vết danh tính thiết bị / kẻ tấn công từ behavior vector.
+- Mã hóa behavior vector và adaptive key rotation.
+- Post-quantum cryptography cho lưu lượng hoặc biểu diễn đặc trưng.
+- Trace Engine: liên kết flow thành dấu vết danh tính theo thiết bị hoặc kẻ tấn công.
+- Cơ chế chặn, cô lập hoặc phản công tự động.
+- Triển khai production, xử lý phân tán, giám sát cấp doanh nghiệp.
 
-## How to track
+## Cách theo dõi
 
-- Proposals documented in `docs/FUTURE_WORK.md`
-- Enhancement issue type (`enhancement` label) can be created if a group wants to propose one
-- Do not create issues that block M0–M5 core work
+- Ghi proposal trong `docs/FUTURE_WORK.md`.
+- Có thể tạo issue loại mở rộng (label `enhancement`) khi nhóm muốn đề xuất.
+- Không tạo issue làm chặn công việc core M0–M5.
 
-Updated: 2026-10-17 (M0)
+Cập nhật: 2026-10-17 (M0)

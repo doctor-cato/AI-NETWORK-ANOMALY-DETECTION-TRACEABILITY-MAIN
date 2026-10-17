@@ -3,11 +3,9 @@
 ## Nguồn
 
 - **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
-- **Nguồn chính (tham chiếu dự kiến; xác minh khi tải):**
-  - Cổng dữ liệu UNSW Canberra Cyber Center
-  - Bài báo / tài liệu từ UNSW (đã ghi trong tài liệu tham khảo)
-- **Truy cập:** Công khai cho nghiên cứu / học thuật; kiểm tra giấy phép / điều khoản hiện tại trước khi phân phối lại.
-- **Ngày truy cập / xác minh:** Chưa xác minh tại thời điểm viết (2026-10-16). Dự kiến xác nhận trước lần chạy huấn luyện đầu tiên.
+- **Nguồn chính:** [trang UNSW-NB15 của UNSW Canberra](https://research.unsw.edu.au/projects/unsw-nb15-dataset).
+- **Truy cập:** UNSW nêu quyền sử dụng miễn phí cho nghiên cứu học thuật; mục đích thương mại cần thỏa thuận với tác giả. Kiểm tra điều khoản tại thời điểm tải và không phân phối lại dữ liệu gốc khi chưa xác nhận quyền.
+- **Ngày truy cập nguồn:** 2026-10-17. Dataset chưa được tải hoặc xác minh trong repository này.
 - **Checksum / tính toàn vẹn file:** Chưa xác minh. Dự kiến ghi SHA-256 hoặc MD5 sau khi tải nếu có từ nguồn.
 
 ## Cấu trúc (dự kiến; xác minh sau khi tải)
@@ -22,9 +20,9 @@
 - Repo này KHÔNG chứa file UNSW-NB15 do kích thước (~2,5 GB nén, lớn hơn khi giải nén) và điều kiện cấp phép.
 - Người dùng phải tải từ nguồn chính thức, đặt vào `data/raw/`, và kiểm tra schema trước khi chạy thực nghiệm.
 
-## Hướng dẫn tải (dự kiến)
+## Hướng dẫn tải
 
-1. Truy cập cổng dữ liệu chính thức UNSW (liên kết sẽ xác nhận trong `REPRODUCIBILITY.md` sau khi kiểm tra).
+1. Truy cập [trang UNSW-NB15 chính thức](https://research.unsw.edu.au/projects/unsw-nb15-dataset), đọc điều khoản và chọn biến thể CSV phù hợp.
 2. Tải gói dữ liệu (CSV hoặc CSV + file nhãn).
 3. Kiểm tra tên file và cấu trúc theo tài liệu.
 4. Đặt file vào `data/raw/`.
@@ -44,4 +42,4 @@
 - `tests/unit/test_validate_data.py` tạo CSV fixture tổng hợp trong thư mục tạm để kiểm tra validation; không có file fixture dataset thật trong Git.
 - Các test model hiện tại chỉ kiểm tra config/constructor; chưa kiểm chứng training hoặc pipeline trên UNSW-NB15. Fixture CSV không thay thế thực nghiệm dữ liệu thật.
 
-Cập nhật: 2026-10-16 — hướng dẫn tải và xác minh checksum được dự kiến; chưa xác minh.
+Cập nhật: 2026-10-17 — nguồn đã được đối chiếu; dataset, checksum và schema cụ thể vẫn chưa được xác minh trong repository.

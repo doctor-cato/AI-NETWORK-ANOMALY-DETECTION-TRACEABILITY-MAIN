@@ -34,7 +34,7 @@ Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test cons
 ## Thực nghiệm và artifact (chưa hoàn thành)
 
 Training, đánh giá end-to-end và Inference CSV chưa có entrypoint hoàn chỉnh. `scripts/run_experiments.py`
-chỉ thực sự chạy bước `check-data` (uỏ quyền `validate_data.py`); các bước `baseline`, `evaluate`, `inference`
+chỉ thực sự chạy bước `check-data` (gọi `validate_data.py`); các bước `baseline`, `evaluate`, `inference`
 in trạng thái NOT IMPLEMENTED và **trả exit 3** để không ai đọc nhầm là đã chạy thành công. Exit 2 dành riêng
 cho lỗi dòng lệnh, nên gõ sai `--step` không bị nhầm với bước "đã lên kế hoạch".
 

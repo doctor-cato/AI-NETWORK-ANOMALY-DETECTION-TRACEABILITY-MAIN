@@ -1,13 +1,13 @@
 # Notebooks
 
-Notebooks are for EDA, demonstration, and result presentation — not for core logic, which lives in `src/network_anomaly/`.
+Notebook dùng cho EDA, minh họa và trình bày kết quả; logic cốt lõi nằm trong `src/network_anomaly/`.
 
-## Planned notebooks (not created yet; to be added during M1–M3)
+## Notebook dự kiến (chưa tạo; bổ sung trong M1–M3)
 
-- `eda_unsw_nb15.ipynb` — dataset exploration, label analysis, missing values, duplicates, leakage audit.
-- `preprocessing.ipynb` — preprocessing steps shown step-by-step with explanations.
-- `random_forest_experiment.ipynb` — training, evaluation, confusion matrix visualization.
-- `isolation_forest_evaluation.ipynb` — **tùy chọn**: score analysis, threshold selection, comparison protocol documented.
-- `inference_demo.ipynb` — load model, predict new input, show output format.
+- `eda_unsw_nb15.ipynb` — khám phá dataset, phân tích nhãn, missing value, bản ghi trùng và leakage audit.
+- `preprocessing.ipynb` — các bước preprocessing cùng giải thích theo từng bước.
+- `random_forest_experiment.ipynb` — training, evaluation và trực quan hóa confusion matrix.
+- `isolation_forest_evaluation.ipynb` — **tùy chọn**: phân tích score, chọn threshold và protocol so sánh.
+- `inference_demo.ipynb` — tải model, dự đoán đầu vào mới và hiển thị định dạng đầu ra.
 
-Updated: 2026-10-17 (M0)
+Cập nhật: 2026-10-17 (M0)

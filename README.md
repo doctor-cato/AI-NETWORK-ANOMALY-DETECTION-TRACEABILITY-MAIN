@@ -1,8 +1,8 @@
-# AI-Based Network Anomaly Detection Using Machine Learning and Network Traffic Behavior Analysis
+# Phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng
 
-**Language:** English (primary documentation) | **Vietnamese title:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
+**Ngôn ngữ tài liệu:** Tiếng Việt | **Tên dự án:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
 
-**Status:** M0 repository foundation implemented; structure, docs, exit-code contract for planned steps, and a CI matrix for Python 3.11/3.12 × Ubuntu/Windows. CI status for the current commit is recorded in `FINAL_REPORT.md`. Dataset not yet downloaded; experiments planned for M1–M3; results not fabricated. Xem `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
+**Trạng thái:** Nền tảng repository M0 đã triển khai: cấu trúc, tài liệu, exit-code contract cho các bước dự kiến và CI matrix Python 3.11/3.12 × Ubuntu/Windows. `FINAL_REPORT.md` ghi bằng chứng kiểm chứng M0 mang tính lịch sử, không phải claim CI cho mọi commit sau đó. Dataset chưa tải; thực nghiệm dự kiến ở M1–M3; không có kết quả bịa đặt. Xem `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
 
 - **License:** Apache License 2.0 (not MIT)
 - **Repository:** https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN
@@ -62,7 +62,7 @@ Ma trận yêu cầu → issue → deliverable → acceptance criteria → cách
 ## Bộ dữ liệu
 
 - **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
-- **Tham chiếu nguồn:** Cổng dữ liệu chính thức UNSW (liên kết sẽ xác nhận khi tải; xem `docs/DATASET.md`)
+- **Tham chiếu nguồn:** [trang UNSW-NB15 chính thức](https://research.unsw.edu.au/projects/unsw-nb15-dataset); xem `docs/DATASET.md`
 - **Trạng thái:** Chưa tải / chưa commit (đã dự kiến)
 - **Hướng dẫn tải:** Xem `docs/DATASET.md`; đặt file vào `data/raw/`; chạy `python scripts/validate_data.py`
 - **Checksum / phiên bản:** Chưa xác minh; sẽ ghi sau khi tải trong `docs/REPRODUCIBILITY.md`
@@ -166,11 +166,13 @@ Constructor test không chứng minh huấn luyện hay đánh giá đã chạy.
 ## Cài đặt
 
 ```bash
-# Clone hoặc dùng repo hiện có
+# Windows PowerShell
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 ```
+
+Trên macOS/Linux, thay dòng kích hoạt bằng `source .venv/bin/activate`.
 
 ---
 
@@ -238,7 +240,7 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 - [Planned] Error analysis write-up (false positives / false negatives)
 - [Planned] Inference script and demo output
 - [Implemented] Documentation (all planned docs exist; some content planned until experiments complete)
-- [Implemented] Milestones M0–M5 (created via GitHub CLI / API where possible)
+- [Planned] Milestones M0–M5 trong `docs/DEVELOPMENT_PLAN.md`; trạng thái remote phải kiểm tra trực tiếp trước khi dùng làm bằng chứng
 
 ---
 

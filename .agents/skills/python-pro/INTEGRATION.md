@@ -6,7 +6,7 @@ date_checked: 2026-10-16
 trigger: viết/review Python cho `src/network_anomaly/`, `scripts/`, `tests/`; cấu hình `pyproject.toml`; xử lý đường dẫn, seed, test.
 
 repo_notes:
-- Python 3.12+ theo `pyproject.toml`.
+- Python 3.11+ theo `pyproject.toml`; CI bao phủ 3.11 và 3.12.
 - Ưu tiên `pathlib` (`config.DATA_RAW`, `DATA_PROCESSED`).
 - Seed tập trung (`RANDOM_SEED = 42`).
 - Không hardcode đường dẫn máy cá nhân.
