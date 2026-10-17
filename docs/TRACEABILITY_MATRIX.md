@@ -4,8 +4,16 @@ Nguồn chuẩn: `docs/REQUIREMENTS.md` (F01–F08, N01–N07), `docs/PROJECT_CH
 viết trong từng GitHub Issue. Ma trận này là cách kiểm chứng duy nhất được dùng để đóng issue; tồn tại file
 không phải bằng chứng chức năng chạy được.
 
-Quy ước trạng thái: `PASS` = đã chạy lệnh và đạt · `SKIPPED` = cố ý bỏ qua vì thiếu dataset ·
-`NOT VERIFIED` = chưa chạy / chưa đủ bằng chứng · `OPTIONAL` = không chặn core.
+Hai trục trạng thái không thay thế nhau:
+
+- Vòng đời: `PLANNED` = mới lên kế hoạch · `IMPLEMENTED` = có implementation · `TESTED` = có test đã chạy
+  (có thể synthetic) · `EXPERIMENTALLY VALIDATED` = đã chạy trên UNSW-NB15 thật với provenance và evaluation
+  evidence.
+- Kiểm chứng: `PASS` = đã chạy check và đạt · `FAIL` = đã chạy và lỗi · `SKIPPED` = cố ý bỏ qua, có lý do ·
+  `NOT VERIFIED` = chưa chạy / chưa đủ bằng chứng · `OPTIONAL` = không chặn core.
+
+Mỗi claim phải truy theo chuỗi `Issue → Requirements → Implementation → Tests → Verification Evidence →
+Experiment Results`. Mắt xích chưa có phải để trống hoặc ghi `NOT VERIFIED`, không suy ra từ việc file tồn tại.
 
 Trạng thái trong bảng là kết quả lịch sử của lượt hoàn thiện M0: local trên máy Windows (Python 3.14.6),
 cộng với CI run `38999810930` trên commit `8504556` (ubuntu/windows × Python 3.11/3.12, 4/4 job PASS).
@@ -28,7 +36,7 @@ Kết quả này không tự chứng minh CI của các commit được tạo ho
 | R11 (N03) | Không hardcode đường dẫn tuyệt đối | #3 | `config.py` dùng `pathlib` tương đối | Không có đường dẫn máy cá nhân trong mã nguồn | `git grep -nE '[A-Za-z]:[/\\]' -- src scripts` (không khớp) | PASS |
 | R12 (N04) | Không secret, không dataset, không artifact lớn trong Git | #3 | `.gitignore` | Dữ liệu/artifact/audit snapshot bị chặn | `git check-ignore -v data/raw/UNSW-NB15.csv artifacts/model.joblib docs/audits/x.md` | PASS |
 | R13 (N05) | CI kiểm tra import + test nhẹ, không cần dataset | #3 | `.github/workflows/ci.yml` | CI xanh; bước dữ liệu ghi SKIPPED | CI run URL (mục D) | PASS — run `38999810930` tại `8504556` |
-| R14 (N07) | Tài liệu phân biệt planned / implemented / tested / verified | #2 | README + docs + ma trận này | Nhãn trạng thái khớp mã nguồn | Đối chiếu README với `src/` | PASS sau M0 |
+| R14 (N07) | Tài liệu phân biệt PLANNED / IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED | #2 | README + docs + ma trận này | Nhãn trạng thái khớp mã nguồn | Đối chiếu README với `src/` | PASS sau M0 |
 | R15 | Bước thí nghiệm chưa triển khai không được báo như thành công | #3 | `scripts/run_experiments.py` | `baseline` / `evaluate` / `inference` trả exit khác 0 (3); lỗi dòng lệnh trả 2 | `python -m pytest tests/unit/test_run_experiments.py -q` | PASS |
 | R16 (N06) | Apache-2.0; ghi nhận nghĩa vụ riêng của dependency/assets | #18 | `LICENSE`, `README.md` | Không có nội dung MIT; LICENSE là Apache-2.0 đầy đủ | `Select-String -Path LICENSE -Pattern 'Apache License'` (khớp) và `git grep -n 'MIT' -- LICENSE` (không khớp) | PASS |
 

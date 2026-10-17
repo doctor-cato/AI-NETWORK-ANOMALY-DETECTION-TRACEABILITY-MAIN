@@ -7,10 +7,17 @@ from pathlib import Path
 def validate(root):
     errors = []
     skill = root / ".agents/skills/repo-workflow/SKILL.md"
-    paths = [root / "AGENTS.md", root / ".agents/README.md",
-             root / ".agents/skills/README.md", skill]
-    paths += [root / f".agents/workflows/{stage}.md"
-              for stage in ("plan", "implement", "verify", "review")]
+    agents_path = root / "AGENTS.md"
+    traceability_path = root / "docs/TRACEABILITY_MATRIX.md"
+    paths = {agents_path, traceability_path, root / ".agents/README.md",
+             root / ".agents/skills/README.md", skill}
+    paths.update(root / f".agents/workflows/{stage}.md"
+                 for stage in ("plan", "implement", "verify", "review"))
+    paths.update((root / ".agents").rglob("*.md"))
+    required_skills = {
+        "repo-workflow", "network-intrusion-detection", "unsw-nb15-protocol",
+        "ml-experiment-audit", "model-experiment",
+    }
     names = set()
     for manifest in (root / ".agents/skills").glob("*/SKILL.md"):
         text = manifest.read_text(encoding="utf-8-sig")
@@ -32,7 +39,9 @@ def validate(root):
         names.add(name)
         if not 1 <= len(fields.get("description", "")) <= 1024:
             errors.append(f"Missing/oversized description: {manifest.relative_to(root)}")
-    for path in paths:
+    for missing in sorted(required_skills - names):
+        errors.append(f"Missing required skill: {missing}")
+    for path in sorted(paths):
         if not path.is_file():
             errors.append(f"Missing file: {path.relative_to(root)}")
             continue
@@ -49,6 +58,16 @@ def validate(root):
         for status in ("PASS", "FAIL", "SKIPPED", "NOT VERIFIED"):
             if f"`{status}`" not in content:
                 errors.append(f"Missing verification status: {status}")
+    if agents_path.is_file():
+        agents = agents_path.read_text(encoding="utf-8-sig")
+        for name in sorted(required_skills):
+            if name not in agents:
+                errors.append(f"AGENTS.md does not route skill: {name}")
+    if traceability_path.is_file():
+        traceability = traceability_path.read_text(encoding="utf-8-sig")
+        for state in ("PLANNED", "IMPLEMENTED", "TESTED", "EXPERIMENTALLY VALIDATED"):
+            if f"`{state}`" not in traceability:
+                errors.append(f"Missing traceability state: {state}")
     return errors
 
 
