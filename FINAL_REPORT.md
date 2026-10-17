@@ -20,6 +20,8 @@ Mốc sau lượt M0:
 
 - `5de5587` `fix(repo): make unimplemented steps fail loudly and harden M0 setup` (Issue #3).
 - `4970d4c` `docs(scope): add requirement traceability matrix and resolve scope contradictions` (Issue #2).
+- `8504556` `fix(repo): address review findings on the M0 exit-code contract` (review round cho #2 và #3).
+- `origin/main` = `8504556` sau khi push; CI run `38999810930` PASS 4/4 job.
 - Lịch sử trước đó giữ nguyên; nhánh `dev` từng có đã bị xóa ở lượt trước, remote không có nhánh `dev`.
 
 ## 2. Workflow OpenCode tìm thấy
@@ -111,10 +113,23 @@ numpy 2.5.4, scikit-learn 1.9.1, joblib 1.6.0, matplotlib 3.11.2, seaborn 0.13.2
 | `.gitignore` chặn dataset/artifact/secret/cache/audit | PASS | `git check-ignore -v` trên các đường dẫn đại diện | — |
 | YAML workflow và template | PASS | `yaml.safe_load` cho `ci.yml` và 3 file template | Template không kiểm tra bằng GitHub API |
 | Dataset thật | SKIPPED | UNSW-NB15 chưa tải theo ràng buộc nhiệm vụ | R01–R06, R08 NOT VERIFIED |
-| GitHub Actions trên commit M0 | NOT VERIFIED | Chưa có run nào cho các commit M0 tại thời điểm viết mục này | Cập nhật sau khi push |
+| GitHub Actions trên commit `8504556` | PASS | Run [38999810930](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/38999810930) — 4/4 job success | Chỉ chứng minh setup, không chứng minh ML |
 | Runtime discovery trong phiên Codex khác | NOT VERIFIED | Chỉ xác nhận được cấu trúc skill hợp lệ | Phụ thuộc host |
 | Hành vi subagent trên mọi Codex host | NOT VERIFIED | Không chạy được ngoài môi trường hiện tại | Phụ thuộc khả năng host |
 | Pipeline ML end-to-end | NOT VERIFIED | Chưa được phép triển khai hoặc huấn luyện trong giai đoạn setup | — |
+
+Chi tiết CI trên commit `8504556`:
+
+| Job | Python | Kết quả |
+|---|---|---|
+| `test (ubuntu-latest, 3.11)` | 3.11.17 | success — 36 test, validate_data SKIPPED |
+| `test (ubuntu-latest, 3.12)` | 3.12.15 | success — 36 test, validate_data SKIPPED |
+| `test (windows-latest, 3.11)` | 3.11.9 | success — 36 test, validate_data SKIPPED |
+| `test (windows-latest, 3.12)` | 3.12.10 | success — 36 test, validate_data SKIPPED |
+
+Mỗi job chạy: `pip install -e .` → `check_environment.py` → `compileall src scripts tests` → import mọi mô-đun
+lõi → `pytest tests` → `validate_data.py`. Bước dataset in `SKIPPED` kèm `::notice::` "SKIPPED is not a
+PASS", nên CI không thể bị đọc là đã kiểm chứng dữ liệu thật.
 
 Lượt trước (tại `f11ccba`) có 22 test và CI run `38946563304` chỉ trên ubuntu + Python 3.12; con số đó còn
 đúng với lượt đó nhưng không còn mô tả trạng thái hiện tại.
