@@ -1,5 +1,7 @@
 name: Báo cáo lỗi
 about: Báo cáo vấn đề với code, xử lý dữ liệu hoặc tài liệu
+title: "[Bug] "
+labels: ["type:bug"]
 body:
   - type: form
     fields:

@@ -1,6 +1,6 @@
 """Inference pipeline — load artifacts and predict."""
 import joblib
-from pathlib import Path
+
 from network_anomaly.config import ARTIFACTS
 
 

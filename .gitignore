@@ -8,15 +8,12 @@ data/processed/*
 !data/interim/.gitkeep
 !data/processed/.gitkeep
 
-# Artifacts / models / outputs
-artifacts/*.joblib
-artifacts/*.pkl
-artifacts/*.png
-artifacts/*.csv
+# Artifacts / models / outputs — ignore everything, keep only the directory markers
+artifacts/**
 !artifacts/.gitkeep
 
-reports/figures/*.png
-reports/figures/*.pdf
+reports/figures/**
+!reports/figures/.gitkeep
 
 # Environment / secrets
 .env
@@ -51,4 +48,4 @@ logs/
 # Local session audit evidence (preserve on disk; not project source)
 /AUDIT_REPORT.md
 /AUDIT_LEDGER.md
-/docs/audits/codex-migration-2026-10-17/
+/docs/audits/

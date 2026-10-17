@@ -2,7 +2,7 @@
 
 ## Môi trường hiện tại
 
-- Python >=3.11; CI dùng 3.12.
+- Python >=3.11; CI chạy ma trận 3.11 và 3.12 trên Ubuntu và Windows (`.github/workflows/ci.yml`).
 - Cài bằng `python -m pip install -e .` hoặc `python -m pip install -r requirements.txt`.
 - `pyproject.toml` và `requirements.txt` dùng giới hạn phiên bản tối thiểu (`>=`), chưa phải lockfile. Cùng câu lệnh cài đặt có thể giải quyết ra các phiên bản khác nhau.
 - Khi ghi nhận một lần chạy, lưu `python --version`, kết quả `python -m pip freeze`, hệ điều hành và commit (`git rev-parse HEAD`). File danh sách phiên bản đã cài là bằng chứng môi trường, chưa bảo đảm tái lập trên mọi nền tảng.
@@ -16,6 +16,7 @@ python -c "import network_anomaly"
 python scripts/check_environment.py
 python -m pytest -q
 python scripts/validate_data.py
+python scripts/run_experiments.py --step baseline   # exit 2 = NOT IMPLEMENTED
 ```
 
 Validator tự kiểm tra cả `data/raw/UNSW-NB15.csv` và `data/raw/UNSW-NB15_training_set.csv` nếu tồn tại. File có tên khác: `python scripts/validate_data.py --file <ten-file.csv>`. Có thể truyền đường dẫn tuyệt đối. Chỉ file mặc định chưa có mới được SKIPPED với exit 0; `--file` trỏ đến file thiếu hoặc CSV không hợp lệ phải thất bại.
@@ -32,7 +33,9 @@ Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test cons
 
 ## Thực nghiệm và artifact (chưa hoàn thành)
 
-Training, đánh giá end-to-end và Inference CSV chưa có entrypoint hoàn chỉnh. `scripts/run_experiments.py` hiện chỉ in trạng thái planned/NOT IMPLEMENTED, không tạo kết quả thực nghiệm.
+Training, đánh giá end-to-end và Inference CSV chưa có entrypoint hoàn chỉnh. `scripts/run_experiments.py`
+chỉ thực sự chạy bước `check-data` (uỏ quyền `validate_data.py`); các bước `baseline`, `evaluate`, `inference`
+in trạng thái NOT IMPLEMENTED và **trả exit 2** để không ai đọc nhầm là đã chạy thành công.
 
 Khi được giao triển khai, mỗi lần chạy cần lưu: run ID, commit, checksum/phiên bản dữ liệu, split/seed, danh sách feature, cấu hình, phiên bản thư viện, model/preprocessing đã fit và metric/confusion matrix có nguồn gốc rõ ràng. Không ghi đè artifact âm thầm và không commit dataset/artifact lớn.
 

@@ -1,0 +1,12 @@
+# Normalize line endings so Windows and Linux checkouts stay byte-identical.
+# Matches .editorconfig (end_of_line = lf).
+* text=auto eol=lf
+
+# Binary assets must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.joblib binary
+*.pkl binary

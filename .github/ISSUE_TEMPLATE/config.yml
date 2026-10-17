@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Hỏi câu hỏi
-    url: https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/discussions
-    about: Cho câu hỏi chung hoặc làm rõ
+    url: https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues/new/choose
+    about: Chọn mẫu phù hợp; nếu chưa có mẫu, mở issue trống và ghi rõ câu hỏi

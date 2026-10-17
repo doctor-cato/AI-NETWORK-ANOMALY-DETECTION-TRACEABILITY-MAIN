@@ -8,20 +8,27 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: |
-          pip install -e .
+        run: pip install -e .
       - name: Check environment
         run: python scripts/check_environment.py
-      - name: Check syntax / imports
-        run: python -m py_compile src/network_anomaly/config.py src/network_anomaly/models/random_forest.py src/network_anomaly/models/isolation_forest.py
-      - name: Unit tests (light)
-        run: python -m pytest tests/unit -q --tb=short
+      - name: Check syntax
+        run: python -m compileall -q src scripts tests
+      - name: Check imports (all submodules, not just syntax)
+        run: |
+          python -c "import network_anomaly, network_anomaly.evaluation.metrics, network_anomaly.inference.pipeline, network_anomaly.models.isolation_forest, network_anomaly.models.random_forest, network_anomaly.visualization.plots"
+      - name: Unit + integration tests
+        run: python -m pytest tests -q --tb=short
       - name: Validate data script — skip if dataset not downloaded; fail if invalid
         run: python scripts/validate_data.py

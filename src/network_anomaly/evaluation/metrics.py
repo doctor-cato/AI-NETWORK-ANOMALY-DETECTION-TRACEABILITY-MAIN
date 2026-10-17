@@ -2,9 +2,8 @@
 Isolation Forest evaluation requires separate score-to-label protocol (documented in docs/EVALUATION.md)."""
 from sklearn.metrics import (
     precision_score, recall_score, f1_score,
-    confusion_matrix, accuracy_score,
+    confusion_matrix,
 )
-import numpy as np
 
 
 def compute_metrics(y_true, y_pred, labels=None):

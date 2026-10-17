@@ -1,5 +1,7 @@
 name: Đề xuất tính năng
 about: Đề xuất tính năng hoặc cải tiến mới (không dùng cho công việc bắt buộc ở M0–M5)
+title: "[Feature] "
+labels: ["type:feature"]
 body:
   - type: form
     fields:
