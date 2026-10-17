@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "variant": "UNSW-NB15 published training/testing partition",
+  "official_source": {
+    "url": "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+    "accessed_at_utc": "2026-10-17T16:30:00Z",
+    "published_row_counts": {
+      "training": 175341,
+      "testing": 82332
+    },
+    "sha256_published": false,
+    "download_result": "SharePoint redirected to forms-based authentication and returned HTTP 403 for anonymous access",
+    "terms_summary": "Free for academic research; commercial use requires agreement with the authors; citation requested."
+  },
+  "acquisition": {
+    "source_type": "third-party public mirror",
+    "repository": "https://github.com/Nir-J/ML-Projects",
+    "revision": "44bbd02b9e70f74dd915218d5eb702f125341ffc",
+    "downloaded_at_utc": "2026-10-17T16:28:00Z",
+    "method": "HTTPS download from revision-pinned raw.githubusercontent.com URLs",
+    "provenance_limit": "The bytes match multiple public mirrors, but UNSW does not publish a SHA-256 and did not serve these files anonymously during verification.",
+    "http_status": 200,
+    "content_type": "text/plain; charset=utf-8"
+  },
+  "checksum_scope": "SHA-256 values were computed from the downloaded local bytes; they are not UNSW-published checksums.",
+  "files": [
+    {
+      "file": "UNSW_NB15_training-set.csv",
+      "role": "training",
+      "url": "https://raw.githubusercontent.com/Nir-J/ML-Projects/44bbd02b9e70f74dd915218d5eb702f125341ffc/UNSW-Network_Packet_Classification/UNSW_NB15_training-set.csv",
+      "size_bytes": 32293018,
+      "sha256": "bec7dd5ec88dc2a0ccc7a07879d338395ed7421750f675fd0339e07dfe0648fa",
+      "expected_rows": 175341
+    },
+    {
+      "file": "UNSW_NB15_testing-set.csv",
+      "role": "testing",
+      "url": "https://raw.githubusercontent.com/Nir-J/ML-Projects/44bbd02b9e70f74dd915218d5eb702f125341ffc/UNSW-Network_Packet_Classification/UNSW_NB15_testing-set.csv",
+      "size_bytes": 15380800,
+      "sha256": "734fe6642edf758f7c94d7d9149426b49d202fe8e7bf0bef47392489c3c0a559",
+      "expected_rows": 82332
+    }
+  ],
+  "independent_observations": [
+    {
+      "source": "https://www.kaggle.com/datasets/quohuysgu/unsw-nb15",
+      "owner": "quohuysgu",
+      "version": 1,
+      "checked_at_utc": "2026-10-17T16:35:00Z",
+      "method": "kagglehub 1.0.2 anonymous public download",
+      "result": "Both files are byte-identical to the selected mirror.",
+      "license_metadata": "Apache 2.0",
+      "license_limit": "Mirror metadata only; it does not supersede UNSW terms.",
+      "files": [
+        {
+          "file": "UNSW_NB15_training-set.csv",
+          "size_bytes": 32293018,
+          "sha256": "bec7dd5ec88dc2a0ccc7a07879d338395ed7421750f675fd0339e07dfe0648fa"
+        },
+        {
+          "file": "UNSW_NB15_testing-set.csv",
+          "size_bytes": 15380800,
+          "sha256": "734fe6642edf758f7c94d7d9149426b49d202fe8e7bf0bef47392489c3c0a559"
+        }
+      ]
+    },
+    {
+      "source": "https://www.kaggle.com/datasets/pankaj4321/unswnb15",
+      "owner": "pankaj4321",
+      "version": 1,
+      "checked_at_utc": "2026-10-17T16:36:00Z",
+      "method": "kagglehub 1.0.2 anonymous public download",
+      "result": "Both files are byte-identical to the selected mirror.",
+      "license_metadata": "CC0",
+      "license_limit": "Mirror metadata only; it does not supersede UNSW terms.",
+      "files": [
+        {
+          "file": "UNSW_NB15_training-set.csv",
+          "size_bytes": 32293018,
+          "sha256": "bec7dd5ec88dc2a0ccc7a07879d338395ed7421750f675fd0339e07dfe0648fa"
+        },
+        {
+          "file": "UNSW_NB15_testing-set.csv",
+          "size_bytes": 15380800,
+          "sha256": "734fe6642edf758f7c94d7d9149426b49d202fe8e7bf0bef47392489c3c0a559"
+        }
+      ]
+    },
+    {
+      "source": "https://huggingface.co/datasets/Mouwiya/UNSW-NB15",
+      "revision": "8ad6b19373f143086a66f52b0d6035a6959d83a9",
+      "checked_at_utc": "2026-10-17T16:30:00Z",
+      "result": "Training CSV size and LFS SHA-256 match; the testing CSV is absent.",
+      "files": [
+        {
+          "file": "UNSW_NB15_training-set.csv",
+          "size_bytes": 32293018,
+          "sha256": "bec7dd5ec88dc2a0ccc7a07879d338395ed7421750f675fd0339e07dfe0648fa"
+        }
+      ]
+    },
+    {
+      "source": "https://zenodo.org/records/3768048",
+      "record_revision": 5,
+      "checked_at_utc": "2026-10-17T16:30:00Z",
+      "result": "Rejected: files are tab-separated, headerless, and the train/test contents are assigned to the opposite filenames.",
+      "files": [
+        {
+          "file": "UNSW_NB15_training-set.csv",
+          "size_bytes": 15380415,
+          "sha256": "17ca4bc21dd02e5ad20c55089781d592494c46ac3e9ca11ba7f34df293fbcb3e"
+        },
+        {
+          "file": "UNSW_NB15_testing-set.csv",
+          "size_bytes": 32292633,
+          "sha256": "a0e05e6dbc8c38a55f2d93ef3cd9d67b64c9f1f55de87482e81fa66667cb8739"
+        }
+      ]
+    }
+  ],
+  "kaggle_cli_attempt": {
+    "checked_at_utc": "2026-10-17T16:27:00Z",
+    "command": "kaggle datasets list -s UNSW-NB15 --csv",
+    "result": "Authentication required; no Kaggle credentials were present or requested.",
+    "fallback": "Anonymous kagglehub public download succeeded for two candidates."
+  }
+}
