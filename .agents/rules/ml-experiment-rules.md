@@ -26,3 +26,11 @@ Mô hình và đánh giá:
 Ghi chép:
 - Config, seed, cách chia, phiên bản thư viện, lệnh chạy (`docs/REPRODUCIBILITY.md`).
 - Nếu chưa chạy thực nghiệm thật: ghi rõ nguyên nhân và trạng thái chưa hoàn thành.
+
+Truy vết bằng tài liệu/metadata sẵn có, không tạo framework mới nếu chưa cần:
+- `Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment Results`.
+- `PLANNED`: mới có kế hoạch; `IMPLEMENTED`: đã có code; `TESTED`: có test đã chạy (có thể synthetic);
+  `EXPERIMENTALLY VALIDATED`: đã chạy trên UNSW-NB15 thật với provenance, split và metric có bằng chứng.
+- Unit/integration test synthetic không nâng trạng thái lên `EXPERIMENTALLY VALIDATED`.
+- Mỗi kết quả thực nghiệm phải truy được về commit, trạng thái working tree, dataset checksum/variant, split, feature,
+  preprocessing/model config, dependency, lệnh và artifact/metric. Thiếu mắt xích thì ghi `NOT VERIFIED`.
