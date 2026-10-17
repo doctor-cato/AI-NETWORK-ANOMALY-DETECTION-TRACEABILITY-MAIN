@@ -1,4 +1,4 @@
-# Phương pháp — Baseline, Random Forest, Isolation Forest
+# Phương pháp — Random Forest (baseline bắt buộc), Isolation Forest (tùy chọn)
 
 ## Luồng tổng thể
 
@@ -7,12 +7,12 @@
 3. Khám phá (notebook EDA) — phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra rò rỉ dữ liệu
 4. Chia train/val/test (stratified nếu giám sát; có nhận thức thời gian/phien nếu cần; ghi trong `REPRODUCIBILITY.md`)
 5. Tiền xử lý (fit chỉ trên train): mã hóa, chuẩn hóa, chọn đặc trưng; lưu pipeline
-6. Huấn luyện mô hình (Random Forest hoặc Isolation Forest với config đã ghi)
+6. Huấn luyện mô hình: Random Forest là baseline bắt buộc (config đã ghi); thêm Isolation Forest nếu còn thời gian (không giám sát, protocol riêng bên dưới)
 7. Đánh giá (protocol khác nhau theo mô hình; xem bên dưới)
 8. Phân tích lỗi (dương tính giả / âm tính giả; ghi rõ hạn chế)
 9. Suy luận (tải pipeline + mô hình; áp dụng cho dữ liệu mới)
 
-## Random Forest (baseline giám sát)
+## Random Forest (baseline bắt buộc)
 
 - Loại: phân loại giám sát (nhị phân hoặc đa lớp tùy mục tiêu)
 - Huấn luyện: tập huấn luyện có nhãn; siêu tham số đã ghi (`n_estimators`, `max_depth`, `random_state`)
@@ -20,7 +20,7 @@
 - Giải thích confusion matrix: âm tính đúng / dương tính giả (bình thường bị phân loại nhầm là bất thường) / âm tính giả (bất thường bị bỏ sót) / dương tính đúng
 - Ngăn rò rỉ dữ liệu: không tạo đặc trưng từ nhãn; chia trước mọi fitting; kiểm tra cột định danh và xử lý cẩn thận
 
-## Isolation Forest (phát hiện bất thường không giám sát — nếu triển khai)
+## Isolation Forest (phát hiện bất thường không giám sát — TÙY CHỌN, không chặn core)
 
 - Loại: không giám sát; học phân phối dữ liệu bình thường; chấm điểm độ lệch
 - Huấn luyện: tập huấn luyện (nhãn chỉ dùng để cung cấp ngữ cảnh; mô hình không dùng nhãn khi fit)
@@ -49,4 +49,4 @@
 - Confusion matrix: hàng/cột phải ghi rõ nhãn (bình thường / bất thường)
 - FPR = FP / (FP + TN) — chỉ báo cáo khi có ý nghĩa cho trường hợp sử dụng
 
-Cập nhật: 2026-10-16
+Cập nhật: 2026-10-17 — tách rõ Random Forest (bắt buộc) và Isolation Forest (tùy chọn).

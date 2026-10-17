@@ -2,7 +2,7 @@
 
 **Language:** English (primary documentation) | **Vietnamese title:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
 
-**Status:** Repository initialized; core structure, documentation, and CI established. Dataset not yet downloaded; experiments planned for M1–M3; results not fabricated.
+**Status:** M0 repository foundation verified (structure, docs, CI on Python 3.11/3.12 × Ubuntu/Windows, exit-code contract for planned steps). Dataset not yet downloaded; experiments planned for M1–M3; results not fabricated. Xem `FINAL_REPORT.md` cho bằng chứng kiểm chứng và `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
 
 - **License:** Apache License 2.0 (not MIT)
 - **Repository:** https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN
@@ -28,16 +28,21 @@ Lưu lượng mạng chứa cả mẫu kết nối bình thường và bất th�
 
 ## Mục tiêu (bắt buộc — xem `docs/PROJECT_CHARTER.md`)
 
+Mục tiêu 1–5 và 7–10 là bắt buộc. Mục tiêu 6 (Isolation Forest) là **tùy chọn**, không chặn chấp nhận core.
+
 1. Phân tích phát hiện bất thường trong lưu lượng mạng và xác định mục tiêu.
 2. Sử dụng UNSW-NB15 làm bộ dữ liệu chính; kiểm tra schema và nhãn.
 3. Kiểm tra chất lượng dữ liệu; xử lý giá trị thiếu; tránh rò rỉ dữ liệu (target leakage).
 4. Thiết kế chia train/val/test tái lập.
 5. Xây dựng baseline Random Forest với pipeline đã ghi.
-6. Xây dựng Isolation Forest theo phương pháp không giám sát nếu khả thi; ghi protocol đánh giá riêng.
+6. *(Tùy chọn)* Xây dựng Isolation Forest theo phương pháp không giám sát nếu khả thi; ghi protocol đánh giá riêng.
 7. So sánh bằng Precision, Recall, F1, Macro-F1, confusion matrix, FPR — với protocol rõ ràng cho từng mô hình.
 8. Phân tích dương tính giả / âm tính giả; ghi rõ hạn chế.
 9. Cung cấp pipeline suy luận và demo tối thiểu.
 10. Đưa ra script/notebook tái lập, kiến trúc, tài liệu và dàn ý trình bày.
+
+Ma trận yêu cầu → issue → deliverable → acceptance criteria → cách kiểm chứng nằm ở
+`docs/TRACEABILITY_MATRIX.md`.
 
 ## Scope and non-goals
 
@@ -47,8 +52,8 @@ Lưu lượng mạng chứa cả mẫu kết nối bình thường và bất th�
 ### Rõ ràng ngoài phạm vi (đã ghi trong `docs/FUTURE_WORK.md`; KHÔNG triển khai ngay)
 - Autoencoder, LSTM, Transformer, GNN.
 - Tuyên bố phát hiện zero-day không có chứng cứ thực nghiệm.
-- Truy vết danh tính thiết bị / hành vi từ vector đặc trưng.
-- Mã hóa hành vi vector / xoay khóa thích ứng.
+- Truy vết danh tính thiết bị / hành vi từ vector đặc trưng (Trace Engine).
+- Mã hóa hành vi vector / xoay khóa thích ứng / mã hóa hậu lượng tử (post-quantum).
 - Chặn tự động / cô lập / phản công tự động.
 - Triển khai production / xử lý phân tán.
 
@@ -88,8 +93,10 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 
 ## Models (planned / partially implemented)
 
-- **Random Forest** (`src/network_anomaly/models/random_forest.py`) — supervised; implemented as module; training requires dataset.
-- **Isolation Forest** (`src/network_anomaly/models/isolation_forest.py`) — unsupervised; module implemented; evaluation protocol documented separately.
+- **Random Forest** (`src/network_anomaly/models/random_forest.py`) — supervised, **baseline bắt buộc**; hiện chỉ có constructor `build_model()`, chưa fit/predict (M2, #10).
+- **Isolation Forest** (`src/network_anomaly/models/isolation_forest.py`) — unsupervised, **tùy chọn**; hiện chỉ có constructor `build_model()` (M3, #11).
+
+Constructor test không chứng minh huấn luyện hay đánh giá đã chạy. Xem `docs/ARCHITECTURE.md` cho trạng thái từng mô-đun.
 
 ---
 
@@ -115,6 +122,8 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 │   ├── PROJECT_CHARTER.md
 │   ├── PROBLEM_STATEMENT.md
 │   ├── REQUIREMENTS.md
+│   ├── TRACEABILITY_MATRIX.md
+│   ├── ISSUE_SUPPLEMENTS.md
 │   ├── DATASET.md
 │   ├── METHODOLOGY.md
 │   ├── ARCHITECTURE.md
@@ -136,8 +145,9 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 │   ├── validate_data.py
 │   └── run_experiments.py
 ├── tests/unit/ + integration/
-├── reports/figures/ + artifacts/ (not committed when large)
-├── data/raw/, interim/, processed/ (dataset not committed)
+├── reports/figures/ + artifacts/ (chỉ giữ .gitkeep; nội dung không commit)
+├── data/raw/, interim/, processed/ (chỉ giữ .gitkeep; dataset không commit)
+├── AGENTS.md + .agents/ (workflow cho AI agent: PLAN → IMPLEMENT → VERIFY → REVIEW)
 └── .github/ (issue templates, PR template, CI)
 ```
 
@@ -145,11 +155,11 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 
 ## Environment setup
 
-- Python 3.11+ (recommended 3.12)
+- Python 3.11+ (CI kiểm tra 3.11 và 3.12 trên Ubuntu và Windows; xem `.github/workflows/ci.yml`)
 - Dependencies dùng giới hạn phiên bản tối thiểu (`>=`) trong `pyproject.toml` và `requirements.txt`; chưa có lockfile. Ghi phiên bản thực tế bằng `python -m pip freeze` khi tái lập.
-- Cài: `pip install -e .` (hoặc `python -m venv .venv` rồi `pip install -e .`)
-- Check environment: `python scripts/check_environment.py`
-- Check syntax: `python -m py_compile src/network_anomaly/config.py`; kiểm tra import riêng bằng `python -c "import network_anomaly"`.
+- Cài: `python -m pip install -e .` (hoặc `python -m venv .venv` rồi `python -m pip install -e .`)
+- Check environment: `python scripts/check_environment.py` (kiểm tra phiên bản Python, dependency và chính package `network_anomaly`)
+- Check syntax: `python -m compileall -q src scripts tests`; kiểm tra import riêng bằng `python -c "import network_anomaly"`.
 
 ---
 
@@ -159,7 +169,7 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 # Clone hoặc dùng repo hiện có
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -e .
+python -m pip install -e .
 ```
 
 ---
@@ -168,7 +178,7 @@ pip install -e .
 
 ```bash
 # Tải UNSW-NB15 từ nguồn chính thức (xem docs/DATASET.md)
-# Đặt CSV vào data/raw/
+# Đặt CSV vào data/raw/ (thư mục đã có sẵn trong repo, chỉ chứa .gitkeep)
 python scripts/validate_data.py
 ```
 
@@ -180,8 +190,9 @@ Dataset không được commit; xem `docs/DATASET.md` để biết chi tiết ng
 
 ```bash
 python scripts/check_environment.py
-python scripts/validate_data.py        # dự kiến; cần tải dataset trước
-python -m pytest tests/unit/test_basic.py -q
+python scripts/validate_data.py        # SKIPPED (exit 0) nếu chưa tải dataset; không phải validation PASS
+python -m pytest tests -q              # unit + integration, không cần dataset
+python scripts/run_experiments.py --step check-data   # gọi validate_data
 ```
 
 ---
@@ -189,11 +200,17 @@ python -m pytest tests/unit/test_basic.py -q
 ## Cách huấn luyện / đánh giá (đã dự kiến — cần dataset)
 
 ```bash
-# Lệnh dự kiến (chưa kiểm chứng đầy đủ cho đến khi có dataset):
+# Kiểm tra constructor (không phải huấn luyện):
 python -c "from network_anomaly.models.random_forest import build_model; print('RF OK')"
-python -m pytest tests/integration/test_pipeline.py -q
-# Sau khi huấn luyện: python src/network_anomaly/inference/pipeline.py <input>
+# Entrypoint huấn luyện/đánh giá/suy luận chưa tồn tại ở M0 — script báo rõ và trả exit khác 0:
+python scripts/run_experiments.py --step baseline    # exit 2 = NOT IMPLEMENTED (M2, #10)
+python scripts/run_experiments.py --step evaluate   # exit 2 = NOT IMPLEMENTED (M3, #12)
+python scripts/run_experiments.py --step inference  # exit 2 = NOT IMPLEMENTED (M4, #15)
 ```
+
+Không có lệnh inference dạng `python src/network_anomaly/inference/pipeline.py <input>` ở M0; entrypoint
+CSV cho inference thuộc issue #15. Chạy file đó hiện không in gì và thoát với code 0 — đừng dùng như bằng chứng
+đã dự đoán.
 
 Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực nghiệm (xem `docs/REPRODUCIBILITY.md`).
 
@@ -201,9 +218,11 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 
 ## Tests
 
-- Unit: `tests/unit/test_basic.py`
-- Integration: `tests/integration/test_pipeline.py`
-- CI runs light tests without dataset (`.github/workflows/ci.yml`)
+- Unit config/model: `tests/unit/test_basic.py`
+- Unit validator (fixture tổng hợp + exit code): `tests/unit/test_validate_data.py`
+- Unit exit-code contract của experiment runner: `tests/unit/test_run_experiments.py`
+- Integration (smoke): `tests/integration/test_pipeline.py`
+- CI chạy toàn bộ `tests/` trên Ubuntu và Windows, Python 3.11 và 3.12, không cần dataset (`.github/workflows/ci.yml`)
 - Fixture data in tests clearly marked synthetic, not UNSW-NB15
 
 ---
@@ -212,9 +231,10 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 
 - [Planned] EDA notebook / figures (class distribution, missing values, duplicates)
 - [Planned] Preprocessing pipeline artifacts (fit objects, encoded data)
-- [Implemented / Not Verified] Random Forest model code; training not verified (depends on dataset)
-- [Implemented / Not Verified] Isolation Forest module; evaluation protocol documented separately
-- [Planned] Metrics files (Precision, Recall, F1, Macro-F1, confusion matrix, FPR)
+- [Implemented (constructor only) / Not Verified] Random Forest model code; training not verified (depends on dataset)
+- [Implemented (constructor only) / Optional] Isolation Forest module; evaluation protocol documented separately
+- [Implemented (no FPR) / Not Verified] `evaluation/metrics.py` returns Precision, Recall, F1, Macro-F1, confusion matrix; FPR thuộc #12
+- [Planned] Metrics files on real data (Precision, Recall, F1, Macro-F1, confusion matrix, FPR)
 - [Planned] Error analysis write-up (false positives / false negatives)
 - [Planned] Inference script and demo output
 - [Implemented] Documentation (all planned docs exist; some content planned until experiments complete)

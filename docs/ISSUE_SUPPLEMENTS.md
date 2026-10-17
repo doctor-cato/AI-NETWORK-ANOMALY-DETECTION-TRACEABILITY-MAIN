@@ -1,6 +1,8 @@
-# Bổ sung đề xuất cho GitHub Issues (chưa cập nhật từ xa)
+# Bổ sung đề xuất cho GitHub Issues — ĐÃ ÁP DỤNG
 
-**Lý do chưa cập nhật từ xa:** Không có `GITHUB_TOKEN`/`gh` CLI ghi quyền; `curl` chỉ đọc. Các đề xuất dưới đây cần được áp dụng thủ công trên GitHub hoặc khi có quyền API.
+**Trạng thái:** Các đề xuất dưới đây đã được áp dụng lên GitHub (issue #3, #9, #11, #15, #16, #17, #18, #20
+đã Việt hóa và bổ sung Acceptance Criteria). File giữ lại như lịch sử đề xuất, không phải backlog.
+Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` thay vì sửa file này.
 
 ## Các Issue liên quan đã audit (từ API)
 

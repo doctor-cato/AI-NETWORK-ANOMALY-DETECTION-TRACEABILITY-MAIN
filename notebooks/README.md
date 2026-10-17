@@ -7,7 +7,7 @@ Notebooks are for EDA, demonstration, and result presentation — not for core l
 - `eda_unsw_nb15.ipynb` — dataset exploration, label analysis, missing values, duplicates, leakage audit.
 - `preprocessing.ipynb` — preprocessing steps shown step-by-step with explanations.
 - `random_forest_experiment.ipynb` — training, evaluation, confusion matrix visualization.
-- `isolation_forest_evaluation.ipynb` — score analysis, threshold selection, comparison protocol documented.
+- `isolation_forest_evaluation.ipynb` — **tùy chọn**: score analysis, threshold selection, comparison protocol documented.
 - `inference_demo.ipynb` — load model, predict new input, show output format.
 
 Updated: 2026-10-16

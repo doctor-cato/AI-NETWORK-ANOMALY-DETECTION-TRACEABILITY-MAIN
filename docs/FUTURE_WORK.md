@@ -11,6 +11,8 @@ These items are proposed extensions for future work; they are NOT implemented an
 - Zero-day detection with controlled experimental evidence
 - Device identity / attacker tracing from behavior vectors
 - Vector behavior encoding and adaptive key rotation
+- Post-quantum cryptography applied to traffic or feature representations
+- Trace Engine: correlating flows into per-device or per-attacker identity traces
 - Automatic blocking, isolation, or counter-attack mechanisms
 - Production deployment, distributed processing, enterprise monitoring
 
