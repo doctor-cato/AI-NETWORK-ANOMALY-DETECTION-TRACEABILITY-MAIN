@@ -10,4 +10,4 @@ Notebooks are for EDA, demonstration, and result presentation — not for core l
 - `isolation_forest_evaluation.ipynb` — **tùy chọn**: score analysis, threshold selection, comparison protocol documented.
 - `inference_demo.ipynb` — load model, predict new input, show output format.
 
-Updated: 2026-10-16
+Updated: 2026-10-17 (M0)

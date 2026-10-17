@@ -30,4 +30,4 @@ Cột "Trạng thái M0" nói rõ mô-đun đã có hành vi thật hay chỉ l�
 | Suy luận | `src/network_anomaly/inference/` | Tải artifact; dự đoán dữ liệu mới | hàm tải artifact; **chưa có entrypoint CLI** (M4, #15) |
 | Trực quan hóa | `src/network_anomaly/visualization/` | Biểu đồ cho EDA, metrics, phân tích lỗi | **placeholder** — M4 (#16) |
 
-Cập nhật: 2026-10-16
+Cập nhật: 2026-10-17 (M0)

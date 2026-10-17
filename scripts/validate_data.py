@@ -36,7 +36,7 @@ def validate_file(target):
     except (OSError, UnicodeError, csv.Error, ValueError) as error:
         print(f"[validate_data] ERROR: {target.name}: {error}")
         return False
-    print(f"[validate_data] FOUND: {target.name} — basic CSV checks passed (rows={rows}).")
+    print(f"[validate_data] FOUND: {target.name} - basic CSV checks passed (rows={rows}).")
     print("[validate_data] Planned: full schema, label values, missing values, duplicates, leakage audit.")
     return True
 
@@ -52,6 +52,8 @@ def main(argv=None):
         if not targets:
             print("[validate_data] SKIPPED (INTENTIONAL SKIP): UNSW-NB15 not downloaded.")
             print("[validate_data] Download per docs/DATASET.md; no real-data validation performed.")
+            print("::notice title=Dataset skipped::UNSW-NB15 is absent, so no real-data "
+                  "validation ran. SKIPPED is not a PASS.")
             return 0
     valid = True
     for target in targets:

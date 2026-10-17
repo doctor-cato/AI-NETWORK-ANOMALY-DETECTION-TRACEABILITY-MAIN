@@ -3,23 +3,24 @@
 Ngày kiểm tra: 2026-10-17
 Repository: `doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN`
 
+> **Phạm vi file này.** Mục 2–5 và 7–8 ghi lại lượt migration workflow trước đó và giữ nguyên như lịch sử.
+> Mục 1 và 6 được cập nhật theo lượt hoàn thiện M0 (Issue #2 và #3) và là phần cần đọc trước.
+> Ma trận yêu cầu → issue → cách kiểm chứng nằm ở `docs/TRACEABILITY_MATRIX.md`.
+
 ## 1. Trạng thái Git
 
-Trước lượt xuất bản cuối của phiên làm việc:
+Nhánh làm việc: `main`. Không tạo nhánh tạm, không force push, không reset/clean, không rewrite history.
 
-- Nhánh làm việc tạm: `dev`.
-- `main` và `origin/main`: `9b8ac74`.
-- Migration workflow đã được commit ở `61d0a62` nhưng chưa push.
-- Tám file sửa P2 chưa commit, tập trung vào CI, validator dữ liệu, test và tài liệu.
+Mốc trước lượt M0:
 
-Trạng thái sau migration và sửa P2, trước commit chỉ cập nhật báo cáo này:
+- `origin/main` = `53471ab` (`docs(audit): refresh migration report`).
+- Working tree sạch trước khi bắt đầu.
 
-- Nhánh duy nhất đang dùng: `main`.
-- Commit code/workflow được kiểm toán trên `main`: `f11ccba`.
-- Commit migration: `61d0a62 feat(workflow): Add portable Codex repository workflows`.
-- Commit sửa P2: `f11ccba fix(validation): enforce dataset CSV checks`.
-- Nhánh local `dev` đã xóa; remote không có nhánh `dev`.
-- Không force push, reset, clean hoặc rewrite history.
+Mốc sau lượt M0:
+
+- `5de5587` `fix(repo): make unimplemented steps fail loudly and harden M0 setup` (Issue #3).
+- `4970d4c` `docs(scope): add requirement traceability matrix and resolve scope contradictions` (Issue #2).
+- Lịch sử trước đó giữ nguyên; nhánh `dev` từng có đã bị xóa ở lượt trước, remote không có nhánh `dev`.
 
 ## 2. Workflow OpenCode tìm thấy
 
@@ -90,21 +91,35 @@ SKIPPED rõ ràng và không tuyên bố đã kiểm chứng UNSW-NB15 thật.
 
 ## 6. Kết quả kiểm chứng
 
-| Hạng mục | Kết quả | Bằng chứng/phạm vi |
-|---|---|---|
-| Cấu trúc workflow và metadata skill | PASS | `check_workflows.py` |
-| Link local trong workflow | PASS | `check_workflows.py` |
-| Environment imports | PASS | `scripts/check_environment.py` |
-| Python compile/import mục tiêu | PASS | `python -m py_compile ...` |
-| Unit Test | PASS | 22 test, gồm 19 test validator và 3 smoke test cấu hình/constructor |
-| GitHub Actions tại `f11ccba` | PASS | Run `38946563304` |
-| Dataset thật | SKIPPED | UNSW-NB15 chưa được tải, đúng ràng buộc nhiệm vụ |
-| Runtime discovery trong phiên Codex khác | NOT VERIFIED | Chỉ có thể xác nhận cấu trúc skill hợp lệ trong môi trường hiện tại |
-| Hành vi subagent trên mọi Codex host | NOT VERIFIED | Phụ thuộc khả năng host và cách người dùng giao việc |
-| Pipeline ML end-to-end | NOT VERIFIED | Chưa được phép triển khai hoặc huấn luyện trong giai đoạn setup |
+Lượt hoàn thiện M0 (Issue #2 và #3). Mọi lệnh chạy từ root trên Windows, Python 3.14.6, venv sạch tại
+`%TEMP%\opencode\m0venv` cài bằng `python -m pip install -e .`. Phiên bản thực tế: pandas 3.0.6,
+numpy 2.5.4, scikit-learn 1.9.1, joblib 1.6.0, matplotlib 3.11.2, seaborn 0.13.2.
 
-Dry-run an toàn của PLAN, VERIFY và REVIEW đã được thực hiện trên thay đổi workflow/P2; không huấn luyện
-mô hình, không tải dataset và không sửa pipeline ML.
+| Hạng mục | Kết quả | Bằng chứng / exit code | Giới hạn |
+|---|---|---|---|
+| Cài package trong venv sạch | PASS | `python -m pip install -e .` → 0 | Chỉ 3.14.6 local; 3.11/3.12 phải chờ CI |
+| Environment imports + phiên bản Python | PASS | `python scripts/check_environment.py` → 0 | Không kiểm tra model |
+| Compile + import mọi mô-đun lõi | PASS | `python -m compileall -q src scripts tests` → 0; `python -c "import network_anomaly, ..."` → 0 | `compileall` trả 0 cả khi thư mục không tồn tại |
+| Unit + Integration Test | PASS | `python -m pytest tests -q` → 0, **36 test** | Fixture tổng hợp; không có UNSW-NB15 |
+| Validator với fixture hợp lệ | PASS | `--file valid.csv` → 0, in `FOUND` | Chỉ kiểm tra cấu trúc CSV |
+| Validator với fixture sai | PASS | `no_label.csv`, `ragged.csv`, `empty.csv`, file thiếu → 1 | Chưa kiểm tra kiểu dữ liệu/nhãn |
+| Validator không có dataset | SKIPPED | `python scripts/validate_data.py` → 0, in `SKIPPED` | SKIPPED không phải validation PASS |
+| Bước thí nghiệm chưa triển khai | PASS | `--step baseline/evaluate/inference` → **3** + `NOT IMPLEMENTED` | Chưa có bước nào thật sự chạy |
+| Sai cú pháp dòng lệnh | PASS | `--step train` → **2**, `invalid choice` | — |
+| Cấu trúc workflow và link nội bộ | PASS | `python .agents/skills/repo-workflow/scripts/check_workflows.py` → 0 | Chỉ kiểm link trong `AGENTS.md` và `.agents/**` |
+| Whitespace | PASS | `git diff --check` → 0 | — |
+| `.gitignore` chặn dataset/artifact/secret/cache/audit | PASS | `git check-ignore -v` trên các đường dẫn đại diện | — |
+| YAML workflow và template | PASS | `yaml.safe_load` cho `ci.yml` và 3 file template | Template không kiểm tra bằng GitHub API |
+| Dataset thật | SKIPPED | UNSW-NB15 chưa tải theo ràng buộc nhiệm vụ | R01–R06, R08 NOT VERIFIED |
+| GitHub Actions trên commit M0 | NOT VERIFIED | Chưa có run nào cho các commit M0 tại thời điểm viết mục này | Cập nhật sau khi push |
+| Runtime discovery trong phiên Codex khác | NOT VERIFIED | Chỉ xác nhận được cấu trúc skill hợp lệ | Phụ thuộc host |
+| Hành vi subagent trên mọi Codex host | NOT VERIFIED | Không chạy được ngoài môi trường hiện tại | Phụ thuộc khả năng host |
+| Pipeline ML end-to-end | NOT VERIFIED | Chưa được phép triển khai hoặc huấn luyện trong giai đoạn setup | — |
+
+Lượt trước (tại `f11ccba`) có 22 test và CI run `38946563304` chỉ trên ubuntu + Python 3.12; con số đó còn
+đúng với lượt đó nhưng không còn mô tả trạng thái hiện tại.
+
+Không huấn luyện mô hình, không tải dataset và không sửa pipeline ML trong lượt này.
 
 ## 7. Audit Issues và Milestones
 

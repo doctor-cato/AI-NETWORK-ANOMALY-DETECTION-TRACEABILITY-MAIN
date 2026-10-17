@@ -22,4 +22,4 @@ These items are proposed extensions for future work; they are NOT implemented an
 - Enhancement issue type (`enhancement` label) can be created if a group wants to propose one
 - Do not create issues that block M0–M5 core work
 
-Updated: 2026-10-16
+Updated: 2026-10-17 (M0)

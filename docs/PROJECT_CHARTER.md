@@ -78,4 +78,4 @@ Ma trận yêu cầu → issue → deliverable → cách kiểm chứng: `docs/T
 - No dataset committed; download instructions and checksum references documented (not verified yet;
   marked as planned).
 
-Updated: 2026-10-16
+Updated: 2026-10-17 (M0)

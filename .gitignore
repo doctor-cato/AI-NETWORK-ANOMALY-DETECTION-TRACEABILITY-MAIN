@@ -18,6 +18,10 @@ reports/figures/**
 # Environment / secrets
 .env
 .env.local
+secrets/
+*.key
+*.pem
+credentials*.json
 .venv/
 env/
 venv/

@@ -16,7 +16,7 @@ python -c "import network_anomaly"
 python scripts/check_environment.py
 python -m pytest -q
 python scripts/validate_data.py
-python scripts/run_experiments.py --step baseline   # exit 2 = NOT IMPLEMENTED
+python scripts/run_experiments.py --step baseline   # exit 3 = NOT IMPLEMENTED
 ```
 
 Validator tự kiểm tra cả `data/raw/UNSW-NB15.csv` và `data/raw/UNSW-NB15_training_set.csv` nếu tồn tại. File có tên khác: `python scripts/validate_data.py --file <ten-file.csv>`. Có thể truyền đường dẫn tuyệt đối. Chỉ file mặc định chưa có mới được SKIPPED với exit 0; `--file` trỏ đến file thiếu hoặc CSV không hợp lệ phải thất bại.
@@ -35,7 +35,8 @@ Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test cons
 
 Training, đánh giá end-to-end và Inference CSV chưa có entrypoint hoàn chỉnh. `scripts/run_experiments.py`
 chỉ thực sự chạy bước `check-data` (uỏ quyền `validate_data.py`); các bước `baseline`, `evaluate`, `inference`
-in trạng thái NOT IMPLEMENTED và **trả exit 2** để không ai đọc nhầm là đã chạy thành công.
+in trạng thái NOT IMPLEMENTED và **trả exit 3** để không ai đọc nhầm là đã chạy thành công. Exit 2 dành riêng
+cho lỗi dòng lệnh, nên gõ sai `--step` không bị nhầm với bước "đã lên kế hoạch".
 
 Khi được giao triển khai, mỗi lần chạy cần lưu: run ID, commit, checksum/phiên bản dữ liệu, split/seed, danh sách feature, cấu hình, phiên bản thư viện, model/preprocessing đã fit và metric/confusion matrix có nguồn gốc rõ ràng. Không ghi đè artifact âm thầm và không commit dataset/artifact lớn.
 

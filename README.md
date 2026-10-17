@@ -2,7 +2,7 @@
 
 **Language:** English (primary documentation) | **Vietnamese title:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
 
-**Status:** M0 repository foundation verified (structure, docs, CI on Python 3.11/3.12 × Ubuntu/Windows, exit-code contract for planned steps). Dataset not yet downloaded; experiments planned for M1–M3; results not fabricated. Xem `FINAL_REPORT.md` cho bằng chứng kiểm chứng và `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
+**Status:** M0 repository foundation implemented; structure, docs, exit-code contract for planned steps, and a CI matrix for Python 3.11/3.12 × Ubuntu/Windows. CI status for the current commit is recorded in `FINAL_REPORT.md`. Dataset not yet downloaded; experiments planned for M1–M3; results not fabricated. Xem `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
 
 - **License:** Apache License 2.0 (not MIT)
 - **Repository:** https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN
@@ -203,9 +203,9 @@ python scripts/run_experiments.py --step check-data   # gọi validate_data
 # Kiểm tra constructor (không phải huấn luyện):
 python -c "from network_anomaly.models.random_forest import build_model; print('RF OK')"
 # Entrypoint huấn luyện/đánh giá/suy luận chưa tồn tại ở M0 — script báo rõ và trả exit khác 0:
-python scripts/run_experiments.py --step baseline    # exit 2 = NOT IMPLEMENTED (M2, #10)
-python scripts/run_experiments.py --step evaluate   # exit 2 = NOT IMPLEMENTED (M3, #12)
-python scripts/run_experiments.py --step inference  # exit 2 = NOT IMPLEMENTED (M4, #15)
+python scripts/run_experiments.py --step baseline    # exit 3 = NOT IMPLEMENTED (M2, #10)
+python scripts/run_experiments.py --step evaluate   # exit 3 = NOT IMPLEMENTED (M3, #12)
+python scripts/run_experiments.py --step inference  # exit 3 = NOT IMPLEMENTED (M4, #15)
 ```
 
 Không có lệnh inference dạng `python src/network_anomaly/inference/pipeline.py <input>` ở M0; entrypoint
