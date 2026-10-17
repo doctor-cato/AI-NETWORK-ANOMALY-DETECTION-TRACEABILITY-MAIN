@@ -10,3 +10,5 @@
 - Test: viết cho hành vi quan trọng (import, model build, pipeline load, metric tính đúng). Không tạo test giả chỉ để tăng coverage.
 - Thay đổi nhỏ, có mục tiêu, dễ review; không sửa file ngoài phạm vi nếu không có lý do rõ ràng.
 - Không đưa thông tin nhạy cảm vào Git; không commit dataset hoặc model artifact lớn.
+- Không thêm trailer AI: không `Co-Authored-By: <AI>`, `Generated with <AI>`, không ký emoji/bot và không nêu tên công cụ, vendor hay model trong commit message, PR description, comment issue/milestone. Nội dung phải nêu thay đổi và bằng chứng, không nêu tác giả là AI. Trailer có sẵn trong lịch sử cũ thì giữ nguyên — không rewrite history để dọn.
+- Commit message dùng Conventional Commits, body ghi lệnh kiểm chứng và giới hạn; không dán diff hay log dài vào message.
