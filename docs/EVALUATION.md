@@ -11,9 +11,11 @@
 
 ### Isolation Forest (không giám sát — nếu triển khai)
 
-- Huấn luyện trên tập train không nhãn (hoặc bỏ qua nhãn).
+- Chọn rõ normal-only novelty setup hoặc mixed/unlabeled outlier setup trước khi fit. Nếu label chỉ được dùng để lọc
+  normal-only, ghi rõ bước này; không truyền target vào mô hình.
 - Tạo điểm bất thường trên tập validation.
-- Chọn ngưỡng (ghi rõ phương pháp: ví dụ ước lượng contamination = tỷ lệ bất thường dự kiến, hoặc chứng lượng điểm).
+- Chọn ngưỡng (ghi rõ phương pháp: contamination/quantile đã định trước, hoặc tối ưu bằng validation labels và ghi
+  rõ đây là supervised calibration).
 - Dự đoán trên test với ngưỡng đã chọn.
 - Tính các metric giống trên; ghi rõ quá trình chọn ngưỡng.
 - Lưu ý: các metric chỉ so sánh được khi cả hai protocol đã được ghi rõ.
@@ -37,6 +39,6 @@
 ## Không tuyên bố benchmark chưa kiểm chứng
 
 - Repo này không tuyên bố độ chính xác, F1 cụ thể, hoặc kết quả benchmark cho đến khi thực nghiệm thật hoàn thành và kết quả được ghi cùng seed/phiên bản.
-- Mọi kết quả phải ghi rõ: planned / implemented / verified.
+- Mọi kết quả phải ghi rõ: `PLANNED / IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`.
 
-Cập nhật: 2026-10-16
+Cập nhật: 2026-10-17

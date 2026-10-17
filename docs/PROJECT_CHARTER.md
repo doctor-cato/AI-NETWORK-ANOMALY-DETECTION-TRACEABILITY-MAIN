@@ -43,7 +43,7 @@ Ma trận yêu cầu → issue → deliverable → cách kiểm chứng: `docs/T
 ## Tiêu chí thành công (có thể kiểm chứng)
 
 - [ ] Cấu trúc repository khớp thiết kế; có đủ tài liệu bắt buộc.
-- [ ] README phân biệt planned / implemented / verified; không có metric bịa đặt.
+- [ ] README phân biệt PLANNED / IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED; không có metric bịa đặt.
 - [ ] Script validation dữ liệu đạt với fixture; đã ghi hướng dẫn tải UNSW-NB15.
 - [ ] Có thể dựng lại pipeline preprocessing từ `docs/REPRODUCIBILITY.md` và `config.py`.
 - [ ] Model Random Forest train và evaluation cùng seed, metric, confusion matrix đã ghi.
