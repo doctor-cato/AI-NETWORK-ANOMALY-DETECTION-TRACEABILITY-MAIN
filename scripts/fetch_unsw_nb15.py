@@ -26,8 +26,14 @@ FILES = {
         "sha256": "734fe6642edf758f7c94d7d9149426b49d202fe8e7bf0bef47392489c3c0a559",
     },
 }
-# Staging lives beside the destination so the verified bytes can be swapped in atomically.
+# Scratch files live beside the destination so the verified bytes can be swapped in atomically.
 STAGING_PREFIX = ".unsw-nb15-staging-"
+BACKUP_PREFIX = ".unsw-nb15-backup-"
+
+
+def scratch_path(destination, prefix, name):
+    """Process-unique scratch path so concurrent fetch runs never share a file."""
+    return destination / f"{prefix}{os.getpid()}-{name}"
 
 
 def sha256_file(path):
@@ -92,22 +98,69 @@ def cache_is_valid(target, expected):
     return True
 
 
+def rollback(destination, installed, backups):
+    """Undo the swaps already applied; returns how many files were restored."""
+    for name in installed:
+        (destination / name).unlink(missing_ok=True)
+    restored = 0
+    for name, backup in backups.items():
+        try:
+            os.replace(backup, destination / name)
+        except OSError as error:
+            print(f"[fetch_unsw_nb15] ROLLBACK WARNING: cannot restore {name}: {error}")
+            continue
+        restored += 1
+    return restored
+
+
+def install(pending, destination):
+    """Swap verified staging files into place, restoring previous bytes if any swap fails.
+
+    Backups are copies rather than moves, so a destination file stays readable until its
+    own replacement succeeds. Every file is backed up before the first swap, so a failure
+    on any file restores the directory to the bytes it held before this run.
+    """
+    backups = {}
+    installed = []
+    try:
+        for name in pending:
+            target = destination / name
+            if target.is_file():
+                backup = scratch_path(destination, BACKUP_PREFIX, name)
+                shutil.copyfile(target, backup)
+                backups[name] = backup
+        for name, staging in pending.items():
+            os.replace(staging, destination / name)
+            installed.append(name)
+            print(f"[fetch_unsw_nb15] INSTALLED unchanged bytes: {destination / name}")
+    except OSError as error:
+        restored = rollback(destination, installed, backups)
+        print(
+            f"[fetch_unsw_nb15] ROLLBACK: restored {restored} file(s) to their previous "
+            f"bytes after a failed install: {error}"
+        )
+        raise
+    finally:
+        for backup in backups.values():
+            backup.unlink(missing_ok=True)
+
+
 def fetch(destination, files=None, base_url=None):
     files = FILES if files is None else files
     base_url = BASE_URL if base_url is None else base_url
     destination.mkdir(parents=True, exist_ok=True)
-    staging = {name: destination / f"{STAGING_PREFIX}{name}" for name in files}
+    staging = {name: scratch_path(destination, STAGING_PREFIX, name) for name in files}
     try:
         pending = {}
         for name, expected in files.items():
             if cache_is_valid(destination / name, expected):
                 continue
-            pending[name] = download_to_staging(name, expected, staging[name], base_url)
+            pending[name] = staging[name]
+            download_to_staging(name, expected, staging[name], base_url)
         # Install only once every needed file is staged and verified, so a failed run
         # never leaves a half-populated data/raw/ directory.
-        for name in pending:
-            os.replace(staging[name], destination / name)
-            print(f"[fetch_unsw_nb15] INSTALLED unchanged bytes: {destination / name}")
+        if pending:
+            install(pending, destination)
     finally:
         for path in staging.values():
             path.unlink(missing_ok=True)

@@ -5,6 +5,8 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
+import shutil
 import subprocess
 import sys
 from email.message import Message
@@ -404,8 +406,38 @@ def serve(fetcher, monkeypatch, response):
     return calls
 
 
-def staging_files(directory):
-    return sorted(path.name for path in directory.glob(".unsw-nb15-staging-*"))
+def serve_files(monkeypatch, fetcher, payloads, fail_on=None):
+    """Serve per-file bytes; `fail_on` makes that download raise instead."""
+    calls = []
+
+    def fake_urlopen(request, timeout=None):
+        name = request.full_url.rsplit("/", 1)[-1]
+        calls.append(name)
+        if name == fail_on:
+            raise URLError(f"offline: {name}")
+        return FakeResponse(payloads[name])
+
+    monkeypatch.setattr(fetcher, "urlopen", fake_urlopen)
+    return calls
+
+
+def fail_replace_on(monkeypatch, fetcher, destination_name):
+    """Make os.replace fail when the destination has this file name; record the sources."""
+    sources = []
+    real_replace = os.replace
+
+    def flaky_replace(src, dst):
+        if Path(dst).name == destination_name:
+            raise OSError(f"simulated replace failure for {destination_name}")
+        sources.append(Path(src).name)
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(fetcher.os, "replace", flaky_replace)
+    return sources
+
+
+def scratch_files(directory):
+    return sorted(path.name for path in directory.glob(".unsw-nb15-*"))
 
 
 def test_fetch_cache_hit_avoids_network(fetcher, tmp_path, monkeypatch, capsys):
@@ -435,7 +467,7 @@ def test_fetch_missing_file_downloads_verifies_and_installs(fetcher, tmp_path, m
     assert calls == [f"{MIRROR}/a.csv"]
     assert "CACHE_INVALID" in out and "DOWNLOAD" in out and "VERIFIED" in out
     assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
-    assert staging_files(tmp_path) == []
+    assert scratch_files(tmp_path) == []
 
 
 def test_fetch_is_all_or_nothing_across_files(fetcher, tmp_path, monkeypatch, capsys):
@@ -464,7 +496,7 @@ def test_fetch_corrupt_cache_is_replaced(fetcher, tmp_path, monkeypatch, capsys)
     out = capsys.readouterr().out
     assert "CACHE_INVALID" in out and "size mismatch" in out
     assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
-    assert staging_files(tmp_path) == []
+    assert scratch_files(tmp_path) == []
 
 
 def test_fetch_checksum_mismatch_cache_is_replaced(fetcher, tmp_path, monkeypatch, capsys):
@@ -500,7 +532,7 @@ def test_fetch_download_failure_keeps_cache_and_leaves_no_staging(
     assert "ERROR" in out
     # The unusable cache is left untouched rather than replaced by partial bytes.
     assert (tmp_path / "a.csv").read_bytes() == b"corrupt"
-    assert staging_files(tmp_path) == []
+    assert scratch_files(tmp_path) == []
 
 
 def test_fetch_rejects_html_payload_and_leaves_no_staging(fetcher, tmp_path, monkeypatch, capsys):
@@ -509,7 +541,7 @@ def test_fetch_rejects_html_payload_and_leaves_no_staging(fetcher, tmp_path, mon
     assert fetcher.main(["--destination", str(tmp_path)]) == 1
     assert "ERROR" in capsys.readouterr().out
     assert not (tmp_path / "a.csv").exists()
-    assert staging_files(tmp_path) == []
+    assert scratch_files(tmp_path) == []
 
 
 def test_fetch_rejects_checksum_mismatch_in_downloaded_payload(fetcher, tmp_path, monkeypatch):
@@ -520,7 +552,141 @@ def test_fetch_rejects_checksum_mismatch_in_downloaded_payload(fetcher, tmp_path
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
     assert not (tmp_path / "a.csv").exists()
-    assert staging_files(tmp_path) == []
+    assert scratch_files(tmp_path) == []
+
+
+# --- fetch_unsw_nb15.py: install rollback and concurrent-run safety -------------
+
+
+TWO_FILES = {
+    "a.csv": b"id,dur,proto,label\r\n1,0.1,tcp,0\r\n",
+    "b.csv": b"id,dur,proto,label\r\n2,0.2,udp,1\r\n",
+}
+PREVIOUS = {
+    "a.csv": b"id,dur,proto,label\r\n9,9.9,tcp,1\r\n",
+    "b.csv": b"id,dur,proto,label\r\n8,8.8,udp,1\r\n",
+}
+
+
+def test_rollback_restores_previous_bytes_when_second_swap_fails(
+    fetcher, tmp_path, monkeypatch, capsys
+):
+    for name, blob in PREVIOUS.items():
+        (tmp_path / name).write_bytes(blob)
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fail_replace_on(monkeypatch, fetcher, "b.csv")
+    with pytest.raises(OSError, match="simulated replace failure"):
+        fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "ROLLBACK" in out
+    # The already-swapped file must go back to the bytes it held before this run.
+    assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
+    assert (tmp_path / "b.csv").read_bytes() == PREVIOUS["b.csv"]
+    assert scratch_files(tmp_path) == []
+
+
+def test_rollback_restores_missing_previous_file_as_absent(fetcher, tmp_path, monkeypatch, capsys):
+    # Only a.csv exists beforehand; after a failed install it must exist again and
+    # b.csv must still be absent, so the directory is never half populated.
+    (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fail_replace_on(monkeypatch, fetcher, "b.csv")
+    with pytest.raises(OSError):
+        fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
+    assert not (tmp_path / "b.csv").exists()
+    assert scratch_files(tmp_path) == []
+    assert "ROLLBACK" in capsys.readouterr().out
+
+
+def test_failed_install_exits_one_and_reports_rollback(fetcher, tmp_path, monkeypatch, capsys):
+    for name, blob in PREVIOUS.items():
+        (tmp_path / name).write_bytes(blob)
+    monkeypatch.setattr(
+        fetcher, "FILES", {name: entry_for(blob) for name, blob in TWO_FILES.items()}
+    )
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fail_replace_on(monkeypatch, fetcher, "b.csv")
+    assert fetcher.main(["--destination", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "ERROR" in out and "ROLLBACK" in out
+    assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
+
+
+def test_install_backs_up_before_the_first_swap(fetcher, tmp_path, monkeypatch):
+    """A target must remain readable on its own path until its own swap succeeds."""
+    (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])
+    staging = tmp_path / "stage-a.csv"
+    staging.write_bytes(TWO_FILES["a.csv"])
+    copies = []
+    real_copyfile = shutil.copyfile
+
+    def record_copy(src, dst, *args, **kwargs):
+        copies.append((Path(src).name, Path(dst).name))
+        return real_copyfile(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(fetcher.shutil, "copyfile", record_copy)
+    fetcher.install({"a.csv": staging}, tmp_path)
+    assert copies == [("a.csv", f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv")]
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert scratch_files(tmp_path) == []
+
+
+def test_scratch_names_are_process_unique(fetcher, tmp_path, monkeypatch):
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    sources = []
+    real_replace = os.replace
+
+    def capture(src, dst):
+        sources.append(Path(src).name)
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(fetcher.os, "replace", capture)
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert sources == [f"{fetcher.STAGING_PREFIX}{os.getpid()}-a.csv"]
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+    assert scratch_files(tmp_path) == []
+
+
+def test_scratch_path_is_stable_and_pid_tagged(fetcher, tmp_path):
+    first = fetcher.scratch_path(tmp_path, fetcher.STAGING_PREFIX, "a.csv")
+    assert first == fetcher.scratch_path(tmp_path, fetcher.STAGING_PREFIX, "a.csv")
+    assert first.name == f"{fetcher.STAGING_PREFIX}{os.getpid()}-a.csv"
+    assert first.parent == tmp_path
+
+
+def test_two_concurrent_runs_do_not_share_scratch_files(fetcher, tmp_path, monkeypatch):
+    """Different PIDs must yield different scratch names for the same destination file."""
+    other_pid = os.getpid() + 1
+    mine = fetcher.scratch_path(tmp_path, fetcher.STAGING_PREFIX, "a.csv").name
+    theirs = f"{fetcher.STAGING_PREFIX}{other_pid}-a.csv"
+    assert mine != theirs
+
+
+# --- validate_data.py: the SKIPPED contract must stay unmistakable -------------
+
+
+def test_skipped_states_explicitly_that_it_is_not_a_pass(validator, capsys):
+    assert validator.main([]) == 0
+    out = capsys.readouterr().out
+    assert "SKIPPED" in out
+    assert "SKIPPED is not PASS" in out
+
+
+def test_skipped_emits_ci_warning_annotation(validator, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert validator.main([]) == 0
+    out = capsys.readouterr().out
+    assert "::warning" in out
+    assert "SKIPPED is not a PASS" in out
+
+
+def test_no_ci_annotation_outside_github_actions(validator, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert validator.main([]) == 0
+    out = capsys.readouterr().out
+    assert "::warning" not in out
+    assert "SKIPPED is not PASS" in out
 
 
 def test_fetch_is_repeatable_and_stable(fetcher, tmp_path, monkeypatch, capsys):

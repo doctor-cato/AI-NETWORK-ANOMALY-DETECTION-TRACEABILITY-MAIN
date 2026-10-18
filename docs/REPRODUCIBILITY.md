@@ -59,9 +59,16 @@ Script fetch tái sử dụng cache local: file trong `data/raw/` chỉ được
 SHA-256 và kích thước theo manifest, nên chạy lại không tải lại (`CACHE_HIT`). File thiếu
 hoặc sai được tải lại từ mirror revision-pinned vào staging tạm cùng thư mục đích, kiểm tra
 HTTP response, size và SHA-256 trước khi thay thế nguyên tử; staging luôn được dọn kể cả
-khi lỗi. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo thật lưu aggregate
-row/schema/blank/missing/duplicate và checksum, không chứa dòng raw.
+khi lỗi. Trước lần thay đầu tiên script sao lưu bản cũ của mọi file sẽ bị thay, và nếu
+`os.replace` thất bại ở file nào thì các file đã thay được hoàn nguyên về byte trước đó
+(log `ROLLBACK` kèm số file khôi phục được). Tên staging và backup có kèm PID nên hai lần
+chạy đồng thời không dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo thật
+lưu aggregate row/schema/blank/missing/duplicate và checksum, không chứa dòng raw.
 Fixture test chỉ kiểm tra hành vi validator.
+
+Khi cả hai CSV vắng mặt, `validate_data.py` in `SKIPPED`, in rõ `SKIPPED is not PASS` và
+exit 0; khi chạy trong GitHub Actions nó ghi thêm annotation `::warning::SKIPPED is not a
+PASS` để CI không bị đọc nhầm là đã kiểm chứng dữ liệu thật.
 
 Timestamp trong manifest là ISO 8601 nguyên giây kèm offset tường minh
 (`YYYY-MM-DDTHH:MM:SSZ` hoặc `±HH:MM`), không dùng naive datetime. `record` chuẩn hóa

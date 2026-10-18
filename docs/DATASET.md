@@ -49,10 +49,19 @@ quyết định. File hợp lệ được giữ nguyên và log `CACHE_HIT`, nê
 mạng. File thiếu hoặc sai checksum được log `CACHE_INVALID` kèm lý do rồi tải lại từ
 mirror revision-pinned. Byte tải về nằm ở staging tạm cùng thư mục đích, được kiểm tra
 trọn vẹn trước khi thay thế nguyên tử (`DOWNLOAD` rồi `VERIFIED`), và staging luôn
-được dọn kể cả khi lỗi. Không tin cache chỉ dựa trên tên file hay kích thước. Cài đặt
-chỉ diễn ra sau khi mọi file cần thiết đã tải và verify xong, nên một lần chạy lỗi không
-để lại `data/raw/` thiếu nửa. Script dùng mirror revision-pinned vì endpoint chính thức
-cần đăng nhập.
+được dọn kể cả khi lỗi. Không tin cache chỉ dựa trên tên file hay kích thước.
+
+Cài đặt chỉ diễn ra sau khi mọi file cần thiết đã tải và verify xong. Trước khi thay byte
+đầu tiên, script sao lưu bản cũ của mọi file sẽ bị thay; nếu `os.replace` thất bại ở bất kỳ
+file nào, mọi file đã thay được hoàn nguyên về byte trước đó và script log `ROLLBACK` kèm
+số file khôi phục được. File đã thay luôn giữ byte mới đã verify, nên dọn backup không bao
+giờ mất bản duy nhất. Nhờ vậy một lần chạy lỗi không để lại `data/raw/` thiếu nửa.
+
+Tên file staging và backup có kèm PID, nên hai lần tải chạy đồng thời không dùng chung file
+tạm. Vì mọi byte đều đã verify trước khi thay, hai tiến trình cùng thay vẫn cho ra kết quả
+giống hệt.
+
+Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
 
 `data/raw/*` nằm ngoài Git. Kiểm tra bằng:
 

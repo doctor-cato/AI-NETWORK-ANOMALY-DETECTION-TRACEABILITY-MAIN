@@ -133,8 +133,9 @@ Chi tiết CI trên commit `8504556`:
 | `test (windows-latest, 3.12)` | 3.12.10 | success — 36 test, validate_data SKIPPED |
 
 Mỗi job chạy: `pip install -e .` → `check_environment.py` → `compileall src scripts tests` → import mọi mô-đun
-lõi → `pytest tests` → `validate_data.py`. Bước dataset in `SKIPPED` kèm `::notice::` "SKIPPED is not a
-PASS", nên CI không thể bị đọc là đã kiểm chứng dữ liệu thật.
+lõi → `pytest tests` → `validate_data.py`. Bước dataset in `SKIPPED` kèm dòng "SKIPPED is not a PASS"; khi chạy
+trong GitHub Actions, `validate_data.py` ghi thêm annotation `::warning::SKIPPED is not a PASS` để CI không
+bị đọc là đã kiểm chứng dữ liệu thật.
 
 Lượt trước (tại `f11ccba`) có 22 test và CI run `38946563304` chỉ trên ubuntu + Python 3.12; con số đó còn
 đúng với lượt đó nhưng không còn mô tả trạng thái hiện tại.

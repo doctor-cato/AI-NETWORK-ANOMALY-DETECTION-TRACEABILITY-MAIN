@@ -6,11 +6,17 @@ import csv
 import hashlib
 import json
 import math
+import os
 from collections import Counter
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_RAW = PROJECT_ROOT / "data" / "raw"
+
+SKIPPED_NOT_A_PASS = (
+    "No real-data validation performed; SKIPPED is not PASS. "
+    "Download the dataset with scripts/fetch_unsw_nb15.py before treating CI as evidence."
+)
 
 DEFAULT_FILES = ("UNSW_NB15_training-set.csv", "UNSW_NB15_testing-set.csv")
 EXPECTED_ROWS = {
@@ -220,7 +226,9 @@ def main(argv=None):
         present = [name for name in DEFAULT_FILES if (DATA_RAW / name).exists()]
         if not present:
             print("[validate_data] SKIPPED: UNSW-NB15 train/test CSV files are absent.")
-            print("[validate_data] No real-data validation performed; SKIPPED is not PASS.")
+            print(f"[validate_data] {SKIPPED_NOT_A_PASS}")
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                print(f"::warning title=SKIPPED is not a PASS::{SKIPPED_NOT_A_PASS}")
             return 0
         if len(present) != len(DEFAULT_FILES):
             missing = set(DEFAULT_FILES) - set(present)
