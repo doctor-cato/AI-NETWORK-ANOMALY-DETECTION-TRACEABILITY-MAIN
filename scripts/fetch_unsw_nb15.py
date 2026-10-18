@@ -98,19 +98,42 @@ def cache_is_valid(target, expected):
     return True
 
 
+def remove_quietly(path):
+    """Drop a scratch file without ever masking the error that is being reported."""
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as error:
+        print(f"[fetch_unsw_nb15] CLEANUP WARNING: cannot remove {path.name}: {error}")
+
+
 def rollback(destination, installed, backups):
-    """Undo the swaps already applied; returns how many files were restored."""
+    """Restore previous bytes where a backup exists, never discarding a valid file first.
+
+    os.replace overwrites its destination atomically, so a backed-up file is restored
+    without ever being absent: if the restore fails, the verified new file stays in place
+    and the backup is returned so it can be recovered by hand. A file installed by this
+    run that had no previous version is kept, because its verified bytes are worth more
+    than deleting them. Returns the backup paths that could not be restored.
+    """
+    retained = []
     for name in installed:
-        (destination / name).unlink(missing_ok=True)
-    restored = 0
-    for name, backup in backups.items():
+        backup = backups.get(name)
+        if backup is None:
+            print(
+                f"[fetch_unsw_nb15] ROLLBACK: kept {name}; it did not exist before this run, "
+                f"so there is no earlier version to restore"
+            )
+            continue
         try:
             os.replace(backup, destination / name)
         except OSError as error:
-            print(f"[fetch_unsw_nb15] ROLLBACK WARNING: cannot restore {name}: {error}")
-            continue
-        restored += 1
-    return restored
+            retained.append(backup)
+            print(
+                f"[fetch_unsw_nb15] ROLLBACK WARNING: cannot restore {name} from "
+                f"{backup.name}: {error}. Keeping {destination / name} and the backup "
+                f"for manual recovery."
+            )
+    return retained
 
 
 def install(pending, destination):
@@ -118,9 +141,10 @@ def install(pending, destination):
 
     Backups are copies rather than moves, so a destination file stays readable until its
     own replacement succeeds. Every file is backed up before the first swap, so a failure
-    on any file restores the directory to the bytes it held before this run.
+    on any file restores that file to the bytes it held before this run.
     """
     backups = {}
+    retained = []
     installed = []
     try:
         for name in pending:
@@ -134,15 +158,23 @@ def install(pending, destination):
             installed.append(name)
             print(f"[fetch_unsw_nb15] INSTALLED unchanged bytes: {destination / name}")
     except OSError as error:
-        restored = rollback(destination, installed, backups)
+        retained = rollback(destination, installed, backups)
         print(
-            f"[fetch_unsw_nb15] ROLLBACK: restored {restored} file(s) to their previous "
-            f"bytes after a failed install: {error}"
+            f"[fetch_unsw_nb15] ROLLBACK: restored {len(installed) - len(retained)} of "
+            f"{len(installed)} installed file(s) after a failed install: {error}"
         )
+        if retained:
+            print(
+                f"[fetch_unsw_nb15] RECOVERY: kept {len(retained)} backup file(s) for manual "
+                f"recovery: {', '.join(path.name for path in retained)}"
+            )
         raise
     finally:
+        # A backup that could not be restored is the only surviving copy of those bytes,
+        # so it must outlive this run; every other backup is now redundant.
         for backup in backups.values():
-            backup.unlink(missing_ok=True)
+            if backup not in retained:
+                remove_quietly(backup)
 
 
 def fetch(destination, files=None, base_url=None):
@@ -163,7 +195,7 @@ def fetch(destination, files=None, base_url=None):
             install(pending, destination)
     finally:
         for path in staging.values():
-            path.unlink(missing_ok=True)
+            remove_quietly(path)
 
 
 def main(argv=None):

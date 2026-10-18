@@ -52,10 +52,18 @@ trọn vẹn trước khi thay thế nguyên tử (`DOWNLOAD` rồi `VERIFIED`),
 được dọn kể cả khi lỗi. Không tin cache chỉ dựa trên tên file hay kích thước.
 
 Cài đặt chỉ diễn ra sau khi mọi file cần thiết đã tải và verify xong. Trước khi thay byte
-đầu tiên, script sao lưu bản cũ của mọi file sẽ bị thay; nếu `os.replace` thất bại ở bất kỳ
-file nào, mọi file đã thay được hoàn nguyên về byte trước đó và script log `ROLLBACK` kèm
-số file khôi phục được. File đã thay luôn giữ byte mới đã verify, nên dọn backup không bao
-giờ mất bản duy nhất. Nhờ vậy một lần chạy lỗi không để lại `data/raw/` thiếu nửa.
+đầu tiên, script sao lưu bản cũ của mọi file sẽ bị thay. Nếu `os.replace` thất bại ở bất kỳ
+file nào, script hoàn nguyên các file **đã thay** về byte trước đó rồi ném lại lỗi gốc.
+
+Nguyên tắc phục hồi: **không bao giờ xóa dữ liệu hợp lệ trước khi biết bản thay thế đã
+nằm đúng chỗ.** Vì `os.replace` ghi đè đích một cách nguyên tử, khôi phục không cần xóa
+file đích trước; nếu bản khôi phục lỗi, file đích vẫn giữ byte mới đã verify và bản sao lưu
+được giữ lại, kèm dòng `RECOVERY` chỉ rõ tên file để phục hồi thủ công. File mới tạo ra
+trong lần chạy đó không có bản cũ để khôi phục nên được giữ lại kèm dòng `ROLLBACK: kept`,
+vì xóa đi chỉ là vứt bỏ byte đã verify mà không thu được gì.
+
+Dọn staging và backup trong `finally` không được ném lỗi mới đè lên lỗi đang báo; lỗi dọn
+được ghi `CLEANUP WARNING`. Backup chỉ bị xóa khi nó không còn là bản duy nhất.
 
 Tên file staging và backup có kèm PID, nên hai lần tải chạy đồng thời không dùng chung file
 tạm. Vì mọi byte đều đã verify trước khi thay, hai tiến trình cùng thay vẫn cho ra kết quả

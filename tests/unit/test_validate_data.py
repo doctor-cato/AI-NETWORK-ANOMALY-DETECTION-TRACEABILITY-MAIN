@@ -663,6 +663,100 @@ def test_two_concurrent_runs_do_not_share_scratch_files(fetcher, tmp_path, monke
     assert mine != theirs
 
 
+# --- rollback must never destroy data when its own restore fails ---------------
+
+
+def fail_replace_after(fetcher, monkeypatch, rule):
+    """Fail os.replace for destinations chosen by `rule(name, attempt_number)`."""
+    attempts = {}
+    real_replace = os.replace
+
+    def flaky(src, dst):
+        name = Path(dst).name
+        attempts[name] = attempts.get(name, 0) + 1
+        if rule(name, attempts[name]):
+            raise OSError(f"simulated replace failure for {name}")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(fetcher.os, "replace", flaky)
+    return attempts
+
+
+def fails_on_second_attempt(name, attempt):
+    return name == "b.csv" or (name == "a.csv" and attempt > 1)
+
+
+def test_restore_failure_keeps_valid_file_and_backup(fetcher, tmp_path, monkeypatch, capsys):
+    """A failing restore must not delete the verified file or the only backup."""
+    for name, blob in PREVIOUS.items():
+        (tmp_path / name).write_bytes(blob)
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    # b.csv fails during install; a.csv installs fine but then fails to restore.
+    fail_replace_after(fetcher, monkeypatch, fails_on_second_attempt)
+    with pytest.raises(OSError, match="simulated replace failure for b.csv"):
+        fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "ROLLBACK WARNING" in out
+    assert "RECOVERY" in out
+    # The verified new bytes stay in place; nothing is deleted before a restore succeeds.
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert (tmp_path / "b.csv").read_bytes() == PREVIOUS["b.csv"]
+    # The backup that could not be restored survives for manual recovery.
+    survivors = scratch_files(tmp_path)
+    assert survivors == [f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv"]
+    assert (tmp_path / survivors[0]).read_bytes() == PREVIOUS["a.csv"]
+
+
+def test_newly_installed_file_is_kept(fetcher, tmp_path, monkeypatch, capsys):
+    """Deleting a valid file just created would throw away verified bytes for nothing."""
+    (tmp_path / "b.csv").write_bytes(PREVIOUS["b.csv"])
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fail_replace_on(monkeypatch, fetcher, "b.csv")
+    with pytest.raises(OSError):
+        fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "kept a.csv" in out
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert (tmp_path / "b.csv").read_bytes() == PREVIOUS["b.csv"]
+    assert scratch_files(tmp_path) == []
+
+
+def lock_scratch_cleanup(monkeypatch, fetcher, prefix):
+    """Make removing a scratch file fail, as a locked file does on Windows."""
+    real_unlink = Path.unlink
+
+    def flaky_unlink(self, missing_ok=False):
+        if prefix in self.name:
+            raise PermissionError(f"simulated lock on {self.name}")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+
+
+def test_backup_cleanup_failure_keeps_the_install_error(fetcher, tmp_path, monkeypatch, capsys):
+    """Double failure: the reported error must stay the install error, not the cleanup one."""
+    for name, blob in PREVIOUS.items():
+        (tmp_path / name).write_bytes(blob)
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fail_replace_on(monkeypatch, fetcher, "b.csv")
+    lock_scratch_cleanup(monkeypatch, fetcher, fetcher.BACKUP_PREFIX)
+    with pytest.raises(OSError, match="simulated replace failure for b.csv"):
+        fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    assert "CLEANUP WARNING" in capsys.readouterr().out
+    assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
+
+
+def test_staging_cleanup_failure_keeps_the_verify_error(fetcher, tmp_path, monkeypatch, capsys):
+    wrong = bytes(len(PAYLOAD))
+    serve(fetcher, monkeypatch, FakeResponse(wrong))
+    lock_scratch_cleanup(monkeypatch, fetcher, fetcher.STAGING_PREFIX)
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "CLEANUP WARNING" in out
+    assert not (tmp_path / "a.csv").exists()
+
+
 # --- validate_data.py: the SKIPPED contract must stay unmistakable -------------
 
 
