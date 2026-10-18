@@ -79,6 +79,15 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def is_blank_line(row):
+    """True for a physical line carrying no delimiter and no value.
+
+    A line that does contain delimiters is never blank here: an all-empty row of the
+    full width is a missing-value defect, and a short all-empty row is a width defect.
+    """
+    return len(row) == 0 or (len(row) == 1 and not row[0].strip())
+
+
 def validate_file(target, expected_sha256=None, expected_size=None, expected_rows=None):
     """Return a report for a valid CSV; raise for a blocking defect."""
     digest = sha256_file(target)
@@ -97,8 +106,15 @@ def validate_file(target, expected_sha256=None, expected_size=None, expected_row
         seen = set()
         duplicates = 0
         rows = 0
+        blank_lines = 0
+        blank_positions = []
         for row in reader:
-            if not row:
+            # Blank lines are counted and rejected, never silently dropped, so the
+            # row/missing/duplicate/class counters below stay exact.
+            if is_blank_line(row):
+                blank_lines += 1
+                if len(blank_positions) < 5:
+                    blank_positions.append(reader.line_num)
                 continue
             if len(row) != len(COLUMNS):
                 raise ValueError(f"wrong column count at CSV line {reader.line_num}")
@@ -143,6 +159,14 @@ def validate_file(target, expected_sha256=None, expected_size=None, expected_row
             counts[record["label"]] += 1
             attack_counts[category] += 1
             rows += 1
+        if blank_lines:
+            shown = ", ".join(str(line) for line in blank_positions)
+            if blank_lines > len(blank_positions):
+                shown += ", ..."
+            raise ValueError(
+                f"{blank_lines} blank CSV line(s) with no delimiter and no value "
+                f"at line(s) {shown}"
+            )
         if not rows:
             raise ValueError("no data rows")
         if expected_rows is not None and rows != expected_rows:
@@ -152,6 +176,7 @@ def validate_file(target, expected_sha256=None, expected_size=None, expected_row
         "sha256": digest,
         "size_bytes": target.stat().st_size,
         "rows": rows,
+        "blank_lines": blank_lines,
         "columns": len(COLUMNS),
         "schema_matches_profile": True,
         "expected_rows": expected_rows,

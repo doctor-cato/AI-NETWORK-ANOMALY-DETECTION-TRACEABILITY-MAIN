@@ -23,6 +23,13 @@ Chi tiết URL, thời điểm UTC, revision, kích thước, checksum và giớ
 trong `data/UNSW_NB15_MANIFEST.json`. Đây là checksum do dự án tính và được các mirror
 corroborate, không phải checksum do UNSW xác nhận.
 
+Mọi timestamp trong manifest dùng ISO 8601 nguyên giây kèm offset tường minh:
+`YYYY-MM-DDTHH:MM:SSZ` hoặc `YYYY-MM-DDTHH:MM:SS±HH:MM`. Naive datetime không được
+dùng. `record` chuẩn hóa `--downloaded-at` về UTC trước khi ghi, nên timestamp có
+offset khác UTC có thể đổi ngày theo lịch. `verify` kiểm tra mọi trường timestamp
+tìm thấy trong manifest và từ chối giá trị naive, sai định dạng hoặc không phải chuỗi;
+`verify` chỉ đọc, không bao giờ ghi lại provenance hay thêm timestamp biến động.
+
 UNSW nêu dữ liệu được dùng miễn phí cho nghiên cứu học thuật; sử dụng thương mại cần
 thỏa thuận với tác giả và phải trích dẫn các công trình trên trang nguồn. Metadata
 license của mirror không thay thế điều khoản UNSW. Dataset không thuộc Apache-2.0 của
@@ -36,10 +43,16 @@ python scripts/dataset_manifest.py verify
 python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
 ```
 
-`fetch_unsw_nb15.py` tải từng file vào thư mục tạm, yêu cầu HTTP 200, từ chối HTML
-và Git LFS pointer, kiểm tra kích thước và SHA-256, rồi mới sao chép byte không đổi vào
-`data/raw/`. File đã tồn tại chỉ được giữ nếu khớp manifest. Script dùng mirror
-revision-pinned vì endpoint chính thức cần đăng nhập.
+`fetch_unsw_nb15.py` tái sử dụng cache local an toàn: mỗi file đã có trong `data/raw/`
+được kiểm tra lại tiền tố (HTML, Git LFS pointer), kích thước và SHA-256 trước khi
+quyết định. File hợp lệ được giữ nguyên và log `CACHE_HIT`, nên chạy lại không gọi
+mạng. File thiếu hoặc sai checksum được log `CACHE_INVALID` kèm lý do rồi tải lại từ
+mirror revision-pinned. Byte tải về nằm ở staging tạm cùng thư mục đích, được kiểm tra
+trọn vẹn trước khi thay thế nguyên tử (`DOWNLOAD` rồi `VERIFIED`), và staging luôn
+được dọn kể cả khi lỗi. Không tin cache chỉ dựa trên tên file hay kích thước. Cài đặt
+chỉ diễn ra sau khi mọi file cần thiết đã tải và verify xong, nên một lần chạy lỗi không
+để lại `data/raw/` thiếu nửa. Script dùng mirror revision-pinned vì endpoint chính thức
+cần đăng nhập.
 
 `data/raw/*` nằm ngoài Git. Kiểm tra bằng:
 
@@ -58,17 +71,21 @@ kiểu số/text, số hữu hạn, nhãn binary `0/1`, các trường bắt bu�
 `label=0` phải có `attack_cat=Normal`, còn `label=1` phải là category khác. Khi
 dùng manifest, validator kiểm tra size, SHA-256 và số bản ghi chính thức.
 
-Báo cáo riêng cho mỗi split gồm số hàng/cột, schema, phân bố nhãn và attack category,
-missing theo cột, duplicate sau khi bỏ cột định danh `id`, invalid labels và tỷ lệ lớp.
-Sai schema/hash/size/row count/nhãn/kiểu/cấu trúc là lỗi chặn (exit 1). Missing feature
-không bắt buộc và duplicate là cảnh báo; validator không xóa, điền, chuẩn hóa hay thay
-đổi dữ liệu.
+Dòng trống không bị bỏ qua âm thầm. Dòng không có delimiter và không có giá trị (rỗng
+hoặc chỉ khoảng trắng) được đếm và là lỗi chặn, thông báo nêu tổng số dòng và vị trí tối
+đa 5 dòng đầu. Dòng có delimiter nhưng giá trị rỗng không phải dòng trống: đủ 45 cột
+thì thành missing value, thiếu cột thành lỗi độ rộng hàng. Báo cáo cho mỗi split gồm
+số hàng/cột, schema, số dòng trống, phân bố nhãn và attack category, missing theo cột,
+duplicate sau khi bỏ cột định danh `id`, invalid labels và tỷ lệ lớp.
+Sai schema/hash/size/row count/nhãn/kiểu/cấu trúc/dòng trống là lỗi chặn (exit 1).
+Missing feature không bắt buộc và duplicate là cảnh báo; validator không xóa, điền,
+chuẩn hóa hay thay đổi dữ liệu.
 
 Kết quả thực ngày 2026-10-17 nằm tại
 `reports/data_quality/unsw_nb15_validation.json`: cả hai split khớp manifest, schema
-45 cột, số hàng 175.341/82.332, không missing, không invalid label và không mâu thuẫn
-label/category. Duplicate bỏ qua `id` lần lượt là 67.601 và 26.387; đây là đầu vào
-cho leakage audit ở issue sau, không bị tự động xóa trong #5.
+45 cột, số hàng 175.341/82.332, không dòng trống, không missing, không invalid label và
+không mâu thuẫn label/category. Duplicate bỏ qua `id` lần lượt là 67.601 và 26.387;
+đây là đầu vào cho leakage audit ở #7, không bị tự động xóa trong #5.
 
 Khi cả hai CSV vắng mặt, validator in `SKIPPED` và exit 0 theo contract M0; trạng thái
 đó không phải PASS. Fixture tổng hợp chỉ kiểm tra hành vi validator, không thay thế báo

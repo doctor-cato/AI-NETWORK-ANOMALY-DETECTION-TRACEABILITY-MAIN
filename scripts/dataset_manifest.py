@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -14,6 +15,49 @@ DATA_RAW = PROJECT_ROOT / "data" / "raw"
 DEFAULT_MANIFEST = PROJECT_ROOT / "data" / "UNSW_NB15_MANIFEST.json"
 
 SOURCE_PAGE = "https://research.unsw.edu.au/projects/unsw-nb15-dataset"
+
+# Every timestamp in the manifest is stored and validated as timezone-aware UTC.
+TIMESTAMP_KEYS = frozenset({"downloaded_at", "recorded_at_utc"})
+# Whole-second ISO 8601 only, so a recorded timestamp round-trips byte for byte.
+TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:Z|[+-]\d{2}:\d{2})")
+
+
+def parse_utc(value, field):
+    """Parse an ISO 8601 timestamp and reject naive, malformed or non-canonical input."""
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be an ISO 8601 string with a UTC offset")
+    text = value.strip()
+    normalized = f"{text[:-1]}+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as error:
+        raise ValueError(f"{field} is not a valid ISO 8601 timestamp: {value!r}") from error
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        raise ValueError(f"{field} must include a UTC offset, not a naive time: {value!r}")
+    if not TIMESTAMP_PATTERN.fullmatch(text):
+        raise ValueError(
+            f"{field} must use YYYY-MM-DDTHH:MM:SSZ or an explicit +/-HH:MM offset: {value!r}"
+        )
+    return parsed
+
+
+def format_utc(moment):
+    """Render an aware datetime as ISO 8601 UTC with a trailing Z."""
+    return moment.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def iter_timestamps(payload, prefix=""):
+    """Yield (field path, value) for every timestamp field in a manifest payload."""
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            path = f"{prefix}.{key}" if prefix else key
+            if key in TIMESTAMP_KEYS or key.endswith("_at_utc"):
+                yield path, value
+            else:
+                yield from iter_timestamps(value, path)
+    elif isinstance(payload, list):
+        for index, value in enumerate(payload):
+            yield from iter_timestamps(value, f"{prefix}[{index}]")
 
 
 def record(files, destination, acquired_from, downloaded_at):
@@ -33,9 +77,7 @@ def record(files, destination, acquired_from, downloaded_at):
         raise ValueError(
             "acquired-from must be an HTTPS URL without credentials, query or fragment"
         )
-    acquired = datetime.fromisoformat(downloaded_at.replace("Z", "+00:00"))
-    if acquired.tzinfo is None:
-        raise ValueError("downloaded-at must include a UTC offset or Z")
+    acquired = parse_utc(downloaded_at, "downloaded_at")
     entries = []
     for path in files:
         if path.name not in DEFAULT_FILES:
@@ -55,10 +97,8 @@ def record(files, destination, acquired_from, downloaded_at):
         "variant": "UNSW-NB15 published training/testing partition",
         "source_page": SOURCE_PAGE,
         "acquired_from": acquired_from,
-        "downloaded_at": downloaded_at,
-        "recorded_at_utc": datetime.now(timezone.utc)
-        .isoformat(timespec="seconds")
-        .replace("+00:00", "Z"),
+        "downloaded_at": format_utc(acquired),
+        "recorded_at_utc": format_utc(datetime.now(timezone.utc)),
         "checksum_scope": "local file bytes; UNSW has not published a SHA-256 for comparison",
         "files": entries,
     }
@@ -69,6 +109,11 @@ def record(files, destination, acquired_from, downloaded_at):
 
 def verify(manifest_path, directory):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    # Timestamps are validated in place; provenance metadata is never rewritten.
+    stamps = list(iter_timestamps(manifest))
+    for field, value in stamps:
+        parse_utc(value, field)
+    print(f"[dataset_manifest] VERIFIED {len(stamps)} timezone-aware timestamp(s) in manifest")
     entries = manifest["files"]
     if len(entries) != len(DEFAULT_FILES) or {entry["file"] for entry in entries} != set(
         DEFAULT_FILES

@@ -1,11 +1,15 @@
 """Synthetic CSV fixtures only; these are not UNSW-NB15 observations."""
 
 import csv
+import hashlib
 import importlib.util
+import io
 import json
 import subprocess
 import sys
+from email.message import Message
 from pathlib import Path
+from urllib.error import URLError
 
 import pytest
 
@@ -357,3 +361,444 @@ def test_fetch_rejects_checksum_mismatch(fetcher, tmp_path):
                 "sha256": "0" * 64,
             },
         )
+
+
+# --- fetch_unsw_nb15.py: safe local cache reuse ---------------------------------
+
+
+class FakeResponse:
+    """Minimal urlopen context manager returning fixed bytes."""
+
+    def __init__(self, payload, content_type="text/plain", status=200):
+        self._buffer = io.BytesIO(payload)
+        self.status = status
+        self.headers = Message()
+        self.headers["Content-Type"] = content_type
+
+    def read(self, size=-1):
+        return self._buffer.read(size)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+
+PAYLOAD = b"id,dur,proto,label\r\n1,0.1,tcp,0\r\n"
+
+
+def entry_for(payload):
+    return {"size_bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}
+
+
+def serve(fetcher, monkeypatch, response):
+    """Route every fetch to `response`; a callable response is invoked per call."""
+    calls = []
+
+    def fake_urlopen(request, timeout=None):
+        calls.append(request.full_url)
+        return response() if callable(response) else response
+
+    monkeypatch.setattr(fetcher, "urlopen", fake_urlopen)
+    return calls
+
+
+def staging_files(directory):
+    return sorted(path.name for path in directory.glob(".unsw-nb15-staging-*"))
+
+
+def test_fetch_cache_hit_avoids_network(fetcher, tmp_path, monkeypatch, capsys):
+    def explode(*args, **kwargs):
+        raise AssertionError("cache hit must not open a network connection")
+
+    monkeypatch.setattr(fetcher, "urlopen", explode)
+    (tmp_path / "a.csv").write_bytes(PAYLOAD)
+    fetcher.fetch(tmp_path, files={"a.csv": entry_for(PAYLOAD)})
+    out = capsys.readouterr().out
+    assert "CACHE_HIT" in out
+    assert "DOWNLOAD" not in out
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+
+
+MIRROR = "https://example.test/mirror"
+
+
+def fetch_one(fetcher, tmp_path, files, monkeypatch):
+    fetcher.fetch(tmp_path, files=files, base_url=MIRROR)
+
+
+def test_fetch_missing_file_downloads_verifies_and_installs(fetcher, tmp_path, monkeypatch, capsys):
+    calls = serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    out = capsys.readouterr().out
+    assert calls == [f"{MIRROR}/a.csv"]
+    assert "CACHE_INVALID" in out and "DOWNLOAD" in out and "VERIFIED" in out
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+    assert staging_files(tmp_path) == []
+
+
+def test_fetch_is_all_or_nothing_across_files(fetcher, tmp_path, monkeypatch, capsys):
+    """A failure on the second file must not leave a half-populated destination."""
+    payloads = {"a.csv": PAYLOAD, "b.csv": b"id,dur,label\r\n2,0.2,1\r\n"}
+    seen = []
+
+    def fake_urlopen(request, timeout=None):
+        seen.append(request.full_url)
+        if request.full_url.endswith("b.csv"):
+            raise URLError("offline")
+        return FakeResponse(payloads["a.csv"])
+
+    monkeypatch.setattr(fetcher, "urlopen", fake_urlopen)
+    with pytest.raises(URLError):
+        fetch_one(fetcher, tmp_path, {k: entry_for(v) for k, v in payloads.items()}, monkeypatch)
+    assert len(seen) == 2
+    assert sorted(path.name for path in tmp_path.iterdir()) == []
+    assert "CACHE_INVALID" in capsys.readouterr().out
+
+
+def test_fetch_corrupt_cache_is_replaced(fetcher, tmp_path, monkeypatch, capsys):
+    (tmp_path / "a.csv").write_bytes(b"truncated")
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetcher.fetch(tmp_path, files={"a.csv": entry_for(PAYLOAD)})
+    out = capsys.readouterr().out
+    assert "CACHE_INVALID" in out and "size mismatch" in out
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+    assert staging_files(tmp_path) == []
+
+
+def test_fetch_checksum_mismatch_cache_is_replaced(fetcher, tmp_path, monkeypatch, capsys):
+    # Same length, different bytes: only the SHA-256 comparison can catch this.
+    corrupt = bytes(len(PAYLOAD))
+    assert len(corrupt) == len(PAYLOAD)
+    (tmp_path / "a.csv").write_bytes(corrupt)
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetcher.fetch(tmp_path, files={"a.csv": entry_for(PAYLOAD)})
+    out = capsys.readouterr().out
+    assert "CACHE_INVALID" in out and "SHA-256 mismatch" in out
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+
+
+def test_fetch_cached_html_is_treated_as_invalid(fetcher, tmp_path, monkeypatch, capsys):
+    html = b"<!doctype html><title>login</title>\r\n" + b"0" * len(PAYLOAD)
+    (tmp_path / "a.csv").write_bytes(html)
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetcher.fetch(tmp_path, files={"a.csv": entry_for(PAYLOAD)})
+    out = capsys.readouterr().out
+    assert "unexpected HTML or Git LFS pointer" in out
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+
+
+def test_fetch_download_failure_keeps_cache_and_leaves_no_staging(
+    fetcher, tmp_path, monkeypatch, capsys
+):
+    (tmp_path / "a.csv").write_bytes(b"corrupt")
+    serve(fetcher, monkeypatch, lambda: (_ for _ in ()).throw(URLError("offline")))
+    assert fetcher.main(["--destination", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "CACHE_INVALID" in out
+    assert "ERROR" in out
+    # The unusable cache is left untouched rather than replaced by partial bytes.
+    assert (tmp_path / "a.csv").read_bytes() == b"corrupt"
+    assert staging_files(tmp_path) == []
+
+
+def test_fetch_rejects_html_payload_and_leaves_no_staging(fetcher, tmp_path, monkeypatch, capsys):
+    html = b"<!doctype html><title>login</title>"
+    serve(fetcher, monkeypatch, FakeResponse(html, content_type="text/html"))
+    assert fetcher.main(["--destination", str(tmp_path)]) == 1
+    assert "ERROR" in capsys.readouterr().out
+    assert not (tmp_path / "a.csv").exists()
+    assert staging_files(tmp_path) == []
+
+
+def test_fetch_rejects_checksum_mismatch_in_downloaded_payload(fetcher, tmp_path, monkeypatch):
+    # Same length, different bytes: only the SHA-256 comparison can catch this.
+    wrong = bytes(len(PAYLOAD))
+    assert len(wrong) == len(PAYLOAD)
+    serve(fetcher, monkeypatch, FakeResponse(wrong))
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert not (tmp_path / "a.csv").exists()
+    assert staging_files(tmp_path) == []
+
+
+def test_fetch_is_repeatable_and_stable(fetcher, tmp_path, monkeypatch, capsys):
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    files = {"a.csv": entry_for(PAYLOAD)}
+    fetcher.fetch(tmp_path, files=files)
+    first = (tmp_path / "a.csv").read_bytes()
+    fetcher.fetch(tmp_path, files=files)
+    assert (tmp_path / "a.csv").read_bytes() == first == PAYLOAD
+    assert capsys.readouterr().out.count("CACHE_HIT") == 1
+
+
+# --- validate_data.py: blank CSV lines are never skipped silently ---------------
+
+
+@pytest.mark.parametrize(
+    "row, blank",
+    [
+        ([], True),
+        (["   "], True),
+        (["\t"], True),
+        (["", "", ""], False),
+        (["", "", "", "", ""], False),
+        (["1"], False),
+    ],
+)
+def test_blank_line_classification(validator, row, blank):
+    assert validator.is_blank_line(row) is blank
+
+
+def write_lines(path, header, records):
+    lines = [",".join(header)]
+    lines.extend(record if isinstance(record, str) else ",".join(record) for record in records)
+    with path.open("w", encoding="utf-8", newline="") as stream:
+        stream.write("\r\n".join(lines) + "\r\n")
+
+
+def test_blank_line_fails_with_count_and_line_numbers(validator, tmp_path):
+    target = tmp_path / "blank.csv"
+    write_lines(
+        target,
+        validator.COLUMNS,
+        [row(validator), "", row(validator, id="2"), "   ", row(validator, id="3")],
+    )
+    with pytest.raises(ValueError) as error:
+        validator.validate_file(target)
+    message = str(error.value)
+    assert "2 blank CSV line(s)" in message
+    assert "3, 5" in message
+
+
+def test_blank_line_exit_code_and_message(validator, tmp_path, capsys):
+    target = tmp_path / "blank.csv"
+    write_lines(target, validator.COLUMNS, [row(validator), ""])
+    assert validator.main(["--file", str(target)]) == 1
+    assert "blank CSV line" in capsys.readouterr().out
+
+
+def test_blank_line_does_not_reach_counters_on_valid_file(validator, tmp_path):
+    target = tmp_path / "clean.csv"
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    report = validator.validate_file(target)
+    assert report["blank_lines"] == 0
+    assert report["rows"] == 1
+    assert report["duplicate_rows"] == 0
+
+
+def test_empty_delimited_row_is_a_missing_value_not_a_blank_line(validator, tmp_path):
+    target = tmp_path / "empty.csv"
+    write_lines(target, validator.COLUMNS, [row(validator), [""] * len(validator.COLUMNS)])
+    with pytest.raises(ValueError) as error:
+        validator.validate_file(target)
+    # Treated as a data row with empty values, never silently skipped as blank.
+    assert "blank CSV line" not in str(error.value)
+    assert "invalid label" in str(error.value)
+
+
+def test_short_empty_delimited_row_is_a_width_defect(validator, tmp_path):
+    target = tmp_path / "narrow.csv"
+    write_lines(target, validator.COLUMNS, [row(validator), ",,"])
+    with pytest.raises(ValueError, match="wrong column count"):
+        validator.validate_file(target)
+
+
+def test_trailing_newline_is_not_a_blank_line(validator, tmp_path):
+    target = tmp_path / "trailing.csv"
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    assert validator.validate_file(target)["rows"] == 1
+
+
+# --- dataset_manifest.py: timezone-aware UTC timestamps -------------------------
+
+
+@pytest.fixture
+def manifest_module(monkeypatch):
+    monkeypatch.syspath_prepend(str(SCRIPT.parent))
+    spec = importlib.util.spec_from_file_location("dataset_manifest", MANIFEST_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-10-17T16:30:00Z",
+        "2026-10-17T16:30:00+00:00",
+        "2026-10-17T18:30:00+02:00",
+        "2026-10-17T09:30:00-07:00",
+    ],
+)
+def test_aware_timestamps_normalize_to_utc(manifest_module, value):
+    moment = manifest_module.parse_utc(value, "downloaded_at")
+    assert moment.tzinfo is not None
+    assert manifest_module.format_utc(moment) == "2026-10-17T16:30:00Z"
+
+
+def test_format_utc_round_trip_is_stable(manifest_module):
+    once = manifest_module.format_utc(manifest_module.parse_utc("2026-10-17T18:30:00+02:00", "d"))
+    twice = manifest_module.format_utc(manifest_module.parse_utc(once, "d"))
+    assert once == twice == "2026-10-17T16:30:00Z"
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("2026-10-17T16:30:00", "naive"),
+        ("2026-10-17 16:30", "naive"),
+        ("2026-10-17", "naive"),
+        ("17/10/2026 16:30", "not a valid ISO 8601"),
+        ("", "not a valid ISO 8601"),
+        (1750000000, "must be an ISO 8601 string"),
+        (None, "must be an ISO 8601 string"),
+        ("20261017T163000Z", "must use YYYY-MM-DDTHH:MM:SSZ"),
+        ("2026-W42-4T00:00:00+00:00", "must use YYYY-MM-DDTHH:MM:SSZ"),
+        ("2026-10-17 16:30:00+00:00", "must use YYYY-MM-DDTHH:MM:SSZ"),
+        ("2026-10-17T16:30:00.500Z", "must use YYYY-MM-DDTHH:MM:SSZ"),
+    ],
+)
+def test_parse_utc_rejects_naive_and_malformed(manifest_module, value, expected):
+    with pytest.raises(ValueError, match=expected):
+        manifest_module.parse_utc(value, "downloaded_at")
+
+
+def test_iter_timestamps_finds_nested_provenance_fields(manifest_module):
+    payload = {
+        "downloaded_at": "2026-10-17T16:30:00Z",
+        "recorded_at_utc": "2026-10-17T16:30:00Z",
+        "official_source": {"accessed_at_utc": "2026-10-17T16:30:00Z", "url": "https://x.test"},
+        "observations": [{"checked_at_utc": "2026-10-17T16:30:00Z"}, {"result": "ok"}],
+    }
+    fields = {field for field, _ in manifest_module.iter_timestamps(payload)}
+    assert fields == {
+        "downloaded_at",
+        "recorded_at_utc",
+        "official_source.accessed_at_utc",
+        "observations[0].checked_at_utc",
+    }
+
+
+def write_manifest(path, files, **extra):
+    path.write_text(json.dumps({"files": files, **extra}, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def manifest_run(action, manifest, directory, extra_args=()):
+    return subprocess.run(
+        [
+            sys.executable,
+            str(MANIFEST_SCRIPT),
+            action,
+            "--manifest",
+            str(manifest),
+            "--directory",
+            str(directory),
+            *extra_args,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def record_run(tmp_path, downloaded_at, manifest=None):
+    paths = []
+    for name in ("UNSW_NB15_training-set.csv", "UNSW_NB15_testing-set.csv"):
+        target = tmp_path / name
+        write_csv(target, ["id", "proto", "label"], [["1", "tcp", "0"]])
+        paths += ["--file", str(target)]
+    target_manifest = manifest or (tmp_path / "manifest.json")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(MANIFEST_SCRIPT),
+            "record",
+            *paths,
+            "--acquired-from",
+            "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+            "--downloaded-at",
+            downloaded_at,
+            "--manifest",
+            str(target_manifest),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result, target_manifest
+
+
+def test_record_normalizes_offset_timestamp_to_utc(tmp_path):
+    result, manifest = record_run(tmp_path, "2026-10-17T18:30:00+02:00")
+    assert result.returncode == 0, result.stdout + result.stderr
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    assert data["downloaded_at"] == "2026-10-17T16:30:00Z"
+    assert data["recorded_at_utc"].endswith("Z")
+
+
+def test_record_rejects_naive_downloaded_at(tmp_path):
+    result, manifest = record_run(tmp_path, "2026-10-17T16:30:00")
+    assert result.returncode == 1
+    assert "naive" in result.stdout
+    assert not manifest.exists()
+
+
+def test_record_rejects_malformed_downloaded_at(tmp_path):
+    result, _ = record_run(tmp_path, "17/10/2026")
+    assert result.returncode == 1
+    assert "not a valid ISO 8601" in result.stdout
+
+
+def test_verify_accepts_utc_manifest_without_rewriting(tmp_path):
+    result, manifest = record_run(tmp_path, "2026-10-17T18:30:00+02:00")
+    assert result.returncode == 0, result.stdout + result.stderr
+    before = manifest.read_bytes()
+    verified = manifest_run("verify", manifest, tmp_path)
+    assert verified.returncode == 0, verified.stdout + verified.stderr
+    assert "timezone-aware timestamp" in verified.stdout
+    # verify must not rewrite provenance metadata or add a volatile timestamp.
+    assert manifest.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "stamp, expected",
+    [
+        ("2026-10-17T16:30:00", "naive"),
+        ("not-a-timestamp", "not a valid ISO 8601"),
+    ],
+)
+def test_verify_rejects_bad_manifest_timestamp(tmp_path, stamp, expected):
+    result, manifest = record_run(tmp_path, "2026-10-17T16:30:00Z")
+    assert result.returncode == 0, result.stdout + result.stderr
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["downloaded_at"] = stamp
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    verified = manifest_run("verify", manifest, tmp_path)
+    assert verified.returncode == 1
+    assert expected in verified.stdout
+
+
+def test_verify_rejects_nested_naive_provenance_timestamp(tmp_path):
+    result, manifest = record_run(tmp_path, "2026-10-17T16:30:00Z")
+    assert result.returncode == 0, result.stdout + result.stderr
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["independent_observations"] = [
+        {"source": "https://x.test", "checked_at_utc": "2026-10-17"}
+    ]
+    manifest.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    verified = manifest_run("verify", manifest, tmp_path)
+    assert verified.returncode == 1
+    assert "naive" in verified.stdout
+    assert "independent_observations[0].checked_at_utc" in verified.stdout
+
+
+def test_shipped_manifest_timestamps_are_utc(manifest_module):
+    root = Path(__file__).resolve().parents[2]
+    manifest = json.loads((root / "data" / "UNSW_NB15_MANIFEST.json").read_text(encoding="utf-8"))
+    stamps = list(manifest_module.iter_timestamps(manifest))
+    assert stamps, "shipped manifest must carry provenance timestamps"
+    for field, value in stamps:
+        assert manifest_module.format_utc(manifest_module.parse_utc(value, field)).endswith("Z")

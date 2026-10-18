@@ -23,7 +23,7 @@ Validator mặc định tìm `data/raw/UNSW_NB15_training-set.csv` và
 `data/raw/UNSW_NB15_testing-set.csv`; khi cả hai thiếu, in SKIPPED và exit 0.
 Đó không phải bằng chứng dữ liệu thật đã đạt. `--file` chỉ định tên file dưới
 `data/raw/` hoặc đường dẫn rõ ràng; file thiếu và dữ liệu sai trả exit 1.
-Profile kiểm tra 45 cột, kiểu dữ liệu, nhãn, attack category, missing và duplicate. Báo cáo trên cặp CSV đã đối chiếu mirror nằm trong `reports/data_quality/unsw_nb15_validation.json`. Leakage audit thuộc #7.
+Profile kiểm tra 45 cột, kiểu dữ liệu, nhãn, attack category, missing, duplicate và dòng trống. Dòng CSV không có delimiter và không có giá trị là lỗi chặn (exit 1) với số dòng và vị trí, không bị bỏ qua âm thầm; dòng có delimiter nhưng giá trị rỗng vẫn thuộc kiểm tra missing/độ rộng hàng. Báo cáo trên cặp CSV đã đối chiếu mirror nằm trong `reports/data_quality/unsw_nb15_validation.json`. Leakage audit thuộc #7.
 
 Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test constructor của RF/IF không chứng minh fit/predict hoặc kết quả trên UNSW-NB15. SKIPPED và fixture không thay thế thực nghiệm thật.
 
@@ -55,9 +55,17 @@ python scripts/dataset_manifest.py verify
 python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
 ```
 
-Script fetch tải vào thư mục tạm, kiểm tra HTTP response, size và SHA-256 trước khi
-đưa byte không đổi vào `data/raw/`. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo
-thật lưu aggregate row/schema/label/missing/duplicate và checksum, không chứa dòng raw.
+Script fetch tái sử dụng cache local: file trong `data/raw/` chỉ được giữ khi khớp
+SHA-256 và kích thước theo manifest, nên chạy lại không tải lại (`CACHE_HIT`). File thiếu
+hoặc sai được tải lại từ mirror revision-pinned vào staging tạm cùng thư mục đích, kiểm tra
+HTTP response, size và SHA-256 trước khi thay thế nguyên tử; staging luôn được dọn kể cả
+khi lỗi. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo thật lưu aggregate
+row/schema/blank/missing/duplicate và checksum, không chứa dòng raw.
 Fixture test chỉ kiểm tra hành vi validator.
+
+Timestamp trong manifest là ISO 8601 nguyên giây kèm offset tường minh
+(`YYYY-MM-DDTHH:MM:SSZ` hoặc `±HH:MM`), không dùng naive datetime. `record` chuẩn hóa
+`--downloaded-at` về UTC trước khi ghi; `verify` kiểm tra mọi timestamp tìm thấy trong
+manifest và chỉ đọc, nên chạy verify không đổi file manifest.
 
 Cập nhật: 2026-10-17.
