@@ -1,345 +1,235 @@
-# Phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng
+# AI-Based Network Anomaly Detection and Traceability System with Secure Behavioral Vectorization and Adaptive Key Rotation
 
-**Ngôn ngữ tài liệu:** Tiếng Việt | **Tên dự án:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
+Hệ thống nghiên cứu về phát hiện bất thường mạng, phân tích rủi ro và truy vết hành vi trong phạm vi hạ tầng được phép giám sát. Đề tài kết hợp **UNSW-NB15**, các mô hình supervised/unsupervised, **Behavioral Vector**, **Risk/Trace Engine**, mã hóa **AES-GCM** và **Adaptive Key Rotation**.
 
-**Trạng thái:** C0 của roadmap Phương án B đang triển khai trên nền M0 lịch sử. C1–C11
-chưa được coi là hoàn thành nếu thiếu code/test/evidence. PR #22 chứa workstream #4/#5
-(tải UNSW-NB15 tái lập, manifest provenance, validation) với bằng chứng local riêng, vẫn
-mở và không được suy thành trạng thái `main` cho đến khi được review/merge hợp lệ. Xem
-`docs/ROADMAP_FULL_SYSTEM.md`, `docs/IMPLEMENTATION_CHECKPOINTS.md` và
-`docs/TRACEABILITY_MATRIX.md`.
+> **Trạng thái hiện tại:** C0 — Governance & Documentation đã được triển khai trong nhánh công việc hiện tại. C1–C11 vẫn chủ yếu `PLANNED`; chưa có kết quả ML end-to-end hoặc benchmark được công bố trong repository. Trạng thái và bằng chứng chuyển tiếp được ghi trong [`docs/IMPLEMENTATION_CHECKPOINTS.md`](docs/IMPLEMENTATION_CHECKPOINTS.md).
 
-- **License:** Apache License 2.0 (not MIT)
-- **Repository:** https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN
-- **Branch:** `main`
-- **Project type:** Course project — roadmap prototype C0–C11
+## Tổng quan
 
----
+### Vấn đề nghiên cứu
 
-## Project title
+Network flow, API log, authentication event và session event có thể chứa các mẫu hành vi bình thường hoặc bất thường. Một hệ thống có giá trị nghiên cứu cần đồng thời:
 
-- **English:** AI-Based Network Anomaly Detection Using Machine Learning and Network Traffic Behavior Analysis
-- **Vietnamese:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
+- phát hiện và phân loại hành vi bất thường với protocol đánh giá có thể tái lập;
+- biểu diễn hành vi bằng vector có versioned schema, thay vì phụ thuộc vào một định danh đơn lẻ;
+- kết hợp anomaly score, classification và evidence thành Risk Score có giải thích;
+- liên kết các event/session/request thành incident timeline với confidence rõ ràng;
+- bảo vệ vector và evidence bằng cryptography chuẩn, có key lifecycle và rotation;
+- phân biệt rõ bằng chứng đã triển khai, đã kiểm thử và mới chỉ nằm trong kế hoạch.
 
-## Tóm tắt ngắn
+### Mục tiêu
 
-Xây dựng hệ thống lab tái lập được cho UNSW-NB15 và network/API/session events: phát hiện
-và phân loại bất thường, Behavioral Vector, Risk/Trace Engine, AES-GCM/key rotation,
-FastAPI/SQLite và Streamlit. Hệ thống không tuyên bố zero-day, attacker identity hoặc
-production readiness khi chưa có bằng chứng.
+Phương án B hướng tới một pipeline lab gồm:
 
----
+1. kiểm tra provenance, schema, chất lượng và leakage của UNSW-NB15;
+2. preprocessing có fit boundary đúng và các mô hình RF/XGBoost, Isolation Forest/Autoencoder;
+3. Network/API/Session Behavioral Vector và correlation confidence;
+4. Risk Engine (0–100) và Trace Engine (evidence, grouping, timeline);
+5. AES-GCM, metadata versioning, historical decryption và fixed/adaptive key rotation;
+6. FastAPI, SQLite và Streamlit cho tích hợp, lưu trữ và trình diễn trong lab;
+7. bảy experiments có protocol, artifact, result và limitation được ghi nhận.
 
-## Phát biểu vấn đề và động lực
+Hệ thống không nhằm xác định danh tính thật của attacker, chứng minh zero-day, hay tự động tác động lên hệ thống production.
 
-Lưu lượng mạng chứa cả mẫu kết nối bình thường và bất thường. Việc phát hiện bất thường hỗ trợ nhận thức bảo mật, nhưng đánh giá phải minh bạch, tái lập và giới hạn ở bằng chứng đã xác minh. Bài tập này minh họa một pipeline ML có cấu trúc cho dự án 5–6 tuần.
+## Thành phần và tính năng
 
-## Mục tiêu (bắt buộc — xem `docs/PROJECT_CHARTER.md`)
+| Thành phần | Định hướng | Trạng thái trong repository hiện tại |
+| --- | --- | --- |
+| Data quality & preprocessing | UNSW-NB15, schema, missing/duplicate, split trước mọi fit, leakage audit | C1–C2 `PLANNED`; validator cơ bản hiện có |
+| Supervised ML | Random Forest là baseline; XGBoost dùng cùng protocol | RF constructor có trong code; training/evaluation và XGBoost `PLANNED` |
+| Unsupervised ML | Isolation Forest và Autoencoder reconstruction error; threshold trên validation | Isolation Forest constructor có trong code; Autoencoder và protocol `PLANNED` |
+| Behavioral Vector | Network/API/Session vector, normalization, similarity, missing-feature policy | `PLANNED` (C5) |
+| Risk/Trace Engine | Risk Score 0–100, explanation, incident grouping, evidence và timeline | `PLANNED` (C6) |
+| Security layer | AES-GCM, key identifier, unique nonce, recovery và rotation 30 phút/adaptive | `PLANNED` (C7) |
+| Response | Risk-triggered early rotation, cooldown, rate limit, idempotency, dry-run | `PLANNED` (C8); chỉ lab/dry-run |
+| API, storage, dashboard | FastAPI, SQLite mặc định, Streamlit thin client | `PLANNED` (C9) |
 
-Phạm vi bắt buộc được chia thành C0–C11: governance; Data/EDA; preprocessing; RF và
-XGBoost; Isolation Forest và Autoencoder; Behavioral Vector; Risk/Trace; AES-GCM và
-key lifecycle; adaptive dry-run response; FastAPI/SQLite/Streamlit; 7 experiments; và
-bàn giao report/slides/demo cho 5 vai trò.
+Các constructor hoặc test import hiện có không chứng minh mô hình đã fit/predict, pipeline đã chạy, hay hệ thống đã sẵn sàng production.
 
-Ma trận yêu cầu → issue → deliverable → acceptance criteria → cách kiểm chứng nằm ở
-`docs/TRACEABILITY_MATRIX.md`.
+## System Architecture
 
-## Scope and non-goals
+Sơ đồ dưới đây mô tả **kiến trúc mục tiêu của Phương án B**. Các khối có nhãn `PLANNED` chưa được xem là tính năng hoạt động trên `main`.
 
-### Trong phạm vi
-- Toàn bộ module và checkpoint trong `docs/ROADMAP_FULL_SYSTEM.md`, với security response
-  chỉ ở chế độ lab/dry-run.
+```mermaid
+flowchart LR
+    A[UNSW-NB15 / lab events<br/>network • API • auth • session] --> B[Data quality & provenance<br/>C1 • PLANNED]
+    B --> C[Split before fit<br/>preprocessing & feature audit<br/>C2 • PLANNED]
 
-### Rõ ràng ngoài phạm vi
-- LSTM, Transformer, GNN và post-quantum cryptography.
-- Tuyên bố phát hiện zero-day không có chứng cứ thực nghiệm.
-- Truy vết danh tính thật của attacker.
-- Response trên hệ thống thật, phản công, production deployment hoặc xử lý phân tán.
+    C --> D[ML Engine<br/>C3–C4 • PLANNED]
+    D --> E1[Random Forest<br/>baseline]
+    D --> E2[XGBoost]
+    D --> E3[Isolation Forest]
+    D --> E4[Autoencoder]
+    E1 --> F[Detection & classification results<br/>score • label • artifact metadata]
+    E2 --> F
+    E3 --> F
+    E4 --> F
 
----
+    C --> G[Behavioral Vector Engine<br/>versioned schemas • C5 • PLANNED]
+    G --> H[Correlation<br/>confidence • similarity]
+    F --> I[Risk Engine<br/>0–100 • explanation<br/>C6 • PLANNED]
+    H --> J[Trace Engine<br/>evidence • grouping • timeline<br/>C6 • PLANNED]
+    I --> J
 
-## Bộ dữ liệu
-
-- **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
-- **Tham chiếu nguồn:** [trang UNSW-NB15 chính thức](https://research.unsw.edu.au/projects/unsw-nb15-dataset); xem `docs/DATASET.md`
-- **Trạng thái:** Raw CSV không nằm trong Git. PR #22 có manifest/validator và bằng chứng
-  local riêng; `main` chưa chứa workstream đó cho đến khi được review/merge hợp lệ.
-- **Hướng dẫn tải:** `python scripts/fetch_unsw_nb15.py`; xem `docs/DATASET.md`
-- **Checksum / phiên bản:** SHA-256 trên PR #22 là project-computed local hash, không phải
-  checksum do UNSW công bố; manifest ở `data/UNSW_NB15_MANIFEST.json`, báo cáo thật ở
-  `reports/data_quality/unsw_nb15_validation.json`
-- **Điều kiện sử dụng:** Học thuật / nghiên cứu; không phân phối lại dữ liệu gốc mà không xác nhận điều khoản
-- **Dữ liệu fixture:** `tests/` dùng fixture tổng hợp rõ ràng là test-only, không phải UNSW-NB15
-
----
-
-## Phương pháp (tổng quan — xem `docs/METHODOLOGY.md`)
-
-1. Đọc và kiểm tra dữ liệu.
-2. EDA + kiểm tra rò rỉ dữ liệu (cột định danh, bản ghi trùng, giá trị thiếu, phân bố lớp).
-3. Chia train/val/test (trước mọi fitting).
-4. Pipeline tiền xử lý (fit trên train; lưu artifact).
-5. Random Forest (giám sát) — huấn luyện, dự đoán, tính Precision/Recall/F1/Macro-F1/confusion matrix/FPR.
-6. Isolation Forest (không giám sát) — sản xuất điểm bất thường; chọn ngưỡng trên validation; đánh giá với protocol riêng.
-7. Lưu ý: Isolation Forest có setup đánh giá khác với RF giám sát. Các metric chỉ so sánh được khi cả hai protocol được mô tả rõ ràng.
-
----
-
-## System architecture (see `docs/ARCHITECTURE.md`)
-
-Data flow: Raw → Validate → EDA/Leakage Audit → Split → Preprocessing Pipeline → Model (RF / IF) → Evaluation → Error Analysis → Inference → Demo/Report.
-
-Modules under `src/network_anomaly/`: config, data, preprocessing, features, models (random_forest, isolation_forest), evaluation, inference, visualization.
-
----
-
-## Models (planned / partially implemented)
-
-- **Random Forest** (`src/network_anomaly/models/random_forest.py`) — supervised, **baseline bắt buộc**; hiện chỉ có constructor `build_model()`, chưa fit/predict (M2, #10).
-- **Isolation Forest** (`src/network_anomaly/models/isolation_forest.py`) — bắt buộc ở C4;
-  hiện chỉ có constructor `build_model()`, chưa fit/threshold/evaluate (#11).
-
-Constructor test không chứng minh huấn luyện hay đánh giá đã chạy. Xem `docs/ARCHITECTURE.md` cho trạng thái từng mô-đun.
-
----
-
-## Metrics and evaluation protocol (see `docs/EVALUATION.md`)
-
-- Precision, Recall, F1-score (binary / per-class), Macro-F1, confusion matrix (labeled axes), False Positive Rate.
-- Confusion matrix interpreted clearly (normal / anomaly axes).
-- Isolation Forest evaluation uses score-to-label conversion with documented threshold selection.
-- No fabricated accuracy or F1 claims.
-
----
-
-## Repository structure (see full tree in repo; key directories)
-
-```
-.
-├── README.md
-├── LICENSE (Apache 2.0 — full text; not MIT)
-├── pyproject.toml
-├── requirements.txt
-├── .gitignore
-├── docs/
-│   ├── PROJECT_CHARTER.md
-│   ├── PROBLEM_STATEMENT.md
-│   ├── REQUIREMENTS.md
-│   ├── TRACEABILITY_MATRIX.md
-│   ├── ISSUE_SUPPLEMENTS.md
-│   ├── DATASET.md
-│   ├── METHODOLOGY.md
-│   ├── ARCHITECTURE.md
-│   ├── EXPERIMENT_PLAN.md
-│   ├── EVALUATION.md
-│   ├── REPRODUCIBILITY.md
-│   ├── ETHICS_AND_PRIVACY.md
-│   ├── REPORT_OUTLINE.md
-│   ├── PRESENTATION_OUTLINE.md
-│   ├── TEAM_TASKS.md
-│   ├── DEVELOPMENT_PLAN.md
-│   └── FUTURE_WORK.md
-├── src/network_anomaly/
-│   ├── config.py
-│   ├── data/, preprocessing/, features/, models/, evaluation/, inference/, visualization/
-├── notebooks/README.md (planned notebooks listed)
-├── scripts/
-│   ├── check_environment.py
-│   ├── validate_data.py
-│   └── run_experiments.py
-├── tests/unit/ + integration/
-├── reports/figures/ + artifacts/ (chỉ giữ .gitkeep; nội dung không commit)
-├── data/raw/, interim/, processed/ (chỉ giữ .gitkeep; dataset không commit)
-├── AGENTS.md + .agents/ (workflow cho AI agent: PLAN → IMPLEMENT → VERIFY → REVIEW)
-└── .github/ (issue templates, PR template, CI)
+    I --> K[Key Manager<br/>key-id • lifecycle • recovery<br/>C7 • PLANNED]
+    I --> L[Adaptive rotation & response<br/>fixed 30 min • early rotation<br/>dry-run • C8 • PLANNED]
+    L --> K
+    J --> M[Security event envelope<br/>AES-GCM • unique nonce • tag<br/>C7 • PLANNED]
+    K --> M
+    M --> N[(SQLite persistence<br/>event • session • evidence<br/>key metadata • rotation audit<br/>C9 • PLANNED)]
+    L --> N
+    N --> O[FastAPI<br/>validated service API • C9 • PLANNED]
+    O --> P[Streamlit<br/>thin dashboard client • C9 • PLANNED]
 ```
 
----
+## Technology Stack
 
-## Environment setup
+| Đã có trong repository | Dự kiến theo Phương án B |
+| --- | --- |
+| Python 3.11+, pandas, NumPy, scikit-learn, joblib, matplotlib, seaborn, pytest | XGBoost và Autoencoder |
+| `network_anomaly` package, config, metrics, model constructors và data validator cơ bản | Behavioral Vector Engine cho network/API/session |
+| Unit/integration tests và GitHub Actions workflow | Risk/Trace Engine, correlation confidence và incident timeline |
+| `scripts/check_environment.py`, `scripts/validate_data.py`, `scripts/run_experiments.py --step check-data` | AES-GCM, Key Manager, key lifecycle và adaptive rotation |
+| — | FastAPI, SQLite persistence, PostgreSQL adapter tùy chọn và Streamlit thin client |
 
-- Python 3.11+ (CI kiểm tra 3.11 và 3.12 trên Ubuntu và Windows; xem `.github/workflows/ci.yml`)
-- Dependencies dùng giới hạn phiên bản tối thiểu (`>=`) trong `pyproject.toml` và `requirements.txt`; chưa có lockfile. Ghi phiên bản thực tế bằng `python -m pip freeze` khi tái lập.
-- Cài: `python -m pip install -e .` (hoặc `python -m venv .venv` rồi `python -m pip install -e .`)
-- Check environment: `python scripts/check_environment.py` (kiểm tra phiên bản Python, dependency và chính package `network_anomaly`)
-- Check syntax: `python -m compileall -q src scripts tests`; kiểm tra import riêng bằng `python -c "import network_anomaly"`.
+Các mục ở cột “Dự kiến” chỉ trở thành `IMPLEMENTED` khi có code, test và evidence tương ứng. Dependency hiện được khai báo dạng lower bound trong `pyproject.toml`; repository chưa có lockfile.
 
----
+## Dataset UNSW-NB15
 
-## Cài đặt
+UNSW-NB15 là dataset nghiên cứu chính của đề tài. Raw CSV không được commit vào Git và phải được đặt ngoài phạm vi version control. Nguồn tham khảo chính thức: [UNSW-NB15 Dataset](https://research.unsw.edu.au/projects/unsw-nb15-dataset).
 
-```bash
-# Windows PowerShell
+- Hướng dẫn provenance và chuẩn bị dữ liệu: [`docs/DATASET.md`](docs/DATASET.md).
+- Validator hiện có: `scripts/validate_data.py`; khi chưa có raw data, script trả `SKIPPED`, không phải validation `PASS`.
+- Fixture trong `tests/` là dữ liệu tổng hợp cho kiểm thử, không phải UNSW-NB15.
+- PR [#22](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/pull/22) là workstream acquisition/validation cho Issue #4/#5, tách khỏi trạng thái implementation của `main`. Đọc [`docs/IMPLEMENTATION_CHECKPOINTS.md`](docs/IMPLEMENTATION_CHECKPOINTS.md) để biết evidence và điều kiện chuyển tiếp; không suy diễn trạng thái code từ PR sang `main`.
+- Workstream đó bổ sung `scripts/fetch_unsw_nb15.py` (tải mirror revision-pinned, cache, lock, rollback), manifest ở `data/UNSW_NB15_MANIFEST.json` và báo cáo tổng hợp ở `reports/data_quality/unsw_nb15_validation.json`.
+- Các SHA-256 trong workstream đó là **project-computed local hashes**, không phải checksum chính thức do UNSW công bố.
+
+Không ghi nhận metric, row count, checksum hoặc kết quả thực nghiệm như kết quả hiện hành nếu chưa có bằng chứng tương ứng trong checkout/PR được nêu rõ.
+
+## Installation & Quick Start
+
+Yêu cầu Python `>=3.11`.
+
+```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
+python scripts/check_environment.py
 ```
 
-Trên macOS/Linux, thay dòng kích hoạt bằng `source .venv/bin/activate`.
-
----
-
-## Cách chuẩn bị dữ liệu
+Trên macOS/Linux:
 
 ```bash
-# Tải mirror revision-pinned sau khi đọc giới hạn provenance trong docs/DATASET.md
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+python scripts/check_environment.py
+```
+
+Các lệnh hiện có và có thể chạy trên checkout này:
+
+```bash
+python scripts/check_environment.py
+python scripts/validate_data.py
+python scripts/run_experiments.py --step check-data
+python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
+```
+
+Sau khi workstream acquisition của PR #22 có trong checkout, vòng lặp dữ liệu đầy đủ là:
+
+```bash
 python scripts/fetch_unsw_nb15.py
 python scripts/dataset_manifest.py verify
 python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
 ```
 
-Dataset không được commit; xem `docs/DATASET.md` để biết chi tiết nguồn và điều kiện sử dụng.
+`run_experiments.py` chỉ triển khai bước `check-data`; các bước `baseline`, `evaluate` và `inference` hiện trả exit code `3` với trạng thái `NOT IMPLEMENTED`. Không sử dụng chúng như bằng chứng mô hình đã được huấn luyện hoặc đánh giá.
 
----
+## Testing & Reproducibility
 
-## Cách chạy kiểm tra
+CI và kiểm tra cục bộ được mô tả trong [`.github/workflows/ci.yml`](.github/workflows/ci.yml) và [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md). Lệnh kiểm tra nền:
 
 ```bash
 python scripts/check_environment.py
-python scripts/validate_data.py        # SKIPPED (exit 0) nếu chưa tải dataset; không phải validation PASS
-python -m pytest tests -q              # unit + integration, không cần dataset
-python scripts/run_experiments.py --step check-data   # gọi validate_data
+python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
+git diff --check
 ```
 
----
+Seed cấu hình hiện tại là `42`. Khi các experiment được triển khai, mỗi kết quả cần ghi dataset/split identifier, seed, preprocessing boundary, dependency versions, config, metrics, artifact và reproduction command. Fixture tổng hợp chỉ kiểm tra hành vi code; không nâng trạng thái thành `EXPERIMENTALLY VALIDATED` trên UNSW-NB15.
 
-## Cách huấn luyện / đánh giá (đã dự kiến — cần dataset)
+## Implementation Status (C0–C11)
 
-```bash
-# Kiểm tra constructor (không phải huấn luyện):
-python -c "from network_anomaly.models.random_forest import build_model; print('RF OK')"
-# Entrypoint huấn luyện/đánh giá/suy luận chưa tồn tại ở M0 — script báo rõ và trả exit khác 0:
-python scripts/run_experiments.py --step baseline    # exit 3 = NOT IMPLEMENTED (M2, #10)
-python scripts/run_experiments.py --step evaluate   # exit 3 = NOT IMPLEMENTED (M3, #12)
-python scripts/run_experiments.py --step inference  # exit 3 = NOT IMPLEMENTED (M4, #15)
-```
+| Checkpoint | Phạm vi | Trạng thái hiện tại |
+| --- | --- | --- |
+| C0 | Governance, scope, architecture, traceability, backlog | `IMPLEMENTED`; evidence và phần còn lại xem checkpoint log |
+| C1 | Data quality, EDA, leakage audit | `PLANNED`; #4/#5 `TESTED` trên PR #22, chưa đồng nhất với `main`; #6/#7 `PLANNED` |
+| C2 | Leakage-safe preprocessing và artifacts | `PLANNED` |
+| C3 | Random Forest và XGBoost supervised protocol | `PLANNED`; RF mới có constructor |
+| C4 | Isolation Forest, Autoencoder, unknown-attack holdout | `PLANNED`; Isolation Forest mới có constructor |
+| C5 | Versioned Behavioral Vector và correlation confidence | `PLANNED` |
+| C6 | Risk Engine và Trace Engine | `PLANNED` |
+| C7 | AES-GCM và key lifecycle | `PLANNED` |
+| C8 | Adaptive response, cooldown, rate limit, idempotency | `PLANNED`; lab/dry-run |
+| C9 | FastAPI, SQLite, Streamlit, integration/E2E | `PLANNED` |
+| C10 | Bảy research experiments | `PLANNED` |
+| C11 | Report, slides, demo, audit và handoff | `PLANNED` |
 
-Không có lệnh inference dạng `python src/network_anomaly/inference/pipeline.py <input>` ở M0; entrypoint
-CSV cho inference thuộc issue #15. Chạy file đó hiện không in gì và thoát với code 0 — đừng dùng như bằng chứng
-đã dự đoán.
+Bảng truy vết đầy đủ: [`docs/TRACEABILITY_MATRIX.md`](docs/TRACEABILITY_MATRIX.md). Checkpoint log: [`docs/IMPLEMENTATION_CHECKPOINTS.md`](docs/IMPLEMENTATION_CHECKPOINTS.md).
 
-Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực nghiệm (xem `docs/REPRODUCIBILITY.md`).
+## Research Experiments
 
----
+Kế hoạch nghiên cứu gồm bảy so sánh, chưa được trình bày như kết quả đã chạy:
 
-## Tests
+1. Random Forest so với XGBoost.
+2. Isolation Forest so với Autoencoder.
+3. Raw imbalance so với class weighting/oversampling trên training set.
+4. Known-attack detection so với unknown-attack holdout.
+5. Correlation dựa trên IP/API identity so với Behavioral Vector.
+6. Fixed 30-minute key rotation so với Adaptive Key Rotation.
+7. Có mã hóa so với không mã hóa để đo latency, throughput, CPU và RAM.
 
-- Unit config/model: `tests/unit/test_basic.py`
-- Unit validator/manifest (fixture tổng hợp + exit code): `tests/unit/test_validate_data.py`
-- Unit exit-code contract của experiment runner: `tests/unit/test_run_experiments.py`
-- Integration (smoke): `tests/integration/test_pipeline.py`
-- CI chạy toàn bộ `tests/` trên Ubuntu và Windows, Python 3.11 và 3.12, không cần dataset (`.github/workflows/ci.yml`)
-- Fixture data in tests clearly marked synthetic, not UNSW-NB15
+Protocol, metric và điều kiện chấp nhận nằm trong [`docs/EXPERIMENT_PLAN.md`](docs/EXPERIMENT_PLAN.md) và [`docs/ROADMAP_FULL_SYSTEM.md`](docs/ROADMAP_FULL_SYSTEM.md). Không chọn threshold, feature, hyperparameter hoặc calibration bằng test set.
 
----
+## Documentation
 
-## Expected outputs (planned / verified status marked)
+- [Problem statement](docs/PROBLEM_STATEMENT.md) và [project charter](docs/PROJECT_CHARTER.md)
+- [Requirements](docs/REQUIREMENTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md)
+- [System architecture](docs/ARCHITECTURE.md) và [full roadmap](docs/ROADMAP_FULL_SYSTEM.md)
+- [Dataset protocol](docs/DATASET.md) và [reproducibility](docs/REPRODUCIBILITY.md)
+- [Evaluation](docs/EVALUATION.md) và [methodology](docs/METHODOLOGY.md)
+- [Ethics & privacy](docs/ETHICS_AND_PRIVACY.md)
+- [Team tasks](docs/TEAM_TASKS.md), [report outline](docs/REPORT_OUTLINE.md) và [presentation outline](docs/PRESENTATION_OUTLINE.md)
 
-- [Planned] EDA notebook / figures (class distribution, missing values, duplicates)
-- [Planned] Preprocessing pipeline artifacts (fit objects, encoded data)
-- [Implemented (constructor only) / Not Verified] Random Forest model code; training not verified (depends on dataset)
-- [Implemented (constructor only) / Optional] Isolation Forest module; evaluation protocol documented separately
-- [Implemented (no FPR) / Not Verified] `evaluation/metrics.py` returns Precision, Recall, F1, Macro-F1, confusion matrix; FPR thuộc #12
-- [Planned] Metrics files on real data (Precision, Recall, F1, Macro-F1, confusion matrix, FPR)
-- [Planned] Error analysis write-up (false positives / false negatives)
-- [Planned] Inference script and demo output
-- [Implemented] Documentation (all planned docs exist; some content planned until experiments complete)
-- [Implemented at C0] GitHub giữ M0–M5 và bổ sung M6/M7; C1–C11 vẫn cần evidence riêng
+## Team & Contributions
 
----
+Repository định nghĩa năm nhóm trách nhiệm trong [`docs/TEAM_TASKS.md`](docs/TEAM_TASKS.md): Data & Preprocessing; Supervised ML & Evaluation; Unsupervised ML & Behavioral; Security Risk & Trace; Backend Integration & Delivery. Tên thành viên chưa được điền khi chưa có xác nhận của nhóm.
 
-## Khả năng tái lập (xem `docs/REPRODUCIBILITY.md`)
+Đóng góp nên mô tả rõ phạm vi, tài liệu/issue liên quan, lệnh kiểm chứng, trạng thái `PLANNED`/`IMPLEMENTED`/`TESTED`/`EXPERIMENTALLY VALIDATED` và giới hạn còn lại.
 
-- Random seed: 42 (configurable)
-- Dependencies hiện chưa khóa phiên bản; lưu phiên bản môi trường thực tế cho từng lần chạy
-- Split before fit; pipeline saved
-- Each experiment should save: seed, config, metrics, confusion matrix, version info
-- Dataset version and checksum are recorded in `data/UNSW_NB15_MANIFEST.json`
+## Limitations & Security
 
----
+- Chưa có bằng chứng trong repository hiện tại cho training/evaluation/inference end-to-end, metric trên UNSW-NB15, hoặc benchmark encryption.
+- Raw dataset, model artifact lớn, secret và key material không được commit.
+- Behavioral Vector chỉ hỗ trợ biểu diễn và tương quan hành vi; Trace Engine không kết luận danh tính thật.
+- Security response chỉ `dry-run` trong lab; không block, cô lập hoặc rate-limit người dùng/hệ thống thật.
+- Unknown-attack holdout không đồng nghĩa với bằng chứng phát hiện zero-day.
+- AES-GCM được dùng như cryptography chuẩn; đề tài không tự thiết kế thuật toán mã hóa.
+- Người dùng phải tự xác nhận điều kiện sử dụng của UNSW-NB15 và không dùng prototype như một security control chưa được xác minh.
 
-## Hạn chế và tuyên bố trung thực
+## License & References
 
-- Provenance đạt mức đối chiếu nhiều mirror; UNSW không công bố SHA-256 và endpoint chính thức yêu cầu đăng nhập khi kiểm tra.
-- Kết quả Random Forest phụ thuộc vào chất lượng dữ liệu thực tế; metric không bị giả mạo.
-- Đánh giá Isolation Forest dùng protocol khác đánh giá giám sát; so sánh trực tiếp cần giải thích rõ.
-- Không tuyên bố phát hiện zero-day; không tuyên bố triển khai production; không tuyên bố truy vết danh tính kẻ tấn công.
-- No MIT license used (Apache 2.0 applied).
-- This is an educational project; results should not be treated as production security guarantees.
-
----
-
-## Ethical and safe-use statement (see `docs/ETHICS_AND_PRIVACY.md`)
-
-- UNSW-NB15 intended for academic/research use; users must confirm terms.
-- No personal/network-identifying data committed.
-- No inference about specific individuals or devices claimed.
-- Do not use this system as an unverified security control.
-
----
-
-## Team / task allocation (see `docs/TEAM_TASKS.md`)
-
-Năm vai trò được định nghĩa; tên để trống cho đến khi nhóm xác nhận.
-
----
-
-## Roadmap and milestones (see `docs/DEVELOPMENT_PLAN.md`)
-
-- **M0 — Repository Foundation and Project Design:** Structure, docs, CI, environment, labels.
-- **M1 — Dataset Acquisition and Exploratory Data Analysis:** Download, validation, EDA, leakage audit.
-- **M2 — Preprocessing and Baseline Models:** Pipeline, Random Forest, documented results.
-- **M3 — Anomaly Detection and Model Evaluation:** Isolation Forest (if feasible), comparison protocol, error analysis.
-- **M4 — Inference, Demo and Integration:** Inference pipeline, demo, tests.
-- **M5 — Final Report, Presentation and Release:** Report outline, presentation outline, final verification.
-- **M6 — Backend, Dashboard & Integration:** Behavioral/Risk/Trace/Security services, API, persistence và dashboard.
-- **M7 — Experiments, Documentation & Delivery:** bảy experiments, report, slides, demo và handoff.
-
-Milestone links and deadlines: planned based on 5–6 week schedule; exact dates depend on course calendar.
-
----
-
-## GitHub Issues and Milestones
-
-Issues #23–#32 bổ sung governance, XGBoost, Autoencoder, Behavioral Vector, Risk/Trace,
-AES-GCM/key lifecycle, adaptive response, FastAPI và bảy experiments. Issue #11, #16 và
-#18–#20 đã được cập nhật dependency/milestone theo Phương án B.
-
----
-
-## Citation
+Mã nguồn được phân phối theo [Apache License 2.0](LICENSE). Dataset UNSW-NB15 giữ nguyên điều kiện sử dụng của nguồn; license của repository không thay đổi điều kiện đó.
 
 ```bibtex
 @software{network_anomaly_2026,
   author = {{Project Team}},
-  title = {AI-Based Network Anomaly Detection Using ML and Network Traffic Behavior Analysis},
+  title = {AI-Based Network Anomaly Detection and Traceability System with Secure Behavioral Vectorization and Adaptive Key Rotation},
   url = {https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN},
   version = {0.1.0},
-  date = {2026-10-16},
+  date = {2026},
   license = {Apache-2.0}
 }
 ```
 
-Thông tin trích dẫn hiện nằm trong khối BibTeX ở trên.
-
----
-
-## License
-
-Apache License 2.0 — full text in `LICENSE`. Copyright placeholder included; replace with actual owner when known. Dataset UNSW-NB15 retains its own license/conditions; this repository does not change dataset licensing.
-
----
-
-## Acknowledgements
-
-- UNSW for UNSW-NB15 dataset (academic use).
-- scikit-learn, pandas, NumPy, matplotlib, pytest, Jupyter communities.
-- Course assignment requirements.
-
----
-
-## Contact / contribution
-
-- Issues: https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues
-- PR template: `.github/pull_request_template.md`
-- Khi đóng góp: mô tả phạm vi, lệnh kiểm chứng và giới hạn trong PR theo template hiện có.
+Tham chiếu chính: [UNSW-NB15](https://research.unsw.edu.au/projects/unsw-nb15-dataset), [roadmap hệ thống](docs/ROADMAP_FULL_SYSTEM.md), [kiến trúc](docs/ARCHITECTURE.md) và [ma trận truy vết](docs/TRACEABILITY_MATRIX.md).
