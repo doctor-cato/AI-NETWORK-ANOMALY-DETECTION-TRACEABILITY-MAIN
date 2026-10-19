@@ -58,17 +58,22 @@ python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report
 Script fetch tái sử dụng cache local: file trong `data/raw/` chỉ được giữ khi khớp
 SHA-256 và kích thước theo manifest, nên chạy lại không tải lại (`CACHE_HIT`). File thiếu
 hoặc sai được tải lại từ mirror revision-pinned vào staging tạm cùng thư mục đích, kiểm tra
-HTTP response, size và SHA-256 trước khi thay thế nguyên tử; staging luôn được dọn kể cả
-khi lỗi. Trước lần thay đầu tiên script sao lưu bản cũ của mọi file sẽ bị thay, và nếu
+HTTP response, size và SHA-256 trước khi thay thế nguyên tử; byte tải về bị giới hạn cứng
+bởi kích thước đã ghim nên response vô hạn không đầy được đĩa đích, và staging luôn được dọn
+kể cả khi lỗi. Trước lần thay đầu tiên script sao lưu bản cũ của mọi file sẽ bị thay, và nếu
 `os.replace` thất bại ở file nào thì các file **đã thay** được hoàn nguyên về byte trước đó,
 rồi lỗi gốc được ném lại. Rollback không xóa file đích trước: `os.replace` ghi đè nguyên tử
 nên nếu khôi phục lỗi, file đích giữ byte mới đã verify và bản sao lưu được giữ lại kèm
-dòng `RECOVERY` để phục hồi thủ công. File mới tạo trong lần chạy đó được giữ vì không có
-bản cũ để khôi phục. Lỗi khi dọn staging/backup được ghi `CLEANUP WARNING` và không ném lỗi
-mới đè lên lỗi đang báo. Tên staging và backup có kèm PID nên hai lần chạy đồng thời không
-dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo thật
+dòng `RECOVERY` để phục hồi thủ công. File mới tạo trong lần chạy đó bị xóa lại để thư mục
+trở về đúng trạng thái trước lần chạy; nếu xóa lỗi, file được giữ lại và báo
+`ROLLBACK WARNING` kèm `RECOVERY`. Lỗi khi dọn staging/backup được ghi `CLEANUP WARNING` và
+không ném lỗi mới đè lên lỗi đang báo. Tên staging và backup có kèm PID nên hai lần chạy
+đồng thời không dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo thật
 lưu aggregate row/schema/blank/missing/duplicate và checksum, không chứa dòng raw.
 Fixture test chỉ kiểm tra hành vi validator.
+
+`validate_data.py` kiểm tra số bản ghi chính thức của hai split mặc định (175.341 và
+82.332) kể cả khi không truyền `--manifest`; `--no-row-count` dành cho fixture hoặc tập con.
 
 Khi cả hai CSV vắng mặt, `validate_data.py` in `SKIPPED`, in rõ `SKIPPED is not PASS` và
 exit 0; khi chạy trong GitHub Actions nó ghi thêm annotation `::warning::SKIPPED is not a

@@ -51,16 +51,22 @@ mirror revision-pinned. Byte tải về nằm ở staging tạm cùng thư mục
 trọn vẹn trước khi thay thế nguyên tử (`DOWNLOAD` rồi `VERIFIED`), và staging luôn
 được dọn kể cả khi lỗi. Không tin cache chỉ dựa trên tên file hay kích thước.
 
-Cài đặt chỉ diễn ra sau khi mọi file cần thiết đã tải và verify xong. Trước khi thay byte
-đầu tiên, script sao lưu bản cũ của mọi file sẽ bị thay. Nếu `os.replace` thất bại ở bất kỳ
-file nào, script hoàn nguyên các file **đã thay** về byte trước đó rồi ném lại lỗi gốc.
+Cài đặt chỉ diễn ra sau khi mọi file cần thiết đã tải và verify xong. Byte tải về được
+ghi với giới hạn cứng bằng kích thước đã ghim: vòng đọc dừng ngay ở byte vượt quá, nên
+mirror hoặc trung gian trả body vô hạn không thể đầy đĩa trước khi kiểm tra kích thước.
+Trước khi thay byte đầu tiên, script sao lưu bản cũ của mọi file sẽ bị thay. Nếu
+`os.replace` thất bại ở bất kỳ file nào, script hoàn nguyên các file **đã thay** về byte
+trước đó rồi ném lại lỗi gốc.
 
 Nguyên tắc phục hồi: **không bao giờ xóa dữ liệu hợp lệ trước khi biết bản thay thế đã
 nằm đúng chỗ.** Vì `os.replace` ghi đè đích một cách nguyên tử, khôi phục không cần xóa
 file đích trước; nếu bản khôi phục lỗi, file đích vẫn giữ byte mới đã verify và bản sao lưu
-được giữ lại, kèm dòng `RECOVERY` chỉ rõ tên file để phục hồi thủ công. File mới tạo ra
-trong lần chạy đó không có bản cũ để khôi phục nên được giữ lại kèm dòng `ROLLBACK: kept`,
-vì xóa đi chỉ là vứt bỏ byte đã verify mà không thu được gì.
+được giữ lại, kèm dòng `RECOVERY` chỉ rõ tên file để phục hồi thủ công. File **mới tạo ra**
+trong lần chạy đó không có bản cũ, nên rollback xóa nó để thư mục trở về đúng trạng thái
+trước lần chạy: chỉ byte do chính lần chạy này tải về bị bỏ đi và lần chạy sau tải lại
+được. Nếu thao tác xóa đó lỗi, file vẫn được giữ lại và báo `ROLLBACK WARNING` kèm tên
+file trong `RECOVERY` để dọn thủ công — thư mục có thể tạm thời lệch so với manifest cho
+đến khi chạy lại `fetch_unsw_nb15.py`.
 
 Dọn staging và backup trong `finally` không được ném lỗi mới đè lên lỗi đang báo; lỗi dọn
 được ghi `CLEANUP WARNING`. Backup chỉ bị xóa khi nó không còn là bản duy nhất.
@@ -86,7 +92,10 @@ gốc nên được version-control để reviewer tái kiểm tra cùng byte.
 `scripts/validate_data.py` kiểm tra UTF-8 BOM, đúng 45 cột theo thứ tự, độ rộng hàng,
 kiểu số/text, số hữu hạn, nhãn binary `0/1`, các trường bắt buộc và tính nhất quán:
 `label=0` phải có `attack_cat=Normal`, còn `label=1` phải là category khác. Khi
-dùng manifest, validator kiểm tra size, SHA-256 và số bản ghi chính thức.
+dùng manifest, validator kiểm tra size và SHA-256. Số bản ghi chính thức của hai split
+(175.341 và 82.332) luôn được kiểm tra kể cả khi không dùng manifest; `--no-row-count`
+bỏ qua bất biến này cho fixture hoặc tập con, còn file không thuộc hai split mặc định
+thì không có số bản ghi công bố để so.
 
 Dòng trống không bị bỏ qua âm thầm. Dòng không có delimiter và không có giá trị (rỗng
 hoặc chỉ khoảng trắng) được đếm và là lỗi chặn, thông báo nêu tổng số dòng và vị trí tối

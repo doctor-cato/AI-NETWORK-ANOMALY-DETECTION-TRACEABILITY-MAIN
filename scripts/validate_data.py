@@ -219,6 +219,11 @@ def main(argv=None):
         "--manifest", type=Path, help="Local manifest produced by dataset_manifest.py"
     )
     parser.add_argument("--report", type=Path, help="Write JSON report after successful validation")
+    parser.add_argument(
+        "--no-row-count",
+        action="store_true",
+        help="Skip the published row count of the default splits (fixtures and subsets)",
+    )
     args = parser.parse_args(argv)
     if args.file:
         targets = [DATA_RAW / args.file]
@@ -247,9 +252,13 @@ def main(argv=None):
                     raise ValueError(f"manifest has no entry for {target.name}")
                 expected = entries[target.name]["sha256"]
                 expected_size = entries[target.name]["size_bytes"]
-            expected_rows = (
-                entries[target.name].get("expected_rows") if manifest is not None else None
-            )
+            expected_rows = None
+            if manifest is not None:
+                expected_rows = entries[target.name].get("expected_rows")
+            if expected_rows is None and not args.no_row_count:
+                # The published row count is a property of the split itself, so it is
+                # enforced even without a manifest; a non-default file has no known count.
+                expected_rows = EXPECTED_ROWS.get(target.name)
             report = validate_file(target, expected, expected_size, expected_rows)
             reports.append(report)
             summary = (

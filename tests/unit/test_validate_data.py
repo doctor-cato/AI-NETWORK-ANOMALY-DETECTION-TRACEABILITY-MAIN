@@ -66,7 +66,8 @@ def test_valid_split_files_and_report(validator, tmp_path, capsys):
             ],
         )
     report_path = tmp_path / "report.json"
-    assert validator.main(["--report", str(report_path)]) == 0
+    # --no-row-count keeps this fixture below the published count of the real splits.
+    assert validator.main(["--report", str(report_path), "--no-row-count"]) == 0
     data = json.loads(report_path.read_text(encoding="utf-8"))
     assert len(data["files"]) == 2
     assert data["files"][0]["rows"] == 2
@@ -77,6 +78,83 @@ def test_valid_split_files_and_report(validator, tmp_path, capsys):
     assert data["files"][0]["invalid_attack_categories"] == 0
     assert data["cross_file_schema_consistent"] is True
     assert "PASS" in capsys.readouterr().out
+
+
+def write_split(validator, directory, rows_per_file):
+    for name in validator.DEFAULT_FILES:
+        write_csv(directory / name, validator.COLUMNS, rows_per_file)
+
+
+def test_default_split_row_count_is_enforced_without_a_manifest(validator, tmp_path, capsys):
+    """A truncated but well-formed split must not pass the documented default validation."""
+    write_split(validator, tmp_path, [row(validator)])
+    assert validator.main([]) == 1
+    out = capsys.readouterr().out
+    assert "row count mismatch: expected 175341, got 1" in out
+
+
+def test_no_row_count_flag_skips_the_published_row_count(validator, tmp_path, capsys):
+    write_split(validator, tmp_path, [row(validator)])
+    assert validator.main(["--no-row-count"]) == 0
+    assert "PASS" in capsys.readouterr().out
+
+
+def test_non_default_file_has_no_published_row_count(validator, tmp_path, capsys):
+    write_csv(tmp_path / "subset.csv", validator.COLUMNS, [row(validator)])
+    assert validator.main(["--file", "subset.csv"]) == 0
+    assert "PASS" in capsys.readouterr().out
+
+
+def test_manifest_row_count_is_recorded_in_the_report(validator, tmp_path):
+    target = tmp_path / validator.DEFAULT_FILES[0]
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "file": target.name,
+                        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                        "size_bytes": target.stat().st_size,
+                        "expected_rows": 1,
+                    }
+                ]
+            }
+        )
+    )
+    report_path = tmp_path / "report.json"
+    assert (
+        validator.main(
+            ["--file", target.name, "--manifest", str(manifest), "--report", str(report_path)]
+        )
+        == 0
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))["files"][0]
+    assert report["expected_rows"] == 1
+    assert report["row_count_matches_expected"] is True
+
+
+def test_manifest_without_row_count_falls_back_to_the_published_count(validator, tmp_path, capsys):
+    """A manifest that stays silent about row counts must not disable the default check."""
+    target = tmp_path / validator.DEFAULT_FILES[0]
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "file": target.name,
+                        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                        "size_bytes": target.stat().st_size,
+                    }
+                ]
+            }
+        )
+    )
+    assert validator.main(["--file", target.name, "--manifest", str(manifest)]) == 1
+    assert "row count mismatch: expected 175341, got 1" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
@@ -250,7 +328,10 @@ def test_manifest_record_verify_and_tamper(validator, tmp_path):
         check=False,
     )
     assert verified.returncode == 0, verified.stdout + verified.stderr
-    assert validator.main(["--file", str(target), "--manifest", str(manifest)]) == 0
+    # The fixture holds one row per file, so the published row count is opted out of.
+    assert (
+        validator.main(["--file", str(target), "--manifest", str(manifest), "--no-row-count"]) == 0
+    )
     target.write_bytes(target.read_bytes().replace(b"tcp", b"udp", 1))
     tampered = subprocess.run(
         [
@@ -707,18 +788,70 @@ def test_restore_failure_keeps_valid_file_and_backup(fetcher, tmp_path, monkeypa
     assert (tmp_path / survivors[0]).read_bytes() == PREVIOUS["a.csv"]
 
 
-def test_newly_installed_file_is_kept(fetcher, tmp_path, monkeypatch, capsys):
-    """Deleting a valid file just created would throw away verified bytes for nothing."""
+def test_newly_installed_file_is_removed_on_rollback(fetcher, tmp_path, monkeypatch, capsys):
+    """A file this run created has no earlier version, so rollback returns it to absent."""
     (tmp_path / "b.csv").write_bytes(PREVIOUS["b.csv"])
     serve_files(monkeypatch, fetcher, TWO_FILES)
     fail_replace_on(monkeypatch, fetcher, "b.csv")
     with pytest.raises(OSError):
         fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
     out = capsys.readouterr().out
-    assert "kept a.csv" in out
-    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert "ROLLBACK" in out and "RECOVERY" not in out
+    # The directory must hold exactly what it held before this run.
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["b.csv"]
     assert (tmp_path / "b.csv").read_bytes() == PREVIOUS["b.csv"]
     assert scratch_files(tmp_path) == []
+
+
+def test_rollback_removal_failure_keeps_file_and_reports_recovery(
+    fetcher, tmp_path, monkeypatch, capsys
+):
+    """If the rollback removal itself fails, keep the verified file and say so."""
+    (tmp_path / "b.csv").write_bytes(PREVIOUS["b.csv"])
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fail_replace_on(monkeypatch, fetcher, "b.csv")
+    real_unlink = Path.unlink
+
+    def flaky_unlink(self, missing_ok=False):
+        if self.name == "a.csv":
+            raise PermissionError(f"simulated lock on {self.name}")
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", flaky_unlink)
+    with pytest.raises(OSError, match="simulated replace failure"):
+        fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "ROLLBACK WARNING" in out and "RECOVERY" in out
+    assert "a.csv" in out.split("RECOVERY:")[1]
+    # Verified bytes are never discarded, and the original error is still the one reported.
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert (tmp_path / "b.csv").read_bytes() == PREVIOUS["b.csv"]
+
+
+def test_download_stops_at_the_pinned_size(fetcher, tmp_path, monkeypatch, capsys):
+    """A response longer than the pinned size must abort before the extra byte is written."""
+    oversized = PAYLOAD + b"attacker payload\r\n" * 1024
+    serve(fetcher, monkeypatch, FakeResponse(oversized))
+    with pytest.raises(ValueError, match="exceeds the pinned size"):
+        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "DOWNLOAD" in out and "VERIFIED" not in out
+    # Nothing is installed and no scratch file survives the abort.
+    assert not (tmp_path / "a.csv").exists()
+    assert scratch_files(tmp_path) == []
+
+
+def test_download_does_not_write_past_the_pinned_size(fetcher, tmp_path):
+    """The staging file never grows beyond the pinned size, so a huge body cannot fill disk."""
+    limit = len(PAYLOAD)
+    oversized = PAYLOAD + b"x" * (3 * fetcher.CHUNK_BYTES)
+    staging = tmp_path / ".unsw-nb15-staging-probe.csv"
+    with pytest.raises(ValueError, match="exceeds the pinned size"):
+        with staging.open("wb") as output:
+            fetcher.copy_up_to_limit(FakeResponse(oversized), output, limit, "a.csv")
+    # The abort happens on the first byte past the limit, so nothing of the oversized
+    # body is left behind.
+    assert staging.stat().st_size <= limit
 
 
 def lock_scratch_cleanup(monkeypatch, fetcher, prefix):

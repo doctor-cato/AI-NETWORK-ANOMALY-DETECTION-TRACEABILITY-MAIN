@@ -29,6 +29,8 @@ FILES = {
 # Scratch files live beside the destination so the verified bytes can be swapped in atomically.
 STAGING_PREFIX = ".unsw-nb15-staging-"
 BACKUP_PREFIX = ".unsw-nb15-backup-"
+# Download chunk size; it only bounds memory, never the number of bytes accepted.
+CHUNK_BYTES = 1024 * 1024
 
 
 def scratch_path(destination, prefix, name):
@@ -63,6 +65,27 @@ def verify_download(path, expected):
     return digest
 
 
+def copy_up_to_limit(response, output, limit, name):
+    """Write at most `limit` bytes and abort on the first byte beyond it.
+
+    The response is read in bounded chunks instead of being copied to EOF, so an
+    endpoint or intermediary that never ends its body cannot fill the destination
+    filesystem before the pinned size is checked.
+    """
+    written = 0
+    while True:
+        chunk = response.read(min(CHUNK_BYTES, limit + 1 - written))
+        if not chunk:
+            break
+        written += len(chunk)
+        if written > limit:
+            raise ValueError(
+                f"response for {name} exceeds the pinned size of {limit} bytes; "
+                f"the download was stopped before the extra byte was written"
+            )
+        output.write(chunk)
+
+
 def download_to_staging(name, expected, staging, base_url):
     """Fetch one revision-pinned file into `staging`; returns the verified digest."""
     request = Request(f"{base_url}/{name}", headers={"User-Agent": "unsw-nb15-fetch/1"})
@@ -75,7 +98,7 @@ def download_to_staging(name, expected, staging, base_url):
             raise ValueError(f"unexpected Content-Type {content_type} for {name}")
         print(f"[fetch_unsw_nb15] DOWNLOAD: {name} <- {base_url}/{name}")
         with staging.open("wb") as output:
-            shutil.copyfileobj(response, output)
+            copy_up_to_limit(response, output, expected["size_bytes"], name)
     digest = verify_download(staging, expected)
     print(f"[fetch_unsw_nb15] VERIFIED: {name} bytes={expected['size_bytes']} sha256={digest}")
     return digest
@@ -107,33 +130,44 @@ def remove_quietly(path):
 
 
 def rollback(destination, installed, backups):
-    """Restore previous bytes where a backup exists, never discarding a valid file first.
+    """Undo this run's swaps so the destination holds the bytes it held before.
 
-    os.replace overwrites its destination atomically, so a backed-up file is restored
-    without ever being absent: if the restore fails, the verified new file stays in place
-    and the backup is returned so it can be recovered by hand. A file installed by this
-    run that had no previous version is kept, because its verified bytes are worth more
-    than deleting them. Returns the backup paths that could not be restored.
+    A file with a backup is restored with `os.replace`, which overwrites its
+    destination atomically, so the restore never passes through an absent state. If
+    that restore fails, the verified new bytes stay in place and the backup is kept
+    for manual recovery rather than discarded.
+
+    A file this run created had no earlier version, so it is removed again to keep the
+    pair install all or nothing. Only bytes this run downloaded are dropped, and a
+    later run fetches them again. If that removal fails the file is left in place and
+    reported, because keeping verified bytes is safer than a failed install.
+
+    Returns the paths that could not be returned to their pre-run state.
     """
-    retained = []
+    leftovers = []
     for name in installed:
         backup = backups.get(name)
         if backup is None:
-            print(
-                f"[fetch_unsw_nb15] ROLLBACK: kept {name}; it did not exist before this run, "
-                f"so there is no earlier version to restore"
-            )
+            target = destination / name
+            try:
+                target.unlink(missing_ok=True)
+            except OSError as error:
+                leftovers.append(target)
+                print(
+                    f"[fetch_unsw_nb15] ROLLBACK WARNING: cannot remove {name}, which this "
+                    f"run created: {error}. Leaving it in place for manual cleanup."
+                )
             continue
         try:
             os.replace(backup, destination / name)
         except OSError as error:
-            retained.append(backup)
+            leftovers.append(backup)
             print(
                 f"[fetch_unsw_nb15] ROLLBACK WARNING: cannot restore {name} from "
                 f"{backup.name}: {error}. Keeping {destination / name} and the backup "
                 f"for manual recovery."
             )
-    return retained
+    return leftovers
 
 
 def install(pending, destination):
@@ -141,10 +175,11 @@ def install(pending, destination):
 
     Backups are copies rather than moves, so a destination file stays readable until its
     own replacement succeeds. Every file is backed up before the first swap, so a failure
-    on any file restores that file to the bytes it held before this run.
+    on any file returns every file this run touched to its pre-run state: the bytes it
+    held before, or absence when it did not exist before.
     """
     backups = {}
-    retained = []
+    leftovers = []
     installed = []
     try:
         for name in pending:
@@ -158,22 +193,23 @@ def install(pending, destination):
             installed.append(name)
             print(f"[fetch_unsw_nb15] INSTALLED unchanged bytes: {destination / name}")
     except OSError as error:
-        retained = rollback(destination, installed, backups)
+        leftovers = rollback(destination, installed, backups)
         print(
-            f"[fetch_unsw_nb15] ROLLBACK: restored {len(installed) - len(retained)} of "
-            f"{len(installed)} installed file(s) after a failed install: {error}"
+            f"[fetch_unsw_nb15] ROLLBACK: returned {len(installed) - len(leftovers)} of "
+            f"{len(installed)} installed file(s) to their pre-run state after a failed "
+            f"install: {error}"
         )
-        if retained:
+        if leftovers:
             print(
-                f"[fetch_unsw_nb15] RECOVERY: kept {len(retained)} backup file(s) for manual "
-                f"recovery: {', '.join(path.name for path in retained)}"
+                f"[fetch_unsw_nb15] RECOVERY: kept {len(leftovers)} file(s) for manual "
+                f"recovery: {', '.join(path.name for path in leftovers)}"
             )
         raise
     finally:
         # A backup that could not be restored is the only surviving copy of those bytes,
         # so it must outlive this run; every other backup is now redundant.
         for backup in backups.values():
-            if backup not in retained:
+            if backup not in leftovers:
                 remove_quietly(backup)
 
 
@@ -190,7 +226,8 @@ def fetch(destination, files=None, base_url=None):
             pending[name] = staging[name]
             download_to_staging(name, expected, staging[name], base_url)
         # Install only once every needed file is staged and verified, so a failed run
-        # never leaves a half-populated data/raw/ directory.
+        # never leaves a half-populated data/raw/ directory: any file this run installed
+        # is returned to its pre-run state when a later swap fails.
         if pending:
             install(pending, destination)
     finally:
