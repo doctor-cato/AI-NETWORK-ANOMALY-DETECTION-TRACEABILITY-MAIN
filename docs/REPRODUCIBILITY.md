@@ -70,8 +70,9 @@ trở về đúng trạng thái trước lần chạy; nếu xóa lỗi, file đ
 không ném lỗi mới đè lên lỗi đang báo; backup dở dang khi `copyfile` lỗi được xóa ngay, và
 tên backup lấy tên trống kế tiếp để không ghi đè một backup còn sót đang là bản duy nhất.
 Một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch nên hai lần chạy không xen kẽ backup,
-swap và rollback; chủ sở hữu chạy heartbeat 30s nên đường phá lock cũ (>1h) chỉ bắt tiến
-trình đã chết, lần chạy thứ hai chờ tối đa 900s. `dataset_manifest.py` không dùng lock này;
+swap và rollback; đó là khóa byte-range của hệ điều hành (`msvcrt.locking` / `fcntl.flock`)
+nên kernel giải phóng khi tiến trình chết, không có ngưỡng stale và không có bước phá lock
+có thể xóa nhầm; lần chạy thứ hai chờ tối đa 900s. `dataset_manifest.py` không dùng lock này;
 `verify` chạy sau `record` sẽ phát hiện trạng thái lẫn bằng SHA-256. Tên staging và backup có
 kèm PID nên hai lần chạy đồng thời không dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi
 Git. Báo cáo thật

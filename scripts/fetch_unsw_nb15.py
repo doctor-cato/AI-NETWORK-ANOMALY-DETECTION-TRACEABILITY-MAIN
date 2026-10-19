@@ -5,13 +5,21 @@ import argparse
 import hashlib
 import os
 import shutil
-import threading
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+try:  # Windows
+    import msvcrt
+except ImportError:  # pragma: no cover - POSIX
+    msvcrt = None  # type: ignore[assignment]
+
+try:  # POSIX
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DESTINATION = PROJECT_ROOT / "data" / "raw"
@@ -35,14 +43,11 @@ STAGING_PREFIX = ".unsw-nb15-staging-"
 BACKUP_PREFIX = ".unsw-nb15-backup-"
 # Download chunk size; it only bounds memory, never the number of bytes accepted.
 CHUNK_BYTES = 1024 * 1024
-# One lock per destination serialises the whole fetch/install transaction.
+# One lock per destination serialises the whole fetch/install transaction. The kernel
+# releases it when the owning process exits, so there is no stale threshold to tune.
 LOCK_NAME = ".unsw-nb15.lock"
 LOCK_TIMEOUT_SECONDS = 900
 LOCK_POLL_SECONDS = 1.0
-# A lock older than this was left behind by a killed run and is safe to break.
-LOCK_STALE_SECONDS = 3600
-# The owner refreshes the lock this often, so staleness means "nobody is refreshing".
-LOCK_HEARTBEAT_SECONDS = 30.0
 
 
 def scratch_path(destination, prefix, name):
@@ -247,35 +252,18 @@ def install(pending, destination):
                 remove_quietly(backup)
 
 
-@contextmanager
-def _refresh_mtime(lock, interval):
-    """Keep `lock` visibly fresh for as long as this run owns it.
-
-    Reclaiming a lock on mtime alone would take it from a live but slow run, which
-    then interleaves its backups and swaps with the reclaiming run. The heartbeat is
-    what separates "owner is silent" from "owner is dead".
-    """
-    stop = threading.Event()
-
-    def refresh():
-        while not stop.wait(interval):
-            try:
-                os.utime(lock, None)
-            except OSError:
-                # The lock is gone; the owning run is about to fail its own work.
-                return
-
-    thread = threading.Thread(target=refresh, name="unsw-nb15-lock-heartbeat", daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        stop.set()
+def _lock_handle(handle):
+    """Take an exclusive OS lock on `handle`, raising OSError when it is held."""
+    if msvcrt is not None:
+        os.lseek(handle, 0, os.SEEK_SET)
+        msvcrt.locking(handle, msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
 
 @contextmanager
-def destination_lock(destination, timeout=None, poll=None, heartbeat=None):
-    """Hold an exclusive lock on `destination` for the whole fetch/install transaction.
+def destination_lock(destination, timeout=None, poll=None):
+    """Hold an exclusive OS lock on `destination` for the whole fetch/install transaction.
 
     PID-tagged scratch names stop two runs from sharing a temporary file, but they do
     not stop them from interleaving backups, swaps and rollback: one run can restore an
@@ -283,64 +271,44 @@ def destination_lock(destination, timeout=None, poll=None, heartbeat=None):
     check, the download, the backups, every swap and the rollback, so only one run
     touches the destination at a time.
 
-    A lock older than LOCK_STALE_SECONDS is treated as abandoned by a killed run and is
-    removed, so a hard kill cannot block the directory forever. The owner refreshes the
-    lock while it works, so that reclaim path only triggers on a lock nobody is
-    refreshing. Defaults are read at call time so a caller or a test can shorten them.
+    The lock is an OS byte-range lock rather than a marker file with a staleness rule.
+    The kernel releases it when the owning process exits, including a hard kill, so
+    there is no abandoned-lock state to guess at and no reclaim step that could delete
+    the lock of a run that is merely slow or that replaced the file in between. The
+    lock file itself stays on disk for the same reason: unlinking it would let another
+    process create a new inode and take the lock while this run still holds the old
+    one. Defaults are read at call time so a caller or a test can shorten them.
     """
     if timeout is None:
         timeout = LOCK_TIMEOUT_SECONDS
     if poll is None:
         poll = LOCK_POLL_SECONDS
-    if heartbeat is None:
-        heartbeat = LOCK_HEARTBEAT_SECONDS
     lock = destination / LOCK_NAME
-    deadline = time.monotonic() + timeout
-    announced = False
-    while True:
-        try:
-            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            try:
-                age = time.time() - lock.stat().st_mtime
-            except FileNotFoundError:
-                # The owner released the lock between O_EXCL failing and stat(); that is
-                # a normal handoff, so take it instead of aborting the whole fetch.
-                continue
-            if age > LOCK_STALE_SECONDS:
-                print(
-                    f"[fetch_unsw_nb15] LOCK: removing stale lock {lock.name}, "
-                    f"unchanged for {age:.0f}s"
-                )
-                remove_quietly(lock)
-                if lock.exists():
-                    if time.monotonic() >= deadline:
-                        raise OSError(
-                            f"gave up after {timeout}s on stale lock {lock.name}; "
-                            f"it cannot be removed"
-                        )
-                    time.sleep(poll)
-                continue
-            if not announced:
-                print(
-                    f"[fetch_unsw_nb15] LOCK: another run holds {lock.name}; "
-                    f"waiting up to {timeout}s"
-                )
-                announced = True
-            if time.monotonic() >= deadline:
-                raise OSError(
-                    f"gave up waiting {timeout}s for {lock.name}; another fetch is running"
-                )
-            time.sleep(poll)
-            continue
-        break
+    lock.touch(exist_ok=True)
+    handle = os.open(lock, os.O_RDWR)
     try:
-        with os.fdopen(handle, "w", encoding="utf-8") as stream:
-            stream.write(f"pid={os.getpid()} acquired={datetime.now(timezone.utc).isoformat()}")
-        with _refresh_mtime(lock, heartbeat):
-            yield lock
+        deadline = time.monotonic() + timeout
+        announced = False
+        while True:
+            try:
+                _lock_handle(handle)
+                break
+            except OSError:
+                if not announced:
+                    print(
+                        f"[fetch_unsw_nb15] LOCK: another run holds {lock.name}; "
+                        f"waiting up to {timeout}s"
+                    )
+                    announced = True
+                if time.monotonic() >= deadline:
+                    raise OSError(
+                        f"gave up waiting {timeout}s for {lock.name}; " f"another fetch is running"
+                    ) from None
+                time.sleep(poll)
+        yield lock
     finally:
-        remove_quietly(lock)
+        # Closing the handle is what releases the lock.
+        os.close(handle)
 
 
 def fetch(destination, files=None, base_url=None):

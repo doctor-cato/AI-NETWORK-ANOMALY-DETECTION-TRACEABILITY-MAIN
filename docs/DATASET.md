@@ -80,11 +80,13 @@ tải, sao lưu, mọi lần thay và cả rollback. Tên staging/backup có kè
 chạy dùng chung **tên file tạm**; nếu không có lock, tiến trình A có thể rollback đè bản cũ
 của một file lên cặp file mới mà tiến trình B vừa cài xong, để lại train/test lệch phiên bản.
 
-Chủ sở hữu lock chạy một heartbeat chạm lại mtime lock mỗi 30 giây. Vì vậy đường phá lock cũ
-chỉ bắt được trường hợp **không ai đang refresh** (tiến trình bị giết), không bắt nhầm một
-lần tải hợp lệ nhưng chậm. Lock cũ hơn 1 giờ mới bị phá; lần chạy thứ hai chờ tối đa 900s
-rồi báo lỗi nếu lock chưa được giải phóng. Nếu lock biến mất giữa lúc thử giành và lúc đọc
-mtime — tức bàn giao bình thường — lần chạy đó thử giành lại thay vì dừng.
+Lock là **khóa byte-range của hệ điều hành** (`msvcrt.locking` trên Windows, `fcntl.flock`
+trên POSIX), không phải file đánh dấu kèm luật "stale". Kernel giải phóng khi tiến trình
+kết thúc, kể cả khi bị giết cứng, nên không tồn tại trạng thái lock bỏ rơi và không có bước
+"phá lock cũ" nào có thể xóa nhầm lock của một tiến trình chỉ vì nó chậm — đó chính là race mà
+luật dựa trên mtime tạo ra. File lock **được giữ lại** sau khi thả, vì xóa nó sẽ cho phép tiến
+trình khác tạo inode mới và giành lock trong lúc lần chạy hiện tại vẫn nghĩ mình đang giữ.
+Lần chạy thứ hai chờ tối đa 900s rồi báo lỗi nếu lock chưa được giải phóng.
 
 `dataset_manifest.py` không dùng lock của `fetch_unsw_nb15.py`. Chạy `record` đúng lúc một
 lần fetch đang thay file có thể ghi lại trạng thái lẫn, nhưng `verify` chạy sau đó sẽ báo

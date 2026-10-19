@@ -1,7 +1,6 @@
 """Synthetic CSV fixtures only; these are not UNSW-NB15 observations."""
 
 import csv
-import errno
 import hashlib
 import importlib.util
 import io
@@ -521,7 +520,19 @@ def fail_replace_on(monkeypatch, fetcher, destination_name):
 
 
 def scratch_files(directory):
-    return sorted(path.name for path in directory.glob(".unsw-nb15-*"))
+    """Staging and backup files; the lock file is a marker, not a leftover."""
+    return sorted(
+        path.name for path in directory.glob(".unsw-nb15-*") if path.name != fetch_lock_name()
+    )
+
+
+def fetch_lock_name():
+    return ".unsw-nb15.lock"
+
+
+def destination_entries(directory):
+    """Destination contents a fetch is allowed to leave; the lock file is not one."""
+    return sorted(path.name for path in directory.iterdir() if path.name != fetch_lock_name())
 
 
 def test_fetch_cache_hit_avoids_network(fetcher, tmp_path, monkeypatch, capsys):
@@ -569,7 +580,7 @@ def test_fetch_is_all_or_nothing_across_files(fetcher, tmp_path, monkeypatch, ca
     with pytest.raises(URLError):
         fetch_one(fetcher, tmp_path, {k: entry_for(v) for k, v in payloads.items()}, monkeypatch)
     assert len(seen) == 2
-    assert sorted(path.name for path in tmp_path.iterdir()) == []
+    assert destination_entries(tmp_path) == []
     assert "CACHE_INVALID" in capsys.readouterr().out
 
 
@@ -801,7 +812,7 @@ def test_newly_installed_file_is_removed_on_rollback(fetcher, tmp_path, monkeypa
     out = capsys.readouterr().out
     assert "ROLLBACK" in out and "RECOVERY" not in out
     # The directory must hold exactly what it held before this run.
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["b.csv"]
+    assert destination_entries(tmp_path) == ["b.csv"]
     assert (tmp_path / "b.csv").read_bytes() == PREVIOUS["b.csv"]
     assert scratch_files(tmp_path) == []
 
@@ -950,7 +961,7 @@ def test_no_row_count_overrides_the_manifest_row_count(validator, tmp_path, caps
 
 
 def test_lock_is_held_for_the_transaction_and_released(fetcher, tmp_path, monkeypatch):
-    """A concurrent run must find the lock while this one is still swapping files."""
+    """A concurrent run must find the lock held while this one is still swapping files."""
     seen = []
     real_replace = os.replace
 
@@ -962,34 +973,101 @@ def test_lock_is_held_for_the_transaction_and_released(fetcher, tmp_path, monkey
     serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
     fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
     assert seen == [True]
-    assert not (tmp_path / fetcher.LOCK_NAME).exists()
+    # The lock file stays on disk on purpose: deleting it would let another process
+    # create a new inode and take the lock while this one still believes it holds it.
+    assert (tmp_path / fetcher.LOCK_NAME).is_file()
 
 
-def test_second_run_gives_up_instead_of_interleaving(fetcher, tmp_path, monkeypatch, capsys):
-    """Holding the lock externally must stop this run before it touches the cache."""
+def test_a_held_lock_stops_the_second_run_before_it_touches_the_cache(
+    fetcher, tmp_path, monkeypatch, capsys
+):
+    """A run that cannot take the lock must fail instead of interleaving."""
+    holding = threading.Event()
+    release = threading.Event()
+
+    def hold():
+        with fetcher.destination_lock(tmp_path, timeout=5, poll=0.01):
+            holding.set()
+            release.wait(5)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    try:
+        assert holding.wait(5)
+        monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 0)
+
+        def explode(*args, **kwargs):
+            raise AssertionError("a locked destination must not be read or written")
+
+        monkeypatch.setattr(fetcher, "urlopen", explode)
+        with pytest.raises(OSError, match="another fetch is running"):
+            fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+        assert "LOCK" in capsys.readouterr().out
+        assert not (tmp_path / "a.csv").exists()
+    finally:
+        release.set()
+        holder.join(5)
+
+
+def test_second_run_waits_for_the_lock_instead_of_failing(fetcher, tmp_path, monkeypatch):
+    """A short overlap must serialise, not error: the waiter takes the lock afterwards."""
+    holding = threading.Event()
+    release = threading.Event()
+    hold_seconds = 0.4
+
+    def hold():
+        with fetcher.destination_lock(tmp_path, timeout=5, poll=0.01):
+            holding.set()
+            release.wait(5)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    try:
+        assert holding.wait(5)
+        monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 10)
+        monkeypatch.setattr(fetcher, "LOCK_POLL_SECONDS", 0.01)
+        started = time.monotonic()
+        timer = threading.Timer(hold_seconds, release.set)
+        timer.start()
+        try:
+            with fetcher.destination_lock(tmp_path, timeout=10, poll=0.01):
+                elapsed = time.monotonic() - started
+        finally:
+            timer.cancel()
+        # It waited for the holder and only then entered the transaction.
+        assert elapsed >= hold_seconds
+    finally:
+        release.set()
+        holder.join(5)
+
+
+def test_abandoned_lock_file_does_not_block_a_new_run(fetcher, tmp_path, monkeypatch):
+    """A lock file left by a killed run must not hold the directory hostage."""
     (tmp_path / fetcher.LOCK_NAME).write_text("pid=1\n", encoding="utf-8")
-    monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 0)
-
-    def explode(*args, **kwargs):
-        raise AssertionError("a locked destination must not be read or written")
-
-    monkeypatch.setattr(fetcher, "urlopen", explode)
-    with pytest.raises(OSError, match="another fetch is running"):
-        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
-    assert "LOCK" in capsys.readouterr().out
-    assert not (tmp_path / "a.csv").exists()
-
-
-def test_stale_lock_is_broken(fetcher, tmp_path, monkeypatch):
-    """A lock left by a killed run must not block the directory forever."""
-    lock = tmp_path / fetcher.LOCK_NAME
-    lock.write_text("pid=1\n", encoding="utf-8")
-    stale = time.time() - fetcher.LOCK_STALE_SECONDS - 60
-    os.utime(lock, (stale, stale))
+    # Short timeout so a lock implementation that waits on a marker file fails fast
+    # instead of stalling the suite for the full production timeout.
+    monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 2)
     serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    started = time.monotonic()
     fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert time.monotonic() - started < 1.0
     assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
-    assert not lock.exists()
+
+
+def test_no_background_work_outlives_the_lock(fetcher, tmp_path):
+    """Nothing may keep touching the lock file after this run has left the context.
+
+    A heartbeat thread that outlives the release can touch the lock file of the next
+    owner, which corrupts its staleness handling and the isolation of the transaction.
+    """
+    baseline = {thread.ident for thread in threading.enumerate()}
+    lock = tmp_path / fetcher.LOCK_NAME
+    with fetcher.destination_lock(tmp_path, timeout=5, poll=0.01):
+        assert lock.is_file()
+    stamp = lock.stat().st_mtime_ns
+    time.sleep(0.2)
+    assert lock.stat().st_mtime_ns == stamp
+    assert {thread.ident for thread in threading.enumerate()} == baseline
 
 
 def test_failed_backup_copy_leaves_no_partial_file(fetcher, tmp_path, monkeypatch, capsys):
@@ -1009,61 +1087,6 @@ def test_failed_backup_copy_leaves_no_partial_file(fetcher, tmp_path, monkeypatc
     assert scratch_files(tmp_path) == []
     # The destination still holds the bytes it had before the failed run.
     assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
-
-
-def test_lock_released_mid_acquire_is_retried(fetcher, tmp_path, monkeypatch, capsys):
-    """A lock that vanishes between os.open and stat is a handoff, not a failure."""
-    (tmp_path / fetcher.LOCK_NAME).write_text("pid=1\n", encoding="utf-8")
-    real_open = os.open
-    attempts = {"count": 0}
-
-    def racy_open(path, flags, *args, **kwargs):
-        attempts["count"] += 1
-        if attempts["count"] == 1:
-            # The owner releases the lock exactly between O_EXCL failing and stat().
-            Path(path).unlink()
-            raise FileExistsError(errno.EEXIST, "simulated release race", str(path))
-        return real_open(path, flags, *args, **kwargs)
-
-    monkeypatch.setattr(fetcher.os, "open", racy_open)
-    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
-    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
-    assert attempts["count"] >= 2
-    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
-
-
-def test_live_owner_with_heartbeat_is_never_reclaimed_as_stale(fetcher, tmp_path, monkeypatch):
-    """A slow but live run must not lose its lock to the stale-reclaim path."""
-    monkeypatch.setattr(fetcher, "LOCK_STALE_SECONDS", 0.05)
-    monkeypatch.setattr(fetcher, "LOCK_HEARTBEAT_SECONDS", 0.01)
-    holder_started = threading.Event()
-    release = threading.Event()
-    lock = tmp_path / fetcher.LOCK_NAME
-
-    def hold():
-        with fetcher.destination_lock(tmp_path, timeout=5, poll=0.01):
-            holder_started.set()
-            release.wait(3)
-
-    holder = threading.Thread(target=hold, daemon=True)
-    holder.start()
-    try:
-        assert holder_started.wait(5)
-        # Far longer than the stale threshold: only a heartbeat keeps this lock alive.
-        time.sleep(0.4)
-        monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 0)
-
-        def explode(*args, **kwargs):
-            raise AssertionError("a live owner's lock must not be reclaimed")
-
-        monkeypatch.setattr(fetcher, "urlopen", explode)
-        with pytest.raises(OSError, match="another fetch is running"):
-            fetcher.fetch(tmp_path, files={"a.csv": entry_for(PAYLOAD)})
-        assert lock.exists()
-    finally:
-        release.set()
-        holder.join(5)
-    assert not lock.exists()
 
 
 def test_existing_backup_is_never_overwritten(fetcher, tmp_path, monkeypatch):
