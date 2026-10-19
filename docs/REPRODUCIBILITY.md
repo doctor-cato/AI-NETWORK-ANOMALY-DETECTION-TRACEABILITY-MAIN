@@ -104,4 +104,26 @@ Timestamp trong manifest là ISO 8601 nguyên giây kèm offset tường minh
 `--downloaded-at` về UTC trước khi ghi; `verify` kiểm tra mọi timestamp tìm thấy trong
 manifest và chỉ đọc, nên chạy verify không đổi file manifest.
 
-Cập nhật: 2026-10-17.
+## Bằng chứng M1 tại head PR #22
+
+Ở `8b82a6e` (2026-10-19), `python -m pytest tests -q --tb=short` PASS với **144 tests**.
+CI của đúng head đó PASS 4/4 cho Ubuntu/Windows × Python 3.11/3.12. Vì runner CI không chứa raw
+CSV, `validate_data.py` trong CI là `SKIPPED` có warning annotation, không phải PASS cho dữ liệu
+thật. Báo cáo version-control `reports/data_quality/unsw_nb15_validation.json` là evidence local
+trên CSV thật: 45 cột và 175.341/82.332 dòng, không blank/missing/nhãn-category bất hợp lệ hoặc
+mâu thuẫn; duplicate bỏ `id` là 67.601/26.387 và vẫn cần Issue #7 audit.
+
+## Giới hạn tái lập và recovery
+
+Transaction fetch không phải bảo đảm ACID: marker mất/hỏng, lỗi filesystem hay process không dùng
+script có thể để lại trạng thái cần recovery thủ công. Lock OS chỉ serial hóa các lần chạy hợp tác
+của `fetch_unsw_nb15.py` trên một máy; `dataset_manifest.py` không lấy lock, nên record/verify có
+thể quan sát xen kẽ với fetch. Khi hardlink không khả dụng, `record` vẫn tránh ghi đè nhờ
+`O_CREAT|O_EXCL` nhưng publish manifest không atomic về nội dung. Các giới hạn này không làm sai
+evidence validation đã ghi, nhưng không phải tuyên bố bảo vệ dữ liệu toàn diện.
+
+Issue #7 vẫn ngoài phạm vi: chưa audit cross-split duplicate, near-duplicate, flow/session/group
+overlap, feature leakage hay quyết định feature/split. Không coi profile validation là leakage-safe
+preprocessing hoặc thí nghiệm ML.
+
+Cập nhật: 2026-10-19.

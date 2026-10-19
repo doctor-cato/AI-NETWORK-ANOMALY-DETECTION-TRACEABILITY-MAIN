@@ -101,9 +101,9 @@ UNSW-NB15 là dataset nghiên cứu chính của đề tài. Raw CSV không đư
 - Hướng dẫn provenance và chuẩn bị dữ liệu: [`docs/DATASET.md`](docs/DATASET.md).
 - Validator hiện có: `scripts/validate_data.py`; khi chưa có raw data, script trả `SKIPPED`, không phải validation `PASS`.
 - Fixture trong `tests/` là dữ liệu tổng hợp cho kiểm thử, không phải UNSW-NB15.
-- PR [#22](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/pull/22) là workstream acquisition/validation cho Issue #4/#5, tách khỏi trạng thái implementation của `main`. Đọc [`docs/IMPLEMENTATION_CHECKPOINTS.md`](docs/IMPLEMENTATION_CHECKPOINTS.md) để biết evidence và điều kiện chuyển tiếp; không suy diễn trạng thái code từ PR sang `main`.
-- Workstream đó bổ sung `scripts/fetch_unsw_nb15.py` (tải mirror revision-pinned, cache, lock, rollback), manifest ở `data/UNSW_NB15_MANIFEST.json` và báo cáo tổng hợp ở `reports/data_quality/unsw_nb15_validation.json`.
-- Các SHA-256 trong workstream đó là **project-computed local hashes**, không phải checksum chính thức do UNSW công bố.
+- PR [#22](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/pull/22) triển khai acquisition và kiểm định cấu trúc cho Issue #4/#5: `scripts/fetch_unsw_nb15.py`, `scripts/dataset_manifest.py`, `scripts/validate_data.py`, manifest version-control và báo cáo aggregate. Không có training, preprocessing hay đánh giá ML trong phạm vi này.
+- Báo cáo dữ liệu thật version-control tại `reports/data_quality/unsw_nb15_validation.json`: training/testing lần lượt 175.341/82.332 dòng, 45 cột, không blank/missing/nhãn hoặc category không hợp lệ và không mâu thuẫn `label`/`attack_cat`; duplicate sau khi bỏ `id` là 67.601/26.387. Đây là kiểm định cấu trúc và giá trị, không phải leakage audit.
+- Các SHA-256 là **project-computed local hashes** được đối chiếu mirror, không phải checksum chính thức do UNSW công bố. Raw CSV vẫn không được commit.
 
 Không ghi nhận metric, row count, checksum hoặc kết quả thực nghiệm như kết quả hiện hành nếu chưa có bằng chứng tương ứng trong checkout/PR được nêu rõ.
 
@@ -136,7 +136,7 @@ python scripts/run_experiments.py --step check-data
 python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
 ```
 
-Sau khi workstream acquisition của PR #22 có trong checkout, vòng lặp dữ liệu đầy đủ là:
+Vòng lặp dữ liệu đầy đủ (chỉ khi có CSV thật trong `data/raw/`) là:
 
 ```bash
 python scripts/fetch_unsw_nb15.py
@@ -152,18 +152,18 @@ CI và kiểm tra cục bộ được mô tả trong [`.github/workflows/ci.yml`
 
 ```bash
 python scripts/check_environment.py
-python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
+python -m pytest tests -q --tb=short
 git diff --check
 ```
 
-Seed cấu hình hiện tại là `42`. Khi các experiment được triển khai, mỗi kết quả cần ghi dataset/split identifier, seed, preprocessing boundary, dependency versions, config, metrics, artifact và reproduction command. Fixture tổng hợp chỉ kiểm tra hành vi code; không nâng trạng thái thành `EXPERIMENTALLY VALIDATED` trên UNSW-NB15.
+Tại head `8b82a6e` của PR #22, full suite có **144 tests**. CI mới nhất của head đó PASS 4/4 (Ubuntu/Windows × Python 3.11/3.12); CI không có raw CSV nên riêng bước validator là `SKIPPED`, không phải validation dữ liệu thật. Seed cấu hình hiện tại là `42`. Khi các experiment được triển khai, mỗi kết quả cần ghi dataset/split identifier, seed, preprocessing boundary, dependency versions, config, metrics, artifact và reproduction command. Fixture tổng hợp chỉ kiểm tra hành vi code; không nâng trạng thái thành `EXPERIMENTALLY VALIDATED` trên UNSW-NB15.
 
 ## Implementation Status (C0–C11)
 
 | Checkpoint | Phạm vi | Trạng thái hiện tại |
 | --- | --- | --- |
 | C0 | Governance, scope, architecture, traceability, backlog | `IMPLEMENTED`; evidence và phần còn lại xem checkpoint log |
-| C1 | Data quality, EDA, leakage audit | `PLANNED`; #4/#5 `TESTED` trên PR #22, chưa đồng nhất với `main`; #6/#7 `PLANNED` |
+| C1 | Data quality, EDA, leakage audit | #4/#5 `IMPLEMENTED` và `TESTED`: acquisition/provenance và profile validation có evidence dữ liệu thật; EDA, overlap/near-duplicate/group leakage audit của #7 vẫn `PLANNED` |
 | C2 | Leakage-safe preprocessing và artifacts | `PLANNED` |
 | C3 | Random Forest và XGBoost supervised protocol | `PLANNED`; RF mới có constructor |
 | C4 | Isolation Forest, Autoencoder, unknown-attack holdout | `PLANNED`; Isolation Forest mới có constructor |
@@ -216,6 +216,8 @@ Repository định nghĩa năm nhóm trách nhiệm trong [`docs/TEAM_TASKS.md`]
 - Unknown-attack holdout không đồng nghĩa với bằng chứng phát hiện zero-day.
 - AES-GCM được dùng như cryptography chuẩn; đề tài không tự thiết kế thuật toán mã hóa.
 - Người dùng phải tự xác nhận điều kiện sử dụng của UNSW-NB15 và không dùng prototype như một security control chưa được xác minh.
+- Fetch/recovery là best-effort trên local filesystem, không phải transaction bền vững tuyệt đối: marker hoặc filesystem hỏng có thể cần phục hồi thủ công. Lock chỉ điều phối các lần chạy hợp tác của fetch trên một máy; `dataset_manifest.py` không dùng lock này. Trên filesystem không hỗ trợ hardlink, publish manifest không atomic về nội dung.
+- Issue #7 chưa đóng: duplicate được ghi nhận nhưng chưa có audit overlap, near-duplicate, group/session leakage, feature decision hoặc thay đổi official split.
 
 ## License & References
 

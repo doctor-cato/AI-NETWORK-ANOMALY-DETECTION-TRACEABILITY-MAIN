@@ -1,11 +1,29 @@
 # Báo cáo migration workflow và audit quản lý dự án
 
-Ngày kiểm tra: 2026-10-17
+Ngày kiểm tra lịch sử M0: 2026-10-17; bổ sung M1: 2026-10-19
 Repository: `doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN`
 
 > **Phạm vi file này.** Mục 2–5 và 7–8 ghi lại lượt migration workflow trước đó và giữ nguyên như lịch sử.
-> Mục 1 và 6 được cập nhật theo lượt hoàn thiện M0 (Issue #2 và #3) và là phần cần đọc trước.
+> Mục 1 và 6 ghi snapshot M0; phần bổ sung M1 bên dưới là trạng thái mới hơn cho PR #22.
 > Ma trận yêu cầu → issue → cách kiểm chứng nằm ở `docs/TRACEABILITY_MATRIX.md`.
+
+## Bổ sung M1 — Issue #4/#5, PR #22
+
+Head được kiểm chứng trước cập nhật tài liệu: `8b82a6ef4aa13190e5378af2262b6894f3ea49d1`.
+PR #22 bổ sung acquisition từ mirror revision-pinned, manifest/provenance, profile validator 45 cột
+và báo cáo aggregate; không triển khai training, preprocessing hoặc đánh giá ML.
+
+| Hạng mục | Trạng thái | Bằng chứng và giới hạn |
+|---|---|---|
+| Full suite | PASS | `python -m pytest tests -q --tb=short` → 0, **144 tests** tại `8b82a6e` |
+| CI | PASS | Run `39248410961`: 4/4 Ubuntu/Windows × Python 3.11/3.12 trên `8b82a6e`; runner không có raw CSV nên validator `SKIPPED`, không phải real-data PASS |
+| Kiểm định CSV thật | PASS | Báo cáo version-control: training/testing 175.341/82.332 hàng, 45 cột, blank/missing/invalid label/category/inconsistency = 0; SHA-256 local được manifest đối chiếu |
+| Duplicate | NOT VERIFIED cho leakage | Bỏ `id`: 67.601 training, 26.387 testing. Chỉ được ghi cảnh báo; chưa audit cross-split/near-duplicate/group overlap |
+| Transaction/recovery | TESTED, có giới hạn | Marker + backup + rollback xử lý các đường lỗi đã test; không bảo đảm tuyệt đối nếu marker/filesystem hỏng hoặc có process không hợp tác |
+| Manifest/concurrency | TESTED, có giới hạn | `os.link` không ghi đè khi hỗ trợ hardlink; fallback không atomic nội dung. Lock chỉ cho fetch process hợp tác trên một máy; manifest tool không lấy lock |
+
+Issue #7 không thuộc PR này và vẫn mở: EDA, duplicate/overlap/leakage audit, feature decision và
+protocol split chưa được xử lý. Không có metric model hay kết quả experiment để báo cáo.
 
 ## 1. Trạng thái Git
 

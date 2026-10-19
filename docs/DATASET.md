@@ -93,11 +93,10 @@ lần fetch đang thay file có thể ghi lại trạng thái lẫn, nhưng `ver
 mismatch SHA-256, nên sai lệch bị phát hiện chứ không lan. `record` cũng từ chối ghi đè một
 manifest đã tồn tại.
 
-Tên staging và backup có kèm PID nên hai lần chạy đồng thời không dùng chung file tạm; cả hai đều
-được mở bằng `O_CREAT|O_EXCL` sau khi xóa bất kỳ thứ gì đang nằm ở tên đó. Tên scratch là tất
-định, nên một symlink được cài sẵn tại đó sẽ chuyển hướng ghi ra ngoài thư mục đích trước khi
-checksum kịp kiểm tra; `O_EXCL` làm cho việc mở file trở nên nguyên tử và an toàn với symlink
-trên cả Windows, nơi không có `O_NOFOLLOW`.
+Tên staging và backup dùng tên trống kế tiếp (có PID) nên hai lần chạy không dùng chung file tạm
+và không ghi đè scratch còn sót. Chúng được mở bằng `O_CREAT|O_EXCL` mà không xóa tên đang tồn
+tại; vì vậy một symlink hoặc backup còn lại làm thao tác thất bại thay vì chuyển hướng ghi ra ngoài
+thư mục đích. Đây là biện pháp cần thiết trên Windows, nơi không có `O_NOFOLLOW`.
 
 Cài đặt ghi một marker `.unsw-nb15-transaction.json` **trước lần thay đầu tiên**, ghi lại trạng
 thái trước đó của từng file (tên backup, hoặc "trước đó không tồn tại"). Rollback chỉ chạy khi
@@ -125,10 +124,9 @@ trước đây chính là đường để mất file.
 Manifest được ghi ra file phụ **có kèm PID** rồi đặt vào chỗ bằng `os.link`, nên bước cuối từ
 chối ghi đè nếu manifest đã xuất hiện giữa lúc kiểm tra và lúc ghi. Trên filesystem không có
 hardlink, bước đặt vào chỗ **giữ chỗ tên bằng `O_CREAT|O_EXCL`** rồi mới đổ nội dung vào — vẫn
-không ghi đè được manifest của người khác, đổi lại không còn tính nguyên tử của nội dung trên
-đúng loại filesystem đó. `record` vẫn từ chối ghi đè manifest đã tồn tại, và ghi tạm rồi đặt
-vào chỗ nên một lần ghi bị giết nửa chừng không để lại JSON cắt cụt mà mọi lần `record` sau đều
-không ghi được nữa.
+không ghi đè được manifest của người khác, đổi lại nội dung không atomic trên đúng loại filesystem
+đó: gián đoạn lúc ghi có thể để lại manifest cắt cụt cần xử lý thủ công. `record` không có lock
+chung với fetch và vẫn từ chối ghi đè manifest đã tồn tại.
 
 Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
 
@@ -175,3 +173,17 @@ không mâu thuẫn label/category. Duplicate bỏ qua `id` lần lượt là 67
 Khi cả hai CSV vắng mặt, validator in `SKIPPED` và exit 0 theo contract M0; trạng thái
 đó không phải PASS. Fixture tổng hợp chỉ kiểm tra hành vi validator, không thay thế báo
 cáo dữ liệu thật.
+
+## Giới hạn bảo vệ dữ liệu và phạm vi #7
+
+- Rollback/recovery bảo vệ các đường lỗi đã kiểm thử, nhưng không là database transaction hay
+  bảo đảm bền vững tuyệt đối trước marker bị mất/hỏng, lỗi filesystem hoặc can thiệp ngoài script.
+  Khi marker không đọc được hay recovery chưa xong, script dừng và giữ marker/backup để kiểm tra
+  thủ công; không được suy diễn rằng cặp CSV đã tự động an toàn trong mọi sự cố.
+- Lock chỉ điều phối process **cùng dùng `fetch_unsw_nb15.py`** trên một máy và chờ tối đa 900s;
+  process không hợp tác, filesystem có semantics lock khác, và `dataset_manifest.py` nằm ngoài
+  lock đều không được serial hóa. `record` có thể quan sát trạng thái lẫn trong lúc fetch; `verify`
+  chỉ phát hiện SHA-256 mismatch sau đó, không biến thao tác này thành atomic transaction.
+- #4/#5 không thực hiện EDA, audit duplicate giữa split, near-duplicate, flow/session/group overlap,
+  feature leakage, feature selection hay thay đổi official partition. Duplicate 67.601/26.387 chỉ là
+  cảnh báo đầu vào cho Issue #7; Issue #7 vẫn chưa được đóng.
