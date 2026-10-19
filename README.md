@@ -2,7 +2,7 @@
 
 Hệ thống nghiên cứu về phát hiện bất thường mạng, phân tích rủi ro và truy vết hành vi trong phạm vi hạ tầng được phép giám sát. Đề tài kết hợp **UNSW-NB15**, các mô hình supervised/unsupervised, **Behavioral Vector**, **Risk/Trace Engine**, mã hóa **AES-GCM** và **Adaptive Key Rotation**.
 
-> **Trạng thái hiện tại:** C0 — Governance & Documentation đã được triển khai trong nhánh công việc hiện tại. C1–C11 vẫn chủ yếu `PLANNED`; chưa có kết quả ML end-to-end hoặc benchmark được công bố trong repository. PR [#22](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/pull/22) là workstream UNSW-NB15 riêng, đang `OPEN` và chưa được xem là code đã merge vào `main`.
+> **Trạng thái hiện tại:** C0 — Governance & Documentation đã được triển khai trong nhánh công việc hiện tại. C1–C11 vẫn chủ yếu `PLANNED`; chưa có kết quả ML end-to-end hoặc benchmark được công bố trong repository. Trạng thái và bằng chứng chuyển tiếp được ghi trong [`docs/IMPLEMENTATION_CHECKPOINTS.md`](docs/IMPLEMENTATION_CHECKPOINTS.md).
 
 ## Tổng quan
 
@@ -52,43 +52,47 @@ Sơ đồ dưới đây mô tả **kiến trúc mục tiêu của Phương án B
 
 ```mermaid
 flowchart LR
-    A[UNSW-NB15 / lab events\nnetwork • API • auth • session] --> B[Data quality & provenance\nC1 • PLANNED]
-    B --> C[Split before fit\npreprocessing & feature audit\nC2 • PLANNED]
-    C --> D[Behavioral Vector Engine\nversioned schemas • C5 • PLANNED]
-    D --> E1[Random Forest\nbaseline • C3]
-    D --> E2[XGBoost\nC3 • PLANNED]
-    D --> E3[Isolation Forest\nC4]
-    D --> E4[Autoencoder\nC4 • PLANNED]
-    E1 --> F[Detection & classification results\nscore • label • artifact metadata]
+    A[UNSW-NB15 / lab events<br/>network • API • auth • session] --> B[Data quality & provenance<br/>C1 • PLANNED]
+    B --> C[Split before fit<br/>preprocessing & feature audit<br/>C2 • PLANNED]
+
+    C --> D[ML Engine<br/>C3–C4 • PLANNED]
+    D --> E1[Random Forest<br/>baseline]
+    D --> E2[XGBoost]
+    D --> E3[Isolation Forest]
+    D --> E4[Autoencoder]
+    E1 --> F[Detection & classification results<br/>score • label • artifact metadata]
     E2 --> F
     E3 --> F
     E4 --> F
-    F --> G[Risk Engine\n0–100 • explanation\nC6 • PLANNED]
-    D --> H[Trace Engine\ncorrelation confidence • evidence\ntimeline • C6 • PLANNED]
-    G --> H
-    H --> I[Security layer\nAES-GCM • key-id • nonce\nC7 • PLANNED]
-    G --> J[Adaptive response\ndry-run only • C8 • PLANNED]
-    I --> K[(SQLite\nlab persistence • C9 • PLANNED)]
-    H --> K
-    J --> K
-    K --> L[FastAPI\nvalidated service API • C9 • PLANNED]
-    L --> M[Streamlit\nthin dashboard client • C9 • PLANNED]
+
+    C --> G[Behavioral Vector Engine<br/>versioned schemas • C5 • PLANNED]
+    G --> H[Correlation<br/>confidence • similarity]
+    F --> I[Risk Engine<br/>0–100 • explanation<br/>C6 • PLANNED]
+    H --> J[Trace Engine<br/>evidence • grouping • timeline<br/>C6 • PLANNED]
+    I --> J
+
+    I --> K[Key Manager<br/>key-id • lifecycle • recovery<br/>C7 • PLANNED]
+    I --> L[Adaptive rotation & response<br/>fixed 30 min • early rotation<br/>dry-run • C8 • PLANNED]
+    L --> K
+    J --> M[Security event envelope<br/>AES-GCM • unique nonce • tag<br/>C7 • PLANNED]
+    K --> M
+    M --> N[(SQLite persistence<br/>event • session • evidence<br/>key metadata • rotation audit<br/>C9 • PLANNED)]
+    L --> N
+    N --> O[FastAPI<br/>validated service API • C9 • PLANNED]
+    O --> P[Streamlit<br/>thin dashboard client • C9 • PLANNED]
 ```
 
 ## Technology Stack
 
-- **Python 3.11+**, pandas, NumPy, scikit-learn, joblib, matplotlib, seaborn, pytest.
-- **Random Forest**: supervised baseline bắt buộc của nghiên cứu.
-- **XGBoost**: supervised comparator, chỉ được báo cáo sau khi implementation và protocol được kiểm chứng.
-- **Isolation Forest** và **Autoencoder**: hướng unsupervised/unknown-attack; threshold chỉ chọn trên validation.
-- **Behavioral Vector**: biểu diễn đặc trưng network/API/session có version và chính sách missing-feature.
-- **Risk/Trace Engine**: risk score, explanation, correlation confidence, evidence và timeline.
-- **AES-GCM**: authenticated encryption chuẩn; không tự thiết kế thuật toán cryptography.
-- **FastAPI + SQLite**: backend và persistence mặc định cho lab; PostgreSQL adapter là hướng mở rộng.
-- **Streamlit**: dashboard mỏng, chỉ gọi API theo kiến trúc mục tiêu.
-- **GitHub Actions**: CI hiện chạy trên Ubuntu/Windows với Python 3.11/3.12.
+| Đã có trong repository | Dự kiến theo Phương án B |
+| --- | --- |
+| Python 3.11+, pandas, NumPy, scikit-learn, joblib, matplotlib, seaborn, pytest | XGBoost và Autoencoder |
+| `network_anomaly` package, config, metrics, model constructors và data validator cơ bản | Behavioral Vector Engine cho network/API/session |
+| Unit/integration tests và GitHub Actions workflow | Risk/Trace Engine, correlation confidence và incident timeline |
+| `scripts/check_environment.py`, `scripts/validate_data.py`, `scripts/run_experiments.py --step check-data` | AES-GCM, Key Manager, key lifecycle và adaptive rotation |
+| — | FastAPI, SQLite persistence, PostgreSQL adapter tùy chọn và Streamlit thin client |
 
-Dependency hiện được khai báo dạng lower bound trong `pyproject.toml`; repository chưa có lockfile.
+Các mục ở cột “Dự kiến” chỉ trở thành `IMPLEMENTED` khi có code, test và evidence tương ứng. Dependency hiện được khai báo dạng lower bound trong `pyproject.toml`; repository chưa có lockfile.
 
 ## Dataset UNSW-NB15
 
@@ -97,7 +101,7 @@ UNSW-NB15 là dataset nghiên cứu chính của đề tài. Raw CSV không đư
 - Hướng dẫn provenance và chuẩn bị dữ liệu: [`docs/DATASET.md`](docs/DATASET.md).
 - Validator hiện có: `scripts/validate_data.py`; khi chưa có raw data, script trả `SKIPPED`, không phải validation `PASS`.
 - Fixture trong `tests/` là dữ liệu tổng hợp cho kiểm thử, không phải UNSW-NB15.
-- PR [#22](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/pull/22) bổ sung workstream acquisition/validation cho Issue #4/#5. Tại thời điểm kiểm tra, PR ở trạng thái `OPEN`, base `main`, head `feat/m1-unsw-nb15-validation`; bốn CI job Ubuntu/Windows × Python 3.11/3.12 đều `SUCCESS`. Đây là bằng chứng của PR, không phải bằng chứng code đã có trên `main`.
+- PR [#22](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/pull/22) là workstream acquisition/validation cho Issue #4/#5, tách khỏi trạng thái implementation của `main`. Đọc [`docs/IMPLEMENTATION_CHECKPOINTS.md`](docs/IMPLEMENTATION_CHECKPOINTS.md) để biết evidence và điều kiện chuyển tiếp; không suy diễn trạng thái code từ PR sang `main`.
 - Các SHA-256 trong workstream đó là **project-computed local hashes**, không phải checksum chính thức do UNSW công bố.
 
 Không ghi nhận metric, row count, checksum hoặc kết quả thực nghiệm như kết quả hiện hành nếu chưa có bằng chứng tương ứng trong checkout/PR được nêu rõ.
@@ -149,7 +153,7 @@ Seed cấu hình hiện tại là `42`. Khi các experiment được triển kha
 
 | Checkpoint | Phạm vi | Trạng thái hiện tại |
 | --- | --- | --- |
-| C0 | Governance, scope, architecture, traceability, backlog | `IMPLEMENTED`; CI remote của checkpoint còn phụ thuộc PR riêng |
+| C0 | Governance, scope, architecture, traceability, backlog | `IMPLEMENTED`; evidence và phần còn lại xem checkpoint log |
 | C1 | Data quality, EDA, leakage audit | `PLANNED`; #4/#5 `TESTED` trên PR #22, chưa đồng nhất với `main`; #6/#7 `PLANNED` |
 | C2 | Leakage-safe preprocessing và artifacts | `PLANNED` |
 | C3 | Random Forest và XGBoost supervised protocol | `PLANNED`; RF mới có constructor |
