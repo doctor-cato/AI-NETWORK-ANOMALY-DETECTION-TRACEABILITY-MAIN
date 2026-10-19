@@ -2,12 +2,17 @@
 
 **Ngôn ngữ tài liệu:** Tiếng Việt | **Tên dự án:** Xây dựng hệ thống AI phát hiện kết nối mạng bất thường bằng học máy và phân tích hành vi lưu lượng mạng
 
-**Trạng thái:** Nền tảng repository M0 đã triển khai: cấu trúc, tài liệu, exit-code contract cho các bước dự kiến và CI matrix Python 3.11/3.12 × Ubuntu/Windows. `FINAL_REPORT.md` ghi bằng chứng kiểm chứng M0 mang tính lịch sử, không phải claim CI cho mọi commit sau đó. Cặp partition UNSW-NB15 đã được tải local, đối chiếu mirror, xác minh manifest và validation ở M1; raw CSV vẫn ngoài Git. Thực nghiệm mô hình chưa chạy. Xem `docs/TRACEABILITY_MATRIX.md` cho ánh xạ yêu cầu → issue → cách kiểm chứng.
+**Trạng thái:** C0 của roadmap Phương án B đang triển khai trên nền M0 lịch sử. C1–C11
+chưa được coi là hoàn thành nếu thiếu code/test/evidence. PR #22 chứa workstream #4/#5
+(tải UNSW-NB15 tái lập, manifest provenance, validation) với bằng chứng local riêng, vẫn
+mở và không được suy thành trạng thái `main` cho đến khi được review/merge hợp lệ. Xem
+`docs/ROADMAP_FULL_SYSTEM.md`, `docs/IMPLEMENTATION_CHECKPOINTS.md` và
+`docs/TRACEABILITY_MATRIX.md`.
 
 - **License:** Apache License 2.0 (not MIT)
 - **Repository:** https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN
 - **Branch:** `main`
-- **Project type:** Course assignment (AI / Machine Learning) — 5–6 weeks
+- **Project type:** Course project — roadmap prototype C0–C11
 
 ---
 
@@ -18,7 +23,10 @@
 
 ## Tóm tắt ngắn
 
-Xây dựng một pipeline học máy tái lập được sử dụng dữ liệu lưu lượng mạng UNSW-NB15 để phát hiện các kết nối bất thường. Dự án cung cấp baseline Random Forest giám sát, ghi rõ protocol đánh giá riêng cho Isolation Forest không giám sát (nếu khả thi), ghi metric một cách minh bạch, và bao gồm thành phần suy luận và demo — không tuyên bố phát hiện zero-day chưa kiểm chứng, triển khai production, hoặc kết quả benchmark giả mạo.
+Xây dựng hệ thống lab tái lập được cho UNSW-NB15 và network/API/session events: phát hiện
+và phân loại bất thường, Behavioral Vector, Risk/Trace Engine, AES-GCM/key rotation,
+FastAPI/SQLite và Streamlit. Hệ thống không tuyên bố zero-day, attacker identity hoặc
+production readiness khi chưa có bằng chứng.
 
 ---
 
@@ -28,18 +36,10 @@ Lưu lượng mạng chứa cả mẫu kết nối bình thường và bất th�
 
 ## Mục tiêu (bắt buộc — xem `docs/PROJECT_CHARTER.md`)
 
-Mục tiêu 1–5 và 7–10 là bắt buộc. Mục tiêu 6 (Isolation Forest) là **tùy chọn**, không chặn chấp nhận core.
-
-1. Phân tích phát hiện bất thường trong lưu lượng mạng và xác định mục tiêu.
-2. Sử dụng UNSW-NB15 làm bộ dữ liệu chính; kiểm tra schema và nhãn.
-3. Kiểm tra chất lượng dữ liệu; xử lý giá trị thiếu; tránh rò rỉ dữ liệu (target leakage).
-4. Thiết kế chia train/val/test tái lập.
-5. Xây dựng baseline Random Forest với pipeline đã ghi.
-6. *(Tùy chọn)* Xây dựng Isolation Forest theo phương pháp không giám sát nếu khả thi; ghi protocol đánh giá riêng.
-7. So sánh bằng Precision, Recall, F1, Macro-F1, confusion matrix, FPR — với protocol rõ ràng cho từng mô hình.
-8. Phân tích dương tính giả / âm tính giả; ghi rõ hạn chế.
-9. Cung cấp pipeline suy luận và demo tối thiểu.
-10. Đưa ra script/notebook tái lập, kiến trúc, tài liệu và dàn ý trình bày.
+Phạm vi bắt buộc được chia thành C0–C11: governance; Data/EDA; preprocessing; RF và
+XGBoost; Isolation Forest và Autoencoder; Behavioral Vector; Risk/Trace; AES-GCM và
+key lifecycle; adaptive dry-run response; FastAPI/SQLite/Streamlit; 7 experiments; và
+bàn giao report/slides/demo cho 5 vai trò.
 
 Ma trận yêu cầu → issue → deliverable → acceptance criteria → cách kiểm chứng nằm ở
 `docs/TRACEABILITY_MATRIX.md`.
@@ -47,15 +47,14 @@ Ma trận yêu cầu → issue → deliverable → acceptance criteria → cách
 ## Scope and non-goals
 
 ### Trong phạm vi
-- Phân tích vấn đề; nguồn dữ liệu; EDA; tiền xử lý; chia dữ liệu; RF; IF (nếu có thời gian); đánh giá; phân tích lỗi; suy luận; tài liệu.
+- Toàn bộ module và checkpoint trong `docs/ROADMAP_FULL_SYSTEM.md`, với security response
+  chỉ ở chế độ lab/dry-run.
 
-### Rõ ràng ngoài phạm vi (đã ghi trong `docs/FUTURE_WORK.md`; KHÔNG triển khai ngay)
-- Autoencoder, LSTM, Transformer, GNN.
+### Rõ ràng ngoài phạm vi
+- LSTM, Transformer, GNN và post-quantum cryptography.
 - Tuyên bố phát hiện zero-day không có chứng cứ thực nghiệm.
-- Truy vết danh tính thiết bị / hành vi từ vector đặc trưng (Trace Engine).
-- Mã hóa hành vi vector / xoay khóa thích ứng / mã hóa hậu lượng tử (post-quantum).
-- Chặn tự động / cô lập / phản công tự động.
-- Triển khai production / xử lý phân tán.
+- Truy vết danh tính thật của attacker.
+- Response trên hệ thống thật, phản công, production deployment hoặc xử lý phân tán.
 
 ---
 
@@ -63,9 +62,12 @@ Ma trận yêu cầu → issue → deliverable → acceptance criteria → cách
 
 - **Tên:** UNSW-NB15 (University of New South Wales — Network Based Data Set 15)
 - **Tham chiếu nguồn:** [trang UNSW-NB15 chính thức](https://research.unsw.edu.au/projects/unsw-nb15-dataset); xem `docs/DATASET.md`
-- **Trạng thái:** Đã xác minh local; raw CSV không commit
+- **Trạng thái:** Raw CSV không nằm trong Git. PR #22 có manifest/validator và bằng chứng
+  local riêng; `main` chưa chứa workstream đó cho đến khi được review/merge hợp lệ.
 - **Hướng dẫn tải:** `python scripts/fetch_unsw_nb15.py`; xem `docs/DATASET.md`
-- **Checksum / phiên bản:** `data/UNSW_NB15_MANIFEST.json`; báo cáo thật ở `reports/data_quality/unsw_nb15_validation.json`
+- **Checksum / phiên bản:** SHA-256 trên PR #22 là project-computed local hash, không phải
+  checksum do UNSW công bố; manifest ở `data/UNSW_NB15_MANIFEST.json`, báo cáo thật ở
+  `reports/data_quality/unsw_nb15_validation.json`
 - **Điều kiện sử dụng:** Học thuật / nghiên cứu; không phân phối lại dữ liệu gốc mà không xác nhận điều khoản
 - **Dữ liệu fixture:** `tests/` dùng fixture tổng hợp rõ ràng là test-only, không phải UNSW-NB15
 
@@ -94,7 +96,8 @@ Modules under `src/network_anomaly/`: config, data, preprocessing, features, mod
 ## Models (planned / partially implemented)
 
 - **Random Forest** (`src/network_anomaly/models/random_forest.py`) — supervised, **baseline bắt buộc**; hiện chỉ có constructor `build_model()`, chưa fit/predict (M2, #10).
-- **Isolation Forest** (`src/network_anomaly/models/isolation_forest.py`) — unsupervised, **tùy chọn**; hiện chỉ có constructor `build_model()` (M3, #11).
+- **Isolation Forest** (`src/network_anomaly/models/isolation_forest.py`) — bắt buộc ở C4;
+  hiện chỉ có constructor `build_model()`, chưa fit/threshold/evaluate (#11).
 
 Constructor test không chứng minh huấn luyện hay đánh giá đã chạy. Xem `docs/ARCHITECTURE.md` cho trạng thái từng mô-đun.
 
@@ -241,7 +244,7 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 - [Planned] Error analysis write-up (false positives / false negatives)
 - [Planned] Inference script and demo output
 - [Implemented] Documentation (all planned docs exist; some content planned until experiments complete)
-- [Planned] Milestones M0–M5 trong `docs/DEVELOPMENT_PLAN.md`; trạng thái remote phải kiểm tra trực tiếp trước khi dùng làm bằng chứng
+- [Implemented at C0] GitHub giữ M0–M5 và bổ sung M6/M7; C1–C11 vẫn cần evidence riêng
 
 ---
 
@@ -277,7 +280,7 @@ Thực thi thực tế phụ thuộc vào tải dataset và theo dõi thực ngh
 
 ## Team / task allocation (see `docs/TEAM_TASKS.md`)
 
-Roles defined for up to 3 members; names to be filled when team forms. Key roles: Data/EDA, ML/Model, Docs/Integration.
+Năm vai trò được định nghĩa; tên để trống cho đến khi nhóm xác nhận.
 
 ---
 
@@ -289,6 +292,8 @@ Roles defined for up to 3 members; names to be filled when team forms. Key roles
 - **M3 — Anomaly Detection and Model Evaluation:** Isolation Forest (if feasible), comparison protocol, error analysis.
 - **M4 — Inference, Demo and Integration:** Inference pipeline, demo, tests.
 - **M5 — Final Report, Presentation and Release:** Report outline, presentation outline, final verification.
+- **M6 — Backend, Dashboard & Integration:** Behavioral/Risk/Trace/Security services, API, persistence và dashboard.
+- **M7 — Experiments, Documentation & Delivery:** bảy experiments, report, slides, demo và handoff.
 
 Milestone links and deadlines: planned based on 5–6 week schedule; exact dates depend on course calendar.
 
@@ -296,7 +301,9 @@ Milestone links and deadlines: planned based on 5–6 week schedule; exact dates
 
 ## GitHub Issues and Milestones
 
-Issues are planned / created for key tasks; see `.github/ISSUE_TEMPLATE/` for formats. Milestones M0–M5 are defined. Issues include dataset validation, leakage audit, baseline, evaluation, inference, documentation, report, presentation, and verification — with labels and milestone links.
+Issues #23–#32 bổ sung governance, XGBoost, Autoencoder, Behavioral Vector, Risk/Trace,
+AES-GCM/key lifecycle, adaptive response, FastAPI và bảy experiments. Issue #11, #16 và
+#18–#20 đã được cập nhật dependency/milestone theo Phương án B.
 
 ---
 
