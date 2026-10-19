@@ -103,8 +103,16 @@ Cài đặt ghi một marker `.unsw-nb15-transaction.json` **trước lần thay
 thái trước đó của từng file (tên backup, hoặc "trước đó không tồn tại"). Rollback chỉ chạy khi
 tiến trình còn sống, nên nếu bị giết cứng giữa hai lần thay thì lần chạy sau thấy marker và
 hoàn nguyên cặp file về đúng trạng thái trước đó **trước khi** tin vào cache. Marker bị xóa khi
-cài đặt thành công, khi rollback hoàn tất và sau khi recovery; nếu rollback còn file chưa khôi
-phục được thì marker được giữ lại cho lần chạy sau.
+cài đặt thành công, khi rollback hoàn tất và sau khi recovery.
+
+Marker là bản ghi duy nhất cho biết byte cũ đang ở đâu, nên nó **không bao giờ bị xóa khi khôi
+phục thất bại** và lần chạy kế tiếp thử lại phần chưa xong. Marker không đọc được hoặc thiếu
+danh sách file thì lần chạy dừng ngay, yêu cầu kiểm tra `data/raw/` và xóa marker bằng tay; không
+lần cài đặt nào ghi đè một trạng thái chưa được hiểu.
+
+Manifest được ghi ra file phụ cùng thư mục rồi thay nguyên tử. Vì `record` từ chối ghi đè
+manifest đã tồn tại, một lần ghi bị giết nửa chừng sẽ để lại JSON cắt cụt không parse được và
+mọi lần `record` sau đó đều bị từ chối; ghi tạm rồi `os.replace` loại bỏ trạng thái đó.
 
 Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
 

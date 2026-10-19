@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -103,7 +104,18 @@ def record(files, destination, acquired_from, downloaded_at):
         "files": entries,
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    # Write beside the destination and swap: an interrupted record would otherwise leave
+    # a truncated manifest, and record refuses to write over an existing one, so the
+    # provenance would be unrecoverable without deleting it by hand.
+    staged = destination.with_name(destination.name + ".partial")
+    try:
+        with staged.open("w", encoding="utf-8") as stream:
+            json.dump(manifest, stream, indent=2)
+            stream.write("\n")
+        os.replace(staged, destination)
+    except OSError:
+        staged.unlink(missing_ok=True)
+        raise
     print(f"[dataset_manifest] RECORDED: {destination}")
 
 

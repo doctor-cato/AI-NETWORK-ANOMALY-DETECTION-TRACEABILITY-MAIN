@@ -1190,6 +1190,71 @@ def test_report_path_over_the_manifest_is_refused(validator, tmp_path, capsys):
     assert manifest.read_bytes() == before
 
 
+def test_failed_recovery_keeps_the_marker_and_the_backup(fetcher, tmp_path, monkeypatch, capsys):
+    """A restore that cannot finish must keep the record of where the old bytes are."""
+    (tmp_path / "a.csv").write_bytes(TWO_FILES["a.csv"])
+    kept_backup = tmp_path / f"{fetcher.BACKUP_PREFIX}999-a.csv"
+    kept_backup.write_bytes(PREVIOUS["a.csv"])
+    (tmp_path / fetcher.TXN_NAME).write_text(
+        json.dumps({"pid": 999, "files": [{"name": "a.csv", "backup": kept_backup.name}]}),
+        encoding="utf-8",
+    )
+
+    def refuse_replace(src, dst):
+        raise OSError(f"simulated restore failure for {Path(dst).name}")
+
+    monkeypatch.setattr(fetcher.os, "replace", refuse_replace)
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "RECOVERY WARNING" in out
+    # Deleting the marker here would orphan the only surviving copy of the old bytes.
+    assert (tmp_path / fetcher.TXN_NAME).is_file()
+    assert kept_backup.read_bytes() == PREVIOUS["a.csv"]
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+
+
+def test_recovery_refuses_to_continue_on_a_marker_it_cannot_parse(
+    fetcher, tmp_path, monkeypatch, capsys
+):
+    """An unreadable marker describes an unknown state; installing over it would hide it."""
+    marker = tmp_path / fetcher.TXN_NAME
+    marker.write_text("{not json", encoding="utf-8")
+
+    def explode(*args, **kwargs):
+        raise AssertionError("nothing may be downloaded while the state is unknown")
+
+    monkeypatch.setattr(fetcher, "urlopen", explode)
+    with pytest.raises(OSError, match="cannot interpret"):
+        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert marker.read_text(encoding="utf-8") == "{not json"
+    assert not (tmp_path / "a.csv").exists()
+
+
+def test_record_does_not_leave_a_partial_manifest(manifest_module, tmp_path, monkeypatch):
+    """An interrupted record must not leave a truncated manifest record refuses to replace."""
+    splits = []
+    for name in manifest_module.DEFAULT_FILES:
+        path = tmp_path / name
+        path.write_bytes(b"id,label\r\n1,0\r\n")
+        splits.append(path)
+    manifest = tmp_path / "manifest.json"
+
+    def refuse_replace(src, dst):
+        raise OSError("simulated manifest swap failure")
+
+    monkeypatch.setattr(manifest_module.os, "replace", refuse_replace)
+    with pytest.raises(OSError, match="simulated manifest swap failure"):
+        manifest_module.record(
+            splits,
+            manifest,
+            "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+            "2026-10-17T00:00:00Z",
+        )
+    assert not manifest.exists()
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(path.name for path in splits)
+
+
 def test_existing_backup_is_never_overwritten(fetcher, tmp_path, monkeypatch):
     """A backup kept for RECOVERY must survive a later run, including a reused PID."""
     (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])

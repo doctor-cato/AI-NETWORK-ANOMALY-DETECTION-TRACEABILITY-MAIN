@@ -244,13 +244,19 @@ def recover_interrupted_transaction(destination):
         return
     try:
         record = json.loads(marker.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
-        print(
-            f"[fetch_unsw_nb15] RECOVERY WARNING: cannot read {marker.name}: {error}. "
-            f"Leaving it in place; remove it by hand once the pair is checked."
-        )
-        return
-    for entry in record.get("files", []):
+        files = record["files"]
+        if not isinstance(files, list) or not all("name" in entry for entry in files):
+            raise ValueError("no usable file list")
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        # The marker is the only record of where the pre-run bytes are, so it is never
+        # removed on the way past and no new install is allowed to overwrite it.
+        raise OSError(
+            f"cannot interpret {marker.name}: {error}. It describes an interrupted "
+            f"install; inspect data/raw/ and remove the marker by hand once the pair "
+            f"is what it should be"
+        ) from None
+    failed = False
+    for entry in files:
         name = entry["name"]
         target = destination / name
         backup = entry.get("backup")
@@ -259,19 +265,27 @@ def recover_interrupted_transaction(destination):
                 os.replace(destination / backup, target)
                 print(f"[fetch_unsw_nb15] RECOVERY: restored {name} from {backup}")
             except OSError as error:
+                failed = True
                 print(
                     f"[fetch_unsw_nb15] RECOVERY WARNING: cannot restore {name} from "
-                    f"{backup}: {error}. The file stays as it is."
+                    f"{backup}: {error}. The backup and {marker.name} are kept."
                 )
         elif target.exists():
             try:
                 target.unlink()
                 print(f"[fetch_unsw_nb15] RECOVERY: removed {name}, created by the lost run")
             except OSError as error:
+                failed = True
                 print(
                     f"[fetch_unsw_nb15] RECOVERY WARNING: cannot remove {name}: {error}. "
-                    f"The file stays as it is."
+                    f"{marker.name} is kept."
                 )
+    if failed:
+        print(
+            f"[fetch_unsw_nb15] RECOVERY WARNING: {marker.name} is kept so the next run "
+            f"retries what this one could not finish"
+        )
+        return
     remove_quietly(marker)
 
 
