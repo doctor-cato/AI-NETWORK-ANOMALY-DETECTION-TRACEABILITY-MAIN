@@ -228,6 +228,15 @@ def copy_file(source, destination_path):
             shutil.copyfileobj(stream, output)
 
 
+def matches_pinned(path, expected):
+    """True only when the local bytes are exactly the pinned ones."""
+    try:
+        verify_download(path, expected)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
 def recover_interrupted_transaction(destination):
     """Undo a transaction whose process died between swaps, before anything else runs.
 
@@ -260,9 +269,23 @@ def recover_interrupted_transaction(destination):
         if backup:
             backup_path = destination / backup
             if not backup_path.exists():
-                # A restore in an earlier attempt consumed this backup. Treating that as
-                # a failure would strand the marker forever, because the file it names
-                # is gone precisely because the restore already happened.
+                # A restore in an earlier attempt consumed this backup. Treating that as a
+                # failure would strand the marker forever, but accepting the file without
+                # looking at it would accept whatever happens to sit there, so the bytes
+                # are checked against the pinned ones before the entry counts as restored.
+                expected = FILES.get(name)
+                if (
+                    target.is_file()
+                    and expected is not None
+                    and not matches_pinned(target, expected)
+                ):
+                    failed = True
+                    print(
+                        f"[fetch_unsw_nb15] RECOVERY WARNING: {name} has no backup and its "
+                        f"bytes do not match the pinned checksum; the pair cannot be "
+                        f"trusted and nothing was changed"
+                    )
+                    continue
                 if target.exists():
                     print(
                         f"[fetch_unsw_nb15] RECOVERY: {name} was already restored by an "

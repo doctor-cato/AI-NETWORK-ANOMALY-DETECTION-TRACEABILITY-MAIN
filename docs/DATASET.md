@@ -106,13 +106,15 @@ hoàn nguyên cặp file về đúng trạng thái trước đó **trước khi*
 cài đặt thành công, khi rollback hoàn tất và sau khi recovery.
 
 Marker là bản ghi duy nhất cho biết byte cũ đang ở đâu, nên nó **không bao giờ bị xóa khi khôi
-phục thất bại**. Recovery là idempotent: một backup đã được restore ở lần trước đã biến mất,
-và điều đó được hiểu là "đã xong" chứ không phải lỗi — nếu không, marker sẽ mắc vĩnh viễn ở
-một backup không còn tồn tại. Khi còn mục chưa khôi phục được, lần chạy **dừng với exit 1**
-trước khi kiểm tra cache, tải hay cài đặt bất cứ thứ gì: cài đặt chồng lên một cặp file mà lần
-chạy đó chưa sửa xong sẽ phá mất đúng thông tin cần để sửa. Marker không đọc được hoặc thiếu
-danh sách file thì cũng dừng, với thông báo yêu cầu kiểm tra `data/raw/` và xóa marker bằng tay;
-không lần cài đặt nào ghi đè một trạng thái chưa được hiểu.
+phục thất bại**. Recovery là idempotent: một backup đã được restore ở lần trước đã biến mất, và
+điều đó được hiểu là "đã xong" chứ không phải lỗi — nếu không, marker sẽ mắc vĩnh viễn ở
+một backup không còn tồn tại. Tuy nhiên mục đó **không được tin chỉ vì file còn đó**: khi backup
+đã mất và tên file là một split đã ghim, byte trên đĩa được đối chiếu với SHA-256 đã ghim trước
+khi coi là đã khôi phục; lệch thì coi là hỏng, dừng và giữ nguyên dữ liệu. Khi còn mục chưa khôi
+phục được, lần chạy **dừng với exit 1** trước khi kiểm tra cache, tải hay cài đặt bất cứ thứ
+gì: cài đặt chồng lên một cặp file mà lần chạy đó chưa sửa xong sẽ phá mất đúng thông tin cần để
+sửa. Marker không đọc được hoặc thiếu danh sách file thì cũng dừng, với thông báo yêu cầu kiểm
+tra `data/raw/` và xóa marker bằng tay; không lần cài đặt nào ghi đè một trạng thái chưa được hiểu.
 
 Staging và backup được cấp **tên trống kế tiếp** và mở bằng `O_CREAT|O_EXCL`. Hai tính chất
 này đi cùng nhau: tên không va chạm với lần chạy trước (PID được tái sụ dụng, và một backup còn
@@ -121,9 +123,12 @@ theo symlink hay xóa file đang tồn tại — Windows không có `O_NOFOLLOW`
 trước đây chính là đường để mất file.
 
 Manifest được ghi ra file phụ **có kèm PID** rồi đặt vào chỗ bằng `os.link`, nên bước cuối từ
-chối ghi đè nếu manifest đã xuất hiện giữa lúc kiểm tra và lúc ghi. `record` vẫn từ chối ghi đè
-manifest đã tồn tại, và ghi tạm rồi thay nguyên tử nên một lần ghi bị giết nửa chừng không để
-lại JSON cắt cụt mà mọi lần `record` sau đều không ghi được nữa.
+chối ghi đè nếu manifest đã xuất hiện giữa lúc kiểm tra và lúc ghi. Trên filesystem không có
+hardlink, bước đặt vào chỗ **giữ chỗ tên bằng `O_CREAT|O_EXCL`** rồi mới đổ nội dung vào — vẫn
+không ghi đè được manifest của người khác, đổi lại không còn tính nguyên tử của nội dung trên
+đúng loại filesystem đó. `record` vẫn từ chối ghi đè manifest đã tồn tại, và ghi tạm rồi đặt
+vào chỗ nên một lần ghi bị giết nửa chừng không để lại JSON cắt cụt mà mọi lần `record` sau đều
+không ghi được nữa.
 
 Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
 

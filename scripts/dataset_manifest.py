@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -73,11 +74,15 @@ def publish_new(staged, destination):
     except FileExistsError:
         raise
     except OSError:
-        # Filesystems without hard links still get the atomic swap; the caller has
-        # already refused an existing manifest.
-        if destination.exists():
+        # Filesystems without hard links: claim the name with O_EXCL, which cannot
+        # overwrite a manifest that appeared in the meantime, and fill it in.
+        handle = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            with os.fdopen(handle, "wb") as published, staged.open("rb") as source:
+                shutil.copyfileobj(source, published)
+        except BaseException:
+            destination.unlink(missing_ok=True)
             raise
-        os.replace(staged, destination)
         return
     staged.unlink()
 

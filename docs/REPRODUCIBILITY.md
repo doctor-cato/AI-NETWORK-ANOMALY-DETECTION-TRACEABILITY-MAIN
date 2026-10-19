@@ -75,9 +75,11 @@ tiến trình bị giết cứng giữa hai lần thay sẽ được lần chạ
 cache; marker không đọc được thì lần chạy dừng thay vì ghi đè trạng thái chưa hiểu, marker
 được giữ lại khi khôi phục thất bại, và recovery idempotent nên backup đã restore ở lần trước
 không làm mắc lần chạy sau. Khôi phục còn dang dở thì lần chạy dừng với exit 1 trước khi tải
-hay cài bất cứ thứ gì. `dataset_manifest.py record` ghi ra file phụ có kèm PID rồi đặt vào chỗ
+hay cài bất cứ thứ gì, và mục "backup đã biến mất" chỉ được coi là đã khôi phục khi byte còn lại
+khớp SHA-256 đã ghim. `dataset_manifest.py record` ghi ra file phụ có kèm PID rồi đặt vào chỗ
 bằng `os.link`, nên không ghi đè được manifest đã có và một lần ghi bị giết không để lại manifest
-cắt cụt.
+cắt cụt; trên filesystem không có hardlink thì giữ chỗ tên bằng `O_CREAT|O_EXCL` trước khi đổ
+nội dung.
 Một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch nên hai lần chạy không xen kẽ backup,
 swap và rollback; đó là khóa byte-range của hệ điều hành (`msvcrt.locking` / `fcntl.flock`)
 nên kernel giải phóng khi tiến trình chết, không có ngưỡng stale và không có bước phá lock

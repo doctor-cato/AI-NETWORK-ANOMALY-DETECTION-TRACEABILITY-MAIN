@@ -1,6 +1,7 @@
 """Synthetic CSV fixtures only; these are not UNSW-NB15 observations."""
 
 import csv
+import errno
 import hashlib
 import importlib.util
 import io
@@ -1245,9 +1246,15 @@ def test_record_does_not_leave_a_partial_manifest(manifest_module, tmp_path, mon
     def refuse_publish(src, dst):
         raise OSError("simulated manifest publish failure")
 
-    # Both publish paths: the hard link and the atomic-swap fallback.
+    def refuse_claim(path, flags, *args, **kwargs):
+        if Path(path) == manifest:
+            raise OSError("simulated manifest publish failure")
+        return os.open(path, flags, *args, **kwargs)
+
+    # Every publish path: the hard link, the atomic swap and the exclusive claim.
     monkeypatch.setattr(manifest_module.os, "link", refuse_publish)
     monkeypatch.setattr(manifest_module.os, "replace", refuse_publish)
+    monkeypatch.setattr(manifest_module.os, "open", refuse_claim)
     with pytest.raises(OSError, match="simulated manifest publish failure"):
         manifest_module.record(
             splits,
@@ -1395,6 +1402,83 @@ def test_record_refuses_an_existing_manifest_without_touching_it(manifest_module
     assert sorted(path.name for path in tmp_path.iterdir()) == sorted(
         [path.name for path in splits] + ["manifest.json"]
     )
+
+
+def test_recovery_refuses_unverified_bytes_when_the_backup_is_gone(fetcher, tmp_path, monkeypatch):
+    """A missing backup plus an existing target is only accepted when the bytes check out."""
+    name = "UNSW_NB15_training-set.csv"
+    monkeypatch.setattr(fetcher, "FILES", {name: entry_for(PAYLOAD)})
+    target = tmp_path / name
+    target.write_bytes(b"not the bytes this pair should hold")
+    marker = tmp_path / fetcher.TXN_NAME
+    marker.write_text(
+        json.dumps({"pid": 999, "files": [{"name": name, "backup": "gone-a.csv"}]}),
+        encoding="utf-8",
+    )
+
+    def explode(*args, **kwargs):
+        raise AssertionError("a blocked run must not download anything")
+
+    monkeypatch.setattr(fetcher, "urlopen", explode)
+    with pytest.raises(OSError, match="RECOVERY incomplete"):
+        fetcher.fetch(tmp_path, files={name: entry_for(PAYLOAD)})
+    assert target.read_bytes() == b"not the bytes this pair should hold"
+    assert marker.is_file()
+
+
+def test_recovery_accepts_already_restored_bytes_it_can_verify(fetcher, tmp_path, monkeypatch):
+    """When the target matches the pinned checksum, the entry really was restored earlier."""
+    name = "UNSW_NB15_training-set.csv"
+    monkeypatch.setattr(fetcher, "FILES", {name: entry_for(PAYLOAD)})
+    target = tmp_path / name
+    target.write_bytes(PAYLOAD)
+    marker = tmp_path / fetcher.TXN_NAME
+    marker.write_text(
+        json.dumps({"pid": 999, "files": [{"name": name, "backup": "gone-a.csv"}]}),
+        encoding="utf-8",
+    )
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetcher.fetch(tmp_path, files={name: entry_for(PAYLOAD)})
+    assert not marker.exists()
+    assert target.read_bytes() == PAYLOAD
+
+
+def test_publish_new_claims_the_name_atomically_without_hardlinks(
+    manifest_module, tmp_path, monkeypatch
+):
+    """Without hard links, a manifest that appears mid-publish must still not be replaced."""
+    staged = tmp_path / "staged.json"
+    staged.write_text("new provenance", encoding="utf-8")
+    destination = tmp_path / "manifest.json"
+    real_open = os.open
+
+    def link_unsupported(*args, **kwargs):
+        raise OSError(errno.ENOTSUP, "no hard links here")
+
+    def racing_open(path, flags, *args, **kwargs):
+        if Path(path) == destination:
+            destination.write_text("someone else's manifest", encoding="utf-8")
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(manifest_module.os, "link", link_unsupported)
+    monkeypatch.setattr(manifest_module.os, "open", racing_open)
+    with pytest.raises(FileExistsError):
+        manifest_module.publish_new(staged, destination)
+    assert destination.read_text(encoding="utf-8") == "someone else's manifest"
+
+
+def test_publish_new_still_works_without_hardlinks(manifest_module, tmp_path, monkeypatch):
+    """The fallback has to remain usable where hard links do not exist."""
+    staged = tmp_path / "staged.json"
+    staged.write_text("new provenance", encoding="utf-8")
+    destination = tmp_path / "manifest.json"
+
+    def link_unsupported(*args, **kwargs):
+        raise OSError(errno.ENOTSUP, "no hard links here")
+
+    monkeypatch.setattr(manifest_module.os, "link", link_unsupported)
+    manifest_module.publish_new(staged, destination)
+    assert destination.read_text(encoding="utf-8") == "new provenance"
 
 
 def test_publish_new_refuses_an_existing_destination(manifest_module, tmp_path):
