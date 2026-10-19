@@ -242,16 +242,18 @@ def main(argv=None):
         targets = [DATA_RAW / name for name in DEFAULT_FILES]
     try:
         if args.report:
-            # The validator never mutates dataset bytes, so a report path that resolves
-            # to an input file must be refused before anything is written.
+            # The validator never mutates dataset bytes or its own provenance record, so
+            # a report path that resolves to an input file or to the manifest must be
+            # refused before anything is written.
             report_path = args.report.resolve()
-            for target in targets:
-                if report_path == target.resolve() or (
-                    report_path.exists() and os.path.samefile(report_path, target)
+            protected = list(targets) + ([args.manifest] if args.manifest else [])
+            for protected_path in protected:
+                if report_path == protected_path.resolve() or (
+                    report_path.exists() and os.path.samefile(report_path, protected_path)
                 ):
                     raise ValueError(
-                        f"report path {args.report} resolves to the input dataset file "
-                        f"{target.name}; refusing to overwrite it"
+                        f"report path {args.report} resolves to {protected_path.name}; "
+                        f"refusing to overwrite it"
                     )
         manifest = json.loads(args.manifest.read_text(encoding="utf-8")) if args.manifest else None
         reports = []

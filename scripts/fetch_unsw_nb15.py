@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import time
@@ -46,6 +47,8 @@ CHUNK_BYTES = 1024 * 1024
 # One lock per destination serialises the whole fetch/install transaction. The kernel
 # releases it when the owning process exits, so there is no stale threshold to tune.
 LOCK_NAME = ".unsw-nb15.lock"
+# Written before the first swap so a process killed mid-install can be undone later.
+TXN_NAME = ".unsw-nb15-transaction.json"
 LOCK_TIMEOUT_SECONDS = 900
 LOCK_POLL_SECONDS = 1.0
 
@@ -53,6 +56,19 @@ LOCK_POLL_SECONDS = 1.0
 def scratch_path(destination, prefix, name):
     """Process-unique scratch path so concurrent fetch runs never share a file."""
     return destination / f"{prefix}{os.getpid()}-{name}"
+
+
+def open_exclusive(path):
+    """Open `path` for writing, refusing to follow anything already at that name.
+
+    Staging and backup names are predictable, so a symlink planted at one would
+    redirect the write outside the destination before any checksum is checked.
+    Removing whatever is there and then creating with O_EXCL keeps the open atomic
+    and symlink-safe on Windows too, where O_NOFOLLOW does not exist.
+    """
+    if path.is_symlink() or path.exists():
+        path.unlink()
+    return os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
 
 
 def free_backup_path(destination, name):
@@ -130,7 +146,7 @@ def download_to_staging(name, expected, staging, base_url):
         if content_type in {"text/html", "application/vnd.git-lfs+json"}:
             raise ValueError(f"unexpected Content-Type {content_type} for {name}")
         print(f"[fetch_unsw_nb15] DOWNLOAD: {name} <- {base_url}/{name}")
-        with staging.open("wb") as output:
+        with os.fdopen(open_exclusive(staging), "wb") as output:
             copy_up_to_limit(response, output, expected["size_bytes"], name)
     digest = verify_download(staging, expected)
     print(f"[fetch_unsw_nb15] VERIFIED: {name} bytes={expected['size_bytes']} sha256={digest}")
@@ -203,6 +219,77 @@ def rollback(destination, installed, backups):
     return leftovers
 
 
+def copy_file(source, destination_path):
+    """Copy `source` to a path that cannot already be pointing somewhere else.
+
+    A copy that fails halfway leaves a partial file, so the path is recorded by the
+    caller and cleaned up; the exclusive open keeps a planted symlink from
+    redirecting the copy outside the destination.
+    """
+    with os.fdopen(open_exclusive(destination_path), "wb") as output:
+        with source.open("rb") as stream:
+            shutil.copyfileobj(stream, output)
+
+
+def recover_interrupted_transaction(destination):
+    """Undo a transaction whose process died between swaps, before anything else runs.
+
+    Rollback only runs while the process is alive, so a hard kill between two swaps
+    used to leave one new file beside one missing or old file. The marker written
+    before the first swap records the pre-run state of every file in the install, so
+    the next run can put that state back before it trusts the cache.
+    """
+    marker = destination / TXN_NAME
+    if not marker.is_file():
+        return
+    try:
+        record = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        print(
+            f"[fetch_unsw_nb15] RECOVERY WARNING: cannot read {marker.name}: {error}. "
+            f"Leaving it in place; remove it by hand once the pair is checked."
+        )
+        return
+    for entry in record.get("files", []):
+        name = entry["name"]
+        target = destination / name
+        backup = entry.get("backup")
+        if backup:
+            try:
+                os.replace(destination / backup, target)
+                print(f"[fetch_unsw_nb15] RECOVERY: restored {name} from {backup}")
+            except OSError as error:
+                print(
+                    f"[fetch_unsw_nb15] RECOVERY WARNING: cannot restore {name} from "
+                    f"{backup}: {error}. The file stays as it is."
+                )
+        elif target.exists():
+            try:
+                target.unlink()
+                print(f"[fetch_unsw_nb15] RECOVERY: removed {name}, created by the lost run")
+            except OSError as error:
+                print(
+                    f"[fetch_unsw_nb15] RECOVERY WARNING: cannot remove {name}: {error}. "
+                    f"The file stays as it is."
+                )
+    remove_quietly(marker)
+
+
+def write_transaction_marker(destination, pending, backups):
+    """Record the pre-run state of an install so a crash can be undone later."""
+    marker = destination / TXN_NAME
+    record = {
+        "pid": os.getpid(),
+        "files": [
+            {"name": name, "backup": backups[name].name if name in backups else None}
+            for name in pending
+        ],
+    }
+    with os.fdopen(open_exclusive(marker), "w", encoding="utf-8") as stream:
+        json.dump(record, stream, indent=2)
+        stream.write("\n")
+
+
 def install(pending, destination):
     """Swap verified staging files into place, restoring previous bytes if any swap fails.
 
@@ -220,17 +307,21 @@ def install(pending, destination):
             if target.is_file():
                 backup = free_backup_path(destination, name)
                 try:
-                    shutil.copyfile(target, backup)
+                    copy_file(target, backup)
                 except OSError:
-                    # Record the path first: a copy that fails halfway would otherwise
-                    # leave a partial backup nobody knows to clean up.
+                    # A copy that fails halfway would otherwise leave a partial backup
+                    # that no cleanup path knows about.
                     remove_quietly(backup)
                     raise
                 backups[name] = backup
+        # Recorded before the first swap: if this process dies mid-install, the next
+        # run finds the marker and puts the pair back the way it was.
+        write_transaction_marker(destination, pending, backups)
         for name, staging in pending.items():
             os.replace(staging, destination / name)
             installed.append(name)
             print(f"[fetch_unsw_nb15] INSTALLED unchanged bytes: {destination / name}")
+        remove_quietly(destination / TXN_NAME)
     except OSError as error:
         leftovers = rollback(destination, installed, backups)
         print(
@@ -243,6 +334,9 @@ def install(pending, destination):
                 f"[fetch_unsw_nb15] RECOVERY: kept {len(leftovers)} file(s) for manual "
                 f"recovery: {', '.join(path.name for path in leftovers)}"
             )
+        else:
+            # The pair is back to its pre-run state, so there is nothing left to undo.
+            remove_quietly(destination / TXN_NAME)
         raise
     finally:
         # A backup that could not be restored is the only surviving copy of those bytes,
@@ -318,6 +412,7 @@ def fetch(destination, files=None, base_url=None):
     staging = {name: scratch_path(destination, STAGING_PREFIX, name) for name in files}
     try:
         with destination_lock(destination):
+            recover_interrupted_transaction(destination)
             pending = {}
             for name, expected in files.items():
                 if cache_is_valid(destination / name, expected):

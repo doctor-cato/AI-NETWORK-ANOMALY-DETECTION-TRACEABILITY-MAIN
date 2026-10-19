@@ -93,6 +93,19 @@ lần fetch đang thay file có thể ghi lại trạng thái lẫn, nhưng `ver
 mismatch SHA-256, nên sai lệch bị phát hiện chứ không lan. `record` cũng từ chối ghi đè một
 manifest đã tồn tại.
 
+Tên staging và backup có kèm PID nên hai lần chạy đồng thời không dùng chung file tạm; cả hai đều
+được mở bằng `O_CREAT|O_EXCL` sau khi xóa bất kỳ thứ gì đang nằm ở tên đó. Tên scratch là tất
+định, nên một symlink được cài sẵn tại đó sẽ chuyển hướng ghi ra ngoài thư mục đích trước khi
+checksum kịp kiểm tra; `O_EXCL` làm cho việc mở file trở nên nguyên tử và an toàn với symlink
+trên cả Windows, nơi không có `O_NOFOLLOW`.
+
+Cài đặt ghi một marker `.unsw-nb15-transaction.json` **trước lần thay đầu tiên**, ghi lại trạng
+thái trước đó của từng file (tên backup, hoặc "trước đó không tồn tại"). Rollback chỉ chạy khi
+tiến trình còn sống, nên nếu bị giết cứng giữa hai lần thay thì lần chạy sau thấy marker và
+hoàn nguyên cặp file về đúng trạng thái trước đó **trước khi** tin vào cache. Marker bị xóa khi
+cài đặt thành công, khi rollback hoàn tất và sau khi recovery; nếu rollback còn file chưa khôi
+phục được thì marker được giữ lại cho lần chạy sau.
+
 Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
 
 `data/raw/*` nằm ngoài Git. Kiểm tra bằng:
@@ -123,8 +136,9 @@ thì thành missing value, thiếu cột thành lỗi độ rộng hàng. Báo c
 số hàng/cột, schema, số dòng trống, phân bố nhãn và attack category, missing theo cột,
 duplicate sau khi bỏ cột định danh `id`, invalid labels và tỷ lệ lớp.
 Sai schema/hash/size/row count/nhãn/kiểu/cấu trúc/dòng trống là lỗi chặn (exit 1).
-`--report` trỏ tới chính file CSV đầu vào (kể cả khi resolve về cùng một file) bị từ chối
-trước khi ghi, vì validator tuyên bố chỉ đọc và không sửa dữ liệu.
+`--report` trỏ tới chính file CSV đầu vào, hoặc tới manifest được dùng làm đối chiếu (kể cả
+khi resolve về cùng một file), đều bị từ chối trước khi ghi — validator tuyên bố chỉ đọc và
+không sửa dữ liệu lẫn provenance của nó.
 Missing feature không bắt buộc và duplicate là cảnh báo; validator không xóa, điền,
 chuẩn hóa hay thay đổi dữ liệu.
 

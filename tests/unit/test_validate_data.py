@@ -6,7 +6,6 @@ import importlib.util
 import io
 import json
 import os
-import shutil
 import subprocess
 import sys
 import threading
@@ -714,13 +713,13 @@ def test_install_backs_up_before_the_first_swap(fetcher, tmp_path, monkeypatch):
     staging = tmp_path / "stage-a.csv"
     staging.write_bytes(TWO_FILES["a.csv"])
     copies = []
-    real_copyfile = shutil.copyfile
+    real_copy = fetcher.copy_file
 
-    def record_copy(src, dst, *args, **kwargs):
+    def record_copy(src, dst):
         copies.append((Path(src).name, Path(dst).name))
-        return real_copyfile(src, dst, *args, **kwargs)
+        return real_copy(src, dst)
 
-    monkeypatch.setattr(fetcher.shutil, "copyfile", record_copy)
+    monkeypatch.setattr(fetcher, "copy_file", record_copy)
     fetcher.install({"a.csv": staging}, tmp_path)
     assert copies == [("a.csv", f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv")]
     assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
@@ -796,9 +795,10 @@ def test_restore_failure_keeps_valid_file_and_backup(fetcher, tmp_path, monkeypa
     # The verified new bytes stay in place; nothing is deleted before a restore succeeds.
     assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
     assert (tmp_path / "b.csv").read_bytes() == PREVIOUS["b.csv"]
-    # The backup that could not be restored survives for manual recovery.
+    # The backup that could not be restored survives for manual recovery, and so does the
+    # transaction marker, so the next run can retry what this one could not finish.
     survivors = scratch_files(tmp_path)
-    assert survivors == [f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv"]
+    assert survivors == [f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv", fetcher.TXN_NAME]
     assert (tmp_path / survivors[0]).read_bytes() == PREVIOUS["a.csv"]
 
 
@@ -1076,17 +1076,118 @@ def test_failed_backup_copy_leaves_no_partial_file(fetcher, tmp_path, monkeypatc
     staging = tmp_path / "stage-a.csv"
     staging.write_bytes(TWO_FILES["a.csv"])
 
-    def failing_copy(src, dst, *args, **kwargs):
+    def failing_copy(src, dst):
         Path(dst).write_bytes(b"partial")
         raise OSError(f"simulated copy failure for {Path(dst).name}")
 
-    monkeypatch.setattr(fetcher.shutil, "copyfile", failing_copy)
+    monkeypatch.setattr(fetcher, "copy_file", failing_copy)
     with pytest.raises(OSError, match="simulated copy failure"):
         fetcher.install({"a.csv": staging}, tmp_path)
     assert "CLEANUP WARNING" not in capsys.readouterr().out
     assert scratch_files(tmp_path) == []
     # The destination still holds the bytes it had before the failed run.
     assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
+
+
+def test_planted_symlink_at_the_staging_path_cannot_redirect_the_write(
+    fetcher, tmp_path, monkeypatch
+):
+    """A predictable staging name must not be able to write outside the destination."""
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"must not be touched")
+    staging = tmp_path / f"{fetcher.STAGING_PREFIX}{os.getpid()}-a.csv"
+    try:
+        os.symlink(outside, staging)
+    except OSError:  # pragma: no cover - needs symlink privilege
+        pytest.skip("symlinks are not available for this user")
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert outside.read_bytes() == b"must not be touched"
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+
+
+def test_planted_symlink_at_the_backup_path_cannot_redirect_the_copy(
+    fetcher, tmp_path, monkeypatch
+):
+    """The backup copy must not follow a symlink either."""
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"must not be touched")
+    (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])
+    try:
+        os.symlink(outside, tmp_path / f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv")
+    except OSError:  # pragma: no cover - needs symlink privilege
+        pytest.skip("symlinks are not available for this user")
+    staging = tmp_path / "stage-a.csv"
+    staging.write_bytes(TWO_FILES["a.csv"])
+    fetcher.install({"a.csv": staging}, tmp_path)
+    assert outside.read_bytes() == b"must not be touched"
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+
+
+def test_a_crash_between_swaps_is_recovered_on_the_next_run(fetcher, tmp_path, monkeypatch, capsys):
+    """A process killed mid-swap must not leave the pair mixed until someone intervenes."""
+    for name, blob in PREVIOUS.items():
+        (tmp_path / name).write_bytes(blob)
+    # State left by a run that swapped a.csv, then died before touching b.csv.
+    (tmp_path / "a.csv").write_bytes(TWO_FILES["a.csv"])
+    kept_backup = tmp_path / f"{fetcher.BACKUP_PREFIX}999-a.csv"
+    kept_backup.write_bytes(PREVIOUS["a.csv"])
+    (tmp_path / fetcher.TXN_NAME).write_text(
+        json.dumps(
+            {
+                "pid": 999,
+                "files": [
+                    {"name": "a.csv", "backup": kept_backup.name},
+                    {"name": "b.csv", "backup": None},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    # b.csv vanished with the crash, so its pre-run state was absence.
+    (tmp_path / "b.csv").unlink()
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    # Recovery ran before the cache check, then the run installed both verified files.
+    out = capsys.readouterr().out
+    assert "RECOVERY: restored a.csv" in out
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert (tmp_path / "b.csv").read_bytes() == TWO_FILES["b.csv"]
+    assert not (tmp_path / fetcher.TXN_NAME).exists()
+    assert scratch_files(tmp_path) == []
+
+
+def test_completed_transaction_leaves_no_marker(fetcher, tmp_path, monkeypatch):
+    (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert not (tmp_path / fetcher.TXN_NAME).exists()
+
+
+def test_report_path_over_the_manifest_is_refused(validator, tmp_path, capsys):
+    """The report must not overwrite the provenance manifest it was validated against."""
+    target = tmp_path / validator.DEFAULT_FILES[0]
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "file": target.name,
+                        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                        "size_bytes": target.stat().st_size,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = manifest.read_bytes()
+    args = ["--file", str(target), "--manifest", str(manifest), "--report", str(manifest)]
+    assert validator.main(args + ["--no-row-count"]) == 1
+    assert "refusing to overwrite" in capsys.readouterr().out
+    assert manifest.read_bytes() == before
 
 
 def test_existing_backup_is_never_overwritten(fetcher, tmp_path, monkeypatch):
