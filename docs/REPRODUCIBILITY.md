@@ -19,9 +19,11 @@ python scripts/validate_data.py
 python scripts/run_experiments.py --step baseline   # exit 3 = NOT IMPLEMENTED
 ```
 
-Validator tự kiểm tra cả `data/raw/UNSW-NB15.csv` và `data/raw/UNSW-NB15_training_set.csv` nếu tồn tại. File có tên khác: `python scripts/validate_data.py --file <ten-file.csv>`. Có thể truyền đường dẫn tuyệt đối. Chỉ file mặc định chưa có mới được SKIPPED với exit 0; `--file` trỏ đến file thiếu hoặc CSV không hợp lệ phải thất bại.
-
-Phạm vi validation hiện tại: header có `label` và `proto`, tên cột không trống/trùng, có dữ liệu, cấu trúc/số cột các bản ghi nhất quán và UTF-8 đọc được. CSV không header chưa hỗ trợ. Kiểu dữ liệu, giá trị nhãn, missing values, duplicates và leakage chưa được xác minh đầy đủ.
+Validator mặc định tìm `data/raw/UNSW_NB15_training-set.csv` và
+`data/raw/UNSW_NB15_testing-set.csv`; khi cả hai thiếu, in SKIPPED và exit 0.
+Đó không phải bằng chứng dữ liệu thật đã đạt. `--file` chỉ định tên file dưới
+`data/raw/` hoặc đường dẫn rõ ràng; file thiếu và dữ liệu sai trả exit 1.
+Profile kiểm tra 45 cột, kiểu dữ liệu, nhãn, attack category, missing, duplicate và dòng trống. Dòng CSV không có delimiter và không có giá trị là lỗi chặn (exit 1) với số dòng và vị trí, không bị bỏ qua âm thầm; dòng có delimiter nhưng giá trị rỗng vẫn thuộc kiểm tra missing/độ rộng hàng. Báo cáo trên cặp CSV đã đối chiếu mirror nằm trong `reports/data_quality/unsw_nb15_validation.json`. Leakage audit thuộc #7.
 
 Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test constructor của RF/IF không chứng minh fit/predict hoặc kết quả trên UNSW-NB15. SKIPPED và fixture không thay thế thực nghiệm thật.
 
@@ -42,6 +44,86 @@ Khi được giao triển khai, mỗi lần chạy cần lưu: run ID, commit, c
 
 ## Ghi nhận dataset
 
-UNSW-NB15 chưa được tải/xác minh trong giai đoạn Setup & Audit. Khi tải ở nhiệm vụ riêng, ghi nguồn, điều kiện sử dụng, ngày tải, biến thể, tên file và SHA-256. Hướng dẫn nguồn ở `docs/DATASET.md`; không tuyên bố có benchmark trước khi thực nghiệm thật hoàn thành.
+Manifest version-control tại `data/UNSW_NB15_MANIFEST.json` ghi nguồn chính thức,
+mirror revision-pinned, thời điểm UTC, kích thước, SHA-256 và các nguồn đối chiếu.
+UNSW không công bố SHA-256 và endpoint SharePoint yêu cầu xác thực trong lần kiểm tra,
+vì vậy manifest không gọi checksum local là checksum chính thức.
 
-Cập nhật: 2026-10-17.
+```text
+python scripts/fetch_unsw_nb15.py
+python scripts/dataset_manifest.py verify
+python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
+```
+
+Script fetch tái sử dụng cache local: file trong `data/raw/` chỉ được giữ khi khớp
+SHA-256 và kích thước theo manifest, nên chạy lại không tải lại (`CACHE_HIT`). File thiếu
+hoặc sai được tải lại từ mirror revision-pinned vào staging tạm cùng thư mục đích, kiểm tra
+HTTP response, size và SHA-256 trước khi thay thế nguyên tử; byte tải về bị giới hạn cứng
+bởi kích thước đã ghim nên response vô hạn không đầy được đĩa đích, và staging luôn được dọn
+kể cả khi lỗi. Trước lần thay đầu tiên script sao lưu bản cũ của mọi file sẽ bị thay, và nếu
+`os.replace` thất bại ở file nào thì các file **đã thay** được hoàn nguyên về byte trước đó,
+rồi lỗi gốc được ném lại. Rollback không xóa file đích trước: `os.replace` ghi đè nguyên tử
+nên nếu khôi phục lỗi, file đích giữ byte mới đã verify và bản sao lưu được giữ lại kèm
+dòng `RECOVERY` để phục hồi thủ công. File mới tạo trong lần chạy đó bị xóa lại để thư mục
+trở về đúng trạng thái trước lần chạy; nếu xóa lỗi, file được giữ lại và báo
+`ROLLBACK WARNING` kèm `RECOVERY`. Lỗi khi dọn staging/backup được ghi `CLEANUP WARNING` và
+không ném lỗi mới đè lên lỗi đang báo; backup dở dang khi `copyfile` lỗi được xóa ngay, và
+tên backup lấy tên trống kế tiếp để không ghi đè một backup còn sót đang là bản duy nhất, và cả staging lẫn
+backup đều mở bằng `O_CREAT|O_EXCL` để một symlink cài sẵn không thể chuyển hướng ghi ra ngoài
+thư mục đích. Cài đặt ghi marker `.unsw-nb15-transaction.json` trước lần thay đầu tiên, nên
+tiến trình bị giết cứng giữa hai lần thay sẽ được lần chạy sau hoàn nguyên trước khi kiểm tra
+cache; marker không đọc được thì lần chạy dừng thay vì ghi đè trạng thái chưa hiểu, marker
+được giữ lại khi khôi phục thất bại, và recovery idempotent nên backup đã restore ở lần trước
+không làm mắc lần chạy sau. Khôi phục còn dang dở thì lần chạy dừng với exit 1 trước khi tải
+hay cài bất cứ thứ gì, và mục "backup đã biến mất" chỉ được coi là đã khôi phục khi byte còn lại
+khớp SHA-256 đã ghim. `dataset_manifest.py record` ghi ra file phụ có kèm PID rồi đặt vào chỗ
+bằng `os.link`, nên không ghi đè được manifest đã có và một lần ghi bị giết không để lại manifest
+cắt cụt; trên filesystem không có hardlink thì giữ chỗ tên bằng `O_CREAT|O_EXCL` trước khi đổ
+nội dung.
+Một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch nên hai lần chạy không xen kẽ backup,
+swap và rollback; đó là khóa byte-range của hệ điều hành (`msvcrt.locking` / `fcntl.flock`)
+nên kernel giải phóng khi tiến trình chết, không có ngưỡng stale và không có bước phá lock
+có thể xóa nhầm; lần chạy thứ hai chờ tối đa 900s. `dataset_manifest.py` không dùng lock này;
+`verify` chạy sau `record` sẽ phát hiện trạng thái lẫn bằng SHA-256. Tên staging và backup có
+kèm PID nên hai lần chạy đồng thời không dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi
+Git. Báo cáo thật
+lưu aggregate row/schema/blank/missing/duplicate và checksum, không chứa dòng raw.
+Fixture test chỉ kiểm tra hành vi validator.
+
+`validate_data.py` kiểm tra số bản ghi chính thức của hai split mặc định (175.341 và
+82.332) kể cả khi không truyền `--manifest`, lấy theo manifest khi manifest có ghi
+`expected_rows`, và `--no-row-count` bỏ qua cả hai nguồn cho fixture hoặc tập con.
+`--report` không được trỏ tới file CSV đầu vào hay tới manifest.
+
+Khi cả hai CSV vắng mặt, `validate_data.py` in `SKIPPED`, in rõ `SKIPPED is not PASS` và
+exit 0; khi chạy trong GitHub Actions nó ghi thêm annotation `::warning::SKIPPED is not a
+PASS` để CI không bị đọc nhầm là đã kiểm chứng dữ liệu thật.
+
+Timestamp trong manifest là ISO 8601 nguyên giây kèm offset tường minh
+(`YYYY-MM-DDTHH:MM:SSZ` hoặc `±HH:MM`), không dùng naive datetime. `record` chuẩn hóa
+`--downloaded-at` về UTC trước khi ghi; `verify` kiểm tra mọi timestamp tìm thấy trong
+manifest và chỉ đọc, nên chạy verify không đổi file manifest.
+
+## Bằng chứng M1 tại head PR #22
+
+Ở `8b82a6e` (2026-10-19), `python -m pytest tests -q --tb=short` PASS với **144 tests**.
+CI của đúng head đó PASS 4/4 cho Ubuntu/Windows × Python 3.11/3.12. Vì runner CI không chứa raw
+CSV, `validate_data.py` trong CI là `SKIPPED` có warning annotation, không phải PASS cho dữ liệu
+thật. Báo cáo version-control `reports/data_quality/unsw_nb15_validation.json` là evidence local
+trên CSV thật: 45 cột và 175.341/82.332 dòng, không blank/missing/nhãn-category bất hợp lệ hoặc
+mâu thuẫn; duplicate bỏ `id` là 67.601/26.387 và vẫn cần Issue #7 audit.
+
+## Giới hạn tái lập và recovery
+
+Transaction fetch không phải bảo đảm ACID: marker mất/hỏng, lỗi filesystem hay process không dùng
+script có thể để lại trạng thái cần recovery thủ công. Lock OS chỉ serial hóa các lần chạy hợp tác
+của `fetch_unsw_nb15.py` trên một máy; `dataset_manifest.py` không lấy lock, nên record/verify có
+thể quan sát xen kẽ với fetch. Khi hardlink không khả dụng, `record` vẫn tránh ghi đè nhờ
+`O_CREAT|O_EXCL` nhưng publish manifest không atomic về nội dung. Các giới hạn này không làm sai
+evidence validation đã ghi, nhưng không phải tuyên bố bảo vệ dữ liệu toàn diện.
+
+Issue #7 vẫn ngoài phạm vi: chưa audit cross-split duplicate, near-duplicate, flow/session/group
+overlap, feature leakage hay quyết định feature/split. Không coi profile validation là leakage-safe
+preprocessing hoặc thí nghiệm ML.
+
+Cập nhật: 2026-10-19.

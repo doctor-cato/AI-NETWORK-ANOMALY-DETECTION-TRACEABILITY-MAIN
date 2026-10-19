@@ -3,6 +3,7 @@
 Guards the M0 rule that a planned-but-unimplemented step must never look like a
 successful run. No dataset is needed; no training is performed.
 """
+
 import importlib.util
 import subprocess
 import sys
@@ -42,7 +43,10 @@ def runner(monkeypatch):
 def run_cli(*args, cwd=None):
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
-        capture_output=True, text=True, check=False, cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
     )
 
 
@@ -89,7 +93,7 @@ def test_check_data_without_dataset_is_an_intentional_skip(runner, monkeypatch, 
 
 
 def test_check_data_with_invalid_dataset_fails(runner, monkeypatch, tmp_path):
-    (tmp_path / "UNSW-NB15.csv").write_text("not-csv\n", encoding="utf-8")
+    (tmp_path / "UNSW_NB15_training-set.csv").write_text("not-csv\n", encoding="utf-8")
     import validate_data
 
     monkeypatch.setattr(validate_data, "DATA_RAW", tmp_path)
