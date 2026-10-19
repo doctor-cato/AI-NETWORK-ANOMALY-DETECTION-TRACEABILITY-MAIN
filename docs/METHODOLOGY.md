@@ -1,4 +1,4 @@
-# Phương pháp — Random Forest (baseline bắt buộc), Isolation Forest (tùy chọn)
+# Phương pháp mô hình — Phương án B
 
 ## Luồng tổng thể
 
@@ -8,7 +8,8 @@
 4. Chia train/val/test (mặc định giữ official test partition; tạo validation chỉ từ official training partition;
    nếu chọn stratified/group/time-aware khác thì ghi lý do và ảnh hưởng trong `REPRODUCIBILITY.md`)
 5. Tiền xử lý (fit chỉ trên train): mã hóa, chuẩn hóa, chọn đặc trưng; lưu pipeline
-6. Huấn luyện mô hình: Random Forest là baseline bắt buộc (config đã ghi); thêm Isolation Forest nếu còn thời gian (không giám sát, protocol riêng bên dưới)
+6. Huấn luyện mô hình: Random Forest/XGBoost theo supervised protocol; Isolation Forest
+   và Autoencoder theo anomaly protocol riêng của C4.
 7. Đánh giá (protocol khác nhau theo mô hình; xem bên dưới)
 8. Phân tích lỗi (dương tính giả / âm tính giả; ghi rõ hạn chế)
 9. Suy luận (tải pipeline + mô hình; áp dụng cho dữ liệu mới)
@@ -21,7 +22,7 @@
 - Giải thích confusion matrix: âm tính đúng / dương tính giả (bình thường bị phân loại nhầm là bất thường) / âm tính giả (bất thường bị bỏ sót) / dương tính đúng
 - Ngăn rò rỉ dữ liệu: không tạo đặc trưng từ nhãn; chia trước mọi fitting; kiểm tra cột định danh và xử lý cẩn thận
 
-## Isolation Forest (phát hiện bất thường không giám sát — TÙY CHỌN, không chặn core)
+## Isolation Forest (phát hiện bất thường không giám sát — bắt buộc ở C4)
 
 - Loại: không giám sát; học phân phối dữ liệu bình thường; chấm điểm độ lệch
 - Dữ liệu fit phải được chọn và ghi trước: normal-only cho novelty detection, hoặc mixed/unlabeled training population
@@ -53,4 +54,7 @@
 - Confusion matrix: hàng/cột phải ghi rõ nhãn (bình thường / bất thường)
 - FPR = FP / (FP + TN) — chỉ báo cáo khi có ý nghĩa cho trường hợp sử dụng
 
-Cập nhật: 2026-10-17 — tách rõ Random Forest (bắt buộc) và Isolation Forest (tùy chọn).
+C4 còn yêu cầu Autoencoder reconstruction-error và unknown-attack holdout; threshold của
+cả hai chỉ được chọn trên validation, không dùng test/holdout để tối ưu.
+
+Cập nhật: 2026-10-19 (C0).
