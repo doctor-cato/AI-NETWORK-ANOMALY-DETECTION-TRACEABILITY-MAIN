@@ -1,6 +1,7 @@
 """Synthetic CSV fixtures only; these are not UNSW-NB15 observations."""
 
 import csv
+import errno
 import hashlib
 import importlib.util
 import io
@@ -9,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from email.message import Message
 from pathlib import Path
@@ -919,6 +921,31 @@ def test_report_path_next_to_the_input_is_allowed(validator, tmp_path):
     assert json.loads(report.read_text(encoding="utf-8"))["files"][0]["rows"] == 1
 
 
+def test_no_row_count_overrides_the_manifest_row_count(validator, tmp_path, capsys):
+    """The documented escape hatch must also silence a row count read from a manifest."""
+    target = tmp_path / validator.DEFAULT_FILES[0]
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "files": [
+                    {
+                        "file": target.name,
+                        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                        "size_bytes": target.stat().st_size,
+                        "expected_rows": validator.EXPECTED_ROWS[target.name],
+                    }
+                ]
+            }
+        )
+    )
+    assert (
+        validator.main(["--file", target.name, "--manifest", str(manifest), "--no-row-count"]) == 0
+    )
+    assert "PASS" in capsys.readouterr().out
+
+
 # --- fetch_unsw_nb15.py: one lock per destination --------------------------------
 
 
@@ -982,6 +1009,74 @@ def test_failed_backup_copy_leaves_no_partial_file(fetcher, tmp_path, monkeypatc
     assert scratch_files(tmp_path) == []
     # The destination still holds the bytes it had before the failed run.
     assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
+
+
+def test_lock_released_mid_acquire_is_retried(fetcher, tmp_path, monkeypatch, capsys):
+    """A lock that vanishes between os.open and stat is a handoff, not a failure."""
+    (tmp_path / fetcher.LOCK_NAME).write_text("pid=1\n", encoding="utf-8")
+    real_open = os.open
+    attempts = {"count": 0}
+
+    def racy_open(path, flags, *args, **kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            # The owner releases the lock exactly between O_EXCL failing and stat().
+            Path(path).unlink()
+            raise FileExistsError(errno.EEXIST, "simulated release race", str(path))
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(fetcher.os, "open", racy_open)
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert attempts["count"] >= 2
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+
+
+def test_live_owner_with_heartbeat_is_never_reclaimed_as_stale(fetcher, tmp_path, monkeypatch):
+    """A slow but live run must not lose its lock to the stale-reclaim path."""
+    monkeypatch.setattr(fetcher, "LOCK_STALE_SECONDS", 0.05)
+    monkeypatch.setattr(fetcher, "LOCK_HEARTBEAT_SECONDS", 0.01)
+    holder_started = threading.Event()
+    release = threading.Event()
+    lock = tmp_path / fetcher.LOCK_NAME
+
+    def hold():
+        with fetcher.destination_lock(tmp_path, timeout=5, poll=0.01):
+            holder_started.set()
+            release.wait(3)
+
+    holder = threading.Thread(target=hold, daemon=True)
+    holder.start()
+    try:
+        assert holder_started.wait(5)
+        # Far longer than the stale threshold: only a heartbeat keeps this lock alive.
+        time.sleep(0.4)
+        monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 0)
+
+        def explode(*args, **kwargs):
+            raise AssertionError("a live owner's lock must not be reclaimed")
+
+        monkeypatch.setattr(fetcher, "urlopen", explode)
+        with pytest.raises(OSError, match="another fetch is running"):
+            fetcher.fetch(tmp_path, files={"a.csv": entry_for(PAYLOAD)})
+        assert lock.exists()
+    finally:
+        release.set()
+        holder.join(5)
+    assert not lock.exists()
+
+
+def test_existing_backup_is_never_overwritten(fetcher, tmp_path, monkeypatch):
+    """A backup kept for RECOVERY must survive a later run, including a reused PID."""
+    (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])
+    kept = tmp_path / f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv"
+    kept.write_bytes(b"only surviving copy of the previous bytes")
+    staging = tmp_path / "stage-a.csv"
+    staging.write_bytes(TWO_FILES["a.csv"])
+    fetcher.install({"a.csv": staging}, tmp_path)
+    assert kept.read_bytes() == b"only surviving copy of the previous bytes"
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert scratch_files(tmp_path) == [kept.name]
 
 
 # --- validate_data.py: the SKIPPED contract must stay unmistakable -------------

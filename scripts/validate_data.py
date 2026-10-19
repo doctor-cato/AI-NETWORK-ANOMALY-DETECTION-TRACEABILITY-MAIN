@@ -265,12 +265,15 @@ def main(argv=None):
                 expected = entries[target.name]["sha256"]
                 expected_size = entries[target.name]["size_bytes"]
             expected_rows = None
-            if manifest is not None:
-                expected_rows = entries[target.name].get("expected_rows")
-            if expected_rows is None and not args.no_row_count:
-                # The published row count is a property of the split itself, so it is
-                # enforced even without a manifest; a non-default file has no known count.
-                expected_rows = EXPECTED_ROWS.get(target.name)
+            if not args.no_row_count:
+                if manifest is not None:
+                    expected_rows = entries[target.name].get("expected_rows")
+                if expected_rows is None:
+                    # The published row count is a property of the split itself, so it is
+                    # enforced even without a manifest; a non-default file has no known
+                    # count. --no-row-count is applied first, so it also silences a count
+                    # that came from a manifest.
+                    expected_rows = EXPECTED_ROWS.get(target.name)
             report = validate_file(target, expected, expected_size, expected_rows)
             reports.append(report)
             summary = (

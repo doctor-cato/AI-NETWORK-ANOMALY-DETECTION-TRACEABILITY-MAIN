@@ -71,14 +71,25 @@ file trong `RECOVERY` để dọn thủ công — thư mục có thể tạm th�
 Dọn staging và backup trong `finally` không được ném lỗi mới đè lên lỗi đang báo; lỗi dọn
 được ghi `CLEANUP WARNING`. Backup chỉ bị xóa khi nó không còn là bản duy nhất. Nếu
 `shutil.copyfile` lỗi giữa chừng, file backup dở dang bị xóa ngay để không tích tụ file tạm
-qua nhiều lần chạy lỗi.
+qua nhiều lần chạy lỗi. Tên backup lấy tên trống kế tiếp nếu tên chuẩn đã tồn tại, vì PID
+được tái sử dụng: một backup còn sót sau khi khôi phục lỗi là bản duy nhất của byte cũ và
+không được lần chạy sau ghi đè hay xóa.
 
 Mỗi thư mục đích có một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch: kiểm tra cache,
 tải, sao lưu, mọi lần thay và cả rollback. Tên staging/backup có kèm PID chỉ ngăn hai lần
 chạy dùng chung **tên file tạm**; nếu không có lock, tiến trình A có thể rollback đè bản cũ
 của một file lên cặp file mới mà tiến trình B vừa cài xong, để lại train/test lệch phiên bản.
-Lần chạy thứ hai chờ tối đa 900s rồi báo lỗi nếu lock chưa được giải phóng; lock cũ hơn 1 giờ
-được coi là do tiến trình bị giết và được phá, nên hard kill không khóa vĩnh viễn thư mục.
+
+Chủ sở hữu lock chạy một heartbeat chạm lại mtime lock mỗi 30 giây. Vì vậy đường phá lock cũ
+chỉ bắt được trường hợp **không ai đang refresh** (tiến trình bị giết), không bắt nhầm một
+lần tải hợp lệ nhưng chậm. Lock cũ hơn 1 giờ mới bị phá; lần chạy thứ hai chờ tối đa 900s
+rồi báo lỗi nếu lock chưa được giải phóng. Nếu lock biến mất giữa lúc thử giành và lúc đọc
+mtime — tức bàn giao bình thường — lần chạy đó thử giành lại thay vì dừng.
+
+`dataset_manifest.py` không dùng lock của `fetch_unsw_nb15.py`. Chạy `record` đúng lúc một
+lần fetch đang thay file có thể ghi lại trạng thái lẫn, nhưng `verify` chạy sau đó sẽ báo
+mismatch SHA-256, nên sai lệch bị phát hiện chứ không lan. `record` cũng từ chối ghi đè một
+manifest đã tồn tại.
 
 Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
 
@@ -98,9 +109,10 @@ gốc nên được version-control để reviewer tái kiểm tra cùng byte.
 kiểu số/text, số hữu hạn, nhãn binary `0/1`, các trường bắt buộc và tính nhất quán:
 `label=0` phải có `attack_cat=Normal`, còn `label=1` phải là category khác. Khi
 dùng manifest, validator kiểm tra size và SHA-256. Số bản ghi chính thức của hai split
-(175.341 và 82.332) luôn được kiểm tra kể cả khi không dùng manifest; `--no-row-count`
-bỏ qua bất biến này cho fixture hoặc tập con, còn file không thuộc hai split mặc định
-thì không có số bản ghi công bố để so.
+(175.341 và 82.332) được kiểm tra khi không có manifest, và khi manifest có ghi
+`expected_rows` thì lấy theo manifest; `--no-row-count` bỏ qua **cả hai** nguồn cho
+fixture hoặc tập con. File không thuộc hai split mặc định thì không có số bản ghi công bố
+để so.
 
 Dòng trống không bị bỏ qua âm thầm. Dòng không có delimiter và không có giá trị (rỗng
 hoặc chỉ khoảng trắng) được đếm và là lỗi chặn, thông báo nêu tổng số dòng và vị trí tối

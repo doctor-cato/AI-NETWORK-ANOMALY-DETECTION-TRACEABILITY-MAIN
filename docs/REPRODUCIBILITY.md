@@ -67,16 +67,20 @@ nên nếu khôi phục lỗi, file đích giữ byte mới đã verify và bả
 dòng `RECOVERY` để phục hồi thủ công. File mới tạo trong lần chạy đó bị xóa lại để thư mục
 trở về đúng trạng thái trước lần chạy; nếu xóa lỗi, file được giữ lại và báo
 `ROLLBACK WARNING` kèm `RECOVERY`. Lỗi khi dọn staging/backup được ghi `CLEANUP WARNING` và
-không ném lỗi mới đè lên lỗi đang báo; backup dở dang khi `copyfile` lỗi được xóa ngay.
+không ném lỗi mới đè lên lỗi đang báo; backup dở dang khi `copyfile` lỗi được xóa ngay, và
+tên backup lấy tên trống kế tiếp để không ghi đè một backup còn sót đang là bản duy nhất.
 Một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch nên hai lần chạy không xen kẽ backup,
-swap và rollback; lần chạy thứ hai chờ tối đa 900s, và lock cũ hơn 1 giờ bị coi là do tiến
-trình bị giết nên được phá. Tên staging và backup có kèm PID nên hai lần chạy đồng thời không
-dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi Git. Báo cáo thật
+swap và rollback; chủ sở hữu chạy heartbeat 30s nên đường phá lock cũ (>1h) chỉ bắt tiến
+trình đã chết, lần chạy thứ hai chờ tối đa 900s. `dataset_manifest.py` không dùng lock này;
+`verify` chạy sau `record` sẽ phát hiện trạng thái lẫn bằng SHA-256. Tên staging và backup có
+kèm PID nên hai lần chạy đồng thời không dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi
+Git. Báo cáo thật
 lưu aggregate row/schema/blank/missing/duplicate và checksum, không chứa dòng raw.
 Fixture test chỉ kiểm tra hành vi validator.
 
 `validate_data.py` kiểm tra số bản ghi chính thức của hai split mặc định (175.341 và
-82.332) kể cả khi không truyền `--manifest`; `--no-row-count` dành cho fixture hoặc tập con.
+82.332) kể cả khi không truyền `--manifest`, lấy theo manifest khi manifest có ghi
+`expected_rows`, và `--no-row-count` bỏ qua cả hai nguồn cho fixture hoặc tập con.
 `--report` không được trỏ tới file CSV đầu vào.
 
 Khi cả hai CSV vắng mặt, `validate_data.py` in `SKIPPED`, in rõ `SKIPPED is not PASS` và
