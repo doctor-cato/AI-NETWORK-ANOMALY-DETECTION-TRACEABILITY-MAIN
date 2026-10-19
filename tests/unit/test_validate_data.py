@@ -9,6 +9,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from email.message import Message
 from pathlib import Path
 from urllib.error import URLError
@@ -888,6 +889,99 @@ def test_staging_cleanup_failure_keeps_the_verify_error(fetcher, tmp_path, monke
     out = capsys.readouterr().out
     assert "CLEANUP WARNING" in out
     assert not (tmp_path / "a.csv").exists()
+
+
+def test_report_path_over_an_input_file_is_refused(validator, tmp_path, capsys):
+    """The validator must never write its report over the dataset it just validated."""
+    target = tmp_path / "input.csv"
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    before = target.read_bytes()
+    assert validator.main(["--file", str(target), "--report", str(target)]) == 1
+    assert "refusing to overwrite" in capsys.readouterr().out
+    assert target.read_bytes() == before
+
+
+def test_report_path_reaching_an_input_file_by_relative_path_is_refused(
+    validator, tmp_path, capsys
+):
+    target = tmp_path / "input.csv"
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    indirect = tmp_path / "sub" / ".." / "input.csv"
+    assert validator.main(["--file", str(target), "--report", str(indirect)]) == 1
+    assert "refusing to overwrite" in capsys.readouterr().out
+
+
+def test_report_path_next_to_the_input_is_allowed(validator, tmp_path):
+    target = tmp_path / "input.csv"
+    write_csv(target, validator.COLUMNS, [row(validator)])
+    report = tmp_path / "report.json"
+    assert validator.main(["--file", str(target), "--report", str(report), "--no-row-count"]) == 0
+    assert json.loads(report.read_text(encoding="utf-8"))["files"][0]["rows"] == 1
+
+
+# --- fetch_unsw_nb15.py: one lock per destination --------------------------------
+
+
+def test_lock_is_held_for_the_transaction_and_released(fetcher, tmp_path, monkeypatch):
+    """A concurrent run must find the lock while this one is still swapping files."""
+    seen = []
+    real_replace = os.replace
+
+    def capture(src, dst):
+        seen.append((tmp_path / fetcher.LOCK_NAME).exists())
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(fetcher.os, "replace", capture)
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert seen == [True]
+    assert not (tmp_path / fetcher.LOCK_NAME).exists()
+
+
+def test_second_run_gives_up_instead_of_interleaving(fetcher, tmp_path, monkeypatch, capsys):
+    """Holding the lock externally must stop this run before it touches the cache."""
+    (tmp_path / fetcher.LOCK_NAME).write_text("pid=1\n", encoding="utf-8")
+    monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 0)
+
+    def explode(*args, **kwargs):
+        raise AssertionError("a locked destination must not be read or written")
+
+    monkeypatch.setattr(fetcher, "urlopen", explode)
+    with pytest.raises(OSError, match="another fetch is running"):
+        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert "LOCK" in capsys.readouterr().out
+    assert not (tmp_path / "a.csv").exists()
+
+
+def test_stale_lock_is_broken(fetcher, tmp_path, monkeypatch):
+    """A lock left by a killed run must not block the directory forever."""
+    lock = tmp_path / fetcher.LOCK_NAME
+    lock.write_text("pid=1\n", encoding="utf-8")
+    stale = time.time() - fetcher.LOCK_STALE_SECONDS - 60
+    os.utime(lock, (stale, stale))
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+    assert not lock.exists()
+
+
+def test_failed_backup_copy_leaves_no_partial_file(fetcher, tmp_path, monkeypatch, capsys):
+    """A copy that fails halfway must not leave a backup nobody knows to clean up."""
+    (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])
+    staging = tmp_path / "stage-a.csv"
+    staging.write_bytes(TWO_FILES["a.csv"])
+
+    def failing_copy(src, dst, *args, **kwargs):
+        Path(dst).write_bytes(b"partial")
+        raise OSError(f"simulated copy failure for {Path(dst).name}")
+
+    monkeypatch.setattr(fetcher.shutil, "copyfile", failing_copy)
+    with pytest.raises(OSError, match="simulated copy failure"):
+        fetcher.install({"a.csv": staging}, tmp_path)
+    assert "CLEANUP WARNING" not in capsys.readouterr().out
+    assert scratch_files(tmp_path) == []
+    # The destination still holds the bytes it had before the failed run.
+    assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
 
 
 # --- validate_data.py: the SKIPPED contract must stay unmistakable -------------

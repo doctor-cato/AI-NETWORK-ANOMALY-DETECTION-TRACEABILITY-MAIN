@@ -69,11 +69,16 @@ file trong `RECOVERY` để dọn thủ công — thư mục có thể tạm th�
 đến khi chạy lại `fetch_unsw_nb15.py`.
 
 Dọn staging và backup trong `finally` không được ném lỗi mới đè lên lỗi đang báo; lỗi dọn
-được ghi `CLEANUP WARNING`. Backup chỉ bị xóa khi nó không còn là bản duy nhất.
+được ghi `CLEANUP WARNING`. Backup chỉ bị xóa khi nó không còn là bản duy nhất. Nếu
+`shutil.copyfile` lỗi giữa chừng, file backup dở dang bị xóa ngay để không tích tụ file tạm
+qua nhiều lần chạy lỗi.
 
-Tên file staging và backup có kèm PID, nên hai lần tải chạy đồng thời không dùng chung file
-tạm. Vì mọi byte đều đã verify trước khi thay, hai tiến trình cùng thay vẫn cho ra kết quả
-giống hệt.
+Mỗi thư mục đích có một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch: kiểm tra cache,
+tải, sao lưu, mọi lần thay và cả rollback. Tên staging/backup có kèm PID chỉ ngăn hai lần
+chạy dùng chung **tên file tạm**; nếu không có lock, tiến trình A có thể rollback đè bản cũ
+của một file lên cặp file mới mà tiến trình B vừa cài xong, để lại train/test lệch phiên bản.
+Lần chạy thứ hai chờ tối đa 900s rồi báo lỗi nếu lock chưa được giải phóng; lock cũ hơn 1 giờ
+được coi là do tiến trình bị giết và được phá, nên hard kill không khóa vĩnh viễn thư mục.
 
 Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
 
@@ -104,6 +109,8 @@ thì thành missing value, thiếu cột thành lỗi độ rộng hàng. Báo c
 số hàng/cột, schema, số dòng trống, phân bố nhãn và attack category, missing theo cột,
 duplicate sau khi bỏ cột định danh `id`, invalid labels và tỷ lệ lớp.
 Sai schema/hash/size/row count/nhãn/kiểu/cấu trúc/dòng trống là lỗi chặn (exit 1).
+`--report` trỏ tới chính file CSV đầu vào (kể cả khi resolve về cùng một file) bị từ chối
+trước khi ghi, vì validator tuyên bố chỉ đọc và không sửa dữ liệu.
 Missing feature không bắt buộc và duplicate là cảnh báo; validator không xóa, điền,
 chuẩn hóa hay thay đổi dữ liệu.
 

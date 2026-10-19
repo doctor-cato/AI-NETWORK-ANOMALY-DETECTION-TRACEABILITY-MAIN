@@ -5,6 +5,9 @@ import argparse
 import hashlib
 import os
 import shutil
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -31,6 +34,12 @@ STAGING_PREFIX = ".unsw-nb15-staging-"
 BACKUP_PREFIX = ".unsw-nb15-backup-"
 # Download chunk size; it only bounds memory, never the number of bytes accepted.
 CHUNK_BYTES = 1024 * 1024
+# One lock per destination serialises the whole fetch/install transaction.
+LOCK_NAME = ".unsw-nb15.lock"
+LOCK_TIMEOUT_SECONDS = 900
+LOCK_POLL_SECONDS = 1.0
+# A lock older than this was left behind by a killed run and is safe to break.
+LOCK_STALE_SECONDS = 3600
 
 
 def scratch_path(destination, prefix, name):
@@ -186,7 +195,13 @@ def install(pending, destination):
             target = destination / name
             if target.is_file():
                 backup = scratch_path(destination, BACKUP_PREFIX, name)
-                shutil.copyfile(target, backup)
+                try:
+                    shutil.copyfile(target, backup)
+                except OSError:
+                    # Record the path first: a copy that fails halfway would otherwise
+                    # leave a partial backup nobody knows to clean up.
+                    remove_quietly(backup)
+                    raise
                 backups[name] = backup
         for name, staging in pending.items():
             os.replace(staging, destination / name)
@@ -213,23 +228,80 @@ def install(pending, destination):
                 remove_quietly(backup)
 
 
+@contextmanager
+def destination_lock(destination, timeout=None, poll=None):
+    """Hold an exclusive lock on `destination` for the whole fetch/install transaction.
+
+    PID-tagged scratch names stop two runs from sharing a temporary file, but they do
+    not stop them from interleaving backups, swaps and rollback: one run can restore an
+    old file over the pair another run has just installed. The lock covers the cache
+    check, the download, the backups, every swap and the rollback, so only one run
+    touches the destination at a time.
+
+    A lock older than LOCK_STALE_SECONDS is treated as abandoned by a killed run and is
+    removed, so a hard kill cannot block the directory forever. The defaults are read at
+    call time so a caller or a test can shorten them.
+    """
+    if timeout is None:
+        timeout = LOCK_TIMEOUT_SECONDS
+    if poll is None:
+        poll = LOCK_POLL_SECONDS
+    lock = destination / LOCK_NAME
+    deadline = time.monotonic() + timeout
+    announced = False
+    while True:
+        try:
+            handle = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            age = time.time() - lock.stat().st_mtime
+            if age > LOCK_STALE_SECONDS:
+                print(
+                    f"[fetch_unsw_nb15] LOCK: removing stale lock {lock.name}, "
+                    f"unchanged for {age:.0f}s"
+                )
+                remove_quietly(lock)
+                if lock.exists():
+                    time.sleep(poll)
+                continue
+            if not announced:
+                print(
+                    f"[fetch_unsw_nb15] LOCK: another run holds {lock.name}; "
+                    f"waiting up to {timeout}s"
+                )
+                announced = True
+            if time.monotonic() >= deadline:
+                raise OSError(
+                    f"gave up waiting {timeout}s for {lock.name}; another fetch is running"
+                )
+            time.sleep(poll)
+            continue
+        break
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as stream:
+            stream.write(f"pid={os.getpid()} acquired={datetime.now(timezone.utc).isoformat()}")
+        yield lock
+    finally:
+        remove_quietly(lock)
+
+
 def fetch(destination, files=None, base_url=None):
     files = FILES if files is None else files
     base_url = BASE_URL if base_url is None else base_url
     destination.mkdir(parents=True, exist_ok=True)
     staging = {name: scratch_path(destination, STAGING_PREFIX, name) for name in files}
     try:
-        pending = {}
-        for name, expected in files.items():
-            if cache_is_valid(destination / name, expected):
-                continue
-            pending[name] = staging[name]
-            download_to_staging(name, expected, staging[name], base_url)
-        # Install only once every needed file is staged and verified, so a failed run
-        # never leaves a half-populated data/raw/ directory: any file this run installed
-        # is returned to its pre-run state when a later swap fails.
-        if pending:
-            install(pending, destination)
+        with destination_lock(destination):
+            pending = {}
+            for name, expected in files.items():
+                if cache_is_valid(destination / name, expected):
+                    continue
+                pending[name] = staging[name]
+                download_to_staging(name, expected, staging[name], base_url)
+            # Install only once every needed file is staged and verified, so a failed run
+            # never leaves a half-populated data/raw/ directory: any file this run installed
+            # is returned to its pre-run state when a later swap fails.
+            if pending:
+                install(pending, destination)
     finally:
         for path in staging.values():
             remove_quietly(path)

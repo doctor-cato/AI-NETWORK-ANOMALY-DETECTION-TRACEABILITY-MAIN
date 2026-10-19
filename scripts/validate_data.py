@@ -241,6 +241,18 @@ def main(argv=None):
             return 1
         targets = [DATA_RAW / name for name in DEFAULT_FILES]
     try:
+        if args.report:
+            # The validator never mutates dataset bytes, so a report path that resolves
+            # to an input file must be refused before anything is written.
+            report_path = args.report.resolve()
+            for target in targets:
+                if report_path == target.resolve() or (
+                    report_path.exists() and os.path.samefile(report_path, target)
+                ):
+                    raise ValueError(
+                        f"report path {args.report} resolves to the input dataset file "
+                        f"{target.name}; refusing to overwrite it"
+                    )
         manifest = json.loads(args.manifest.read_text(encoding="utf-8")) if args.manifest else None
         reports = []
         for target in targets:
