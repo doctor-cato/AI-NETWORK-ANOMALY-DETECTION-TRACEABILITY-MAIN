@@ -1013,12 +1013,13 @@ def test_second_run_waits_for_the_lock_instead_of_failing(fetcher, tmp_path, mon
     """A short overlap must serialise, not error: the waiter takes the lock afterwards."""
     holding = threading.Event()
     release = threading.Event()
-    hold_seconds = 0.4
+    marks = {}
 
     def hold():
         with fetcher.destination_lock(tmp_path, timeout=5, poll=0.01):
             holding.set()
             release.wait(5)
+            marks["released"] = time.monotonic()
 
     holder = threading.Thread(target=hold, daemon=True)
     holder.start()
@@ -1026,16 +1027,16 @@ def test_second_run_waits_for_the_lock_instead_of_failing(fetcher, tmp_path, mon
         assert holding.wait(5)
         monkeypatch.setattr(fetcher, "LOCK_TIMEOUT_SECONDS", 10)
         monkeypatch.setattr(fetcher, "LOCK_POLL_SECONDS", 0.01)
-        started = time.monotonic()
-        timer = threading.Timer(hold_seconds, release.set)
+        timer = threading.Timer(0.2, release.set)
         timer.start()
         try:
             with fetcher.destination_lock(tmp_path, timeout=10, poll=0.01):
-                elapsed = time.monotonic() - started
+                marks["acquired"] = time.monotonic()
         finally:
             timer.cancel()
-        # It waited for the holder and only then entered the transaction.
-        assert elapsed >= hold_seconds
+        # Compared as instants, not durations: the waiter may only enter after the
+        # holder is out, and no wall-clock tolerance is needed for that.
+        assert marks["acquired"] >= marks["released"]
     finally:
         release.set()
         holder.join(5)
