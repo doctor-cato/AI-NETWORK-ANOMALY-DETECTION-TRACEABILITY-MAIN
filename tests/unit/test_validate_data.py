@@ -1190,7 +1190,7 @@ def test_report_path_over_the_manifest_is_refused(validator, tmp_path, capsys):
     assert manifest.read_bytes() == before
 
 
-def test_failed_recovery_keeps_the_marker_and_the_backup(fetcher, tmp_path, monkeypatch, capsys):
+def test_a_failed_recovery_keeps_the_marker_and_the_backup(fetcher, tmp_path, monkeypatch, capsys):
     """A restore that cannot finish must keep the record of where the old bytes are."""
     (tmp_path / "a.csv").write_bytes(TWO_FILES["a.csv"])
     kept_backup = tmp_path / f"{fetcher.BACKUP_PREFIX}999-a.csv"
@@ -1205,7 +1205,8 @@ def test_failed_recovery_keeps_the_marker_and_the_backup(fetcher, tmp_path, monk
 
     monkeypatch.setattr(fetcher.os, "replace", refuse_replace)
     serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
-    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    with pytest.raises(OSError, match="RECOVERY incomplete"):
+        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
     out = capsys.readouterr().out
     assert "RECOVERY WARNING" in out
     # Deleting the marker here would orphan the only surviving copy of the old bytes.
@@ -1240,11 +1241,13 @@ def test_record_does_not_leave_a_partial_manifest(manifest_module, tmp_path, mon
         splits.append(path)
     manifest = tmp_path / "manifest.json"
 
-    def refuse_replace(src, dst):
-        raise OSError("simulated manifest swap failure")
+    def refuse_publish(src, dst):
+        raise OSError("simulated manifest publish failure")
 
-    monkeypatch.setattr(manifest_module.os, "replace", refuse_replace)
-    with pytest.raises(OSError, match="simulated manifest swap failure"):
+    # Both publish paths: the hard link and the atomic-swap fallback.
+    monkeypatch.setattr(manifest_module.os, "link", refuse_publish)
+    monkeypatch.setattr(manifest_module.os, "replace", refuse_publish)
+    with pytest.raises(OSError, match="simulated manifest publish failure"):
         manifest_module.record(
             splits,
             manifest,
@@ -1253,6 +1256,174 @@ def test_record_does_not_leave_a_partial_manifest(manifest_module, tmp_path, mon
         )
     assert not manifest.exists()
     assert sorted(path.name for path in tmp_path.iterdir()) == sorted(path.name for path in splits)
+
+
+def test_recovery_retries_after_a_partly_completed_run(fetcher, tmp_path, monkeypatch, capsys):
+    """A backup restored in an earlier attempt must not make the next attempt fail."""
+    (tmp_path / "a.csv").write_bytes(TWO_FILES["a.csv"])
+    (tmp_path / "b.csv").write_bytes(TWO_FILES["b.csv"])
+    first_backup = tmp_path / f"{fetcher.BACKUP_PREFIX}999-a.csv"
+    first_backup.write_bytes(PREVIOUS["a.csv"])
+    second_backup = tmp_path / f"{fetcher.BACKUP_PREFIX}999-b.csv"
+    second_backup.write_bytes(PREVIOUS["b.csv"])
+    marker = tmp_path / fetcher.TXN_NAME
+    marker.write_text(
+        json.dumps(
+            {
+                "pid": 999,
+                "files": [
+                    {"name": "a.csv", "backup": first_backup.name},
+                    {"name": "b.csv", "backup": second_backup.name},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    real_replace = os.replace
+
+    def refuse_b(src, dst):
+        if Path(dst).name == "b.csv":
+            raise OSError("simulated restore failure for b.csv")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(fetcher.os, "replace", refuse_b)
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    with pytest.raises(OSError, match="RECOVERY incomplete"):
+        fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    capsys.readouterr()
+    # a.csv was restored and its backup consumed; b.csv failed, so the marker stays.
+    assert (tmp_path / "a.csv").read_bytes() == PREVIOUS["a.csv"]
+    assert not first_backup.exists()
+    assert second_backup.is_file()
+    assert marker.is_file()
+
+    # The next run must finish the job instead of tripping over the consumed backup.
+    monkeypatch.setattr(fetcher.os, "replace", real_replace)
+    serve_files(monkeypatch, fetcher, TWO_FILES)
+    fetch_one(fetcher, tmp_path, {n: entry_for(v) for n, v in TWO_FILES.items()}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "RECOVERY WARNING" not in out
+    assert not marker.exists()
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert (tmp_path / "b.csv").read_bytes() == TWO_FILES["b.csv"]
+
+
+def test_a_failed_recovery_blocks_the_run_before_touching_anything(
+    fetcher, tmp_path, monkeypatch, capsys
+):
+    """If recovery cannot finish, no download and no install may follow it."""
+    (tmp_path / "a.csv").write_bytes(TWO_FILES["a.csv"])
+    kept_backup = tmp_path / f"{fetcher.BACKUP_PREFIX}999-a.csv"
+    kept_backup.write_bytes(PREVIOUS["a.csv"])
+    marker = tmp_path / fetcher.TXN_NAME
+    marker.write_text(
+        json.dumps({"pid": 999, "files": [{"name": "a.csv", "backup": kept_backup.name}]}),
+        encoding="utf-8",
+    )
+
+    def refuse_replace(src, dst):
+        raise OSError(f"simulated restore failure for {Path(dst).name}")
+
+    def explode(*args, **kwargs):
+        raise AssertionError("a blocked run must not download anything")
+
+    monkeypatch.setattr(fetcher.os, "replace", refuse_replace)
+    monkeypatch.setattr(fetcher, "urlopen", explode)
+    with pytest.raises(OSError, match="RECOVERY"):
+        fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    out = capsys.readouterr().out
+    assert "RECOVERY WARNING" in out
+    # Data and the evidence needed to repair it both survive.
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert kept_backup.read_bytes() == PREVIOUS["a.csv"]
+    assert marker.is_file()
+    assert scratch_files(tmp_path) == [kept_backup.name, fetcher.TXN_NAME]
+
+
+def test_open_new_never_removes_what_is_already_there(fetcher, tmp_path):
+    """The exclusive open must refuse, not clean up, whatever occupies the name."""
+    existing = tmp_path / "scratch.bin"
+    existing.write_bytes(b"an earlier run left this")
+    with pytest.raises(FileExistsError):
+        fetcher.open_new(existing)
+    assert existing.read_bytes() == b"an earlier run left this"
+
+
+def test_a_leftover_scratch_file_is_never_deleted_or_overwritten(fetcher, tmp_path, monkeypatch):
+    """A scratch name that is already taken belongs to an earlier run; leave it alone."""
+    leftover = tmp_path / f"{fetcher.STAGING_PREFIX}{os.getpid()}-a.csv"
+    leftover.write_bytes(b"earlier run left this here")
+    serve(fetcher, monkeypatch, FakeResponse(PAYLOAD))
+    fetch_one(fetcher, tmp_path, {"a.csv": entry_for(PAYLOAD)}, monkeypatch)
+    assert leftover.read_bytes() == b"earlier run left this here"
+    assert (tmp_path / "a.csv").read_bytes() == PAYLOAD
+    # The run used a different staging name and cleaned up after itself.
+    assert scratch_files(tmp_path) == [leftover.name]
+
+
+def test_a_leftover_backup_name_is_never_overwritten(fetcher, tmp_path, monkeypatch):
+    """Same rule for the backup name, which may hold the only copy of older bytes."""
+    (tmp_path / "a.csv").write_bytes(PREVIOUS["a.csv"])
+    kept = tmp_path / f"{fetcher.BACKUP_PREFIX}{os.getpid()}-a.csv"
+    kept.write_bytes(b"only surviving copy")
+    staging = tmp_path / "stage-a.csv"
+    staging.write_bytes(TWO_FILES["a.csv"])
+    fetcher.install({"a.csv": staging}, tmp_path)
+    assert kept.read_bytes() == b"only surviving copy"
+    assert (tmp_path / "a.csv").read_bytes() == TWO_FILES["a.csv"]
+    assert scratch_files(tmp_path) == [kept.name]
+
+
+def test_record_refuses_an_existing_manifest_without_touching_it(manifest_module, tmp_path, capsys):
+    """A second record must fail rather than replace provenance that is already there."""
+    splits = []
+    for name in manifest_module.DEFAULT_FILES:
+        path = tmp_path / name
+        path.write_bytes(b"id,label\r\n1,0\r\n")
+        splits.append(path)
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"variant": "existing provenance"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="manifest already exists"):
+        manifest_module.record(
+            splits,
+            manifest,
+            "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+            "2026-10-17T00:00:00Z",
+        )
+    assert manifest.read_text(encoding="utf-8") == '{"variant": "existing provenance"}\n'
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted(
+        [path.name for path in splits] + ["manifest.json"]
+    )
+
+
+def test_publish_new_refuses_an_existing_destination(manifest_module, tmp_path):
+    """The publish step is the last line of defence: it must never overwrite."""
+    staged = tmp_path / "staged.json"
+    staged.write_text("new provenance", encoding="utf-8")
+    destination = tmp_path / "manifest.json"
+    destination.write_text("existing provenance", encoding="utf-8")
+    with pytest.raises(FileExistsError):
+        manifest_module.publish_new(staged, destination)
+    assert destination.read_text(encoding="utf-8") == "existing provenance"
+    assert staged.read_text(encoding="utf-8") == "new provenance"
+
+
+def test_record_stages_beside_the_manifest_without_clobbering_it(manifest_module, tmp_path):
+    """The staged file is process-unique, so two records cannot write the same one."""
+    splits = []
+    for name in manifest_module.DEFAULT_FILES:
+        path = tmp_path / name
+        path.write_bytes(b"id,label\r\n1,0\r\n")
+        splits.append(path)
+    manifest = tmp_path / "manifest.json"
+    manifest_module.record(
+        splits,
+        manifest,
+        "https://research.unsw.edu.au/projects/unsw-nb15-dataset",
+        "2026-10-17T00:00:00Z",
+    )
+    assert manifest.is_file()
+    assert not list(tmp_path.glob(f"{manifest.name}.*.partial"))
 
 
 def test_existing_backup_is_never_overwritten(fetcher, tmp_path, monkeypatch):

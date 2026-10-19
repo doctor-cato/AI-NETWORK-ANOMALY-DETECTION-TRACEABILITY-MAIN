@@ -72,9 +72,12 @@ tên backup lấy tên trống kế tiếp để không ghi đè một backup c�
 backup đều mở bằng `O_CREAT|O_EXCL` để một symlink cài sẵn không thể chuyển hướng ghi ra ngoài
 thư mục đích. Cài đặt ghi marker `.unsw-nb15-transaction.json` trước lần thay đầu tiên, nên
 tiến trình bị giết cứng giữa hai lần thay sẽ được lần chạy sau hoàn nguyên trước khi kiểm tra
-cache; marker không đọc được thì lần chạy dừng thay vì ghi đè trạng thái chưa hiểu, và marker
-được giữ lại khi khôi phục thất bại. `dataset_manifest.py record` ghi ra file phụ rồi thay nguyên
-tử, nên một lần ghi bị giết không để lại manifest cắt cụt.
+cache; marker không đọc được thì lần chạy dừng thay vì ghi đè trạng thái chưa hiểu, marker
+được giữ lại khi khôi phục thất bại, và recovery idempotent nên backup đã restore ở lần trước
+không làm mắc lần chạy sau. Khôi phục còn dang dở thì lần chạy dừng với exit 1 trước khi tải
+hay cài bất cứ thứ gì. `dataset_manifest.py record` ghi ra file phụ có kèm PID rồi đặt vào chỗ
+bằng `os.link`, nên không ghi đè được manifest đã có và một lần ghi bị giết không để lại manifest
+cắt cụt.
 Một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch nên hai lần chạy không xen kẽ backup,
 swap và rollback; đó là khóa byte-range của hệ điều hành (`msvcrt.locking` / `fcntl.flock`)
 nên kernel giải phóng khi tiến trình chết, không có ngưỡng stale và không có bước phá lock

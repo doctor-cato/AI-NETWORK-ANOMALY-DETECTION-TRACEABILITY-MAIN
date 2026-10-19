@@ -61,6 +61,27 @@ def iter_timestamps(payload, prefix=""):
             yield from iter_timestamps(value, f"{prefix}[{index}]")
 
 
+def publish_new(staged, destination):
+    """Put `staged` in place only while `destination` is still absent.
+
+    The existence check at the start of record and the write that follows are not
+    atomic, so the last step refuses to overwrite rather than assumes nothing
+    appeared: os.link fails when the destination exists.
+    """
+    try:
+        os.link(staged, destination)
+    except FileExistsError:
+        raise
+    except OSError:
+        # Filesystems without hard links still get the atomic swap; the caller has
+        # already refused an existing manifest.
+        if destination.exists():
+            raise
+        os.replace(staged, destination)
+        return
+    staged.unlink()
+
+
 def record(files, destination, acquired_from, downloaded_at):
     if destination.exists():
         raise ValueError(f"manifest already exists: {destination}")
@@ -106,13 +127,14 @@ def record(files, destination, acquired_from, downloaded_at):
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Write beside the destination and swap: an interrupted record would otherwise leave
     # a truncated manifest, and record refuses to write over an existing one, so the
-    # provenance would be unrecoverable without deleting it by hand.
-    staged = destination.with_name(destination.name + ".partial")
+    # provenance would be unrecoverable without deleting it by hand. The staged name
+    # carries the PID so two records cannot write over the same file.
+    staged = destination.with_name(f"{destination.name}.{os.getpid()}.partial")
     try:
         with staged.open("w", encoding="utf-8") as stream:
             json.dump(manifest, stream, indent=2)
             stream.write("\n")
-        os.replace(staged, destination)
+        publish_new(staged, destination)
     except OSError:
         staged.unlink(missing_ok=True)
         raise

@@ -58,33 +58,30 @@ def scratch_path(destination, prefix, name):
     return destination / f"{prefix}{os.getpid()}-{name}"
 
 
-def open_exclusive(path):
-    """Open `path` for writing, refusing to follow anything already at that name.
+def free_scratch_path(destination, prefix, name):
+    """First free scratch path for this run; anything already there is left alone.
 
-    Staging and backup names are predictable, so a symlink planted at one would
-    redirect the write outside the destination before any checksum is checked.
-    Removing whatever is there and then creating with O_EXCL keeps the open atomic
-    and symlink-safe on Windows too, where O_NOFOLLOW does not exist.
+    Staging and backup names are predictable and PIDs are reused, so a name may still
+    belong to an earlier run: a leftover backup can be the only surviving copy of older
+    bytes. Taking the next free name keeps that file intact.
     """
-    if path.is_symlink() or path.exists():
-        path.unlink()
-    return os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-
-
-def free_backup_path(destination, name):
-    """First backup path that does not exist yet.
-
-    A backup left behind by a failed restore is the only surviving copy of those bytes,
-    and PIDs are reused, so the same PID can reach a kept backup again. Taking the next
-    free name keeps that copy intact instead of overwriting or deleting it.
-    """
-    base = scratch_path(destination, BACKUP_PREFIX, name)
+    base = scratch_path(destination, prefix, name)
     candidate = base
     suffix = 0
-    while candidate.exists():
+    while candidate.exists() or candidate.is_symlink():
         suffix += 1
         candidate = base.with_name(f"{base.name}.{suffix}")
     return candidate
+
+
+def open_new(path):
+    """Create `path` exclusively: never follow and never remove what is there.
+
+    O_EXCL fails for anything already at that name, including a symlink, so a planted
+    symlink cannot redirect the write outside the destination and no earlier file is
+    destroyed. This is the portable form of O_NOFOLLOW, which Windows lacks.
+    """
+    return os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
 
 
 def sha256_file(path):
@@ -146,7 +143,7 @@ def download_to_staging(name, expected, staging, base_url):
         if content_type in {"text/html", "application/vnd.git-lfs+json"}:
             raise ValueError(f"unexpected Content-Type {content_type} for {name}")
         print(f"[fetch_unsw_nb15] DOWNLOAD: {name} <- {base_url}/{name}")
-        with os.fdopen(open_exclusive(staging), "wb") as output:
+        with os.fdopen(open_new(staging), "wb") as output:
             copy_up_to_limit(response, output, expected["size_bytes"], name)
     digest = verify_download(staging, expected)
     print(f"[fetch_unsw_nb15] VERIFIED: {name} bytes={expected['size_bytes']} sha256={digest}")
@@ -226,7 +223,7 @@ def copy_file(source, destination_path):
     caller and cleaned up; the exclusive open keeps a planted symlink from
     redirecting the copy outside the destination.
     """
-    with os.fdopen(open_exclusive(destination_path), "wb") as output:
+    with os.fdopen(open_new(destination_path), "wb") as output:
         with source.open("rb") as stream:
             shutil.copyfileobj(stream, output)
 
@@ -261,8 +258,25 @@ def recover_interrupted_transaction(destination):
         target = destination / name
         backup = entry.get("backup")
         if backup:
+            backup_path = destination / backup
+            if not backup_path.exists():
+                # A restore in an earlier attempt consumed this backup. Treating that as
+                # a failure would strand the marker forever, because the file it names
+                # is gone precisely because the restore already happened.
+                if target.exists():
+                    print(
+                        f"[fetch_unsw_nb15] RECOVERY: {name} was already restored by an "
+                        f"earlier attempt"
+                    )
+                    continue
+                failed = True
+                print(
+                    f"[fetch_unsw_nb15] RECOVERY WARNING: {name} has neither {backup} nor "
+                    f"a file to keep; the previous bytes are lost"
+                )
+                continue
             try:
-                os.replace(destination / backup, target)
+                os.replace(backup_path, target)
                 print(f"[fetch_unsw_nb15] RECOVERY: restored {name} from {backup}")
             except OSError as error:
                 failed = True
@@ -281,11 +295,12 @@ def recover_interrupted_transaction(destination):
                     f"{marker.name} is kept."
                 )
     if failed:
-        print(
-            f"[fetch_unsw_nb15] RECOVERY WARNING: {marker.name} is kept so the next run "
-            f"retries what this one could not finish"
+        # Blocking here is the point: installing on top of a pair this run could not put
+        # back would destroy the evidence needed to repair it.
+        raise OSError(
+            f"RECOVERY incomplete for {marker.name}; nothing was downloaded or installed. "
+            f"The marker and its backups are kept for the next attempt"
         )
-        return
     remove_quietly(marker)
 
 
@@ -299,7 +314,7 @@ def write_transaction_marker(destination, pending, backups):
             for name in pending
         ],
     }
-    with os.fdopen(open_exclusive(marker), "w", encoding="utf-8") as stream:
+    with os.fdopen(open_new(marker), "w", encoding="utf-8") as stream:
         json.dump(record, stream, indent=2)
         stream.write("\n")
 
@@ -319,7 +334,7 @@ def install(pending, destination):
         for name in pending:
             target = destination / name
             if target.is_file():
-                backup = free_backup_path(destination, name)
+                backup = free_scratch_path(destination, BACKUP_PREFIX, name)
                 try:
                     copy_file(target, backup)
                 except OSError:
@@ -423,7 +438,7 @@ def fetch(destination, files=None, base_url=None):
     files = FILES if files is None else files
     base_url = BASE_URL if base_url is None else base_url
     destination.mkdir(parents=True, exist_ok=True)
-    staging = {name: scratch_path(destination, STAGING_PREFIX, name) for name in files}
+    staging = {name: free_scratch_path(destination, STAGING_PREFIX, name) for name in files}
     try:
         with destination_lock(destination):
             recover_interrupted_transaction(destination)
