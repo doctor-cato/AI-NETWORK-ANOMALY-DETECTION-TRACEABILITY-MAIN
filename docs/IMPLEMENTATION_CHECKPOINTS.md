@@ -26,7 +26,7 @@ Next Action:
 
 ```text
 Checkpoint: C0
-Branch: codex/c0-governance (base origin/main a707038)
+Branch: codex/c0-governance-after-revert (base khôi phục dce80bf)
 HEAD: xác minh bằng git/PR readback tại bàn giao; không nhúng self-hash vào commit
 Completed: IMPLEMENTED — scope, charter, requirements, architecture, traceability,
   5-role mapping, M6/M7 và backlog #23–#32 đã đồng bộ.
@@ -34,11 +34,11 @@ Tests: PASS — workflow validator; environment check; targeted 4 passed; full 3
   git diff --check. PR #22 worktree: 105 passed; manifest/real validation/diff-check PASS.
   Remote CI cho C0: NOT VERIFIED cho đến khi PR chạy.
 Issues: #23 (C0); #24–#32; cập nhật #11, #16, #18–#20; #4/#5 giữ OPEN.
-PR: sẽ ghi URL sau khi push/tạo PR; không merge tự động.
-Remaining: VERIFY/REVIEW diff C0, commit, push, PR và CI readback.
+PR: chờ PR khôi phục #33 được maintainer merge; không merge tự động.
+Remaining: Sau #33, mở PR C0 từ branch này vào main và đọc lại CI.
 Blockers: DOCX layout NOT VERIFIED vì runtime không có LibreOffice bundled; không chặn
   mapping nội dung. C1 real-data workstream vẫn phụ thuộc quyết định PR #22/#7.
-Next Action: Chạy check C0, self-review, tạo commit/PR riêng rồi tiếp tục C1 nếu không blocker.
+Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp tục C1 khi CI C0 đạt.
 ```
 
 ## C1–C11
