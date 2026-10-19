@@ -1,14 +1,15 @@
 # Bổ sung đề xuất cho GitHub Issues — ĐÃ ÁP DỤNG
 
-**Trạng thái:** Các đề xuất dưới đây đã được áp dụng lên GitHub (issue #3, #9, #11, #15, #16, #17, #18, #20
-đã Việt hóa và bổ sung Acceptance Criteria). File giữ lại như lịch sử đề xuất, không phải backlog.
+**Trạng thái:** Snapshot M0 này chỉ được giữ như lịch sử. Roadmap C0 ngày 2026-10-19 đã
+cập nhật #11, #16, #18–#20, tạo #23–#32 và bổ sung M6/M7. Nội dung “tùy chọn”, M0–M5
+hoặc tối đa 3 thành viên bên dưới không còn là backlog hiện hành.
 Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` thay vì sửa file này.
 
 ## Các Issue liên quan đã audit (từ API)
 
 | # | Trạng thái | Tiêu đề | Milestone | Ghi chú đề xuất |
 |---|---|---|---|---|
-| 11 | open | Isolation Forest implementation and evaluation protocol | M3 | **Đánh dấu tùy chọn**. Thêm điều kiện: chỉ thực hiện sau khi RF baseline ổn, pipeline đánh giá độc lập hoàn thành, inference/demo tối thiểu chạy được. Yêu cầu mô tả rõ cách chuyển score → nhãn, chọn threshold trên validation, đánh giá trên test. |
+| 11 | open | Isolation Forest implementation and evaluation protocol | M3 | Snapshot M0 từng đánh dấu optional; C0 đã thay bằng yêu cầu bắt buộc ở C4, threshold chọn trên validation và unknown holdout không tham gia tuning. |
 | 9 | open | Baseline implementation — establish comparison point | M2 | **Làm rõ RF là baseline chính**; có thể thêm baseline đơn giản nếu hữu ích nhưng không làm chậm tiến độ. Không bắt buộc nhiều thuật toán. |
 | 8 | open | Preprocessing pipeline design and reproducibility | M2 | Giữ nguyên; chỉ bổ sung yêu cầu fit chỉ trên train, lưu artifact. |
 | 15 | open | Inference pipeline — load artifacts and predict new input | M4 | **Bổ sung kiểm thử thực tế**: cần CLI/script dự đoán trên CSV; kiểm tra cột bắt buộc, dữ liệu thiếu; dùng preprocessing đã fit; sinh CSV kết quả; báo lỗi nếu artifact chưa có. |
@@ -56,7 +57,7 @@ Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` 
 
 ## Đề xuất chỉnh sửa Milestone (đã Vietnamese một phần từ trước)
 
-- M0 → M5 đã có tên tiếng Việt; chỉ cần đảm bảo mô tả phản ánh đúng thứ tự trên và IF được đánh dấu tùy chọn ở M3.
+- M0 → M5 được giữ làm lịch sử; C0 bổ sung M6/M7 và chuyển IF thành bắt buộc ở C4.
 - Không đổi milestone ID, không đóng/mở tùy tiện, không chuyển Issue sang milestone khác không có lý do.
 
 ## Đề xuất chỉnh sửa Labels (từ API: 23 label)
