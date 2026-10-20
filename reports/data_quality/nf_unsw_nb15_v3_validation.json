@@ -1108,7 +1108,24 @@
   "real_data": true,
   "rows": 2365424,
   "source_file": "NF-UNSW-NB15-v3.csv",
-  "status": "FAIL",
+  "status": {
+    "ML_READY": "BLOCKED",
+    "RAW_QUALITY": "FINDINGS_RECORDED",
+    "SOURCE_INTEGRITY": "PASS",
+    "ml_readiness_blockers": [
+      "raw quality findings require an approved train-only handling policy",
+      "real split and leakage audit are NOT VERIFIED"
+    ],
+    "raw_quality_findings": {
+      "behavioral_fingerprint_duplicate_rows": 1134553,
+      "exact_duplicate_rows": 14815,
+      "missing:SRC_TO_DST_SECOND_BYTES": 63425,
+      "ml_feature_equivalent_duplicate_rows": 1134553,
+      "positive_infinity:DST_TO_SRC_SECOND_BYTES": 122493,
+      "positive_infinity:SRC_TO_DST_SECOND_BYTES": 59068
+    },
+    "source_integrity_issues": {}
+  },
   "timestamp_range_epoch_ms": {
     "maximum_end": 1424262565011.0,
     "minimum_start": 1421927376907.0

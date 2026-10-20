@@ -17,7 +17,7 @@ Current verified scope:
 | Official-source research, version and license | VERIFIED | `docs/dataset/` decision/provenance records |
 | Reproducible download, cache, checksum, rollback and locking | IMPLEMENTED / TESTED | `scripts/fetch_nf_unsw_nb15_v3.py` and acquisition tests |
 | Package manifest and 55-column schema | VERIFIED on real bytes | `data/NF_UNSW_NB15_V3_MANIFEST.json` |
-| Streaming quality audit | IMPLEMENTED / TESTED; real data **FAIL** | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
+| Streaming quality audit | source PASS; raw findings recorded; ML readiness BLOCKED | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
 | 47-feature baseline exclusion and split leakage guards | IMPLEMENTED / TESTED on synthetic fixtures | `src/network_anomaly/data/nf_unsw_nb15_v3.py` |
 | Real train/validation/test split | PLANNED / NOT VERIFIED | blocked on an approved missing/non-finite and duplicate policy |
 | Model training, benchmark and deployment | PLANNED / NOT VERIFIED | no real experiment result is claimed |
@@ -87,9 +87,10 @@ publishes atomically where supported. A destination lock, transaction marker, ba
 path protect an existing cache.
 
 `validate_data.py` checks the real CSV in constant-memory streaming mode and uses a temporary
-SQLite database for duplicate fingerprints. Exit status `1` is expected while blocking findings
-remain. If raw bytes are absent, the default validation is `SKIPPED` with exit `0`; this is not a
-PASS.
+SQLite database for duplicate fingerprints. It reports `SOURCE_INTEGRITY: PASS`,
+`RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`; exit `1` is expected while the ML gate is
+blocked. Integrity/corruption errors use exit `2`. If raw bytes are absent, default validation is
+`SOURCE_INTEGRITY: SKIPPED` with exit `0`; this is not a PASS.
 
 ## Split and leakage safeguards
 

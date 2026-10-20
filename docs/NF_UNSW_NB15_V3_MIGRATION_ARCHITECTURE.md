@@ -62,8 +62,11 @@ timestamp/IP/port và parsing error. Missing, NaN/Inf, negative-value policy, ex
 duplicate và behavior-equivalent near-duplicate được báo riêng; duplicate audit dùng
 disk-backed index để RAM không tăng theo số dòng.
 
-`PASS` chỉ khi chạy trên file thật đã đối chiếu manifest và không có blocking quality
-failure. Fixture chỉ là `TESTED`. Vắng package mặc định là `SKIPPED` và CI warning.
+Output tách ba gate: `SOURCE_INTEGRITY`, `RAW_QUALITY` và `ML_READY`. Bytes/schema/labels đúng
+không bị gọi là corrupted chỉ vì raw findings; raw findings vẫn được ghi đầy đủ và
+`ML_READY: BLOCKED`. Dataset mặc định vắng mặt là `SOURCE_INTEGRITY: SKIPPED`, không phải PASS.
+CLI dùng exit `1` khi source hợp lệ nhưng ML gate bị chặn, exit `2` cho integrity/corruption error,
+và exit `0` duy nhất cho default-absent `SKIPPED` để CI không tự tải raw data.
 
 ## Split và leakage boundary
 

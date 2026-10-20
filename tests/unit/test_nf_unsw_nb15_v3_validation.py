@@ -1,6 +1,7 @@
 """Synthetic validator fixtures; a PASS here is not real-data validation evidence."""
 
 import csv
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -60,6 +61,33 @@ def test_valid_synthetic_csv_has_no_quality_findings(validator, contract, tmp_pa
 
     assert report["rows"] == 1
     assert report["issue_counts"] == {}
+
+
+def test_status_semantics_separate_integrity_quality_and_ml_readiness(validator):
+    status = validator.classify_dataset_status(
+        {
+            "missing:IN_BYTES": 2,
+            "exact_duplicate_rows": 1,
+            "invalid_label": 3,
+        }
+    )
+
+    assert status["SOURCE_INTEGRITY"] == "FAIL"
+    assert status["RAW_QUALITY"] == "FINDINGS_RECORDED"
+    assert status["ML_READY"] == "BLOCKED"
+    assert status["source_integrity_issues"] == {"invalid_label": 3}
+    assert status["raw_quality_findings"] == {
+        "missing:IN_BYTES": 2,
+        "exact_duplicate_rows": 1,
+    }
+
+
+def test_clean_raw_status_still_does_not_claim_ml_readiness(validator):
+    status = validator.classify_dataset_status({})
+
+    assert status["SOURCE_INTEGRITY"] == "PASS"
+    assert status["RAW_QUALITY"] == "PASS"
+    assert status["ML_READY"] == "BLOCKED"
 
 
 @pytest.mark.parametrize(
@@ -256,6 +284,43 @@ def test_row_count_mismatch_is_reported(validator, contract, tmp_path):
     report = validator.validate_csv(dataset, contract, 2, tmp_path)
 
     assert report["issue_counts"]["row_count_mismatch"] == 1
+
+
+def test_validation_does_not_mutate_source_csv(validator, contract, tmp_path):
+    dataset = tmp_path / "immutable.csv"
+    write_csv(dataset, contract, [valid_row(contract, IN_BYTES="inf")])
+    before = hashlib.sha256(dataset.read_bytes()).hexdigest()
+
+    validator.validate_csv(dataset, contract, 1, tmp_path)
+
+    after = hashlib.sha256(dataset.read_bytes()).hexdigest()
+    assert after == before
+
+
+def test_default_absent_is_skipped_but_ml_ready_remains_blocked(
+    validator, monkeypatch, tmp_path, capsys
+):
+    missing = tmp_path / "missing.csv"
+    monkeypatch.setattr(validator, "DATASET_PATH", missing)
+
+    assert validator.main([]) == 0
+    output = capsys.readouterr().out
+    assert "SOURCE_INTEGRITY: SKIPPED" in output
+    assert "RAW_QUALITY: NOT VERIFIED" in output
+    assert "ML_READY: BLOCKED" in output
+
+
+def test_corrupt_explicit_dataset_uses_integrity_failure_exit_code(
+    validator, tmp_path, capsys
+):
+    dataset = tmp_path / "corrupt.csv"
+    dataset.write_bytes(b"not-the-pinned-dataset")
+
+    assert validator.main(["--dataset", str(dataset)]) == 2
+    output = capsys.readouterr().out
+    assert "SOURCE_INTEGRITY: FAIL" in output
+    assert "RAW_QUALITY: NOT EVALUATED" in output
+    assert "ML_READY: BLOCKED" in output
 
 
 def test_manifest_dataset_hash_verification_detects_tamper(validator, tmp_path):

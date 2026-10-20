@@ -37,13 +37,15 @@ successful cache hit still rehashes all package members.
 python scripts/validate_data.py
 ```
 
-Expected current status is `FAIL`, not PASS. The version-controlled report records the verified
-dataset SHA-256, row/label/category counts, missing/non-finite counts and disk-backed duplicate
-audit. The validator removes its temporary SQLite database after success or failure.
+Expected current status is `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`,
+`ML_READY: BLOCKED`. The version-controlled report records the verified dataset SHA-256,
+row/label/category counts, missing/non-finite counts and disk-backed duplicate audit. The validator
+removes its temporary SQLite database after success or failure.
 
-When the default CSV is absent, validation prints `SKIPPED` and exits `0`. That behavior permits CI
-without a 577 MB raw CSV, but it is not real-data evidence. Synthetic test PASS only demonstrates
-validator behavior.
+When the default CSV is absent, validation prints `SOURCE_INTEGRITY: SKIPPED` and exits `0`. A
+source-valid but ML-blocked audit exits `1`; integrity/corruption errors exit `2`. The SKIPPED
+behavior permits CI without a 577 MB raw CSV, but it is not real-data evidence. Synthetic test PASS
+only demonstrates validator behavior.
 
 ## Split and experiment identity
 

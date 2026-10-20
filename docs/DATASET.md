@@ -81,7 +81,8 @@ Validator stream CSV, kiểm tra schema/order, width, row count, numeric/NaN/Inf
 IPv4, port, label/category consistency, timestamp ordering và duration. Exact và near-duplicate
 fingerprint được ghi vào SQLite tạm để RAM không tăng theo số dòng.
 
-Kết quả đã ghi trong repository là **FAIL**:
+Kết quả đã ghi trong repository là `SOURCE_INTEGRITY: PASS`,
+`RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`:
 
 - 63.425 missing tại `SRC_TO_DST_SECOND_BYTES`;
 - 59.068 positive infinity tại `SRC_TO_DST_SECOND_BYTES`;
@@ -90,10 +91,12 @@ Kết quả đã ghi trong repository là **FAIL**:
 - 1.134.553 dòng lặp theo fingerprint hành vi đã công bố trong report.
 
 Schema, row count, SHA-256, label/category distribution, IP/port và temporal ordering đạt các check
-đã triển khai. Điều này không đổi status tổng thành PASS vì các finding trên vẫn chặn raw-to-model.
+đã triển khai. Source integrity PASS không đổi ML readiness thành PASS; findings vẫn chặn
+raw-to-model.
 
-Khi raw package không có, lệnh mặc định trả `SKIPPED`/exit `0` để CI không tải dataset. Exit `0`
-trong trường hợp đó không phải bằng chứng real-data PASS.
+Khi raw package không có, lệnh mặc định trả `SOURCE_INTEGRITY: SKIPPED`/exit `0` để CI không tải
+dataset. Dataset nguyên vẹn nhưng ML-blocked trả exit `1`; corruption/integrity error trả exit `2`.
+Exit `0` cho SKIPPED không phải bằng chứng real-data PASS.
 
 ## Split và preprocessing gate
 

@@ -98,4 +98,4 @@ def test_check_data_with_invalid_dataset_fails(runner, monkeypatch, tmp_path):
     import validate_data
 
     monkeypatch.setattr(validate_data, "DATASET_PATH", dataset)
-    assert runner.main(["--step", "check-data"]) == 1
+    assert runner.main(["--step", "check-data"]) == 2

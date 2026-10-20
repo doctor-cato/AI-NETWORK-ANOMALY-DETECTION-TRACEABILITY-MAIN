@@ -42,6 +42,8 @@ VALID_ATTACKS = set(ATTACK_CATEGORIES)
 ATTACK_BITS = {attack: 1 << index for index, attack in enumerate(ATTACK_CATEGORIES)}
 FINGERPRINT_SCHEMA_VERSION = "nf-unsw-nb15-v3-fingerprint-v1"
 MAX_EXAMPLES = 20
+EXIT_ML_BLOCKED = 1
+EXIT_SOURCE_INTEGRITY_FAILURE = 2
 QUALITY_TOKEN_ISSUES = {
     "missing",
     "positive_infinity",
@@ -58,6 +60,18 @@ QUALITY_RELATION_COLUMNS = (
     "IN_BYTES",
     "OUT_BYTES",
 )
+RAW_QUALITY_PREFIXES = {
+    "missing",
+    "positive_infinity",
+    "negative_infinity",
+    "nan",
+    "negative",
+}
+RAW_QUALITY_KEYS = {
+    "exact_duplicate_rows",
+    "ml_feature_equivalent_duplicate_rows",
+    "behavioral_fingerprint_duplicate_rows",
+}
 
 
 def sha256_file(path):
@@ -138,6 +152,34 @@ def duration_bucket(value):
     if value <= 1:
         return "small_positive_le_1ms"
     return "greater_than_1ms"
+
+
+def classify_dataset_status(issue_counts):
+    source_integrity_issues = {}
+    raw_quality_findings = {}
+    for issue, count in issue_counts.items():
+        prefix = issue.split(":", 1)[0]
+        target = (
+            raw_quality_findings
+            if prefix in RAW_QUALITY_PREFIXES or issue in RAW_QUALITY_KEYS
+            else source_integrity_issues
+        )
+        target[issue] = count
+    source_status = "PASS" if not source_integrity_issues else "FAIL"
+    raw_status = "PASS" if not raw_quality_findings else "FINDINGS_RECORDED"
+    blockers = ["real split and leakage audit are NOT VERIFIED"]
+    if source_integrity_issues:
+        blockers.insert(0, "source integrity defects must be resolved")
+    if raw_quality_findings:
+        blockers.insert(0, "raw quality findings require an approved train-only handling policy")
+    return {
+        "SOURCE_INTEGRITY": source_status,
+        "RAW_QUALITY": raw_status,
+        "ML_READY": "BLOCKED",
+        "source_integrity_issues": source_integrity_issues,
+        "raw_quality_findings": raw_quality_findings,
+        "ml_readiness_blockers": blockers,
+    }
 
 
 class NumericQualityAudit:
@@ -610,7 +652,9 @@ def main(argv=None):
     parser.add_argument("--no-byte-verification", action="store_true")
     args = parser.parse_args(argv)
     if not args.dataset.is_file() and args.dataset == DATASET_PATH:
-        print(f"[validate_data] SKIPPED: {SKIPPED_MESSAGE}")
+        print(f"[validate_data] SOURCE_INTEGRITY: SKIPPED — {SKIPPED_MESSAGE}")
+        print("[validate_data] RAW_QUALITY: NOT VERIFIED")
+        print("[validate_data] ML_READY: BLOCKED")
         if os.getenv("GITHUB_ACTIONS") == "true":
             print(f"::warning::{SKIPPED_MESSAGE}")
         return 0
@@ -630,7 +674,7 @@ def main(argv=None):
             entry["expected_rows"],
             args.duplicate_directory,
         )
-        status = "PASS" if not result["issue_counts"] else "FAIL"
+        status = classify_dataset_status(result["issue_counts"])
         report = {
             "dataset": "NF-UNSW-NB15-v3",
             "status": status,
@@ -642,14 +686,22 @@ def main(argv=None):
             **result,
         }
         write_report(args.report, report)
+        print(f"[validate_data] SOURCE_INTEGRITY: {status['SOURCE_INTEGRITY']}")
+        print(f"[validate_data] RAW_QUALITY: {status['RAW_QUALITY']}")
+        print(f"[validate_data] ML_READY: {status['ML_READY']}")
         print(
-            f"[validate_data] {status}: rows={result['rows']} "
-            f"issues={sum(result['issue_counts'].values())} report={args.report}"
+            f"[validate_data] rows={result['rows']} finding_occurrences="
+            f"{sum(result['issue_counts'].values())} report={args.report}"
         )
-        return 0 if status == "PASS" else 1
+        if status["SOURCE_INTEGRITY"] == "FAIL":
+            return EXIT_SOURCE_INTEGRITY_FAILURE
+        return EXIT_ML_BLOCKED
     except (OSError, ValueError, KeyError, StopIteration, json.JSONDecodeError) as error:
+        print("[validate_data] SOURCE_INTEGRITY: FAIL")
+        print("[validate_data] RAW_QUALITY: NOT EVALUATED")
+        print("[validate_data] ML_READY: BLOCKED")
         print(f"[validate_data] ERROR: {error}")
-        return 1
+        return EXIT_SOURCE_INTEGRITY_FAILURE
 
 
 if __name__ == "__main__":
