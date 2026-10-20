@@ -18,6 +18,8 @@
 - Issues #6–#14, #17, #18, #20, #25, #29, #31 cùng milestone M1–M4/M7.
 - Behavioral Vector/Risk/Trace docs phải nói rõ network-flow metadata không thay thế
   API/auth/session event sources.
+- Quality reporting phải tách source integrity, raw findings và ML readiness; duplicate semantics
+  phải dùng versioned exact/source-feature/ML-feature/behavioral/group definitions.
 
 ## 3. Giữ như historical evidence
 

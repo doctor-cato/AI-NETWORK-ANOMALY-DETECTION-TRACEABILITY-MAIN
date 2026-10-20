@@ -5,8 +5,9 @@
 1. Đọc dữ liệu (sau khi tải về `data/raw/`)
 2. Kiểm tra schema / nhãn (`scripts/validate_data.py`)
 3. Khám phá (notebook EDA) — phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra rò rỉ dữ liệu
-4. Tạo split mới cho NF-UNSW-NB15-v3: temporal ordering, duplicate consolidation và
-   bidirectional 5-tuple/time-bucket grouping; không kế thừa split UNSW-NB15 (2015).
+4. Tạo split mới cho NF-UNSW-NB15-v3: temporal ordering, versioned duplicate/equivalence audit và
+   bidirectional 5-tuple/time-bucket grouping; không kế thừa split UNSW-NB15 (2015) và không tự
+   động loại behavioral-equivalent rows.
 5. Tiền xử lý (fit chỉ trên train): mã hóa, chuẩn hóa, chọn đặc trưng; lưu pipeline
 6. Huấn luyện mô hình: Random Forest/XGBoost theo supervised protocol; Isolation Forest
    và Autoencoder theo anomaly protocol riêng của C4.
@@ -48,8 +49,9 @@
   không thuộc default `X`; sáu metadata fields vẫn được giữ riêng cho grouping/Trace Engine.
 - Cấu hình 49 features có thêm hai port chỉ là experiment tương lai; PR migration không triển khai
   hoặc tuyên bố kết quả so sánh này.
-- Chính sách missing/positive-infinity phải được chọn và fit chỉ trên train. Quality report hiện
-  `FAIL`, nên chưa có split/model thật được chấp nhận.
+- Chính sách missing/positive-infinity phải được chọn và fit chỉ trên train. Report hiện ghi
+  `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`; chưa có
+  split/model thật được chấp nhận.
 
 ## Định nghĩa metric
 

@@ -58,9 +58,9 @@ row count, schema order, target semantics và source discrepancy. Signed S3 URL 
 
 Validator stream CSV và chỉ ghi aggregate report. Blocking defects gồm manifest/hash,
 schema/order, row width/count, invalid target, target/category inconsistency, invalid
-timestamp/IP/port và parsing error. Missing, NaN/Inf, negative-value policy, exact
-duplicate và behavior-equivalent near-duplicate được báo riêng; duplicate audit dùng
-disk-backed index để RAM không tăng theo số dòng.
+timestamp/IP/port và parsing error. Missing, NaN/Inf, negative-value policy, exact,
+ML-feature-equivalent và behavioral-v1 findings được báo riêng; duplicate audit dùng disk-backed
+index để RAM không tăng theo số dòng.
 
 Output tách ba gate: `SOURCE_INTEGRITY`, `RAW_QUALITY` và `ML_READY`. Bytes/schema/labels đúng
 không bị gọi là corrupted chỉ vì raw findings; raw findings vẫn được ghi đầy đủ và
@@ -71,8 +71,8 @@ và exit `0` duy nhất cho default-absent `SKIPPED` để CI không tự tải 
 ## Split và leakage boundary
 
 NF-UNSW-NB15-v3 là một CSV, không có official split. Contract mặc định đánh giá
-time-aware split trên `FLOW_START_MILLISECONDS`, giữ test cô lập và kiểm tra exact/
-behavior duplicate cùng canonical flow-group overlap qua boundary. Vì không có session
+time-aware split trên `FLOW_START_MILLISECONDS`, giữ test cô lập và kiểm tra exact,
+source-feature, ML-feature cùng canonical flow-group overlap qua boundary. Vì không có session
 ID authoritative, canonical 5-tuple/time-window chỉ là heuristic và phải ghi limitation.
 
 `Label` và `Attack` luôn bị loại khỏi `X`. Hai absolute timestamp, hai IP và hai L4 port

@@ -78,8 +78,8 @@ python scripts/validate_data.py
 ```
 
 Validator stream CSV, kiểm tra schema/order, width, row count, numeric/NaN/Inf/missing, giá trị âm,
-IPv4, port, label/category consistency, timestamp ordering và duration. Exact và near-duplicate
-fingerprint được ghi vào SQLite tạm để RAM không tăng theo số dòng.
+IPv4, port, label/category consistency, timestamp ordering và duration. Exact, 47-feature và
+behavioral-v1 fingerprints được ghi vào SQLite tạm để RAM không tăng theo số dòng.
 
 Kết quả đã ghi trong repository là `SOURCE_INTEGRITY: PASS`,
 `RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`:
@@ -88,7 +88,10 @@ Kết quả đã ghi trong repository là `SOURCE_INTEGRITY: PASS`,
 - 59.068 positive infinity tại `SRC_TO_DST_SECOND_BYTES`;
 - 122.493 positive infinity tại `DST_TO_SRC_SECOND_BYTES`;
 - 14.815 dòng exact-duplicate;
-- 1.134.553 dòng lặp theo fingerprint hành vi đã công bố trong report.
+- 1.134.553 repeated rows theo 47-feature/behavioral-v1 equivalence, thuộc 189.788
+  fingerprints;
+- 0 binary-label/Benign-vs-Attack conflict fingerprints, nhưng 1.270 fingerprints có nhiều
+  malicious `Attack` categories; không có deduplication tự động.
 
 Schema, row count, SHA-256, label/category distribution, IP/port và temporal ordering đạt các check
 đã triển khai. Source integrity PASS không đổi ML readiness thành PASS; findings vẫn chặn
@@ -113,6 +116,10 @@ Chưa được train cho đến khi:
 3. materialize split manifest không có exact/group overlap;
 4. ghi boundaries, seed, class distributions và row-index hashes;
 5. audit feature list và fitted preprocessing artifact.
+
+Chi tiết aggregate numeric và duplicate/label-conflict nằm tại
+`docs/dataset/NF_UNSW_NB15_V3_QUALITY_ANALYSIS.md` và
+`docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md`.
 
 ## Historical evidence
 

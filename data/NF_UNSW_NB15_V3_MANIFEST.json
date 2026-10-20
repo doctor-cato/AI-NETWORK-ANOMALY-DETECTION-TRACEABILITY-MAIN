@@ -188,7 +188,9 @@
     "DST_TO_SRC_SECOND_BYTES": {
       "positive_infinity": 122493
     },
-    "status": "FAIL",
-    "reason": "Raw values are not directly suitable for ML until a train-only missing/non-finite policy is implemented and tested."
+    "source_integrity": "PASS",
+    "raw_quality": "FINDINGS_RECORDED",
+    "ml_ready": "BLOCKED",
+    "reason": "Raw values are not directly suitable for ML until the documented train-only missing/non-finite policy is fitted after a verified split and leakage audit."
   }
 }

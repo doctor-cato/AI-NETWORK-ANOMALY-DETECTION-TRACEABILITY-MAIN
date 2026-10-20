@@ -44,9 +44,10 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 
 ## C1–C11
 
-C1 đã có provenance/schema và real-data quality audit cho NF-UNSW-NB15-v3, nhưng quality status
-là `FAIL`; EDA và split thật vẫn `NOT VERIFIED`. C2 chỉ có feature/split contract và synthetic
-guard tests; chưa có fitted preprocessing artifact. C3–C11 vẫn `PLANNED`.
+C1 đã có provenance/schema và real-data quality/duplicate audit cho NF-UNSW-NB15-v3:
+`SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA đầy đủ và split thật vẫn
+`NOT VERIFIED`. C2 có 47-feature/split/handling contracts và synthetic guard tests nhưng chưa có
+fitted preprocessing artifact, nên `ML_READY: BLOCKED`. C3–C11 vẫn `PLANNED`.
 
 ## Migration NF-UNSW-NB15-v3 — A–H
 
@@ -81,9 +82,9 @@ Remaining: raw package stays ignored and subject to UQRDM license.
 Checkpoint: D — validation and quality
 HEAD: 9015e58
 Completed: IMPLEMENTED / TESTED — streaming validation and disk-backed duplicate audit.
-Tests: FAIL on real data — missing/Inf/duplicate findings in
-  reports/data_quality/nf_unsw_nb15_v3_validation.json; synthetic validator tests PASS.
-Blockers: raw CSV is not model-ready; preprocessing policy must be train-only and audited.
+Tests: SOURCE_INTEGRITY PASS; RAW_QUALITY FINDINGS_RECORDED on real data; synthetic validator
+  tests PASS. Report includes numeric aggregates, versioned fingerprints and label conflicts.
+Blockers: ML_READY BLOCKED; no fitted train-only preprocessing artifact or real split audit.
 ```
 
 ```text
@@ -125,6 +126,36 @@ Tests: PASS — GitHub readback xác nhận 16 issue contracts, 2 historical not
   milestone contracts; không Issue nào bị tự động đóng hoặc mở lại.
 PR: #36 OPEN vào `main`; remote CI run 39423059243 PASS 4/4; không tự merge.
 Remaining: maintainer review và xử lý/ra quyết định cho các blocker đã ghi.
-Blockers: all-gates merge vẫn bị chặn bởi real-data quality FAIL, real split/model
-  NOT VERIFIED và repository-wide Ruff/Black failures đã phân loại ở G.
+Blockers: ML readiness vẫn BLOCKED, real split/model NOT VERIFIED và repository-wide Ruff/Black
+  failures đã phân loại ở G.
+```
+
+## PR #36 hardening checkpoints
+
+```text
+Checkpoint 1 — feature contract
+HEAD: 2b96a1c
+Completed: 47 ML features + 6 trace/grouping metadata + 2 targets, raw schema remains 55 columns.
+Tests: PASS — feature ordering/exclusion and target/metadata rejection.
+```
+
+```text
+Checkpoint 2 — numeric quality and preprocessing policy
+HEAD: 2cc031a
+Completed: real aggregate missing/non-finite analysis and train-only handling contract.
+Tests: PASS synthetic behavior; real-data findings recorded; fitted artifact NOT VERIFIED.
+```
+
+```text
+Checkpoint 3 — duplicate and leakage semantics
+HEAD: 71030cc
+Completed: versioned fingerprints, label/category conflicts, exact-dedup impact and bounded guards.
+Tests: PASS synthetic guards; real duplicate audit recorded; real split NOT VERIFIED.
+```
+
+```text
+Checkpoint 4 — quality-gate semantics
+HEAD: 01eb9c8
+Completed: SOURCE_INTEGRITY / RAW_QUALITY / ML_READY output and distinct CLI exits.
+Tests: PASS synthetic semantics and real-data report regeneration.
 ```

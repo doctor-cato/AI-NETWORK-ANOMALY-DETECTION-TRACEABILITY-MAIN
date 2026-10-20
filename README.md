@@ -23,8 +23,9 @@ Current verified scope:
 | Model training, benchmark and deployment | PLANNED / NOT VERIFIED | no real experiment result is claimed |
 
 The real-data audit confirms 2,365,424 rows and the expected label/category distribution, but it
-also finds missing/positive-infinity values and substantial exact/behavior-equivalent duplicates.
-Raw data is therefore not accepted as model-ready.
+also finds missing/positive-infinity values, exact duplicates and substantial 47-feature/
+behavioral-v1 equivalence. Source integrity passes; raw findings are recorded; ML readiness remains
+blocked.
 
 ## Architecture
 
@@ -100,7 +101,8 @@ is temporal and group-aware:
 - keep `Label` and `Attack` out of `X`;
 - use one baseline contract: 47 ordered ML features; keep absolute timestamps, IP identifiers and
   both L4 ports as six Trace Engine/grouping metadata fields outside `X`;
-- consolidate/audit duplicates before partition assignment;
+- compute and audit exact/source-feature/ML-feature/behavioral/group keys before partition
+  assignment; do not automatically remove behavioral-equivalent rows;
 - assign complete bidirectional 5-tuple/time-bucket groups in chronological order;
 - fit imputer, finite-value policy, encoder, scaler, selector and resampling on train only;
 - use validation for thresholds/hyperparameters and keep test sealed for final reporting;
@@ -159,6 +161,8 @@ experiment result. Every claim follows:
 - The verified v3 package was released in 2025, but its observed timestamps cover January-February
   2015; it does not prove performance on contemporary traffic.
 - Missing/non-finite values and duplicates block direct model use.
+- The real duplicate audit found no binary-label conflicts, but found 1,270 fingerprints spanning
+  multiple malicious categories; a real cross-split audit is still NOT VERIFIED.
 - The schema has no trusted session ID; group-aware splitting remains heuristic.
 - No benchmark, zero-day claim, production safety claim or real identity attribution is supported.
 - The UQRDM license is more restrictive than this repository's source-code license.

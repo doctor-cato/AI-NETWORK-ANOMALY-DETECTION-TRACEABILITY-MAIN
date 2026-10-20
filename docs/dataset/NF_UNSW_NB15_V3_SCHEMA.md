@@ -57,9 +57,10 @@ Shellcode `2381`; Worms `158`.
 - `DST_TO_SRC_SECOND_BYTES`: 122.493 `inf`.
 - Không có invalid IPv4, port ngoài miền, negative numeric value, sai row width,
   invalid target hoặc mâu thuẫn Label/Attack trong lượt streaming check.
-- Duplicate, near-duplicate và group-overlap cần validator disk-backed; chưa được coi
-  là `PASS` chỉ từ kiểm tra schema này.
+- Exact, ML-feature-equivalent, behavioral-v1 và group-overlap có contract riêng; real validator
+  đã audit ba fingerprint đầu bằng disk-backed index, còn cross-split group audit chưa có split.
 
-Vì missing/non-finite tồn tại, quality status hiện là `FAIL` cho input ML trực tiếp.
+Status hiện tại là `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`,
+`ML_READY: BLOCKED`.
 Preprocessing sau này phải quyết định imputation/drop policy từ **train only**; không
 được thay dữ liệu raw tại chỗ.
