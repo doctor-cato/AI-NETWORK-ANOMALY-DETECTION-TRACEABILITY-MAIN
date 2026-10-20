@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "dataset": "NF-UNSW-NB15-v3",
+  "release_year": 2025,
+  "official_source": {
+    "publisher": "The University of Queensland",
+    "doi": "10.48610/6E0EDA1",
+    "rdm_uuid": "abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f",
+    "landing_page": "https://staff.itee.uq.edu.au/marius/NIDS_datasets/",
+    "metadata_api": "https://api.rdm.uq.edu.au/datasets/abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f/file-details",
+    "download_api": "https://api.rdm.uq.edu.au/datasets/abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f/download",
+    "accessed_at_utc": "2026-10-20T07:09:32Z",
+    "access_type": "OPEN",
+    "license_title": "Permitted Re-Use with Commercial Use Restriction",
+    "license_external_id": "454104",
+    "license_url": "https://guides.library.uq.edu.au/research-and-teaching-staff/data-deposit-checklist/license-reuse-noncommercial",
+    "license_summary": "Full citation is required and use is limited to non-commercial endeavours."
+  },
+  "related_work": {
+    "title": "Temporal Analysis of NetFlow Datasets for Network Intrusion Detection Systems",
+    "authors": [
+      "Majed Luay",
+      "Siamak Layeghy",
+      "Seyedehfaezeh Hosseininoorbin",
+      "Mohanad Sarhan",
+      "Nour Moustafa",
+      "Marius Portmann"
+    ],
+    "arxiv": "2503.04404",
+    "first_submitted_at_utc": "2025-03-06T12:58:09Z"
+  },
+  "package": {
+    "identifier": "f7546561558c07c5_NFV3DATA-A11964_A11964",
+    "archive_file": "f7546561558c07c5_NFV3DATA-A11964_A11964.zip",
+    "media_type": "application/zip",
+    "size_bytes": 110825147,
+    "sha256": "6d51554df43e324ba8d68fc31a02a83d860ba0a3a93d63320a4a6fc314c9cdfd",
+    "sha256_scope": "Project-computed from bytes returned by the official UQRDM download API; not publisher-published SHA-256.",
+    "observed_s3_version_id": "hs070VLSKCiR6pCh0N0Y4qUg1FQOHULp",
+    "local_directory": "NF-UNSW-NB15-v3"
+  },
+  "files": [
+    {
+      "file": "FurtherInformation.txt",
+      "size_bytes": 143,
+      "sha256": "2628f3a188deec265aa663e42035825da2dcd9137fd63b6821fc9a8c61cfecca"
+    },
+    {
+      "file": "bag-info.txt",
+      "size_bytes": 839,
+      "sha256": "b5d9904090ee469141a74296357b525ec10dc4ca6962c96986f6787b3de1c288"
+    },
+    {
+      "file": "bagit.txt",
+      "size_bytes": 55,
+      "sha256": "133dce1caef7fc5544d815791265569a933ec658860821fdff8c157b561d0d39"
+    },
+    {
+      "file": "manifest-sha1.txt",
+      "size_bytes": 136,
+      "sha256": "5916eef3fd5bf18cd5de296df04cbd63a1384fc8e21cbcac617fd86d8284e772"
+    },
+    {
+      "file": "tagmanifest-sha1.txt",
+      "size_bytes": 164,
+      "sha256": "d95bcb4b0a1e4753751d36f132f0e6db43eaf3c907ee14c7c102db26e71f506c"
+    },
+    {
+      "file": "data/NF-UNSW-NB15-v3.csv",
+      "role": "dataset",
+      "size_bytes": 577360958,
+      "sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+      "publisher_bagit_sha1": "2cba4879ead17c51e3268a01c06af41186cd90e4",
+      "expected_rows": 2365424
+    },
+    {
+      "file": "data/NetFlow_v3_Features.csv",
+      "role": "feature_dictionary",
+      "size_bytes": 2935,
+      "sha256": "abe3ce6e6ff731d72d76e029b512585c0dbcbd8e03ff6dbe2bd04b560723bd67",
+      "publisher_bagit_sha1": "d028597391217f78df3db31c1dbd96805203196f"
+    }
+  ],
+  "schema": {
+    "feature_count": 53,
+    "target_count": 2,
+    "column_count": 55,
+    "columns_in_order": [
+      "FLOW_START_MILLISECONDS",
+      "FLOW_END_MILLISECONDS",
+      "IPV4_SRC_ADDR",
+      "L4_SRC_PORT",
+      "IPV4_DST_ADDR",
+      "L4_DST_PORT",
+      "PROTOCOL",
+      "L7_PROTO",
+      "IN_BYTES",
+      "IN_PKTS",
+      "OUT_BYTES",
+      "OUT_PKTS",
+      "TCP_FLAGS",
+      "CLIENT_TCP_FLAGS",
+      "SERVER_TCP_FLAGS",
+      "FLOW_DURATION_MILLISECONDS",
+      "DURATION_IN",
+      "DURATION_OUT",
+      "MIN_TTL",
+      "MAX_TTL",
+      "LONGEST_FLOW_PKT",
+      "SHORTEST_FLOW_PKT",
+      "MIN_IP_PKT_LEN",
+      "MAX_IP_PKT_LEN",
+      "SRC_TO_DST_SECOND_BYTES",
+      "DST_TO_SRC_SECOND_BYTES",
+      "RETRANSMITTED_IN_BYTES",
+      "RETRANSMITTED_IN_PKTS",
+      "RETRANSMITTED_OUT_BYTES",
+      "RETRANSMITTED_OUT_PKTS",
+      "SRC_TO_DST_AVG_THROUGHPUT",
+      "DST_TO_SRC_AVG_THROUGHPUT",
+      "NUM_PKTS_UP_TO_128_BYTES",
+      "NUM_PKTS_128_TO_256_BYTES",
+      "NUM_PKTS_256_TO_512_BYTES",
+      "NUM_PKTS_512_TO_1024_BYTES",
+      "NUM_PKTS_1024_TO_1514_BYTES",
+      "TCP_WIN_MAX_IN",
+      "TCP_WIN_MAX_OUT",
+      "ICMP_TYPE",
+      "ICMP_IPV4_TYPE",
+      "DNS_QUERY_ID",
+      "DNS_QUERY_TYPE",
+      "DNS_TTL_ANSWER",
+      "FTP_COMMAND_RET_CODE",
+      "SRC_TO_DST_IAT_MIN",
+      "SRC_TO_DST_IAT_MAX",
+      "SRC_TO_DST_IAT_AVG",
+      "SRC_TO_DST_IAT_STDDEV",
+      "DST_TO_SRC_IAT_MIN",
+      "DST_TO_SRC_IAT_MAX",
+      "DST_TO_SRC_IAT_AVG",
+      "DST_TO_SRC_IAT_STDDEV",
+      "Label",
+      "Attack"
+    ],
+    "binary_target": "Label",
+    "multiclass_target": "Attack",
+    "binary_mapping": {
+      "0": "Benign",
+      "1": "Attack"
+    },
+    "attack_categories": [
+      "Benign",
+      "Analysis",
+      "Backdoor",
+      "DoS",
+      "Exploits",
+      "Fuzzers",
+      "Generic",
+      "Reconnaissance",
+      "Shellcode",
+      "Worms"
+    ]
+  },
+  "verified_distribution": {
+    "Label": {
+      "0": 2237731,
+      "1": 127693
+    },
+    "Attack": {
+      "Analysis": 1226,
+      "Backdoor": 4659,
+      "Benign": 2237731,
+      "DoS": 5980,
+      "Exploits": 42748,
+      "Fuzzers": 33816,
+      "Generic": 19651,
+      "Reconnaissance": 17074,
+      "Shellcode": 2381,
+      "Worms": 158
+    }
+  },
+  "source_discrepancy": "The UQ landing page reports 127639 attacks and maps counts 2381/1226/4659 to Analysis/Backdoor/Shellcode. The downloaded CSV has 127693 attacks and maps those categories to 1226/4659/2381. The local contract follows verified file bytes.",
+  "quality_observations": {
+    "SRC_TO_DST_SECOND_BYTES": {
+      "blank": 63425,
+      "positive_infinity": 59068
+    },
+    "DST_TO_SRC_SECOND_BYTES": {
+      "positive_infinity": 122493
+    },
+    "status": "FAIL",
+    "reason": "Raw values are not directly suitable for ML until a train-only missing/non-finite policy is implemented and tested."
+  }
+}

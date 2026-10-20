@@ -10,12 +10,12 @@ import os
 from collections import Counter
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_RAW = PROJECT_ROOT / "data" / "raw"
 
 SKIPPED_NOT_A_PASS = (
     "No real-data validation performed; SKIPPED is not PASS. "
-    "Download the dataset with scripts/fetch_unsw_nb15.py before treating CI as evidence."
+    "This historical validator is not the default NF-UNSW-NB15-v3 pipeline."
 )
 
 DEFAULT_FILES = ("UNSW_NB15_training-set.csv", "UNSW_NB15_testing-set.csv")
