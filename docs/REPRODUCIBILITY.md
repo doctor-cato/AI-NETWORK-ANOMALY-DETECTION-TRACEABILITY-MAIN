@@ -68,7 +68,8 @@ actual seed or deterministic split algorithm.
   L4 ports or absolute timestamps in it.
 - Fit imputer, non-finite policy, encoder, scaler, selector and resampler only on train.
 - Validation selects configuration and thresholds; test is not reused for tuning.
-- Fail when exact fingerprint or flow-group identifiers cross partitions.
+- Fail when exact, source-feature or ML-feature fingerprints, or canonical flow groups, cross
+  partitions. Enforce chronological boundaries and any configured purge gap.
 - Treat the five-minute bidirectional 5-tuple group as a documented heuristic, not a proven session.
 
 See `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.

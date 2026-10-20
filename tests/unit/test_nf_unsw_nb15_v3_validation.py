@@ -165,7 +165,9 @@ def test_numeric_quality_aggregates_unique_rows_overlap_and_context(
     assert destination["related_numeric_states"]["OUT_PKTS"] == {"positive": 1}
 
 
-def test_duplicate_and_near_duplicate_are_disk_backed(validator, contract, tmp_path):
+def test_duplicate_fingerprints_and_label_conflicts_are_disk_backed(
+    validator, contract, tmp_path
+):
     first = valid_row(contract)
     exact = list(first)
     near = valid_row(
@@ -175,13 +177,75 @@ def test_duplicate_and_near_duplicate_are_disk_backed(validator, contract, tmp_p
         IPV4_SRC_ADDR="203.0.113.7",
         L4_SRC_PORT="23456",
     )
+    conflict = valid_row(
+        contract,
+        FLOW_START_MILLISECONDS="3000",
+        FLOW_END_MILLISECONDS="3002",
+        IPV4_SRC_ADDR="198.51.100.77",
+        L4_SRC_PORT="34567",
+        Label="1",
+        Attack="Worms",
+    )
+    malicious_analysis = valid_row(
+        contract,
+        FLOW_START_MILLISECONDS="4000",
+        FLOW_END_MILLISECONDS="4002",
+        IPV4_SRC_ADDR="203.0.113.20",
+        L4_SRC_PORT="45678",
+        IN_BYTES="9",
+        Label="1",
+        Attack="Analysis",
+    )
+    malicious_worms = valid_row(
+        contract,
+        FLOW_START_MILLISECONDS="5000",
+        FLOW_END_MILLISECONDS="5002",
+        IPV4_SRC_ADDR="203.0.113.21",
+        L4_SRC_PORT="45679",
+        IN_BYTES="9",
+        Label="1",
+        Attack="Worms",
+    )
     dataset = tmp_path / "duplicates.csv"
-    write_csv(dataset, contract, [first, exact, near])
+    write_csv(
+        dataset,
+        [*contract],
+        [first, exact, near, conflict, malicious_analysis, malicious_worms],
+    )
 
-    report = validator.validate_csv(dataset, contract, 3, tmp_path)
+    report = validator.validate_csv(dataset, contract, 6, tmp_path)
 
     assert report["issue_counts"]["exact_duplicate_rows"] == 1
-    assert report["issue_counts"]["near_duplicate_rows"] == 2
+    assert report["issue_counts"]["ml_feature_equivalent_duplicate_rows"] == 4
+    assert report["issue_counts"]["behavioral_fingerprint_duplicate_rows"] == 4
+    duplicate = report["duplicate_analysis"]
+    assert duplicate["schema_version"] == "nf-unsw-nb15-v3-fingerprint-v1"
+    assert duplicate["exact"]["duplicate_rows_by_label"] == {"0": 1}
+    assert duplicate["ml_feature_equivalent"]["label_conflict_fingerprints"] == 1
+    assert duplicate["ml_feature_equivalent"]["rows_in_label_conflict_fingerprints"] == 4
+    assert duplicate["ml_feature_equivalent"]["benign_attack_conflict_fingerprints"] == 1
+    assert duplicate["ml_feature_equivalent"]["multiple_attack_values_fingerprints"] == 2
+    assert duplicate["ml_feature_equivalent"][
+        "multiple_malicious_categories_fingerprints"
+    ] == 1
+    assert duplicate["ml_feature_equivalent"]["attack_value_conflict_patterns"] == {
+        "Benign | Worms": {"fingerprints": 1, "rows": 4},
+        "Analysis | Worms": {"fingerprints": 1, "rows": 2},
+    }
+    assert duplicate["ml_feature_equivalent"]["rare_category_label_conflicts"]["Worms"] == {
+        "fingerprints": 1,
+        "rows": 4,
+    }
+    assert duplicate["ml_feature_equivalent"]["rare_category_multi_attack_fingerprints"] == {
+        "Analysis": {"fingerprints": 1, "rows": 2},
+        "Worms": {"fingerprints": 2, "rows": 6},
+    }
+    assert duplicate["behavioral_v1"]["automatic_removal_permitted"] is False
+    assert duplicate["hypothetical_exact_dedup_keep_first"]["retained_by_label"] == {
+        "0": 2,
+        "1": 3,
+    }
+    assert duplicate["hypothetical_exact_dedup_keep_first"]["applied"] is False
     assert not list(tmp_path.glob("nf-unsw-v3-duplicates-*.sqlite3"))
 
 

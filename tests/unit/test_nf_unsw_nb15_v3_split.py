@@ -5,11 +5,18 @@ import pytest
 
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
+    BEHAVIORAL_FINGERPRINT_COLUMNS,
+    FINGERPRINT_SCHEMA_VERSION,
     ML_FEATURE_COLUMNS,
+    SOURCE_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
     audit_bounded_split_rows,
+    behavioral_fingerprint,
     canonical_flow_group,
+    full_row_fingerprint,
+    ml_feature_fingerprint,
+    source_feature_fingerprint,
     validate_feature_selection,
 )
 
@@ -52,6 +59,9 @@ def test_code_contract_matches_manifest_column_order():
     )
     assert set(ML_FEATURE_COLUMNS).isdisjoint(TRACE_METADATA_COLUMNS + TARGET_COLUMNS)
     assert set(ML_FEATURE_COLUMNS + TRACE_METADATA_COLUMNS + TARGET_COLUMNS) == set(ALL_COLUMNS)
+    assert SOURCE_FEATURE_COLUMNS == ALL_COLUMNS[:-2]
+    assert BEHAVIORAL_FINGERPRINT_COLUMNS == ML_FEATURE_COLUMNS
+    assert FINGERPRINT_SCHEMA_VERSION == "nf-unsw-nb15-v3-fingerprint-v1"
 
 
 def test_feature_contract_excludes_targets_identifiers_and_absolute_timestamps():
@@ -99,6 +109,19 @@ def test_flow_group_is_direction_independent_within_bucket():
     assert canonical_flow_group(forward, 1_000) == canonical_flow_group(reverse, 1_000)
 
 
+def test_fingerprint_definitions_separate_exact_source_ml_and_behavioral_purposes():
+    original = row()
+    changed_target = row(Label=1, Attack="Analysis")
+    changed_metadata = row(IPV4_SRC_ADDR="203.0.113.7", L4_SRC_PORT=23456)
+
+    assert full_row_fingerprint(original) != full_row_fingerprint(changed_target)
+    assert source_feature_fingerprint(original) == source_feature_fingerprint(changed_target)
+    assert source_feature_fingerprint(original) != source_feature_fingerprint(changed_metadata)
+    assert ml_feature_fingerprint(original) == ml_feature_fingerprint(changed_metadata)
+    assert behavioral_fingerprint(original) == behavioral_fingerprint(changed_metadata)
+    assert ml_feature_fingerprint(original) != behavioral_fingerprint(original)
+
+
 def test_cross_split_duplicate_and_group_overlap_fail():
     training = row()
     duplicate = dict(training)
@@ -109,23 +132,64 @@ def test_cross_split_duplicate_and_group_overlap_fail():
     )
 
     assert result["status"] == "FAIL"
-    assert result["duplicate_overlaps"]
+    assert result["exact_overlaps"]
+    assert result["source_feature_overlaps"]
+    assert result["ml_feature_overlaps"]
     assert result["group_overlaps"]
 
 
 def test_disjoint_groups_pass():
     result = audit_bounded_split_rows(
         {
-            "train": [row()],
-            "validation": [row(FLOW_START_MILLISECONDS=400_000, FLOW_END_MILLISECONDS=400_002)],
+            "train": [row(IN_BYTES=1)],
+            "validation": [
+                row(
+                    FLOW_START_MILLISECONDS=400_000,
+                    FLOW_END_MILLISECONDS=400_002,
+                    IN_BYTES=2,
+                )
+            ],
             "test": [
                 row(
                     FLOW_START_MILLISECONDS=800_000,
                     FLOW_END_MILLISECONDS=800_002,
                     IPV4_DST_ADDR="203.0.113.9",
+                    IN_BYTES=3,
                 )
             ],
         }
     )
 
-    assert result == {"status": "PASS", "duplicate_overlaps": [], "group_overlaps": []}
+    assert result == {
+        "status": "PASS",
+        "exact_overlaps": [],
+        "source_feature_overlaps": [],
+        "ml_feature_overlaps": [],
+        "group_overlaps": [],
+        "temporal_boundary_violations": [],
+    }
+
+
+def test_temporal_boundary_and_purge_gap_guard():
+    result = audit_bounded_split_rows(
+        {
+            "train": [row(FLOW_START_MILLISECONDS=2_000)],
+            "validation": [row(FLOW_START_MILLISECONDS=1_500, IPV4_DST_ADDR="203.0.113.9")],
+            "test": [],
+        }
+    )
+    assert result["status"] == "FAIL"
+    assert result["temporal_boundary_violations"] == [
+        ("train", "validation", 2_000, 1_500, -500)
+    ]
+
+    purge_result = audit_bounded_split_rows(
+        {
+            "train": [row(FLOW_START_MILLISECONDS=1_000)],
+            "validation": [row(FLOW_START_MILLISECONDS=1_500, IPV4_DST_ADDR="203.0.113.9")],
+            "test": [],
+        },
+        purge_gap_milliseconds=1_000,
+    )
+    assert purge_result["status"] == "FAIL"
+    assert purge_result["temporal_boundary_violations"][0][-1] == 500

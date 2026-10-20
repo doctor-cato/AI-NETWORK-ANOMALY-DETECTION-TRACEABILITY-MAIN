@@ -13,9 +13,364 @@
   },
   "dataset": "NF-UNSW-NB15-v3",
   "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-  "duplicate_definition": {
-    "exact": "All 55 ordered CSV values are identical.",
-    "near": "All non-identifier, non-timestamp, non-port and non-target values are identical."
+  "duplicate_analysis": {
+    "behavioral_v1": {
+      "automatic_removal_permitted": false,
+      "duplicate_rows": 1134553,
+      "fingerprints_with_duplicates": 189788
+    },
+    "definitions": {
+      "behavioral_v1": {
+        "columns": "the ordered 47-feature baseline under a separate namespace",
+        "purpose": "correlation-oriented equivalence; not an automatic dedup key"
+      },
+      "exact_full_row": {
+        "columns": "all 55 ordered CSV columns, including targets",
+        "purpose": "byte-level parsed-row identity and exact-dedup impact audit"
+      },
+      "ml_feature_equivalent": {
+        "columns": "the ordered 47-feature baseline; metadata and targets excluded",
+        "purpose": "memorization risk and label-conflict audit"
+      },
+      "source_feature": {
+        "columns": "all 53 published NetFlow fields; targets excluded",
+        "purpose": "cross-split observation overlap even if labels differ"
+      }
+    },
+    "exact": {
+      "duplicate_rows": 14815,
+      "duplicate_rows_by_attack": {
+        "Backdoor": 1,
+        "Benign": 14801,
+        "DoS": 9,
+        "Exploits": 4
+      },
+      "duplicate_rows_by_label": {
+        "0": 14801,
+        "1": 14
+      },
+      "fingerprints_with_duplicates": 14815
+    },
+    "hypothetical_exact_dedup_keep_first": {
+      "applied": false,
+      "retained_by_attack": {
+        "Analysis": 1226,
+        "Backdoor": 4658,
+        "Benign": 2222930,
+        "DoS": 5971,
+        "Exploits": 42744,
+        "Fuzzers": 33816,
+        "Generic": 19651,
+        "Reconnaissance": 17074,
+        "Shellcode": 2381,
+        "Worms": 158
+      },
+      "retained_by_label": {
+        "0": 2222930,
+        "1": 127679
+      }
+    },
+    "ml_feature_equivalent": {
+      "attack_value_conflict_patterns": {
+        "Backdoor | DoS": {
+          "fingerprints": 3,
+          "rows": 7
+        },
+        "Backdoor | DoS | Exploits | Fuzzers": {
+          "fingerprints": 4,
+          "rows": 21
+        },
+        "Backdoor | DoS | Exploits | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 124
+        },
+        "Backdoor | DoS | Exploits | Fuzzers | Generic | Reconnaissance | Shellcode": {
+          "fingerprints": 3,
+          "rows": 7560
+        },
+        "Backdoor | DoS | Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 4548
+        },
+        "Backdoor | DoS | Exploits | Generic": {
+          "fingerprints": 1,
+          "rows": 14
+        },
+        "Backdoor | DoS | Exploits | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 13
+        },
+        "Backdoor | DoS | Exploits | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 11
+        },
+        "Backdoor | DoS | Fuzzers": {
+          "fingerprints": 3,
+          "rows": 9
+        },
+        "Backdoor | DoS | Fuzzers | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 5
+        },
+        "Backdoor | DoS | Shellcode": {
+          "fingerprints": 1,
+          "rows": 14
+        },
+        "Backdoor | Exploits": {
+          "fingerprints": 12,
+          "rows": 58
+        },
+        "Backdoor | Exploits | Fuzzers": {
+          "fingerprints": 30,
+          "rows": 185
+        },
+        "Backdoor | Exploits | Fuzzers | Generic": {
+          "fingerprints": 2,
+          "rows": 24
+        },
+        "Backdoor | Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 5,
+          "rows": 33
+        },
+        "Backdoor | Exploits | Fuzzers | Reconnaissance | Shellcode": {
+          "fingerprints": 2,
+          "rows": 42
+        },
+        "Backdoor | Exploits | Generic": {
+          "fingerprints": 4,
+          "rows": 38
+        },
+        "Backdoor | Exploits | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 6
+        },
+        "Backdoor | Exploits | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Exploits | Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Exploits | Shellcode": {
+          "fingerprints": 3,
+          "rows": 30
+        },
+        "Backdoor | Fuzzers": {
+          "fingerprints": 29,
+          "rows": 190
+        },
+        "Backdoor | Fuzzers | Generic": {
+          "fingerprints": 6,
+          "rows": 51
+        },
+        "Backdoor | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 4
+        },
+        "Backdoor | Fuzzers | Reconnaissance": {
+          "fingerprints": 12,
+          "rows": 46
+        },
+        "Backdoor | Fuzzers | Shellcode": {
+          "fingerprints": 3,
+          "rows": 68
+        },
+        "Backdoor | Generic": {
+          "fingerprints": 248,
+          "rows": 1830
+        },
+        "Backdoor | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Generic | Shellcode": {
+          "fingerprints": 1,
+          "rows": 13
+        },
+        "Backdoor | Generic | Worms": {
+          "fingerprints": 1,
+          "rows": 28
+        },
+        "Backdoor | Reconnaissance": {
+          "fingerprints": 3,
+          "rows": 41
+        },
+        "Backdoor | Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Shellcode": {
+          "fingerprints": 18,
+          "rows": 147
+        },
+        "DoS | Exploits": {
+          "fingerprints": 17,
+          "rows": 60
+        },
+        "DoS | Exploits | Fuzzers": {
+          "fingerprints": 16,
+          "rows": 81
+        },
+        "DoS | Exploits | Fuzzers | Generic": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "DoS | Exploits | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 21
+        },
+        "DoS | Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 7,
+          "rows": 45
+        },
+        "DoS | Exploits | Fuzzers | Shellcode": {
+          "fingerprints": 1,
+          "rows": 15
+        },
+        "DoS | Exploits | Generic": {
+          "fingerprints": 2,
+          "rows": 11
+        },
+        "DoS | Exploits | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 11
+        },
+        "DoS | Exploits | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 10
+        },
+        "DoS | Fuzzers": {
+          "fingerprints": 27,
+          "rows": 98
+        },
+        "DoS | Fuzzers | Generic": {
+          "fingerprints": 3,
+          "rows": 12
+        },
+        "DoS | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 15
+        },
+        "DoS | Fuzzers | Reconnaissance": {
+          "fingerprints": 4,
+          "rows": 18
+        },
+        "DoS | Generic": {
+          "fingerprints": 8,
+          "rows": 37
+        },
+        "DoS | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 47
+        },
+        "Exploits | Fuzzers": {
+          "fingerprints": 226,
+          "rows": 921
+        },
+        "Exploits | Fuzzers | Generic": {
+          "fingerprints": 67,
+          "rows": 497
+        },
+        "Exploits | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 15,
+          "rows": 342
+        },
+        "Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 91,
+          "rows": 861
+        },
+        "Exploits | Fuzzers | Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 14
+        },
+        "Exploits | Fuzzers | Shellcode": {
+          "fingerprints": 1,
+          "rows": 15
+        },
+        "Exploits | Fuzzers | Worms": {
+          "fingerprints": 1,
+          "rows": 6
+        },
+        "Exploits | Generic": {
+          "fingerprints": 153,
+          "rows": 877
+        },
+        "Exploits | Generic | Reconnaissance": {
+          "fingerprints": 4,
+          "rows": 24
+        },
+        "Exploits | Reconnaissance": {
+          "fingerprints": 15,
+          "rows": 41
+        },
+        "Exploits | Shellcode": {
+          "fingerprints": 4,
+          "rows": 36
+        },
+        "Fuzzers | Generic": {
+          "fingerprints": 75,
+          "rows": 276
+        },
+        "Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 13,
+          "rows": 54
+        },
+        "Fuzzers | Reconnaissance": {
+          "fingerprints": 88,
+          "rows": 323
+        },
+        "Fuzzers | Shellcode": {
+          "fingerprints": 4,
+          "rows": 52
+        },
+        "Generic | Reconnaissance": {
+          "fingerprints": 5,
+          "rows": 10
+        },
+        "Generic | Reconnaissance | Shellcode": {
+          "fingerprints": 3,
+          "rows": 18
+        },
+        "Generic | Shellcode": {
+          "fingerprints": 1,
+          "rows": 13
+        },
+        "Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 2
+        }
+      },
+      "benign_attack_conflict_fingerprints": 0,
+      "duplicate_rows": 1134553,
+      "fingerprints_with_duplicates": 189788,
+      "label_conflict_fingerprints": 0,
+      "multiple_attack_values_fingerprints": 1270,
+      "multiple_malicious_categories_fingerprints": 1270,
+      "rare_category_label_conflicts": {
+        "Analysis": {
+          "fingerprints": 0,
+          "rows": 0
+        },
+        "Worms": {
+          "fingerprints": 0,
+          "rows": 0
+        }
+      },
+      "rare_category_multi_attack_fingerprints": {
+        "Analysis": {
+          "fingerprints": 0,
+          "rows": 0
+        },
+        "Worms": {
+          "fingerprints": 2,
+          "rows": 34
+        }
+      },
+      "rows_in_label_conflict_fingerprints": 0,
+      "rows_in_multiple_attack_values_fingerprints": 20058
+    },
+    "schema_version": "nf-unsw-nb15-v3-fingerprint-v1"
   },
   "example_line_numbers": {
     "missing:SRC_TO_DST_SECOND_BYTES": [
@@ -87,9 +442,10 @@
   },
   "expected_rows": 2365424,
   "issue_counts": {
+    "behavioral_fingerprint_duplicate_rows": 1134553,
     "exact_duplicate_rows": 14815,
     "missing:SRC_TO_DST_SECOND_BYTES": 63425,
-    "near_duplicate_rows": 1134553,
+    "ml_feature_equivalent_duplicate_rows": 1134553,
     "positive_infinity:DST_TO_SRC_SECOND_BYTES": 122493,
     "positive_infinity:SRC_TO_DST_SECOND_BYTES": 59068
   },

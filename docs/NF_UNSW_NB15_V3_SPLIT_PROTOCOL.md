@@ -37,15 +37,16 @@ metadata field, unknown field or ordering mismatch is supplied.
 3. Form a direction-independent group from source/destination IP and port, protocol, and a
    five-minute start-time bucket. Because the dataset has no trusted session identifier, this is a
    heuristic rather than proof of session separation.
-4. Consolidate exact duplicates and the documented behavior-equivalent fingerprints before
-   assigning partitions. Keep the earliest observation as the canonical observation and record
-   every excluded row; do not silently drop it.
+4. Compute the versioned exact, source-feature, ML-feature, behavioral-v1 and canonical-group keys
+   before assigning partitions. Do not automatically remove behavioral/ML-equivalent rows. If a
+   future policy applies exact keep-first deduplication, record every excluded source row and the
+   class-distribution impact; otherwise assign each equivalence/group wholly to one partition.
 5. Order groups by their earliest `FLOW_START_MILLISECONDS`, with stable fingerprint tie-breaking.
    Assign whole groups approximately 70%/15%/15% to train/validation/test. Record actual temporal
    boundaries and class/category distributions; proportions are targets, not guarantees.
-6. Fail the build if an exact fingerprint or group identifier occurs in more than one partition.
-   Review boundary-adjacent flows and use a documented purge gap if the group heuristic still
-   creates temporal adjacency risk.
+6. Fail the build if an exact, source-feature or ML-feature fingerprint, or a canonical group,
+   occurs in more than one partition. Reject temporal-order inversions. Review boundary-adjacent
+   flows and use a documented purge gap if the group heuristic still creates adjacency risk.
 7. Fit imputer, finite-value replacement, scaler, encoder, feature selector and resampling only on
    train. Apply frozen transforms to validation and test. Fit supervised and unsupervised models
    only after the transform artifact records its train split identifier.
@@ -63,8 +64,10 @@ the three row-index files. Changing any of these fields creates a new split iden
 
 - Real validation found missing and positive-infinity values in throughput-like fields. The
   handling rule must be selected on train only and tested before a real split is accepted.
-- Exact and behavior-equivalent duplicates are present. The impact of consolidation on rare
-  attack categories must be reported.
+- Exact and ML/behavior-equivalent repeats are present. The real audit found no binary-label
+  conflicts but found 1,270 ML fingerprints with multiple malicious categories, including two
+  fingerprints involving Worms. No automatic behavioral deduplication is approved; see
+  `docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md`.
 - A five-minute bidirectional 5-tuple group is only a proxy for a session; no trustworthy session
   ID is available in the verified schema.
 - The source period is January-February 2015 even though the v3 release is from 2025. Temporal

@@ -12,6 +12,7 @@ IDENTIFIER_COLUMNS = ("IPV4_SRC_ADDR", "IPV4_DST_ADDR")
 PORT_COLUMNS = ("L4_SRC_PORT", "L4_DST_PORT")
 TRACE_METADATA_COLUMNS = TIMESTAMP_COLUMNS + IDENTIFIER_COLUMNS + PORT_COLUMNS
 TARGET_COLUMNS = ("Label", "Attack")
+FINGERPRINT_SCHEMA_VERSION = "nf-unsw-nb15-v3-fingerprint-v1"
 
 ALL_COLUMNS = (
     "FLOW_START_MILLISECONDS",
@@ -73,6 +74,8 @@ ALL_COLUMNS = (
 ML_FEATURE_COLUMNS = tuple(
     column for column in ALL_COLUMNS if column not in set(TRACE_METADATA_COLUMNS + TARGET_COLUMNS)
 )
+SOURCE_FEATURE_COLUMNS = tuple(column for column in ALL_COLUMNS if column not in TARGET_COLUMNS)
+BEHAVIORAL_FINGERPRINT_COLUMNS = ML_FEATURE_COLUMNS
 
 
 def validate_feature_selection(columns, require_complete=True):
@@ -102,42 +105,111 @@ def canonical_flow_group(row, bucket_milliseconds=300_000):
     return first, second, int(row["PROTOCOL"]), start // bucket_milliseconds
 
 
-def split_row_fingerprint(row):
-    """Fingerprint all non-target values for cross-split duplicate detection."""
+def _fingerprint(row, columns, purpose):
     digest = blake2b(digest_size=16)
-    for column in ALL_COLUMNS:
-        if column in TARGET_COLUMNS:
-            continue
+    digest.update(FINGERPRINT_SCHEMA_VERSION.encode("ascii"))
+    digest.update(purpose.encode("ascii"))
+    for column in columns:
         value = str(row[column]).encode("utf-8", errors="surrogatepass")
         digest.update(len(value).to_bytes(4, "big"))
         digest.update(value)
     return digest.digest()
 
 
-def audit_bounded_split_rows(split_rows):
+def full_row_fingerprint(row):
+    """Fingerprint all 55 values, including targets, for exact-row identity."""
+    return _fingerprint(row, ALL_COLUMNS, "full-row")
+
+
+def source_feature_fingerprint(row):
+    """Fingerprint all 53 published NetFlow fields while excluding both targets."""
+    return _fingerprint(row, SOURCE_FEATURE_COLUMNS, "source-feature")
+
+
+def ml_feature_fingerprint(row):
+    """Fingerprint the ordered 47-feature baseline ML matrix."""
+    return _fingerprint(row, ML_FEATURE_COLUMNS, "ml-feature")
+
+
+def behavioral_fingerprint(row):
+    """Fingerprint behavioral-v1 columns for correlation-oriented equivalence.
+
+    Version 1 deliberately uses the same ordered 47 columns as the baseline ML
+    contract, but a separate namespace prevents treating the two purposes as the
+    same artifact. Future behavioral schemas require a new version.
+    """
+    return _fingerprint(row, BEHAVIORAL_FINGERPRINT_COLUMNS, "behavioral-v1")
+
+
+def split_row_fingerprint(row):
+    """Backward-compatible name for the source-feature split fingerprint."""
+    return source_feature_fingerprint(row)
+
+
+def audit_bounded_split_rows(split_rows, purge_gap_milliseconds=0):
     """Audit small fixtures or bounded split manifests for cross-split overlap.
 
     Full-dataset implementations must use a disk-backed equivalent; this helper
     deliberately makes no scalability claim.
     """
-    owners_by_fingerprint = {}
+    if purge_gap_milliseconds < 0:
+        raise ValueError("purge_gap_milliseconds must not be negative")
+    owners_by_exact = {}
+    owners_by_source_feature = {}
+    owners_by_ml_feature = {}
     owners_by_group = {}
-    duplicate_overlaps = []
+    exact_overlaps = []
+    source_feature_overlaps = []
+    ml_feature_overlaps = []
     group_overlaps = []
+    starts_by_split = {"train": [], "validation": [], "test": []}
     for split, rows in split_rows.items():
         if split not in {"train", "validation", "test"}:
             raise ValueError(f"unsupported split name: {split}")
         for offset, row in enumerate(rows):
-            fingerprint = split_row_fingerprint(row)
-            previous = owners_by_fingerprint.setdefault(fingerprint, split)
+            starts_by_split[split].append(int(row["FLOW_START_MILLISECONDS"]))
+            fingerprint = full_row_fingerprint(row)
+            previous = owners_by_exact.setdefault(fingerprint, split)
             if previous != split:
-                duplicate_overlaps.append((previous, split, offset))
+                exact_overlaps.append((previous, split, offset))
+            fingerprint = source_feature_fingerprint(row)
+            previous = owners_by_source_feature.setdefault(fingerprint, split)
+            if previous != split:
+                source_feature_overlaps.append((previous, split, offset))
+            fingerprint = ml_feature_fingerprint(row)
+            previous = owners_by_ml_feature.setdefault(fingerprint, split)
+            if previous != split:
+                ml_feature_overlaps.append((previous, split, offset))
             group = canonical_flow_group(row)
             previous = owners_by_group.setdefault(group, split)
             if previous != split:
                 group_overlaps.append((previous, split, offset))
+    temporal_boundary_violations = []
+    ordered = ("train", "validation", "test")
+    for earlier, later in zip(ordered, ordered[1:]):
+        if not starts_by_split[earlier] or not starts_by_split[later]:
+            continue
+        earlier_max = max(starts_by_split[earlier])
+        later_min = min(starts_by_split[later])
+        actual_gap = later_min - earlier_max
+        if actual_gap < purge_gap_milliseconds:
+            temporal_boundary_violations.append(
+                (earlier, later, earlier_max, later_min, actual_gap)
+            )
+    failed = any(
+        (
+            exact_overlaps,
+            source_feature_overlaps,
+            ml_feature_overlaps,
+            group_overlaps,
+            temporal_boundary_violations,
+        )
+    )
     return {
-        "status": "PASS" if not duplicate_overlaps and not group_overlaps else "FAIL",
-        "duplicate_overlaps": duplicate_overlaps,
+        "status": "FAIL" if failed else "PASS",
+        "exact_overlaps": exact_overlaps,
+        "source_feature_overlaps": source_feature_overlaps,
+        "ml_feature_overlaps": ml_feature_overlaps,
         "group_overlaps": group_overlaps,
+        "temporal_boundary_violations": temporal_boundary_violations,
     }

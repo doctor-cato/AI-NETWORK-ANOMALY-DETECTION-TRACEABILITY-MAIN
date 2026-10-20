@@ -26,7 +26,7 @@ PORT_COLUMNS = ("L4_SRC_PORT", "L4_DST_PORT")
 TIMESTAMP_COLUMNS = ("FLOW_START_MILLISECONDS", "FLOW_END_MILLISECONDS")
 TARGET_COLUMNS = ("Label", "Attack")
 NON_FEATURE_COLUMNS = set(IP_COLUMNS + PORT_COLUMNS + TIMESTAMP_COLUMNS + TARGET_COLUMNS)
-VALID_ATTACKS = {
+ATTACK_CATEGORIES = (
     "Benign",
     "Analysis",
     "Backdoor",
@@ -37,7 +37,10 @@ VALID_ATTACKS = {
     "Reconnaissance",
     "Shellcode",
     "Worms",
-}
+)
+VALID_ATTACKS = set(ATTACK_CATEGORIES)
+ATTACK_BITS = {attack: 1 << index for index, attack in enumerate(ATTACK_CATEGORIES)}
+FINGERPRINT_SCHEMA_VERSION = "nf-unsw-nb15-v3-fingerprint-v1"
 MAX_EXAMPLES = 20
 QUALITY_TOKEN_ISSUES = {
     "missing",
@@ -220,8 +223,10 @@ class NumericQualityAudit:
         }
 
 
-def row_digest(values):
+def row_digest(values, namespace):
     digest = hashlib.blake2b(digest_size=16)
+    digest.update(FINGERPRINT_SCHEMA_VERSION.encode("ascii"))
+    digest.update(namespace.encode("ascii"))
     for value in values:
         encoded = value.encode("utf-8", errors="surrogatepass")
         digest.update(len(encoded).to_bytes(4, "big"))
@@ -230,7 +235,7 @@ def row_digest(values):
 
 
 class DuplicateAudit:
-    """Disk-backed exact and behavior-equivalent fingerprint audit."""
+    """Disk-backed exact, ML-equivalent and behavioral-v1 audit."""
 
     def __init__(self, directory=None):
         handle, name = tempfile.mkstemp(
@@ -241,28 +246,194 @@ class DuplicateAudit:
         self.connection = sqlite3.connect(self.path)
         self.connection.execute("PRAGMA journal_mode=OFF")
         self.connection.execute("PRAGMA synchronous=OFF")
-        self.connection.execute("CREATE TABLE exact (digest BLOB PRIMARY KEY) WITHOUT ROWID")
-        self.connection.execute("CREATE TABLE near (digest BLOB PRIMARY KEY) WITHOUT ROWID")
+        self.connection.execute(
+            "CREATE TABLE exact (digest BLOB PRIMARY KEY, count INTEGER NOT NULL) WITHOUT ROWID"
+        )
+        self.connection.execute(
+            "CREATE TABLE ml (digest BLOB PRIMARY KEY, count INTEGER NOT NULL, "
+            "label_mask INTEGER NOT NULL, attack_mask INTEGER NOT NULL) WITHOUT ROWID"
+        )
+        self.connection.execute(
+            "CREATE TABLE behavior (digest BLOB PRIMARY KEY, count INTEGER NOT NULL) WITHOUT ROWID"
+        )
         self.exact_duplicates = 0
-        self.near_duplicates = 0
+        self.ml_feature_equivalent_duplicates = 0
+        self.behavioral_duplicates = 0
+        self.exact_duplicate_labels = Counter()
+        self.exact_duplicate_attacks = Counter()
 
     def add(self, row, columns):
-        exact = row_digest(row)
+        index = {column: position for position, column in enumerate(columns)}
+        label = row[index["Label"]]
+        attack = row[index["Attack"]]
+        label_mask = 1 << int(label) if label in {"0", "1"} else 0
+        attack_mask = ATTACK_BITS.get(attack, 0)
+        exact = row_digest(row, "full-row")
+        ml_feature = row_digest(
+            (
+                value
+                for column, value in zip(columns, row, strict=True)
+                if column not in NON_FEATURE_COLUMNS
+            ),
+            "ml-feature",
+        )
         behavior = row_digest(
-            value
-            for column, value in zip(columns, row, strict=True)
-            if column not in NON_FEATURE_COLUMNS
+            (
+                value
+                for column, value in zip(columns, row, strict=True)
+                if column not in NON_FEATURE_COLUMNS
+            ),
+            "behavioral-v1",
         )
         if (
-            self.connection.execute("INSERT OR IGNORE INTO exact VALUES (?)", (exact,)).rowcount
+            self.connection.execute(
+                "INSERT OR IGNORE INTO exact VALUES (?, 1)", (exact,)
+            ).rowcount
             == 0
         ):
             self.exact_duplicates += 1
+            self.exact_duplicate_labels[label] += 1
+            self.exact_duplicate_attacks[attack] += 1
+            self.connection.execute("UPDATE exact SET count = count + 1 WHERE digest = ?", (exact,))
         if (
-            self.connection.execute("INSERT OR IGNORE INTO near VALUES (?)", (behavior,)).rowcount
+            self.connection.execute(
+                "INSERT OR IGNORE INTO ml VALUES (?, 1, ?, ?)",
+                (ml_feature, label_mask, attack_mask),
+            ).rowcount
             == 0
         ):
-            self.near_duplicates += 1
+            self.ml_feature_equivalent_duplicates += 1
+            self.connection.execute(
+                "UPDATE ml SET count = count + 1, label_mask = label_mask | ?, "
+                "attack_mask = attack_mask | ? WHERE digest = ?",
+                (label_mask, attack_mask, ml_feature),
+            )
+        if (
+            self.connection.execute(
+                "INSERT OR IGNORE INTO behavior VALUES (?, 1)", (behavior,)
+            ).rowcount
+            == 0
+        ):
+            self.behavioral_duplicates += 1
+            self.connection.execute(
+                "UPDATE behavior SET count = count + 1 WHERE digest = ?", (behavior,)
+            )
+
+    def report(self):
+        exact_groups = self.connection.execute(
+            "SELECT COUNT(*) FROM exact WHERE count > 1"
+        ).fetchone()[0]
+        ml_groups = 0
+        label_conflict_groups = 0
+        label_conflict_rows = 0
+        benign_attack_conflict_groups = 0
+        multiple_attack_values_groups = 0
+        rows_in_multiple_attack_values_groups = 0
+        multiple_malicious_categories_groups = 0
+        attack_value_conflict_patterns = {}
+        rare_conflicts = {
+            category: {"fingerprints": 0, "rows": 0} for category in ("Analysis", "Worms")
+        }
+        rare_multi_attack = {
+            category: {"fingerprints": 0, "rows": 0} for category in ("Analysis", "Worms")
+        }
+        benign_bit = ATTACK_BITS["Benign"]
+        malicious_mask = sum(
+            bit for category, bit in ATTACK_BITS.items() if category != "Benign"
+        )
+        for count, label_mask, attack_mask in self.connection.execute(
+            "SELECT count, label_mask, attack_mask FROM ml"
+        ):
+            if count > 1:
+                ml_groups += 1
+            has_label_conflict = label_mask == 3
+            if has_label_conflict:
+                label_conflict_groups += 1
+                label_conflict_rows += count
+            has_benign_attack = bool(attack_mask & benign_bit) and bool(
+                attack_mask & malicious_mask
+            )
+            if has_benign_attack:
+                benign_attack_conflict_groups += 1
+            if attack_mask.bit_count() > 1:
+                multiple_attack_values_groups += 1
+                rows_in_multiple_attack_values_groups += count
+                categories = tuple(
+                    category
+                    for category in ATTACK_CATEGORIES
+                    if attack_mask & ATTACK_BITS[category]
+                )
+                pattern = " | ".join(categories)
+                pattern_counts = attack_value_conflict_patterns.setdefault(
+                    pattern, {"fingerprints": 0, "rows": 0}
+                )
+                pattern_counts["fingerprints"] += 1
+                pattern_counts["rows"] += count
+                for category in rare_multi_attack:
+                    if attack_mask & ATTACK_BITS[category]:
+                        rare_multi_attack[category]["fingerprints"] += 1
+                        rare_multi_attack[category]["rows"] += count
+            if (attack_mask & malicious_mask).bit_count() > 1:
+                multiple_malicious_categories_groups += 1
+            if has_label_conflict:
+                for category in rare_conflicts:
+                    if attack_mask & ATTACK_BITS[category]:
+                        rare_conflicts[category]["fingerprints"] += 1
+                        rare_conflicts[category]["rows"] += count
+        behavioral_groups = self.connection.execute(
+            "SELECT COUNT(*) FROM behavior WHERE count > 1"
+        ).fetchone()[0]
+        return {
+            "schema_version": FINGERPRINT_SCHEMA_VERSION,
+            "definitions": {
+                "exact_full_row": {
+                    "columns": "all 55 ordered CSV columns, including targets",
+                    "purpose": "byte-level parsed-row identity and exact-dedup impact audit",
+                },
+                "source_feature": {
+                    "columns": "all 53 published NetFlow fields; targets excluded",
+                    "purpose": "cross-split observation overlap even if labels differ",
+                },
+                "ml_feature_equivalent": {
+                    "columns": "the ordered 47-feature baseline; metadata and targets excluded",
+                    "purpose": "memorization risk and label-conflict audit",
+                },
+                "behavioral_v1": {
+                    "columns": "the ordered 47-feature baseline under a separate namespace",
+                    "purpose": "correlation-oriented equivalence; not an automatic dedup key",
+                },
+            },
+            "exact": {
+                "duplicate_rows": self.exact_duplicates,
+                "fingerprints_with_duplicates": exact_groups,
+                "duplicate_rows_by_label": dict(sorted(self.exact_duplicate_labels.items())),
+                "duplicate_rows_by_attack": dict(sorted(self.exact_duplicate_attacks.items())),
+            },
+            "ml_feature_equivalent": {
+                "duplicate_rows": self.ml_feature_equivalent_duplicates,
+                "fingerprints_with_duplicates": ml_groups,
+                "label_conflict_fingerprints": label_conflict_groups,
+                "rows_in_label_conflict_fingerprints": label_conflict_rows,
+                "benign_attack_conflict_fingerprints": benign_attack_conflict_groups,
+                "multiple_attack_values_fingerprints": multiple_attack_values_groups,
+                "rows_in_multiple_attack_values_fingerprints": (
+                    rows_in_multiple_attack_values_groups
+                ),
+                "multiple_malicious_categories_fingerprints": (
+                    multiple_malicious_categories_groups
+                ),
+                "attack_value_conflict_patterns": dict(
+                    sorted(attack_value_conflict_patterns.items())
+                ),
+                "rare_category_label_conflicts": rare_conflicts,
+                "rare_category_multi_attack_fingerprints": rare_multi_attack,
+            },
+            "behavioral_v1": {
+                "duplicate_rows": self.behavioral_duplicates,
+                "fingerprints_with_duplicates": behavioral_groups,
+                "automatic_removal_permitted": False,
+            },
+        }
 
     def close(self):
         self.connection.commit()
@@ -278,6 +449,7 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
     min_start = None
     max_end = None
     quality_audit = NumericQualityAudit()
+    duplicate_analysis = None
     audit = DuplicateAudit(duplicate_directory)
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as stream:
@@ -355,10 +527,16 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
                         add_example(examples, "duration_mismatch", line_number)
             if counts["rows"] == 0:
                 raise ValueError("dataset has no data rows")
+            duplicate_analysis = audit.report()
     finally:
         audit.close()
-    counts["exact_duplicate_rows"] = audit.exact_duplicates
-    counts["near_duplicate_rows"] = audit.near_duplicates
+    counts["exact_duplicate_rows"] = duplicate_analysis["exact"]["duplicate_rows"]
+    counts["ml_feature_equivalent_duplicate_rows"] = duplicate_analysis[
+        "ml_feature_equivalent"
+    ]["duplicate_rows"]
+    counts["behavioral_fingerprint_duplicate_rows"] = duplicate_analysis["behavioral_v1"][
+        "duplicate_rows"
+    ]
     if counts["rows"] != expected_rows:
         counts["row_count_mismatch"] = abs(counts["rows"] - expected_rows)
     issue_counts = {key: value for key, value in sorted(counts.items()) if key != "rows" and value}
@@ -370,12 +548,21 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
         "timestamp_range_epoch_ms": {"minimum_start": min_start, "maximum_end": max_end},
         "issue_counts": issue_counts,
         "example_line_numbers": examples,
-        "duplicate_definition": {
-            "exact": "All 55 ordered CSV values are identical.",
-            "near": (
-                "All non-identifier, non-timestamp, non-port and non-target "
-                "values are identical."
-            ),
+        "duplicate_analysis": {
+            **duplicate_analysis,
+            "hypothetical_exact_dedup_keep_first": {
+                "retained_by_label": {
+                    label: count
+                    - duplicate_analysis["exact"]["duplicate_rows_by_label"].get(label, 0)
+                    for label, count in sorted(labels.items())
+                },
+                "retained_by_attack": {
+                    attack: count
+                    - duplicate_analysis["exact"]["duplicate_rows_by_attack"].get(attack, 0)
+                    for attack, count in sorted(attacks.items())
+                },
+                "applied": False,
+            },
         },
         "numeric_quality_analysis": quality_audit.report(),
     }
