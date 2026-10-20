@@ -1,0 +1,110 @@
+{
+  "attacks": {
+    "Analysis": 1226,
+    "Backdoor": 4659,
+    "Benign": 2237731,
+    "DoS": 5980,
+    "Exploits": 42748,
+    "Fuzzers": 33816,
+    "Generic": 19651,
+    "Reconnaissance": 17074,
+    "Shellcode": 2381,
+    "Worms": 158
+  },
+  "dataset": "NF-UNSW-NB15-v3",
+  "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+  "duplicate_definition": {
+    "exact": "All 55 ordered CSV values are identical.",
+    "near": "All non-identifier, non-timestamp, non-port and non-target values are identical."
+  },
+  "example_line_numbers": {
+    "missing:SRC_TO_DST_SECOND_BYTES": [
+      42,
+      73,
+      103,
+      141,
+      168,
+      254,
+      296,
+      325,
+      336,
+      376,
+      400,
+      433,
+      465,
+      479,
+      544,
+      597,
+      605,
+      615,
+      637,
+      676
+    ],
+    "non_finite:DST_TO_SRC_SECOND_BYTES": [
+      42,
+      65,
+      73,
+      83,
+      99,
+      103,
+      141,
+      168,
+      171,
+      199,
+      211,
+      227,
+      233,
+      254,
+      258,
+      263,
+      265,
+      296,
+      312,
+      320
+    ],
+    "non_finite:SRC_TO_DST_SECOND_BYTES": [
+      65,
+      83,
+      99,
+      171,
+      199,
+      211,
+      227,
+      233,
+      258,
+      263,
+      265,
+      312,
+      320,
+      363,
+      377,
+      381,
+      460,
+      461,
+      466,
+      483
+    ]
+  },
+  "expected_rows": 2365424,
+  "issue_counts": {
+    "exact_duplicate_rows": 14815,
+    "missing:SRC_TO_DST_SECOND_BYTES": 63425,
+    "near_duplicate_rows": 1134553,
+    "non_finite:DST_TO_SRC_SECOND_BYTES": 122493,
+    "non_finite:SRC_TO_DST_SECOND_BYTES": 59068
+  },
+  "labels": {
+    "0": 2237731,
+    "1": 127693
+  },
+  "manifest": "NF_UNSW_NB15_V3_MANIFEST.json",
+  "manifest_sha256_verified": true,
+  "real_data": true,
+  "rows": 2365424,
+  "source_file": "NF-UNSW-NB15-v3.csv",
+  "status": "FAIL",
+  "timestamp_range_epoch_ms": {
+    "maximum_end": 1424262565011.0,
+    "minimum_start": 1421927376907.0
+  }
+}
