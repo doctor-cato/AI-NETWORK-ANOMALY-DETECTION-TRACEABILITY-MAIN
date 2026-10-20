@@ -176,15 +176,25 @@ Completed: migration-scoped formatting and lint audit; CI workflow scope inspect
 Tests: PASS — migration Ruff and per-file Black checks, compileall and 196 pytest.
 Tests: FAIL — repository-wide Ruff has 5 findings and repository-wide per-file Black has 11
   files requiring formatting; all are outside the migration diff and remain unchanged.
-Remote CI: previous PR head 460b668 PASS 4/4; new-head CI NOT VERIFIED until push.
+Remote CI: PASS — PR #36 run 39467658090, Ubuntu/Windows × Python 3.11/3.12; workflow vẫn
+  không chạy Ruff hoặc Black.
 ```
 
 ```text
 Checkpoint 7 — regression coverage
-HEAD: recorded by the checkpoint commit.
+HEAD: 5d21f43
 Completed: behavioral tests cover the 47-feature order/exclusion contract, invalid/non-finite
   values and zero-duration context, versioned duplicate fingerprints and label/category conflicts,
   exact/ML/group/temporal split guards, status/manifest semantics and source-file immutability.
 Tests: PASS — 196 tests on the current checkout; synthetic split guards remain distinct from a
   real split audit, which is NOT VERIFIED.
+```
+
+```text
+Checkpoint 8 — PR and affected Issues
+HEAD: recorded by final PR readback.
+Completed: branch pushed to the existing PR #36; Issues #6, #7, #8, #17 and #20 updated and
+  read back OPEN with the 47-feature contract, structured quality gates and remaining blockers.
+Remote verification: PR remains OPEN and unmerged; CI matrix PASS; no reviews/comments pending at
+  the recorded readback. Repository-wide Ruff/Black and ML readiness blockers remain explicit.
 ```

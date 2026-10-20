@@ -28,8 +28,8 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | D — Quality audit | streaming validator, disk-backed numeric/duplicate/label-conflict audit | real report on 2.365.424 rows | SOURCE_INTEGRITY PASS; RAW_QUALITY FINDINGS_RECORDED; ML_READY BLOCKED |
 | E — Split contract | 47-feature exclusion, versioned fingerprints, group/temporal guards | synthetic split tests | TESTED; real split/leakage NOT VERIFIED |
 | F — Architecture/docs | v3 default throughout current docs | link/text/status checks | IMPLEMENTED / VERIFIED |
-| G — Tests/CI | Windows/Linux matrix and migration regression tests | 196 pytest PASS; migration Ruff/per-file Black PASS; repo Ruff/Black FAIL on pre-existing files; CI does not run Ruff/Black | PARTIAL — previous-head CI PASS, new-head CI NOT VERIFIED until push; all-gates blockers remain |
-| H — Issues/PR | #6–#15, #17, #18, #20, #25, #29, #31; historical notes #4/#5; M1–M5/M7 | GitHub readback confirms v3 contracts; PR #36 OPEN into `main` | VERIFIED; not merged |
+| G — Tests/CI | Windows/Linux matrix and migration regression tests | 196 pytest PASS; migration Ruff/per-file Black PASS; repo Ruff/Black FAIL on pre-existing files; PR CI matrix PASS but does not run Ruff/Black | PARTIAL — remote CI PASS, all-gates blockers remain |
+| H — Issues/PR | #6–#15, #17, #18, #20, #25, #29, #31; historical notes #4/#5; M1–M5/M7 | #6/#7/#8/#17/#20 hardening contracts read back OPEN; PR #36 OPEN into `main` | VERIFIED; not merged |
 
 UNSW-NB15 (2015) evidence is preserved under `historical/`; its old validation cannot satisfy a v3
 gate. PR #22 and #35 are merged historical workstreams, not pending proof for this migration.
@@ -39,4 +39,4 @@ Chuỗi bắt buộc cho mọi claim:
 Synthetic fixture/CI không thay thế real-data experiment. Mỗi result phải gắn commit,
 dataset/split identifier, dependency versions, seed/config, artifact và reproduction command.
 
-Cập nhật: 2026-10-20 (migration NF-UNSW-NB15-v3; self-review, không phải reviewer độc lập)
+Cập nhật: 2026-10-21 (migration NF-UNSW-NB15-v3; self-review, không phải reviewer độc lập)
