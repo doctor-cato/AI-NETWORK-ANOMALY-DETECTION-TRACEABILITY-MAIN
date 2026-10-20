@@ -28,8 +28,8 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | D — Quality audit | streaming validator, disk-backed duplicate audit | real report on 2.365.424 rows | FAIL due missing/Inf/duplicates |
 | E — Split contract | feature exclusions, group key, bounded overlap guards | synthetic split tests | TESTED; real split NOT VERIFIED |
 | F — Architecture/docs | v3 default throughout current docs | link/text/status checks | IMPLEMENTED / VERIFIED |
-| G — Tests/CI | Windows/Linux matrix and migration regression tests | 183 pytest PASS; migration Ruff PASS; repo Ruff/Black FAIL on pre-existing files; remote CI NOT VERIFIED | PARTIAL |
-| H — Issues/PR | #6–#15, #17, #18, #20, #25, #29, #31; historical notes #4/#5; M1–M5/M7 | GitHub readback confirms v3 contracts; PR/remote CI recorded at handoff | backlog VERIFIED; PR/CI pending |
+| G — Tests/CI | Windows/Linux matrix and migration regression tests | 183 pytest PASS; migration Ruff PASS; repo Ruff/Black FAIL on pre-existing files; PR #36 CI PASS 4/4 | PARTIAL — remote CI PASS, all-gates blockers remain |
+| H — Issues/PR | #6–#15, #17, #18, #20, #25, #29, #31; historical notes #4/#5; M1–M5/M7 | GitHub readback confirms v3 contracts; PR #36 OPEN into `main` | VERIFIED; not merged |
 
 UNSW-NB15 (2015) evidence is preserved under `historical/`; its old validation cannot satisfy a v3
 gate. PR #22 and #35 are merged historical workstreams, not pending proof for this migration.

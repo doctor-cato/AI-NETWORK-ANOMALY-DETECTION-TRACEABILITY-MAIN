@@ -111,8 +111,8 @@ Tests: PASS — environment, compileall, workflow validator, migration Ruff scop
 Tests: FAIL — repository-wide Ruff has 5 pre-existing findings; repository-wide Black has 11
   pre-existing files requiring formatting. These files are outside the migration implementation
   except historical test wiring, and are not reformatted in this scoped PR.
-Remote CI: NOT VERIFIED until branch is pushed and PR checks complete.
-Remaining: H Issues/PR; all-gates merge remains blocked while required lint gates fail.
+Remote CI: PASS — PR #36 run 39423059243, Ubuntu/Windows × Python 3.11/3.12.
+Remaining: all-gates merge remains blocked while required lint gates fail.
 ```
 
 ```text
@@ -123,8 +123,8 @@ Completed: backlog VERIFIED — #6–#15, #17, #18, #20, #25, #29, #31 có
   history note; M1–M5/M7 có source/schema/gate/dependency/test requirements mới.
 Tests: PASS — GitHub readback xác nhận 16 issue contracts, 2 historical notes và 6
   milestone contracts; không Issue nào bị tự động đóng hoặc mở lại.
-PR: tạo sau commit checkpoint này; URL và remote CI được đọc lại tại handoff.
-Remaining: remote PR CI NOT VERIFIED cho đến khi checks kết thúc.
+PR: #36 OPEN vào `main`; remote CI run 39423059243 PASS 4/4; không tự merge.
+Remaining: maintainer review và xử lý/ra quyết định cho các blocker đã ghi.
 Blockers: all-gates merge vẫn bị chặn bởi real-data quality FAIL, real split/model
   NOT VERIFIED và repository-wide Ruff/Black failures đã phân loại ở G.
 ```
