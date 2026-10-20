@@ -72,8 +72,9 @@ time-aware split trên `FLOW_START_MILLISECONDS`, giữ test cô lập và kiể
 behavior duplicate cùng canonical flow-group overlap qua boundary. Vì không có session
 ID authoritative, canonical 5-tuple/time-window chỉ là heuristic và phải ghi limitation.
 
-`Label` và `Attack` luôn bị loại khỏi `X`. Absolute timestamp, IP và port mặc định nằm
-trong trace metadata, không trong ML feature matrix. Imputer/encoder/scaler/selector chỉ
+`Label` và `Attack` luôn bị loại khỏi `X`. Hai absolute timestamp, hai IP và hai L4 port
+tạo thành sáu trace/grouping metadata fields, không nằm trong baseline ML matrix 47 fields.
+Imputer/encoder/scaler/selector chỉ
 được fit trên train. Seed, boundary, group rule, counts và class distribution phải nằm
 trong split manifest trước training.
 

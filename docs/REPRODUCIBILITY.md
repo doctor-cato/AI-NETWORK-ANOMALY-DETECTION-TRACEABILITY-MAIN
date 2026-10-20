@@ -64,7 +64,8 @@ actual seed or deterministic split algorithm.
 ## Leakage and transform rules
 
 - Split/group/deduplicate before fitting preprocessing.
-- Never put `Label`, `Attack`, IP identifiers or absolute timestamps in default `X`.
+- Default `X` is the ordered 47-feature contract. Never put `Label`, `Attack`, IP identifiers,
+  L4 ports or absolute timestamps in it.
 - Fit imputer, non-finite policy, encoder, scaler, selector and resampler only on train.
 - Validation selects configuration and thresholds; test is not reused for tuning.
 - Fail when exact fingerprint or flow-group identifiers cross partitions.

@@ -15,17 +15,19 @@ tuning.
 
 - Targets: `Label` for binary evaluation and `Attack` for stratified reporting. Neither enters
   `X`.
-- Trace metadata: `FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR` and
-  `IPV4_DST_ADDR`. They remain available to Trace Engine correlation but are excluded from the
-  default ML matrix.
-- Candidate ML input: the other 49 ordered NetFlow v3 fields, including ports, protocol, traffic
-  counters, duration, throughput and IAT fields.
+- Trace/grouping metadata: `FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`,
+  `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT` and `L4_DST_PORT`. They remain available to
+  flow grouping and Trace Engine correlation but are excluded from the default ML matrix.
+- Baseline ML input: the other 47 ordered NetFlow v3 fields: protocol/application-protocol,
+  traffic counters, flags, duration, throughput and IAT fields.
+- A port-augmented 49-feature configuration is reserved for a future controlled experiment. It is
+  not the default contract and has not been implemented or evaluated in this migration.
 - API, authentication and application-session events are separate sources. This dataset does not
   supply them.
 
 The executable column contract is
-`src/network_anomaly/data/nf_unsw_nb15_v3.py`. It fails closed when a target, absolute timestamp,
-IP identifier, unknown field or ordering mismatch is supplied.
+`src/network_anomaly/data/nf_unsw_nb15_v3.py`. It fails closed when a target, trace/grouping
+metadata field, unknown field or ordering mismatch is supplied.
 
 ## Proposed deterministic split
 

@@ -63,7 +63,9 @@ Manifest ghi đúng thứ tự 55 cột. Phân loại vai trò:
 - binary target `Label`: `0` benign, `1` attack;
 - multiclass target `Attack`: `Benign`, `Analysis`, `Backdoor`, `DoS`, `Exploits`, `Fuzzers`,
   `Generic`, `Reconnaissance`, `Shellcode`, `Worms`;
-- absolute timestamps và IP được giữ như trace metadata và mặc định loại khỏi `X`;
+- sáu metadata fields gồm absolute timestamps, IP và hai L4 port được giữ cho grouping/Trace
+  Engine và mặc định loại khỏi `X`;
+- 47 NetFlow fields còn lại là baseline ML input theo đúng thứ tự CSV;
 - `Label` và `Attack` tuyệt đối không đi vào `X`.
 
 Website UQ và CSV không đồng nhất ở tổng attack và ánh xạ ba category count. Manifest theo byte CSV

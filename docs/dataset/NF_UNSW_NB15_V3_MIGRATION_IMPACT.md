@@ -13,7 +13,8 @@
 
 - Methodology/evaluation/experiment plan cho temporal/group-aware split, missing/Inf,
   imbalance và 10 temporal NetFlow features.
-- Feature contract: tách 47 ML candidates, 6 metadata/identifier candidates và 2 targets.
+- Default feature contract: đúng 47 ordered ML features, 6 metadata/grouping fields (hai
+  timestamps, hai IP, hai port) và 2 targets. Cấu hình 49 có port chỉ là experiment tương lai.
 - Issues #6–#14, #17, #18, #20, #25, #29, #31 cùng milestone M1–M4/M7.
 - Behavioral Vector/Risk/Trace docs phải nói rõ network-flow metadata không thay thế
   API/auth/session event sources.

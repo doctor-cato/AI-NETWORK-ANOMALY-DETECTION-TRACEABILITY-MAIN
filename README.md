@@ -18,7 +18,7 @@ Current verified scope:
 | Reproducible download, cache, checksum, rollback and locking | IMPLEMENTED / TESTED | `scripts/fetch_nf_unsw_nb15_v3.py` and acquisition tests |
 | Package manifest and 55-column schema | VERIFIED on real bytes | `data/NF_UNSW_NB15_V3_MANIFEST.json` |
 | Streaming quality audit | IMPLEMENTED / TESTED; real data **FAIL** | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
-| Feature exclusion and split leakage guards | IMPLEMENTED / TESTED on synthetic fixtures | `src/network_anomaly/data/nf_unsw_nb15_v3.py` |
+| 47-feature baseline exclusion and split leakage guards | IMPLEMENTED / TESTED on synthetic fixtures | `src/network_anomaly/data/nf_unsw_nb15_v3.py` |
 | Real train/validation/test split | PLANNED / NOT VERIFIED | blocked on an approved missing/non-finite and duplicate policy |
 | Model training, benchmark and deployment | PLANNED / NOT VERIFIED | no real experiment result is claimed |
 
@@ -97,7 +97,8 @@ NF-UNSW-NB15-v3 is one CSV; it does not inherit the original UNSW-NB15 split. Th
 is temporal and group-aware:
 
 - keep `Label` and `Attack` out of `X`;
-- keep absolute timestamps and IP identifiers as Trace Engine metadata, not default ML features;
+- use one baseline contract: 47 ordered ML features; keep absolute timestamps, IP identifiers and
+  both L4 ports as six Trace Engine/grouping metadata fields outside `X`;
 - consolidate/audit duplicates before partition assignment;
 - assign complete bidirectional 5-tuple/time-bucket groups in chronological order;
 - fit imputer, finite-value policy, encoder, scaler, selector and resampling on train only;
@@ -105,6 +106,8 @@ is temporal and group-aware:
 - record dataset hash, split identifier, boundaries, groups, class distribution and exclusions.
 
 See `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`. No real split is claimed yet.
+Including the two ports would create a separate 49-feature experimental configuration; that
+comparison is planned, not implemented or evaluated in this migration.
 
 ## Models and experiment scope
 

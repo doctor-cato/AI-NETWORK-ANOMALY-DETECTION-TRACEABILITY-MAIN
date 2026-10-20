@@ -19,8 +19,8 @@ flowchart LR
 ```
 
 NF-UNSW-NB15-v3 chỉ cấp network-flow fields. API/auth/session events là nguồn tương lai độc lập,
-không được suy diễn từ dataset. Absolute timestamps và IP được giữ ở trace metadata boundary;
-49 candidate fields còn lại mới thuộc default ML contract. Xem
+không được suy diễn từ dataset. Absolute timestamps, IP và hai L4 port được giữ ở trace metadata
+boundary; 47 fields còn lại mới thuộc default ML contract. Xem
 `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
 
 ## Ranh giới mô-đun

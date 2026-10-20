@@ -44,8 +44,10 @@
 - Transform val/test bằng đối tượng đã fit.
 - Lưu đối tượng đã fit cùng artifact mô hình.
 - Ghi rõ cột nào được bao gồm / loại bỏ và lý do (kết quả kiểm tra rò rỉ).
-- `Label`, `Attack`, IP identifier và absolute timestamp không thuộc default `X`; metadata vẫn được
-  giữ riêng cho Trace Engine.
+- Baseline `X` có 47 fields. `Label`, `Attack`, IP identifier, hai L4 port và absolute timestamp
+  không thuộc default `X`; sáu metadata fields vẫn được giữ riêng cho grouping/Trace Engine.
+- Cấu hình 49 features có thêm hai port chỉ là experiment tương lai; PR migration không triển khai
+  hoặc tuyên bố kết quả so sánh này.
 - Chính sách missing/positive-infinity phải được chọn và fit chỉ trên train. Quality report hiện
   `FAIL`, nên chưa có split/model thật được chấp nhận.
 

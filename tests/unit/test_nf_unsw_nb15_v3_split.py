@@ -6,6 +6,7 @@ import pytest
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
     ML_FEATURE_COLUMNS,
+    TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
     audit_bounded_split_rows,
     canonical_flow_group,
@@ -40,7 +41,17 @@ def test_code_contract_matches_manifest_column_order():
     )
 
     assert tuple(manifest["schema"]["columns_in_order"]) == ALL_COLUMNS
-    assert len(ML_FEATURE_COLUMNS) == 49
+    assert len(ML_FEATURE_COLUMNS) == 47
+    assert TRACE_METADATA_COLUMNS == (
+        "FLOW_START_MILLISECONDS",
+        "FLOW_END_MILLISECONDS",
+        "IPV4_SRC_ADDR",
+        "IPV4_DST_ADDR",
+        "L4_SRC_PORT",
+        "L4_DST_PORT",
+    )
+    assert set(ML_FEATURE_COLUMNS).isdisjoint(TRACE_METADATA_COLUMNS + TARGET_COLUMNS)
+    assert set(ML_FEATURE_COLUMNS + TRACE_METADATA_COLUMNS + TARGET_COLUMNS) == set(ALL_COLUMNS)
 
 
 def test_feature_contract_excludes_targets_identifiers_and_absolute_timestamps():
@@ -51,7 +62,15 @@ def test_feature_contract_excludes_targets_identifiers_and_absolute_timestamps()
 
 
 @pytest.mark.parametrize(
-    "forbidden", ["Label", "Attack", "IPV4_SRC_ADDR", "FLOW_START_MILLISECONDS"]
+    "forbidden",
+    [
+        "Label",
+        "Attack",
+        "IPV4_SRC_ADDR",
+        "FLOW_START_MILLISECONDS",
+        "L4_SRC_PORT",
+        "L4_DST_PORT",
+    ],
 )
 def test_feature_contract_rejects_leakage_prone_columns(forbidden):
     with pytest.raises(ValueError, match="forbidden"):

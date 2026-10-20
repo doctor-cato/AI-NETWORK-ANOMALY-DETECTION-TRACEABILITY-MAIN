@@ -7,7 +7,7 @@ lý ngoài text; validator parse theo contract: IPv4 string, integer/number, bin
 và categorical target. `Label=0` tương ứng `Attack=Benign`; `Label=1` tương ứng một
 trong chín attack categories.
 
-### Metadata/identifier candidates — giữ cho audit/Trace Engine, mặc định loại khỏi X
+### Sáu metadata/identifier fields — giữ cho grouping/Trace Engine, mặc định loại khỏi X
 
 1. `FLOW_START_MILLISECONDS` — Unix epoch milliseconds, integer.
 2. `FLOW_END_MILLISECONDS` — Unix epoch milliseconds, integer.
@@ -19,7 +19,7 @@ trong chín attack categories.
 Khoảng timestamp quan sát: `2015-01-22T11:49:36.907Z` đến
 `2015-02-18T12:29:25.011Z`. Không có row có end trước start trong lượt kiểm tra.
 
-### Network-flow feature candidates
+### Baseline ML feature contract — 47 ordered fields
 
 Theo thứ tự CSV:
 

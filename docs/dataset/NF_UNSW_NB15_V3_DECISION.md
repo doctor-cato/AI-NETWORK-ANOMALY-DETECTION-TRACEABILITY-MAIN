@@ -22,7 +22,8 @@ train/test partition UNSW-NB15 (2015) 45 cột đang dùng trước migration.
   target `Attack`. Con số “53 features” không bao gồm hai target.
 - `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, hai port và absolute timestamps là metadata/identifier
   candidates. Chúng được giữ cho audit/correlation/traceability nhưng mặc định không vào
-  ma trận feature ML cho đến khi Issue #7 có evidence khác.
+  ma trận feature ML. Baseline duy nhất có 47 ordered features; cấu hình 49 features có port
+  chỉ là experiment tương lai và cần protocol/evidence riêng.
 - NF-UNSW-NB15-v3 không cung cấp API, authentication hay application-session logs. Các
   nguồn đó phải có schema và provenance riêng cho Behavioral Vector/Trace Engine.
 - Dataset chỉ được dùng cho mục đích non-commercial và phải được trích dẫn đầy đủ theo
