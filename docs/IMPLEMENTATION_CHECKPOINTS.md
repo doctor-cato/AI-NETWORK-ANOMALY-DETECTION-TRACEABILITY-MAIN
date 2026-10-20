@@ -33,7 +33,8 @@ Completed: IMPLEMENTED — scope, charter, requirements, architecture, traceabil
 Tests: PASS — workflow validator; environment check; targeted 4 passed; full 36 passed;
   git diff --check. PR #22 worktree: 105 passed; manifest/real validation/diff-check PASS.
   Remote CI cho C0: NOT VERIFIED cho đến khi PR chạy.
-Issues: #23 (C0); #24–#32; cập nhật #11, #16, #18–#20; #4/#5 giữ OPEN.
+Issues: #23 (C0); #24–#32; cập nhật #11, #16, #18–#20; #4/#5 hiện CLOSED
+  sau workstream dữ liệu 2015 và được giữ làm bằng chứng lịch sử.
 PR: chờ PR khôi phục #33 được maintainer merge; không merge tự động.
 Remaining: Sau #33, mở PR C0 từ branch này vào main và đọc lại CI.
 Blockers: DOCX layout NOT VERIFIED vì runtime không có LibreOffice bundled; không chặn
@@ -95,15 +96,15 @@ Remaining: real split PLANNED / NOT VERIFIED; no model training authorized.
 
 ```text
 Checkpoint: F — architecture/documentation
-HEAD: recorded by commit/PR readback at handoff.
+HEAD: 4874b7e
 Completed: NF-UNSW-NB15-v3 is the documented default; 2015 dataset is historical only.
-Tests: pending documentation/link/full-suite gate in G.
-Remaining: G tests/CI and H Issues/PR.
+Tests: PASS — documentation/link/status checks và full-suite gate trong G.
+Remaining: H Issues/PR.
 ```
 
 ```text
 Checkpoint: G — tests and CI
-HEAD: recorded by commit/PR readback at handoff.
+HEAD: 4e2409f
 Completed: migration regression tests and current-checkout pytest import boundary IMPLEMENTED.
 Tests: PASS — environment, compileall, workflow validator, migration Ruff scope, 183 pytest,
   YAML parse, secret/raw tracking scan, branch-wide git diff --check.
@@ -112,4 +113,18 @@ Tests: FAIL — repository-wide Ruff has 5 pre-existing findings; repository-wid
   except historical test wiring, and are not reformatted in this scoped PR.
 Remote CI: NOT VERIFIED until branch is pushed and PR checks complete.
 Remaining: H Issues/PR; all-gates merge remains blocked while required lint gates fail.
+```
+
+```text
+Checkpoint: H — GitHub Issues, milestones and PR
+HEAD: recorded by commit/PR readback at handoff.
+Completed: backlog VERIFIED — #6–#15, #17, #18, #20, #25, #29, #31 có
+  NF-UNSW-NB15-v3 contract; #6/#8 đổi title; #4/#5 vẫn CLOSED và nhận migration
+  history note; M1–M5/M7 có source/schema/gate/dependency/test requirements mới.
+Tests: PASS — GitHub readback xác nhận 16 issue contracts, 2 historical notes và 6
+  milestone contracts; không Issue nào bị tự động đóng hoặc mở lại.
+PR: tạo sau commit checkpoint này; URL và remote CI được đọc lại tại handoff.
+Remaining: remote PR CI NOT VERIFIED cho đến khi checks kết thúc.
+Blockers: all-gates merge vẫn bị chặn bởi real-data quality FAIL, real split/model
+  NOT VERIFIED và repository-wide Ruff/Black failures đã phân loại ở G.
 ```

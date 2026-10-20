@@ -5,6 +5,10 @@ cập nhật #11, #16, #18–#20, tạo #23–#32 và bổ sung M6/M7. Nội dun
 hoặc tối đa 3 thành viên bên dưới không còn là backlog hiện hành.
 Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` thay vì sửa file này.
 
+Ngày 2026-10-20, migration NF-UNSW-NB15-v3 đã bổ sung contract trực tiếp vào các Issue
+và Milestone liên quan. #4/#5 vẫn CLOSED như evidence lịch sử của UNSW-NB15 (2015);
+#6/#8 đã đổi title sang dataset v3. Bảng dưới đây không thay thế readback GitHub hiện hành.
+
 ## Các Issue liên quan đã audit (từ API)
 
 | # | Trạng thái | Tiêu đề | Milestone | Ghi chú đề xuất |
@@ -20,7 +24,7 @@ Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` 
 
 **A. Train và đánh giá thực tế**
 - Tải NF-UNSW-NB15-v3 từ UQRDM chính thức (`docs/DATASET.md`).
-- Kiểm tra schema, nhãn (`label`), missing values, kiểu dữ liệu.
+- Kiểm tra schema, nhãn (`Label`, `Attack`), missing values, kiểu dữ liệu.
 - Xác định bài toán nhị phân normal/anomaly hay phân loại đa lớp.
 - Chia train/val/test đúng (stratified hoặc theo thời gian; ghi chiến lược + seed).
 - Fit preprocessing chỉ trên train.
