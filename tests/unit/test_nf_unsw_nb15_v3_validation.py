@@ -135,9 +135,7 @@ def test_wrong_width_is_reported(validator, contract, tmp_path):
     assert report["issue_counts"]["wrong_width"] == 1
 
 
-def test_numeric_quality_aggregates_unique_rows_overlap_and_context(
-    validator, contract, tmp_path
-):
+def test_numeric_quality_aggregates_unique_rows_overlap_and_context(validator, contract, tmp_path):
     dataset = tmp_path / "quality.csv"
     rows = [
         valid_row(
@@ -193,9 +191,7 @@ def test_numeric_quality_aggregates_unique_rows_overlap_and_context(
     assert destination["related_numeric_states"]["OUT_PKTS"] == {"positive": 1}
 
 
-def test_duplicate_fingerprints_and_label_conflicts_are_disk_backed(
-    validator, contract, tmp_path
-):
+def test_duplicate_fingerprints_and_label_conflicts_are_disk_backed(validator, contract, tmp_path):
     first = valid_row(contract)
     exact = list(first)
     near = valid_row(
@@ -253,9 +249,7 @@ def test_duplicate_fingerprints_and_label_conflicts_are_disk_backed(
     assert duplicate["ml_feature_equivalent"]["rows_in_label_conflict_fingerprints"] == 4
     assert duplicate["ml_feature_equivalent"]["benign_attack_conflict_fingerprints"] == 1
     assert duplicate["ml_feature_equivalent"]["multiple_attack_values_fingerprints"] == 2
-    assert duplicate["ml_feature_equivalent"][
-        "multiple_malicious_categories_fingerprints"
-    ] == 1
+    assert duplicate["ml_feature_equivalent"]["multiple_malicious_categories_fingerprints"] == 1
     assert duplicate["ml_feature_equivalent"]["attack_value_conflict_patterns"] == {
         "Benign | Worms": {"fingerprints": 1, "rows": 4},
         "Analysis | Worms": {"fingerprints": 1, "rows": 2},
@@ -310,9 +304,7 @@ def test_default_absent_is_skipped_but_ml_ready_remains_blocked(
     assert "ML_READY: BLOCKED" in output
 
 
-def test_corrupt_explicit_dataset_uses_integrity_failure_exit_code(
-    validator, tmp_path, capsys
-):
+def test_corrupt_explicit_dataset_uses_integrity_failure_exit_code(validator, tmp_path, capsys):
     dataset = tmp_path / "corrupt.csv"
     dataset.write_bytes(b"not-the-pinned-dataset")
 

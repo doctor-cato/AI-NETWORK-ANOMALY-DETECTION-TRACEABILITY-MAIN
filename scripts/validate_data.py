@@ -194,11 +194,7 @@ class NumericQualityAudit:
 
     def add(self, issues, parsed, label, attack, protocol):
         relevant = tuple(
-            sorted(
-                issue
-                for issue in issues
-                if issue.split(":", 1)[0] in QUALITY_TOKEN_ISSUES
-            )
+            sorted(issue for issue in issues if issue.split(":", 1)[0] in QUALITY_TOKEN_ISSUES)
         )
         if not relevant:
             return
@@ -328,9 +324,7 @@ class DuplicateAudit:
             "behavioral-v1",
         )
         if (
-            self.connection.execute(
-                "INSERT OR IGNORE INTO exact VALUES (?, 1)", (exact,)
-            ).rowcount
+            self.connection.execute("INSERT OR IGNORE INTO exact VALUES (?, 1)", (exact,)).rowcount
             == 0
         ):
             self.exact_duplicates += 1
@@ -380,9 +374,7 @@ class DuplicateAudit:
             category: {"fingerprints": 0, "rows": 0} for category in ("Analysis", "Worms")
         }
         benign_bit = ATTACK_BITS["Benign"]
-        malicious_mask = sum(
-            bit for category, bit in ATTACK_BITS.items() if category != "Benign"
-        )
+        malicious_mask = sum(bit for category, bit in ATTACK_BITS.items() if category != "Benign")
         for count, label_mask, attack_mask in self.connection.execute(
             "SELECT count, label_mask, attack_mask FROM ml"
         ):
@@ -573,9 +565,9 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
     finally:
         audit.close()
     counts["exact_duplicate_rows"] = duplicate_analysis["exact"]["duplicate_rows"]
-    counts["ml_feature_equivalent_duplicate_rows"] = duplicate_analysis[
-        "ml_feature_equivalent"
-    ]["duplicate_rows"]
+    counts["ml_feature_equivalent_duplicate_rows"] = duplicate_analysis["ml_feature_equivalent"][
+        "duplicate_rows"
+    ]
     counts["behavioral_fingerprint_duplicate_rows"] = duplicate_analysis["behavioral_v1"][
         "duplicate_rows"
     ]

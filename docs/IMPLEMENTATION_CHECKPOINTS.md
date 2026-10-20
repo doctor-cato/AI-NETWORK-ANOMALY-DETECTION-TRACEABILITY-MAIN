@@ -107,12 +107,13 @@ Remaining: H Issues/PR.
 Checkpoint: G — tests and CI
 HEAD: 4e2409f
 Completed: migration regression tests and current-checkout pytest import boundary IMPLEMENTED.
-Tests: PASS — environment, compileall, workflow validator, migration Ruff scope, 183 pytest,
+Tests: PASS — environment, compileall, workflow validator, migration Ruff/Black scope, 196 pytest,
   YAML parse, secret/raw tracking scan, branch-wide git diff --check.
 Tests: FAIL — repository-wide Ruff has 5 pre-existing findings; repository-wide Black has 11
   pre-existing files requiring formatting. These files are outside the migration implementation
   except historical test wiring, and are not reformatted in this scoped PR.
 Remote CI: PASS — PR #36 run 39423059243, Ubuntu/Windows × Python 3.11/3.12.
+CI scope note: workflow hiện không chạy Ruff hoặc Black; CI PASS không thay thế hai lint gates.
 Remaining: all-gates merge remains blocked while required lint gates fail.
 ```
 
@@ -158,4 +159,22 @@ Checkpoint 4 — quality-gate semantics
 HEAD: 01eb9c8
 Completed: SOURCE_INTEGRITY / RAW_QUALITY / ML_READY output and distinct CLI exits.
 Tests: PASS synthetic semantics and real-data report regeneration.
+```
+
+```text
+Checkpoint 5 — documentation and checkpoint status
+HEAD: 6412ccf
+Completed: current documentation uses one 47-feature baseline and distinguishes migration completion
+  from ML readiness; 2015 evidence remains historical.
+Tests: PASS — manifest, workflow/status and diff checks.
+```
+
+```text
+Checkpoint 6 — Ruff, Black and CI audit
+HEAD: recorded by the checkpoint commit.
+Completed: migration-scoped formatting and lint audit; CI workflow scope inspected.
+Tests: PASS — migration Ruff and per-file Black checks, compileall and 196 pytest.
+Tests: FAIL — repository-wide Ruff has 5 findings and repository-wide per-file Black has 11
+  files requiring formatting; all are outside the migration diff and remain unchanged.
+Remote CI: previous PR head 460b668 PASS 4/4; new-head CI NOT VERIFIED until push.
 ```

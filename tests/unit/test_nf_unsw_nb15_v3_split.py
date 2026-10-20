@@ -179,9 +179,7 @@ def test_temporal_boundary_and_purge_gap_guard():
         }
     )
     assert result["status"] == "FAIL"
-    assert result["temporal_boundary_violations"] == [
-        ("train", "validation", 2_000, 1_500, -500)
-    ]
+    assert result["temporal_boundary_violations"] == [("train", "validation", 2_000, 1_500, -500)]
 
     purge_result = audit_bounded_split_rows(
         {
