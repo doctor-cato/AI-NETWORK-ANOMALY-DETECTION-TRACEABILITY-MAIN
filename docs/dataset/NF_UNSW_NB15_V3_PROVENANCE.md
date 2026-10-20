@@ -60,4 +60,3 @@ Download phải gọi stable UQRDM API để nhận signed URL mới, stream và
 đúng kích thước đã ghim, kiểm tra ZIP magic/size/SHA-256, kiểm tra archive path và
 decompressed-size, xác minh từng payload rồi mới publish. Không ghi signed URL hết hạn
 vào manifest và không dùng mirror khi API/DOI chính thức không khả dụng.
-

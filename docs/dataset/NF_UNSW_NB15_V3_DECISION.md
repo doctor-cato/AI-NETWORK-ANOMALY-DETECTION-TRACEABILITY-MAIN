@@ -34,4 +34,3 @@ train/test partition UNSW-NB15 (2015) 45 cột đang dùng trước migration.
 Trước khi training phải có split manifest, duplicate/near-duplicate/group-overlap audit,
 policy xử lý missing/`inf` chỉ fit trên train, và test chứng minh `Label`/`Attack` không
 lọt vào `X`. Cho đến lúc đó trạng thái là `NOT VERIFIED`, không phải leakage-safe.
-

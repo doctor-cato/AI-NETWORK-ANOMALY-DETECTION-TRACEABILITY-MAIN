@@ -121,9 +121,7 @@ def copy_up_to_limit(response, output, limit, name):
             break
         written += len(chunk)
         if written > limit:
-            raise ValueError(
-                f"response for {name} exceeds the pinned size of {limit} bytes"
-            )
+            raise ValueError(f"response for {name} exceeds the pinned size of {limit} bytes")
         output.write(chunk)
 
 
@@ -164,9 +162,7 @@ def download_archive(staging):
         with staging.open("xb") as output:
             copy_up_to_limit(response, output, ARCHIVE_SIZE, ARCHIVE_NAME)
     digest = verify_archive(staging)
-    print(
-        f"[fetch_nf_unsw_nb15_v3] VERIFIED archive bytes={ARCHIVE_SIZE} sha256={digest}"
-    )
+    print(f"[fetch_nf_unsw_nb15_v3] VERIFIED archive bytes={ARCHIVE_SIZE} sha256={digest}")
 
 
 def _safe_member_name(info):
@@ -352,9 +348,7 @@ def recover_interrupted_transaction(destination):
         remove_file_quietly(marker)
         print("[fetch_nf_unsw_nb15_v3] RECOVERY: published verified staging package")
         return
-    raise OSError(
-        f"RECOVERY blocked: {TXN_NAME} has no valid final, backup, or staging package"
-    )
+    raise OSError(f"RECOVERY blocked: {TXN_NAME} has no valid final, backup, or staging package")
 
 
 def publish_package(destination, staging):

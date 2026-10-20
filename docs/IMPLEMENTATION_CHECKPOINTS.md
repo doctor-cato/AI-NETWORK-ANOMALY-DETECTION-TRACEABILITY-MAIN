@@ -100,3 +100,16 @@ Completed: NF-UNSW-NB15-v3 is the documented default; 2015 dataset is historical
 Tests: pending documentation/link/full-suite gate in G.
 Remaining: G tests/CI and H Issues/PR.
 ```
+
+```text
+Checkpoint: G — tests and CI
+HEAD: recorded by commit/PR readback at handoff.
+Completed: migration regression tests and current-checkout pytest import boundary IMPLEMENTED.
+Tests: PASS — environment, compileall, workflow validator, migration Ruff scope, 183 pytest,
+  YAML parse, secret/raw tracking scan, branch-wide git diff --check.
+Tests: FAIL — repository-wide Ruff has 5 pre-existing findings; repository-wide Black has 11
+  pre-existing files requiring formatting. These files are outside the migration implementation
+  except historical test wiring, and are not reformatted in this scoped PR.
+Remote CI: NOT VERIFIED until branch is pushed and PR checks complete.
+Remaining: H Issues/PR; all-gates merge remains blocked while required lint gates fail.
+```

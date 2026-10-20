@@ -28,7 +28,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | D — Quality audit | streaming validator, disk-backed duplicate audit | real report on 2.365.424 rows | FAIL due missing/Inf/duplicates |
 | E — Split contract | feature exclusions, group key, bounded overlap guards | synthetic split tests | TESTED; real split NOT VERIFIED |
 | F — Architecture/docs | v3 default throughout current docs | link/text/status checks | IMPLEMENTED; verification pending |
-| G — Tests/CI | Windows/Linux matrix and migration regression tests | full gates | pending |
+| G — Tests/CI | Windows/Linux matrix and migration regression tests | 183 pytest PASS; migration Ruff PASS; repo Ruff/Black FAIL on pre-existing files; remote CI NOT VERIFIED | PARTIAL |
 | H — Issues/PR | affected backlog and migration PR | GitHub readback/CI | pending |
 
 UNSW-NB15 (2015) evidence is preserved under `historical/`; its old validation cannot satisfy a v3

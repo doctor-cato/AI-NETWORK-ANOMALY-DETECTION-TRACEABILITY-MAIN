@@ -63,9 +63,7 @@ def archive_bytes(fetcher, members, names=None):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as bundle:
         for relative, payload in members.items():
-            archive_name = (
-                names.get(relative, relative) if names is not None else relative
-            )
+            archive_name = names.get(relative, relative) if names is not None else relative
             bundle.writestr(f"{fetcher.PACKAGE_PREFIX}/{archive_name}", payload)
     return output.getvalue()
 
@@ -169,9 +167,7 @@ def test_archive_path_traversal_is_rejected(fetcher, tmp_path):
         module.extract_verified_archive(archive, tmp_path / "staging")
 
 
-def test_publish_failure_restores_cache_and_next_run_recovers(
-    fetcher, tmp_path, monkeypatch
-):
+def test_publish_failure_restores_cache_and_next_run_recovers(fetcher, tmp_path, monkeypatch):
     module, members = fetcher
     final = tmp_path / module.DATASET_NAME
     staging = tmp_path / ".nf-staging-package"

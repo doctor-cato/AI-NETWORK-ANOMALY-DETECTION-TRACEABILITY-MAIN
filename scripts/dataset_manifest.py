@@ -96,10 +96,7 @@ def verify(manifest_path, directory):
                 f"SHA-256 mismatch for {entry['file']}: expected {entry['sha256']}, got {digest}"
             )
         print(f"[dataset_manifest] VERIFIED local bytes: {entry['file']}")
-    print(
-        "[dataset_manifest] PASS: NF-UNSW-NB15-v3 package matches "
-        f"{manifest_path.name}"
-    )
+    print("[dataset_manifest] PASS: NF-UNSW-NB15-v3 package matches " f"{manifest_path.name}")
 
 
 def main(argv=None):
