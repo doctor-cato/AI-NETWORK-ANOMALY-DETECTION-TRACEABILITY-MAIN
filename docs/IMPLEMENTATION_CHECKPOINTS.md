@@ -171,10 +171,20 @@ Tests: PASS — manifest, workflow/status and diff checks.
 
 ```text
 Checkpoint 6 — Ruff, Black and CI audit
-HEAD: recorded by the checkpoint commit.
+HEAD: e509282
 Completed: migration-scoped formatting and lint audit; CI workflow scope inspected.
 Tests: PASS — migration Ruff and per-file Black checks, compileall and 196 pytest.
 Tests: FAIL — repository-wide Ruff has 5 findings and repository-wide per-file Black has 11
   files requiring formatting; all are outside the migration diff and remain unchanged.
 Remote CI: previous PR head 460b668 PASS 4/4; new-head CI NOT VERIFIED until push.
+```
+
+```text
+Checkpoint 7 — regression coverage
+HEAD: recorded by the checkpoint commit.
+Completed: behavioral tests cover the 47-feature order/exclusion contract, invalid/non-finite
+  values and zero-duration context, versioned duplicate fingerprints and label/category conflicts,
+  exact/ML/group/temporal split guards, status/manifest semantics and source-file immutability.
+Tests: PASS — 196 tests on the current checkout; synthetic split guards remain distinct from a
+  real split audit, which is NOT VERIFIED.
 ```
