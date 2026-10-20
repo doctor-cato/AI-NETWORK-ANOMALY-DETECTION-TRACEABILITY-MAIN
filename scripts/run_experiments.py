@@ -12,8 +12,8 @@ Usage:
   python scripts/run_experiments.py --step check-data
   python scripts/run_experiments.py --step baseline   # exits 3 until M2 implements it
 """
+
 import argparse
-import sys
 
 EXIT_NOT_IMPLEMENTED = 3  # see docstring; 2 stays reserved for argparse usage errors
 
@@ -21,7 +21,7 @@ EXIT_NOT_IMPLEMENTED = 3  # see docstring; 2 stays reserved for argparse usage e
 NOT_IMPLEMENTED_STEPS = {
     "baseline": (
         "train the Random Forest baseline",
-        "training requires a verified dataset and belongs to M2 / issue #10",
+        "NF-UNSW-NB15-v3 quality/split gates are unresolved; " "training belongs to M2 / issue #10",
     ),
     "evaluate": (
         "evaluate a trained model",

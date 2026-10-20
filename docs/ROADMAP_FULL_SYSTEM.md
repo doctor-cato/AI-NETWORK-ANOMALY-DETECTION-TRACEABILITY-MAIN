@@ -47,8 +47,8 @@ xem rotation events và health. Toàn bộ input phải được schema-validate
 
 - Đề cương ghi nhóm 6 người, nhưng yêu cầu triển khai hiện tại chốt **5 vai trò**; tên
   thành viên để trống đến khi nhóm xác nhận.
-- Đề cương mô tả UNSW-NB15 ở mức 49 feature; implementation dùng published train/test
-  partition 45 cột gồm `attack_cat` và `label`. Không trộn schema giữa các biến thể.
+- NF-UNSW-NB15-v3 thay thế dataset cũ: 53 feature + `Label` + `Attack`, một CSV và không có
+  official split. UNSW-NB15 (2015) chỉ còn là historical evidence.
 - M6 (milestone #7) chứa C5–C9; M7 (milestone #8) chứa C0, C10–C11.
 - Issue mapping mới: C0 #23; C3 XGBoost #31; C4 Autoencoder #29; C5 #28;
   C6 Risk #32 và Trace #24; C7 #26; C8 #27; C9 API #30 và Streamlit #16;
@@ -78,5 +78,5 @@ xem rotation events và health. Toàn bộ input phải được schema-validate
 Mỗi PR chạy targeted unit/integration tests trước, sau đó checkpoint bàn giao chạy
 environment check, full pytest phù hợp, serialization compatibility, schema/input
 validation, `git diff --check`, và kiểm tra CI. CI hoặc fixture synthetic không thay thế
-kết quả thực nghiệm trên UNSW-NB15. PostgreSQL, Docker và GPU không là yêu cầu cho CI
+kết quả thực nghiệm trên NF-UNSW-NB15-v3. PostgreSQL, Docker và GPU không là yêu cầu cho CI
 mặc định; mọi check phụ thuộc dịch vụ phải ghi rõ điều kiện và trạng thái.

@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [
     {name = "Project Team", email = "example@institution.edu"},
 ]
-keywords = ["network anomaly", "machine learning", "UNSW-NB15", "security"]
+keywords = ["network anomaly", "machine learning", "NF-UNSW-NB15-v3", "security"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",

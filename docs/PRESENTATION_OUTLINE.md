@@ -2,7 +2,8 @@
 
 1. Tiêu đề — tên dự án, nhóm, cơ sở đào tạo.
 2. Vấn đề — phát hiện bất thường mạng; ý nghĩa; phạm vi.
-3. Dataset — UNSW-NB15; cấu trúc; trạng thái tải và xác minh.
+3. Dataset — NF-UNSW-NB15-v3; provenance/license, 55-column schema, quality FAIL và migration
+   history của UNSW-NB15 (2015).
 4. Phương pháp — sơ đồ pipeline; split; preprocessing; Random Forest; protocol Isolation Forest (đánh giá riêng).
 5. Thiết kế thực nghiệm — seed; metric; khác biệt protocol.
 6. Kết quả — bảng metric; trực quan confusion matrix; so sánh cùng giải thích protocol.
@@ -33,4 +34,4 @@ Yêu cầu của giảng viên gồm cả phần chuẩn bị trình bày, khôn
 Mọi câu trả lời về kết quả phải trỏ về artifact hoặc `docs/TRACEABILITY_MATRIX.md`. Câu nào chưa có bằng
 chứng thì trả lời "chưa kiểm chứng, sẽ bổ sung ở #<issue>", không ước lượng số liệu tại chỗ.
 
-Cập nhật: 2026-10-17
+Cập nhật: 2026-10-20

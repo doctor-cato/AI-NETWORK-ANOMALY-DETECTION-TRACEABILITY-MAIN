@@ -43,6 +43,60 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 
 ## C1–C11
 
-Các checkpoint C1 đến C11 hiện là `PLANNED`. Khi hoàn thành từng checkpoint, thêm một
-mục theo mẫu trên; nêu rõ lệnh đã chạy, exit code, evidence path/URL, Issue/PR liên
-quan, phần `SKIPPED` hoặc `NOT VERIFIED`, và điều kiện chuyển tiếp còn lại.
+C1 đã có provenance/schema và real-data quality audit cho NF-UNSW-NB15-v3, nhưng quality status
+là `FAIL`; EDA và split thật vẫn `NOT VERIFIED`. C2 chỉ có feature/split contract và synthetic
+guard tests; chưa có fitted preprocessing artifact. C3–C11 vẫn `PLANNED`.
+
+## Migration NF-UNSW-NB15-v3 — A–H
+
+```text
+Checkpoint: A — research/source verification
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: 017f32b
+Completed: VERIFIED — decision, provenance, 55-column schema, source discrepancy, impact.
+Tests: PASS — source/package/CSV inspection; git diff --check.
+Remaining: none trong phạm vi A.
+```
+
+```text
+Checkpoint: B — migration architecture
+HEAD: 74b6d4e
+Completed: IMPLEMENTED — component classification, canonical paths, historical boundary.
+Tests: PASS — git diff --check.
+Remaining: implementation C–H.
+```
+
+```text
+Checkpoint: C — acquisition and manifest
+HEAD: 3259d3b
+Completed: IMPLEMENTED / TESTED — official fetch, bounded streaming, safe ZIP, checksums,
+  cache, lock, transaction marker, rollback/recovery; legacy artifacts preserved.
+Tests: PASS — 138 synthetic tests; official 110825147-byte archive verified and installed;
+  manifest verify PASS; second fetch CACHE_HIT.
+Remaining: raw package stays ignored and subject to UQRDM license.
+```
+
+```text
+Checkpoint: D — validation and quality
+HEAD: 9015e58
+Completed: IMPLEMENTED / TESTED — streaming validation and disk-backed duplicate audit.
+Tests: FAIL on real data — missing/Inf/duplicate findings in
+  reports/data_quality/nf_unsw_nb15_v3_validation.json; synthetic validator tests PASS.
+Blockers: raw CSV is not model-ready; preprocessing policy must be train-only and audited.
+```
+
+```text
+Checkpoint: E — split/leakage contract
+HEAD: c6004d7
+Completed: feature/metadata/target contract and bounded overlap guards IMPLEMENTED / TESTED.
+Tests: PASS — 10 synthetic split tests.
+Remaining: real split PLANNED / NOT VERIFIED; no model training authorized.
+```
+
+```text
+Checkpoint: F — architecture/documentation
+HEAD: recorded by commit/PR readback at handoff.
+Completed: NF-UNSW-NB15-v3 is the documented default; 2015 dataset is historical only.
+Tests: pending documentation/link/full-suite gate in G.
+Remaining: G tests/CI and H Issues/PR.
+```

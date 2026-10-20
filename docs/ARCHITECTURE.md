@@ -18,6 +18,11 @@ flowchart LR
     K --> L[Streamlit Dashboard]
 ```
 
+NF-UNSW-NB15-v3 chỉ cấp network-flow fields. API/auth/session events là nguồn tương lai độc lập,
+không được suy diễn từ dataset. Absolute timestamps và IP được giữ ở trace metadata boundary;
+49 candidate fields còn lại mới thuộc default ML contract. Xem
+`docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
+
 ## Ranh giới mô-đun
 
 | Module | Package dự kiến | Contract chính | Checkpoint |
@@ -36,4 +41,4 @@ phải persistent. Health/readiness phải phân biệt process sống với mod
 
 Response mạnh chỉ là dry-run trong lab. Trace/Behavioral Vector không xác định danh tính thật.
 
-Cập nhật: 2026-10-19 (C0)
+Cập nhật: 2026-10-20 (migration NF-UNSW-NB15-v3)

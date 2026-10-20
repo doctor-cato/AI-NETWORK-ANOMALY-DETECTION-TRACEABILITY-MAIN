@@ -5,8 +5,8 @@
 1. Đọc dữ liệu (sau khi tải về `data/raw/`)
 2. Kiểm tra schema / nhãn (`scripts/validate_data.py`)
 3. Khám phá (notebook EDA) — phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra rò rỉ dữ liệu
-4. Chia train/val/test (mặc định giữ official test partition; tạo validation chỉ từ official training partition;
-   nếu chọn stratified/group/time-aware khác thì ghi lý do và ảnh hưởng trong `REPRODUCIBILITY.md`)
+4. Tạo split mới cho NF-UNSW-NB15-v3: temporal ordering, duplicate consolidation và
+   bidirectional 5-tuple/time-bucket grouping; không kế thừa split UNSW-NB15 (2015).
 5. Tiền xử lý (fit chỉ trên train): mã hóa, chuẩn hóa, chọn đặc trưng; lưu pipeline
 6. Huấn luyện mô hình: Random Forest/XGBoost theo supervised protocol; Isolation Forest
    và Autoencoder theo anomaly protocol riêng của C4.
@@ -44,6 +44,10 @@
 - Transform val/test bằng đối tượng đã fit.
 - Lưu đối tượng đã fit cùng artifact mô hình.
 - Ghi rõ cột nào được bao gồm / loại bỏ và lý do (kết quả kiểm tra rò rỉ).
+- `Label`, `Attack`, IP identifier và absolute timestamp không thuộc default `X`; metadata vẫn được
+  giữ riêng cho Trace Engine.
+- Chính sách missing/positive-infinity phải được chọn và fit chỉ trên train. Quality report hiện
+  `FAIL`, nên chưa có split/model thật được chấp nhận.
 
 ## Định nghĩa metric
 
@@ -57,4 +61,4 @@
 C4 còn yêu cầu Autoencoder reconstruction-error và unknown-attack holdout; threshold của
 cả hai chỉ được chọn trên validation, không dùng test/holdout để tối ưu.
 
-Cập nhật: 2026-10-19 (C0).
+Cập nhật: 2026-10-20 (migration NF-UNSW-NB15-v3).
