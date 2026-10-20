@@ -108,6 +108,8 @@ is temporal and group-aware:
 See `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`. No real split is claimed yet.
 Including the two ports would create a separate 49-feature experimental configuration; that
 comparison is planned, not implemented or evaluated in this migration.
+Missing/non-finite and zero-duration handling is specified in
+`docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; the policy is not yet fitted on a real train split.
 
 ## Models and experiment scope
 

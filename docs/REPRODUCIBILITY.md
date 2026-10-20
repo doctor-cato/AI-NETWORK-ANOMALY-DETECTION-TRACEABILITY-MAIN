@@ -72,6 +72,8 @@ actual seed or deterministic split algorithm.
 - Treat the five-minute bidirectional 5-tuple group as a documented heuristic, not a proven session.
 
 See `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
+The policy boundary is specified in `docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; it is not a
+fitted preprocessing artifact.
 
 ## Historical snapshot boundary
 

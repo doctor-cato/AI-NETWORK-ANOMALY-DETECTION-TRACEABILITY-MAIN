@@ -39,6 +39,22 @@ VALID_ATTACKS = {
     "Worms",
 }
 MAX_EXAMPLES = 20
+QUALITY_TOKEN_ISSUES = {
+    "missing",
+    "positive_infinity",
+    "negative_infinity",
+    "nan",
+    "invalid_numeric",
+}
+QUALITY_RELATION_COLUMNS = (
+    "FLOW_DURATION_MILLISECONDS",
+    "DURATION_IN",
+    "DURATION_OUT",
+    "IN_PKTS",
+    "OUT_PKTS",
+    "IN_BYTES",
+    "OUT_BYTES",
+)
 
 
 def sha256_file(path):
@@ -88,13 +104,120 @@ def parse_finite(value, column):
         number = float(value)
     except ValueError:
         return None, "invalid_numeric"
-    if not math.isfinite(number):
-        return None, "non_finite"
+    if math.isnan(number):
+        return None, "nan"
+    if math.isinf(number):
+        return None, "positive_infinity" if number > 0 else "negative_infinity"
     if number < 0:
         return number, "negative"
     if column in PORT_COLUMNS and (not number.is_integer() or number > 65535):
         return number, "invalid_port"
     return number, None
+
+
+def numeric_state(value):
+    if value is None:
+        return "unavailable"
+    if value == 0:
+        return "zero"
+    if value < 0:
+        return "negative"
+    return "positive"
+
+
+def duration_bucket(value):
+    if value is None:
+        return "unavailable"
+    if value < 0:
+        return "negative"
+    if value == 0:
+        return "zero"
+    if value <= 1:
+        return "small_positive_le_1ms"
+    return "greater_than_1ms"
+
+
+class NumericQualityAudit:
+    """Aggregate numeric-token findings without retaining source rows."""
+
+    def __init__(self):
+        self.affected_rows = 0
+        self.multi_finding_rows = 0
+        self.patterns = Counter()
+        self.finding_type_counts = Counter({issue: 0 for issue in QUALITY_TOKEN_ISSUES})
+        self.by_issue = {}
+
+    def add(self, issues, parsed, label, attack, protocol):
+        relevant = tuple(
+            sorted(
+                issue
+                for issue in issues
+                if issue.split(":", 1)[0] in QUALITY_TOKEN_ISSUES
+            )
+        )
+        if not relevant:
+            return
+        self.affected_rows += 1
+        if len(relevant) > 1:
+            self.multi_finding_rows += 1
+        self.patterns[" | ".join(relevant)] += 1
+        for issue in relevant:
+            self.finding_type_counts[issue.split(":", 1)[0]] += 1
+            aggregate = self.by_issue.setdefault(
+                issue,
+                {
+                    "labels": Counter(),
+                    "attacks": Counter(),
+                    "protocols": Counter(),
+                    "duration_buckets": {
+                        "FLOW_DURATION_MILLISECONDS": Counter(),
+                        "DURATION_IN": Counter(),
+                        "DURATION_OUT": Counter(),
+                    },
+                    "related_numeric_states": {
+                        column: Counter() for column in QUALITY_RELATION_COLUMNS[3:]
+                    },
+                },
+            )
+            aggregate["labels"][label] += 1
+            aggregate["attacks"][attack] += 1
+            aggregate["protocols"][protocol] += 1
+            for column in QUALITY_RELATION_COLUMNS[:3]:
+                aggregate["duration_buckets"][column][duration_bucket(parsed[column])] += 1
+            for column in QUALITY_RELATION_COLUMNS[3:]:
+                aggregate["related_numeric_states"][column][numeric_state(parsed[column])] += 1
+
+    def report(self):
+        def sorted_counter(counter):
+            return dict(sorted(counter.items(), key=lambda item: str(item[0])))
+
+        findings = {}
+        for issue, aggregate in sorted(self.by_issue.items()):
+            findings[issue] = {
+                "labels": sorted_counter(aggregate["labels"]),
+                "attacks": sorted_counter(aggregate["attacks"]),
+                "protocols": sorted_counter(aggregate["protocols"]),
+                "duration_buckets": {
+                    column: sorted_counter(counts)
+                    for column, counts in aggregate["duration_buckets"].items()
+                },
+                "related_numeric_states": {
+                    column: sorted_counter(counts)
+                    for column, counts in aggregate["related_numeric_states"].items()
+                },
+            }
+        return {
+            "affected_unique_rows": self.affected_rows,
+            "rows_with_one_finding": self.affected_rows - self.multi_finding_rows,
+            "rows_with_multiple_findings": self.multi_finding_rows,
+            "finding_type_counts": sorted_counter(self.finding_type_counts),
+            "overlap_patterns": sorted_counter(self.patterns),
+            "findings": findings,
+            "causality_note": (
+                "Aggregates describe observed associations only. They do not establish how "
+                "the published feature values were computed or why a value became non-finite."
+            ),
+        }
 
 
 def row_digest(values):
@@ -154,6 +277,7 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
     attacks = Counter()
     min_start = None
     max_end = None
+    quality_audit = NumericQualityAudit()
     audit = DuplicateAudit(duplicate_directory)
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as stream:
@@ -176,11 +300,14 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
                     continue
                 audit.add(row, columns)
                 parsed = {}
+                row_issues = []
                 for column in numeric_columns:
                     number, issue = parse_finite(row[index[column]], column)
                     if issue:
-                        counts[f"{issue}:{column}"] += 1
-                        add_example(examples, f"{issue}:{column}", line_number)
+                        issue_key = f"{issue}:{column}"
+                        counts[issue_key] += 1
+                        row_issues.append(issue_key)
+                        add_example(examples, issue_key, line_number)
                     parsed[column] = number
                 for column in IP_COLUMNS:
                     try:
@@ -192,6 +319,13 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
                         add_example(examples, f"invalid_ip:{column}", line_number)
                 label = row[index["Label"]]
                 attack = row[index["Attack"]]
+                quality_audit.add(
+                    row_issues,
+                    parsed,
+                    label,
+                    attack,
+                    row[index["PROTOCOL"]],
+                )
                 labels[label] += 1
                 attacks[attack] += 1
                 if label not in {"0", "1"}:
@@ -243,6 +377,7 @@ def validate_csv(path, columns, expected_rows, duplicate_directory=None):
                 "values are identical."
             ),
         },
+        "numeric_quality_analysis": quality_audit.report(),
     }
 
 

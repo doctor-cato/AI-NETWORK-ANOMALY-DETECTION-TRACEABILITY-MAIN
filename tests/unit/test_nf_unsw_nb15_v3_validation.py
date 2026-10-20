@@ -73,7 +73,10 @@ def test_valid_synthetic_csv_has_no_quality_findings(validator, contract, tmp_pa
         ({"L4_SRC_PORT": "70000"}, "invalid_port:L4_SRC_PORT"),
         ({"IPV4_SRC_ADDR": "not-an-ip"}, "invalid_ip:IPV4_SRC_ADDR"),
         ({"IN_BYTES": ""}, "missing:IN_BYTES"),
-        ({"IN_BYTES": "inf"}, "non_finite:IN_BYTES"),
+        ({"IN_BYTES": "inf"}, "positive_infinity:IN_BYTES"),
+        ({"IN_BYTES": "-inf"}, "negative_infinity:IN_BYTES"),
+        ({"IN_BYTES": "nan"}, "nan:IN_BYTES"),
+        ({"IN_BYTES": "not-a-number"}, "invalid_numeric:IN_BYTES"),
         ({"IN_BYTES": "-1"}, "negative:IN_BYTES"),
     ],
 )
@@ -102,6 +105,64 @@ def test_wrong_width_is_reported(validator, contract, tmp_path):
     report = validator.validate_csv(dataset, contract, 1, tmp_path)
 
     assert report["issue_counts"]["wrong_width"] == 1
+
+
+def test_numeric_quality_aggregates_unique_rows_overlap_and_context(
+    validator, contract, tmp_path
+):
+    dataset = tmp_path / "quality.csv"
+    rows = [
+        valid_row(
+            contract,
+            SRC_TO_DST_SECOND_BYTES="",
+            DST_TO_SRC_SECOND_BYTES="inf",
+            FLOW_DURATION_MILLISECONDS="0",
+            DURATION_IN="0",
+            DURATION_OUT="1",
+            IN_PKTS="0",
+            OUT_PKTS="2",
+            IN_BYTES="0",
+            OUT_BYTES="10",
+            PROTOCOL="6",
+            Label="0",
+            Attack="Benign",
+        ),
+        valid_row(
+            contract,
+            SRC_TO_DST_SECOND_BYTES="inf",
+            FLOW_DURATION_MILLISECONDS="2",
+            DURATION_IN="0.5",
+            DURATION_OUT="2",
+            PROTOCOL="17",
+            Label="1",
+            Attack="Analysis",
+        ),
+    ]
+    write_csv(dataset, contract, rows)
+
+    report = validator.validate_csv(dataset, contract, 2, tmp_path)
+    analysis = report["numeric_quality_analysis"]
+
+    assert analysis["affected_unique_rows"] == 2
+    assert analysis["rows_with_one_finding"] == 1
+    assert analysis["rows_with_multiple_findings"] == 1
+    assert analysis["finding_type_counts"] == {
+        "invalid_numeric": 0,
+        "missing": 1,
+        "nan": 0,
+        "negative_infinity": 0,
+        "positive_infinity": 2,
+    }
+    assert analysis["overlap_patterns"] == {
+        "missing:SRC_TO_DST_SECOND_BYTES | positive_infinity:DST_TO_SRC_SECOND_BYTES": 1,
+        "positive_infinity:SRC_TO_DST_SECOND_BYTES": 1,
+    }
+    destination = analysis["findings"]["positive_infinity:DST_TO_SRC_SECOND_BYTES"]
+    assert destination["labels"] == {"0": 1}
+    assert destination["attacks"] == {"Benign": 1}
+    assert destination["protocols"] == {"6": 1}
+    assert destination["duration_buckets"]["FLOW_DURATION_MILLISECONDS"] == {"zero": 1}
+    assert destination["related_numeric_states"]["OUT_PKTS"] == {"positive": 1}
 
 
 def test_duplicate_and_near_duplicate_are_disk_backed(validator, contract, tmp_path):

@@ -100,6 +100,8 @@ trong trường hợp đó không phải bằng chứng real-data PASS.
 Dataset chỉ có một CSV; không dùng split cũ của UNSW-NB15. Contract temporal/group-aware, duplicate
 consolidation, metadata/target exclusion và train-only fitting nằm tại
 `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
+The handling contract for missing/non-finite values, short-duration flows and numeric-coded fields
+is `docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; no fitted transformer exists yet.
 
 Chưa được train cho đến khi:
 
