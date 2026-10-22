@@ -1,9 +1,9 @@
 name: Lint audit
 
-# Manual, non-gating audit of Ruff and Black. It records the repository-wide
-# legacy lint debt separately from the files that the current change set owns,
-# so that a migration or analysis change can prove that it introduces no new
-# lint findings without having to reformat unrelated legacy files.
+# Audit of Ruff and Black. It records the repository-wide legacy lint debt
+# separately from the files that the current change set owns, so that a migration
+# or analysis change can prove that it introduces no new lint findings without
+# having to reformat unrelated legacy files.
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +11,10 @@ on:
         description: "Branch, tag or SHA to audit"
         required: false
         default: feat/migrate-nf-unsw-nb15-v3
+  pull_request:
+    paths:
+      - "**/*.py"
+      - ".github/workflows/lint-audit.yml"
 
 jobs:
   audit:
@@ -18,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
