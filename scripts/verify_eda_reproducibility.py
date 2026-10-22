@@ -13,7 +13,7 @@ runs of the same command: the run timestamp and the environment description.
 Exit codes:
   0 - both runs succeeded and the deterministic content is identical, or the raw
       package is absent and the check was skipped. A skip is not a PASS and is
-      reported as SKIPPED.
+      reported as SKIPPED, like the validator and the EDA command.
   1 - a run failed or the two runs disagree.
 """
 
@@ -57,7 +57,6 @@ SKIPPED_MESSAGE = (
 )
 EXIT_OK = 0
 EXIT_FAILED = 1
-EXIT_ABSENT = 2
 
 
 def run_eda(arguments: list[str]) -> tuple[int, str, str, float, str, str]:
@@ -149,7 +148,7 @@ def main(argv=None):
         print("[verify_eda_reproducibility] ML_READY: BLOCKED")
         if os.getenv("GITHUB_ACTIONS") == "true":
             print(f"::warning::{SKIPPED_MESSAGE}")
-        return EXIT_ABSENT
+        return EXIT_OK
     if args.runs < 2:
         print("[verify_eda_reproducibility] ERROR: at least two runs are required")
         return EXIT_FAILED

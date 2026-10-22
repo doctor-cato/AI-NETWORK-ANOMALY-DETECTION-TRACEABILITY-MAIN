@@ -148,8 +148,8 @@ bundle có thể truy xuất tại `reports/eda/evidence/run-1` và `run-2`:
 
 Báo cáo so sánh `reports/eda/evidence/reproducibility_comparison.md` và `.json` hiển thị
 PASS/FAIL theo từng chỉ số và liệt kê mọi khác biệt. Chỉ metadata được phép khác giữa hai
-lần chạy (timestamp và môi trường) bị loại khỏi so sánh. Exit `0` khi hai lần chạy giống nhau,
-`1` khi lệch, `2` khi thiếu raw package (SKIPPED, không phải PASS).
+lần chạy (timestamp và môi trường) bị loại khỏi so sánh. Exit `0` khi hai lần chạy giống nhau
+hoặc khi thiếu raw package (in `SKIPPED`, không phải PASS), exit `1` khi lệch.
 
 ## Split và preprocessing gate
 

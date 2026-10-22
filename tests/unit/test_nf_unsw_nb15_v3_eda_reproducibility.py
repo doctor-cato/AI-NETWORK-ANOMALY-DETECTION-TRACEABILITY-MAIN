@@ -312,8 +312,9 @@ def test_reproducibility_check_is_skipped_without_raw_data(tmp_path, capsys):
         ]
     )
     output = capsys.readouterr().out
-    assert exit_code == 2
+    assert exit_code == 0
     assert "SKIPPED" in output
+    assert "ML_READY: BLOCKED" in output
     assert not (tmp_path / "evidence" / "reproducibility_comparison.json").exists()
 
 

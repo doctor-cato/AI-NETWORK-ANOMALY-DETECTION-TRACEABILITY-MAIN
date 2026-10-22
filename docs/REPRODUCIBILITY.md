@@ -99,8 +99,9 @@ differ between two runs of the same command is excluded: the run timestamp and t
 description. The two summary artifacts have different file hashes because each artifact embeds its
 own run timestamp; the deterministic content comparison is the authoritative check.
 
-Exit codes: `0` when both runs succeeded and the deterministic content is identical, `1` when a run
-failed or the two runs disagree, `2` when the raw package is absent (SKIPPED, not PASS).
+Exit codes: `0` when both runs succeeded and the deterministic content is identical, or when the raw
+package is absent and the check was skipped, `1` when a run failed or the two runs disagree. A
+skipped check prints `SKIPPED`, never `PASS`, and writes no artifact.
 
 ## What runs where
 
