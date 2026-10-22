@@ -6,7 +6,7 @@
 **Source SHA-256:** `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`
 **Rows analysed:** 2,365,424
 **Manifest row expectation:** 2,365,424
-**Analysis run (UTC):** 2026-10-22T07:38:57+00:00
+**Analysis run (UTC):** 2026-10-22T08:48:08+00:00
 
 This document is generated from the version-controlled machine-readable summary
 `reports/eda/nf_unsw_nb15_v3_eda_summary.json`. Regenerating it requires no manual
@@ -40,6 +40,20 @@ feature distributions and the relationships between semantically compatible feat
 Inherited duplicate and token findings are cross-checked against the values recomputed
 by this run; the comparison result is recorded in section 8 and in the summary artifact.
 
+### What ran where
+
+| Step | Environment | Status |
+|---|---|---|
+| This analysis | local checkout with the verified raw CSV | `EXECUTED ON REAL DATA` |
+| Two-run reproducibility check | local checkout, verified raw CSV | `reports/eda/evidence/` |
+| Validator and EDA in GitHub Actions | CI runner without the raw CSV | `SKIPPED` |
+| Unit tests | synthetic fixtures only | code behaviour, not data properties |
+
+The two-run evidence bundles keep the real stdout and stderr, the exact summary and report
+of each run, the git state, the interpreter, the dependencies, the dataset identity, the
+manifest and schema verification and the key aggregates. The comparison report is
+`reports/eda/evidence/reproducibility_comparison.md`.
+
 ### Reproduction order
 
 ```text
@@ -48,6 +62,7 @@ python scripts/fetch_nf_unsw_nb15_v3.py
 python scripts/dataset_manifest.py verify
 python scripts/validate_data.py
 python scripts/eda_nf_unsw_nb15_v3.py
+python scripts/verify_eda_reproducibility.py
 ```
 
 `scripts/validate_data.py` must run first: the EDA reuses its manifest contract and
@@ -342,18 +357,18 @@ why zero-duration flows carry non-finite rate values.
 
 | Figure | Title | Evidence basis | Caption |
 |---|---|---|---|
-| ![Binary target distribution (Label)](../reports/figures/nf_unsw_nb15_v3/fig01_label_distribution.png) | Binary target distribution (Label) | full population | Counts and shares of the binary `Label` target over every row of the verified source file. The log scale keeps the minority class visible. |
-| ![Attack category distribution (Attack)](../reports/figures/nf_unsw_nb15_v3/fig02_attack_category_distribution.png) | Attack category distribution (Attack) | full population | All ten attack categories with counts and shares. `Worms` is the rarest class; the axis is logarithmic so that rare categories stay readable. |
-| ![Numeric-coded protocol distributions](../reports/figures/nf_unsw_nb15_v3/fig03_protocol_distribution.png) | Numeric-coded protocol distributions | full population | `PROTOCOL` and `L7_PROTO` are numeric-coded categories, not continuous variables. The 15 most frequent codes of each are shown; the full counts are in the machine-readable summary. |
-| ![Capture window coverage per UTC day](../reports/figures/nf_unsw_nb15_v3/fig04_capture_coverage_by_day.png) | Capture window coverage per UTC day | full population | Flow start timestamps grouped per UTC day. The published capture window is a few weeks in 2015; it does not represent contemporary traffic. |
-| ![Flow duration distribution](../reports/figures/nf_unsw_nb15_v3/fig05_duration_distribution.png) | Flow duration distribution | sample-based (n=200,000) | Log-transformed flow duration in milliseconds. The distribution is zero-heavy, so the log1p transform is used for readability; no flow is dropped. |
-| ![Byte and packet count distributions](../reports/figures/nf_unsw_nb15_v3/fig06_byte_and_packet_distributions.png) | Byte and packet count distributions | sample-based (n=200,000) | Inbound/outbound byte and packet counts. Both directions are strongly zero-heavy, which is why a log1p transform is used for the display only. |
-| ![Average throughput distributions](../reports/figures/nf_unsw_nb15_v3/fig07_throughput_distribution.png) | Average throughput distributions | sample-based (n=200,000) | Directional average throughput in bytes per second. Non-finite values are not silently replaced; they are counted separately in the population statistics. |
-| ![Duration versus throughput](../reports/figures/nf_unsw_nb15_v3/fig08_duration_versus_throughput.png) | Duration versus throughput | sample-based (n=200,000) | Joint view of duration and average throughput for rows with finite, non-negative values. The non-finite values of this dataset sit in the rate fields, not in the throughput fields; they are counted in the population contingency table. The association is descriptive and not causal. |
-| ![Feature correlation heatmap](../reports/figures/nf_unsw_nb15_v3/fig09_correlation_heatmap.png) | Feature correlation heatmap | full population, complete cases (n=2,242,931) | Pearson correlations restricted to the 37 quantitative baseline features. Numeric-coded categorical fields such as `PROTOCOL` or `TCP_FLAGS` are deliberately excluded. |
-| ![Class-conditional feature distributions](../reports/figures/nf_unsw_nb15_v3/fig10_class_conditional_boxplots.png) | Class-conditional feature distributions | sample-based (n=200,000) | Descriptive class-conditional comparison only. These distributions are not used to select features, to tune thresholds or to fit any model. |
-| ![Duration and throughput quality contingency](../reports/figures/nf_unsw_nb15_v3/fig11_duration_throughput_quality.png) | Duration and throughput quality contingency | full population | Counts of flows per (zero duration, non-finite rate, non-finite throughput) combination, split by label. The association is an observed property of the published bytes and does not establish how the producer computed the values. |
-| ![Feature skewness](../reports/figures/nf_unsw_nb15_v3/fig12_feature_skewness.png) | Feature skewness | sample-based (n=200,000 per feature) | Sample skewness per quantitative feature. Magnitudes above 1 indicate a strongly right-skewed feature and therefore a transformation risk for linear models. |
+| ![Binary target distribution (Label)](../../reports/figures/nf_unsw_nb15_v3/fig01_label_distribution.png) | Binary target distribution (Label) | full population | Counts and shares of the binary `Label` target over every row of the verified source file. The log scale keeps the minority class visible. |
+| ![Attack category distribution (Attack)](../../reports/figures/nf_unsw_nb15_v3/fig02_attack_category_distribution.png) | Attack category distribution (Attack) | full population | All ten attack categories with counts and shares. `Worms` is the rarest class; the axis is logarithmic so that rare categories stay readable. |
+| ![Numeric-coded protocol distributions](../../reports/figures/nf_unsw_nb15_v3/fig03_protocol_distribution.png) | Numeric-coded protocol distributions | full population | `PROTOCOL` and `L7_PROTO` are numeric-coded categories, not continuous variables. The 15 most frequent codes of each are shown; the full counts are in the machine-readable summary. |
+| ![Capture window coverage per UTC day](../../reports/figures/nf_unsw_nb15_v3/fig04_capture_coverage_by_day.png) | Capture window coverage per UTC day | full population | Flow start timestamps grouped per UTC day. The published capture window is a few weeks in 2015; it does not represent contemporary traffic. |
+| ![Flow duration distribution](../../reports/figures/nf_unsw_nb15_v3/fig05_duration_distribution.png) | Flow duration distribution | sample-based (n=200,000) | Log-transformed flow duration in milliseconds. The distribution is zero-heavy, so the log1p transform is used for readability; no flow is dropped. |
+| ![Byte and packet count distributions](../../reports/figures/nf_unsw_nb15_v3/fig06_byte_and_packet_distributions.png) | Byte and packet count distributions | sample-based (n=200,000) | Inbound/outbound byte and packet counts. Both directions are strongly zero-heavy, which is why a log1p transform is used for the display only. |
+| ![Average throughput distributions](../../reports/figures/nf_unsw_nb15_v3/fig07_throughput_distribution.png) | Average throughput distributions | sample-based (n=200,000) | Directional average throughput in bytes per second. Non-finite values are not silently replaced; they are counted separately in the population statistics. |
+| ![Duration versus throughput](../../reports/figures/nf_unsw_nb15_v3/fig08_duration_versus_throughput.png) | Duration versus throughput | sample-based (n=200,000) | Joint view of duration and average throughput for rows with finite, non-negative values. The non-finite values of this dataset sit in the rate fields, not in the throughput fields; they are counted in the population contingency table. The association is descriptive and not causal. |
+| ![Feature correlation heatmap](../../reports/figures/nf_unsw_nb15_v3/fig09_correlation_heatmap.png) | Feature correlation heatmap | full population, complete cases (n=2,242,931) | Pearson correlations restricted to the 37 quantitative baseline features. Numeric-coded categorical fields such as `PROTOCOL` or `TCP_FLAGS` are deliberately excluded. |
+| ![Class-conditional feature distributions](../../reports/figures/nf_unsw_nb15_v3/fig10_class_conditional_boxplots.png) | Class-conditional feature distributions | sample-based (n=200,000) | Descriptive class-conditional comparison only. These distributions are not used to select features, to tune thresholds or to fit any model. |
+| ![Duration and throughput quality contingency](../../reports/figures/nf_unsw_nb15_v3/fig11_duration_throughput_quality.png) | Duration and throughput quality contingency | full population | Counts of flows per (zero duration, non-finite rate, non-finite throughput) combination, split by label. The association is an observed property of the published bytes and does not establish how the producer computed the values. |
+| ![Feature skewness](../../reports/figures/nf_unsw_nb15_v3/fig12_feature_skewness.png) | Feature skewness | sample-based (n=200,000 per feature) | Sample skewness per quantitative feature. Magnitudes above 1 indicate a strongly right-skewed feature and therefore a transformation risk for linear models. |
 
 The PNG files are written under `reports/figures/nf_unsw_nb15_v3/`. That directory is
 excluded by `.gitignore`, so the figures are regenerated locally rather than committed;
@@ -463,5 +478,5 @@ would have to be investigated before the counts could be used.
   analysis. Only aggregates and a seeded sample held in memory are used, and the sample
   contains no identifier column.
 
-Report generated at 2026-10-22T07:39:06+00:00 from
+Report generated at 2026-10-22T08:48:12+00:00 from
 `reports/eda/nf_unsw_nb15_v3_eda_summary.json`.
