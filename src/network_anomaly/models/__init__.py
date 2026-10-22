@@ -1,1 +1,1 @@
-"""Model implementations: Random Forest and Isolation Forest."""
+"""Model implementations: Random Forest, Isolation Forest, and XGBoost."""
