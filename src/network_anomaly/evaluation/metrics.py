@@ -57,30 +57,46 @@ def compute_metrics(
     }
 
 
+def _is_positive_attack(label: Any) -> bool:
+    """Check if label indicates positive attack class."""
+    return label == 1 or label == "1" or label == "Attack"
+
+
+def _is_negative_benign(label: Any) -> bool:
+    """Check if label indicates negative benign class."""
+    return label == 0 or label == "0" or label == "Benign"
+
+
 def compute_attack_category_breakdown(
-    y_true: Sequence[int],
-    y_pred: Sequence[int],
+    y_true: Sequence[Any],
+    y_pred: Sequence[Any],
     attack_categories: Sequence[str],
 ) -> Dict[str, Dict[str, Union[int, float]]]:
     """Compute per-attack-category error analysis and recall.
 
     Parameters
     ----------
-    y_true : array-like of int
-        Ground truth binary labels (0 for Benign, 1 for Attack).
-    y_pred : array-like of int
-        Predicted binary labels (0 for Benign, 1 for Attack).
+    y_true : array-like
+        Ground truth binary labels (0 / 'Benign' or 1 / 'Attack').
+    y_pred : array-like
+        Predicted binary labels (0 / 'Benign' or 1 / 'Attack').
     attack_categories : array-like of str
         The specific attack category for each row (e.g. 'Exploits', 'DoS', 'Benign').
 
     Returns
     -------
     Dict[str, Dict[str, Union[int, float]]]
-        Dictionary mapping each attack category to:
-        - 'total': total occurrences of this category.
-        - 'detected': true positive count (predicted 1).
-        - 'missed': false negative count (predicted 0).
-        - 'detection_rate': recall for this category (detected / total).
+        Dictionary mapping each category to:
+        - For Attack categories (e.g. 'Exploits', 'DoS'):
+            - 'total': total occurrences of this attack category.
+            - 'detected': true positive count (true attack correctly predicted as Attack).
+            - 'missed': false negative count (true attack incorrectly predicted as Benign).
+            - 'detection_rate': recall for this attack category (detected / total).
+        - For 'Benign':
+            - 'total': total benign occurrences.
+            - 'false_positive': count where benign was incorrectly predicted as Attack (FP).
+            - 'true_negative': count where benign was correctly predicted as Benign (TN).
+            - 'false_positive_rate': false positive rate on benign traffic (false_positive / total).
     """
     if len(y_true) != len(y_pred) or len(y_true) != len(attack_categories):
         raise ValueError("y_true, y_pred, and attack_categories must have identical lengths")
@@ -91,15 +107,44 @@ def compute_attack_category_breakdown(
     for cat in categories:
         indices = [i for i, c in enumerate(attack_categories) if c == cat]
         total = len(indices)
-        detected = sum(1 for i in indices if y_pred[i] == 1)
-        missed = sum(1 for i in indices if y_pred[i] == 0)
-        detection_rate = float(detected / total) if total > 0 else 0.0
 
-        breakdown[cat] = {
-            "total": total,
-            "detected": detected,
-            "missed": missed,
-            "detection_rate": detection_rate,
-        }
+        if cat == "Benign":
+            false_positive = sum(
+                1
+                for i in indices
+                if _is_negative_benign(y_true[i]) and _is_positive_attack(y_pred[i])
+            )
+            true_negative = sum(
+                1
+                for i in indices
+                if _is_negative_benign(y_true[i]) and _is_negative_benign(y_pred[i])
+            )
+            fp_rate = float(false_positive / total) if total > 0 else 0.0
+
+            breakdown[cat] = {
+                "total": total,
+                "false_positive": false_positive,
+                "true_negative": true_negative,
+                "false_positive_rate": fp_rate,
+            }
+        else:
+            detected = sum(
+                1
+                for i in indices
+                if _is_positive_attack(y_true[i]) and _is_positive_attack(y_pred[i])
+            )
+            missed = sum(
+                1
+                for i in indices
+                if _is_positive_attack(y_true[i]) and _is_negative_benign(y_pred[i])
+            )
+            detection_rate = float(detected / total) if total > 0 else 0.0
+
+            breakdown[cat] = {
+                "total": total,
+                "detected": detected,
+                "missed": missed,
+                "detection_rate": detection_rate,
+            }
 
     return breakdown

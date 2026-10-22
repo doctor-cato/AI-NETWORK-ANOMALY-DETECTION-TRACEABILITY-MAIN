@@ -320,8 +320,67 @@ def test_attack_category_breakdown():
 
     assert "Benign" in breakdown
     assert breakdown["Benign"]["total"] == 2
-    assert breakdown["Benign"]["missed"] == 1  # benign predicted 0 (correct negative)
-    assert breakdown["Benign"]["detected"] == 1  # benign predicted 1 (false alarm)
+    assert breakdown["Benign"]["false_positive"] == 1
+    assert breakdown["Benign"]["true_negative"] == 1
+    assert breakdown["Benign"]["false_positive_rate"] == 0.5
+    assert "detected" not in breakdown["Benign"]
+
+
+def test_attack_category_breakdown_benign_false_positive():
+    """Test 1: True Benign incorrectly predicted as Attack is counted as false_positive."""
+    y_true = [0]
+    y_pred = [1]
+    attack_cats = ["Benign"]
+
+    breakdown = compute_attack_category_breakdown(y_true, y_pred, attack_cats)
+
+    assert "Benign" in breakdown
+    assert breakdown["Benign"]["total"] == 1
+    assert breakdown["Benign"]["false_positive"] == 1
+    assert breakdown["Benign"]["true_negative"] == 0
+    assert breakdown["Benign"]["false_positive_rate"] == 1.0
+    assert "detected" not in breakdown["Benign"]
+
+
+def test_attack_category_breakdown_attack_missed():
+    """Test 2: True Attack incorrectly predicted as Benign is counted as missed."""
+    y_true = [1]
+    y_pred = [0]
+    attack_cats = ["Exploits"]
+
+    breakdown = compute_attack_category_breakdown(y_true, y_pred, attack_cats)
+
+    assert "Exploits" in breakdown
+    assert breakdown["Exploits"]["total"] == 1
+    assert breakdown["Exploits"]["detected"] == 0
+    assert breakdown["Exploits"]["missed"] == 1
+    assert breakdown["Exploits"]["detection_rate"] == 0.0
+
+
+def test_attack_category_breakdown_all_confusion_cases():
+    """Verify all four quadrant outcomes (TP, FN, TN, FP) in category breakdown."""
+    # TP: Exploits predicted as Attack (1)
+    # FN: Exploits predicted as Benign (0)
+    # TN: Benign predicted as Benign (0)
+    # FP: Benign predicted as Attack (1)
+    y_true = [1, 1, 0, 0]
+    y_pred = [1, 0, 0, 1]
+    attack_cats = ["Exploits", "Exploits", "Benign", "Benign"]
+
+    breakdown = compute_attack_category_breakdown(y_true, y_pred, attack_cats)
+
+    # Attack category assertions (TP & FN)
+    assert breakdown["Exploits"]["total"] == 2
+    assert breakdown["Exploits"]["detected"] == 1
+    assert breakdown["Exploits"]["missed"] == 1
+    assert breakdown["Exploits"]["detection_rate"] == 0.5
+
+    # Benign assertions (TN & FP)
+    assert breakdown["Benign"]["total"] == 2
+    assert breakdown["Benign"]["true_negative"] == 1
+    assert breakdown["Benign"]["false_positive"] == 1
+    assert breakdown["Benign"]["false_positive_rate"] == 0.5
+    assert "detected" not in breakdown["Benign"]
 
 
 def test_metadata_and_traceability():
