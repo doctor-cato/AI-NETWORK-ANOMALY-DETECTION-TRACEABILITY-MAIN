@@ -47,7 +47,27 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 C1 đã có provenance/schema và real-data quality/duplicate audit cho NF-UNSW-NB15-v3:
 `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA đầy đủ và split thật vẫn
 `NOT VERIFIED`. C2 có 47-feature/split/handling contracts và synthetic guard tests nhưng chưa có
-fitted preprocessing artifact, nên `ML_READY: BLOCKED`. C3–C11 vẫn `PLANNED`.
+fitted preprocessing artifact, nên `ML_READY: BLOCKED`.
+C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, trong khi huấn luyện
+(#10) và đánh giá (#12) vẫn `PLANNED`. C4–C11 vẫn `PLANNED`.
+
+```text
+Checkpoint: C3 — Random Forest Baseline Protocol
+Branch: feat/issue-9-rf-baseline-protocol
+Completed: IMPLEMENTED / TESTED — RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1`
+  đã được chuẩn hóa và khóa theo đúng 47 đặc trưng ML (Issue #7), target Label nhị phân
+  (Positive: Attack), ranh giới fit preprocessing train_only (Issue #8), TEST lock policy
+  bảo vệ tập test, tuning policy cách ly, và metric protocol hỗ trợ Precision/Recall/F1/Macro-F1/FPR
+  cùng error analysis theo 9 loại Attack.
+Tests: PASS — 20 unit tests trong `tests/unit/test_rf_baseline_protocol.py`; toàn bộ test suite
+  214 passed, 2 skipped; git diff --check PASS.
+Issues: #9 (Protocol & Criteria); #10 (RF Training) và #12 (Evaluation) vẫn PLANNED.
+Remaining: Training và evaluation trên dữ liệu thật NF-UNSW-NB15-v3; phụ thuộc mở gate
+  split/preprocessing ở Issue #7 và #8.
+Blockers: Real split và fitted preprocessing artifact chưa materialize (`ML_READY: BLOCKED`),
+  không được train model hoặc tạo benchmark ML giả.
+Next Action: Hoàn tất bàn giao Issue #9; chờ giải quyết Issue #7 và #8 trước khi tiến hành Issue #10.
+```
 
 ## Migration NF-UNSW-NB15-v3 — A–H
 
