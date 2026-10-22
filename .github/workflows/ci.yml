@@ -27,8 +27,8 @@ jobs:
         run: python -m compileall -q src scripts tests
       - name: Check imports (core modules, not just syntax)
         run: |
-          python -c "import network_anomaly, network_anomaly.config, network_anomaly.data, network_anomaly.evaluation.metrics, network_anomaly.features, network_anomaly.inference.pipeline, network_anomaly.models.isolation_forest, network_anomaly.models.random_forest, network_anomaly.preprocessing, network_anomaly.visualization.plots"
+          python -c "import network_anomaly, network_anomaly.config, network_anomaly.data, network_anomaly.data.nf_unsw_nb15_v3, network_anomaly.evaluation.metrics, network_anomaly.features, network_anomaly.inference.pipeline, network_anomaly.models.isolation_forest, network_anomaly.models.random_forest, network_anomaly.preprocessing, network_anomaly.visualization.plots"
       - name: Unit + integration tests
         run: python -m pytest tests -q --tb=short
-      - name: Validate data script — skip if dataset not downloaded; fail if invalid
+      - name: Validate NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
         run: python scripts/validate_data.py

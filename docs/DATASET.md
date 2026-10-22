@@ -1,189 +1,134 @@
-# UNSW-NB15: nguồn và đầu vào M1 (#4, #5)
+# NF-UNSW-NB15-v3: nguồn, acquisition và quality gate
 
-## Biến thể và bằng chứng nguồn
+## Dataset mặc định
 
-Dự án dùng hai partition được trang UNSW công bố:
-`UNSW_NB15_training-set.csv` (175.341 bản ghi) và
-`UNSW_NB15_testing-set.csv` (82.332 bản ghi). Bốn file nguồn đầy đủ và các bản
-parquet 49 cột là biến thể khác, không thuộc profile validation này.
+`NF-UNSW-NB15-v3` là dataset network-flow mặc định duy nhất. Gói UQRDM đã xác minh chứa một CSV
+2.365.424 dòng, 53 feature và hai target `Label`/`Attack`. UNSW-NB15 (2015) không còn được gọi bởi
+pipeline mặc định; artifact cũ nằm trong các thư mục `historical/`.
 
-Ngày 2026-10-17, trang UNSW truy cập được nhưng link tải SharePoint yêu cầu
-forms-based authentication và trả HTTP 403 cho truy cập ẩn danh. UNSW không công bố
-SHA-256 cho hai partition. Dự án lấy byte từ mirror GitHub tại revision cố định
-`44bbd02b9e70f74dd915218d5eb702f125341ffc`, rồi đối chiếu độc lập:
+Nguồn chuẩn:
 
-- Kaggle `quohuysgu/unsw-nb15` v1 và `pankaj4321/unswnb15` v1: cả hai file trùng byte.
-- Hugging Face `Mouwiya/UNSW-NB15` revision
-  `8ad6b19373f143086a66f52b0d6035a6959d83a9`: training CSV trùng SHA-256;
-  nguồn này không có testing CSV.
-- Zenodo record 3768048 bị loại: file dùng tab, không có header và nội dung train/test
-  nằm dưới tên ngược với partition UNSW.
+- University of Queensland NIDS datasets: <https://staff.itee.uq.edu.au/marius/NIDS_datasets/>
+- DOI: <https://doi.org/10.48610/6E0EDA1>
+- UQRDM UUID: `abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f`
+- Paper liên quan: arXiv `2503.04404`
+- License record: `Permitted Re-Use with Commercial Use Restriction`; phải trích dẫn đầy đủ và
+  chỉ dùng cho mục đích phi thương mại.
 
-Chi tiết URL, thời điểm UTC, revision, kích thước, checksum và giới hạn provenance nằm
-trong `data/UNSW_NB15_MANIFEST.json`. Đây là checksum do dự án tính và được các mirror
-corroborate, không phải checksum do UNSW xác nhận.
+Chi tiết bằng chứng nằm tại `docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md`. SHA-256 trong manifest
+do dự án tính từ byte tải qua API chính thức, không được mô tả là checksum chính thức của tác giả.
 
-Mọi timestamp trong manifest dùng ISO 8601 nguyên giây kèm offset tường minh:
-`YYYY-MM-DDTHH:MM:SSZ` hoặc `YYYY-MM-DDTHH:MM:SS±HH:MM`. Naive datetime không được
-dùng. `record` chuẩn hóa `--downloaded-at` về UTC trước khi ghi, nên timestamp có
-offset khác UTC có thể đổi ngày theo lịch. `verify` kiểm tra mọi trường timestamp
-tìm thấy trong manifest và từ chối giá trị naive, sai định dạng hoặc không phải chuỗi;
-`verify` chỉ đọc, không bao giờ ghi lại provenance hay thêm timestamp biến động.
+## Layout thống nhất
 
-UNSW nêu dữ liệu được dùng miễn phí cho nghiên cứu học thuật; sử dụng thương mại cần
-thỏa thuận với tác giả và phải trích dẫn các công trình trên trang nguồn. Metadata
-license của mirror không thay thế điều khoản UNSW. Dataset không thuộc Apache-2.0 của
-mã nguồn.
+| Vai trò | Đường dẫn |
+|---|---|
+| Manifest version-control | `data/NF_UNSW_NB15_V3_MANIFEST.json` |
+| Package local, ignored | `data/raw/NF-UNSW-NB15-v3/` |
+| Dataset CSV | `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` |
+| Feature dictionary | `data/raw/NF-UNSW-NB15-v3/data/NetFlow_v3_Features.csv` |
+| Quality report | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
+| Downloader | `scripts/fetch_nf_unsw_nb15_v3.py` |
+| Manifest verifier | `scripts/dataset_manifest.py` |
+| Validator | `scripts/validate_data.py` |
 
-## Tải tái lập
+## Acquisition tái lập
 
 ```text
-python scripts/fetch_unsw_nb15.py
+python scripts/fetch_nf_unsw_nb15_v3.py
 python scripts/dataset_manifest.py verify
-python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
 ```
 
-`fetch_unsw_nb15.py` tái sử dụng cache local an toàn: mỗi file đã có trong `data/raw/`
-được kiểm tra lại tiền tố (HTML, Git LFS pointer), kích thước và SHA-256 trước khi
-quyết định. File hợp lệ được giữ nguyên và log `CACHE_HIT`, nên chạy lại không gọi
-mạng. File thiếu hoặc sai checksum được log `CACHE_INVALID` kèm lý do rồi tải lại từ
-mirror revision-pinned. Byte tải về nằm ở staging tạm cùng thư mục đích, được kiểm tra
-trọn vẹn trước khi thay thế nguyên tử (`DOWNLOAD` rồi `VERIFIED`), và staging luôn
-được dọn kể cả khi lỗi. Không tin cache chỉ dựa trên tên file hay kích thước.
+Fetcher:
 
-Cài đặt chỉ diễn ra sau khi mọi file cần thiết đã tải và verify xong. Byte tải về được
-ghi với giới hạn cứng bằng kích thước đã ghim: vòng đọc dừng ngay ở byte vượt quá, nên
-mirror hoặc trung gian trả body vô hạn không thể đầy đĩa trước khi kiểm tra kích thước.
-Trước khi thay byte đầu tiên, script sao lưu bản cũ của mọi file sẽ bị thay. Nếu
-`os.replace` thất bại ở bất kỳ file nào, script hoàn nguyên các file **đã thay** về byte
-trước đó rồi ném lại lỗi gốc.
+- lấy signed HTTPS URL từ UQRDM API và xác minh UUID/access state;
+- tải streaming vào staging, dừng nếu vượt `110825147` byte;
+- từ chối HTML, ZIP magic sai, checksum sai, archive traversal, symlink, member lạ/thiếu và
+  extracted size vượt giới hạn;
+- xác minh SHA-256 của archive và từng member trước publish;
+- dùng lock theo destination để tuần tự hóa concurrent fetch;
+- ghi transaction marker trước swap, giữ backup và phục hồi sau lỗi/crash;
+- chỉ trả `CACHE_HIT` khi toàn bộ bảy member vẫn đúng size/checksum.
 
-Nguyên tắc phục hồi: **không bao giờ xóa dữ liệu hợp lệ trước khi biết bản thay thế đã
-nằm đúng chỗ.** Vì `os.replace` ghi đè đích một cách nguyên tử, khôi phục không cần xóa
-file đích trước; nếu bản khôi phục lỗi, file đích vẫn giữ byte mới đã verify và bản sao lưu
-được giữ lại, kèm dòng `RECOVERY` chỉ rõ tên file để phục hồi thủ công. File **mới tạo ra**
-trong lần chạy đó không có bản cũ, nên rollback xóa nó để thư mục trở về đúng trạng thái
-trước lần chạy: chỉ byte do chính lần chạy này tải về bị bỏ đi và lần chạy sau tải lại
-được. Nếu thao tác xóa đó lỗi, file vẫn được giữ lại và báo `ROLLBACK WARNING` kèm tên
-file trong `RECOVERY` để dọn thủ công — thư mục có thể tạm thời lệch so với manifest cho
-đến khi chạy lại `fetch_unsw_nb15.py`.
-
-Dọn staging và backup trong `finally` không được ném lỗi mới đè lên lỗi đang báo; lỗi dọn
-được ghi `CLEANUP WARNING`. Backup chỉ bị xóa khi nó không còn là bản duy nhất. Nếu
-`shutil.copyfile` lỗi giữa chừng, file backup dở dang bị xóa ngay để không tích tụ file tạm
-qua nhiều lần chạy lỗi. Tên backup lấy tên trống kế tiếp nếu tên chuẩn đã tồn tại, vì PID
-được tái sử dụng: một backup còn sót sau khi khôi phục lỗi là bản duy nhất của byte cũ và
-không được lần chạy sau ghi đè hay xóa.
-
-Mỗi thư mục đích có một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch: kiểm tra cache,
-tải, sao lưu, mọi lần thay và cả rollback. Tên staging/backup có kèm PID chỉ ngăn hai lần
-chạy dùng chung **tên file tạm**; nếu không có lock, tiến trình A có thể rollback đè bản cũ
-của một file lên cặp file mới mà tiến trình B vừa cài xong, để lại train/test lệch phiên bản.
-
-Lock là **khóa byte-range của hệ điều hành** (`msvcrt.locking` trên Windows, `fcntl.flock`
-trên POSIX), không phải file đánh dấu kèm luật "stale". Kernel giải phóng khi tiến trình
-kết thúc, kể cả khi bị giết cứng, nên không tồn tại trạng thái lock bỏ rơi và không có bước
-"phá lock cũ" nào có thể xóa nhầm lock của một tiến trình chỉ vì nó chậm — đó chính là race mà
-luật dựa trên mtime tạo ra. File lock **được giữ lại** sau khi thả, vì xóa nó sẽ cho phép tiến
-trình khác tạo inode mới và giành lock trong lúc lần chạy hiện tại vẫn nghĩ mình đang giữ.
-Lần chạy thứ hai chờ tối đa 900s rồi báo lỗi nếu lock chưa được giải phóng.
-
-`dataset_manifest.py` không dùng lock của `fetch_unsw_nb15.py`. Chạy `record` đúng lúc một
-lần fetch đang thay file có thể ghi lại trạng thái lẫn, nhưng `verify` chạy sau đó sẽ báo
-mismatch SHA-256, nên sai lệch bị phát hiện chứ không lan. `record` cũng từ chối ghi đè một
-manifest đã tồn tại.
-
-Tên staging và backup dùng tên trống kế tiếp (có PID) nên hai lần chạy không dùng chung file tạm
-và không ghi đè scratch còn sót. Chúng được mở bằng `O_CREAT|O_EXCL` mà không xóa tên đang tồn
-tại; vì vậy một symlink hoặc backup còn lại làm thao tác thất bại thay vì chuyển hướng ghi ra ngoài
-thư mục đích. Đây là biện pháp cần thiết trên Windows, nơi không có `O_NOFOLLOW`.
-
-Cài đặt ghi một marker `.unsw-nb15-transaction.json` **trước lần thay đầu tiên**, ghi lại trạng
-thái trước đó của từng file (tên backup, hoặc "trước đó không tồn tại"). Rollback chỉ chạy khi
-tiến trình còn sống, nên nếu bị giết cứng giữa hai lần thay thì lần chạy sau thấy marker và
-hoàn nguyên cặp file về đúng trạng thái trước đó **trước khi** tin vào cache. Marker bị xóa khi
-cài đặt thành công, khi rollback hoàn tất và sau khi recovery.
-
-Marker là bản ghi duy nhất cho biết byte cũ đang ở đâu, nên nó **không bao giờ bị xóa khi khôi
-phục thất bại**. Recovery là idempotent: một backup đã được restore ở lần trước đã biến mất, và
-điều đó được hiểu là "đã xong" chứ không phải lỗi — nếu không, marker sẽ mắc vĩnh viễn ở
-một backup không còn tồn tại. Tuy nhiên mục đó **không được tin chỉ vì file còn đó**: khi backup
-đã mất và tên file là một split đã ghim, byte trên đĩa được đối chiếu với SHA-256 đã ghim trước
-khi coi là đã khôi phục; lệch thì coi là hỏng, dừng và giữ nguyên dữ liệu. Khi còn mục chưa khôi
-phục được, lần chạy **dừng với exit 1** trước khi kiểm tra cache, tải hay cài đặt bất cứ thứ
-gì: cài đặt chồng lên một cặp file mà lần chạy đó chưa sửa xong sẽ phá mất đúng thông tin cần để
-sửa. Marker không đọc được hoặc thiếu danh sách file thì cũng dừng, với thông báo yêu cầu kiểm
-tra `data/raw/` và xóa marker bằng tay; không lần cài đặt nào ghi đè một trạng thái chưa được hiểu.
-
-Staging và backup được cấp **tên trống kế tiếp** và mở bằng `O_CREAT|O_EXCL`. Hai tính chất
-này đi cùng nhau: tên không va chạm với lần chạy trước (PID được tái sụ dụng, và một backup còn
-sót có thể là bản duy nhất của byte cũ), còn `O_EXCL` khiến việc mở file thất bại thay vì đi
-theo symlink hay xóa file đang tồn tại — Windows không có `O_NOFOLLOW`, và cơ chế "xoá rồi tạo"
-trước đây chính là đường để mất file.
-
-Manifest được ghi ra file phụ **có kèm PID** rồi đặt vào chỗ bằng `os.link`, nên bước cuối từ
-chối ghi đè nếu manifest đã xuất hiện giữa lúc kiểm tra và lúc ghi. Trên filesystem không có
-hardlink, bước đặt vào chỗ **giữ chỗ tên bằng `O_CREAT|O_EXCL`** rồi mới đổ nội dung vào — vẫn
-không ghi đè được manifest của người khác, đổi lại nội dung không atomic trên đúng loại filesystem
-đó: gián đoạn lúc ghi có thể để lại manifest cắt cụt cần xử lý thủ công. `record` không có lock
-chung với fetch và vẫn từ chối ghi đè manifest đã tồn tại.
-
-Script dùng mirror revision-pinned vì endpoint chính thức cần đăng nhập.
-
-`data/raw/*` nằm ngoài Git. Kiểm tra bằng:
+Raw package không được commit. Kiểm tra boundary:
 
 ```text
-git check-ignore data/raw/UNSW_NB15_training-set.csv data/raw/UNSW_NB15_testing-set.csv
-git status --short
+git check-ignore data/raw/NF-UNSW-NB15-v3
 ```
 
-Không dùng `git add -f` cho CSV. Manifest và báo cáo tổng hợp không chứa dòng dữ liệu
-gốc nên được version-control để reviewer tái kiểm tra cùng byte.
+## Schema và target
 
-## Profile validation
+Manifest ghi đúng thứ tự 55 cột. Phân loại vai trò:
 
-`scripts/validate_data.py` kiểm tra UTF-8 BOM, đúng 45 cột theo thứ tự, độ rộng hàng,
-kiểu số/text, số hữu hạn, nhãn binary `0/1`, các trường bắt buộc và tính nhất quán:
-`label=0` phải có `attack_cat=Normal`, còn `label=1` phải là category khác. Khi
-dùng manifest, validator kiểm tra size và SHA-256. Số bản ghi chính thức của hai split
-(175.341 và 82.332) được kiểm tra khi không có manifest, và khi manifest có ghi
-`expected_rows` thì lấy theo manifest; `--no-row-count` bỏ qua **cả hai** nguồn cho
-fixture hoặc tập con. File không thuộc hai split mặc định thì không có số bản ghi công bố
-để so.
+- 53 NetFlow v3 fields;
+- binary target `Label`: `0` benign, `1` attack;
+- multiclass target `Attack`: `Benign`, `Analysis`, `Backdoor`, `DoS`, `Exploits`, `Fuzzers`,
+  `Generic`, `Reconnaissance`, `Shellcode`, `Worms`;
+- sáu metadata fields gồm absolute timestamps, IP và hai L4 port được giữ cho grouping/Trace
+  Engine và mặc định loại khỏi `X`;
+- 47 NetFlow fields còn lại là baseline ML input theo đúng thứ tự CSV;
+- `Label` và `Attack` tuyệt đối không đi vào `X`.
 
-Dòng trống không bị bỏ qua âm thầm. Dòng không có delimiter và không có giá trị (rỗng
-hoặc chỉ khoảng trắng) được đếm và là lỗi chặn, thông báo nêu tổng số dòng và vị trí tối
-đa 5 dòng đầu. Dòng có delimiter nhưng giá trị rỗng không phải dòng trống: đủ 45 cột
-thì thành missing value, thiếu cột thành lỗi độ rộng hàng. Báo cáo cho mỗi split gồm
-số hàng/cột, schema, số dòng trống, phân bố nhãn và attack category, missing theo cột,
-duplicate sau khi bỏ cột định danh `id`, invalid labels và tỷ lệ lớp.
-Sai schema/hash/size/row count/nhãn/kiểu/cấu trúc/dòng trống là lỗi chặn (exit 1).
-`--report` trỏ tới chính file CSV đầu vào, hoặc tới manifest được dùng làm đối chiếu (kể cả
-khi resolve về cùng một file), đều bị từ chối trước khi ghi — validator tuyên bố chỉ đọc và
-không sửa dữ liệu lẫn provenance của nó.
-Missing feature không bắt buộc và duplicate là cảnh báo; validator không xóa, điền,
-chuẩn hóa hay thay đổi dữ liệu.
+Website UQ và CSV không đồng nhất ở tổng attack và ánh xạ ba category count. Manifest theo byte CSV
+đã tải và giữ mô tả discrepancy. Xem `docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md`.
 
-Kết quả thực ngày 2026-10-17 nằm tại
-`reports/data_quality/unsw_nb15_validation.json`: cả hai split khớp manifest, schema
-45 cột, số hàng 175.341/82.332, không dòng trống, không missing, không invalid label và
-không mâu thuẫn label/category. Duplicate bỏ qua `id` lần lượt là 67.601 và 26.387;
-đây là đầu vào cho leakage audit ở #7, không bị tự động xóa trong #5.
+## Validation thật
 
-Khi cả hai CSV vắng mặt, validator in `SKIPPED` và exit 0 theo contract M0; trạng thái
-đó không phải PASS. Fixture tổng hợp chỉ kiểm tra hành vi validator, không thay thế báo
-cáo dữ liệu thật.
+```text
+python scripts/validate_data.py
+```
 
-## Giới hạn bảo vệ dữ liệu và phạm vi #7
+Validator stream CSV, kiểm tra schema/order, width, row count, numeric/NaN/Inf/missing, giá trị âm,
+IPv4, port, label/category consistency, timestamp ordering và duration. Exact, 47-feature và
+behavioral-v1 fingerprints được ghi vào SQLite tạm để RAM không tăng theo số dòng.
 
-- Rollback/recovery bảo vệ các đường lỗi đã kiểm thử, nhưng không là database transaction hay
-  bảo đảm bền vững tuyệt đối trước marker bị mất/hỏng, lỗi filesystem hoặc can thiệp ngoài script.
-  Khi marker không đọc được hay recovery chưa xong, script dừng và giữ marker/backup để kiểm tra
-  thủ công; không được suy diễn rằng cặp CSV đã tự động an toàn trong mọi sự cố.
-- Lock chỉ điều phối process **cùng dùng `fetch_unsw_nb15.py`** trên một máy và chờ tối đa 900s;
-  process không hợp tác, filesystem có semantics lock khác, và `dataset_manifest.py` nằm ngoài
-  lock đều không được serial hóa. `record` có thể quan sát trạng thái lẫn trong lúc fetch; `verify`
-  chỉ phát hiện SHA-256 mismatch sau đó, không biến thao tác này thành atomic transaction.
-- #4/#5 không thực hiện EDA, audit duplicate giữa split, near-duplicate, flow/session/group overlap,
-  feature leakage, feature selection hay thay đổi official partition. Duplicate 67.601/26.387 chỉ là
-  cảnh báo đầu vào cho Issue #7; Issue #7 vẫn chưa được đóng.
+Kết quả đã ghi trong repository là `SOURCE_INTEGRITY: PASS`,
+`RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`:
+
+- 63.425 missing tại `SRC_TO_DST_SECOND_BYTES`;
+- 59.068 positive infinity tại `SRC_TO_DST_SECOND_BYTES`;
+- 122.493 positive infinity tại `DST_TO_SRC_SECOND_BYTES`;
+- 14.815 dòng exact-duplicate;
+- 1.134.553 repeated rows theo 47-feature/behavioral-v1 equivalence, thuộc 189.788
+  fingerprints;
+- 0 binary-label/Benign-vs-Attack conflict fingerprints, nhưng 1.270 fingerprints có nhiều
+  malicious `Attack` categories; không có deduplication tự động.
+
+Schema, row count, SHA-256, label/category distribution, IP/port và temporal ordering đạt các check
+đã triển khai. Source integrity PASS không đổi ML readiness thành PASS; findings vẫn chặn
+raw-to-model.
+
+Khi raw package không có, lệnh mặc định trả `SOURCE_INTEGRITY: SKIPPED`/exit `0` để CI không tải
+dataset. Dataset nguyên vẹn nhưng ML-blocked trả exit `1`; corruption/integrity error trả exit `2`.
+Exit `0` cho SKIPPED không phải bằng chứng real-data PASS.
+
+## Split và preprocessing gate
+
+Dataset chỉ có một CSV; không dùng split cũ của UNSW-NB15. Contract temporal/group-aware, duplicate
+consolidation, metadata/target exclusion và train-only fitting nằm tại
+`docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
+The handling contract for missing/non-finite values, short-duration flows and numeric-coded fields
+is `docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; no fitted transformer exists yet.
+
+Chưa được train cho đến khi:
+
+1. chọn và test chính sách missing/non-finite chỉ dựa trên train;
+2. đánh giá tác động deduplication tới rare attack categories;
+3. materialize split manifest không có exact/group overlap;
+4. ghi boundaries, seed, class distributions và row-index hashes;
+5. audit feature list và fitted preprocessing artifact.
+
+Chi tiết aggregate numeric và duplicate/label-conflict nằm tại
+`docs/dataset/NF_UNSW_NB15_V3_QUALITY_ANALYSIS.md` và
+`docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md`.
+
+## Historical evidence
+
+Các file sau chỉ phục vụ audit migration:
+
+- `data/historical/UNSW_NB15_MANIFEST_2015.json`;
+- `scripts/historical/fetch_unsw_nb15_2015.py`;
+- `scripts/historical/dataset_manifest_unsw_nb15_2015.py`;
+- `scripts/historical/validate_unsw_nb15_2015.py`;
+- `reports/data_quality/historical/unsw_nb15_2015_validation.json`.
+
+Không xóa hoặc diễn giải chúng như trạng thái hiện tại của pipeline.
