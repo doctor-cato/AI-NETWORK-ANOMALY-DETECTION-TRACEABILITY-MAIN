@@ -94,11 +94,13 @@ def git_metadata(project_root) -> dict:
         return result.stdout.strip() or "NOT VERIFIED"
 
     status = run("status", "--porcelain")
+    changes = [line for line in status.splitlines() if line]
     return {
         "head": run("rev-parse", "HEAD"),
         "branch": run("rev-parse", "--abbrev-ref", "HEAD"),
         "commit_date": run("log", "-1", "--format=%cI"),
-        "working_tree_clean": status in ("", "NOT VERIFIED"),
+        "working_tree_clean": not changes,
+        "working_tree_changes": changes,
         "remote": run("config", "--get", "remote.origin.url"),
     }
 
