@@ -162,6 +162,29 @@ experiment result. Every claim follows:
 
 `Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment Results`.
 
+### What runs where
+
+| Check | Environment | Result |
+|---|---|---|
+| `scripts/validate_data.py` on the real CSV | local checkout, raw package present | `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED` (exit `1`) |
+| `scripts/eda_nf_unsw_nb15_v3.py` on the real CSV | local checkout, raw package present | EDA executed on 2,365,424 rows, exit `0` |
+| `scripts/verify_eda_reproducibility.py` | local checkout, raw package present | two independent runs, deterministic content comparison PASS per metric |
+| Unit and integration tests | CI and local, synthetic fixtures | PASS — proves code behavior only |
+| `scripts/validate_data.py` in GitHub Actions | CI runner without the raw CSV | `SKIPPED` — not a real-data result |
+| `scripts/eda_nf_unsw_nb15_v3.py` in GitHub Actions | CI runner without the raw CSV | `SKIPPED` — not a real-data result |
+
+A `SKIPPED` step in CI is never presented as evidence that the validator or the EDA ran on real
+data. The real-data evidence is versioned under `reports/data_quality/` and `reports/eda/`.
+
+### Lint scope
+
+| Scope | Ruff | Black | Tracking |
+|---|---|---|---|
+| Files owned by this change set | PASS | PASS | — |
+| Whole repository | 5 findings | 11 files | Issue #37 |
+
+Repository-wide lint is **not** PASS while the findings remain.
+
 ## Documentation map
 
 - Dataset use and commands: `docs/DATASET.md`

@@ -29,6 +29,7 @@ do dự án tính từ byte tải qua API chính thức, không được mô t�
 | Quality report | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
 | EDA summary (machine-readable) | `reports/eda/nf_unsw_nb15_v3_eda_summary.json` |
 | EDA report (generated) | `docs/dataset/NF_UNSW_NB15_V3_EDA.md` |
+| EDA reproducibility evidence | `reports/eda/evidence/` |
 | EDA figures (local, ignored) | `reports/figures/nf_unsw_nb15_v3/` |
 | Downloader | `scripts/fetch_nf_unsw_nb15_v3.py` |
 | Manifest verifier | `scripts/dataset_manifest.py` |
@@ -129,6 +130,26 @@ Kết luận chính từ lượt chạy trên dữ liệu thật (2.365.424 dòn
 
 EDA là mô tả: không chọn feature, không fit transformer, không xóa dòng và không tạo split.
 Mọi khuyến nghị phụ thuộc train vẫn ở trạng thái `PENDING ISSUE #7`; `ML_READY` giữ `BLOCKED`.
+
+## Bằng chứng tái lập EDA (hai lần chạy)
+
+```text
+python scripts/verify_eda_reproducibility.py
+```
+
+Lệnh chạy EDA hai lần độc lập trên cùng raw CSV đã xác thực và ghi mỗi lần chạy thành một
+bundle có thể truy xuất tại `reports/eda/evidence/run-1` và `run-2`:
+
+- `run_metadata.json`: git HEAD/branch, Python/OS, dependency versions, dataset identity (size +
+  SHA-256), manifest/schema verification, key aggregates, command, exit code, start/end timestamp,
+  SHA-256 của summary và report;
+- `stdout.log` / `stderr.log`: stdout và stderr thực tế của lần chạy đó;
+- `eda_summary.json` / `eda_report.md`: đúng artifact mà lần chạy đó sinh ra.
+
+Báo cáo so sánh `reports/eda/evidence/reproducibility_comparison.md` và `.json` hiển thị
+PASS/FAIL theo từng chỉ số và liệt kê mọi khác biệt. Chỉ metadata được phép khác giữa hai
+lần chạy (timestamp và môi trường) bị loại khỏi so sánh. Exit `0` khi hai lần chạy giống nhau,
+`1` khi lệch, `2` khi thiếu raw package (SKIPPED, không phải PASS).
 
 ## Split và preprocessing gate
 

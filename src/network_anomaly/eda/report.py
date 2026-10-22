@@ -18,7 +18,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
 
 NOT_VERIFIED = "NOT VERIFIED"
 PENDING_SPLIT = "PENDING ISSUE #7"
-FIGURE_DIRECTORY = "../reports/figures/nf_unsw_nb15_v3"
+FIGURE_DIRECTORY = "../../reports/figures/nf_unsw_nb15_v3"
 
 
 def _number(value, digits: int = 2) -> str:
@@ -106,6 +106,20 @@ feature distributions and the relationships between semantically compatible feat
 Inherited duplicate and token findings are cross-checked against the values recomputed
 by this run; the comparison result is recorded in section 8 and in the summary artifact.
 
+### What ran where
+
+| Step | Environment | Status |
+|---|---|---|
+| This analysis | local checkout with the verified raw CSV | `EXECUTED ON REAL DATA` |
+| Two-run reproducibility check | local checkout, verified raw CSV | `reports/eda/evidence/` |
+| Validator and EDA in GitHub Actions | CI runner without the raw CSV | `SKIPPED` |
+| Unit tests | synthetic fixtures only | code behaviour, not data properties |
+
+The two-run evidence bundles keep the real stdout and stderr, the exact summary and report
+of each run, the git state, the interpreter, the dependencies, the dataset identity, the
+manifest and schema verification and the key aggregates. The comparison report is
+`reports/eda/evidence/reproducibility_comparison.md`.
+
 ### Reproduction order
 
 ```text
@@ -114,6 +128,7 @@ python scripts/fetch_nf_unsw_nb15_v3.py
 python scripts/dataset_manifest.py verify
 python scripts/validate_data.py
 python scripts/eda_nf_unsw_nb15_v3.py
+python scripts/verify_eda_reproducibility.py
 ```
 
 `scripts/validate_data.py` must run first: the EDA reuses its manifest contract and

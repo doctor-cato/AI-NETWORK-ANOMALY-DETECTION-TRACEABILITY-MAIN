@@ -218,3 +218,23 @@ PR: #36 updated in place, still OPEN, not merged; reviewer re-review requested.
 Remaining: ML_READY stays BLOCKED. No feature selection, no fitted transformer, no model, no
   evaluation. Repository-wide Ruff/Black debt is unchanged and tracked by #37.
 ```
+
+```text
+Checkpoint 10 — EDA reproducibility evidence
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: recorded by final PR readback.
+Completed: scripts/verify_eda_reproducibility.py runs the EDA twice on the verified raw CSV
+  and writes one retrievable bundle per run under reports/eda/evidence/ (run_metadata.json,
+  stdout.log, stderr.log, eda_summary.json, eda_report.md) plus a PASS/FAIL comparison per
+  metric in reproducibility_comparison.md and .json. The EDA report now states explicitly
+  what ran on real data, what is skipped in CI and what only proves code behaviour.
+Tests: PASS — 8 new reproducibility tests on synthetic fixtures; full pytest suite 219 PASS;
+  Ruff and Black PASS on every changed Python file; the two real runs agree on every
+  deterministic metric (rows, labels, categories, quality tokens, duplicates, quantiles,
+  correlations, time coverage, contract, readiness, leakage boundary) and on the run
+  evidence (command, exit code, git HEAD, dataset SHA-256, manifest and row verification).
+Issues: #6 implemented; #7, #8 and #37 remain OPEN and unchanged.
+PR: #36 updated in place, still OPEN, not merged; re-review requested on the new HEAD.
+Remaining: ML_READY stays BLOCKED. Repository-wide Ruff (5 findings) and Black (11 files)
+  remain FAIL and tracked by #37; they are never reported as PASS.
+```

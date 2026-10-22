@@ -77,6 +77,54 @@ Reproducibility properties of the recorded run:
 The analysis is descriptive only. It does not fit a transformer, does not select features, does not
 remove a row and does not create a split, so `ML_READY` stays `BLOCKED`.
 
+## Reproduce the EDA twice and compare the two runs
+
+```text
+python scripts/verify_eda_reproducibility.py
+```
+
+The command executes `scripts/eda_nf_unsw_nb15_v3.py` twice on the same verified source file and
+writes one retrievable evidence bundle per run:
+
+| Artifact | Path | Content |
+|---|---|---|
+| Run metadata | `reports/eda/evidence/run-{1,2}/run_metadata.json` | git HEAD, branch, commit date, interpreter, OS, dependency versions, dataset identity, manifest and schema verification, key aggregates, command, exit code, start/end timestamps, SHA-256 of the summary and report |
+| Captured output | `reports/eda/evidence/run-{1,2}/stdout.log`, `stderr.log` | the real stdout and stderr of that run |
+| Summary of that run | `reports/eda/evidence/run-{1,2}/eda_summary.json` | the exact machine-readable summary the run produced |
+| Report of that run | `reports/eda/evidence/run-{1,2}/eda_report.md` | the exact generated report of that run |
+| Comparison | `reports/eda/evidence/reproducibility_comparison.md`, `.json` | PASS/FAIL per metric and the list of differences |
+
+The comparison walks both summaries and both evidence bundles. Only the metadata that is allowed to
+differ between two runs of the same command is excluded: the run timestamp and the environment
+description. The two summary artifacts have different file hashes because each artifact embeds its
+own run timestamp; the deterministic content comparison is the authoritative check.
+
+Exit codes: `0` when both runs succeeded and the deterministic content is identical, `1` when a run
+failed or the two runs disagree, `2` when the raw package is absent (SKIPPED, not PASS).
+
+## What runs where
+
+| Check | Environment | Result |
+|---|---|---|
+| `scripts/validate_data.py` | local, raw package present | real-data audit, exit `1` while `ML_READY: BLOCKED` |
+| `scripts/eda_nf_unsw_nb15_v3.py` | local, raw package present | EDA executed on the verified population |
+| `scripts/verify_eda_reproducibility.py` | local, raw package present | two runs compared per metric |
+| `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
+| `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+| `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+
+A skipped CI step is never reported as evidence that the validator or the EDA ran on real data.
+
+## Lint scope
+
+| Scope | Ruff 0.17.1 | Black 26.10.1 | Tracking |
+|---|---|---|---|
+| Files owned by the current change set | PASS | PASS | — |
+| Whole repository | 5 findings, exit `1` | 11 files, exit `1` | Issue #37 |
+
+The repository-wide result is a FAIL while the findings remain. The Linux and CI-compatible
+re-check is the manual or pull-request workflow `.github/workflows/lint-audit.yml`.
+
 ## Split and experiment identity
 
 No real v3 split or benchmark currently exists. A future accepted run must record:

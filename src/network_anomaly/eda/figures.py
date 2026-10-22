@@ -378,19 +378,35 @@ def _shape_statistics(summary: dict, output: Path) -> dict:
     names = [name for name, _ in shaped]
     skews = [values["skewness"] for _, values in shaped]
     figure, axes = plt.subplots(figsize=(11, 5))
-    axes.bar(names, skews, color="#c44e52")
-    axes.axhline(1.0, color="black", linestyle="--", linewidth=1, label="skewness = 1")
-    axes.axhline(-1.0, color="black", linestyle=":", linewidth=1, label="skewness = -1")
-    axes.set_title(f"Distribution skewness of quantitative features ({SAMPLE_NOTE})")
-    axes.set_ylabel("Sample skewness")
-    axes.set_xlabel("Quantitative feature")
-    axes.tick_params(axis="x", rotation=90, labelsize=7)
-    axes.legend(loc="upper left")
+    if not names:
+        axes.text(
+            0.5,
+            0.5,
+            "No quantitative feature has a non-zero sample variance,\n"
+            "so no skewness can be estimated on this sample.",
+            ha="center",
+            va="center",
+            fontsize=11,
+        )
+        axes.set_xticks([])
+        axes.set_yticks([])
+        axes.set_title(f"Distribution skewness of quantitative features ({SAMPLE_NOTE})")
+        evidence = f"{SAMPLE_NOTE} (no feature with a non-zero sample variance)"
+    else:
+        axes.bar(names, skews, color="#c44e52")
+        axes.axhline(1.0, color="black", linestyle="--", linewidth=1, label="skewness = 1")
+        axes.axhline(-1.0, color="black", linestyle=":", linewidth=1, label="skewness = -1")
+        axes.set_title(f"Distribution skewness of quantitative features ({SAMPLE_NOTE})")
+        axes.set_ylabel("Sample skewness")
+        axes.set_xlabel("Quantitative feature")
+        axes.tick_params(axis="x", rotation=90, labelsize=7)
+        axes.legend(loc="upper left")
+        evidence = f"{SAMPLE_NOTE} (n={shaped[0][1]['sample_count']:,} per feature)"
     name = _save(figure, output / "fig12_feature_skewness.png")
     return {
         "file": name,
         "title": "Feature skewness",
-        "evidence": f"{SAMPLE_NOTE} (n={shaped[0][1]['sample_count']:,} per feature)",
+        "evidence": evidence,
         "caption": (
             "Sample skewness per quantitative feature. Magnitudes above 1 indicate a strongly "
             "right-skewed feature and therefore a transformation risk for linear models."
