@@ -25,11 +25,18 @@ Validator mặc định tìm `data/raw/UNSW_NB15_training-set.csv` và
 `data/raw/` hoặc đường dẫn rõ ràng; file thiếu và dữ liệu sai trả exit 1.
 Profile kiểm tra 45 cột, kiểu dữ liệu, nhãn, attack category, missing, duplicate và dòng trống. Dòng CSV không có delimiter và không có giá trị là lỗi chặn (exit 1) với số dòng và vị trí, không bị bỏ qua âm thầm; dòng có delimiter nhưng giá trị rỗng vẫn thuộc kiểm tra missing/độ rộng hàng. Báo cáo trên cặp CSV đã đối chiếu mirror nằm trong `reports/data_quality/unsw_nb15_validation.json`. Leakage audit thuộc #7.
 
-Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test constructor của RF/IF không chứng minh fit/predict hoặc kết quả trên UNSW-NB15. SKIPPED và fixture không thay thế thực nghiệm thật.
+Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test constructor và fixture
+synthetic của RF/IF không chứng minh fit/predict trên dữ liệu thật hay kết quả trên
+UNSW-NB15. SKIPPED và fixture không thay thế thực nghiệm thật.
 
 ## Seed và cấu hình
 
 - Giá trị mặc định `RANDOM_SEED = 42` nằm trong `src/network_anomaly/config.py`, được dùng cho `random_state` của model constructors.
+- Isolation Forest dùng factory `network_anomaly.models.isolation_forest.build_model`; config
+  hiệu lực được merge trên `ISOLATION_FOREST_DEFAULTS` và mọi giá trị đều được validate trước
+  khi dựng estimator. `random_state` phải là seed số nguyên tường minh — truyền `None` bị từ
+  chối vì tắt khả năng tái lập. Bảy tham số được ghi trong config: `n_estimators`,
+  `max_samples`, `contamination`, `max_features`, `bootstrap`, `random_state`, `n_jobs`.
 - Chưa có training/split pipeline hoàn chỉnh; không mặc định rằng seed NumPy/Python hoặc mọi bước chia dữ liệu đã được thiết lập. Khi triển khai phải ghi rõ seed thực sự được sử dụng.
 - Cấu hình hiện lấy từ module Python; chưa có cơ chế đọc seed từ biến môi trường hoặc `pyproject.toml`.
 
