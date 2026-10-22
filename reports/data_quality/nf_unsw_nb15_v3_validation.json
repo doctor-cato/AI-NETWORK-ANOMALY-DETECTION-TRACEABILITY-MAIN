@@ -1,0 +1,1133 @@
+{
+  "attacks": {
+    "Analysis": 1226,
+    "Backdoor": 4659,
+    "Benign": 2237731,
+    "DoS": 5980,
+    "Exploits": 42748,
+    "Fuzzers": 33816,
+    "Generic": 19651,
+    "Reconnaissance": 17074,
+    "Shellcode": 2381,
+    "Worms": 158
+  },
+  "dataset": "NF-UNSW-NB15-v3",
+  "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+  "duplicate_analysis": {
+    "behavioral_v1": {
+      "automatic_removal_permitted": false,
+      "duplicate_rows": 1134553,
+      "fingerprints_with_duplicates": 189788
+    },
+    "definitions": {
+      "behavioral_v1": {
+        "columns": "the ordered 47-feature baseline under a separate namespace",
+        "purpose": "correlation-oriented equivalence; not an automatic dedup key"
+      },
+      "exact_full_row": {
+        "columns": "all 55 ordered CSV columns, including targets",
+        "purpose": "byte-level parsed-row identity and exact-dedup impact audit"
+      },
+      "ml_feature_equivalent": {
+        "columns": "the ordered 47-feature baseline; metadata and targets excluded",
+        "purpose": "memorization risk and label-conflict audit"
+      },
+      "source_feature": {
+        "columns": "all 53 published NetFlow fields; targets excluded",
+        "purpose": "cross-split observation overlap even if labels differ"
+      }
+    },
+    "exact": {
+      "duplicate_rows": 14815,
+      "duplicate_rows_by_attack": {
+        "Backdoor": 1,
+        "Benign": 14801,
+        "DoS": 9,
+        "Exploits": 4
+      },
+      "duplicate_rows_by_label": {
+        "0": 14801,
+        "1": 14
+      },
+      "fingerprints_with_duplicates": 14815
+    },
+    "hypothetical_exact_dedup_keep_first": {
+      "applied": false,
+      "retained_by_attack": {
+        "Analysis": 1226,
+        "Backdoor": 4658,
+        "Benign": 2222930,
+        "DoS": 5971,
+        "Exploits": 42744,
+        "Fuzzers": 33816,
+        "Generic": 19651,
+        "Reconnaissance": 17074,
+        "Shellcode": 2381,
+        "Worms": 158
+      },
+      "retained_by_label": {
+        "0": 2222930,
+        "1": 127679
+      }
+    },
+    "ml_feature_equivalent": {
+      "attack_value_conflict_patterns": {
+        "Backdoor | DoS": {
+          "fingerprints": 3,
+          "rows": 7
+        },
+        "Backdoor | DoS | Exploits | Fuzzers": {
+          "fingerprints": 4,
+          "rows": 21
+        },
+        "Backdoor | DoS | Exploits | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 124
+        },
+        "Backdoor | DoS | Exploits | Fuzzers | Generic | Reconnaissance | Shellcode": {
+          "fingerprints": 3,
+          "rows": 7560
+        },
+        "Backdoor | DoS | Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 4548
+        },
+        "Backdoor | DoS | Exploits | Generic": {
+          "fingerprints": 1,
+          "rows": 14
+        },
+        "Backdoor | DoS | Exploits | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 13
+        },
+        "Backdoor | DoS | Exploits | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 11
+        },
+        "Backdoor | DoS | Fuzzers": {
+          "fingerprints": 3,
+          "rows": 9
+        },
+        "Backdoor | DoS | Fuzzers | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 5
+        },
+        "Backdoor | DoS | Shellcode": {
+          "fingerprints": 1,
+          "rows": 14
+        },
+        "Backdoor | Exploits": {
+          "fingerprints": 12,
+          "rows": 58
+        },
+        "Backdoor | Exploits | Fuzzers": {
+          "fingerprints": 30,
+          "rows": 185
+        },
+        "Backdoor | Exploits | Fuzzers | Generic": {
+          "fingerprints": 2,
+          "rows": 24
+        },
+        "Backdoor | Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 5,
+          "rows": 33
+        },
+        "Backdoor | Exploits | Fuzzers | Reconnaissance | Shellcode": {
+          "fingerprints": 2,
+          "rows": 42
+        },
+        "Backdoor | Exploits | Generic": {
+          "fingerprints": 4,
+          "rows": 38
+        },
+        "Backdoor | Exploits | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 6
+        },
+        "Backdoor | Exploits | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Exploits | Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Exploits | Shellcode": {
+          "fingerprints": 3,
+          "rows": 30
+        },
+        "Backdoor | Fuzzers": {
+          "fingerprints": 29,
+          "rows": 190
+        },
+        "Backdoor | Fuzzers | Generic": {
+          "fingerprints": 6,
+          "rows": 51
+        },
+        "Backdoor | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 4
+        },
+        "Backdoor | Fuzzers | Reconnaissance": {
+          "fingerprints": 12,
+          "rows": 46
+        },
+        "Backdoor | Fuzzers | Shellcode": {
+          "fingerprints": 3,
+          "rows": 68
+        },
+        "Backdoor | Generic": {
+          "fingerprints": 248,
+          "rows": 1830
+        },
+        "Backdoor | Generic | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Generic | Shellcode": {
+          "fingerprints": 1,
+          "rows": 13
+        },
+        "Backdoor | Generic | Worms": {
+          "fingerprints": 1,
+          "rows": 28
+        },
+        "Backdoor | Reconnaissance": {
+          "fingerprints": 3,
+          "rows": 41
+        },
+        "Backdoor | Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "Backdoor | Shellcode": {
+          "fingerprints": 18,
+          "rows": 147
+        },
+        "DoS | Exploits": {
+          "fingerprints": 17,
+          "rows": 60
+        },
+        "DoS | Exploits | Fuzzers": {
+          "fingerprints": 16,
+          "rows": 81
+        },
+        "DoS | Exploits | Fuzzers | Generic": {
+          "fingerprints": 1,
+          "rows": 7
+        },
+        "DoS | Exploits | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 21
+        },
+        "DoS | Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 7,
+          "rows": 45
+        },
+        "DoS | Exploits | Fuzzers | Shellcode": {
+          "fingerprints": 1,
+          "rows": 15
+        },
+        "DoS | Exploits | Generic": {
+          "fingerprints": 2,
+          "rows": 11
+        },
+        "DoS | Exploits | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 11
+        },
+        "DoS | Exploits | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 10
+        },
+        "DoS | Fuzzers": {
+          "fingerprints": 27,
+          "rows": 98
+        },
+        "DoS | Fuzzers | Generic": {
+          "fingerprints": 3,
+          "rows": 12
+        },
+        "DoS | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 2,
+          "rows": 15
+        },
+        "DoS | Fuzzers | Reconnaissance": {
+          "fingerprints": 4,
+          "rows": 18
+        },
+        "DoS | Generic": {
+          "fingerprints": 8,
+          "rows": 37
+        },
+        "DoS | Reconnaissance": {
+          "fingerprints": 1,
+          "rows": 47
+        },
+        "Exploits | Fuzzers": {
+          "fingerprints": 226,
+          "rows": 921
+        },
+        "Exploits | Fuzzers | Generic": {
+          "fingerprints": 67,
+          "rows": 497
+        },
+        "Exploits | Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 15,
+          "rows": 342
+        },
+        "Exploits | Fuzzers | Reconnaissance": {
+          "fingerprints": 91,
+          "rows": 861
+        },
+        "Exploits | Fuzzers | Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 14
+        },
+        "Exploits | Fuzzers | Shellcode": {
+          "fingerprints": 1,
+          "rows": 15
+        },
+        "Exploits | Fuzzers | Worms": {
+          "fingerprints": 1,
+          "rows": 6
+        },
+        "Exploits | Generic": {
+          "fingerprints": 153,
+          "rows": 877
+        },
+        "Exploits | Generic | Reconnaissance": {
+          "fingerprints": 4,
+          "rows": 24
+        },
+        "Exploits | Reconnaissance": {
+          "fingerprints": 15,
+          "rows": 41
+        },
+        "Exploits | Shellcode": {
+          "fingerprints": 4,
+          "rows": 36
+        },
+        "Fuzzers | Generic": {
+          "fingerprints": 75,
+          "rows": 276
+        },
+        "Fuzzers | Generic | Reconnaissance": {
+          "fingerprints": 13,
+          "rows": 54
+        },
+        "Fuzzers | Reconnaissance": {
+          "fingerprints": 88,
+          "rows": 323
+        },
+        "Fuzzers | Shellcode": {
+          "fingerprints": 4,
+          "rows": 52
+        },
+        "Generic | Reconnaissance": {
+          "fingerprints": 5,
+          "rows": 10
+        },
+        "Generic | Reconnaissance | Shellcode": {
+          "fingerprints": 3,
+          "rows": 18
+        },
+        "Generic | Shellcode": {
+          "fingerprints": 1,
+          "rows": 13
+        },
+        "Reconnaissance | Shellcode": {
+          "fingerprints": 1,
+          "rows": 2
+        }
+      },
+      "benign_attack_conflict_fingerprints": 0,
+      "duplicate_rows": 1134553,
+      "fingerprints_with_duplicates": 189788,
+      "label_conflict_fingerprints": 0,
+      "multiple_attack_values_fingerprints": 1270,
+      "multiple_malicious_categories_fingerprints": 1270,
+      "rare_category_label_conflicts": {
+        "Analysis": {
+          "fingerprints": 0,
+          "rows": 0
+        },
+        "Worms": {
+          "fingerprints": 0,
+          "rows": 0
+        }
+      },
+      "rare_category_multi_attack_fingerprints": {
+        "Analysis": {
+          "fingerprints": 0,
+          "rows": 0
+        },
+        "Worms": {
+          "fingerprints": 2,
+          "rows": 34
+        }
+      },
+      "rows_in_label_conflict_fingerprints": 0,
+      "rows_in_multiple_attack_values_fingerprints": 20058
+    },
+    "schema_version": "nf-unsw-nb15-v3-fingerprint-v1"
+  },
+  "example_line_numbers": {
+    "missing:SRC_TO_DST_SECOND_BYTES": [
+      42,
+      73,
+      103,
+      141,
+      168,
+      254,
+      296,
+      325,
+      336,
+      376,
+      400,
+      433,
+      465,
+      479,
+      544,
+      597,
+      605,
+      615,
+      637,
+      676
+    ],
+    "positive_infinity:DST_TO_SRC_SECOND_BYTES": [
+      42,
+      65,
+      73,
+      83,
+      99,
+      103,
+      141,
+      168,
+      171,
+      199,
+      211,
+      227,
+      233,
+      254,
+      258,
+      263,
+      265,
+      296,
+      312,
+      320
+    ],
+    "positive_infinity:SRC_TO_DST_SECOND_BYTES": [
+      65,
+      83,
+      99,
+      171,
+      199,
+      211,
+      227,
+      233,
+      258,
+      263,
+      265,
+      312,
+      320,
+      363,
+      377,
+      381,
+      460,
+      461,
+      466,
+      483
+    ]
+  },
+  "expected_rows": 2365424,
+  "issue_counts": {
+    "behavioral_fingerprint_duplicate_rows": 1134553,
+    "exact_duplicate_rows": 14815,
+    "missing:SRC_TO_DST_SECOND_BYTES": 63425,
+    "ml_feature_equivalent_duplicate_rows": 1134553,
+    "positive_infinity:DST_TO_SRC_SECOND_BYTES": 122493,
+    "positive_infinity:SRC_TO_DST_SECOND_BYTES": 59068
+  },
+  "labels": {
+    "0": 2237731,
+    "1": 127693
+  },
+  "manifest": "NF_UNSW_NB15_V3_MANIFEST.json",
+  "manifest_sha256_verified": true,
+  "numeric_quality_analysis": {
+    "affected_unique_rows": 122493,
+    "causality_note": "Aggregates describe observed associations only. They do not establish how the published feature values were computed or why a value became non-finite.",
+    "finding_type_counts": {
+      "invalid_numeric": 0,
+      "missing": 63425,
+      "nan": 0,
+      "negative_infinity": 0,
+      "positive_infinity": 181561
+    },
+    "findings": {
+      "missing:SRC_TO_DST_SECOND_BYTES": {
+        "attacks": {
+          "Backdoor": 1208,
+          "Benign": 27636,
+          "DoS": 930,
+          "Exploits": 3932,
+          "Fuzzers": 8228,
+          "Generic": 14891,
+          "Reconnaissance": 5783,
+          "Shellcode": 795,
+          "Worms": 22
+        },
+        "duration_buckets": {
+          "DURATION_IN": {
+            "zero": 63425
+          },
+          "DURATION_OUT": {
+            "zero": 63425
+          },
+          "FLOW_DURATION_MILLISECONDS": {
+            "zero": 63425
+          }
+        },
+        "labels": {
+          "0": 27636,
+          "1": 35789
+        },
+        "protocols": {
+          "0": 6,
+          "1": 337,
+          "10": 5,
+          "100": 6,
+          "101": 6,
+          "102": 6,
+          "103": 7,
+          "104": 7,
+          "105": 7,
+          "106": 7,
+          "107": 7,
+          "108": 7,
+          "109": 7,
+          "11": 5,
+          "110": 7,
+          "111": 7,
+          "112": 7,
+          "113": 7,
+          "114": 7,
+          "115": 7,
+          "116": 7,
+          "117": 7,
+          "118": 7,
+          "119": 7,
+          "12": 5,
+          "120": 7,
+          "121": 7,
+          "122": 7,
+          "123": 7,
+          "124": 7,
+          "125": 7,
+          "126": 7,
+          "127": 7,
+          "128": 7,
+          "129": 7,
+          "13": 5,
+          "130": 7,
+          "131": 7,
+          "132": 41,
+          "133": 7,
+          "134": 7,
+          "135": 7,
+          "136": 7,
+          "137": 7,
+          "138": 7,
+          "139": 7,
+          "14": 5,
+          "140": 7,
+          "141": 7,
+          "142": 7,
+          "143": 7,
+          "144": 7,
+          "145": 7,
+          "146": 7,
+          "147": 7,
+          "148": 7,
+          "149": 7,
+          "15": 5,
+          "150": 7,
+          "151": 7,
+          "152": 7,
+          "153": 7,
+          "154": 7,
+          "155": 7,
+          "156": 7,
+          "157": 7,
+          "158": 7,
+          "159": 7,
+          "16": 5,
+          "160": 7,
+          "161": 7,
+          "162": 7,
+          "163": 7,
+          "164": 7,
+          "165": 7,
+          "166": 7,
+          "167": 7,
+          "168": 7,
+          "169": 7,
+          "17": 59559,
+          "170": 7,
+          "171": 7,
+          "172": 7,
+          "173": 7,
+          "174": 7,
+          "175": 7,
+          "176": 7,
+          "177": 7,
+          "178": 7,
+          "179": 7,
+          "180": 7,
+          "181": 7,
+          "182": 7,
+          "183": 7,
+          "184": 7,
+          "185": 7,
+          "186": 7,
+          "187": 7,
+          "188": 7,
+          "189": 7,
+          "19": 6,
+          "190": 7,
+          "191": 7,
+          "192": 7,
+          "193": 6,
+          "194": 6,
+          "195": 7,
+          "196": 7,
+          "197": 7,
+          "198": 7,
+          "199": 7,
+          "2": 19,
+          "20": 6,
+          "200": 7,
+          "201": 7,
+          "202": 7,
+          "203": 7,
+          "204": 7,
+          "205": 7,
+          "206": 7,
+          "207": 7,
+          "208": 7,
+          "209": 7,
+          "21": 6,
+          "210": 7,
+          "211": 7,
+          "212": 7,
+          "213": 7,
+          "214": 7,
+          "215": 7,
+          "216": 7,
+          "217": 7,
+          "218": 7,
+          "219": 7,
+          "22": 6,
+          "220": 7,
+          "221": 7,
+          "222": 7,
+          "223": 7,
+          "224": 7,
+          "225": 7,
+          "226": 7,
+          "227": 7,
+          "228": 7,
+          "229": 7,
+          "23": 6,
+          "230": 7,
+          "231": 7,
+          "232": 7,
+          "233": 7,
+          "234": 7,
+          "235": 7,
+          "236": 7,
+          "237": 7,
+          "238": 7,
+          "239": 7,
+          "24": 6,
+          "240": 7,
+          "241": 7,
+          "242": 7,
+          "243": 7,
+          "244": 7,
+          "245": 7,
+          "246": 7,
+          "247": 7,
+          "248": 7,
+          "249": 7,
+          "25": 6,
+          "250": 7,
+          "251": 7,
+          "252": 7,
+          "253": 7,
+          "254": 7,
+          "255": 7,
+          "26": 6,
+          "27": 6,
+          "28": 6,
+          "29": 6,
+          "3": 6,
+          "30": 6,
+          "31": 6,
+          "32": 6,
+          "33": 13,
+          "34": 6,
+          "35": 6,
+          "36": 6,
+          "37": 6,
+          "38": 6,
+          "39": 6,
+          "4": 6,
+          "40": 6,
+          "41": 13,
+          "42": 6,
+          "43": 6,
+          "44": 6,
+          "45": 6,
+          "46": 6,
+          "47": 14,
+          "48": 6,
+          "49": 6,
+          "50": 6,
+          "51": 6,
+          "52": 6,
+          "53": 13,
+          "54": 6,
+          "55": 13,
+          "56": 6,
+          "57": 6,
+          "59": 6,
+          "6": 1802,
+          "60": 6,
+          "61": 6,
+          "62": 6,
+          "63": 6,
+          "64": 6,
+          "65": 6,
+          "66": 6,
+          "67": 6,
+          "68": 6,
+          "69": 6,
+          "70": 6,
+          "71": 6,
+          "72": 6,
+          "73": 6,
+          "74": 6,
+          "75": 6,
+          "76": 6,
+          "77": 13,
+          "78": 6,
+          "79": 6,
+          "8": 5,
+          "80": 6,
+          "81": 6,
+          "82": 6,
+          "83": 6,
+          "84": 6,
+          "85": 6,
+          "86": 6,
+          "87": 6,
+          "88": 6,
+          "89": 7,
+          "9": 5,
+          "90": 6,
+          "91": 6,
+          "92": 6,
+          "93": 6,
+          "94": 6,
+          "95": 6,
+          "96": 6,
+          "97": 6,
+          "98": 6,
+          "99": 6
+        },
+        "related_numeric_states": {
+          "IN_BYTES": {
+            "positive": 63425
+          },
+          "IN_PKTS": {
+            "positive": 63425
+          },
+          "OUT_BYTES": {
+            "zero": 63425
+          },
+          "OUT_PKTS": {
+            "zero": 63425
+          }
+        }
+      },
+      "positive_infinity:DST_TO_SRC_SECOND_BYTES": {
+        "attacks": {
+          "Backdoor": 1208,
+          "Benign": 86704,
+          "DoS": 930,
+          "Exploits": 3932,
+          "Fuzzers": 8228,
+          "Generic": 14891,
+          "Reconnaissance": 5783,
+          "Shellcode": 795,
+          "Worms": 22
+        },
+        "duration_buckets": {
+          "DURATION_IN": {
+            "zero": 122493
+          },
+          "DURATION_OUT": {
+            "zero": 122493
+          },
+          "FLOW_DURATION_MILLISECONDS": {
+            "zero": 122493
+          }
+        },
+        "labels": {
+          "0": 86704,
+          "1": 35789
+        },
+        "protocols": {
+          "0": 6,
+          "1": 337,
+          "10": 5,
+          "100": 6,
+          "101": 6,
+          "102": 6,
+          "103": 7,
+          "104": 7,
+          "105": 7,
+          "106": 7,
+          "107": 7,
+          "108": 7,
+          "109": 7,
+          "11": 5,
+          "110": 7,
+          "111": 7,
+          "112": 7,
+          "113": 7,
+          "114": 7,
+          "115": 7,
+          "116": 7,
+          "117": 7,
+          "118": 7,
+          "119": 7,
+          "12": 5,
+          "120": 7,
+          "121": 7,
+          "122": 7,
+          "123": 7,
+          "124": 7,
+          "125": 7,
+          "126": 7,
+          "127": 7,
+          "128": 7,
+          "129": 7,
+          "13": 5,
+          "130": 7,
+          "131": 7,
+          "132": 41,
+          "133": 7,
+          "134": 7,
+          "135": 7,
+          "136": 7,
+          "137": 7,
+          "138": 7,
+          "139": 7,
+          "14": 5,
+          "140": 7,
+          "141": 7,
+          "142": 7,
+          "143": 7,
+          "144": 7,
+          "145": 7,
+          "146": 7,
+          "147": 7,
+          "148": 7,
+          "149": 7,
+          "15": 5,
+          "150": 7,
+          "151": 7,
+          "152": 7,
+          "153": 7,
+          "154": 7,
+          "155": 7,
+          "156": 7,
+          "157": 7,
+          "158": 7,
+          "159": 7,
+          "16": 5,
+          "160": 7,
+          "161": 7,
+          "162": 7,
+          "163": 7,
+          "164": 7,
+          "165": 7,
+          "166": 7,
+          "167": 7,
+          "168": 7,
+          "169": 7,
+          "17": 113722,
+          "170": 7,
+          "171": 7,
+          "172": 7,
+          "173": 7,
+          "174": 7,
+          "175": 7,
+          "176": 7,
+          "177": 7,
+          "178": 7,
+          "179": 7,
+          "180": 7,
+          "181": 7,
+          "182": 7,
+          "183": 7,
+          "184": 7,
+          "185": 7,
+          "186": 7,
+          "187": 7,
+          "188": 7,
+          "189": 7,
+          "19": 6,
+          "190": 7,
+          "191": 7,
+          "192": 7,
+          "193": 6,
+          "194": 6,
+          "195": 7,
+          "196": 7,
+          "197": 7,
+          "198": 7,
+          "199": 7,
+          "2": 19,
+          "20": 6,
+          "200": 7,
+          "201": 7,
+          "202": 7,
+          "203": 7,
+          "204": 7,
+          "205": 7,
+          "206": 7,
+          "207": 7,
+          "208": 7,
+          "209": 7,
+          "21": 6,
+          "210": 7,
+          "211": 7,
+          "212": 7,
+          "213": 7,
+          "214": 7,
+          "215": 7,
+          "216": 7,
+          "217": 7,
+          "218": 7,
+          "219": 7,
+          "22": 6,
+          "220": 7,
+          "221": 7,
+          "222": 7,
+          "223": 7,
+          "224": 7,
+          "225": 7,
+          "226": 7,
+          "227": 7,
+          "228": 7,
+          "229": 7,
+          "23": 6,
+          "230": 7,
+          "231": 7,
+          "232": 7,
+          "233": 7,
+          "234": 7,
+          "235": 7,
+          "236": 7,
+          "237": 7,
+          "238": 7,
+          "239": 7,
+          "24": 6,
+          "240": 7,
+          "241": 7,
+          "242": 7,
+          "243": 7,
+          "244": 7,
+          "245": 7,
+          "246": 7,
+          "247": 7,
+          "248": 7,
+          "249": 7,
+          "25": 6,
+          "250": 7,
+          "251": 7,
+          "252": 7,
+          "253": 7,
+          "254": 7,
+          "255": 7,
+          "26": 6,
+          "27": 6,
+          "28": 6,
+          "29": 6,
+          "3": 6,
+          "30": 6,
+          "31": 6,
+          "32": 6,
+          "33": 13,
+          "34": 6,
+          "35": 6,
+          "36": 6,
+          "37": 6,
+          "38": 6,
+          "39": 6,
+          "4": 6,
+          "40": 6,
+          "41": 13,
+          "42": 6,
+          "43": 6,
+          "44": 6,
+          "45": 6,
+          "46": 6,
+          "47": 14,
+          "48": 6,
+          "49": 6,
+          "50": 6,
+          "51": 6,
+          "52": 6,
+          "53": 13,
+          "54": 6,
+          "55": 13,
+          "56": 6,
+          "57": 6,
+          "59": 6,
+          "6": 6707,
+          "60": 6,
+          "61": 6,
+          "62": 6,
+          "63": 6,
+          "64": 6,
+          "65": 6,
+          "66": 6,
+          "67": 6,
+          "68": 6,
+          "69": 6,
+          "70": 6,
+          "71": 6,
+          "72": 6,
+          "73": 6,
+          "74": 6,
+          "75": 6,
+          "76": 6,
+          "77": 13,
+          "78": 6,
+          "79": 6,
+          "8": 5,
+          "80": 6,
+          "81": 6,
+          "82": 6,
+          "83": 6,
+          "84": 6,
+          "85": 6,
+          "86": 6,
+          "87": 6,
+          "88": 6,
+          "89": 7,
+          "9": 5,
+          "90": 6,
+          "91": 6,
+          "92": 6,
+          "93": 6,
+          "94": 6,
+          "95": 6,
+          "96": 6,
+          "97": 6,
+          "98": 6,
+          "99": 6
+        },
+        "related_numeric_states": {
+          "IN_BYTES": {
+            "positive": 122493
+          },
+          "IN_PKTS": {
+            "positive": 122493
+          },
+          "OUT_BYTES": {
+            "positive": 59068,
+            "zero": 63425
+          },
+          "OUT_PKTS": {
+            "positive": 59068,
+            "zero": 63425
+          }
+        }
+      },
+      "positive_infinity:SRC_TO_DST_SECOND_BYTES": {
+        "attacks": {
+          "Benign": 59068
+        },
+        "duration_buckets": {
+          "DURATION_IN": {
+            "zero": 59068
+          },
+          "DURATION_OUT": {
+            "zero": 59068
+          },
+          "FLOW_DURATION_MILLISECONDS": {
+            "zero": 59068
+          }
+        },
+        "labels": {
+          "0": 59068
+        },
+        "protocols": {
+          "17": 54163,
+          "6": 4905
+        },
+        "related_numeric_states": {
+          "IN_BYTES": {
+            "positive": 59068
+          },
+          "IN_PKTS": {
+            "positive": 59068
+          },
+          "OUT_BYTES": {
+            "positive": 59068
+          },
+          "OUT_PKTS": {
+            "positive": 59068
+          }
+        }
+      }
+    },
+    "overlap_patterns": {
+      "missing:SRC_TO_DST_SECOND_BYTES | positive_infinity:DST_TO_SRC_SECOND_BYTES": 63425,
+      "positive_infinity:DST_TO_SRC_SECOND_BYTES | positive_infinity:SRC_TO_DST_SECOND_BYTES": 59068
+    },
+    "rows_with_multiple_findings": 122493,
+    "rows_with_one_finding": 0
+  },
+  "real_data": true,
+  "rows": 2365424,
+  "source_file": "NF-UNSW-NB15-v3.csv",
+  "status": {
+    "ML_READY": "BLOCKED",
+    "RAW_QUALITY": "FINDINGS_RECORDED",
+    "SOURCE_INTEGRITY": "PASS",
+    "ml_readiness_blockers": [
+      "raw quality findings require an approved train-only handling policy",
+      "real split and leakage audit are NOT VERIFIED"
+    ],
+    "raw_quality_findings": {
+      "behavioral_fingerprint_duplicate_rows": 1134553,
+      "exact_duplicate_rows": 14815,
+      "missing:SRC_TO_DST_SECOND_BYTES": 63425,
+      "ml_feature_equivalent_duplicate_rows": 1134553,
+      "positive_infinity:DST_TO_SRC_SECOND_BYTES": 122493,
+      "positive_infinity:SRC_TO_DST_SECOND_BYTES": 59068
+    },
+    "source_integrity_issues": {}
+  },
+  "timestamp_range_epoch_ms": {
+    "maximum_end": 1424262565011.0,
+    "minimum_start": 1421927376907.0
+  }
+}

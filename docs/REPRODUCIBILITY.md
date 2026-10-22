@@ -1,129 +1,163 @@
 # Reproducibility
 
-## Môi trường hiện tại
+## Environment
 
-- Python >=3.11; CI chạy ma trận 3.11 và 3.12 trên Ubuntu và Windows (`.github/workflows/ci.yml`).
-- Cài bằng `python -m pip install -e .` hoặc `python -m pip install -r requirements.txt`.
-- `pyproject.toml` và `requirements.txt` dùng giới hạn phiên bản tối thiểu (`>=`), chưa phải lockfile. Cùng câu lệnh cài đặt có thể giải quyết ra các phiên bản khác nhau.
-- Khi ghi nhận một lần chạy, lưu `python --version`, kết quả `python -m pip freeze`, hệ điều hành và commit (`git rev-parse HEAD`). File danh sách phiên bản đã cài là bằng chứng môi trường, chưa bảo đảm tái lập trên mọi nền tảng.
-
-## Lệnh kiểm tra đã có
-
-Chạy từ root repository, sau khi cài package:
+- Python: 3.11/3.12 in CI; local code declares `>=3.11`.
+- Supported CI OS: Ubuntu and Windows.
+- Raw dataset and large model artifacts are not committed.
+- `pytest` prepends this checkout's `src/`, avoiding an editable install from another worktree.
 
 ```text
-python -c "import network_anomaly"
 python scripts/check_environment.py
-python -m pytest -q
-python scripts/validate_data.py
-python scripts/run_experiments.py --step baseline   # exit 3 = NOT IMPLEMENTED
+python -m pytest tests -q
+python -m ruff check .
+python -m black --check .
+git diff --check
 ```
 
-Validator mặc định tìm `data/raw/UNSW_NB15_training-set.csv` và
-`data/raw/UNSW_NB15_testing-set.csv`; khi cả hai thiếu, in SKIPPED và exit 0.
-Đó không phải bằng chứng dữ liệu thật đã đạt. `--file` chỉ định tên file dưới
-`data/raw/` hoặc đường dẫn rõ ràng; file thiếu và dữ liệu sai trả exit 1.
-Profile kiểm tra 45 cột, kiểu dữ liệu, nhãn, attack category, missing, duplicate và dòng trống. Dòng CSV không có delimiter và không có giá trị là lỗi chặn (exit 1) với số dòng và vị trí, không bị bỏ qua âm thầm; dòng có delimiter nhưng giá trị rỗng vẫn thuộc kiểm tra missing/độ rộng hàng. Báo cáo trên cặp CSV đã đối chiếu mirror nằm trong `reports/data_quality/unsw_nb15_validation.json`. Leakage audit thuộc #7.
-
-Tests CSV dùng dữ liệu tổng hợp tạo trong thư mục tạm. Test constructor của RF/IF không chứng minh fit/predict hoặc kết quả trên UNSW-NB15. SKIPPED và fixture không thay thế thực nghiệm thật.
-
-## Seed và cấu hình
-
-- Giá trị mặc định `RANDOM_SEED = 42` nằm trong `src/network_anomaly/config.py`, được dùng cho `random_state` của model constructors.
-- Chưa có training/split pipeline hoàn chỉnh; không mặc định rằng seed NumPy/Python hoặc mọi bước chia dữ liệu đã được thiết lập. Khi triển khai phải ghi rõ seed thực sự được sử dụng.
-- Cấu hình hiện lấy từ module Python; chưa có cơ chế đọc seed từ biến môi trường hoặc `pyproject.toml`.
-
-## Thực nghiệm và artifact (chưa hoàn thành)
-
-Training, đánh giá end-to-end và Inference CSV chưa có entrypoint hoàn chỉnh. `scripts/run_experiments.py`
-chỉ thực sự chạy bước `check-data` (gọi `validate_data.py`); các bước `baseline`, `evaluate`, `inference`
-in trạng thái NOT IMPLEMENTED và **trả exit 3** để không ai đọc nhầm là đã chạy thành công. Exit 2 dành riêng
-cho lỗi dòng lệnh, nên gõ sai `--step` không bị nhầm với bước "đã lên kế hoạch".
-
-Khi được giao triển khai, mỗi lần chạy cần lưu: run ID, commit, checksum/phiên bản dữ liệu, split/seed, danh sách feature, cấu hình, phiên bản thư viện, model/preprocessing đã fit và metric/confusion matrix có nguồn gốc rõ ràng. Không ghi đè artifact âm thầm và không commit dataset/artifact lớn.
-
-## Ghi nhận dataset
-
-Manifest version-control tại `data/UNSW_NB15_MANIFEST.json` ghi nguồn chính thức,
-mirror revision-pinned, thời điểm UTC, kích thước, SHA-256 và các nguồn đối chiếu.
-UNSW không công bố SHA-256 và endpoint SharePoint yêu cầu xác thực trong lần kiểm tra,
-vì vậy manifest không gọi checksum local là checksum chính thức.
+## Reproduce official bytes
 
 ```text
-python scripts/fetch_unsw_nb15.py
+python scripts/fetch_nf_unsw_nb15_v3.py
 python scripts/dataset_manifest.py verify
-python scripts/validate_data.py --manifest data/UNSW_NB15_MANIFEST.json --report reports/data_quality/unsw_nb15_validation.json
 ```
 
-Script fetch tái sử dụng cache local: file trong `data/raw/` chỉ được giữ khi khớp
-SHA-256 và kích thước theo manifest, nên chạy lại không tải lại (`CACHE_HIT`). File thiếu
-hoặc sai được tải lại từ mirror revision-pinned vào staging tạm cùng thư mục đích, kiểm tra
-HTTP response, size và SHA-256 trước khi thay thế nguyên tử; byte tải về bị giới hạn cứng
-bởi kích thước đã ghim nên response vô hạn không đầy được đĩa đích, và staging luôn được dọn
-kể cả khi lỗi. Trước lần thay đầu tiên script sao lưu bản cũ của mọi file sẽ bị thay, và nếu
-`os.replace` thất bại ở file nào thì các file **đã thay** được hoàn nguyên về byte trước đó,
-rồi lỗi gốc được ném lại. Rollback không xóa file đích trước: `os.replace` ghi đè nguyên tử
-nên nếu khôi phục lỗi, file đích giữ byte mới đã verify và bản sao lưu được giữ lại kèm
-dòng `RECOVERY` để phục hồi thủ công. File mới tạo trong lần chạy đó bị xóa lại để thư mục
-trở về đúng trạng thái trước lần chạy; nếu xóa lỗi, file được giữ lại và báo
-`ROLLBACK WARNING` kèm `RECOVERY`. Lỗi khi dọn staging/backup được ghi `CLEANUP WARNING` và
-không ném lỗi mới đè lên lỗi đang báo; backup dở dang khi `copyfile` lỗi được xóa ngay, và
-tên backup lấy tên trống kế tiếp để không ghi đè một backup còn sót đang là bản duy nhất, và cả staging lẫn
-backup đều mở bằng `O_CREAT|O_EXCL` để một symlink cài sẵn không thể chuyển hướng ghi ra ngoài
-thư mục đích. Cài đặt ghi marker `.unsw-nb15-transaction.json` trước lần thay đầu tiên, nên
-tiến trình bị giết cứng giữa hai lần thay sẽ được lần chạy sau hoàn nguyên trước khi kiểm tra
-cache; marker không đọc được thì lần chạy dừng thay vì ghi đè trạng thái chưa hiểu, marker
-được giữ lại khi khôi phục thất bại, và recovery idempotent nên backup đã restore ở lần trước
-không làm mắc lần chạy sau. Khôi phục còn dang dở thì lần chạy dừng với exit 1 trước khi tải
-hay cài bất cứ thứ gì, và mục "backup đã biến mất" chỉ được coi là đã khôi phục khi byte còn lại
-khớp SHA-256 đã ghim. `dataset_manifest.py record` ghi ra file phụ có kèm PID rồi đặt vào chỗ
-bằng `os.link`, nên không ghi đè được manifest đã có và một lần ghi bị giết không để lại manifest
-cắt cụt; trên filesystem không có hardlink thì giữ chỗ tên bằng `O_CREAT|O_EXCL` trước khi đổ
-nội dung.
-Một lock `.unsw-nb15.lock` giữ xuyên suốt giao dịch nên hai lần chạy không xen kẽ backup,
-swap và rollback; đó là khóa byte-range của hệ điều hành (`msvcrt.locking` / `fcntl.flock`)
-nên kernel giải phóng khi tiến trình chết, không có ngưỡng stale và không có bước phá lock
-có thể xóa nhầm; lần chạy thứ hai chờ tối đa 900s. `dataset_manifest.py` không dùng lock này;
-`verify` chạy sau `record` sẽ phát hiện trạng thái lẫn bằng SHA-256. Tên staging và backup có
-kèm PID nên hai lần chạy đồng thời không dùng chung file tạm. Raw CSV bị `.gitignore` loại khỏi
-Git. Báo cáo thật
-lưu aggregate row/schema/blank/missing/duplicate và checksum, không chứa dòng raw.
-Fixture test chỉ kiểm tra hành vi validator.
+The manifest pins DOI, UQRDM UUID, package identifier, byte sizes, project-computed SHA-256,
+publisher BagIt SHA-1 for payload files, schema order and verified distributions. The download API
+returns a rotating signed URL, so the stable identity is the UQRDM record plus pinned content bytes,
+not the temporary URL.
 
-`validate_data.py` kiểm tra số bản ghi chính thức của hai split mặc định (175.341 và
-82.332) kể cả khi không truyền `--manifest`, lấy theo manifest khi manifest có ghi
-`expected_rows`, và `--no-row-count` bỏ qua cả hai nguồn cho fixture hoặc tập con.
-`--report` không được trỏ tới file CSV đầu vào hay tới manifest.
+Fetcher safety includes bounded streaming, HTML/ZIP/member checks, safe extraction, cache
+verification, destination lock, staging, transaction marker, backup, rollback and recovery. A
+successful cache hit still rehashes all package members.
 
-Khi cả hai CSV vắng mặt, `validate_data.py` in `SKIPPED`, in rõ `SKIPPED is not PASS` và
-exit 0; khi chạy trong GitHub Actions nó ghi thêm annotation `::warning::SKIPPED is not a
-PASS` để CI không bị đọc nhầm là đã kiểm chứng dữ liệu thật.
+## Reproduce real-data audit
 
-Timestamp trong manifest là ISO 8601 nguyên giây kèm offset tường minh
-(`YYYY-MM-DDTHH:MM:SSZ` hoặc `±HH:MM`), không dùng naive datetime. `record` chuẩn hóa
-`--downloaded-at` về UTC trước khi ghi; `verify` kiểm tra mọi timestamp tìm thấy trong
-manifest và chỉ đọc, nên chạy verify không đổi file manifest.
+```text
+python scripts/validate_data.py
+```
 
-## Bằng chứng M1 tại head PR #22
+Expected current status is `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`,
+`ML_READY: BLOCKED`. The version-controlled report records the verified dataset SHA-256,
+row/label/category counts, missing/non-finite counts and disk-backed duplicate audit. The validator
+removes its temporary SQLite database after success or failure.
 
-Ở `8b82a6e` (2026-10-19), `python -m pytest tests -q --tb=short` PASS với **144 tests**.
-CI của đúng head đó PASS 4/4 cho Ubuntu/Windows × Python 3.11/3.12. Vì runner CI không chứa raw
-CSV, `validate_data.py` trong CI là `SKIPPED` có warning annotation, không phải PASS cho dữ liệu
-thật. Báo cáo version-control `reports/data_quality/unsw_nb15_validation.json` là evidence local
-trên CSV thật: 45 cột và 175.341/82.332 dòng, không blank/missing/nhãn-category bất hợp lệ hoặc
-mâu thuẫn; duplicate bỏ `id` là 67.601/26.387 và vẫn cần Issue #7 audit.
+When the default CSV is absent, validation prints `SOURCE_INTEGRITY: SKIPPED` and exits `0`. A
+source-valid but ML-blocked audit exits `1`; integrity/corruption errors exit `2`. The SKIPPED
+behavior permits CI without a 577 MB raw CSV, but it is not real-data evidence. Synthetic test PASS
+only demonstrates validator behavior.
 
-## Giới hạn tái lập và recovery
+## Reproduce the exploratory analysis
 
-Transaction fetch không phải bảo đảm ACID: marker mất/hỏng, lỗi filesystem hay process không dùng
-script có thể để lại trạng thái cần recovery thủ công. Lock OS chỉ serial hóa các lần chạy hợp tác
-của `fetch_unsw_nb15.py` trên một máy; `dataset_manifest.py` không lấy lock, nên record/verify có
-thể quan sát xen kẽ với fetch. Khi hardlink không khả dụng, `record` vẫn tránh ghi đè nhờ
-`O_CREAT|O_EXCL` nhưng publish manifest không atomic về nội dung. Các giới hạn này không làm sai
-evidence validation đã ghi, nhưng không phải tuyên bố bảo vệ dữ liệu toàn diện.
+```text
+python scripts/eda_nf_unsw_nb15_v3.py
+```
 
-Issue #7 vẫn ngoài phạm vi: chưa audit cross-split duplicate, near-duplicate, flow/session/group
-overlap, feature leakage hay quyết định feature/split. Không coi profile validation là leakage-safe
-preprocessing hoặc thí nghiệm ML.
+The EDA reuses the manifest contract and the byte verification of `scripts/validate_data.py`, so
+`scripts/validate_data.py` has to run first. The run streams the population in bounded memory and
+writes the machine-readable summary `reports/eda/nf_unsw_nb15_v3_eda_summary.json`, the generated
+report `docs/dataset/NF_UNSW_NB15_V3_EDA.md` and the labelled figures under
+`reports/figures/nf_unsw_nb15_v3/` (excluded from Git, regenerated locally).
 
-Cập nhật: 2026-10-19.
+Reproducibility properties of the recorded run:
+
+- Source identity: SHA-256 of the raw CSV is re-verified against the manifest before the analysis.
+- Sampling: figures and shape statistics use a reservoir sample of 200,000 rows with seed `42` and
+  the method is recorded in the summary. Counts, means, extremes, exact population quantiles and
+  complete-case correlations are computed over every row.
+- Float aggregation: means and standard deviations are accumulated per streaming chunk, so their
+  last decimal digits depend on the chunk size. The recorded run uses the default chunk size of
+  100,000 rows; counts and quantiles are unaffected.
+- Stability: two runs of the same command on the same bytes produce identical counts and
+  quantiles. Re-running the command regenerates the report and the summary; the summary records
+  the run timestamp, the report records the dataset SHA-256.
+- Absent raw bytes: the command prints `EDA: SKIPPED` and exits `0`. A skip is not a result and
+  writes no artifact.
+
+The analysis is descriptive only. It does not fit a transformer, does not select features, does not
+remove a row and does not create a split, so `ML_READY` stays `BLOCKED`.
+
+## Reproduce the EDA twice and compare the two runs
+
+```text
+python scripts/verify_eda_reproducibility.py
+```
+
+The command executes `scripts/eda_nf_unsw_nb15_v3.py` twice on the same verified source file and
+writes one retrievable evidence bundle per run:
+
+| Artifact | Path | Content |
+|---|---|---|
+| Run metadata | `reports/eda/evidence/run-{1,2}/run_metadata.json` | git HEAD, branch, commit date, interpreter, OS, dependency versions, dataset identity, manifest and schema verification, key aggregates, command, exit code, start/end timestamps, SHA-256 of the summary and report |
+| Captured output | `reports/eda/evidence/run-{1,2}/stdout.log`, `stderr.log` | the real stdout and stderr of that run |
+| Summary of that run | `reports/eda/evidence/run-{1,2}/eda_summary.json` | the exact machine-readable summary the run produced |
+| Report of that run | `reports/eda/evidence/run-{1,2}/eda_report.md` | the exact generated report of that run |
+| Comparison | `reports/eda/evidence/reproducibility_comparison.md`, `.json` | PASS/FAIL per metric and the list of differences |
+
+The comparison walks both summaries and both evidence bundles. Only the metadata that is allowed to
+differ between two runs of the same command is excluded: the run timestamp and the environment
+description. The two summary artifacts have different file hashes because each artifact embeds its
+own run timestamp; the deterministic content comparison is the authoritative check.
+
+Exit codes: `0` when both runs succeeded and the deterministic content is identical, or when the raw
+package is absent and the check was skipped, `1` when a run failed or the two runs disagree. A
+skipped check prints `SKIPPED`, never `PASS`, and writes no artifact.
+
+## What runs where
+
+| Check | Environment | Result |
+|---|---|---|
+| `scripts/validate_data.py` | local, raw package present | real-data audit, exit `1` while `ML_READY: BLOCKED` |
+| `scripts/eda_nf_unsw_nb15_v3.py` | local, raw package present | EDA executed on the verified population |
+| `scripts/verify_eda_reproducibility.py` | local, raw package present | two runs compared per metric |
+| `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
+| `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+| `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+
+A skipped CI step is never reported as evidence that the validator or the EDA ran on real data.
+
+## Lint scope
+
+| Scope | Ruff 0.17.1 | Black 26.10.1 | Tracking |
+|---|---|---|---|
+| Files owned by the current change set | PASS | PASS | — |
+| Whole repository | 5 findings, exit `1` | 11 files, exit `1` | Issue #37 |
+
+The repository-wide result is a FAIL while the findings remain. The Linux and CI-compatible
+re-check is the manual or pull-request workflow `.github/workflows/lint-audit.yml`.
+
+## Split and experiment identity
+
+No real v3 split or benchmark currently exists. A future accepted run must record:
+
+- Git commit and dependency snapshot;
+- dataset SHA-256 and split identifier;
+- temporal boundaries, group rule, excluded-row ledger and row-index hashes;
+- ordered feature list and trace-only metadata list;
+- train-only fitted preprocessing artifact and its hash;
+- model family, seed/config, artifact hash and environment;
+- validation-selected threshold/hyperparameters;
+- test metrics, confusion matrix, per-category errors and limitations.
+
+Random seed `42` is the default where randomness is required. It does not replace recording the
+actual seed or deterministic split algorithm.
+
+## Leakage and transform rules
+
+- Split/group/deduplicate before fitting preprocessing.
+- Default `X` is the ordered 47-feature contract. Never put `Label`, `Attack`, IP identifiers,
+  L4 ports or absolute timestamps in it.
+- Fit imputer, non-finite policy, encoder, scaler, selector and resampler only on train.
+- Validation selects configuration and thresholds; test is not reused for tuning.
+- Fail when exact, source-feature or ML-feature fingerprints, or canonical flow groups, cross
+  partitions. Enforce chronological boundaries and any configured purge gap.
+- Treat the five-minute bidirectional 5-tuple group as a documented heuristic, not a proven session.
+
+See `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
+The policy boundary is specified in `docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; it is not a
+fitted preprocessing artifact.
+
+## Historical snapshot boundary
+
+UNSW-NB15 (2015) scripts, manifest and quality report are retained under `historical/`. Their old
+PASS state describes different bytes/schema/split and cannot validate NF-UNSW-NB15-v3.

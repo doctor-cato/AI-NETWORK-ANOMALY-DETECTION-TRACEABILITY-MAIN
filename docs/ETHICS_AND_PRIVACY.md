@@ -2,7 +2,9 @@
 
 ## Sử dụng dữ liệu
 
-- UNSW-NB15 dành cho mục đích học thuật/nghiên cứu. Người dùng phải tôn trọng điều khoản của dataset và không phân phối lại dữ liệu gốc khi chưa xác nhận quyền.
+- NF-UNSW-NB15-v3 có license record `Permitted Re-Use with Commercial Use Restriction`: phải
+  trích dẫn đầy đủ và chỉ dùng cho mục đích phi thương mại. Apache-2.0 của source code không
+  relicense dataset.
 - Repository này chỉ chứa hướng dẫn và mã nguồn; không kèm dataset.
 - Mã nguồn và tài liệu không nhúng dữ liệu cá nhân như tên, địa chỉ hoặc nội dung mạng riêng tư.
 
@@ -18,4 +20,4 @@
 - Mô hình không bảo đảm phát hiện zero-day; mọi tuyên bố như vậy cần thực nghiệm có kiểm soát, hiện chưa được thực hiện.
 - Cần diễn giải kết quả cùng với nguy cơ false positive và các giới hạn dữ liệu.
 
-Cập nhật: 2026-10-17
+Cập nhật: 2026-10-20
