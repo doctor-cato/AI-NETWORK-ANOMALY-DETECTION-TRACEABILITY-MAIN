@@ -44,9 +44,10 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 
 ## C1–C11
 
-C1 đã có provenance/schema và real-data quality/duplicate audit cho NF-UNSW-NB15-v3:
-`SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA đầy đủ và split thật vẫn
-`NOT VERIFIED`. C2 có 47-feature/split/handling contracts và synthetic guard tests nhưng chưa có
+C1 đã có provenance/schema, real-data quality/duplicate audit và EDA tái lập được cho
+NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA chạy trên
+2.365.424 dòng và tái lập khớp các finding đã xác minh, còn split thật vẫn `NOT VERIFIED`.
+C2 có 47-feature/split/handling contracts và synthetic guard tests nhưng chưa có
 fitted preprocessing artifact, nên `ML_READY: BLOCKED`. C3–C11 vẫn `PLANNED`.
 
 ## Migration NF-UNSW-NB15-v3 — A–H

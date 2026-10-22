@@ -11,6 +11,7 @@ UQRDM stable dataset UUID
   -> atomic package publish + rollback marker + OS lock
   -> manifest verification
   -> streaming quality audit
+  -> exploratory analysis (descriptive, no split, no fitting)
   -> split contract / split manifest
   -> train-only preprocessing (future C2)
 ```
@@ -25,11 +26,14 @@ ghim không xác minh được, acquisition `FAIL` và giữ nguyên cache/packa
 | Downloader | `scripts/fetch_nf_unsw_nb15_v3.py` |
 | Manifest verifier | `scripts/dataset_manifest.py` |
 | Validator | `scripts/validate_data.py` |
+| Exploratory analysis | `scripts/eda_nf_unsw_nb15_v3.py`, `src/network_anomaly/eda/` |
 | Version-control manifest | `data/NF_UNSW_NB15_V3_MANIFEST.json` |
 | Published local package | `data/raw/NF-UNSW-NB15-v3/` |
 | Dataset CSV | `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` |
 | Feature dictionary | `data/raw/NF-UNSW-NB15-v3/data/NetFlow_v3_Features.csv` |
 | Validation report | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
+| EDA summary | `reports/eda/nf_unsw_nb15_v3_eda_summary.json` |
+| EDA report | `docs/dataset/NF_UNSW_NB15_V3_EDA.md` |
 | Split protocol | `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md` |
 | Historical 2015 evidence | `data/historical/`, `reports/data_quality/historical/`, `scripts/historical/` |
 
@@ -80,6 +84,18 @@ tạo thành sáu trace/grouping metadata fields, không nằm trong baseline ML
 Imputer/encoder/scaler/selector chỉ
 được fit trên train. Seed, boundary, group rule, counts và class distribution phải nằm
 trong split manifest trước training.
+
+## Exploratory analysis contract (Issue #6)
+
+EDA chạy sau validator, tái sử dụng manifest contract và byte verification của
+`scripts/validate_data.py` nên không copy logic. Profiler stream theo chunk, giữ RAM
+giới hạn, buffer giá trị ra đĩa để tính quantile population chính xác, và dùng reservoir
+sample có seed cho shape statistics và biểu đồ. Báo cáo Markdown được sinh tự động từ
+summary máy đọc được nên số liệu không thể lệch khỏi artifact.
+
+EDA chỉ mô tả: không chọn feature, không fit transformer/selector, không xóa dòng, không
+tạo split. Vì chưa có split manifest, mọi khuyến nghị phụ thuộc train ghi
+`PENDING ISSUE #7` và `ML_READY` giữ `BLOCKED`. Raw bytes không bị đổi.
 
 ## Compatibility và historical evidence
 
