@@ -198,3 +198,22 @@ Completed: branch pushed to the existing PR #36; Issues #6, #7, #8, #17 and #20 
 Remote verification: PR remains OPEN and unmerged; CI matrix PASS; no reviews/comments pending at
   the recorded readback. Repository-wide Ruff/Black and ML readiness blockers remain explicit.
 ```
+
+```text
+Checkpoint 9 — reproducible EDA (Issue #6)
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: recorded by final PR readback.
+Completed: streaming EDA for NF-UNSW-NB15-v3 in src/network_anomaly/eda plus the CLI
+  scripts/eda_nf_unsw_nb15_v3.py; generated report docs/dataset/NF_UNSW_NB15_V3_EDA.md and
+  machine-readable summary reports/eda/nf_unsw_nb15_v3_eda_summary.json. The run re-verifies the
+  source SHA-256, reuses the validator contract, profiles the whole population in bounded memory
+  and reproduces the inherited quality findings exactly.
+Tests: PASS — 15 EDA unit tests on synthetic fixtures; full pytest suite; Ruff and Black on every
+  changed Python file; real-data EDA run on 2,365,424 rows with MATCH on rows, labels, exact
+  duplicate rows and repeated rows.
+Issues: #6 implemented; #7 (real split, leakage audit) and #8 (train-only fitted preprocessing)
+  remain OPEN; #37 keeps the repository-wide lint debt.
+PR: #36 updated in place, still OPEN, not merged; reviewer re-review requested.
+Remaining: ML_READY stays BLOCKED. No feature selection, no fitted transformer, no model, no
+  evaluation. Repository-wide Ruff/Black debt is unchanged and tracked by #37.
+```

@@ -6,7 +6,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | C | Requirement | Issue | Deliverable/evidence | Trạng thái hiện tại |
 |---|---|---|---|---|
 | C0 | Governance, scope, architecture, backlog | #23 | docs, backlog, PR evidence | IMPLEMENTED; trạng thái remote phải đọc lại theo từng PR |
-| C1 | NF-UNSW-NB15-v3 provenance, quality, EDA, leakage | #4–#7 | v3 manifest, schema, real numeric/duplicate audit, leakage decision | `SOURCE_INTEGRITY: PASS`; `RAW_QUALITY: FINDINGS_RECORDED`; full EDA/split NOT VERIFIED; `ML_READY: BLOCKED` |
+| C1 | NF-UNSW-NB15-v3 provenance, quality, EDA, leakage | #4–#7 | v3 manifest, schema, real numeric/duplicate audit, EDA report, leakage decision | `SOURCE_INTEGRITY: PASS`; `RAW_QUALITY: FINDINGS_RECORDED`; EDA IMPLEMENTED/TESTED on real data; real split/leakage NOT VERIFIED; `ML_READY: BLOCKED` |
 | C2 | Preprocessing không leakage | #8 | train-only pipeline artifact, fit-boundary tests | 47-feature/handling contracts TESTED; fitted artifact PLANNED; ML_READY BLOCKED |
 | C3 | RF và XGBoost supervised | #9, #10, #12, #31 | model artifacts, metrics, reproduction | PLANNED |
 | C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED |
@@ -30,6 +30,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | F — Architecture/docs | v3 default throughout current docs | link/text/status checks | IMPLEMENTED / VERIFIED |
 | G — Tests/CI | Windows/Linux matrix and migration regression tests | 196 pytest PASS; migration Ruff/per-file Black PASS; repo Ruff/Black FAIL on pre-existing files; PR CI matrix PASS but does not run Ruff/Black | PARTIAL — remote CI PASS, all-gates blockers remain |
 | H — Issues/PR | #6–#15, #17, #18, #20, #25, #29, #31; historical notes #4/#5; M1–M5/M7 | #6/#7/#8/#17/#20 hardening contracts read back OPEN; PR #36 OPEN into `main` | VERIFIED; not merged |
+| I — EDA (Issue #6) | `scripts/eda_nf_unsw_nb15_v3.py`, `src/network_anomaly/eda/`, generated report + summary | 15 EDA unit tests on synthetic fixtures PASS; real run on 2.365.424 rows; inherited findings reproduced (rows, labels, exact duplicates, repeated rows all MATCH) | IMPLEMENTED / TESTED; no split, no fitted artifact, `ML_READY: BLOCKED` |
 
 UNSW-NB15 (2015) evidence is preserved under `historical/`; its old validation cannot satisfy a v3
 gate. PR #22 and #35 are merged historical workstreams, not pending proof for this migration.
@@ -39,4 +40,4 @@ Chuỗi bắt buộc cho mọi claim:
 Synthetic fixture/CI không thay thế real-data experiment. Mỗi result phải gắn commit,
 dataset/split identifier, dependency versions, seed/config, artifact và reproduction command.
 
-Cập nhật: 2026-10-21 (migration NF-UNSW-NB15-v3; self-review, không phải reviewer độc lập)
+Cập nhật: 2026-10-22 (migration NF-UNSW-NB15-v3 + EDA Issue #6; self-review, không phải reviewer độc lập)

@@ -4,7 +4,11 @@
 
 1. Đọc dữ liệu (sau khi tải về `data/raw/`)
 2. Kiểm tra schema / nhãn (`scripts/validate_data.py`)
-3. Khám phá (notebook EDA) — phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra rò rỉ dữ liệu
+3. Khám phá (EDA tái lập được — `scripts/eda_nf_unsw_nb15_v3.py`, báo cáo
+   `docs/dataset/NF_UNSW_NB15_V3_EDA.md`): phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra
+   rò rỉ dữ liệu. EDA chỉ mô tả population đã xác minh, không chọn feature, không fit
+   transformer, không xóa dòng và không tạo split; mọi khuyến nghị phụ thuộc train ở trạng
+   thái `PENDING ISSUE #7`.
 4. Tạo split mới cho NF-UNSW-NB15-v3: temporal ordering, versioned duplicate/equivalence audit và
    bidirectional 5-tuple/time-bucket grouping; không kế thừa split UNSW-NB15 (2015) và không tự
    động loại behavioral-equivalent rows.
@@ -65,4 +69,4 @@
 C4 còn yêu cầu Autoencoder reconstruction-error và unknown-attack holdout; threshold của
 cả hai chỉ được chọn trên validation, không dùng test/holdout để tối ưu.
 
-Cập nhật: 2026-10-20 (migration NF-UNSW-NB15-v3).
+Cập nhật: 2026-10-22 (migration NF-UNSW-NB15-v3 + EDA Issue #6).

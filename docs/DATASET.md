@@ -27,9 +27,13 @@ do dự án tính từ byte tải qua API chính thức, không được mô t�
 | Dataset CSV | `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` |
 | Feature dictionary | `data/raw/NF-UNSW-NB15-v3/data/NetFlow_v3_Features.csv` |
 | Quality report | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
+| EDA summary (machine-readable) | `reports/eda/nf_unsw_nb15_v3_eda_summary.json` |
+| EDA report (generated) | `docs/dataset/NF_UNSW_NB15_V3_EDA.md` |
+| EDA figures (local, ignored) | `reports/figures/nf_unsw_nb15_v3/` |
 | Downloader | `scripts/fetch_nf_unsw_nb15_v3.py` |
 | Manifest verifier | `scripts/dataset_manifest.py` |
 | Validator | `scripts/validate_data.py` |
+| Exploratory analysis | `scripts/eda_nf_unsw_nb15_v3.py` |
 
 ## Acquisition tái lập
 
@@ -100,6 +104,31 @@ raw-to-model.
 Khi raw package không có, lệnh mặc định trả `SOURCE_INTEGRITY: SKIPPED`/exit `0` để CI không tải
 dataset. Dataset nguyên vẹn nhưng ML-blocked trả exit `1`; corruption/integrity error trả exit `2`.
 Exit `0` cho SKIPPED không phải bằng chứng real-data PASS.
+
+## Exploratory data analysis (Issue #6)
+
+```text
+python scripts/eda_nf_unsw_nb15_v3.py
+```
+
+EDA dùng lại contract và byte verification của `scripts/validate_data.py` (không copy logic),
+stream population trong bộ nhớ giới hạn và ghi:
+
+- `reports/eda/nf_unsw_nb15_v3_eda_summary.json` — summary máy đọc được (đã commit);
+- `docs/dataset/NF_UNSW_NB15_V3_EDA.md` — báo cáo Markdown sinh tự động từ summary;
+- `reports/figures/nf_unsw_nb15_v3/*.png` — biểu đồ có nhãn (bị `.gitignore` loại, sinh lại local).
+
+Kết luận chính từ lượt chạy trên dữ liệu thật (2.365.424 dòng, SHA-256 khớp manifest):
+
+- Target: 2.237.731 benign / 127.693 attack (tỉ lệ 17,52:1); `Worms` hiếm nhất với 158 dòng;
+- 122.493 dòng có duration bằng 0 và đồng thời có giá trị rate không hữu hạn;
+- 14.815 dòng exact-duplicate và 1.134.553 dòng lặp theo 47-feature equivalence (189.788 nhóm),
+  trong đó 1.270 nhóm trộn nhiều category tấn công và không nhóm nào mâu thuẫn nhãn nhị phân;
+- traffic tập trung trên 3 ngày UTC trong cửa sổ 27 ngày;
+- feature byte/packet/duration lệch phải mạnh, không có feature hằng số.
+
+EDA là mô tả: không chọn feature, không fit transformer, không xóa dòng và không tạo split.
+Mọi khuyến nghị phụ thuộc train vẫn ở trạng thái `PENDING ISSUE #7`; `ML_READY` giữ `BLOCKED`.
 
 ## Split và preprocessing gate
 

@@ -47,6 +47,36 @@ source-valid but ML-blocked audit exits `1`; integrity/corruption errors exit `2
 behavior permits CI without a 577 MB raw CSV, but it is not real-data evidence. Synthetic test PASS
 only demonstrates validator behavior.
 
+## Reproduce the exploratory analysis
+
+```text
+python scripts/eda_nf_unsw_nb15_v3.py
+```
+
+The EDA reuses the manifest contract and the byte verification of `scripts/validate_data.py`, so
+`scripts/validate_data.py` has to run first. The run streams the population in bounded memory and
+writes the machine-readable summary `reports/eda/nf_unsw_nb15_v3_eda_summary.json`, the generated
+report `docs/dataset/NF_UNSW_NB15_V3_EDA.md` and the labelled figures under
+`reports/figures/nf_unsw_nb15_v3/` (excluded from Git, regenerated locally).
+
+Reproducibility properties of the recorded run:
+
+- Source identity: SHA-256 of the raw CSV is re-verified against the manifest before the analysis.
+- Sampling: figures and shape statistics use a reservoir sample of 200,000 rows with seed `42` and
+  the method is recorded in the summary. Counts, means, extremes, exact population quantiles and
+  complete-case correlations are computed over every row.
+- Float aggregation: means and standard deviations are accumulated per streaming chunk, so their
+  last decimal digits depend on the chunk size. The recorded run uses the default chunk size of
+  100,000 rows; counts and quantiles are unaffected.
+- Stability: two runs of the same command on the same bytes produce identical counts and
+  quantiles. Re-running the command regenerates the report and the summary; the summary records
+  the run timestamp, the report records the dataset SHA-256.
+- Absent raw bytes: the command prints `EDA: SKIPPED` and exits `0`. A skip is not a result and
+  writes no artifact.
+
+The analysis is descriptive only. It does not fit a transformer, does not select features, does not
+remove a row and does not create a split, so `ML_READY` stays `BLOCKED`.
+
 ## Split and experiment identity
 
 No real v3 split or benchmark currently exists. A future accepted run must record:
