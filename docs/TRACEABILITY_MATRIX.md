@@ -6,7 +6,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | C | Requirement | Issue | Deliverable/evidence | Trạng thái hiện tại |
 |---|---|---|---|---|
 | C0 | Governance, scope, architecture, backlog | #23 | docs, backlog, PR evidence | IMPLEMENTED; trạng thái remote phải đọc lại theo từng PR |
-| C1 | NF-UNSW-NB15-v3 provenance, quality, EDA, leakage | #4–#7 | v3 manifest, schema, real numeric/duplicate audit, leakage decision | Source integrity PASS; raw findings recorded; full EDA/split NOT VERIFIED |
+| C1 | NF-UNSW-NB15-v3 provenance, quality, EDA, leakage | #4–#7 | v3 manifest, schema, real numeric/duplicate audit, leakage decision | `SOURCE_INTEGRITY: PASS`; `RAW_QUALITY: FINDINGS_RECORDED`; full EDA/split NOT VERIFIED; `ML_READY: BLOCKED` |
 | C2 | Preprocessing không leakage | #8 | train-only pipeline artifact, fit-boundary tests | 47-feature/handling contracts TESTED; fitted artifact PLANNED; ML_READY BLOCKED |
 | C3 | RF và XGBoost supervised | #9, #10, #12, #31 | model artifacts, metrics, reproduction | PLANNED |
 | C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED |

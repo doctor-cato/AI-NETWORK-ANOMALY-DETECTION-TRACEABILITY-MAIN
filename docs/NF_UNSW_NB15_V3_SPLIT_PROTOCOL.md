@@ -1,8 +1,8 @@
 # NF-UNSW-NB15-v3 split and leakage protocol
 
 **Status:** IMPLEMENTED contract and TESTED safeguards; real train/validation/test split **NOT
-VERIFIED**. The raw quality audit currently fails, so this document does not authorize model
-training.
+VERIFIED**. The real audit is `RAW_QUALITY: FINDINGS_RECORDED`, so this document does not
+authorize model training while `ML_READY: BLOCKED`.
 
 ## Purpose
 

@@ -2,9 +2,12 @@
 """Experiment runner - step status is decided by implementation, not by exit code 0.
 
 Exit codes:
-  0 - step completed, or the optional data check was intentionally skipped (no dataset).
-  1 - step ran and failed (for example: dataset CSV is invalid).
-  2 - invalid command line (argparse default).
+  0 - ``check-data`` completed, or its optional default-dataset check was
+      intentionally skipped because the raw CSV is absent.
+  1 - ``check-data`` verified the dataset but reports ``ML_READY: BLOCKED``;
+      for the current v3 audit this includes ``RAW_QUALITY: FINDINGS_RECORDED``.
+  2 - invalid command line (argparse default), or ``check-data`` found a
+      source-integrity/corruption failure.
   3 - step is planned but NOT implemented. This is not a result and must not be
       reported as a successful experiment.
 
