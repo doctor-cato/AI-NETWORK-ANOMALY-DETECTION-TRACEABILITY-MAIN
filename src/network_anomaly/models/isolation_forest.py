@@ -48,8 +48,14 @@ def _is_float(value):
 
 
 def _is_numeric_dtype(dtype):
-    """True for numeric dtypes, including pandas nullable and extension dtypes."""
-    return getattr(dtype, "kind", None) in ("b", "i", "u", "f", "c")
+    """True for real numeric dtypes (boolean, integer, unsigned, float).
+
+    Complex dtypes (kind == 'c') are intentionally excluded: converting a
+    complex array to float64 silently discards the imaginary component, which
+    is incorrect.  Callers that hold complex features must convert to a real
+    representation before calling this module.
+    """
+    return getattr(dtype, "kind", None) in ("b", "i", "u", "f")
 
 
 def _check_n_estimators(value):
@@ -89,8 +95,19 @@ def _check_contamination(value):
 
 
 def _check_max_features(value):
+    """Validate max_features against the values accepted by IsolationForest.
+
+    Accepted: a positive integer (>= 1) or a float in (0, 1].
+    Rejected: None, booleans, strings, zero, negative values, and floats
+    outside (0, 1].  None is explicitly rejected because scikit-learn maps it
+    to 1.0 only by coincidence of internal defaults; an explicit 1.0 is the
+    correct way to express "use all features".
+    """
     if value is None:
-        return
+        raise ValueError(
+            "max_features must be an integer >= 1 or a float in (0, 1], got None. "
+            "Use max_features=1.0 to select all features."
+        )
     if _is_int(value):
         if value < 1:
             raise ValueError(f"max_features must be an integer >= 1, got {value!r}")
@@ -100,7 +117,7 @@ def _check_max_features(value):
             raise ValueError(f"max_features must be a float in (0, 1], got {value!r}")
         return
     raise ValueError(
-        f"max_features must be None, an integer >= 1 or a float in (0, 1], got {value!r}"
+        f"max_features must be an integer >= 1 or a float in (0, 1], got {value!r}"
     )
 
 
@@ -186,18 +203,50 @@ def _to_float_array(X):
 
 
 def validate_features(X):
-    """Ensure ``X`` is a finite numeric feature matrix.
+    """Ensure ``X`` is a finite 2-D numeric (real) feature matrix.
 
     The model never fits a transformer, so the caller owns the feature
     contract: which columns enter the matrix, in which order, and the
     exclusion of ``Label``, ``Attack`` and the metadata columns. This guard
-    only checks that what reaches the estimator is numeric and finite; it
-    deliberately does not hard-code a dataset column list, because that list is
-    owned by the split and feature contract work of #7.
+    checks that what reaches the estimator is:
+
+    * a two-dimensional array or DataFrame (not 1-D, not 0-row, not 0-column);
+    * composed entirely of real numeric columns (complex is rejected because
+      converting complex to float64 silently discards the imaginary part);
+    * free of NaN and infinite values (preprocessing must have handled these).
+
+    It does not hard-code a dataset column list; that contract belongs to the
+    split and feature work of #7.
     """
     if X is None:
         raise TypeError("Feature matrix X is required, got None")
     if hasattr(X, "columns") and hasattr(X, "dtypes"):
+        # --- pandas DataFrame path ---
+        if X.ndim != 2:  # pragma: no cover — DataFrames are always 2-D
+            raise ValueError(
+                f"Feature matrix must be 2-D, got {X.ndim}-D DataFrame"
+            )
+        if X.shape[0] == 0:
+            raise ValueError(
+                "Feature matrix must have at least one sample, got 0 rows. "
+                "Check that the dataset is not empty after splitting."
+            )
+        if X.shape[1] == 0:
+            raise ValueError(
+                "Feature matrix must have at least one feature, got 0 columns. "
+                "Check that the preprocessing pipeline has not dropped all columns."
+            )
+        complex_cols = [
+            str(col)
+            for col, dtype in zip(X.columns, X.dtypes)
+            if getattr(dtype, "kind", None) == "c"
+        ]
+        if complex_cols:
+            raise TypeError(
+                "Feature matrix must not contain complex-valued columns; "
+                "complex column(s): " + ", ".join(complex_cols) + ". "
+                "Convert to a real representation before passing to the model."
+            )
         non_numeric = [
             str(column)
             for column, dtype in zip(X.columns, X.dtypes)
@@ -209,7 +258,28 @@ def validate_features(X):
                 + ", ".join(non_numeric)
             )
     else:
+        # --- NumPy / array-like path ---
         array = np.asarray(X)
+        if array.ndim != 2:
+            raise ValueError(
+                f"Feature matrix must be 2-D, got {array.ndim}-D array (shape {array.shape}). "
+                "Pass a matrix with shape (n_samples, n_features); a 1-D array is not accepted."
+            )
+        if array.shape[0] == 0:
+            raise ValueError(
+                "Feature matrix must have at least one sample, got 0 rows. "
+                "Check that the dataset is not empty after splitting."
+            )
+        if array.shape[1] == 0:
+            raise ValueError(
+                "Feature matrix must have at least one feature, got 0 columns. "
+                "Check that the preprocessing pipeline has not dropped all columns."
+            )
+        if getattr(array.dtype, "kind", None) == "c":
+            raise TypeError(
+                f"Feature matrix must not be complex-valued, got dtype {array.dtype}. "
+                "Convert to a real representation before passing to the model."
+            )
         if not _is_numeric_dtype(array.dtype):
             raise TypeError(
                 f"Feature matrix must be numeric, got dtype {array.dtype}"

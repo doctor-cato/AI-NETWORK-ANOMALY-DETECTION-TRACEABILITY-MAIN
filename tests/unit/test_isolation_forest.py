@@ -126,6 +126,7 @@ def test_supported_params_cover_the_documented_set():
         {"max_features": 0},
         {"max_features": 1.5},
         {"max_features": "all"},
+        {"max_features": None},
         {"bootstrap": "yes"},
         {"random_state": None},
         {"random_state": "42"},
@@ -197,6 +198,76 @@ def test_validate_features_rejects_infinite_values():
 def test_validate_features_rejects_none():
     with pytest.raises(TypeError):
         validate_features(None)
+
+
+# --- regression: complex dtype rejection ---------------------------------------
+
+
+def test_validate_features_rejects_complex_numpy_array():
+    """Complex NumPy arrays must be rejected, not silently stripped of imaginary parts."""
+    X = np.array([[1.0 + 2j, 3.0 + 4j], [5.0 + 6j, 7.0 + 8j]])
+    with pytest.raises(TypeError, match="complex"):
+        validate_features(X)
+
+
+def test_validate_features_rejects_complex_dataframe_column():
+    """DataFrames with complex-dtype columns must be rejected."""
+    frame = pd.DataFrame({"a": np.array([1.0 + 2j, 3.0 + 4j])})
+    with pytest.raises(TypeError, match="complex"):
+        validate_features(frame)
+
+
+# --- regression: shape validation ---------------------------------------------
+
+
+def test_validate_features_rejects_1d_array():
+    """1-D arrays are not a valid feature matrix."""
+    with pytest.raises(ValueError, match="2-D"):
+        validate_features(np.array([1.0, 2.0, 3.0]))
+
+
+def test_validate_features_rejects_empty_sample_matrix():
+    """A matrix with zero rows must be rejected."""
+    with pytest.raises(ValueError, match="at least one sample"):
+        validate_features(np.empty((0, 5)))
+
+
+def test_validate_features_rejects_zero_column_array():
+    """A matrix with zero columns must be rejected."""
+    with pytest.raises(ValueError, match="at least one feature"):
+        validate_features(np.empty((5, 0)))
+
+
+def test_validate_features_rejects_zero_column_dataframe():
+    """A DataFrame with no columns must be rejected."""
+    with pytest.raises(ValueError, match="at least one feature"):
+        validate_features(pd.DataFrame(index=range(5)))
+
+
+def test_validate_features_rejects_empty_row_dataframe():
+    """A DataFrame with zero rows must be rejected."""
+    frame = pd.DataFrame({"a": pd.Series([], dtype="float64")})
+    with pytest.raises(ValueError, match="at least one sample"):
+        validate_features(frame)
+
+
+# --- regression: valid inputs still pass --------------------------------------
+
+
+def test_validate_features_accepts_int_array():
+    """Integer arrays (unsigned, signed) are valid real numerics."""
+    validate_features(np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32))
+
+
+def test_validate_features_accepts_float32_array():
+    """float32 arrays are valid."""
+    validate_features(np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32))
+
+
+def test_validate_features_accepts_mixed_numeric_dataframe():
+    """DataFrames mixing int and float columns are valid."""
+    frame = pd.DataFrame({"a": [1, 2, 3], "b": [0.1, 0.2, 0.3]})
+    validate_features(frame)
 
 
 # --- fit and score contract on a synthetic fixture ------------------------------
