@@ -17,6 +17,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
     validate_semantic_column_roles,
 )
 from network_anomaly.data.split import (
+    EXPECTED_ARTIFACT_REL_PATHS,
     PARTITION_PURGED_TRAIN_VAL,
     PARTITION_PURGED_VAL_TEST,
     PARTITION_TEST,
@@ -25,11 +26,14 @@ from network_anomaly.data.split import (
     SplitConfig,
     _sha256_file,
     audit_split_leakage,
+    compare_artifact_inventories,
     compute_chronological_split,
     generate_split_manifest,
     load_partition_indices,
     render_leakage_audit_report,
+    run_split_pipeline,
     save_split_artifacts,
+    verify_artifact_reproducibility,
     write_deterministic_index_csv_gz,
 )
 
@@ -332,3 +336,160 @@ def test_real_dataset_split_manifest_and_audit():
         assert attacks["Analysis"] > 0
         assert attacks["Backdoor"] > 0
         assert attacks["Shellcode"] > 0
+
+
+def test_expected_artifact_inventory_structure():
+    """Verify that EXPECTED_ARTIFACT_REL_PATHS contains all 10 required artifacts."""
+    assert len(EXPECTED_ARTIFACT_REL_PATHS) == 10
+    expected = {
+        "data/processed/splits/train_indices.csv.gz",
+        "data/processed/splits/purged_train_val_gap_indices.csv.gz",
+        "data/processed/splits/validation_indices.csv.gz",
+        "data/processed/splits/purged_val_test_gap_indices.csv.gz",
+        "data/processed/splits/test_indices.csv.gz",
+        "data/processed/nf_unsw_nb15_v3_split_manifest.json",
+        "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+        "reports/splits/nf_unsw_nb15_v3_split_manifest.json",
+        "reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md",
+        "docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md",
+    }
+    assert set(EXPECTED_ARTIFACT_REL_PATHS) == expected
+
+
+def test_verify_artifact_reproducibility_full_inventory_success():
+    """Verify that dual-pass reproducibility succeeds across all 10 artifacts on synthetic data."""
+    df = make_synthetic_df(n_rows=60, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+
+    comp = verify_artifact_reproducibility(df, config=config, dataset_digest=fake_sha)
+    assert comp["status"] == "PASS"
+    assert comp["total_checked"] == 10
+    assert len(comp["matches"]) == 10
+    assert len(comp["mismatches"]) == 0
+    assert set(comp["matches"].keys()) == set(EXPECTED_ARTIFACT_REL_PATHS)
+
+
+def test_compare_artifact_inventories_detects_changed_markdown_reports():
+    """Verify that a modified Markdown report causes reproducibility verification to fail."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    fixed_ts = "2026-10-27T00:00:00+00:00"
+
+    with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
+        dir1, dir2 = Path(t1), Path(t2)
+        run_split_pipeline(df, config, fake_sha, dir1, generated_at_utc=fixed_ts)
+        run_split_pipeline(df, config, fake_sha, dir2, generated_at_utc=fixed_ts)
+
+        # Baseline comparison passes
+        assert compare_artifact_inventories(dir1, dir2)["status"] == "PASS"
+
+        # Tamper reports/splits markdown report
+        rep_file = dir2 / "reports" / "splits" / "nf_unsw_nb15_v3_leakage_audit_report.md"
+        rep_file.write_text("tampered content", encoding="utf-8")
+
+        res = compare_artifact_inventories(dir1, dir2)
+        assert res["status"] == "FAIL"
+        assert any(
+            "reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md" in m for m in res["mismatches"]
+        )
+
+        # Restore and tamper docs/dataset markdown report
+        run_split_pipeline(df, config, fake_sha, dir2, generated_at_utc=fixed_ts)
+        docs_file = dir2 / "docs" / "dataset" / "NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md"
+        docs_file.write_text("tampered content", encoding="utf-8")
+
+        res2 = compare_artifact_inventories(dir1, dir2)
+        assert res2["status"] == "FAIL"
+        assert any("docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md" in m for m in res2["mismatches"])
+
+
+def test_compare_artifact_inventories_detects_changed_manifests():
+    """Verify that modified secondary or root manifests cause reproducibility check to fail."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    fixed_ts = "2026-10-27T00:00:00+00:00"
+
+    with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
+        dir1, dir2 = Path(t1), Path(t2)
+        run_split_pipeline(df, config, fake_sha, dir1, generated_at_utc=fixed_ts)
+        run_split_pipeline(df, config, fake_sha, dir2, generated_at_utc=fixed_ts)
+
+        # Tamper secondary manifest
+        sec_man = dir2 / "reports" / "splits" / "nf_unsw_nb15_v3_split_manifest.json"
+        sec_man.write_text('{"tampered": true}', encoding="utf-8")
+        res = compare_artifact_inventories(dir1, dir2)
+        assert res["status"] == "FAIL"
+        assert any(
+            "reports/splits/nf_unsw_nb15_v3_split_manifest.json" in m for m in res["mismatches"]
+        )
+
+        # Tamper root manifest
+        run_split_pipeline(df, config, fake_sha, dir2, generated_at_utc=fixed_ts)
+        root_man = dir2 / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+        root_man.write_text('{"tampered": true}', encoding="utf-8")
+        res2 = compare_artifact_inventories(dir1, dir2)
+        assert res2["status"] == "FAIL"
+        assert any("data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json" in m for m in res2["mismatches"])
+
+
+def test_compare_artifact_inventories_detects_changed_compressed_index():
+    """Verify that a modified compressed index file causes reproducibility check to fail."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    fixed_ts = "2026-10-27T00:00:00+00:00"
+
+    with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
+        dir1, dir2 = Path(t1), Path(t2)
+        run_split_pipeline(df, config, fake_sha, dir1, generated_at_utc=fixed_ts)
+        run_split_pipeline(df, config, fake_sha, dir2, generated_at_utc=fixed_ts)
+
+        idx_file = dir2 / "data" / "processed" / "splits" / "train_indices.csv.gz"
+        write_deterministic_index_csv_gz(idx_file, np.array([999, 1000], dtype=np.int64))
+
+        res = compare_artifact_inventories(dir1, dir2)
+        assert res["status"] == "FAIL"
+        assert any("train_indices.csv.gz" in m for m in res["mismatches"])
+
+
+def test_compare_artifact_inventories_detects_missing_file():
+    """Verify that a missing expected artifact triggers a clear mismatch error."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    fixed_ts = "2026-10-27T00:00:00+00:00"
+
+    with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
+        dir1, dir2 = Path(t1), Path(t2)
+        run_split_pipeline(df, config, fake_sha, dir1, generated_at_utc=fixed_ts)
+        run_split_pipeline(df, config, fake_sha, dir2, generated_at_utc=fixed_ts)
+
+        # Remove an artifact from pass 2
+        missing_file = dir2 / "docs" / "dataset" / "NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md"
+        missing_file.unlink()
+
+        res = compare_artifact_inventories(dir1, dir2)
+        assert res["status"] == "FAIL"
+        assert any(
+            "Pass 2 missing expected artifact: docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md" in m
+            for m in res["mismatches"]
+        )
+
+
+def test_reproducibility_contract_detects_variable_timestamps():
+    """Verify variable timestamps cause manifest mismatches unless fixed timestamp is used."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+
+    with tempfile.TemporaryDirectory() as t1, tempfile.TemporaryDirectory() as t2:
+        dir1, dir2 = Path(t1), Path(t2)
+        run_split_pipeline(df, config, fake_sha, dir1, generated_at_utc="2026-10-27T00:00:00+00:00")
+        run_split_pipeline(df, config, fake_sha, dir2, generated_at_utc="2026-10-27T00:00:01+00:00")
+
+        res = compare_artifact_inventories(dir1, dir2)
+        assert res["status"] == "FAIL"
+        assert any("split_manifest.json" in m for m in res["mismatches"])

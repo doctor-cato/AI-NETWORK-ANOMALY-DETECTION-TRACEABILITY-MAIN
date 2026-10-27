@@ -75,6 +75,20 @@ the three row-index files. Changing any of these fields creates a new split iden
   novel traffic. Impact must be evaluated during model training in future issues.
 - Artifact generation is verified to be 100% byte-for-byte deterministic on disk using fixed
   gzip timestamp (`mtime=0.0`) and independent dual-pass verification (`--check-reproducibility`).
+  The verification strictly compares all 10 generated artifacts on disk:
+  1. `data/processed/splits/train_indices.csv.gz`
+  2. `data/processed/splits/purged_train_val_gap_indices.csv.gz`
+  3. `data/processed/splits/validation_indices.csv.gz`
+  4. `data/processed/splits/purged_val_test_gap_indices.csv.gz`
+  5. `data/processed/splits/test_indices.csv.gz`
+  6. `data/processed/nf_unsw_nb15_v3_split_manifest.json` (primary manifest)
+  7. `data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json` (root manifest)
+  8. `reports/splits/nf_unsw_nb15_v3_split_manifest.json` (secondary manifest)
+  9. `reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md` (reports audit report)
+  10. `docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md` (docs audit report)
+  A fixed ISO timestamp is passed during reproducibility checks so that all JSON manifests and
+  Markdown reports achieve byte-identical SHA-256 hashes without variable metadata drift. If any
+  artifact is missing or any hash differs, verification fails with exit code 2 and diagnostic logs.
 - A five-minute bidirectional 5-tuple group is only a proxy for a session; no trustworthy session
   ID is available in the verified schema.
 - The source period is January-February 2015 even though the v3 release is from 2025. Temporal

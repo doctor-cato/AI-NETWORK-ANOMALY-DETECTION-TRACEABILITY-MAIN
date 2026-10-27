@@ -35,12 +35,15 @@ from network_anomaly.data.split import (  # noqa: E402
     DEFAULT_TEST_RATIO,
     DEFAULT_TRAIN_RATIO,
     DEFAULT_VAL_RATIO,
+    EXPECTED_ARTIFACT_REL_PATHS,
     SplitConfig,
     _sha256_file,
     audit_split_leakage,
+    compare_artifact_inventories,
     compute_chronological_split,
     generate_split_manifest,
     render_leakage_audit_report,
+    run_split_pipeline,
     save_split_artifacts,
     write_deterministic_index_csv_gz,
 )
@@ -50,6 +53,7 @@ DEFAULT_MANIFEST = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_MANIFEST.json"
 DEFAULT_PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 DEFAULT_REPORTS_SPLIT_DIR = PROJECT_ROOT / "reports" / "splits"
 DEFAULT_DOCS_REPORT = PROJECT_ROOT / "docs" / "dataset" / "NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md"
+DEFAULT_ROOT_MANIFEST = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
 
 EXPECTED_DATASET_SHA256 = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
 
@@ -81,6 +85,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_DOCS_REPORT,
         help="Output path for docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md",
+    )
+    parser.add_argument(
+        "--root-manifest",
+        type=Path,
+        default=DEFAULT_ROOT_MANIFEST,
+        help="Output path for root data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
     )
     parser.add_argument(
         "--purge-gap-ms",
@@ -121,7 +131,7 @@ def verify_source_dataset(dataset_path: Path) -> str:
 def verify_artifact_reproducibility(
     df: pd.DataFrame, config: SplitConfig, dataset_digest: str
 ) -> None:
-    """Run artifact generation independently twice and verify byte-for-byte identity."""
+    """Run artifact generation independently twice and verify byte identity across all artifacts."""
     print("[split_and_audit] ========================================================")
     print("[split_and_audit] Running independent dual-pass artifact reproducibility check...")
     print("[split_and_audit] ========================================================")
@@ -132,72 +142,42 @@ def verify_artifact_reproducibility(
         tmp1 = Path(tmp1_str)
         tmp2 = Path(tmp2_str)
 
-        # Pass 1
-        print("[split_and_audit] Reproducibility Pass 1: computing split and writing artifacts...")
-        res1 = compute_chronological_split(df, config=config)
-        audit1 = audit_split_leakage(df, res1)
-        hashes1 = {}
-        for p_name, p_data in res1["partitions"].items():
-            p_file = tmp1 / "splits" / f"{p_name}_indices.csv.gz"
-            hashes1[p_name] = write_deterministic_index_csv_gz(p_file, p_data["indices"])
-        man1 = generate_split_manifest(
-            split_result=res1,
-            audit_results=audit1,
+        print("[split_and_audit] Reproducibility Pass 1: generating full artifact inventory...")
+        run_split_pipeline(
+            df=df,
+            config=config,
             dataset_sha256=dataset_digest,
-            partition_index_hashes=hashes1,
+            root_dir=tmp1,
             generated_at_utc=fixed_timestamp,
         )
-        rep1 = render_leakage_audit_report(man1)
-        save_split_artifacts(res1, man1, rep1, output_dir=tmp1)
 
-        # Pass 2
-        print("[split_and_audit] Reproducibility Pass 2: computing split and writing artifacts...")
-        res2 = compute_chronological_split(df, config=config)
-        audit2 = audit_split_leakage(df, res2)
-        hashes2 = {}
-        for p_name, p_data in res2["partitions"].items():
-            p_file = tmp2 / "splits" / f"{p_name}_indices.csv.gz"
-            hashes2[p_name] = write_deterministic_index_csv_gz(p_file, p_data["indices"])
-        man2 = generate_split_manifest(
-            split_result=res2,
-            audit_results=audit2,
+        print("[split_and_audit] Reproducibility Pass 2: generating full artifact inventory...")
+        run_split_pipeline(
+            df=df,
+            config=config,
             dataset_sha256=dataset_digest,
-            partition_index_hashes=hashes2,
+            root_dir=tmp2,
             generated_at_utc=fixed_timestamp,
         )
-        rep2 = render_leakage_audit_report(man2)
-        save_split_artifacts(res2, man2, rep2, output_dir=tmp2)
 
-        # Compare disk files
-        print("[split_and_audit] Comparing generated files on disk between Pass 1 and Pass 2:")
-        files_to_compare = [f"splits/{p_name}_indices.csv.gz" for p_name in res1["partitions"]] + [
-            "nf_unsw_nb15_v3_split_manifest.json"
-        ]
+        print(
+            "[split_and_audit] Comparing all generated artifacts on disk between Pass 1 and Pass 2:"
+        )
+        comp = compare_artifact_inventories(tmp1, tmp2, EXPECTED_ARTIFACT_REL_PATHS)
 
-        mismatches = []
-        for rel_file in files_to_compare:
-            f1 = tmp1 / rel_file
-            f2 = tmp2 / rel_file
-            if not f1.is_file():
-                mismatches.append(f"Pass 1 missing file: {rel_file}")
-                continue
-            if not f2.is_file():
-                mismatches.append(f"Pass 2 missing file: {rel_file}")
-                continue
-            h1 = _sha256_file(f1)
-            h2 = _sha256_file(f2)
-            if h1 != h2:
-                mismatches.append(f"SHA-256 mismatch for {rel_file}: {h1} vs {h2}")
-            else:
-                print(f"  * {rel_file:<35}: SHA-256 MATCH ({h1})")
+        for rel_file, sha in comp["matches"].items():
+            print(f"  * {rel_file:<58}: SHA-256 MATCH ({sha})")
 
-        if mismatches:
+        if comp["mismatches"]:
             print("[split_and_audit] ERROR: Artifact reproducibility check FAILED!")
-            for m in mismatches:
+            for m in comp["mismatches"]:
                 print(f"  - {m}")
             sys.exit(2)
 
-        print("[split_and_audit] PASS: Byte-for-byte file reproducibility verified successfully.")
+        print(
+            f"[split_and_audit] PASS: Byte-for-byte file reproducibility verified across all "
+            f"{comp['total_checked']} artifacts."
+        )
 
 
 def main() -> None:
@@ -289,6 +269,7 @@ def main() -> None:
         output_dir=args.output_dir,
         reports_split_dir=args.reports_dir,
         docs_report_path=args.docs_report,
+        root_manifest_path=args.root_manifest,
     )
 
     print("[split_and_audit] Artifacts written:")

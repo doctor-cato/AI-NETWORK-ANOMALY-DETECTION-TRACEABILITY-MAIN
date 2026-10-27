@@ -4,7 +4,7 @@
   "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
   "split_protocol_version": "nf-unsw-nb15-v3-chronological-group-purged-v1",
   "fingerprint_schema_version": "nf-unsw-nb15-v3-fingerprint-v1",
-  "generated_at_utc": "2026-10-27T07:33:22.943923+00:00",
+  "generated_at_utc": "2026-10-27T08:23:56.896324+00:00",
   "total_source_rows": 2365424,
   "random_seed": 42,
   "features": {

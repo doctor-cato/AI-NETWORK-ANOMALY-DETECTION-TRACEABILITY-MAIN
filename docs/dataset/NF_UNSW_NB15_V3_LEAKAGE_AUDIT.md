@@ -1,11 +1,11 @@
 # Báo cáo kiểm toán Data Leakage và Phân chia Dữ liệu NF-UNSW-NB15-v3
 
 **Trạng thái kiểm toán:** `PASS`
-**Trạng thái sẵn sàng ML (ML Readiness):** `ML_READY: BLOCKED` (Chờ tiền xử lý train-only ở Issue #8)
+**Sẵn sàng ML (ML Readiness):** `ML_READY: BLOCKED` (Chờ tiền xử lý train-only ở Issue #8)
 **Mã giao thức phân chia:** `nf-unsw-nb15-v3-chronological-group-purged-v1`
 **Phiên bản Fingerprint Schema:** `nf-unsw-nb15-v3-fingerprint-v1`
 **Dataset SHA-256:** `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`
-**Ngày thực hiện kiểm toán:** `2026-10-27T07:33:22.943923+00:00`
+**Ngày thực hiện kiểm toán:** `2026-10-27T08:23:56.896324+00:00`
 
 ---
 
@@ -88,42 +88,76 @@ trong cả ba phân vùng Train, Validation, Test:
 ### 4.1 Phân biệt rõ ràng bốn khái niệm trùng khớp và chính sách xử lý:
 
 1. **Exact Full-Row Overlap (Trùng lặp toàn dòng - 0 bản ghi / 0,00%):**
-   - *Định nghĩa:* Trùng khớp toàn bộ 55 cột nguồn (53 đặc trưng NetFlow cộng nhãn `Label` và `Attack`).
+   - *Định nghĩa:* Trùng khớp toàn bộ 55 cột nguồn (53 đặc trưng NetFlow cộng nhãn
+     `Label` và `Attack`).
    - *Kết quả:* **0 bản ghi** trên toàn bộ các cặp phân vùng.
-   - *Đánh giá:* **PASS** — Không có bất kỳ dòng dữ liệu nguyên bản nào xuất hiện ở nhiều phân vùng.
+   - *Đánh giá:* **PASS** — Không có dòng dữ liệu nguyên bản nào xuất hiện ở nhiều phân vùng.
 
 2. **Source-Feature Overlap (Trùng lặp đặc trưng nguồn - 0 bản ghi / 0,00%):**
-   - *Định nghĩa:* Trùng khớp 53 đặc trưng NetFlow v3 nguồn (bao gồm cả mốc thời gian và địa chỉ IP/Port).
+   - *Định nghĩa:* Trùng khớp 53 đặc trưng NetFlow v3 nguồn (bao gồm cả mốc thời gian và
+     địa chỉ IP/Port).
    - *Kết quả:* **0 bản ghi** trên toàn bộ các cặp phân vùng.
    - *Đánh giá:* **PASS** — Thứ tự thời gian và vùng đệm cách ly triệt để các luồng mạng nguồn.
 
 3. **Canonical Flow-Group Overlap (Trùng lặp nhóm luồng bảo vệ - 0 nhóm / 0,00%):**
-   - *Định nghĩa:* Bản ghi thuộc cùng một phiên liên lạc 5-tuple đối xứng (`IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`, `PROTOCOL`) trong cùng một bucket thời gian 5 phút.
+   - *Định nghĩa:* Bản ghi thuộc cùng một phiên liên lạc 5-tuple đối xứng (`IPV4_SRC_ADDR`,
+     `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`, `PROTOCOL`) trong cùng một bucket
+     thời gian 5 phút.
    - *Kết quả:* **0 nhóm** trên toàn bộ các cặp phân vùng.
-   - *Đánh giá:* **PASS** — Vùng đệm Purge Gap 300.000 ms đảm bảo không có phiên hội thoại nào bị cắt đôi giữa hai tập.
+   - *Đánh giá:* **PASS** — Vùng đệm Purge Gap 300.000 ms đảm bảo không có phiên hội thoại
+     nào bị cắt đôi giữa hai tập.
 
 4. **ML-Feature Overlap (Trùng lặp vector đặc trưng ML 47 chiều):**
-   - *Định nghĩa:* Hai bản ghi có cùng giá trị trên 47 đặc trưng đầu vào ML sau khi đã loại bỏ 6 trường trace metadata (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`) và 2 trường mục tiêu (`Label`, `Attack`).
+   - *Định nghĩa:* Hai bản ghi có cùng giá trị trên 47 đặc trưng đầu vào ML sau khi đã loại bỏ
+     6 trường trace metadata (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`,
+     `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`) và 2 trường mục tiêu
+     (`Label`, `Attack`).
    - *Kết quả thực tế:*
-     - **Train vs Validation:** 61.007 fingerprints lặp lại, liên quan 551.167 dòng Train (33,29%) và 172.621 dòng Validation (49,98%).
-     - **Validation vs Test:** 24.143 fingerprints lặp lại, liên quan 105.218 dòng Validation (30,47%) và 114.622 dòng Test (33,13%).
-     - **Train vs Test:** 59.966 fingerprints lặp lại, liên quan 548.253 dòng Train (33,11%) và 184.067 dòng Test (**53,21%**).
-   - *Xung đột nhãn nhị phân:* **0 trường hợp**. Tuyệt đối không có trường hợp nào cùng một bộ đặc trưng ML 47 chiều mà ở tập này là Benign (`Label=0`) nhưng ở tập khác là Attack (`Label=1`).
-   - *Khác biệt danh mục Attack đa lớp:* 580 (Train-Val), 586 (Val-Test), 889 (Train-Test) trường hợp các dòng tấn công khác loại (như DoS vs Exploits) có vector 47 đặc trưng thống kê giống nhau.
+     - **Train vs Validation:** 61.007 fingerprints lặp lại, liên quan 551.167 dòng Train
+       (33,29%) và 172.621 dòng Validation (49,98%).
+     - **Validation vs Test:** 24.143 fingerprints lặp lại, liên quan 105.218 dòng
+       Validation (30,47%) và 114.622 dòng Test (33,13%).
+     - **Train vs Test:** 59.966 fingerprints lặp lại, liên quan 548.253 dòng Train
+       (33,11%) và 184.067 dòng Test (**53,21%**).
+   - *Xung đột nhãn nhị phân:* **0 trường hợp**. Tuyệt đối không có trường hợp nào cùng một
+     bộ đặc trưng ML 47 chiều mà ở tập này là Benign (`Label=0`) nhưng ở tập khác là
+     Attack (`Label=1`).
+   - *Khác biệt danh mục Attack đa lớp:* 580 (Train-Val), 586 (Val-Test), 889 (Train-Test)
+     trường hợp các dòng tấn công khác loại (như DoS vs Exploits) có vector 47 đặc trưng
+     thống kê giống nhau.
 
 ### 4.2 Giải trình nguyên nhân kỹ thuật và giới hạn phương pháp luận về trùng lặp đặc trưng ML:
 
 1. **Tại sao các luồng khác nhau lại có cùng vector đặc trưng ML?**
-   - NetFlow v3 là bản ghi thống kê tóm tắt gói tin và byte của luồng mạng, không lưu trữ dữ liệu gói (payload).
-   - Nhiều luồng mạng độc lập phát sinh từ các máy trạm khác nhau, hướng đến các máy chủ khác nhau vào các ngày cách nhau hàng tuần có hành vi giao thức chuẩn hóa giống hệt nhau (ví dụ: gói tin TCP SYN rỗng thăm dò cổng, truy vấn phân giải DNS A-record tiêu chuẩn, gói tin FIN-ACK đóng phiên chuẩn).
-   - Khi loại trừ 6 trường metadata định danh (IP, Port, Timestamp), các luồng độc lập này hội tụ về cùng một vector 47 số trị thống kê.
+   - NetFlow v3 là bản ghi thống kê tóm tắt gói tin và byte của luồng mạng, không lưu trữ
+     dữ liệu gói (payload).
+   - Nhiều luồng mạng độc lập phát sinh từ các máy trạm khác nhau, hướng đến các máy chủ khác
+     nhau vào các ngày cách nhau hàng tuần có hành vi giao thức chuẩn hóa giống hệt nhau (ví dụ:
+     gói tin TCP SYN rỗng thăm dò cổng, truy vấn phân giải DNS A-record tiêu chuẩn, gói tin
+     FIN-ACK đóng phiên chuẩn).
+   - Khi loại trừ 6 trường metadata định danh (IP, Port, Timestamp), các luồng độc lập này hội
+     tụ về cùng một vector 47 số trị thống kê.
 
 2. **Giới hạn quan trọng của phương pháp đánh giá:**
-   - **Zero binary-label conflicts không đồng nghĩa với việc trùng lặp vô hại:** Việc nhãn nhị phân không xung đột chứng minh dữ liệu không có nhãn mâu thuẫn trực tiếp. Tuy nhiên, điều này **không chứng minh** rằng hiện tượng trùng lặp đặc trưng hoàn toàn không ảnh hưởng đến đánh giá mô hình.
-   - **Tính độc lập của mẫu kiểm thử (Sample Independence):** Việc 53,21% mẫu Test chia sẻ vector đặc trưng ML với Train khiến các quan sát kiểm thử này không hoàn toàn độc lập (non-i.i.d.) trong không gian đặc trưng.
-   - **Nguy cơ sai lệch đánh giá (Evaluation vs Generalization):** Mô hình học máy có thể đạt điểm số cao trên tập Test nhờ việc ghi nhớ (memorization) các khuôn mẫu thống kê phổ biến đã gặp trong tập Train, thay vì học được quy luật phát hiện bất thường thực sự có khả năng tổng quát hóa trên lưu lượng mới.
-   - **Mức độ tác động chưa được lượng hóa ở giai đoạn Split:** Kiểm toán dữ liệu chỉ ghi nhận sự hiện diện và tỷ lệ mẫu bị ảnh hưởng, chưa thể lượng hóa mức độ tác động cụ thể lên độ chính xác hay khoảng cách tổng quát hóa (generalization gap). Tác động thực tế này phải được kiểm chứng bằng thực nghiệm đánh giá mô hình ở các issue tiếp theo (từ Issue #8 trở đi).
-   - **Chính sách giữ lại (Retained with Justification):** Các mẫu này được giữ nguyên trong tập dữ liệu tự nhiên vì việc tự ý xóa bỏ các vector đặc trưng phổ biến sẽ làm sai lệch nghiêm trọng phân bố xác suất tiên nghiệm (prior probability) và tỷ lệ cơ sở (base rate) của lưu lượng mạng thực tế.
+   - **Zero binary-label conflicts không đồng nghĩa với việc trùng lặp vô hại:** Việc nhãn nhị
+     phân không xung đột chứng minh dữ liệu không có nhãn mâu thuẫn trực tiếp. Tuy nhiên, điều này
+     **không chứng minh** rằng hiện tượng trùng lặp đặc trưng hoàn toàn không ảnh hưởng đến đánh
+     giá mô hình.
+   - **Tính độc lập của mẫu kiểm thử (Sample Independence):** Việc 53,21% mẫu Test chia sẻ
+     vector đặc trưng ML với Train khiến các quan sát kiểm thử này không hoàn toàn độc lập
+     (non-i.i.d.) trong không gian đặc trưng.
+   - **Nguy cơ sai lệch đánh giá (Evaluation vs Generalization):** Mô hình học máy có thể đạt
+     điểm số cao trên tập Test nhờ việc ghi nhớ (memorization) các khuôn mẫu thống kê phổ biến
+     đã gặp trong tập Train, thay vì học được quy luật phát hiện bất thường thực sự có khả năng
+     tổng quát hóa trên lưu lượng mới.
+   - **Mức độ tác động chưa được lượng hóa ở giai đoạn Split:** Kiểm toán dữ liệu chỉ ghi nhận
+     sự hiện diện và tỷ lệ mẫu bị ảnh hưởng, chưa thể lượng hóa mức độ tác động cụ thể lên độ
+     chính xác hay khoảng cách tổng quát hóa (generalization gap). Tác động thực tế này phải được
+     kiểm chứng bằng thực nghiệm đánh giá mô hình ở các issue tiếp theo (từ Issue #8 trở đi).
+   - **Chính sách giữ lại (Retained with Justification):** Các mẫu này được giữ nguyên trong
+     tập dữ liệu tự nhiên vì việc tự ý xóa bỏ các vector đặc trưng phổ biến sẽ làm sai lệch
+     nghiêm trọng phân bố xác suất tiên nghiệm (prior probability) và tỷ lệ cơ sở (base rate)
+     của lưu lượng mạng thực tế.
 
 ---
 

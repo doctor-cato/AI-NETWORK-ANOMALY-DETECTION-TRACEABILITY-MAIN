@@ -13,6 +13,7 @@ import gzip
 import hashlib
 import io
 import json
+import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -48,6 +49,19 @@ PARTITION_VALIDATION = "validation"
 PARTITION_TEST = "test"
 PARTITION_PURGED_TRAIN_VAL = "purged_train_val_gap"
 PARTITION_PURGED_VAL_TEST = "purged_val_test_gap"
+
+EXPECTED_ARTIFACT_REL_PATHS: List[str] = [
+    "data/processed/splits/train_indices.csv.gz",
+    "data/processed/splits/purged_train_val_gap_indices.csv.gz",
+    "data/processed/splits/validation_indices.csv.gz",
+    "data/processed/splits/purged_val_test_gap_indices.csv.gz",
+    "data/processed/splits/test_indices.csv.gz",
+    "data/processed/nf_unsw_nb15_v3_split_manifest.json",
+    "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+    "reports/splits/nf_unsw_nb15_v3_split_manifest.json",
+    "reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md",
+    "docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md",
+]
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -991,6 +1005,7 @@ def save_split_artifacts(
     output_dir: Path,
     reports_split_dir: Optional[Path] = None,
     docs_report_path: Optional[Path] = None,
+    root_manifest_path: Optional[Path] = None,
 ) -> Dict[str, Path]:
     """Save all split artifacts, compressed partition index arrays, and reports.
 
@@ -1031,7 +1046,116 @@ def save_split_artifacts(
         docs_report_path.write_text(report_md, encoding="utf-8")
         written_paths["docs_report"] = docs_report_path
 
+    # Save root manifest copy if specified
+    if root_manifest_path is not None:
+        root_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        root_manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        written_paths["root_manifest"] = root_manifest_path
+
     return written_paths
+
+
+def run_split_pipeline(
+    df: pd.DataFrame,
+    config: SplitConfig,
+    dataset_sha256: str,
+    root_dir: Path,
+    generated_at_utc: Optional[str] = None,
+) -> Dict[str, Path]:
+    """Run split, leakage audit, and save the full artifact inventory under root_dir."""
+    split_result = compute_chronological_split(df, config=config)
+    audit_results = audit_split_leakage(df, split_result)
+
+    indices_dir = root_dir / "data" / "processed" / "splits"
+    partition_hashes = {}
+    for p_name, p_data in split_result["partitions"].items():
+        idx_path = indices_dir / f"{p_name}_indices.csv.gz"
+        partition_hashes[p_name] = write_deterministic_index_csv_gz(idx_path, p_data["indices"])
+
+    manifest = generate_split_manifest(
+        split_result=split_result,
+        audit_results=audit_results,
+        dataset_sha256=dataset_sha256,
+        partition_index_hashes=partition_hashes,
+        generated_at_utc=generated_at_utc,
+    )
+    report_md = render_leakage_audit_report(manifest)
+
+    written = save_split_artifacts(
+        split_result=split_result,
+        manifest=manifest,
+        report_md=report_md,
+        output_dir=root_dir / "data" / "processed",
+        reports_split_dir=root_dir / "reports" / "splits",
+        docs_report_path=root_dir / "docs" / "dataset" / "NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md",
+        root_manifest_path=root_dir / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+    )
+    return written
+
+
+def compare_artifact_inventories(
+    dir1: Path, dir2: Path, expected_rel_paths: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Compare SHA-256 hashes of all expected artifacts between two independent runs."""
+    rel_paths = (
+        expected_rel_paths if expected_rel_paths is not None else EXPECTED_ARTIFACT_REL_PATHS
+    )
+    matches: Dict[str, str] = {}
+    mismatches: List[str] = []
+
+    for rel in rel_paths:
+        f1 = dir1 / rel
+        f2 = dir2 / rel
+        if not f1.is_file():
+            mismatches.append(f"Pass 1 missing expected artifact: {rel}")
+            continue
+        if not f2.is_file():
+            mismatches.append(f"Pass 2 missing expected artifact: {rel}")
+            continue
+        h1 = _sha256_file(f1)
+        h2 = _sha256_file(f2)
+        if h1 != h2:
+            mismatches.append(f"SHA-256 mismatch for {rel}: {h1} vs {h2}")
+        else:
+            matches[rel] = h1
+
+    status = "PASS" if not mismatches and len(matches) == len(rel_paths) else "FAIL"
+    return {
+        "status": status,
+        "matches": matches,
+        "mismatches": mismatches,
+        "total_checked": len(rel_paths),
+    }
+
+
+def verify_artifact_reproducibility(
+    df: pd.DataFrame,
+    config: SplitConfig,
+    dataset_digest: str,
+    fixed_timestamp: str = "2026-10-27T00:00:00+00:00",
+) -> Dict[str, Any]:
+    """Run artifact generation independently twice and verify byte identity across all artifacts."""
+    with tempfile.TemporaryDirectory() as tmp1_str, tempfile.TemporaryDirectory() as tmp2_str:
+        tmp1 = Path(tmp1_str)
+        tmp2 = Path(tmp2_str)
+
+        run_split_pipeline(
+            df=df,
+            config=config,
+            dataset_sha256=dataset_digest,
+            root_dir=tmp1,
+            generated_at_utc=fixed_timestamp,
+        )
+        run_split_pipeline(
+            df=df,
+            config=config,
+            dataset_sha256=dataset_digest,
+            root_dir=tmp2,
+            generated_at_utc=fixed_timestamp,
+        )
+
+        comparison = compare_artifact_inventories(tmp1, tmp2, EXPECTED_ARTIFACT_REL_PATHS)
+        return comparison
 
 
 def load_partition_indices(
