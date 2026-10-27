@@ -1,0 +1,183 @@
+{
+  "evidence": {
+    "checked": {
+      "command_normalized": true,
+      "dataset_sha256": true,
+      "exit_code": true,
+      "git_head": true,
+      "manifest_sha256_matches": true,
+      "row_count_matches": true
+    },
+    "differences": [],
+    "excluded_paths": [
+      "started_at_utc",
+      "finished_at_utc",
+      "duration_seconds",
+      "label",
+      "directory",
+      "stdout_log",
+      "stderr_log",
+      "figure_directory",
+      "figure_files",
+      "command",
+      "summary_artifact.path",
+      "summary_artifact.sha256",
+      "report_artifact.path",
+      "report_artifact.sha256"
+    ],
+    "informational": {
+      "left_summary_artifact_sha256": "7d712c3df71e67e7ffd46391d70ea126158c6b83c7441ef3d36d5d3822d45019",
+      "note": "The two summary artifacts have different file hashes because each artifact embeds its own run timestamp. The deterministic content comparison is the authoritative check.",
+      "right_summary_artifact_sha256": "579aceacfe0759402f7dc74c5707aa8af3c8787e8e677cb58903d377c0db9afe"
+    },
+    "overall": "PASS"
+  },
+  "generated_at_utc": "2026-10-22T08:48:54+00:00",
+  "overall": "PASS",
+  "runs": [
+    {
+      "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+      "directory": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1",
+      "duration_seconds": 39.731,
+      "exit_code": 0,
+      "finished_at_utc": "2026-10-22T08:48:12+00:00",
+      "git_head": "435d56afb44817f5ac23272e96bb5dd5fd82f7af",
+      "label": "run-1",
+      "started_at_utc": "2026-10-22T08:47:32+00:00",
+      "summary_sha256": "7d712c3df71e67e7ffd46391d70ea126158c6b83c7441ef3d36d5d3822d45019"
+    },
+    {
+      "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+      "directory": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-2",
+      "duration_seconds": 40.512,
+      "exit_code": 0,
+      "finished_at_utc": "2026-10-22T08:48:53+00:00",
+      "git_head": "435d56afb44817f5ac23272e96bb5dd5fd82f7af",
+      "label": "run-2",
+      "started_at_utc": "2026-10-22T08:48:13+00:00",
+      "summary_sha256": "579aceacfe0759402f7dc74c5707aa8af3c8787e8e677cb58903d377c0db9afe"
+    }
+  ],
+  "schema_version": "nf-unsw-nb15-v3-eda-reproducibility-v1",
+  "summaries": {
+    "differences": [],
+    "excluded_paths": [
+      "generated_at_utc",
+      "tool.python",
+      "tool.platform"
+    ],
+    "metrics": [
+      {
+        "difference_count": 0,
+        "metric": "rows",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "expected_rows",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "row_count_matches_manifest",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "parse_mode",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "label_counts",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "attack_counts",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "protocol_counts",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "l7_proto_counts",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "categorical_counts",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "numeric_statistics",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "quantiles",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "class_conditional",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "class_conditional_quantiles",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "duration_throughput",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "time_coverage",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "duplicates",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "correlations",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "sample",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "sample_statistics",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "contract",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "readiness",
+        "status": "PASS"
+      },
+      {
+        "difference_count": 0,
+        "metric": "leakage_boundary",
+        "status": "PASS"
+      }
+    ],
+    "overall": "PASS"
+  }
+}

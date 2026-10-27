@@ -1,0 +1,78 @@
+# NF-UNSW-NB15-v3 split and leakage protocol
+
+**Status:** IMPLEMENTED contract and TESTED safeguards; real train/validation/test split **NOT
+VERIFIED**. The real audit is `RAW_QUALITY: FINDINGS_RECORDED`, so this document does not
+authorize model training while `ML_READY: BLOCKED`.
+
+## Purpose
+
+NF-UNSW-NB15-v3 is one CSV and does not inherit the published train/test files of UNSW-NB15
+(2015). A new split must be produced from the verified v3 bytes. The test partition is held out
+from feature selection, imputation policy selection, threshold selection and hyperparameter
+tuning.
+
+## Column roles
+
+- Targets: `Label` for binary evaluation and `Attack` for stratified reporting. Neither enters
+  `X`.
+- Trace/grouping metadata: `FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`,
+  `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT` and `L4_DST_PORT`. They remain available to
+  flow grouping and Trace Engine correlation but are excluded from the default ML matrix.
+- Baseline ML input: the other 47 ordered NetFlow v3 fields: protocol/application-protocol,
+  traffic counters, flags, duration, throughput and IAT fields.
+- A port-augmented 49-feature configuration is reserved for a future controlled experiment. It is
+  not the default contract and has not been implemented or evaluated in this migration.
+- API, authentication and application-session events are separate sources. This dataset does not
+  supply them.
+
+The executable column contract is
+`src/network_anomaly/data/nf_unsw_nb15_v3.py`. It fails closed when a target, trace/grouping
+metadata field, unknown field or ordering mismatch is supplied.
+
+## Proposed deterministic split
+
+1. Start only from a package that passes `scripts/dataset_manifest.py verify` and a quality report
+   whose blocking findings have an approved handling policy.
+2. Attach the source-row identifier and preserve the two targets plus trace metadata outside `X`.
+3. Form a direction-independent group from source/destination IP and port, protocol, and a
+   five-minute start-time bucket. Because the dataset has no trusted session identifier, this is a
+   heuristic rather than proof of session separation.
+4. Compute the versioned exact, source-feature, ML-feature, behavioral-v1 and canonical-group keys
+   before assigning partitions. Do not automatically remove behavioral/ML-equivalent rows. If a
+   future policy applies exact keep-first deduplication, record every excluded source row and the
+   class-distribution impact; otherwise assign each equivalence/group wholly to one partition.
+5. Order groups by their earliest `FLOW_START_MILLISECONDS`, with stable fingerprint tie-breaking.
+   Assign whole groups approximately 70%/15%/15% to train/validation/test. Record actual temporal
+   boundaries and class/category distributions; proportions are targets, not guarantees.
+6. Fail the build if an exact, source-feature or ML-feature fingerprint, or a canonical group,
+   occurs in more than one partition. Reject temporal-order inversions. Review boundary-adjacent
+   flows and use a documented purge gap if the group heuristic still creates adjacency risk.
+7. Fit imputer, finite-value replacement, scaler, encoder, feature selector and resampling only on
+   train. Apply frozen transforms to validation and test. Fit supervised and unsupervised models
+   only after the transform artifact records its train split identifier.
+8. Use validation for hyperparameters and thresholds. Open test once for final reporting; never
+   feed test metrics back into feature, threshold or policy choices.
+
+## Required split artifact
+
+The future split manifest must record dataset SHA-256, algorithm/version, seed (use `42` where a
+stable tie-break requires one), group rule, duplicate policy, temporal boundaries, row/group
+counts, binary and attack-category distributions, excluded-row ledger, feature list and hashes of
+the three row-index files. Changing any of these fields creates a new split identifier.
+
+## Current limitations and gate
+
+- Real validation found missing and positive-infinity values in throughput-like fields. The
+  handling rule must be selected on train only and tested before a real split is accepted.
+- Exact and ML/behavior-equivalent repeats are present. The real audit found no binary-label
+  conflicts but found 1,270 ML fingerprints with multiple malicious categories, including two
+  fingerprints involving Worms. No automatic behavioral deduplication is approved; see
+  `docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md`.
+- A five-minute bidirectional 5-tuple group is only a proxy for a session; no trustworthy session
+  ID is available in the verified schema.
+- The source period is January-February 2015 even though the v3 release is from 2025. Temporal
+  holdout tests chronology within this capture; it does not demonstrate contemporary traffic
+  generalization.
+
+Therefore the split is **PLANNED / NOT VERIFIED**, while feature exclusion and bounded overlap
+guards are **IMPLEMENTED / TESTED** using synthetic fixtures only.

@@ -1,0 +1,4 @@
+[eda_nf_unsw_nb15_v3] SOURCE_INTEGRITY: PASS
+[eda_nf_unsw_nb15_v3] RAW_QUALITY: FINDINGS_RECORDED
+[eda_nf_unsw_nb15_v3] ML_READY: BLOCKED
+[eda_nf_unsw_nb15_v3] EDA: COMPLETE rows=2365424 summary=C:\Users\Admin\Documents\code_workspace\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\reports\eda\evidence\run-2\eda_summary.json report=C:\Users\Admin\Documents\code_workspace\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\reports\eda\evidence\run-2\eda_report.md figures=C:\Users\Admin\Documents\code_workspace\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\reports\figures\nf_unsw_nb15_v3\repro-run-2

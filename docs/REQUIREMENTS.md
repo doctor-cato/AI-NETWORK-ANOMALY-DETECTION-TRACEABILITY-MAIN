@@ -4,7 +4,7 @@
 
 | ID | Yêu cầu | Checkpoint | Issue |
 |---|---|---|---|
-| F01 | Provenance, schema, quality, EDA và leakage audit UNSW-NB15 | C1 | #4–#7 |
+| F01 | Provenance, schema, quality, EDA và leakage audit NF-UNSW-NB15-v3 | C1 | #4–#7 |
 | F02 | Split trước fit; preprocessing artifact và leakage tests | C2 | #8 |
 | F03 | Random Forest và XGBoost cùng supervised protocol | C3 | #9, #10, #12, #31 |
 | F04 | Isolation Forest và Autoencoder; validation-only threshold; unknown holdout | C4 | #11, #29 |
@@ -34,4 +34,4 @@ Unit/integration test synthetic chỉ chứng minh hành vi code. `EXPERIMENTALL
 đòi dữ liệu thật có provenance, protocol không leakage, artifact và result được đối chiếu.
 Thiếu dữ liệu là `SKIPPED` hoặc `NOT VERIFIED`, không phải `PASS`.
 
-Cập nhật: 2026-10-19 (C0)
+Cập nhật: 2026-10-20 (dataset migration)
