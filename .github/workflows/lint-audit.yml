@@ -50,14 +50,17 @@ jobs:
             scripts/historical/fetch_unsw_nb15_2015.py \
             scripts/historical/validate_unsw_nb15_2015.py \
             scripts/run_experiments.py \
+            scripts/split_and_audit_nf_unsw_nb15_v3.py \
             scripts/validate_data.py \
             src/network_anomaly/data/nf_unsw_nb15_v3.py \
+            src/network_anomaly/data/split.py \
             src/network_anomaly/eda \
             tests/unit/test_nf_unsw_nb15_v3_acquisition.py \
             tests/unit/test_nf_unsw_nb15_v3_eda.py \
             tests/unit/test_nf_unsw_nb15_v3_split.py \
             tests/unit/test_nf_unsw_nb15_v3_validation.py \
             tests/unit/test_run_experiments.py \
+            tests/unit/test_split_protocol.py \
             tests/unit/test_validate_data.py
 
       - name: Scoped Black (files owned by this change set)
@@ -70,14 +73,17 @@ jobs:
             scripts/historical/fetch_unsw_nb15_2015.py \
             scripts/historical/validate_unsw_nb15_2015.py \
             scripts/run_experiments.py \
+            scripts/split_and_audit_nf_unsw_nb15_v3.py \
             scripts/validate_data.py \
             src/network_anomaly/data/nf_unsw_nb15_v3.py \
+            src/network_anomaly/data/split.py \
             src/network_anomaly/eda \
             tests/unit/test_nf_unsw_nb15_v3_acquisition.py \
             tests/unit/test_nf_unsw_nb15_v3_eda.py \
             tests/unit/test_nf_unsw_nb15_v3_split.py \
             tests/unit/test_nf_unsw_nb15_v3_validation.py \
             tests/unit/test_run_experiments.py \
+            tests/unit/test_split_protocol.py \
             tests/unit/test_validate_data.py
 
       - name: Repository-wide Ruff (legacy debt, non-gating)

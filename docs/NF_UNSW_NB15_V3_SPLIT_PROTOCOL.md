@@ -1,8 +1,8 @@
 # NF-UNSW-NB15-v3 split and leakage protocol
 
-**Status:** IMPLEMENTED contract and TESTED safeguards; real train/validation/test split **NOT
-VERIFIED**. The real audit is `RAW_QUALITY: FINDINGS_RECORDED`, so this document does not
-authorize model training while `ML_READY: BLOCKED`.
+**Status:** IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED on verified NF-UNSW-NB15-v3 bytes (SHA-256 `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`).
+Cross-partition leakage audit status is **PASS**; split manifest generated at `reports/splits/nf_unsw_nb15_v3_split_manifest.json` and `data/processed/nf_unsw_nb15_v3_split_manifest.json`.
+Issue #7 is complete; Issue #8 consumes this verified train/val/test split.
 
 ## Purpose
 
@@ -74,5 +74,4 @@ the three row-index files. Changing any of these fields creates a new split iden
   holdout tests chronology within this capture; it does not demonstrate contemporary traffic
   generalization.
 
-Therefore the split is **PLANNED / NOT VERIFIED**, while feature exclusion and bounded overlap
-guards are **IMPLEMENTED / TESTED** using synthetic fixtures only.
+The deterministic split with 5-minute canonical group purge gap is **IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED** (Audit status: PASS). Full leakage audit report is recorded in `docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md` and `reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md`. Model training remains blocked pending train-only fitted preprocessing in Issue #8 (`ML_READY: BLOCKED`).
