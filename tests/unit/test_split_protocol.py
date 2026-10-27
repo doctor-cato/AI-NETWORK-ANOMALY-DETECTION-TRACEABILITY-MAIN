@@ -34,6 +34,7 @@ from network_anomaly.data.split import (
     run_split_pipeline,
     save_split_artifacts,
     verify_artifact_reproducibility,
+    verify_split_artifacts,
     write_deterministic_index_csv_gz,
 )
 
@@ -493,3 +494,136 @@ def test_reproducibility_contract_detects_variable_timestamps():
         res = compare_artifact_inventories(dir1, dir2)
         assert res["status"] == "FAIL"
         assert any("split_manifest.json" in m for m in res["mismatches"])
+
+
+def test_audit_split_leakage_detects_flow_end_boundary_crossing():
+    """Verify that a flow extending into a later partition's time window triggers a failure."""
+    df = make_synthetic_df(n_rows=50, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    split_res = compute_chronological_split(df, config=config)
+
+    # Force a Train flow to have FLOW_END extending into Validation start time
+    val_min_start = split_res["partitions"][PARTITION_VALIDATION]["time_coverage"]["min_epoch_ms"]
+    train_indices = split_res["partitions"][PARTITION_TRAIN]["indices"]
+    df.loc[train_indices[0], "FLOW_END_MILLISECONDS"] = val_min_start + 5_000
+
+    audit_res = audit_split_leakage(df, split_res)
+    assert audit_res["status"] == "FAIL"
+    assert audit_res["flow_end_crossings"]["train_into_validation"] == 1
+    assert any("Temporal boundary violation" in f for f in audit_res["blocking_failures"])
+
+
+def test_verify_split_artifacts_valid_inventory():
+    """Verify that verify_split_artifacts passes on a cleanly generated artifact inventory."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        run_split_pipeline(
+            df, config, fake_sha, tmp_dir, generated_at_utc="2026-10-27T00:00:00+00:00"
+        )
+        manifest_path = tmp_dir / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+
+        res = verify_split_artifacts(manifest_path, root_dir=tmp_dir)
+        assert res["status"] == "PASS"
+        assert len(res["errors"]) == 0
+        assert res["total_artifacts_checked"] == 10
+
+
+def test_verify_split_artifacts_detects_missing_file():
+    """Verify that verify_split_artifacts fails when an expected artifact is absent."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        run_split_pipeline(
+            df, config, fake_sha, tmp_dir, generated_at_utc="2026-10-27T00:00:00+00:00"
+        )
+        manifest_path = tmp_dir / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+
+        # Remove an index archive
+        (tmp_dir / "data" / "processed" / "splits" / "test_indices.csv.gz").unlink()
+
+        res = verify_split_artifacts(manifest_path, root_dir=tmp_dir)
+        assert res["status"] == "FAIL"
+        assert any(
+            "Missing expected artifact: data/processed/splits/test_indices.csv.gz" in e
+            for e in res["errors"]
+        )
+
+
+def test_verify_split_artifacts_detects_altered_index_hash():
+    """Verify that verify_split_artifacts fails when an index file hash differs from manifest."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        run_split_pipeline(
+            df, config, fake_sha, tmp_dir, generated_at_utc="2026-10-27T00:00:00+00:00"
+        )
+        manifest_path = tmp_dir / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+
+        # Modify index file
+        idx_path = tmp_dir / "data" / "processed" / "splits" / "train_indices.csv.gz"
+        write_deterministic_index_csv_gz(idx_path, np.array([1, 2, 3], dtype=np.int64))
+
+        res = verify_split_artifacts(manifest_path, root_dir=tmp_dir)
+        assert res["status"] == "FAIL"
+        assert any("SHA-256 mismatch for train_indices.csv.gz" in e for e in res["errors"])
+
+
+def test_verify_split_artifacts_detects_secondary_manifest_mismatch():
+    """Verify that verify_split_artifacts fails when a secondary manifest is tampered with."""
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        run_split_pipeline(
+            df, config, fake_sha, tmp_dir, generated_at_utc="2026-10-27T00:00:00+00:00"
+        )
+        manifest_path = tmp_dir / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+
+        sec_manifest_path = tmp_dir / "reports" / "splits" / "nf_unsw_nb15_v3_split_manifest.json"
+        sec_manifest = json.loads(sec_manifest_path.read_text(encoding="utf-8"))
+        sec_manifest["total_source_rows"] = 999999
+        sec_manifest_path.write_text(json.dumps(sec_manifest), encoding="utf-8")
+
+        res = verify_split_artifacts(manifest_path, root_dir=tmp_dir)
+        assert res["status"] == "FAIL"
+        assert any("Content mismatch between primary manifest" in e for e in res["errors"])
+
+
+def test_verify_only_cli_execution_does_not_modify_files():
+    """Verify that running --verify-only does not change any byte hashes of on-disk artifacts."""
+    import subprocess
+    import sys
+
+    # Record hashes of existing artifacts in repo
+    initial_hashes = {}
+    for rel in EXPECTED_ARTIFACT_REL_PATHS:
+        f = ROOT / rel
+        if f.is_file():
+            initial_hashes[rel] = _sha256_file(f)
+
+    cmd = [
+        sys.executable,
+        str(ROOT / "scripts" / "split_and_audit_nf_unsw_nb15_v3.py"),
+        "--verify-only",
+    ]
+    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
+    assert proc.returncode == 0
+    assert "PASS: All 10 split artifacts successfully verified on disk" in proc.stdout
+
+    # Verify every hash is untouched
+    for rel, orig_sha in initial_hashes.items():
+        assert (
+            _sha256_file(ROOT / rel) == orig_sha
+        ), f"Artifact was modified by --verify-only: {rel}"

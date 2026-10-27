@@ -45,6 +45,7 @@ from network_anomaly.data.split import (  # noqa: E402
     render_leakage_audit_report,
     run_split_pipeline,
     save_split_artifacts,
+    verify_split_artifacts,
     write_deterministic_index_csv_gz,
 )
 
@@ -185,6 +186,40 @@ def main() -> None:
     print("=" * 70)
     print("NF-UNSW-NB15-v3 Data Splitting and Cross-Partition Leakage Audit")
     print("=" * 70)
+
+    # In --verify-only mode: validate existing on-disk artifacts without re-splitting or writing
+    if args.verify_only:
+        print("[split_and_audit] Running in --verify-only mode (validating existing artifacts)...")
+        manifest_path = (
+            args.root_manifest
+            if args.root_manifest.is_file()
+            else (args.output_dir / "nf_unsw_nb15_v3_split_manifest.json")
+        )
+        dataset_path = args.dataset if (args.dataset and args.dataset.is_file()) else None
+
+        result = verify_split_artifacts(
+            manifest_path=manifest_path,
+            root_dir=PROJECT_ROOT,
+            dataset_path=dataset_path,
+        )
+
+        for art in result["verified_artifacts"]:
+            print(f"  * {art['path']:<58}: EXISTS")
+
+        if result["status"] != "PASS":
+            print("[split_and_audit] ERROR: Artifact verification FAILED with errors:")
+            for err in result["errors"]:
+                print(f"  - {err}")
+            sys.exit(2)
+
+        print("=" * 70)
+        print(
+            f"[split_and_audit] PASS: All {result['total_artifacts_checked']} split artifacts "
+            "successfully verified on disk."
+        )
+        print(f"[split_and_audit] Manifest: {manifest_path}")
+        print("=" * 70)
+        sys.exit(0)
 
     dataset_digest = verify_source_dataset(args.dataset)
 

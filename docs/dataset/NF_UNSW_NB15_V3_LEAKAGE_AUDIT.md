@@ -5,7 +5,7 @@
 **Mã giao thức phân chia:** `nf-unsw-nb15-v3-chronological-group-purged-v1`
 **Phiên bản Fingerprint Schema:** `nf-unsw-nb15-v3-fingerprint-v1`
 **Dataset SHA-256:** `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`
-**Ngày thực hiện kiểm toán:** `2026-10-27T08:23:56.896324+00:00`
+**Ngày thực hiện kiểm toán:** `2026-10-27T10:46:58.474159+00:00`
 
 ---
 
@@ -32,8 +32,21 @@ trên **3 ngày UTC duy nhất**:
 - **Vùng đệm Purge Gap (300.000 ms = 5 phút):** Thiết lập vùng đệm 5 phút tại ranh giới
   Train-Validation và Validation-Test. Do quy tắc gom nhóm `canonical_flow_group` sử dụng
   bucket 5 phút (`FLOW_START_MILLISECONDS // 300_000`), khoảng cách tối thiểu >300.000 ms
-  giữa các tập đảm bảo **toán học và thực nghiệm rằng không có bất kỳ nhóm luồng nào có
-  thể rò rỉ qua các phân vùng**.
+  giữa các tập đảm bảo **toán học và thực nghiệm rằng không có bất kỳ nhóm luồng nào (theo
+  định nghĩa canonical 5-tuple trong bucket 5 phút) có thể rò rỉ qua các phân vùng**.
+
+### 1.3 Kiểm toán ranh giới thời gian kết thúc luồng (FLOW_END_MILLISECONDS)
+Bên cạnh mốc thời gian bắt đầu (`FLOW_START_MILLISECONDS`), kiểm toán thực nghiệm đã đối chiếu
+toàn bộ mốc thời gian kết thúc (`FLOW_END_MILLISECONDS`) để xác minh không có luồng nào bắt đầu
+trong phân vùng trước nhưng kéo dài và kết thúc trong khoảng thời gian của phân vùng sau:
+- **Thời lượng luồng tối đa trong bộ dữ liệu:** `120.948 ms` (~2,02 phút), hoàn toàn nhỏ hơn
+  kích thước vùng đệm Purge Gap (300.000 ms = 5 phút).
+- **Ranh giới Train → Validation:** Luồng kết thúc muộn nhất của Train là `1.424.238.197.221 ms`,
+  cách thời điểm bắt đầu của luồng sớm nhất trong Validation (`1.424.238.433.386 ms`) một khoảng
+  an toàn là **236.165 ms** (gần 4 phút). Số luồng Train kéo dài sang Validation: **0 luồng** (`PASS`).
+- **Ranh giới Validation → Test:** Luồng kết thúc muộn nhất của Validation là `1.424.250.544.102 ms`,
+  cách thời điểm bắt đầu của luồng sớm nhất trong Test (`1.424.250.796.160 ms`) một khoảng
+  an toàn là **252.058 ms** (hơn 4 phút). Số luồng Validation kéo dài sang Test: **0 luồng** (`PASS`).
 
 ---
 
@@ -104,8 +117,12 @@ trong cả ba phân vùng Train, Validation, Test:
      `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`, `PROTOCOL`) trong cùng một bucket
      thời gian 5 phút.
    - *Kết quả:* **0 nhóm** trên toàn bộ các cặp phân vùng.
-   - *Đánh giá:* **PASS** — Vùng đệm Purge Gap 300.000 ms đảm bảo không có phiên hội thoại
-     nào bị cắt đôi giữa hai tập.
+   - *Đánh giá:* **PASS** — Vùng đệm Purge Gap 300.000 ms đảm bảo không có nhóm luồng chuẩn hóa
+     nào bị chia cắt giữa hai tập.
+   - *Giới hạn phương pháp:* Kết quả 0 group overlap chứng minh sự cô lập theo định nghĩa nhóm 5-tuple
+     trong bucket 5 phút. NetFlow v3 là bản ghi thống kê lưu lượng tóm tắt, không chứa TCP payload
+     hay sequence number; do đó, các phiên kéo dài qua nhiều bucket hoặc các quan hệ ứng dụng phức tạp
+     không được mô hình hóa bởi 5-tuple vẫn có thể tồn tại và là một giới hạn khách quan của bộ dữ liệu.
 
 4. **ML-Feature Overlap (Trùng lặp vector đặc trưng ML 47 chiều):**
    - *Định nghĩa:* Hai bản ghi có cùng giá trị trên 47 đặc trưng đầu vào ML sau khi đã loại bỏ
@@ -198,7 +215,7 @@ Issue #8 có thể tiêu thụ phân vùng này thông qua hàm `load_split_for_
 
 ## 7. Kết luận kiểm toán
 
-Giao thức phân chia theo thời gian có vùng đệm 5 phút giải quyết triệt để rủi ro rò rỉ phiên luồng,
-không vi phạm thứ tự thời gian, bảo tồn đầy đủ 10 lớp lưu lượng trong cả 3 tập, và đáp ứng toàn bộ
-tiêu chí nghiệm thu của Issue #7. Pipeline ML tiếp tục được khóa ở mức `ML_READY: BLOCKED` theo đúng
-ranh giới khoa học.
+Giao thức phân chia theo thời gian có vùng đệm 5 phút loại bỏ hoàn toàn việc trùng lặp nhóm luồng chuẩn hóa
+(0 canonical group overlap), không có bất kỳ luồng nào kéo dài qua ranh giới thời gian (0 FLOW_END crossing),
+không vi phạm thứ tự thời gian, bảo tồn đầy đủ 10 lớp lưu lượng trong cả 3 tập, và đáp ứng toàn bộ tiêu chí
+nghiệm thu của Issue #7. Pipeline ML tiếp tục được khóa ở mức `ML_READY: BLOCKED` theo đúng ranh giới khoa học.

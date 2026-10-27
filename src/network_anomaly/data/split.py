@@ -342,6 +342,17 @@ def audit_split_leakage(
 
     # Check temporal boundary rules
     temporal_boundary_violations = []
+    flow_end_crossings = {
+        "train_into_validation": 0,
+        "validation_into_test": 0,
+        "train_max_end_ms": 0,
+        "val_min_start_ms": 0,
+        "train_val_margin_ms": 0,
+        "val_max_end_ms": 0,
+        "test_min_start_ms": 0,
+        "val_test_margin_ms": 0,
+        "status": "PASS",
+    }
     ordered_splits = (PARTITION_TRAIN, PARTITION_VALIDATION, PARTITION_TEST)
     for earlier, later in zip(ordered_splits, ordered_splits[1:]):
         e_cov = partitions_data[earlier]["time_coverage"]
@@ -354,6 +365,7 @@ def audit_split_leakage(
             if gap < req_gap:
                 temporal_boundary_violations.append(
                     {
+                        "type": "flow_start_inversion_or_insufficient_gap",
                         "earlier": earlier,
                         "later": later,
                         "earlier_max_ms": e_max,
@@ -362,6 +374,39 @@ def audit_split_leakage(
                         "required_gap_ms": req_gap,
                     }
                 )
+
+            # Check FLOW_END_MILLISECONDS boundary crossings
+            if "FLOW_END_MILLISECONDS" in df.columns:
+                e_idx = partitions_data[earlier]["indices"]
+                e_ends = df["FLOW_END_MILLISECONDS"].iloc[e_idx].to_numpy()
+                if len(e_ends) > 0:
+                    max_e_end = int(e_ends.max())
+                    crossing_count = int((e_ends >= l_min).sum())
+                    margin = int(l_min - max_e_end)
+                    pair_key = f"{earlier}_into_{later}"
+                    if pair_key == "train_into_validation":
+                        flow_end_crossings["train_into_validation"] = crossing_count
+                        flow_end_crossings["train_max_end_ms"] = max_e_end
+                        flow_end_crossings["val_min_start_ms"] = int(l_min)
+                        flow_end_crossings["train_val_margin_ms"] = margin
+                    elif pair_key == "validation_into_test":
+                        flow_end_crossings["validation_into_test"] = crossing_count
+                        flow_end_crossings["val_max_end_ms"] = max_e_end
+                        flow_end_crossings["test_min_start_ms"] = int(l_min)
+                        flow_end_crossings["val_test_margin_ms"] = margin
+
+                    if crossing_count > 0:
+                        temporal_boundary_violations.append(
+                            {
+                                "type": "flow_end_crossing",
+                                "earlier": earlier,
+                                "later": later,
+                                "crossing_count": crossing_count,
+                                "earlier_max_end_ms": max_e_end,
+                                "later_min_start_ms": int(l_min),
+                            }
+                        )
+                        flow_end_crossings["status"] = "FAIL"
 
     # Compute fast hashes for each fingerprint type
     # 1. Exact full-row
@@ -536,6 +581,7 @@ def audit_split_leakage(
         "status": overall_status,
         "blocking_failures": blocking_failures,
         "temporal_boundary_violations": temporal_boundary_violations,
+        "flow_end_crossings": flow_end_crossings,
         "pair_audits": pair_audits,
         "purged_records": {
             "purged_train_val_gap_rows": len(
@@ -629,6 +675,7 @@ def generate_split_manifest(
                 for p in audit_results["pair_audits"].values()
             ),
             "temporal_boundary_violations": len(audit_results["temporal_boundary_violations"]),
+            "flow_end_crossings": audit_results.get("flow_end_crossings"),
             "binary_label_conflicts": sum(
                 p["ml_feature_overlap"]["binary_label_conflicts"]
                 for p in audit_results["pair_audits"].values()
@@ -641,8 +688,19 @@ def generate_split_manifest(
             "(2015-01-22, 2015-01-23, 2015-02-18).",
             "2015-01-23 contains only 39,778 benign flows and 0 attacks; temporal split cuts "
             "inside 2015-02-18 to ensure all 9 attack classes exist across train, val, and test.",
-            "Canonical 5-tuple + 5-minute bucket flow group is a heuristic proxy; raw PCAP session "
-            "identifiers are not present in published NetFlow v3 schema.",
+            (
+                "Canonical 5-tuple + 5-minute bucket flow group is a heuristic proxy; raw "
+                "PCAP session identifiers are not present in published NetFlow v3 schema. 0 group "
+                "overlap guarantees isolation under this definition, but does not prove complete "
+                "elimination of complex multi-connection application sessions or sessions "
+                "spanning across buckets."
+            ),
+            (
+                "Temporal boundaries verified on FLOW_END_MILLISECONDS: 0 flows originating "
+                "in Train extend into the Validation time window (margin: 236,165 ms) and 0 flows "
+                "from Validation extend into Test (margin: 252,058 ms), well protected by the "
+                "300,000 ms purge gap vs maximum flow duration of 120,948 ms in the entire dataset."
+            ),
             (
                 "ML-feature pattern repetition across time (affecting 53.21% of Test and 49.98% "
                 "of Validation rows against Train) represents common recurring protocol profiles "
@@ -845,8 +903,23 @@ trên **3 ngày UTC duy nhất**:
 - **Vùng đệm Purge Gap (300.000 ms = 5 phút):** Thiết lập vùng đệm 5 phút tại ranh giới
   Train-Validation và Validation-Test. Do quy tắc gom nhóm `canonical_flow_group` sử dụng
   bucket 5 phút (`FLOW_START_MILLISECONDS // 300_000`), khoảng cách tối thiểu >300.000 ms
-  giữa các tập đảm bảo **toán học và thực nghiệm rằng không có bất kỳ nhóm luồng nào có
-  thể rò rỉ qua các phân vùng**.
+  giữa các tập đảm bảo **toán học và thực nghiệm rằng không có bất kỳ nhóm luồng nào (theo
+  định nghĩa canonical 5-tuple trong bucket 5 phút) có thể rò rỉ qua các phân vùng**.
+
+### 1.3 Kiểm toán ranh giới thời gian kết thúc luồng (FLOW_END_MILLISECONDS)
+Bên cạnh mốc thời gian bắt đầu (`FLOW_START_MILLISECONDS`), kiểm toán thực nghiệm đã đối chiếu
+toàn bộ mốc thời gian kết thúc (`FLOW_END_MILLISECONDS`) để xác minh không có luồng nào bắt đầu
+trong phân vùng trước nhưng kéo dài và kết thúc trong khoảng thời gian của phân vùng sau:
+- **Thời lượng luồng tối đa trong bộ dữ liệu:** `120.948 ms` (~2,02 phút), hoàn toàn nhỏ hơn
+  kích thước vùng đệm Purge Gap (300.000 ms = 5 phút).
+- **Ranh giới Train → Validation:** Luồng kết thúc muộn nhất của Train là
+  `1.424.238.197.221 ms`, cách thời điểm bắt đầu của luồng sớm nhất trong Validation
+  (`1.424.238.433.386 ms`) một khoảng an toàn là **236.165 ms** (gần 4 phút).
+  Số luồng Train kéo dài sang Validation: **0 luồng** (`PASS`).
+- **Ranh giới Validation → Test:** Luồng kết thúc muộn nhất của Validation là
+  `1.424.250.544.102 ms`, cách thời điểm bắt đầu của luồng sớm nhất trong Test
+  (`1.424.250.796.160 ms`) một khoảng an toàn là **252.058 ms** (hơn 4 phút).
+  Số luồng Validation kéo dài sang Test: **0 luồng** (`PASS`).
 
 ---
 
@@ -896,8 +969,13 @@ trong cả ba phân vùng Train, Validation, Test:
      `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`, `PROTOCOL`) trong cùng một bucket
      thời gian 5 phút.
    - *Kết quả:* **0 nhóm** trên toàn bộ các cặp phân vùng.
-   - *Đánh giá:* **PASS** — Vùng đệm Purge Gap 300.000 ms đảm bảo không có phiên hội thoại
-     nào bị cắt đôi giữa hai tập.
+   - *Đánh giá:* **PASS** — Vùng đệm Purge Gap 300.000 ms đảm bảo không có nhóm luồng chuẩn hóa
+     nào bị chia cắt giữa hai tập.
+   - *Giới hạn phương pháp:* Kết quả 0 group overlap chứng minh sự cô lập theo định nghĩa
+     nhóm 5-tuple trong bucket 5 phút. NetFlow v3 là bản ghi thống kê lưu lượng tóm tắt,
+     không chứa TCP payload hay sequence number; do đó, các phiên kéo dài qua nhiều bucket
+     hoặc các quan hệ ứng dụng phức tạp không được mô hình hóa bởi 5-tuple vẫn có thể tồn tại
+     và là một giới hạn khách quan của bộ dữ liệu.
 
 4. **ML-Feature Overlap (Trùng lặp vector đặc trưng ML 47 chiều):**
    - *Định nghĩa:* Hai bản ghi có cùng giá trị trên 47 đặc trưng đầu vào ML sau khi đã loại bỏ
@@ -990,10 +1068,11 @@ Issue #8 có thể tiêu thụ phân vùng này thông qua hàm `load_split_for_
 
 ## 7. Kết luận kiểm toán
 
-Giao thức phân chia theo thời gian có vùng đệm 5 phút giải quyết triệt để rủi ro rò rỉ phiên luồng,
-không vi phạm thứ tự thời gian, bảo tồn đầy đủ 10 lớp lưu lượng trong cả 3 tập, và đáp ứng toàn bộ
-tiêu chí nghiệm thu của Issue #7. Pipeline ML tiếp tục được khóa ở mức `ML_READY: BLOCKED` theo đúng
-ranh giới khoa học.
+Giao thức phân chia theo thời gian có vùng đệm 5 phút loại bỏ hoàn toàn việc trùng lặp
+nhóm luồng chuẩn hóa (0 canonical group overlap), không có bất kỳ luồng nào kéo dài qua
+ranh giới thời gian (0 FLOW_END crossing), không vi phạm thứ tự thời gian, bảo tồn đầy đủ
+10 lớp lưu lượng trong cả 3 tập, và đáp ứng toàn bộ tiêu chí nghiệm thu của Issue #7.
+Pipeline ML tiếp tục được khóa ở mức `ML_READY: BLOCKED` theo đúng ranh giới khoa học.
 """
     return report_md
 
@@ -1156,6 +1235,127 @@ def verify_artifact_reproducibility(
 
         comparison = compare_artifact_inventories(tmp1, tmp2, EXPECTED_ARTIFACT_REL_PATHS)
         return comparison
+
+
+def verify_split_artifacts(
+    manifest_path: Path,
+    root_dir: Optional[Path] = None,
+    dataset_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Verify on-disk integrity of split artifacts against the split manifest.
+
+    This function does NOT compute splits, does NOT audit leakage, and does NOT
+    modify or write any files. It purely inspects and validates existing artifacts.
+    """
+    if not manifest_path.is_file():
+        return {
+            "status": "FAIL",
+            "errors": [f"Manifest file not found: {manifest_path}"],
+            "verified_artifacts": [],
+            "manifest_path": str(manifest_path),
+            "total_artifacts_checked": 0,
+        }
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if root_dir is not None:
+        base_dir = root_dir
+    else:
+        p = manifest_path.resolve()
+        found_base = None
+        for candidate in [p.parent, p.parent.parent, p.parent.parent.parent]:
+            if (candidate / EXPECTED_ARTIFACT_REL_PATHS[0]).is_file():
+                found_base = candidate
+                break
+        base_dir = found_base if found_base is not None else p.parent.parent
+
+    errors: List[str] = []
+    verified_artifacts: List[Dict[str, Any]] = []
+
+    # 1. Verify existence of all expected artifacts
+    for rel_path in EXPECTED_ARTIFACT_REL_PATHS:
+        f_path = base_dir / rel_path
+        if not f_path.is_file():
+            errors.append(f"Missing expected artifact: {rel_path}")
+        else:
+            verified_artifacts.append({"path": rel_path, "status": "EXISTS"})
+
+    # 2. Verify partition index archives against manifest hashes and row counts
+    indices_dir = base_dir / "data" / "processed" / "splits"
+    partitions = manifest.get("partitions", {})
+    for p_name, p_info in partitions.items():
+        idx_path = indices_dir / f"{p_name}_indices.csv.gz"
+        if not idx_path.is_file():
+            continue
+
+        actual_sha = _sha256_file(idx_path)
+        expected_sha = p_info.get("index_sha256")
+        if expected_sha is not None and actual_sha != expected_sha:
+            errors.append(
+                f"SHA-256 mismatch for {idx_path.name}: "
+                f"expected {expected_sha}, got {actual_sha}"
+            )
+
+        try:
+            df_idx = pd.read_csv(idx_path, compression="gzip")
+            if "source_row_index" not in df_idx.columns:
+                errors.append(f"{idx_path.name} missing 'source_row_index' column")
+            elif len(df_idx) != p_info.get("row_count"):
+                errors.append(
+                    f"Row count mismatch for {idx_path.name}: "
+                    f"expected {p_info.get('row_count')}, got {len(df_idx)}"
+                )
+        except Exception as e:
+            errors.append(f"Error reading index archive {idx_path.name}: {e}")
+
+    # 3. Verify secondary manifests match primary manifest
+    secondary_rel_paths = [
+        "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+        "reports/splits/nf_unsw_nb15_v3_split_manifest.json",
+    ]
+    for sec_rel in secondary_rel_paths:
+        sec_path = base_dir / sec_rel
+        if sec_path.is_file() and sec_path.resolve() != manifest_path.resolve():
+            try:
+                sec_manifest = json.loads(sec_path.read_text(encoding="utf-8"))
+                if sec_manifest != manifest:
+                    errors.append(f"Content mismatch between primary manifest and {sec_rel}")
+            except Exception as e:
+                errors.append(f"Error reading secondary manifest {sec_rel}: {e}")
+
+    # 4. Verify markdown audit reports are non-empty
+    report_rel_paths = [
+        "reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md",
+        "docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md",
+    ]
+    for rep_rel in report_rel_paths:
+        rep_path = base_dir / rep_rel
+        if rep_path.is_file():
+            content = rep_path.read_text(encoding="utf-8")
+            if len(content.strip()) == 0:
+                errors.append(f"Report {rep_rel} is empty")
+
+    # 5. Verify source dataset SHA-256 if provided
+    if dataset_path is not None and dataset_path.is_file():
+        ds_sha = _sha256_file(dataset_path)
+        expected_ds_sha = manifest.get("dataset_sha256")
+        if expected_ds_sha is not None and ds_sha != expected_ds_sha:
+            errors.append(f"Dataset SHA-256 mismatch: expected {expected_ds_sha}, got {ds_sha}")
+
+    # 6. Verify ML_READY gate remains BLOCKED
+    ml_readiness = manifest.get("audit_summary", {}).get("ML_READY")
+    if ml_readiness != "BLOCKED":
+        errors.append(
+            f"Invalid ML_READY state in manifest: expected 'BLOCKED', got '{ml_readiness}'"
+        )
+
+    status = "PASS" if not errors else "FAIL"
+    return {
+        "status": status,
+        "errors": errors,
+        "verified_artifacts": verified_artifacts,
+        "manifest_path": str(manifest_path),
+        "total_artifacts_checked": len(EXPECTED_ARTIFACT_REL_PATHS),
+    }
 
 
 def load_partition_indices(

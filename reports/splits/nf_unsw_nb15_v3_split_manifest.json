@@ -4,7 +4,7 @@
   "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
   "split_protocol_version": "nf-unsw-nb15-v3-chronological-group-purged-v1",
   "fingerprint_schema_version": "nf-unsw-nb15-v3-fingerprint-v1",
-  "generated_at_utc": "2026-10-27T08:23:56.896324+00:00",
+  "generated_at_utc": "2026-10-27T10:46:58.474159+00:00",
   "total_source_rows": 2365424,
   "random_seed": 42,
   "features": {
@@ -295,6 +295,17 @@
     "source_feature_overlap": 0,
     "canonical_flow_group_overlap": 0,
     "temporal_boundary_violations": 0,
+    "flow_end_crossings": {
+      "train_into_validation": 0,
+      "validation_into_test": 0,
+      "train_max_end_ms": 1424238197221,
+      "val_min_start_ms": 1424238433386,
+      "train_val_margin_ms": 236165,
+      "val_max_end_ms": 1424250544102,
+      "test_min_start_ms": 1424250796160,
+      "val_test_margin_ms": 252058,
+      "status": "PASS"
+    },
     "binary_label_conflicts": 0,
     "pair_audits": {
       "train_vs_validation": {
@@ -409,7 +420,8 @@
   "limitations_and_assumptions": [
     "Dataset capture window spans only 3 distinct UTC days (2015-01-22, 2015-01-23, 2015-02-18).",
     "2015-01-23 contains only 39,778 benign flows and 0 attacks; temporal split cuts inside 2015-02-18 to ensure all 9 attack classes exist across train, val, and test.",
-    "Canonical 5-tuple + 5-minute bucket flow group is a heuristic proxy; raw PCAP session identifiers are not present in published NetFlow v3 schema.",
+    "Canonical 5-tuple + 5-minute bucket flow group is a heuristic proxy; raw PCAP session identifiers are not present in published NetFlow v3 schema. 0 group overlap guarantees isolation under this definition, but does not prove complete elimination of complex multi-connection application sessions or sessions spanning across buckets.",
+    "Temporal boundaries verified on FLOW_END_MILLISECONDS: 0 flows originating in Train extend into the Validation time window (margin: 236,165 ms) and 0 flows from Validation extend into Test (margin: 252,058 ms), well protected by the 300,000 ms purge gap vs maximum flow duration of 120,948 ms in the entire dataset.",
     "ML-feature pattern repetition across time (affecting 53.21% of Test and 49.98% of Validation rows against Train) represents common recurring protocol profiles (TCP handshakes, DNS queries) rather than session leakage.",
     "Zero binary-label conflicts does not guarantee that repeated ML-feature patterns have zero impact on evaluation independence or model generalization. Evaluation samples sharing feature vectors with Train are not purely independent in feature space; actual impact must be audited during model evaluation.",
     "ML pipeline readiness remains ML_READY: BLOCKED pending train-only fitted preprocessing in Issue #8.",
