@@ -199,7 +199,6 @@ def main() -> None:
 
         result = verify_split_artifacts(
             manifest_path=manifest_path,
-            root_dir=PROJECT_ROOT,
             dataset_path=dataset_path,
         )
 

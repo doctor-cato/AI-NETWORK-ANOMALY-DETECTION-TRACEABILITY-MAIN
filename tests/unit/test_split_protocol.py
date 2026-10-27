@@ -606,24 +606,52 @@ def test_verify_only_cli_execution_does_not_modify_files():
     import subprocess
     import sys
 
-    # Record hashes of existing artifacts in repo
-    initial_hashes = {}
-    for rel in EXPECTED_ARTIFACT_REL_PATHS:
-        f = ROOT / rel
-        if f.is_file():
+    df = make_synthetic_df(n_rows=40, base_time=1_000_000, time_step=10_000)
+    config = SplitConfig(purge_gap_milliseconds=20_000)
+    fake_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        run_split_pipeline(
+            df, config, fake_sha, tmp_dir, generated_at_utc="2026-10-27T00:00:00+00:00"
+        )
+        manifest_path = tmp_dir / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+        output_dir = tmp_dir / "data" / "processed"
+
+        # Record hashes of generated artifacts
+        initial_hashes = {}
+        for rel in EXPECTED_ARTIFACT_REL_PATHS:
+            f = tmp_dir / rel
+            assert f.is_file()
             initial_hashes[rel] = _sha256_file(f)
 
-    cmd = [
-        sys.executable,
-        str(ROOT / "scripts" / "split_and_audit_nf_unsw_nb15_v3.py"),
-        "--verify-only",
-    ]
-    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
-    assert proc.returncode == 0
-    assert "PASS: All 10 split artifacts successfully verified on disk" in proc.stdout
+        cmd = [
+            sys.executable,
+            str(ROOT / "scripts" / "split_and_audit_nf_unsw_nb15_v3.py"),
+            "--verify-only",
+            "--root-manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(output_dir),
+        ]
+        proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
+        assert proc.returncode == 0, f"CLI verify-only failed: {proc.stderr}\n{proc.stdout}"
+        assert "PASS: All 10 split artifacts successfully verified on disk" in proc.stdout
 
-    # Verify every hash is untouched
-    for rel, orig_sha in initial_hashes.items():
-        assert (
-            _sha256_file(ROOT / rel) == orig_sha
-        ), f"Artifact was modified by --verify-only: {rel}"
+        # Verify every hash is untouched
+        for rel, orig_sha in initial_hashes.items():
+            assert (
+                _sha256_file(tmp_dir / rel) == orig_sha
+            ), f"Artifact was modified by --verify-only: {rel}"
+
+    # If the real processed split manifest and indices exist locally, test repo-level CLI too
+    repo_manifest = ROOT / "data" / "processed" / "nf_unsw_nb15_v3_split_manifest.json"
+    repo_idx = ROOT / "data" / "processed" / "splits" / "train_indices.csv.gz"
+    if repo_manifest.is_file() and repo_idx.is_file():
+        cmd_repo = [
+            sys.executable,
+            str(ROOT / "scripts" / "split_and_audit_nf_unsw_nb15_v3.py"),
+            "--verify-only",
+        ]
+        proc_repo = subprocess.run(cmd_repo, cwd=str(ROOT), capture_output=True, text=True)
+        assert proc_repo.returncode == 0
