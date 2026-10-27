@@ -37,7 +37,7 @@ Hệ thống không nhằm xác định danh tính thật của attacker, chứn
 | --- | --- | --- |
 | Data quality & preprocessing | UNSW-NB15, schema, missing/duplicate, split trước mọi fit, leakage audit | C1–C2 `PLANNED`; validator cơ bản hiện có |
 | Supervised ML | Random Forest là baseline; XGBoost dùng cùng protocol | RF constructor có trong code; training/evaluation và XGBoost `PLANNED` |
-| Unsupervised ML | Isolation Forest và Autoencoder reconstruction error; threshold trên validation | Isolation Forest constructor có trong code; Autoencoder và protocol `PLANNED` |
+| Unsupervised ML | Isolation Forest và Autoencoder reconstruction error; threshold trên validation | Isolation Forest model component `IMPLEMENTED`/`TESTED` (factory có validate, score direction; chưa có threshold); Autoencoder và protocol C4 `PLANNED` |
 | Behavioral Vector | Network/API/Session vector, normalization, similarity, missing-feature policy | `PLANNED` (C5) |
 | Risk/Trace Engine | Risk Score 0–100, explanation, incident grouping, evidence và timeline | `PLANNED` (C6) |
 | Security layer | AES-GCM, key identifier, unique nonce, recovery và rotation 30 phút/adaptive | `PLANNED` (C7) |
@@ -166,7 +166,7 @@ Tại head `8b82a6e` của PR #22, full suite có **144 tests**. CI mới nhất
 | C1 | Data quality, EDA, leakage audit | #4/#5 `IMPLEMENTED` và `TESTED`: acquisition/provenance và profile validation có evidence dữ liệu thật; EDA, overlap/near-duplicate/group leakage audit của #7 vẫn `PLANNED` |
 | C2 | Leakage-safe preprocessing và artifacts | `PLANNED` |
 | C3 | Random Forest và XGBoost supervised protocol | `PLANNED`; RF mới có constructor |
-| C4 | Isolation Forest, Autoencoder, unknown-attack holdout | `PLANNED`; Isolation Forest mới có constructor |
+| C4 | Isolation Forest, Autoencoder, unknown-attack holdout | `PLANNED` cho protocol; model component Isolation Forest `IMPLEMENTED`/`TESTED` (chưa có threshold, holdout hay so sánh Autoencoder) |
 | C5 | Versioned Behavioral Vector và correlation confidence | `PLANNED` |
 | C6 | Risk Engine và Trace Engine | `PLANNED` |
 | C7 | AES-GCM và key lifecycle | `PLANNED` |

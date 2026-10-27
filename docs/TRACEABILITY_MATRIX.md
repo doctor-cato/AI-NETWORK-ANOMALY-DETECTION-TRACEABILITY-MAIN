@@ -12,7 +12,7 @@ code, test và evidence tương ứng. PR #22 là workstream #4/#5 riêng, khôn
 | C1 | Data quality, EDA, leakage | #4–#7, PR #22 | manifest/report/EDA/leakage decision | #4/#5 TESTED trên PR #22; #6/#7 PLANNED |
 | C2 | Preprocessing không leakage | #8 | pipeline artifact, fit-boundary tests | PLANNED |
 | C3 | RF và XGBoost supervised | #9, #10, #12, #31 | model artifacts, metrics, reproduction | PLANNED |
-| C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED |
+| C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED; model component IF `IMPLEMENTED`/`TESTED` (synthetic), threshold/holdout/so sánh chưa có |
 | C5 | Behavioral Vector | #28 | versioned schemas, fixtures, correlation tests | PLANNED |
 | C6 | Risk và Trace | #32, #24 | explanation, calibration, evidence/timeline tests | PLANNED |
 | C7 | AES-GCM và key lifecycle | #26 | integrity/recovery/rotation tests | PLANNED |
@@ -35,3 +35,19 @@ dataset/split identifier, dependency versions, seed/config, artifact và reprodu
   leakage thuộc #7. Không merge hoặc đóng #4/#5 trong C0.
 
 Cập nhật: 2026-10-19 (self-review; không phải reviewer độc lập khác)
+
+## Model component Isolation Forest tại Issue #11
+
+- Issue: #11 (C4). Chỉ phần model component; protocol đánh giá chưa làm.
+- Implementation: `src/network_anomaly/models/isolation_forest.py` (factory có validate,
+  `random_state` tường minh, hợp đồng score direction và feature matrix số hữu hạn) và
+  `ISOLATION_FOREST_DEFAULTS` trong `src/network_anomaly/config.py`.
+- Tests: `tests/unit/test_isolation_forest.py` — khởi tạo, mặc định, cấu hình tùy chỉnh,
+  tham số không hợp lệ, và hành vi fit/score trên fixture synthetic.
+- Evidence: `python -m pytest tests -q` PASS (189 passed, 2 skipped — 2 skip là symlink
+  trên Windows, có sẵn từ trước). Fixture synthetic chỉ chứng minh contract của model.
+- `NOT VERIFIED`: EDA (#6), split/leakage audit (#7), fitted preprocessing artifact (#8),
+  threshold calibration trên validation, unknown-attack holdout, detection rate, FPR và
+  so sánh với Autoencoder. Không có kết quả trên UNSW-NB15, không tuyên bố zero-day.
+
+Cập nhật: 2026-10-22 (model component Isolation Forest cho Issue #11)

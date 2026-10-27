@@ -11,6 +11,9 @@
 
 ### Isolation Forest (không giám sát — nếu triển khai)
 
+- Hướng score đã được ghim trong code: `network_anomaly.models.isolation_forest.anomaly_scores` trả
+  về điểm mà **lớn hơn = bất thường hơn** (đảo dấu `decision_function` của scikit-learn, vốn dùng chiều
+  ngược). Dùng helper này để tránh đảo chiều âm thầm; helper không áp ngưỡng.
 - Chọn rõ normal-only novelty setup hoặc mixed/unlabeled outlier setup trước khi fit. Nếu label chỉ được dùng để lọc
   normal-only, ghi rõ bước này; không truyền target vào mô hình.
 - Tạo điểm bất thường trên tập validation.
