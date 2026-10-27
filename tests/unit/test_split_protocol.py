@@ -1,5 +1,6 @@
 import json
 import tempfile
+import time
 from pathlib import Path
 
 import numpy as np
@@ -22,12 +23,14 @@ from network_anomaly.data.split import (
     PARTITION_TRAIN,
     PARTITION_VALIDATION,
     SplitConfig,
+    _sha256_file,
     audit_split_leakage,
     compute_chronological_split,
     generate_split_manifest,
     load_partition_indices,
     render_leakage_audit_report,
     save_split_artifacts,
+    write_deterministic_index_csv_gz,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -188,19 +191,11 @@ def test_manifest_schema_and_reproducible_saving():
         indices_dir = tmp_path / "splits"
         indices_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write index files and compute real hashes
+        # Write index files with deterministic gzip and compute real hashes
         real_hashes = {}
         for p_name, p_data in split_res["partitions"].items():
             idx_file = indices_dir / f"{p_name}_indices.csv.gz"
-            import gzip
-
-            with gzip.open(idx_file, "wt", encoding="utf-8") as f:
-                f.write("source_row_index\n")
-                for idx in p_data["indices"]:
-                    f.write(f"{idx}\n")
-            from network_anomaly.data.split import _sha256_file
-
-            real_hashes[p_name] = _sha256_file(idx_file)
+            real_hashes[p_name] = write_deterministic_index_csv_gz(idx_file, p_data["indices"])
 
         manifest = generate_split_manifest(
             split_res,
@@ -213,6 +208,8 @@ def test_manifest_schema_and_reproducible_saving():
         assert manifest["total_source_rows"] == 80
         assert manifest["features"]["baseline_ml_features_count"] == 47
         assert manifest["features"]["baseline_ml_features_in_order"] == list(ML_FEATURE_COLUMNS)
+        assert manifest["audit_summary"]["ML_READY"] == "BLOCKED"
+        assert manifest["interface_for_issue_8"]["ml_readiness"] == "BLOCKED"
 
         report_md = render_leakage_audit_report(manifest)
         written = save_split_artifacts(split_res, manifest, report_md, tmp_path)
@@ -228,6 +225,74 @@ def test_manifest_schema_and_reproducible_saving():
         )
         assert len(indices) == len(split_res["partitions"][PARTITION_TRAIN]["indices"])
         assert np.array_equal(indices, split_res["partitions"][PARTITION_TRAIN]["indices"])
+
+
+def test_deterministic_gzip_indices_byte_identity():
+    """Verify that writing partition indices twice produces identical SHA-256 byte hashes."""
+    indices = np.array([0, 15, 42, 99, 1054, 999999], dtype=np.int64)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p1 = Path(tmpdir) / "run1" / "train_indices.csv.gz"
+        p2 = Path(tmpdir) / "run2" / "train_indices.csv.gz"
+
+        h1 = write_deterministic_index_csv_gz(p1, indices)
+        time.sleep(0.05)  # Ensure system clock advances
+        h2 = write_deterministic_index_csv_gz(p2, indices)
+
+        assert h1 == h2
+        assert _sha256_file(p1) == _sha256_file(p2)
+
+        # Decompress and verify content
+        df_read = pd.read_csv(p1, compression="gzip")
+        assert list(df_read.columns) == ["source_row_index"]
+        assert np.array_equal(df_read["source_row_index"].to_numpy(), indices)
+
+
+def test_reproducibility_check_detects_file_byte_mismatch():
+    """Verify that file comparison detects modified index files."""
+    indices = np.arange(50, dtype=np.int64)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f1 = Path(tmpdir) / "pass1" / "test_indices.csv.gz"
+        f2 = Path(tmpdir) / "pass2" / "test_indices.csv.gz"
+
+        write_deterministic_index_csv_gz(f1, indices)
+        # Pass 2 gets different indices
+        write_deterministic_index_csv_gz(f2, np.arange(51, dtype=np.int64))
+
+        h1 = _sha256_file(f1)
+        h2 = _sha256_file(f2)
+        assert h1 != h2
+
+
+def test_split_manifest_and_audit_report_explains_ml_duplicates():
+    """Verify that manifest and report clearly explain ML duplicates and methodology limits."""
+    df = make_synthetic_df(n_rows=60, base_time=1_000_000, time_step=10_000)
+    split_res = compute_chronological_split(df)
+    audit = audit_split_leakage(df, split_res)
+    manifest = generate_split_manifest(
+        split_res,
+        audit,
+        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+        partition_index_hashes={},
+    )
+    report_md = render_leakage_audit_report(manifest)
+
+    # Distinguishes 4 concepts
+    assert "Exact Full-Row Overlap" in report_md
+    assert "Source-Feature Overlap" in report_md
+    assert "Canonical Flow-Group Overlap" in report_md
+    assert "ML-Feature Overlap" in report_md
+
+    # Contains ML readiness gate
+    assert "ML_READY: BLOCKED" in report_md
+    assert manifest["audit_summary"]["ML_READY"] == "BLOCKED"
+    assert manifest["interface_for_issue_8"]["ml_readiness"] == "BLOCKED"
+
+    # Mentions methodology limitations
+    assert "Giới hạn quan trọng của phương pháp đánh giá" in report_md
+    assert "Tính độc lập của mẫu kiểm thử" in report_md
+    assert "Nguy cơ sai lệch đánh giá (Evaluation vs Generalization)" in report_md
 
 
 def test_real_dataset_split_manifest_and_audit():

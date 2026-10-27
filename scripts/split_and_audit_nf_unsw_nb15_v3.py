@@ -17,8 +17,8 @@ This script executes GitHub Issue #7:
 from __future__ import annotations
 
 import argparse
-import gzip
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -27,7 +27,6 @@ LOCAL_SOURCE = PROJECT_ROOT / "src"
 if str(LOCAL_SOURCE) not in sys.path:
     sys.path.insert(0, str(LOCAL_SOURCE))
 
-import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 from network_anomaly.data.split import (  # noqa: E402
@@ -43,6 +42,7 @@ from network_anomaly.data.split import (  # noqa: E402
     generate_split_manifest,
     render_leakage_audit_report,
     save_split_artifacts,
+    write_deterministic_index_csv_gz,
 )
 
 DEFAULT_DATASET = PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
@@ -118,6 +118,88 @@ def verify_source_dataset(dataset_path: Path) -> str:
     return digest
 
 
+def verify_artifact_reproducibility(
+    df: pd.DataFrame, config: SplitConfig, dataset_digest: str
+) -> None:
+    """Run artifact generation independently twice and verify byte-for-byte identity."""
+    print("[split_and_audit] ========================================================")
+    print("[split_and_audit] Running independent dual-pass artifact reproducibility check...")
+    print("[split_and_audit] ========================================================")
+
+    fixed_timestamp = "2026-10-27T00:00:00+00:00"
+
+    with tempfile.TemporaryDirectory() as tmp1_str, tempfile.TemporaryDirectory() as tmp2_str:
+        tmp1 = Path(tmp1_str)
+        tmp2 = Path(tmp2_str)
+
+        # Pass 1
+        print("[split_and_audit] Reproducibility Pass 1: computing split and writing artifacts...")
+        res1 = compute_chronological_split(df, config=config)
+        audit1 = audit_split_leakage(df, res1)
+        hashes1 = {}
+        for p_name, p_data in res1["partitions"].items():
+            p_file = tmp1 / "splits" / f"{p_name}_indices.csv.gz"
+            hashes1[p_name] = write_deterministic_index_csv_gz(p_file, p_data["indices"])
+        man1 = generate_split_manifest(
+            split_result=res1,
+            audit_results=audit1,
+            dataset_sha256=dataset_digest,
+            partition_index_hashes=hashes1,
+            generated_at_utc=fixed_timestamp,
+        )
+        rep1 = render_leakage_audit_report(man1)
+        save_split_artifacts(res1, man1, rep1, output_dir=tmp1)
+
+        # Pass 2
+        print("[split_and_audit] Reproducibility Pass 2: computing split and writing artifacts...")
+        res2 = compute_chronological_split(df, config=config)
+        audit2 = audit_split_leakage(df, res2)
+        hashes2 = {}
+        for p_name, p_data in res2["partitions"].items():
+            p_file = tmp2 / "splits" / f"{p_name}_indices.csv.gz"
+            hashes2[p_name] = write_deterministic_index_csv_gz(p_file, p_data["indices"])
+        man2 = generate_split_manifest(
+            split_result=res2,
+            audit_results=audit2,
+            dataset_sha256=dataset_digest,
+            partition_index_hashes=hashes2,
+            generated_at_utc=fixed_timestamp,
+        )
+        rep2 = render_leakage_audit_report(man2)
+        save_split_artifacts(res2, man2, rep2, output_dir=tmp2)
+
+        # Compare disk files
+        print("[split_and_audit] Comparing generated files on disk between Pass 1 and Pass 2:")
+        files_to_compare = [f"splits/{p_name}_indices.csv.gz" for p_name in res1["partitions"]] + [
+            "nf_unsw_nb15_v3_split_manifest.json"
+        ]
+
+        mismatches = []
+        for rel_file in files_to_compare:
+            f1 = tmp1 / rel_file
+            f2 = tmp2 / rel_file
+            if not f1.is_file():
+                mismatches.append(f"Pass 1 missing file: {rel_file}")
+                continue
+            if not f2.is_file():
+                mismatches.append(f"Pass 2 missing file: {rel_file}")
+                continue
+            h1 = _sha256_file(f1)
+            h2 = _sha256_file(f2)
+            if h1 != h2:
+                mismatches.append(f"SHA-256 mismatch for {rel_file}: {h1} vs {h2}")
+            else:
+                print(f"  * {rel_file:<35}: SHA-256 MATCH ({h1})")
+
+        if mismatches:
+            print("[split_and_audit] ERROR: Artifact reproducibility check FAILED!")
+            for m in mismatches:
+                print(f"  - {m}")
+            sys.exit(2)
+
+        print("[split_and_audit] PASS: Byte-for-byte file reproducibility verified successfully.")
+
+
 def main() -> None:
     args = parse_args()
     print("=" * 70)
@@ -140,6 +222,10 @@ def main() -> None:
     load_time = time.time() - t0
     print(f"[split_and_audit] Loaded {len(df):,} rows in {load_time:.2f} seconds.")
 
+    # If check-reproducibility requested, run independent dual-pass check on disk files
+    if args.check_reproducibility:
+        verify_artifact_reproducibility(df, config=config, dataset_digest=dataset_digest)
+
     print(
         "[split_and_audit] Computing chronological split "
         f"(purge gap: {config.purge_gap_milliseconds} ms)..."
@@ -154,18 +240,6 @@ def main() -> None:
         n_rows = len(p_info["indices"])
         pct = n_rows / split_result["total_source_rows"] * 100
         print(f"  * {name:<22}: {n_rows:>9,} rows ({pct:6.2f}%)")
-
-    # If check-reproducibility requested, run a second time and assert equality
-    if args.check_reproducibility:
-        print("[split_and_audit] Verifying split determinism with second independent run...")
-        split_result_2 = compute_chronological_split(df, config=config)
-        for name in parts:
-            if not np.array_equal(
-                parts[name]["indices"], split_result_2["partitions"][name]["indices"]
-            ):
-                print(f"[split_and_audit] ERROR: Partition {name} mismatch between runs!")
-                sys.exit(2)
-        print("[split_and_audit] PASS: Split determinism verified bit-for-bit.")
 
     print("[split_and_audit] Performing cross-partition leakage audit...")
     t2 = time.time()
@@ -188,7 +262,7 @@ def main() -> None:
             f"ml_overlap={ml_cnt:,}, binary_conflicts={bin_conf}, cat_conflicts={cat_conf:,}"
         )
 
-    # Compute index hashes for the manifest
+    # Compute index hashes for the manifest using deterministic gzip writing
     print("[split_and_audit] Writing partition index files and computing SHA-256 hashes...")
     indices_dir = args.output_dir / "splits"
     indices_dir.mkdir(parents=True, exist_ok=True)
@@ -196,11 +270,7 @@ def main() -> None:
 
     for p_name, p_data in parts.items():
         idx_path = indices_dir / f"{p_name}_indices.csv.gz"
-        with gzip.open(idx_path, "wt", encoding="utf-8") as f:
-            f.write("source_row_index\n")
-            for idx in p_data["indices"]:
-                f.write(f"{idx}\n")
-        partition_hashes[p_name] = _sha256_file(idx_path)
+        partition_hashes[p_name] = write_deterministic_index_csv_gz(idx_path, p_data["indices"])
         print(f"  * {idx_path.name}: sha256={partition_hashes[p_name]}")
 
     print("[split_and_audit] Generating split manifest and reports...")
@@ -227,6 +297,9 @@ def main() -> None:
 
     print("=" * 70)
     print(f"Audit Status: {audit_results['status']}")
+    print(
+        "[split_and_audit] ML_READY: BLOCKED (pending train-only fitted preprocessing in Issue #8)"
+    )
     print("=" * 70)
     if audit_results["status"] != "PASS":
         print(f"[split_and_audit] Blocking failures: {audit_results['blocking_failures']}")

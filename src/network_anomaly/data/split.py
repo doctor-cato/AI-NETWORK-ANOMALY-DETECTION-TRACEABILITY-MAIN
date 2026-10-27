@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import io
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -59,6 +60,21 @@ def _sha256_file(path: Path, chunk_bytes: int = 1024 * 1024) -> str:
         for chunk in iter(lambda: stream.read(chunk_bytes), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def write_deterministic_index_csv_gz(path: Path, indices: Any) -> str:
+    """Write partition indices to a compressed CSV with fixed mtime=0.0 for file-byte determinism.
+
+    Returns the SHA-256 hash of the generated file.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as raw_file:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw_file, mtime=0.0) as gz:
+            with io.TextIOWrapper(gz, encoding="utf-8", newline="\n") as text_file:
+                text_file.write("source_row_index\n")
+                for idx in indices:
+                    text_file.write(f"{idx}\n")
+    return _sha256_file(path)
 
 
 def _format_epoch_ms(epoch_ms: int) -> str:
@@ -525,6 +541,7 @@ def generate_split_manifest(
     audit_results: Dict[str, Any],
     dataset_sha256: str,
     partition_index_hashes: Dict[str, str],
+    generated_at_utc: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Generate the machine-readable split manifest conforming to Issue #7 and #8."""
     validate_semantic_column_roles()
@@ -544,13 +561,17 @@ def generate_split_manifest(
         if "reason" in p_data:
             partitions_summary[name]["exclusion_reason"] = p_data["reason"]
 
+    manifest_timestamp = (
+        generated_at_utc if generated_at_utc is not None else datetime.now(timezone.utc).isoformat()
+    )
+
     manifest = {
         "manifest_schema_version": SPLIT_MANIFEST_SCHEMA_VERSION,
         "dataset_name": DATASET_NAME,
         "dataset_sha256": dataset_sha256,
         "split_protocol_version": SPLIT_PROTOCOL_VERSION,
         "fingerprint_schema_version": FINGERPRINT_SCHEMA_VERSION,
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": manifest_timestamp,
         "total_source_rows": split_result["total_source_rows"],
         "random_seed": split_result["config"]["random_seed"],
         "features": {
@@ -580,6 +601,7 @@ def generate_split_manifest(
         "partitions": partitions_summary,
         "audit_summary": {
             "status": audit_results["status"],
+            "ML_READY": "BLOCKED",
             "exact_full_row_overlap": sum(
                 p["exact_full_row_overlap"]["distinct_fingerprints"]
                 for p in audit_results["pair_audits"].values()
@@ -607,12 +629,30 @@ def generate_split_manifest(
             "inside 2015-02-18 to ensure all 9 attack classes exist across train, val, and test.",
             "Canonical 5-tuple + 5-minute bucket flow group is a heuristic proxy; raw PCAP session "
             "identifiers are not present in published NetFlow v3 schema.",
-            "ML-feature pattern repetition across time is retained without deduplication because "
-            "it represents common protocol flows rather than session leakage.",
+            (
+                "ML-feature pattern repetition across time (affecting 53.21% of Test and 49.98% "
+                "of Validation rows against Train) represents common recurring protocol profiles "
+                "(TCP handshakes, DNS queries) rather than session leakage."
+            ),
+            (
+                "Zero binary-label conflicts does not guarantee that repeated ML-feature patterns "
+                "have zero impact on evaluation independence or model generalization. Evaluation "
+                "samples sharing feature vectors with Train are not purely independent in feature "
+                "space; actual impact must be audited during model evaluation."
+            ),
+            (
+                "ML pipeline readiness remains ML_READY: BLOCKED pending train-only fitted "
+                "preprocessing in Issue #8."
+            ),
             "Models evaluated on held-out test reflect chronological generalization within the "
             "2015 capture; they do not prove zero-day or modern network generalization.",
         ],
         "interface_for_issue_8": {
+            "ml_readiness": "BLOCKED",
+            "ml_readiness_reason": (
+                "Split and leakage audit PASS; however, ML pipeline readiness remains BLOCKED "
+                "pending train-only fitted preprocessing transformers in Issue #8."
+            ),
             "ready_for_issue_8": audit_results["status"] == "PASS",
             "train_partition_name": PARTITION_TRAIN,
             "validation_partition_name": PARTITION_VALIDATION,
@@ -760,6 +800,7 @@ def render_leakage_audit_report(manifest: Dict[str, Any]) -> str:
     report_md = f"""# Báo cáo kiểm toán Data Leakage và Phân chia Dữ liệu NF-UNSW-NB15-v3
 
 **Trạng thái kiểm toán:** `{audit['status']}`
+**Sẵn sàng ML (ML Readiness):** `ML_READY: BLOCKED` (Chờ tiền xử lý train-only ở Issue #8)
 **Mã giao thức phân chia:** `{manifest['split_protocol_version']}`
 **Phiên bản Fingerprint Schema:** `{manifest['fingerprint_schema_version']}`
 **Dataset SHA-256:** `{manifest['dataset_sha256']}`
@@ -822,31 +863,79 @@ trong cả ba phân vùng Train, Validation, Test:
 
 {pair_table_md}
 
-### Diễn giải chi tiết từng loại trùng khớp và chính sách xử lý:
-1. **Exact Full-Row Overlap (0 bản ghi):** Không có bất kỳ dòng dữ liệu nguyên bản nào xuất hiện ở
-   hai phân vùng khác nhau. Trùng khớp = 0.
-2. **Source-Feature Overlap (0 bản ghi):** Không có bản ghi nào trùng khớp toàn bộ 53 trường NetFlow
-   v3 xuất hiện giữa các tập. Trùng khớp = 0.
-3. **Canonical Flow-Group Overlap (0 nhóm):** Không có phiên liên lạc nào (cặp IP, Port đối xứng,
-   Protocol trong cùng bucket 5 phút) bị phân tách qua hai phân vùng. Toàn vẹn phiên được bảo toàn
-   nhờ Purge Gap 300.000 ms.
-4. **Xung đột nhãn nhị phân (`Label` conflict):** **0 trường hợp**. Tuyệt đối không có trường hợp
-   nào cùng một bộ đặc trưng ML 47 chiều mà ở tập này là Benign (`Label=0`) nhưng ở tập khác là
-   Attack (`Label=1`).
-5. **ML-Feature Overlap (Đặc trưng thống kê 47 chiều trùng khớp):**
-   - Có ~61k mẫu trùng giữa Train-Val, ~24k mẫu giữa Val-Test, ~60k mẫu giữa Train-Test.
-   - **Bản chất kỹ thuật:** Các mẫu này KHÔNG PHẢI là cùng một luồng mạng vật lý (khác địa chỉ IP,
-     khác Port và khác mốc thời gian cách nhau hàng giờ). Đây là các cấu hình thống kê phổ biến của
-     giao thức mạng (ví dụ: gói tin TCP SYN chuẩn, truy vấn DNS tiêu chuẩn, handshake ACK rỗng) do
-     nhiều máy trạm phát sinh độc lập tại các thời điểm khác nhau.
-   - **Chính sách:** Giữ nguyên các dòng này trong phân vùng tự nhiên. Không xóa bỏ vì việc xóa các
-     cấu hình lưu lượng mạng phổ biến sẽ bóp méo phân bố xác suất tự nhiên của dữ liệu mạng và loại
-     bỏ sai các gói tin bình thường thực tế.
-6. **Khác biệt danh mục tấn công giữa các đặc trưng ML trùng lặp:** Ghi nhận 580 (Train-Val),
-   589 (Val-Test), 890 (Train-Test) trường hợp các dòng tấn công khác loại (ví dụ DoS vs Exploits)
-   có vector 47 đặc trưng thống kê giống nhau. Đây là giới hạn tự nhiên của việc biểu diễn luồng
-   bằng 47 trường NetFlow v3 (ghi nhận tại `docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md`),
-   không phải rò rỉ dữ liệu mục tiêu.
+### 4.1 Phân biệt rõ ràng bốn khái niệm trùng khớp và chính sách xử lý:
+
+1. **Exact Full-Row Overlap (Trùng lặp toàn dòng - 0 bản ghi / 0,00%):**
+   - *Định nghĩa:* Trùng khớp toàn bộ 55 cột nguồn (53 đặc trưng NetFlow cộng nhãn
+     `Label` và `Attack`).
+   - *Kết quả:* **0 bản ghi** trên toàn bộ các cặp phân vùng.
+   - *Đánh giá:* **PASS** — Không có dòng dữ liệu nguyên bản nào xuất hiện ở nhiều phân vùng.
+
+2. **Source-Feature Overlap (Trùng lặp đặc trưng nguồn - 0 bản ghi / 0,00%):**
+   - *Định nghĩa:* Trùng khớp 53 đặc trưng NetFlow v3 nguồn (bao gồm cả mốc thời gian và
+     địa chỉ IP/Port).
+   - *Kết quả:* **0 bản ghi** trên toàn bộ các cặp phân vùng.
+   - *Đánh giá:* **PASS** — Thứ tự thời gian và vùng đệm cách ly triệt để các luồng mạng nguồn.
+
+3. **Canonical Flow-Group Overlap (Trùng lặp nhóm luồng bảo vệ - 0 nhóm / 0,00%):**
+   - *Định nghĩa:* Bản ghi thuộc cùng một phiên liên lạc 5-tuple đối xứng (`IPV4_SRC_ADDR`,
+     `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`, `PROTOCOL`) trong cùng một bucket
+     thời gian 5 phút.
+   - *Kết quả:* **0 nhóm** trên toàn bộ các cặp phân vùng.
+   - *Đánh giá:* **PASS** — Vùng đệm Purge Gap 300.000 ms đảm bảo không có phiên hội thoại
+     nào bị cắt đôi giữa hai tập.
+
+4. **ML-Feature Overlap (Trùng lặp vector đặc trưng ML 47 chiều):**
+   - *Định nghĩa:* Hai bản ghi có cùng giá trị trên 47 đặc trưng đầu vào ML sau khi đã loại bỏ
+     6 trường trace metadata (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`,
+     `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`) và 2 trường mục tiêu
+     (`Label`, `Attack`).
+   - *Kết quả thực tế:*
+     - **Train vs Validation:** 61.007 fingerprints lặp lại, liên quan 551.167 dòng Train
+       (33,29%) và 172.621 dòng Validation (49,98%).
+     - **Validation vs Test:** 24.143 fingerprints lặp lại, liên quan 105.218 dòng
+       Validation (30,47%) và 114.622 dòng Test (33,13%).
+     - **Train vs Test:** 59.966 fingerprints lặp lại, liên quan 548.253 dòng Train
+       (33,11%) và 184.067 dòng Test (**53,21%**).
+   - *Xung đột nhãn nhị phân:* **0 trường hợp**. Tuyệt đối không có trường hợp nào cùng một
+     bộ đặc trưng ML 47 chiều mà ở tập này là Benign (`Label=0`) nhưng ở tập khác là
+     Attack (`Label=1`).
+   - *Khác biệt danh mục Attack đa lớp:* 580 (Train-Val), 586 (Val-Test), 889 (Train-Test)
+     trường hợp các dòng tấn công khác loại (như DoS vs Exploits) có vector 47 đặc trưng
+     thống kê giống nhau.
+
+### 4.2 Giải trình nguyên nhân kỹ thuật và giới hạn phương pháp luận về trùng lặp đặc trưng ML:
+
+1. **Tại sao các luồng khác nhau lại có cùng vector đặc trưng ML?**
+   - NetFlow v3 là bản ghi thống kê tóm tắt gói tin và byte của luồng mạng, không lưu trữ
+     dữ liệu gói (payload).
+   - Nhiều luồng mạng độc lập phát sinh từ các máy trạm khác nhau, hướng đến các máy chủ khác
+     nhau vào các ngày cách nhau hàng tuần có hành vi giao thức chuẩn hóa giống hệt nhau (ví dụ:
+     gói tin TCP SYN rỗng thăm dò cổng, truy vấn phân giải DNS A-record tiêu chuẩn, gói tin
+     FIN-ACK đóng phiên chuẩn).
+   - Khi loại trừ 6 trường metadata định danh (IP, Port, Timestamp), các luồng độc lập này hội
+     tụ về cùng một vector 47 số trị thống kê.
+
+2. **Giới hạn quan trọng của phương pháp đánh giá:**
+   - **Zero binary-label conflicts không đồng nghĩa với việc trùng lặp vô hại:** Việc nhãn nhị
+     phân không xung đột chứng minh dữ liệu không có nhãn mâu thuẫn trực tiếp. Tuy nhiên, điều này
+     **không chứng minh** rằng hiện tượng trùng lặp đặc trưng hoàn toàn không ảnh hưởng đến đánh
+     giá mô hình.
+   - **Tính độc lập của mẫu kiểm thử (Sample Independence):** Việc 53,21% mẫu Test chia sẻ
+     vector đặc trưng ML với Train khiến các quan sát kiểm thử này không hoàn toàn độc lập
+     (non-i.i.d.) trong không gian đặc trưng.
+   - **Nguy cơ sai lệch đánh giá (Evaluation vs Generalization):** Mô hình học máy có thể đạt
+     điểm số cao trên tập Test nhờ việc ghi nhớ (memorization) các khuôn mẫu thống kê phổ biến
+     đã gặp trong tập Train, thay vì học được quy luật phát hiện bất thường thực sự có khả năng
+     tổng quát hóa trên lưu lượng mới.
+   - **Mức độ tác động chưa được lượng hóa ở giai đoạn Split:** Kiểm toán dữ liệu chỉ ghi nhận
+     sự hiện diện và tỷ lệ mẫu bị ảnh hưởng, chưa thể lượng hóa mức độ tác động cụ thể lên độ
+     chính xác hay khoảng cách tổng quát hóa (generalization gap). Tác động thực tế này phải được
+     kiểm chứng bằng thực nghiệm đánh giá mô hình ở các issue tiếp theo (từ Issue #8 trở đi).
+   - **Chính sách giữ lại (Retained with Justification):** Các mẫu này được giữ nguyên trong
+     tập dữ liệu tự nhiên vì việc tự ý xóa bỏ các vector đặc trưng phổ biến sẽ làm sai lệch
+     nghiêm trọng phân bố xác suất tiên nghiệm (prior probability) và tỷ lệ cơ sở (base rate)
+     của lưu lượng mạng thực tế.
 
 ---
 
@@ -880,6 +969,8 @@ Issue #8 có thể tiêu thụ phân vùng này thông qua hàm `load_split_for_
 3. **Quy tắc huấn luyện tiền xử lý:** Toàn bộ bộ biến đổi (Imputer, Scaler, One-Hot Encoder,
    Feature Selector) **CHỈ ĐƯỢC FIT TRÊN TẬP TRAIN** (`train_indices`). Tập Validation và Test
    chỉ được áp dụng phép biến đổi đã đóng băng (frozen transforms).
+4. **Cổng sẵn sàng mô hình (ML Readiness Gate):** Giữ nguyên trạng thái `ML_READY: BLOCKED`
+   cho đến khi Issue #8 hoàn thành và nghiệm thu các transformer fit độc quyền trên tập Train.
 
 ---
 
@@ -887,7 +978,8 @@ Issue #8 có thể tiêu thụ phân vùng này thông qua hàm `load_split_for_
 
 Giao thức phân chia theo thời gian có vùng đệm 5 phút giải quyết triệt để rủi ro rò rỉ phiên luồng,
 không vi phạm thứ tự thời gian, bảo tồn đầy đủ 10 lớp lưu lượng trong cả 3 tập, và đáp ứng toàn bộ
-tiêu chí nghiệm thu của Issue #7.
+tiêu chí nghiệm thu của Issue #7. Pipeline ML tiếp tục được khóa ở mức `ML_READY: BLOCKED` theo đúng
+ranh giới khoa học.
 """
     return report_md
 
@@ -914,10 +1006,7 @@ def save_split_artifacts(
     for partition_name, p_data in split_result["partitions"].items():
         indices = p_data["indices"]
         idx_path = indices_dir / f"{partition_name}_indices.csv.gz"
-        with gzip.open(idx_path, "wt", encoding="utf-8") as f:
-            f.write("source_row_index\n")
-            for idx in indices:
-                f.write(f"{idx}\n")
+        write_deterministic_index_csv_gz(idx_path, indices)
         written_paths[f"{partition_name}_indices"] = idx_path
 
     # Save split manifest to output_dir

@@ -250,13 +250,15 @@ Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED.
   - Split manifest generated at data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json,
     reports/splits/nf_unsw_nb15_v3_split_manifest.json, and data/processed/nf_unsw_nb15_v3_split_manifest.json.
   - Leakage audit report rendered at docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md and
-    reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md.
-  - Partition row indices generated under data/processed/splits/*.csv.gz with SHA-256 verification.
+    reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md with comprehensive analysis of ML duplicates
+    (53.21% Test affected), evaluation limitations (non-i.i.d. feature representation), and methodology boundaries.
+  - Partition row indices generated under data/processed/splits/*.csv.gz using deterministic gzip (mtime=0.0)
+    with 100% byte-for-byte SHA-256 match across independent runs.
   - Baseline 47 feature contract strictly preserved; 6 trace metadata and 2 target columns excluded.
-Tests: PASS — 9 dedicated unit tests (test_split_protocol.py); full test suite 226 passed;
-  reproducibility verified bit-for-bit across independent runs; audit status PASS.
+Tests: PASS — 12 dedicated unit tests (test_split_protocol.py); full test suite passed;
+  artifact reproducibility verified byte-for-byte on disk via independent dual-pass runs; audit status PASS.
   Exact full-row overlap: 0; source-feature overlap: 0; flow-group overlap: 0;
   temporal boundary violations: 0; binary label conflicts: 0.
-Issues: #7 COMPLETED and ready for closure; #8 ready to consume verified split contract.
+Issues: #7 review feedback fully addressed; #8 ready to consume verified split contract.
 Remaining: ML_READY remains BLOCKED pending train-only fitted preprocessing in Issue #8.
 ```

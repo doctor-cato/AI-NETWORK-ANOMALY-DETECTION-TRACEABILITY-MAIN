@@ -64,10 +64,17 @@ the three row-index files. Changing any of these fields creates a new split iden
 
 - Real validation found missing and positive-infinity values in throughput-like fields. The
   handling rule must be selected on train only and tested before a real split is accepted.
-- Exact and ML/behavior-equivalent repeats are present. The real audit found no binary-label
-  conflicts but found 1,270 ML fingerprints with multiple malicious categories, including two
-  fingerprints involving Worms. No automatic behavioral deduplication is approved; see
-  `docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md`.
+- Exact full-row, source-feature, canonical flow-group, and temporal boundary overlaps are 0 (zero)
+  across all partitions.
+- ML-feature duplicate patterns affect 53.21% of Test samples and 49.98% of Validation samples
+  relative to Train. These represent recurring standard network protocol patterns (TCP handshake,
+  DNS queries) across different hosts and dates. Zero binary-label conflicts exist.
+- Crucial evaluation limitation: zero binary-label conflicts does not mean duplicate patterns have
+  no effect. Test samples sharing feature vectors with Train are not purely independent in feature
+  space, and model evaluation may reflect pattern memorization rather than generalization to
+  novel traffic. Impact must be evaluated during model training in future issues.
+- Artifact generation is verified to be 100% byte-for-byte deterministic on disk using fixed
+  gzip timestamp (`mtime=0.0`) and independent dual-pass verification (`--check-reproducibility`).
 - A five-minute bidirectional 5-tuple group is only a proxy for a session; no trustworthy session
   ID is available in the verified schema.
 - The source period is January-February 2015 even though the v3 release is from 2025. Temporal
