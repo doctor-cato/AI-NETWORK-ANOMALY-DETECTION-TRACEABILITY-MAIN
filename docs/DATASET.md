@@ -153,19 +153,15 @@ hoặc khi thiếu raw package (in `SKIPPED`, không phải PASS), exit `1` khi 
 
 ## Split và preprocessing gate
 
-Dataset chỉ có một CSV; không dùng split cũ của UNSW-NB15. Contract temporal/group-aware, duplicate
-consolidation, metadata/target exclusion và train-only fitting nằm tại
-`docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
-The handling contract for missing/non-finite values, short-duration flows and numeric-coded fields
-is `docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; no fitted transformer exists yet.
+Dataset chỉ có một CSV; không dùng split cũ của UNSW-NB15. Giao thức phân chia theo thời gian có vùng đệm bảo vệ nhóm (chronological with 5-minute canonical group purge gap) và kiểm toán rò rỉ chéo phân vùng đã được thực thi và xác minh tại `reports/splits/nf_unsw_nb15_v3_split_manifest.json` và `docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md`.
+Contract temporal/group-aware, duplicate consolidation, metadata/target exclusion và train-only fitting nằm tại `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
+The handling contract for missing/non-finite values, short-duration flows and numeric-coded fields is `docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; no fitted transformer exists yet.
 
-Chưa được train cho đến khi:
+Chưa được train cho đến khi hoàn thành Issue #8:
 
 1. chọn và test chính sách missing/non-finite chỉ dựa trên train;
-2. đánh giá tác động deduplication tới rare attack categories;
-3. materialize split manifest không có exact/group overlap;
-4. ghi boundaries, seed, class distributions và row-index hashes;
-5. audit feature list và fitted preprocessing artifact.
+2. fit transformers (imputer, scaler, encoder) chỉ trên tập train;
+3. audit feature list và fitted preprocessing artifact.
 
 Chi tiết aggregate numeric và duplicate/label-conflict nằm tại
 `docs/dataset/NF_UNSW_NB15_V3_QUALITY_ANALYSIS.md` và

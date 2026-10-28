@@ -238,3 +238,27 @@ PR: #36 updated in place, still OPEN, not merged; re-review requested on the new
 Remaining: ML_READY stays BLOCKED. Repository-wide Ruff (5 findings) and Black (11 files)
   remain FAIL and tracked by #37; they are never reported as PASS.
 ```
+
+```text
+Checkpoint 11 — Data leakage audit, data splitting and feature contract (Issue #7)
+Branch: feat/issue-7-data-splitting-leakage-audit
+HEAD: recorded by commit/PR readback at handoff.
+Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED.
+  - Deterministic chronological train/val/test split with 5-minute canonical group purge gaps
+    implemented in src/network_anomaly/data/split.py and CLI scripts/split_and_audit_nf_unsw_nb15_v3.py.
+  - Full-dataset cross-partition leakage audit executed on verified NF-UNSW-NB15-v3 bytes (2,365,424 rows).
+  - Split manifest generated at data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json,
+    reports/splits/nf_unsw_nb15_v3_split_manifest.json, and data/processed/nf_unsw_nb15_v3_split_manifest.json.
+  - Leakage audit report rendered at docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md and
+    reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md with comprehensive analysis of ML duplicates
+    (53.21% Test affected), evaluation limitations (non-i.i.d. feature representation), and methodology boundaries.
+  - Partition row indices generated under data/processed/splits/*.csv.gz using deterministic gzip (mtime=0.0)
+    with 100% byte-for-byte SHA-256 match across independent runs.
+  - Baseline 47 feature contract strictly preserved; 6 trace metadata and 2 target columns excluded.
+Tests: PASS — 12 dedicated unit tests (test_split_protocol.py); full test suite passed;
+  artifact reproducibility verified byte-for-byte on disk via independent dual-pass runs; audit status PASS.
+  Exact full-row overlap: 0; source-feature overlap: 0; flow-group overlap: 0;
+  temporal boundary violations: 0; binary label conflicts: 0.
+Issues: #7 review feedback fully addressed; #8 ready to consume verified split contract.
+Remaining: ML_READY remains BLOCKED pending train-only fitted preprocessing in Issue #8.
+```
