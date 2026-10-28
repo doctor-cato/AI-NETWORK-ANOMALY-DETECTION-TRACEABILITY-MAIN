@@ -1,0 +1,461 @@
+"""Unit tests for NF-UNSW-NB15-v3 train-only preprocessing pipeline (Issue #8).
+
+Tests all 13 mandatory criteria:
+1. Exact 47 baseline ML features in exact contract order.
+2. Targets and trace metadata excluded from X.
+3. Fit executes exclusively on Train.
+4. Validation and Test data modifications do not alter fitted state.
+5. Extreme outliers in Validation/Test do not alter Train fit statistics.
+6. NaN, infinity, and invalid numeric tokens handled according to policy.
+7. Missing, extra, or reordered columns fail closed.
+8. Save and load artifact produces bit-identical transformation.
+9. Artifact with mismatched checksum or altered metadata is rejected.
+10. Input data is never modified in-place.
+11. Features with zero variance (constants) or all-missing values are handled robustly.
+12. Outputs have exact shape, column names, dtypes, and finite values.
+13. Preprocessing strictly never uses targets as features.
+"""
+
+from __future__ import annotations
+
+import copy
+import tempfile
+from pathlib import Path
+from typing import Dict, Tuple
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from network_anomaly.data.nf_unsw_nb15_v3 import (
+    CATEGORICAL_CODED_COLUMNS,
+    ML_FEATURE_COLUMNS,
+    QUANTITATIVE_ML_COLUMNS,
+    TARGET_COLUMNS,
+    TRACE_METADATA_COLUMNS,
+)
+from network_anomaly.preprocessing.pipeline import (
+    EXPECTED_DATASET_SHA256,
+    PreprocessingConfig,
+    TrainOnlyPreprocessor,
+    verify_preprocessing_artifact,
+)
+
+
+@pytest.fixture
+def synthetic_47_feature_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Generate small synthetic Train, Validation, and Test feature matrices."""
+    rng = np.random.default_rng(42)
+    n_train = 50
+    n_val = 20
+    n_test = 20
+
+    def _make_df(n_rows: int) -> pd.DataFrame:
+        data: Dict[str, np.ndarray] = {}
+        for col in ML_FEATURE_COLUMNS:
+            if col in CATEGORICAL_CODED_COLUMNS:
+                data[col] = rng.integers(0, 10, size=n_rows)
+            else:
+                data[col] = rng.normal(loc=100.0, scale=15.0, size=n_rows)
+        return pd.DataFrame(data, columns=list(ML_FEATURE_COLUMNS))
+
+    df_train = _make_df(n_train)
+    df_val = _make_df(n_val)
+    df_test = _make_df(n_test)
+    return df_train, df_val, df_test
+
+
+def test_criterion_1_exact_47_features_in_exact_order(synthetic_47_feature_data):
+    """Criterion 1: Exactly 47 baseline ML features in exact order."""
+    df_train, df_val, df_test = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor()
+    prep.fit(df_train)
+
+    out_train = prep.transform(df_train)
+    out_val = prep.transform(df_val)
+    out_test = prep.transform(df_test)
+
+    for out in [out_train, out_val, out_test]:
+        assert list(out.columns) == list(ML_FEATURE_COLUMNS)
+        assert len(out.columns) == 47
+
+
+def test_criterion_2_targets_and_trace_metadata_rejected(synthetic_47_feature_data):
+    """Criterion 2: Targets and trace metadata must never enter X."""
+    df_train, _, _ = synthetic_47_feature_data
+
+    # Test rejecting targets in X
+    for target_col in TARGET_COLUMNS:
+        df_bad = df_train.copy()
+        df_bad[target_col] = 1
+        prep = TrainOnlyPreprocessor()
+        with pytest.raises(ValueError, match="forbidden columns"):
+            prep.fit(df_bad)
+
+    # Test rejecting trace metadata in X
+    for meta_col in TRACE_METADATA_COLUMNS:
+        df_bad = df_train.copy()
+        df_bad[meta_col] = 1000
+        prep = TrainOnlyPreprocessor()
+        with pytest.raises(ValueError, match="forbidden columns"):
+            prep.fit(df_bad)
+
+
+def test_criterion_3_fit_strictly_on_train(synthetic_47_feature_data):
+    """Criterion 3: Imputer statistics and vocabularies are learned EXCLUSIVELY from Train."""
+    df_train, df_val, _ = synthetic_47_feature_data
+
+    # Set specific known values in Train for a quantitative feature
+    col_q = "IN_BYTES"
+    known_train_vals = np.array([10.0, 20.0, 30.0, 40.0, 50.0] * 10)
+    df_train[col_q] = known_train_vals
+    expected_median = float(np.median(known_train_vals))
+
+    # Set completely different values in Val
+    df_val[col_q] = np.array([999.0] * len(df_val))
+
+    prep = TrainOnlyPreprocessor()
+    prep.fit(df_train)
+
+    assert prep.imputed_values_[col_q] == expected_median
+    assert prep.train_row_count_ == len(df_train)
+
+    # Transform val where one value is NaN
+    df_val_with_nan = df_val.copy()
+    df_val_with_nan.loc[0, col_q] = np.nan
+    out_val = prep.transform(df_val_with_nan)
+
+    # The imputed value in val must be the TRAIN median, not anything from val
+    assert out_val.loc[0, col_q] == expected_median
+
+
+def test_criterion_4_changing_val_test_does_not_affect_fitted_state(synthetic_47_feature_data):
+    """Criterion 4: Modifying Validation/Test data does not alter fitted state."""
+    df_train, df_val, df_test = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor()
+    prep.fit(df_train)
+
+    imputed_before = copy.deepcopy(prep.imputed_values_)
+    vocab_before = copy.deepcopy(prep.category_vocabularies_)
+
+    # Transform normal val
+    prep.transform(df_val)
+    assert prep.imputed_values_ == imputed_before
+    assert prep.category_vocabularies_ == vocab_before
+
+    # Transform modified val with new values
+    df_val_altered = df_val.copy() * 10.0
+    prep.transform(df_val_altered)
+    assert prep.imputed_values_ == imputed_before
+    assert prep.category_vocabularies_ == vocab_before
+
+
+def test_criterion_5_extreme_outliers_in_val_test_do_not_alter_train_statistics(
+    synthetic_47_feature_data,
+):
+    """Criterion 5: Extreme outliers in Validation/Test do not leak into Train statistics."""
+    df_train, df_val, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig(scaler_type="standard"))
+    prep.fit(df_train)
+
+    imputed_frozen = copy.deepcopy(prep.imputed_values_)
+    scaler_frozen = copy.deepcopy(prep.scaler_params_)
+
+    # Introduce extreme values and infinities in validation
+    df_val_extreme = df_val.copy()
+    df_val_extreme.iloc[0, 2] = 1e18
+    df_val_extreme.iloc[1, 2] = -1e18
+    df_val_extreme.iloc[2, 2] = np.inf
+    df_val_extreme.iloc[3, 2] = -np.inf
+    df_val_extreme.iloc[4, 2] = np.nan
+
+    out_val = prep.transform(df_val_extreme)
+
+    # Ensure train parameters were not altered
+    assert prep.imputed_values_ == imputed_frozen
+    assert prep.scaler_params_ == scaler_frozen
+    # Ensure transformed values are finite
+    assert np.all(np.isfinite(out_val.to_numpy()))
+
+
+def test_criterion_6_nan_infinity_and_invalid_numeric_handling(synthetic_47_feature_data):
+    """Criterion 6: NaN and infinities imputed with train median/mode; invalid numerics rejected."""
+    df_train, df_val, _ = synthetic_47_feature_data
+    col = "SRC_TO_DST_SECOND_BYTES"
+
+    # Insert NaN, +inf, -inf into Train
+    df_train.loc[0, col] = np.nan
+    df_train.loc[1, col] = np.inf
+    df_train.loc[2, col] = -np.inf
+
+    prep = TrainOnlyPreprocessor()
+    prep.fit(df_train)
+
+    # Assert audit counts on train recorded non-finite values correctly
+    audit = prep.audit_counts_train_[col]
+    assert audit["nan"] == 1
+    assert audit["positive_infinity"] == 1
+    assert audit["negative_infinity"] == 1
+    assert audit["total_non_finite"] == 3
+
+    # Transform and verify finite output
+    out_train = prep.transform(df_train)
+    assert np.all(np.isfinite(out_train[col].to_numpy()))
+
+    # Ensure +inf in val is transformed to train median (not zero)
+    df_val_inf = df_val.copy()
+    df_val_inf.loc[0, col] = np.inf
+    out_val = prep.transform(df_val_inf)
+    assert out_val.loc[0, col] == prep.imputed_values_[col]
+    assert prep.imputed_values_[col] != 0.0
+
+    # Ensure invalid numeric strings raise ValueError fail-closed
+    df_bad = df_train.copy()
+    df_bad[col] = df_bad[col].astype(object)
+    df_bad.loc[5, col] = "unparseable_string_token"
+    prep_fail = TrainOnlyPreprocessor()
+    with pytest.raises(ValueError, match="invalid numeric token"):
+        prep_fail.fit(df_bad)
+
+
+def test_criterion_7_schema_mismatch_fails_closed(synthetic_47_feature_data):
+    """Criterion 7: Missing, extra, or reordered columns fail closed."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor()
+
+    # Missing column
+    df_missing = df_train.drop(columns=[ML_FEATURE_COLUMNS[0]])
+    with pytest.raises(ValueError, match="does not match the ordered v3 ML contract"):
+        prep.fit(df_missing)
+
+    # Extra unknown column
+    df_extra = df_train.copy()
+    df_extra["UNKNOWN_COL"] = 123
+    with pytest.raises(ValueError, match="unknown columns"):
+        prep.fit(df_extra)
+
+    # Reordered columns
+    cols_reordered = list(ML_FEATURE_COLUMNS)
+    cols_reordered[0], cols_reordered[1] = cols_reordered[1], cols_reordered[0]
+    df_reordered = df_train[cols_reordered]
+    with pytest.raises(ValueError, match="does not match the ordered v3 ML contract"):
+        prep.fit(df_reordered)
+
+
+def test_criterion_8_save_and_load_artifact_equivalence(synthetic_47_feature_data):
+    """Criterion 8: Saved and loaded artifact gives identical transformation."""
+    df_train, _, df_test = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig(scaler_type="robust"))
+    prep.fit(df_train)
+
+    out_original = prep.transform(df_test)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+
+        prep.save(art_path, manifest_path=man_path)
+
+        # Load back
+        prep_loaded = TrainOnlyPreprocessor.load(art_path)
+        out_loaded = prep_loaded.transform(df_test)
+
+        pd.testing.assert_frame_equal(out_original, out_loaded)
+        assert prep_loaded.imputed_values_ == prep.imputed_values_
+        assert prep_loaded.scaler_params_ == prep.scaler_params_
+
+
+def test_criterion_9_artifact_with_wrong_checksum_rejected(synthetic_47_feature_data):
+    """Criterion 9: Artifact with mismatched dataset/manifest hash is rejected."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+        split_manifest_sha256="correct_manifest_hash",
+    )
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        prep.save(art_path)
+
+        # Mismatched dataset SHA
+        with pytest.raises(ValueError, match="Dataset SHA-256 mismatch"):
+            TrainOnlyPreprocessor.load(art_path, expected_dataset_sha256="wrong_dataset_hash")
+
+        # Mismatched manifest SHA
+        with pytest.raises(ValueError, match="Split manifest SHA-256 mismatch"):
+            TrainOnlyPreprocessor.load(art_path, expected_manifest_sha256="wrong_manifest_hash")
+
+
+def test_criterion_10_input_dataframe_not_modified_in_place(synthetic_47_feature_data):
+    """Criterion 10: Processing does not modify input DataFrame in-place."""
+    df_train, df_val, _ = synthetic_47_feature_data
+    df_val.loc[0, "IN_BYTES"] = np.nan
+
+    df_val_before = df_val.copy(deep=True)
+
+    prep = TrainOnlyPreprocessor()
+    prep.fit(df_train)
+    out_val = prep.transform(df_val)
+
+    # Input df_val must remain identical
+    pd.testing.assert_frame_equal(df_val, df_val_before)
+    # Output must have imputed finite value
+    assert np.isfinite(out_val.loc[0, "IN_BYTES"])
+
+
+def test_criterion_11_constant_and_all_missing_features(synthetic_47_feature_data):
+    """Criterion 11: Constant features and all-missing features are handled robustly."""
+    df_train, df_val, _ = synthetic_47_feature_data
+
+    # Make one quantitative column constant (variance = 0)
+    col_const = "DURATION_IN"
+    df_train[col_const] = 42.0
+    df_val[col_const] = 42.0
+
+    # Make one column all missing in Train
+    col_missing = "SRC_TO_DST_IAT_STDDEV"
+    df_train[col_missing] = np.nan
+    df_val[col_missing] = np.nan
+
+    # Fit with scaler
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig(scaler_type="standard"))
+    prep.fit(df_train)
+
+    assert col_const in prep.constant_features_
+    assert col_missing in prep.all_missing_columns_
+
+    # Verify scaler does not divide by zero or produce NaNs for constant feature
+    out_train = prep.transform(df_train)
+    out_val = prep.transform(df_val)
+
+    assert np.all(np.isfinite(out_train[col_const].to_numpy()))
+    assert np.all(np.isfinite(out_val[col_const].to_numpy()))
+    assert np.all(np.isfinite(out_train[col_missing].to_numpy()))
+    assert np.all(np.isfinite(out_val[col_missing].to_numpy()))
+
+
+def test_criterion_12_output_finite_shape_and_dtypes(synthetic_47_feature_data):
+    """Criterion 12: Outputs strictly have shape (N, 47), exact feature names,
+    and all finite values.
+    """
+    df_train, df_val, df_test = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig(scaler_type="minmax"))
+    prep.fit(df_train)
+
+    for df_in, name in [(df_train, "train"), (df_val, "val"), (df_test, "test")]:
+        df_out = prep.transform(df_in, partition_name=name)
+        assert df_out.shape == (len(df_in), 47)
+        assert list(df_out.columns) == list(ML_FEATURE_COLUMNS)
+        assert np.all(np.isfinite(df_out.to_numpy()))
+
+
+def test_criterion_13_no_preprocessing_step_uses_target_as_feature(synthetic_47_feature_data):
+    """Criterion 13: Passing target to fit(X, y) strictly does not influence
+    feature transformation.
+    """
+    df_train, df_val, _ = synthetic_47_feature_data
+
+    # Fit without y
+    prep1 = TrainOnlyPreprocessor()
+    prep1.fit(df_train)
+    out1 = prep1.transform(df_val)
+
+    # Fit with synthetic y
+    y_synth = pd.Series(np.ones(len(df_train), dtype=int))
+    prep2 = TrainOnlyPreprocessor()
+    prep2.fit(df_train, y=y_synth)
+    out2 = prep2.transform(df_val)
+
+    pd.testing.assert_frame_equal(out1, out2)
+    assert prep1.imputed_values_ == prep2.imputed_values_
+
+
+def test_categorical_coded_columns_never_scaled_as_continuous(synthetic_47_feature_data):
+    """Test that the 10 categorical-coded columns are NEVER scaled by continuous scalers."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig(scaler_type="standard"))
+    prep.fit(df_train)
+
+    # Check scaler_params_ only contains quantitative columns
+    for cat_col in CATEGORICAL_CODED_COLUMNS:
+        assert cat_col not in prep.scaler_params_
+
+    for quant_col in QUANTITATIVE_ML_COLUMNS:
+        assert quant_col in prep.scaler_params_
+
+    # Transform and check categorical values remain discrete codes
+    out = prep.transform(df_train)
+    for cat_col in CATEGORICAL_CODED_COLUMNS:
+        # Values should be integers / whole numbers, not continuous standardized floats
+        arr = out[cat_col].to_numpy()
+        np.testing.assert_allclose(arr, np.round(arr))
+
+
+def test_verify_preprocessing_artifact_helper(synthetic_47_feature_data):
+    """Test verify_preprocessing_artifact on a valid artifact."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        res = verify_preprocessing_artifact(
+            artifact_path=art_path,
+            manifest_path=man_path,
+            expected_dataset_sha256=EXPECTED_DATASET_SHA256,
+        )
+        assert res["status"] == "PASS"
+        assert len(res["errors"]) == 0
+
+
+def test_cli_preprocess_absent_dataset_skips(monkeypatch):
+    """Test that preprocess CLI cleanly outputs SKIPPED and exits 0 when dataset is absent."""
+    import scripts.preprocess_nf_unsw_nb15_v3 as prep_cli
+
+    fake_args = [
+        "preprocess_nf_unsw_nb15_v3.py",
+        "--dataset",
+        "nonexistent_dataset.csv",
+    ]
+    monkeypatch.setattr("sys.argv", fake_args)
+    exit_code = prep_cli.main()
+    assert exit_code == 0
+
+
+def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
+    """Test that preprocess CLI with --verify-only verifies an existing valid artifact."""
+    import scripts.preprocess_nf_unsw_nb15_v3 as prep_cli
+
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+    )
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
+        fake_ds_path.write_text("dummy", encoding="utf-8")
+        prep.save(art_path, manifest_path=man_path)
+
+        fake_args = [
+            "preprocess_nf_unsw_nb15_v3.py",
+            "--dataset",
+            str(fake_ds_path),
+            "--output-artifact",
+            str(art_path),
+            "--output-manifest",
+            str(man_path),
+            "--verify-only",
+        ]
+        monkeypatch.setattr("sys.argv", fake_args)
+        exit_code = prep_cli.main()
+        assert exit_code == 0

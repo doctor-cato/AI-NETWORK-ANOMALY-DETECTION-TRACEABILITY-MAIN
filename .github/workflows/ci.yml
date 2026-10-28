@@ -36,3 +36,5 @@ jobs:
         run: python scripts/eda_nf_unsw_nb15_v3.py
       - name: EDA reproducibility check — SKIPPED if raw package is absent
         run: python scripts/verify_eda_reproducibility.py
+      - name: Preprocess NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
+        run: python scripts/preprocess_nf_unsw_nb15_v3.py

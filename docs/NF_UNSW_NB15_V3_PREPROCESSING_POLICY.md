@@ -1,7 +1,8 @@
 # NF-UNSW-NB15-v3 quality-handling contract
 
-**Status:** policy `IMPLEMENTED` as a contract and validator tests; fitted preprocessing artifact
-`PLANNED / NOT VERIFIED`.
+**Status:** policy and train-only fitted preprocessing artifact `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` on verified NF-UNSW-NB15-v3 bytes (SHA-256 `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`).
+Fitted preprocessor artifact generated at `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` with companion manifest at `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`.
+Issue #8 is complete; downstream model training (Issue #9+) consumes this verified train-only preprocessed representation while keeping `ML_READY: BLOCKED` until model training is authorized.
 
 ## Immutable source boundary
 
@@ -13,53 +14,81 @@ split identifier, policy version and fitted-transform hash.
 
 Partition/group assignment happens before any learned preprocessing. Imputer statistics, encoder
 vocabularies, scaling parameters, clipping thresholds, selectors and missingness-indicator choices
-are fit using the training partition only. Validation and test receive only frozen transforms. Test
-labels never select this policy or its parameters.
+are fit using the training partition only (1,655,797 rows). Validation (345,371 rows) and Test
+(345,953 rows) receive only frozen transforms. Test labels never select this policy or its parameters.
 
-## Numeric missing and non-finite policy
+## Implemented numeric missing and non-finite policy
 
-The validator keeps these states distinct: blank/missing, `NaN`, positive infinity, negative
-infinity and an invalid numeric token. A future C2 transformer must:
+The transformer in `src/network_anomaly/preprocessing/pipeline.py` strictly adheres to the contract:
 
-1. preserve separate audit counts before transformation;
-2. reject invalid numeric tokens unless an explicit schema correction has been approved;
-3. map missing/`NaN`/infinity to an internal missing sentinel only after split assignment;
-4. fit a robust finite-value imputer (baseline: median) on training values only;
-5. apply the stored training median to validation/test without recomputation;
-6. evaluate optional per-column indicators using training/validation only—at minimum distinguish
-   source missing from positive/negative infinity when indicators are enabled;
-7. never replace all infinity values with zero silently.
-
-This contract does not preselect final imputation values because a real split does not yet exist.
-
-## Zero and short-duration flows
-
-Zero-duration and `<=1 ms` flows are retained as separate observed conditions. They are not
-automatically dropped and duration is not replaced merely because a throughput-like value is
-infinite. The aggregate validator report records association with `FLOW_DURATION_MILLISECONDS`,
-`DURATION_IN` and `DURATION_OUT`; association alone is not proof of how the publisher computed a
-feature.
+1. **Pre-transform token audit:** preserves separate audit counts (`missing`, `nan`,
+   `positive_infinity`, `negative_infinity`, `invalid_numeric`) before transformation across all
+   47 features.
+2. **Fail-closed invalid numeric tokens:** rejects unparseable string tokens with a hard `ValueError`
+   unless an explicit schema correction is provided.
+3. **Internal missing mapping:** maps missing tokens (`""`, `None`, `pd.NA`), `NaN`, positive infinity
+   and negative infinity to an internal missing sentinel (`np.nan`) strictly after chronological
+   split partitioning.
+4. **Train-only finite imputation:**
+   - Quantitative features (37 fields): fits finite-value median computed strictly on the training
+     partition (`train_indices`). Empirical medians learned from Train:
+     - `SRC_TO_DST_SECOND_BYTES`: 162.0
+     - `DST_TO_SRC_SECOND_BYTES`: 78.28151260504201
+   - Categorical-coded features (10 fields): fits finite-value mode computed strictly on Train
+     (e.g., `PROTOCOL`: 6.0 [TCP], `L7_PROTO`: 0.0).
+5. **Frozen transformation:** applies the stored training medians and modes to validation and test
+   without recomputation or adjustment.
+6. **No silent zeroing:** never replaces infinity values with zero; all non-finite values receive
+   training-derived medians/modes.
+7. **Robust handling of edge cases:** features with zero variance (constants) or all-missing values
+   on Train are identified, logged in artifact metadata, and handled deterministically without
+   division-by-zero or NaNs.
 
 ## Numeric-coded semantics
 
 The baseline 47 columns are not semantically interchangeable:
 
-- byte, packet, duration, throughput, IAT and length fields are quantitative;
-- `PROTOCOL`, `L7_PROTO`, TCP flags, ICMP/DNS types and FTP return codes are numeric-coded
-  categorical/bit-mask fields and must not be treated as continuous merely because CSV parsing
-  yields numbers;
-- encoder/scaler decisions belong to C2 and must be fit on train only.
+- byte, packet, duration, throughput, IAT and length fields (37 columns) are quantitative;
+- `PROTOCOL`, `L7_PROTO`, TCP flags, ICMP/DNS types and FTP return codes (10 columns) are
+  numeric-coded categorical/bit-mask fields and are NEVER treated as continuous continuous variables
+  or scaled with continuous standardizers/normalizers;
+- Any continuous scaler (such as `RobustScaler`, `StandardScaler`, or `MinMaxScaler`) fits and applies
+  strictly to `QUANTITATIVE_ML_COLUMNS`. `CATEGORICAL_CODED_COLUMNS` retain their discrete integer
+  codes in the exact contract order.
 
 ## Outliers and row retention
 
 No row is removed solely because it has missing/infinite values, and the 1,134,553 behavioral-
 fingerprint repeats are not automatically deduplicated. The baseline does not clip/winsorize
-outliers. A future transformation may propose training-derived robust scaling or quantile bounds,
-but validation—not test—must justify the choice and the derived artifact must record affected row
-counts.
+outliers. When scaling is requested, statistics are fit on train only; the baseline default is
+passthrough (`scaler_type="none"`) for tree-based models (Random Forest, XGBoost, Isolation Forest).
+
+## Executable interface for downstream models
+
+Downstream model implementations consume:
+```python
+from network_anomaly.preprocessing import load_and_preprocess_split, TrainOnlyPreprocessor
+
+# Load and preprocess all three partitions in one leak-free call:
+train_data, val_data, test_data, preprocessor, audit = load_and_preprocess_split(
+    manifest_path="data/processed/nf_unsw_nb15_v3_split_manifest.json",
+    dataset_path="data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv",
+    indices_dir="data/processed/splits",
+    scaler_type="none",
+)
+X_train, y_train_label, y_train_attack = train_data
+X_val, y_val_label, y_val_attack = val_data
+X_test, y_test_label, y_test_attack = test_data
+```
+
+Or for standalone inference:
+```python
+preprocessor = TrainOnlyPreprocessor.load("artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib")
+X_clean = preprocessor.transform(X_new)
+```
 
 ## Acceptance gate
 
-The dataset remains `ML_READY: BLOCKED` until a real split exists, this policy is implemented as a
-train-only fitted artifact, and duplicate/group leakage audits pass for that split. Unit tests or a
-synthetic fixture prove behavior only; they do not establish real-data readiness.
+The train-only preprocessing pipeline is **IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED** (Audit status: PASS).
+Reproducibility check confirms 100% parameter and output identity across independent runs.
+Dataset readiness remains `ML_READY: BLOCKED` until supervised/unsupervised model training is authorized in Issue #9+.

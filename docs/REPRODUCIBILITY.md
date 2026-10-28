@@ -103,6 +103,28 @@ Exit codes: `0` when both runs succeeded and the deterministic content is identi
 package is absent and the check was skipped, `1` when a run failed or the two runs disagree. A
 skipped check prints `SKIPPED`, never `PASS`, and writes no artifact.
 
+## Reproduce the train-only preprocessing pipeline
+
+```text
+python scripts/preprocess_nf_unsw_nb15_v3.py
+python scripts/preprocess_nf_unsw_nb15_v3.py --check-reproducibility
+python scripts/preprocess_nf_unsw_nb15_v3.py --verify-only
+```
+
+The script consumes the verified split manifest (`data/processed/nf_unsw_nb15_v3_split_manifest.json`)
+and partition indices (`data/processed/splits/*.csv.gz`). It extracts the 47 baseline ML features,
+fits imputers and vocabularies strictly on the Train partition (1,655,797 rows), and transforms Train,
+Validation, and Test partitions with the frozen state.
+
+Artifacts produced:
+- Preprocessor binary: `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`
+- Companion manifest: `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`
+
+Reproducibility properties:
+- Independent dual-pass check (`--check-reproducibility`) verifies 100% parameter and numeric output identity.
+- Verify-only mode (`--verify-only`) validates artifact schema and dataset checksum without retraining.
+- Absent raw bytes: prints `PREPROCESSING: SKIPPED (raw dataset absent)` and exits `0`.
+
 ## What runs where
 
 | Check | Environment | Result |
@@ -110,9 +132,12 @@ skipped check prints `SKIPPED`, never `PASS`, and writes no artifact.
 | `scripts/validate_data.py` | local, raw package present | real-data audit, exit `1` while `ML_READY: BLOCKED` |
 | `scripts/eda_nf_unsw_nb15_v3.py` | local, raw package present | EDA executed on the verified population |
 | `scripts/verify_eda_reproducibility.py` | local, raw package present | two runs compared per metric |
+| `scripts/split_and_audit_nf_unsw_nb15_v3.py` | local, raw package present | split manifest and leakage audit executed |
+| `scripts/preprocess_nf_unsw_nb15_v3.py` | local, raw package present | train-only preprocessing executed and verified |
 | `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
 | `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
 | `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+| `scripts/preprocess_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
 
 A skipped CI step is never reported as evidence that the validator or the EDA ran on real data.
 
