@@ -38,6 +38,8 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
 )
 from network_anomaly.preprocessing.pipeline import (
     EXPECTED_DATASET_SHA256,
+    REQUIRED_COMPANION_MANIFEST_FIELDS,
+    SPLIT_PROTOCOL_VERSION,
     PreprocessingConfig,
     TrainOnlyPreprocessor,
     audit_column_tokens,
@@ -449,7 +451,11 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
     df_train, _, _ = synthetic_47_feature_data
     with tempfile.TemporaryDirectory() as tmp_dir:
         fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
-        fake_split_manifest.write_text("{}", encoding="utf-8")
+        split_content = {
+            "dataset_sha256": EXPECTED_DATASET_SHA256,
+            "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+        }
+        fake_split_manifest.write_text(json.dumps(split_content), encoding="utf-8")
         from network_anomaly.preprocessing.pipeline import _sha256_file
 
         sm_hash = _sha256_file(fake_split_manifest)
@@ -492,8 +498,16 @@ def test_cli_preprocess_verify_only_missing_manifest_fails(synthetic_47_feature_
     prep.fit(df_train)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
+        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
+        fake_split_manifest.write_text(
+            json.dumps({
+                "dataset_sha256": EXPECTED_DATASET_SHA256,
+                "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+            }),
+            encoding="utf-8",
+        )
         art_path = Path(tmp_dir) / "preprocessor.joblib"
-        prep.save(art_path)  # saves artifact only, no manifest
+        prep.save(art_path)  # saves artifact only, no companion manifest
         fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
         fake_ds_path.write_text("dummy", encoding="utf-8")
         nonexistent_man = Path(tmp_dir) / "missing_manifest.json"
@@ -502,10 +516,124 @@ def test_cli_preprocess_verify_only_missing_manifest_fails(synthetic_47_feature_
             "preprocess_nf_unsw_nb15_v3.py",
             "--dataset",
             str(fake_ds_path),
+            "--manifest",
+            str(fake_split_manifest),
             "--output-artifact",
             str(art_path),
             "--output-manifest",
             str(nonexistent_man),
+            "--verify-only",
+        ]
+        monkeypatch.setattr("sys.argv", fake_args)
+        exit_code = prep_cli.main()
+        assert exit_code == 1
+
+
+def test_cli_preprocess_verify_only_missing_dataset_fails(synthetic_47_feature_data, monkeypatch):
+    """Test CLI --verify-only fails closed (exit code 1) when raw dataset is missing."""
+    prep_cli = _load_preprocess_cli()
+
+    df_train, _, _ = synthetic_47_feature_data
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
+        fake_split_manifest.write_text(
+            json.dumps({
+                "dataset_sha256": EXPECTED_DATASET_SHA256,
+                "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+            }),
+            encoding="utf-8",
+        )
+        from network_anomaly.preprocessing.pipeline import _sha256_file
+
+        sm_hash = _sha256_file(fake_split_manifest)
+
+        prep = TrainOnlyPreprocessor(
+            dataset_sha256=EXPECTED_DATASET_SHA256,
+            split_manifest_sha256=sm_hash,
+        )
+        prep.fit(df_train)
+
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        nonexistent_dataset = Path(tmp_dir) / "absent_dataset.csv"
+
+        fake_args = [
+            "preprocess_nf_unsw_nb15_v3.py",
+            "--dataset",
+            str(nonexistent_dataset),
+            "--manifest",
+            str(fake_split_manifest),
+            "--output-artifact",
+            str(art_path),
+            "--output-manifest",
+            str(man_path),
+            "--verify-only",
+        ]
+        monkeypatch.setattr("sys.argv", fake_args)
+        exit_code = prep_cli.main()
+        assert exit_code == 1
+
+
+def test_cli_preprocess_verify_only_missing_split_manifest_fails(
+    synthetic_47_feature_data, monkeypatch
+):
+    """Test CLI --verify-only fails closed (exit code 1) when split manifest is missing."""
+    prep_cli = _load_preprocess_cli()
+
+    df_train, _, _ = synthetic_47_feature_data
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
+        fake_ds_path.write_text("dummy", encoding="utf-8")
+        nonexistent_sm = Path(tmp_dir) / "absent_split_manifest.json"
+
+        prep = TrainOnlyPreprocessor(dataset_sha256=EXPECTED_DATASET_SHA256)
+        prep.fit(df_train)
+        prep.save(art_path, manifest_path=man_path)
+
+        fake_args = [
+            "preprocess_nf_unsw_nb15_v3.py",
+            "--dataset",
+            str(fake_ds_path),
+            "--manifest",
+            str(nonexistent_sm),
+            "--output-artifact",
+            str(art_path),
+            "--output-manifest",
+            str(man_path),
+            "--verify-only",
+        ]
+        monkeypatch.setattr("sys.argv", fake_args)
+        exit_code = prep_cli.main()
+        assert exit_code == 1
+
+
+def test_cli_preprocess_verify_only_missing_artifact_fails(monkeypatch):
+    """Test CLI --verify-only fails closed (exit code 1) when artifact is missing."""
+    prep_cli = _load_preprocess_cli()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
+        fake_ds_path.write_text("dummy", encoding="utf-8")
+        fake_sm_path = Path(tmp_dir) / "split_manifest.json"
+        fake_sm_path.write_text("{}", encoding="utf-8")
+        man_path = Path(tmp_dir) / "manifest.json"
+        man_path.write_text("{}", encoding="utf-8")
+        nonexistent_art = Path(tmp_dir) / "absent_artifact.joblib"
+
+        fake_args = [
+            "preprocess_nf_unsw_nb15_v3.py",
+            "--dataset",
+            str(fake_ds_path),
+            "--manifest",
+            str(fake_sm_path),
+            "--output-artifact",
+            str(nonexistent_art),
+            "--output-manifest",
+            str(man_path),
             "--verify-only",
         ]
         monkeypatch.setattr("sys.argv", fake_args)
@@ -590,6 +718,145 @@ def test_verify_artifact_negative_cases(synthetic_47_feature_data):
         )
         assert res["status"] == "FAIL"
         assert any("Dataset SHA-256" in e for e in res["errors"])
+
+        # 9. Empty companion manifest object {}
+        empty_man = Path(tmp_dir) / "empty_manifest.json"
+        empty_man.write_text("{}", encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=empty_man)
+        assert res["status"] == "FAIL"
+        assert any(
+            "Companion manifest is empty or not a valid JSON object" in e for e in res["errors"]
+        )
+
+        # 10. Companion manifest as JSON array []
+        array_man = Path(tmp_dir) / "array_manifest.json"
+        array_man.write_text("[]", encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=array_man)
+        assert res["status"] == "FAIL"
+        assert any(
+            "Companion manifest is empty or not a valid JSON object" in e for e in res["errors"]
+        )
+
+        # 11. Companion manifest as JSON string "hello"
+        string_man = Path(tmp_dir) / "string_manifest.json"
+        string_man.write_text('"hello"', encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=string_man)
+        assert res["status"] == "FAIL"
+        assert any(
+            "Companion manifest is empty or not a valid JSON object" in e for e in res["errors"]
+        )
+
+        # 12. Missing each required field individually
+        for req_field in REQUIRED_COMPANION_MANIFEST_FIELDS:
+            incomplete = copy.deepcopy(man_content)
+            del incomplete[req_field]
+            inc_path = Path(tmp_dir) / f"missing_{req_field}.json"
+            inc_path.write_text(json.dumps(incomplete), encoding="utf-8")
+            res = verify_preprocessing_artifact(art_path, manifest_path=inc_path)
+            assert res["status"] == "FAIL", f"Expected FAIL when missing {req_field}"
+            assert any(f"missing required field: '{req_field}'" in e for e in res["errors"])
+
+        # 13. Field type mismatches (including bool for int)
+        # 13a. artifact_version as string
+        bad_type_man = copy.deepcopy(man_content)
+        bad_type_man["artifact_version"] = "1"
+        bt_path = Path(tmp_dir) / "bad_type_str.json"
+        bt_path.write_text(json.dumps(bad_type_man), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bt_path)
+        assert res["status"] == "FAIL"
+        assert any("must be int, got str" in e for e in res["errors"])
+
+        # 13b. train_row_count as bool
+        bad_type_bool = copy.deepcopy(man_content)
+        bad_type_bool["train_row_count"] = True
+        bt_bool_path = Path(tmp_dir) / "bad_type_bool.json"
+        bt_bool_path.write_text(json.dumps(bad_type_bool), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bt_bool_path)
+        assert res["status"] == "FAIL"
+        assert any("must be int, got bool" in e for e in res["errors"])
+
+        # 13c. config as list instead of dict
+        bad_type_dict = copy.deepcopy(man_content)
+        bad_type_dict["config"] = ["not", "a", "dict"]
+        bt_dict_path = Path(tmp_dir) / "bad_type_dict.json"
+        bt_dict_path.write_text(json.dumps(bad_type_dict), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bt_dict_path)
+        assert res["status"] == "FAIL"
+        assert any("must be dict, got list" in e for e in res["errors"])
+
+        # 14. Non-positive train_row_count
+        zero_rows_man = copy.deepcopy(man_content)
+        zero_rows_man["train_row_count"] = 0
+        zr_path = Path(tmp_dir) / "zero_rows.json"
+        zr_path.write_text(json.dumps(zero_rows_man), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=zr_path)
+        assert res["status"] == "FAIL"
+        assert any("train_row_count' must be positive" in e for e in res["errors"])
+
+        # 15. output_features_count mismatch with output_features_in_order
+        mismatch_count_man = copy.deepcopy(man_content)
+        order_len = len(mismatch_count_man["output_features_in_order"])
+        mismatch_count_man["output_features_count"] = order_len + 1
+        mc_path = Path(tmp_dir) / "mismatch_count.json"
+        mc_path.write_text(json.dumps(mismatch_count_man), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=mc_path)
+        assert res["status"] == "FAIL"
+        assert any("output_features_count" in e for e in res["errors"])
+
+        # 16. Split manifest verification negative cases
+        # 16a. Nonexistent split manifest
+        res = verify_preprocessing_artifact(
+            art_path,
+            manifest_path=man_path,
+            split_manifest_path=Path(tmp_dir) / "nonexistent_sm.json",
+        )
+        assert res["status"] == "FAIL"
+        assert any("Referenced split manifest not found" in e for e in res["errors"])
+
+        # 16b. Empty split manifest {}
+        empty_sm = Path(tmp_dir) / "empty_sm.json"
+        empty_sm.write_text("{}", encoding="utf-8")
+        res = verify_preprocessing_artifact(
+            art_path,
+            manifest_path=man_path,
+            split_manifest_path=empty_sm,
+        )
+        assert res["status"] == "FAIL"
+        assert any("Split manifest is empty or not a valid JSON object" in e for e in res["errors"])
+
+        # 16c. Split manifest with dataset_sha256 mismatch
+        bad_ds_sm = Path(tmp_dir) / "bad_ds_sm.json"
+        bad_ds_sm.write_text(
+            json.dumps({
+                "dataset_sha256": "wrong_hash",
+                "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+            }),
+            encoding="utf-8",
+        )
+        res = verify_preprocessing_artifact(
+            art_path,
+            manifest_path=man_path,
+            split_manifest_path=bad_ds_sm,
+        )
+        assert res["status"] == "FAIL"
+        assert any("Split manifest dataset_sha256 mismatch" in e for e in res["errors"])
+
+        # 16d. Split manifest with split_protocol_version mismatch
+        bad_ver_sm = Path(tmp_dir) / "bad_ver_sm.json"
+        bad_ver_sm.write_text(
+            json.dumps({
+                "dataset_sha256": EXPECTED_DATASET_SHA256,
+                "split_protocol_version": "v0.0.1",
+            }),
+            encoding="utf-8",
+        )
+        res = verify_preprocessing_artifact(
+            art_path,
+            manifest_path=man_path,
+            split_manifest_path=bad_ver_sm,
+        )
+        assert res["status"] == "FAIL"
+        assert any("Split manifest protocol version mismatch" in e for e in res["errors"])
 
 
 def test_audit_column_tokens_distinguishes_empty_from_nan():

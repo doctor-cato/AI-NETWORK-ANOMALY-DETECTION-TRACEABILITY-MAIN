@@ -31,6 +31,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     ML_FEATURE_COLUMNS,
 )
 from network_anomaly.preprocessing.pipeline import (  # noqa: E402
+    EXPECTED_DATASET_SHA256,
     load_and_preprocess_split,
     verify_preprocessing_artifact,
 )
@@ -46,7 +47,7 @@ DEFAULT_OUTPUT_MANIFEST = (
 )
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fit train-only preprocessor and transform NF-UNSW-NB15-v3 partitions."
     )
@@ -109,7 +110,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Run fit independently twice and verify exact identity of output and parameters",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def run_reproducibility_check(
@@ -185,20 +186,34 @@ def run_reproducibility_check(
 
 
 def main(argv: Optional[list] = None) -> int:
-    args = parse_args() if argv is None else parse_args()
+    args = parse_args(argv)
 
-    # 1. Check if raw dataset exists; if not, skip cleanly (CI mode)
-    if not args.dataset.is_file():
-        print(f"PREPROCESSING: SKIPPED (raw dataset absent at {args.dataset})")
-        return 0
-
-    # 2. Verify-only mode (strictly fail-closed: companion manifest is mandatory)
+    # 1. Verify-only mode (strictly fail-closed: companion manifest, split manifest,
+    # artifact, and raw dataset are mandatory)
     if args.verify_only:
         print(f"[preprocess] Verifying existing preprocessor artifact: {args.output_artifact}...")
+        missing_files = []
+        if not args.dataset.is_file():
+            missing_files.append(f"raw dataset ({args.dataset})")
+        if not args.manifest.is_file():
+            missing_files.append(f"split manifest ({args.manifest})")
+        if not args.output_artifact.is_file():
+            missing_files.append(f"preprocessor artifact ({args.output_artifact})")
+        if not args.output_manifest.is_file():
+            missing_files.append(f"companion manifest ({args.output_manifest})")
+
+        if missing_files:
+            print(
+                f"[preprocess] FAIL: verify-only mode requires all input/output files to exist. "
+                f"Missing: {', '.join(missing_files)}"
+            )
+            return 1
+
         result = verify_preprocessing_artifact(
             artifact_path=args.output_artifact,
             manifest_path=args.output_manifest,
-            split_manifest_path=args.manifest if args.manifest.is_file() else None,
+            split_manifest_path=args.manifest,
+            expected_dataset_sha256=EXPECTED_DATASET_SHA256,
         )
         if result["status"] == "PASS":
             print("[preprocess] PASS: artifact integrity and schema verified.")
@@ -206,6 +221,11 @@ def main(argv: Optional[list] = None) -> int:
         else:
             print(f"[preprocess] FAIL: artifact verification errors: {result['errors']}")
             return 1
+
+    # 2. Check if raw dataset exists; if not, skip cleanly (CI mode)
+    if not args.dataset.is_file():
+        print(f"PREPROCESSING: SKIPPED (raw dataset absent at {args.dataset})")
+        return 0
 
     # 3. Check reproducibility if requested
     if args.check_reproducibility:

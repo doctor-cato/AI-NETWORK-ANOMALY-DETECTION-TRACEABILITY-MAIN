@@ -46,6 +46,27 @@ EXPECTED_DATASET_SHA256 = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d00784
 VALID_SCALER_TYPES = {"none", "robust", "standard", "minmax"}
 VALID_UNKNOWN_CATEGORIES_STRATEGIES = {"passthrough", "sentinel", "error"}
 
+REQUIRED_COMPANION_MANIFEST_FIELDS: Dict[str, type] = {
+    "artifact_type": str,
+    "artifact_version": int,
+    "dataset_name": str,
+    "dataset_sha256": str,
+    "split_protocol_version": str,
+    "split_manifest_sha256": str,
+    "feature_contract_version": str,
+    "baseline_ml_features_count": int,
+    "baseline_ml_features_in_order": list,
+    "output_features_count": int,
+    "output_features_in_order": list,
+    "preprocessing_policy_version": str,
+    "config": dict,
+    "train_row_count": int,
+    "fitted_at_utc": str,
+    "artifact_path": str,
+    "artifact_sha256": str,
+    "fitted_parameters_summary": dict,
+}
+
 
 @dataclass(frozen=True)
 class PreprocessingConfig:
@@ -873,28 +894,128 @@ def verify_preprocessing_artifact(
         }
 
     # 3. Load and validate companion manifest JSON first
-    manifest_json = {}
+    manifest_json: Dict[str, Any] = {}
     try:
         manifest_text = manifest_path.read_text(encoding="utf-8")
-        manifest_json = json.loads(manifest_text)
+        parsed = json.loads(manifest_text)
+        if not isinstance(parsed, dict) or len(parsed) == 0:
+            errors.append("Companion manifest is empty or not a valid JSON object")
+        else:
+            manifest_json = parsed
     except Exception as e:
         errors.append(f"Error reading companion manifest JSON: {e}")
 
-    # 4. Verify artifact SHA-256 on disk against companion manifest recorded hash
-    actual_artifact_sha256 = _sha256_file(artifact_path)
+    # 4. Strictly validate companion manifest schema and required fields
     if manifest_json:
+        for field, exp_type in REQUIRED_COMPANION_MANIFEST_FIELDS.items():
+            if field not in manifest_json or manifest_json[field] is None:
+                errors.append(f"Companion manifest missing required field: '{field}'")
+            else:
+                val = manifest_json[field]
+                if exp_type is int and isinstance(val, bool):
+                    errors.append(
+                        f"Companion manifest field '{field}' must be int, got bool"
+                    )
+                elif not isinstance(val, exp_type):
+                    errors.append(
+                        f"Companion manifest field '{field}' must be {exp_type.__name__}, "
+                        f"got {type(val).__name__}"
+                    )
+                elif isinstance(val, str) and not val.strip():
+                    errors.append(
+                        f"Companion manifest field '{field}' must not be empty"
+                    )
+
+        # Validate companion manifest semantics and contract values
+        if manifest_json.get("artifact_type") != "nf-unsw-nb15-v3-train-only-preprocessor":
+            errors.append(
+                f"Invalid artifact_type in companion manifest: "
+                f"expected 'nf-unsw-nb15-v3-train-only-preprocessor', "
+                f"got '{manifest_json.get('artifact_type')}'"
+            )
+
+        if manifest_json.get("artifact_version") != 1:
+            errors.append(
+                f"Invalid artifact_version in companion manifest: "
+                f"expected 1, got {manifest_json.get('artifact_version')}"
+            )
+
+        if manifest_json.get("dataset_name") != DATASET_NAME:
+            errors.append(
+                f"Invalid dataset_name in companion manifest: "
+                f"expected '{DATASET_NAME}', got '{manifest_json.get('dataset_name')}'"
+            )
+
+        if manifest_json.get("dataset_sha256") != expected_dataset_sha256:
+            errors.append(
+                f"Dataset SHA-256 in manifest does not match expected ({expected_dataset_sha256})"
+            )
+
+        if manifest_json.get("split_protocol_version") != SPLIT_PROTOCOL_VERSION:
+            errors.append(
+                f"Invalid split_protocol_version in companion manifest: "
+                f"expected '{SPLIT_PROTOCOL_VERSION}', "
+                f"got '{manifest_json.get('split_protocol_version')}'"
+            )
+
+        if manifest_json.get("feature_contract_version") != FEATURE_CONTRACT_VERSION:
+            errors.append(
+                f"Invalid feature_contract_version in companion manifest: "
+                f"expected '{FEATURE_CONTRACT_VERSION}', "
+                f"got '{manifest_json.get('feature_contract_version')}'"
+            )
+
+        if manifest_json.get("preprocessing_policy_version") != PREPROCESSING_POLICY_VERSION:
+            errors.append(
+                f"Invalid preprocessing_policy_version in companion manifest: "
+                f"expected '{PREPROCESSING_POLICY_VERSION}', "
+                f"got '{manifest_json.get('preprocessing_policy_version')}'"
+            )
+
+        if manifest_json.get("baseline_ml_features_count") != len(ML_FEATURE_COLUMNS):
+            errors.append(
+                f"Companion manifest 'baseline_ml_features_count' mismatch: "
+                f"expected {len(ML_FEATURE_COLUMNS)}, "
+                f"got {manifest_json.get('baseline_ml_features_count')}"
+            )
+
+        if manifest_json.get("baseline_ml_features_in_order") != list(ML_FEATURE_COLUMNS):
+            errors.append(
+                "Companion manifest 'baseline_ml_features_in_order' does not match contract columns"
+            )
+
+        train_rows = manifest_json.get("train_row_count")
+        if isinstance(train_rows, int) and not isinstance(train_rows, bool) and train_rows <= 0:
+            errors.append(
+                f"Companion manifest 'train_row_count' must be positive, got {train_rows}"
+            )
+
+        out_features = manifest_json.get("output_features_in_order")
+        out_count = manifest_json.get("output_features_count")
+        if (
+            isinstance(out_features, list)
+            and isinstance(out_count, int)
+            and not isinstance(out_count, bool)
+        ):
+            if len(out_features) != out_count:
+                errors.append(
+                    f"Companion manifest 'output_features_count' ({out_count}) "
+                    f"does not match length of 'output_features_in_order' ({len(out_features)})"
+                )
+
+    # 5. Verify artifact SHA-256 on disk against companion manifest recorded hash
+    actual_artifact_sha256 = _sha256_file(artifact_path)
+    if manifest_json and "artifact_sha256" in manifest_json:
         recorded_artifact_sha = manifest_json.get("artifact_sha256")
-        if not recorded_artifact_sha:
-            errors.append("Companion manifest missing required field: 'artifact_sha256'")
-        elif recorded_artifact_sha != actual_artifact_sha256:
+        if recorded_artifact_sha != actual_artifact_sha256:
             errors.append(
                 f"Artifact SHA-256 mismatch in manifest: "
                 f"expected {actual_artifact_sha256}, recorded {recorded_artifact_sha}"
             )
 
-    # 5. Load and validate artifact .joblib
+    # 6. Load and validate artifact .joblib
     preprocessor = None
-    meta = {}
+    meta: Dict[str, Any] = {}
     try:
         preprocessor = TrainOnlyPreprocessor.load(
             artifact_path=artifact_path,
@@ -904,81 +1025,106 @@ def verify_preprocessing_artifact(
     except Exception as e:
         errors.append(f"Error loading/validating preprocessor artifact: {e}")
 
-    # 6. Cross-verify hashes and contract metadata between artifact and companion manifest
+    # 7. Cross-verify hashes and contract metadata between artifact and companion manifest
     if preprocessor is not None and manifest_json:
-
         # Check dataset SHA-256
-        recorded_ds_sha = manifest_json.get("dataset_sha256")
-        if recorded_ds_sha != meta.get("dataset_sha256"):
+        if manifest_json.get("dataset_sha256") != meta.get("dataset_sha256"):
             errors.append(
                 f"Dataset SHA-256 mismatch between artifact ({meta.get('dataset_sha256')}) "
-                f"and companion manifest ({recorded_ds_sha})"
-            )
-        if recorded_ds_sha != expected_dataset_sha256:
-            errors.append(
-                f"Dataset SHA-256 in manifest does not match expected ({expected_dataset_sha256})"
+                f"and companion manifest ({manifest_json.get('dataset_sha256')})"
             )
 
         # Check split manifest SHA-256
-        recorded_sm_sha = manifest_json.get("split_manifest_sha256")
-        if recorded_sm_sha != meta.get("split_manifest_sha256"):
-            art_sm = meta.get("split_manifest_sha256")
+        if manifest_json.get("split_manifest_sha256") != meta.get("split_manifest_sha256"):
             errors.append(
-                f"Split manifest SHA-256 mismatch between artifact ({art_sm}) "
-                f"and companion manifest ({recorded_sm_sha})"
+                f"Split manifest SHA-256 mismatch between artifact "
+                f"({meta.get('split_manifest_sha256')}) and companion manifest "
+                f"({manifest_json.get('split_manifest_sha256')})"
             )
 
         # Check split protocol version
         if manifest_json.get("split_protocol_version") != meta.get("split_protocol_version"):
-            art_sp = meta.get("split_protocol_version")
-            man_sp = manifest_json.get("split_protocol_version")
             errors.append(
-                f"Split protocol version mismatch: artifact has '{art_sp}', "
-                f"companion manifest has '{man_sp}'"
+                f"Split protocol version mismatch: artifact has "
+                f"'{meta.get('split_protocol_version')}', companion manifest has "
+                f"'{manifest_json.get('split_protocol_version')}'"
             )
 
         # Check feature contract version
-        if manifest_json.get("feature_contract_version") != FEATURE_CONTRACT_VERSION:
-            man_fc = manifest_json.get("feature_contract_version")
+        if manifest_json.get("feature_contract_version") != meta.get("feature_contract_version"):
             errors.append(
-                f"Invalid feature_contract_version in companion manifest: "
-                f"expected {FEATURE_CONTRACT_VERSION}, got {man_fc}"
+                f"Feature contract version mismatch: artifact has "
+                f"'{meta.get('feature_contract_version')}', companion manifest has "
+                f"'{manifest_json.get('feature_contract_version')}'"
             )
 
-        # Check feature list and order
-        if manifest_json.get("baseline_ml_features_in_order") != list(ML_FEATURE_COLUMNS):
+        # Check output feature count and order
+        if manifest_json.get("output_features_count") != meta.get("output_features_count"):
             errors.append(
-                "Companion manifest 'baseline_ml_features_in_order' does not match contract columns"
+                f"Output features count mismatch: artifact has "
+                f"{meta.get('output_features_count')}, companion manifest has "
+                f"{manifest_json.get('output_features_count')}"
+            )
+        if manifest_json.get("output_features_in_order") != meta.get("output_features_in_order"):
+            errors.append(
+                "Output features in order mismatch between artifact and companion manifest"
             )
 
-        # Check preprocessing policy version
-        if manifest_json.get("preprocessing_policy_version") != PREPROCESSING_POLICY_VERSION:
-            man_pv = manifest_json.get("preprocessing_policy_version")
+        # Check train row count
+        if manifest_json.get("train_row_count") != meta.get("train_row_count"):
             errors.append(
-                f"Invalid preprocessing_policy_version in companion manifest: "
-                f"expected {PREPROCESSING_POLICY_VERSION}, got {man_pv}"
+                f"Train row count mismatch: artifact has {meta.get('train_row_count')}, "
+                f"companion manifest has {manifest_json.get('train_row_count')}"
             )
 
-    # 6. Verify against official split manifest if provided
+        # Check config
+        if manifest_json.get("config") != meta.get("config"):
+            errors.append("Config mismatch between artifact and companion manifest")
+
+    # 8. Verify against official split manifest if provided
     if split_manifest_path is not None:
         split_p = Path(split_manifest_path)
         if not split_p.is_file():
             errors.append(f"Referenced split manifest not found: {split_p}")
         else:
-            actual_sm_sha256 = _sha256_file(split_p)
-            # Verify artifact was fit on this split manifest
-            if meta and meta.get("split_manifest_sha256") != actual_sm_sha256:
-                errors.append(
-                    f"Artifact was not fit on current split manifest: "
-                    f"artifact recorded {meta.get('split_manifest_sha256')}, "
-                    f"current split manifest has {actual_sm_sha256}"
-                )
-            if manifest_json and manifest_json.get("split_manifest_sha256") != actual_sm_sha256:
-                man_sm = manifest_json.get("split_manifest_sha256")
-                errors.append(
-                    f"Companion manifest split_manifest_sha256 ({man_sm}) "
-                    f"does not match current split manifest hash ({actual_sm_sha256})"
-                )
+            try:
+                sm_json = json.loads(split_p.read_text(encoding="utf-8"))
+                if not isinstance(sm_json, dict) or len(sm_json) == 0:
+                    errors.append(
+                        f"Split manifest is empty or not a valid JSON object: {split_p}"
+                    )
+                else:
+                    actual_sm_sha256 = _sha256_file(split_p)
+                    # Verify artifact was fit on this split manifest
+                    if meta and meta.get("split_manifest_sha256") != actual_sm_sha256:
+                        errors.append(
+                            f"Artifact was not fit on current split manifest: "
+                            f"artifact recorded {meta.get('split_manifest_sha256')}, "
+                            f"current split manifest has {actual_sm_sha256}"
+                        )
+                    if (
+                        manifest_json
+                        and manifest_json.get("split_manifest_sha256") != actual_sm_sha256
+                    ):
+                        man_sm = manifest_json.get("split_manifest_sha256")
+                        errors.append(
+                            f"Companion manifest split_manifest_sha256 ({man_sm}) "
+                            f"does not match current split manifest hash ({actual_sm_sha256})"
+                        )
+                    if sm_json.get("dataset_sha256") != expected_dataset_sha256:
+                        errors.append(
+                            f"Split manifest dataset_sha256 mismatch: "
+                            f"expected {expected_dataset_sha256}, "
+                            f"got {sm_json.get('dataset_sha256')}"
+                        )
+                    if sm_json.get("split_protocol_version") != SPLIT_PROTOCOL_VERSION:
+                        errors.append(
+                            f"Split manifest protocol version mismatch: "
+                            f"expected {SPLIT_PROTOCOL_VERSION}, "
+                            f"got {sm_json.get('split_protocol_version')}"
+                        )
+            except Exception as e:
+                errors.append(f"Error reading split manifest JSON: {e}")
 
     status = "PASS" if not errors else "FAIL"
     return {
