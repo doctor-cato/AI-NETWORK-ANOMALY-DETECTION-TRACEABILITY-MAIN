@@ -19,6 +19,7 @@ Tests all 13 mandatory criteria:
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import tempfile
 from pathlib import Path
@@ -42,6 +43,16 @@ from network_anomaly.preprocessing.pipeline import (
     audit_column_tokens,
     verify_preprocessing_artifact,
 )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+PREPROCESS_SCRIPT = REPOSITORY_ROOT / "scripts" / "preprocess_nf_unsw_nb15_v3.py"
+
+
+def _load_preprocess_cli():
+    spec = importlib.util.spec_from_file_location("preprocess_cli", PREPROCESS_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture
@@ -419,7 +430,7 @@ def test_verify_preprocessing_artifact_helper(synthetic_47_feature_data):
 
 def test_cli_preprocess_absent_dataset_skips(monkeypatch):
     """Test that preprocess CLI cleanly outputs SKIPPED and exits 0 when dataset is absent."""
-    import scripts.preprocess_nf_unsw_nb15_v3 as prep_cli
+    prep_cli = _load_preprocess_cli()
 
     fake_args = [
         "preprocess_nf_unsw_nb15_v3.py",
@@ -433,7 +444,7 @@ def test_cli_preprocess_absent_dataset_skips(monkeypatch):
 
 def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
     """Test that preprocess CLI with --verify-only verifies an existing valid artifact."""
-    import scripts.preprocess_nf_unsw_nb15_v3 as prep_cli
+    prep_cli = _load_preprocess_cli()
 
     df_train, _, _ = synthetic_47_feature_data
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -474,7 +485,7 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
 
 def test_cli_preprocess_verify_only_missing_manifest_fails(synthetic_47_feature_data, monkeypatch):
     """Test CLI --verify-only fails closed (exit code 1) when manifest is missing."""
-    import scripts.preprocess_nf_unsw_nb15_v3 as prep_cli
+    prep_cli = _load_preprocess_cli()
 
     df_train, _, _ = synthetic_47_feature_data
     prep = TrainOnlyPreprocessor(dataset_sha256=EXPECTED_DATASET_SHA256)
