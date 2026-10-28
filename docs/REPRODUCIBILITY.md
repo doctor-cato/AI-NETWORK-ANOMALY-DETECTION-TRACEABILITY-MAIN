@@ -122,7 +122,7 @@ Artifacts produced:
 
 Reproducibility properties:
 - Independent dual-pass check (`--check-reproducibility`) verifies 100% parameter and numeric output identity.
-- Verify-only mode (`--verify-only`) validates artifact schema and dataset checksum without retraining.
+- Verify-only mode (`--verify-only`) validates artifact schema, companion manifest integrity, and dataset/split checksums without retraining (fails closed if companion manifest is missing or hashes mismatch).
 - Absent raw bytes: prints `PREPROCESSING: SKIPPED (raw dataset absent)` and exits `0`.
 
 ## What runs where

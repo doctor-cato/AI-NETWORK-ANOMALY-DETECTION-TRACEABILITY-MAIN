@@ -23,7 +23,8 @@ The transformer in `src/network_anomaly/preprocessing/pipeline.py` strictly adhe
 
 1. **Pre-transform token audit:** preserves separate audit counts (`missing`, `nan`,
    `positive_infinity`, `negative_infinity`, `invalid_numeric`) before transformation across all
-   47 features.
+   47 features. Uses `keep_default_na=False` on CSV loading to distinguish literal empty cells (`""`)
+   from literal `NaN` strings and non-finite values.
 2. **Fail-closed invalid numeric tokens:** rejects unparseable string tokens with a hard `ValueError`
    unless an explicit schema correction is provided.
 3. **Internal missing mapping:** maps missing tokens (`""`, `None`, `pd.NA`), `NaN`, positive infinity
@@ -43,6 +44,15 @@ The transformer in `src/network_anomaly/preprocessing/pipeline.py` strictly adhe
 7. **Robust handling of edge cases:** features with zero variance (constants) or all-missing values
    on Train are identified, logged in artifact metadata, and handled deterministically without
    division-by-zero or NaNs.
+8. **Missingness indicators:** optionally generates binary indicator columns (`add_missing_indicators=True`)
+   learned strictly from Train and applied to Validation and Test without modifying the feature schema dynamically.
+9. **Unknown discrete categories handling:** configurable via `handle_unknown_categories`:
+   - `"passthrough"` (default): retains unseen category integer codes;
+   - `"sentinel"`: maps unseen categories to training-derived mode;
+   - `"error"`: fails closed with `ValueError` if an unseen category appears during transform.
+10. **Strict companion manifest verification:** enforces fail-closed verification of the `.joblib`
+    artifact alongside its companion `.json` manifest, cross-checking `artifact_sha256`, `split_manifest_sha256`,
+    `dataset_sha256`, `feature_contract_version`, and `preprocessing_policy_version`.
 
 ## Numeric-coded semantics
 

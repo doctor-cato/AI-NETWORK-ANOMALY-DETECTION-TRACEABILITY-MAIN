@@ -6,6 +6,7 @@ This module implements a reusable, leak-free preprocessing pipeline for NF-UNSW-
 3. Freezes all learned state so Validation and Test receive only immutable transforms.
 4. Audits missing, NaN, positive infinity, negative infinity, and rejects invalid numeric tokens.
 5. Saves versioned, verifiable preprocessing artifacts with complete provenance metadata.
+6. Enforces strict companion manifest verification with fail-closed integrity checks.
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ FEATURE_CONTRACT_VERSION = "nf-unsw-nb15-v3-baseline-47"
 EXPECTED_DATASET_SHA256 = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
 
 VALID_SCALER_TYPES = {"none", "robust", "standard", "minmax"}
+VALID_UNKNOWN_CATEGORIES_STRATEGIES = {"passthrough", "sentinel", "error"}
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,9 @@ class PreprocessingConfig:
     imputer_strategy_categorical: str = "mode"
     add_missing_indicators: bool = False
     handle_unknown_categories: str = "passthrough"
+
+    def __post_init__(self) -> None:
+        self.validate()
 
     def validate(self) -> None:
         if self.scaler_type not in VALID_SCALER_TYPES:
@@ -72,10 +77,25 @@ class PreprocessingConfig:
                 f"Unsupported categorical imputer strategy: '{self.imputer_strategy_categorical}'. "
                 "Baseline policy requires 'mode'."
             )
+        if self.handle_unknown_categories not in VALID_UNKNOWN_CATEGORIES_STRATEGIES:
+            raise ValueError(
+                f"Invalid handle_unknown_categories: '{self.handle_unknown_categories}'. "
+                f"Supported: {sorted(VALID_UNKNOWN_CATEGORIES_STRATEGIES)}"
+            )
 
 
-def audit_column_tokens(series: pd.Series, column_name: str) -> Tuple[Dict[str, int], np.ndarray]:
+def audit_column_tokens(series: pd.Series, column_name: str, return_masks: bool = False) -> Union[
+    Tuple[Dict[str, int], np.ndarray],
+    Tuple[Dict[str, int], np.ndarray, Dict[str, np.ndarray]],
+]:
     """Audit values in a column for missingness, non-finite states, and invalid numeric tokens.
+
+    Preserves distinct counts for:
+    - blank/missing (literal empty string '' from CSV)
+    - NaN (literal string 'nan' or float NaN)
+    - positive infinity (literal string 'inf' or float inf)
+    - negative infinity (literal string '-inf' or float -inf)
+    - invalid numeric (unparseable strings, raises ValueError fail-closed)
 
     Returns
     -------
@@ -83,6 +103,8 @@ def audit_column_tokens(series: pd.Series, column_name: str) -> Tuple[Dict[str, 
         Detailed counts of missing, nan, pos/neg infinity, invalid numeric, finite.
     cleaned_float_array : np.ndarray
         Float64 array where non-finite tokens (missing, nan, +inf, -inf) are represented as np.nan.
+    token_masks : dict, optional
+        Boolean masks for 'missing', 'nan', 'pos_inf', 'neg_inf' (returned if return_masks=True).
 
     Raises
     ------
@@ -96,6 +118,11 @@ def audit_column_tokens(series: pd.Series, column_name: str) -> Tuple[Dict[str, 
     neg_inf_count = 0
     invalid_tokens = []
 
+    missing_mask = np.zeros(total, dtype=bool)
+    nan_mask = np.zeros(total, dtype=bool)
+    pos_inf_mask = np.zeros(total, dtype=bool)
+    neg_inf_mask = np.zeros(total, dtype=bool)
+
     if pd.api.types.is_numeric_dtype(series.dtype):
         vals = series.to_numpy(dtype=np.float64, copy=True)
         pos_inf_mask = np.isposinf(vals)
@@ -107,8 +134,7 @@ def audit_column_tokens(series: pd.Series, column_name: str) -> Tuple[Dict[str, 
         nan_count = int(nan_mask.sum())
         finite_count = total - (pos_inf_count + neg_inf_count + nan_count)
 
-        # In numeric pandas series, both empty strings and NaNs parse as NaN,
-        # but infinities are distinct float objects.
+        # In numeric pandas series, infinities are distinct float values.
         # Map infinities to np.nan sentinel for downstream imputation
         vals[pos_inf_mask | neg_inf_mask] = np.nan
         cleaned_array = vals
@@ -117,7 +143,12 @@ def audit_column_tokens(series: pd.Series, column_name: str) -> Tuple[Dict[str, 
         cleaned_array = np.empty(total, dtype=np.float64)
         for i, val in enumerate(series):
             if val is None or val == "" or pd.isna(val):
-                missing_count += 1
+                if val == "":
+                    missing_count += 1
+                    missing_mask[i] = True
+                else:
+                    nan_count += 1
+                    nan_mask[i] = True
                 cleaned_array[i] = np.nan
                 continue
 
@@ -126,24 +157,30 @@ def audit_column_tokens(series: pd.Series, column_name: str) -> Tuple[Dict[str, 
 
             if val_lower in {"nan", "null", "none"}:
                 nan_count += 1
+                nan_mask[i] = True
                 cleaned_array[i] = np.nan
             elif val_lower in {"inf", "+inf", "infinity", "+infinity"}:
                 pos_inf_count += 1
+                pos_inf_mask[i] = True
                 cleaned_array[i] = np.nan
             elif val_lower in {"-inf", "-infinity"}:
                 neg_inf_count += 1
+                neg_inf_mask[i] = True
                 cleaned_array[i] = np.nan
             else:
                 try:
                     num = float(val_str)
                     if math.isnan(num):
                         nan_count += 1
+                        nan_mask[i] = True
                         cleaned_array[i] = np.nan
                     elif math.isinf(num):
                         if num > 0:
                             pos_inf_count += 1
+                            pos_inf_mask[i] = True
                         else:
                             neg_inf_count += 1
+                            neg_inf_mask[i] = True
                         cleaned_array[i] = np.nan
                     else:
                         cleaned_array[i] = num
@@ -169,6 +206,16 @@ def audit_column_tokens(series: pd.Series, column_name: str) -> Tuple[Dict[str, 
         "total_non_finite": missing_count + nan_count + pos_inf_count + neg_inf_count,
         "finite": finite_count,
     }
+
+    if return_masks:
+        masks = {
+            "missing": missing_mask,
+            "nan": nan_mask,
+            "pos_inf": pos_inf_mask,
+            "neg_inf": neg_inf_mask,
+        }
+        return audit_counts, cleaned_array, masks
+
     return audit_counts, cleaned_array
 
 
@@ -203,6 +250,7 @@ class TrainOnlyPreprocessor:
         self.category_vocabularies_: Dict[str, List[int]] = {}
         self.constant_features_: List[str] = []
         self.all_missing_columns_: List[str] = []
+        self.indicator_features_: List[Tuple[str, str]] = []
         self.audit_counts_train_: Dict[str, Dict[str, int]] = {}
         self.train_row_count_: int = 0
         self.fitted_at_utc_: Optional[str] = None
@@ -240,6 +288,7 @@ class TrainOnlyPreprocessor:
         self.category_vocabularies_ = {}
         self.constant_features_ = []
         self.all_missing_columns_ = []
+        self.indicator_features_ = []
         self.audit_counts_train_ = {}
 
         # 2. Audit and learn imputers and vocabularies on Train
@@ -247,9 +296,20 @@ class TrainOnlyPreprocessor:
 
         for col in ML_FEATURE_COLUMNS:
             series = X[col]
-            col_audit, cleaned_arr = audit_column_tokens(series, col)
+            col_audit, cleaned_arr = audit_column_tokens(series, col, return_masks=False)
             self.audit_counts_train_[col] = col_audit
             cleaned_train_arrays[col] = cleaned_arr
+
+            # Register missingness indicators if enabled (learned strictly from Train)
+            if self.config.add_missing_indicators:
+                if col_audit["missing"] > 0:
+                    self.indicator_features_.append((col, "missing"))
+                if col_audit["nan"] > 0:
+                    self.indicator_features_.append((col, "nan"))
+                if col_audit["positive_infinity"] > 0:
+                    self.indicator_features_.append((col, "pos_inf"))
+                if col_audit["negative_infinity"] > 0:
+                    self.indicator_features_.append((col, "neg_inf"))
 
             finite_mask = ~np.isnan(cleaned_arr)
             finite_values = cleaned_arr[finite_mask]
@@ -332,8 +392,7 @@ class TrainOnlyPreprocessor:
         Returns
         -------
         X_out : pd.DataFrame
-            Cleaned and transformed DataFrame with exactly 47 finite feature columns
-            in exact contract order.
+            Cleaned and transformed DataFrame with exact feature columns in contract order.
         """
         if not self.is_fitted_:
             raise RuntimeError("Preprocessor has not been fitted. Call fit(X_train) first.")
@@ -345,11 +404,13 @@ class TrainOnlyPreprocessor:
         validate_feature_selection(X.columns, require_complete=True)
 
         transformed_cols: Dict[str, np.ndarray] = {}
+        token_masks_by_col: Dict[str, Dict[str, np.ndarray]] = {}
 
         # 2. Audit and transform each column using frozen train parameters
         for col in ML_FEATURE_COLUMNS:
             series = X[col]
-            _, cleaned_arr = audit_column_tokens(series, col)
+            _, cleaned_arr, masks = audit_column_tokens(series, col, return_masks=True)
+            token_masks_by_col[col] = masks
 
             # Impute non-finite values (missing, nan, inf) using train fitted value
             nan_mask = np.isnan(cleaned_arr)
@@ -362,15 +423,40 @@ class TrainOnlyPreprocessor:
                 scale = params["scale"]
                 cleaned_arr = (cleaned_arr - center) / scale
 
-            # If categorical-coded, cast to int64 or float representation
+            # If categorical-coded, check categories and handle unknowns
             if col in CATEGORICAL_CODED_COLUMNS:
-                # Keep discrete codes as float64 or int64
                 cleaned_arr = np.round(cleaned_arr)
+                known_vocab = set(self.category_vocabularies_.get(col, []))
+                int_codes = cleaned_arr.astype(np.int64)
+                unknown_mask = ~np.isin(int_codes, list(known_vocab))
+
+                if np.any(unknown_mask):
+                    if self.config.handle_unknown_categories == "error":
+                        unknown_vals = sorted(list(set(int_codes[unknown_mask])))
+                        vocab_list = sorted(list(known_vocab))
+                        raise ValueError(
+                            f"Unseen category encountered in column '{col}' during transform: "
+                            f"{unknown_vals}. Known categories from Train: {vocab_list}"
+                        )
+                    elif self.config.handle_unknown_categories == "sentinel":
+                        cleaned_arr[unknown_mask] = self.imputed_values_[col]
+                    elif self.config.handle_unknown_categories == "passthrough":
+                        pass
 
             transformed_cols[col] = cleaned_arr
 
-        # Construct result DataFrame preserving exact column order and index
-        df_out = pd.DataFrame(transformed_cols, index=X.index, columns=list(ML_FEATURE_COLUMNS))
+        # 3. Append missingness indicators if enabled
+        if self.config.add_missing_indicators and self.indicator_features_:
+            for col, ind_type in self.indicator_features_:
+                ind_col_name = f"{col}__is_{ind_type}"
+                col_masks = token_masks_by_col.get(col, {})
+                mask = col_masks.get(ind_type, np.zeros(len(X), dtype=bool))
+                transformed_cols[ind_col_name] = mask.astype(np.float64)
+
+        output_cols = list(ML_FEATURE_COLUMNS) + [
+            f"{c}__is_{t}" for c, t in self.indicator_features_
+        ]
+        df_out = pd.DataFrame(transformed_cols, index=X.index, columns=output_cols)
 
         # Assert no NaNs, no Infs, finite output
         if not np.all(np.isfinite(df_out.to_numpy())):
@@ -389,6 +475,10 @@ class TrainOnlyPreprocessor:
         if not self.is_fitted_:
             raise RuntimeError("Preprocessor has not been fitted")
 
+        output_cols = list(ML_FEATURE_COLUMNS) + [
+            f"{c}__is_{t}" for c, t in self.indicator_features_
+        ]
+
         return {
             "artifact_type": "nf-unsw-nb15-v3-train-only-preprocessor",
             "artifact_version": 1,
@@ -399,6 +489,8 @@ class TrainOnlyPreprocessor:
             "feature_contract_version": FEATURE_CONTRACT_VERSION,
             "baseline_ml_features_count": len(ML_FEATURE_COLUMNS),
             "baseline_ml_features_in_order": list(ML_FEATURE_COLUMNS),
+            "output_features_count": len(output_cols),
+            "output_features_in_order": output_cols,
             "categorical_coded_columns": list(CATEGORICAL_CODED_COLUMNS),
             "quantitative_ml_columns": list(QUANTITATIVE_ML_COLUMNS),
             "preprocessing_policy_version": PREPROCESSING_POLICY_VERSION,
@@ -407,6 +499,7 @@ class TrainOnlyPreprocessor:
             "fitted_at_utc": self.fitted_at_utc_,
             "constant_features": list(self.constant_features_),
             "all_missing_columns": list(self.all_missing_columns_),
+            "indicator_features": [f"{c}__is_{t}" for c, t in self.indicator_features_],
             "environment": {
                 "python": sys.version,
                 "numpy": np.__version__,
@@ -416,7 +509,7 @@ class TrainOnlyPreprocessor:
         }
 
     def save(self, artifact_path: Path, manifest_path: Optional[Path] = None) -> str:
-        """Save fitted preprocessor artifact and optional companion manifest.
+        """Save fitted preprocessor artifact and companion manifest.
 
         Returns the SHA-256 hash of the saved artifact.
         """
@@ -434,6 +527,7 @@ class TrainOnlyPreprocessor:
                 "category_vocabularies": self.category_vocabularies_,
                 "constant_features": self.constant_features_,
                 "all_missing_columns": self.all_missing_columns_,
+                "indicator_features": self.indicator_features_,
                 "audit_counts_train": self.audit_counts_train_,
                 "train_row_count": self.train_row_count_,
                 "fitted_at_utc": self.fitted_at_utc_,
@@ -457,9 +551,10 @@ class TrainOnlyPreprocessor:
                     "scaler_params_count": len(self.scaler_params_),
                     "constant_features_count": len(self.constant_features_),
                     "all_missing_columns_count": len(self.all_missing_columns_),
+                    "indicator_features_count": len(self.indicator_features_),
                 },
             }
-            manifest_path.write_text(json.dumps(manifest_data, indent=2), encoding="utf-8")
+            manifest_path.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
 
         return artifact_sha256
 
@@ -550,6 +645,9 @@ class TrainOnlyPreprocessor:
         preprocessor.category_vocabularies_ = fitted_state["category_vocabularies"]
         preprocessor.constant_features_ = fitted_state.get("constant_features", [])
         preprocessor.all_missing_columns_ = fitted_state.get("all_missing_columns", [])
+        preprocessor.indicator_features_ = [
+            tuple(item) for item in fitted_state.get("indicator_features", [])
+        ]
         preprocessor.audit_counts_train_ = fitted_state.get("audit_counts_train", {})
         preprocessor.train_row_count_ = fitted_state.get("train_row_count", 0)
         preprocessor.fitted_at_utc_ = fitted_state.get("fitted_at_utc")
@@ -563,6 +661,9 @@ def load_and_preprocess_split(
     dataset_path: Union[str, Path],
     indices_dir: Union[str, Path],
     scaler_type: str = "none",
+    add_missing_indicators: bool = False,
+    handle_unknown_categories: str = "passthrough",
+    config: Optional[PreprocessingConfig] = None,
     save_artifact_path: Optional[Union[str, Path]] = None,
     save_manifest_path: Optional[Union[str, Path]] = None,
 ) -> Tuple[
@@ -577,7 +678,8 @@ def load_and_preprocess_split(
     Guarantees:
     - Preprocessing is fitted EXCLUSIVELY on Train.
     - Validation and Test receive only frozen transforms.
-    - Features strictly match the 47 baseline ML features contract.
+    - Features strictly match the baseline ML features contract.
+    - Preserves distinct missing vs non-finite states via keep_default_na=False.
     - Returns (X, y_label, y_attack) for each partition.
 
     Parameters
@@ -590,6 +692,12 @@ def load_and_preprocess_split(
         Directory containing partition index files (*_indices.csv.gz).
     scaler_type : str
         Scaler type: 'none', 'robust', 'standard', 'minmax'. Default 'none'.
+    add_missing_indicators : bool
+        Whether to generate missingness indicator columns learned from Train.
+    handle_unknown_categories : str
+        Strategy for unseen categories: 'passthrough', 'sentinel', 'error'.
+    config : PreprocessingConfig, optional
+        Explicit configuration. If provided, overrides individual flags.
     save_artifact_path : Path or str, optional
         Path to save fitted preprocessor .joblib.
     save_manifest_path : Path or str, optional
@@ -631,9 +739,15 @@ def load_and_preprocess_split(
     val_indices = load_partition_indices(manifest, indices_dir, "validation")
     test_indices = load_partition_indices(manifest, indices_dir, "test")
 
-    # 3. Read dataset columns (47 ML features + 2 targets)
+    # 3. Read dataset columns (47 ML features + 2 targets) with keep_default_na=False
+    # This prevents pandas from silently collapsing empty string '' into NaN
     cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
-    df_raw = pd.read_csv(dataset_path, usecols=cols_to_read)
+    df_raw = pd.read_csv(
+        dataset_path,
+        usecols=cols_to_read,
+        keep_default_na=False,
+        low_memory=False,
+    )
 
     # Verify column presence
     validate_feature_selection(df_raw[list(ML_FEATURE_COLUMNS)].columns)
@@ -656,7 +770,14 @@ def load_and_preprocess_split(
     y_test_attack = df_test["Attack"]
 
     # 5. Fit preprocessor EXCLUSIVELY on Train
-    config = PreprocessingConfig(scaler_type=scaler_type)
+    if config is None:
+        config = PreprocessingConfig(
+            scaler_type=scaler_type,
+            add_missing_indicators=add_missing_indicators,
+            handle_unknown_categories=handle_unknown_categories,
+        )
+    config.validate()
+
     preprocessor = TrainOnlyPreprocessor(
         config=config,
         dataset_sha256=dataset_sha256,
@@ -684,7 +805,7 @@ def load_and_preprocess_split(
         "split_manifest_sha256": manifest_sha256,
         "preprocessor_artifact_sha256": saved_sha256,
         "fit_boundary": "TRAIN_ONLY",
-        "scaler_type": scaler_type,
+        "scaler_type": config.scaler_type,
         "row_counts": {
             "train": len(X_train),
             "validation": len(X_val),
@@ -692,6 +813,7 @@ def load_and_preprocess_split(
         },
         "constant_features": preprocessor.constant_features_,
         "all_missing_columns": preprocessor.all_missing_columns_,
+        "indicator_features": [f"{c}__is_{t}" for c, t in preprocessor.indicator_features_],
         "train_audit_counts": preprocessor.audit_counts_train_,
     }
 
@@ -704,71 +826,165 @@ def load_and_preprocess_split(
 
 def verify_preprocessing_artifact(
     artifact_path: Union[str, Path],
-    manifest_path: Optional[Union[str, Path]] = None,
+    manifest_path: Union[str, Path],
+    split_manifest_path: Optional[Union[str, Path]] = None,
     expected_dataset_sha256: str = EXPECTED_DATASET_SHA256,
 ) -> Dict[str, Any]:
-    """Inspect and verify an existing preprocessor artifact and companion manifest.
+    """Inspect and verify a preprocessor artifact, companion manifest, and split consistency.
+
+    Fails closed if the companion manifest is missing, if any file hash mismatches,
+    or if metadata fields (feature contract, policy version, split ID) do not align.
 
     Parameters
     ----------
     artifact_path : Path or str
-        Path to the saved .joblib artifact.
-    manifest_path : Path or str, optional
-        Path to companion .json manifest.
+        Path to the saved .joblib artifact. Required.
+    manifest_path : Path or str
+        Path to companion .json manifest. Required.
+    split_manifest_path : Path or str, optional
+        Path to official split manifest. When provided, verifies consistency of
+        split_manifest_sha256, split_protocol_version, and dataset_sha256.
     expected_dataset_sha256 : str
         Expected dataset SHA-256 hash.
 
     Returns
     -------
     dict
-        Verification findings with PASS/FAIL status.
+        Verification findings with PASS/FAIL status and detailed error list.
     """
     errors: List[str] = []
     artifact_path = Path(artifact_path)
+    manifest_path = Path(manifest_path)
 
+    # 1. Check artifact file existence
     if not artifact_path.is_file():
+        errors.append(f"Artifact file not found: {artifact_path}")
+
+    # 2. Check companion manifest file existence (MANDATORY per policy)
+    if not manifest_path.is_file():
+        errors.append(f"Companion manifest file not found: {manifest_path}")
+
+    if errors:
         return {
             "status": "FAIL",
-            "errors": [f"Artifact file not found: {artifact_path}"],
+            "errors": errors,
             "artifact_path": str(artifact_path),
+            "manifest_path": str(manifest_path),
         }
 
+    # 3. Load and validate companion manifest JSON first
+    manifest_json = {}
+    try:
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+        manifest_json = json.loads(manifest_text)
+    except Exception as e:
+        errors.append(f"Error reading companion manifest JSON: {e}")
+
+    # 4. Verify artifact SHA-256 on disk against companion manifest recorded hash
+    actual_artifact_sha256 = _sha256_file(artifact_path)
+    if manifest_json:
+        recorded_artifact_sha = manifest_json.get("artifact_sha256")
+        if not recorded_artifact_sha:
+            errors.append("Companion manifest missing required field: 'artifact_sha256'")
+        elif recorded_artifact_sha != actual_artifact_sha256:
+            errors.append(
+                f"Artifact SHA-256 mismatch in manifest: "
+                f"expected {actual_artifact_sha256}, recorded {recorded_artifact_sha}"
+            )
+
+    # 5. Load and validate artifact .joblib
+    preprocessor = None
+    meta = {}
     try:
         preprocessor = TrainOnlyPreprocessor.load(
             artifact_path=artifact_path,
             expected_dataset_sha256=expected_dataset_sha256,
         )
+        meta = preprocessor.get_metadata()
     except Exception as e:
-        return {
-            "status": "FAIL",
-            "errors": [f"Error loading/validating preprocessor artifact: {e}"],
-            "artifact_path": str(artifact_path),
-        }
+        errors.append(f"Error loading/validating preprocessor artifact: {e}")
 
-    meta = preprocessor.get_metadata()
+    # 6. Cross-verify hashes and contract metadata between artifact and companion manifest
+    if preprocessor is not None and manifest_json:
 
-    # Check companion manifest if provided
-    if manifest_path is not None:
-        manifest_path = Path(manifest_path)
-        if not manifest_path.is_file():
-            errors.append(f"Companion manifest file not found: {manifest_path}")
+        # Check dataset SHA-256
+        recorded_ds_sha = manifest_json.get("dataset_sha256")
+        if recorded_ds_sha != meta.get("dataset_sha256"):
+            errors.append(
+                f"Dataset SHA-256 mismatch between artifact ({meta.get('dataset_sha256')}) "
+                f"and companion manifest ({recorded_ds_sha})"
+            )
+        if recorded_ds_sha != expected_dataset_sha256:
+            errors.append(
+                f"Dataset SHA-256 in manifest does not match expected ({expected_dataset_sha256})"
+            )
+
+        # Check split manifest SHA-256
+        recorded_sm_sha = manifest_json.get("split_manifest_sha256")
+        if recorded_sm_sha != meta.get("split_manifest_sha256"):
+            art_sm = meta.get("split_manifest_sha256")
+            errors.append(
+                f"Split manifest SHA-256 mismatch between artifact ({art_sm}) "
+                f"and companion manifest ({recorded_sm_sha})"
+            )
+
+        # Check split protocol version
+        if manifest_json.get("split_protocol_version") != meta.get("split_protocol_version"):
+            art_sp = meta.get("split_protocol_version")
+            man_sp = manifest_json.get("split_protocol_version")
+            errors.append(
+                f"Split protocol version mismatch: artifact has '{art_sp}', "
+                f"companion manifest has '{man_sp}'"
+            )
+
+        # Check feature contract version
+        if manifest_json.get("feature_contract_version") != FEATURE_CONTRACT_VERSION:
+            man_fc = manifest_json.get("feature_contract_version")
+            errors.append(
+                f"Invalid feature_contract_version in companion manifest: "
+                f"expected {FEATURE_CONTRACT_VERSION}, got {man_fc}"
+            )
+
+        # Check feature list and order
+        if manifest_json.get("baseline_ml_features_in_order") != list(ML_FEATURE_COLUMNS):
+            errors.append(
+                "Companion manifest 'baseline_ml_features_in_order' does not match contract columns"
+            )
+
+        # Check preprocessing policy version
+        if manifest_json.get("preprocessing_policy_version") != PREPROCESSING_POLICY_VERSION:
+            man_pv = manifest_json.get("preprocessing_policy_version")
+            errors.append(
+                f"Invalid preprocessing_policy_version in companion manifest: "
+                f"expected {PREPROCESSING_POLICY_VERSION}, got {man_pv}"
+            )
+
+    # 6. Verify against official split manifest if provided
+    if split_manifest_path is not None:
+        split_p = Path(split_manifest_path)
+        if not split_p.is_file():
+            errors.append(f"Referenced split manifest not found: {split_p}")
         else:
-            try:
-                manifest_json = json.loads(manifest_path.read_text(encoding="utf-8"))
-                actual_artifact_sha256 = _sha256_file(artifact_path)
-                recorded_sha256 = manifest_json.get("artifact_sha256")
-                if recorded_sha256 != actual_artifact_sha256:
-                    errors.append(
-                        f"Artifact SHA-256 mismatch in manifest: "
-                        f"expected {actual_artifact_sha256}, recorded {recorded_sha256}"
-                    )
-            except Exception as e:
-                errors.append(f"Error reading companion manifest: {e}")
+            actual_sm_sha256 = _sha256_file(split_p)
+            # Verify artifact was fit on this split manifest
+            if meta and meta.get("split_manifest_sha256") != actual_sm_sha256:
+                errors.append(
+                    f"Artifact was not fit on current split manifest: "
+                    f"artifact recorded {meta.get('split_manifest_sha256')}, "
+                    f"current split manifest has {actual_sm_sha256}"
+                )
+            if manifest_json and manifest_json.get("split_manifest_sha256") != actual_sm_sha256:
+                man_sm = manifest_json.get("split_manifest_sha256")
+                errors.append(
+                    f"Companion manifest split_manifest_sha256 ({man_sm}) "
+                    f"does not match current split manifest hash ({actual_sm_sha256})"
+                )
 
     status = "PASS" if not errors else "FAIL"
     return {
         "status": status,
         "errors": errors,
         "artifact_path": str(artifact_path),
+        "manifest_path": str(manifest_path),
         "metadata": meta,
     }

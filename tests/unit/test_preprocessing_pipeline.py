@@ -19,6 +19,7 @@ Tests all 13 mandatory criteria:
 from __future__ import annotations
 
 import copy
+import json
 import tempfile
 from pathlib import Path
 from typing import Dict, Tuple
@@ -38,6 +39,7 @@ from network_anomaly.preprocessing.pipeline import (
     EXPECTED_DATASET_SHA256,
     PreprocessingConfig,
     TrainOnlyPreprocessor,
+    audit_column_tokens,
     verify_preprocessing_artifact,
 )
 
@@ -434,12 +436,19 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
     import scripts.preprocess_nf_unsw_nb15_v3 as prep_cli
 
     df_train, _, _ = synthetic_47_feature_data
-    prep = TrainOnlyPreprocessor(
-        dataset_sha256=EXPECTED_DATASET_SHA256,
-    )
-    prep.fit(df_train)
-
     with tempfile.TemporaryDirectory() as tmp_dir:
+        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
+        fake_split_manifest.write_text("{}", encoding="utf-8")
+        from network_anomaly.preprocessing.pipeline import _sha256_file
+
+        sm_hash = _sha256_file(fake_split_manifest)
+
+        prep = TrainOnlyPreprocessor(
+            dataset_sha256=EXPECTED_DATASET_SHA256,
+            split_manifest_sha256=sm_hash,
+        )
+        prep.fit(df_train)
+
         art_path = Path(tmp_dir) / "preprocessor.joblib"
         man_path = Path(tmp_dir) / "manifest.json"
         fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
@@ -450,6 +459,8 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
             "preprocess_nf_unsw_nb15_v3.py",
             "--dataset",
             str(fake_ds_path),
+            "--manifest",
+            str(fake_split_manifest),
             "--output-artifact",
             str(art_path),
             "--output-manifest",
@@ -459,3 +470,211 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
         monkeypatch.setattr("sys.argv", fake_args)
         exit_code = prep_cli.main()
         assert exit_code == 0
+
+
+def test_cli_preprocess_verify_only_missing_manifest_fails(synthetic_47_feature_data, monkeypatch):
+    """Test CLI --verify-only fails closed (exit code 1) when manifest is missing."""
+    import scripts.preprocess_nf_unsw_nb15_v3 as prep_cli
+
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(dataset_sha256=EXPECTED_DATASET_SHA256)
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        prep.save(art_path)  # saves artifact only, no manifest
+        fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
+        fake_ds_path.write_text("dummy", encoding="utf-8")
+        nonexistent_man = Path(tmp_dir) / "missing_manifest.json"
+
+        fake_args = [
+            "preprocess_nf_unsw_nb15_v3.py",
+            "--dataset",
+            str(fake_ds_path),
+            "--output-artifact",
+            str(art_path),
+            "--output-manifest",
+            str(nonexistent_man),
+            "--verify-only",
+        ]
+        monkeypatch.setattr("sys.argv", fake_args)
+        exit_code = prep_cli.main()
+        assert exit_code == 1
+
+
+def test_verify_artifact_negative_cases(synthetic_47_feature_data):
+    """Negative tests for artifact verification: missing, corrupted, altered, or mismatched."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="valid_split_manifest_sha256",
+    )
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        # 1. Missing companion manifest
+        missing_man = Path(tmp_dir) / "nonexistent.json"
+        res = verify_preprocessing_artifact(art_path, manifest_path=missing_man)
+        assert res["status"] == "FAIL"
+        assert any("Companion manifest file not found" in e for e in res["errors"])
+
+        # 2. Corrupted JSON companion manifest
+        bad_json_man = Path(tmp_dir) / "bad_json.json"
+        bad_json_man.write_text("not-a-valid-json", encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bad_json_man)
+        assert res["status"] == "FAIL"
+        assert any("Error reading companion manifest JSON" in e for e in res["errors"])
+
+        # 3. Artifact tampered with on disk (corrupted content)
+        tampered_art = Path(tmp_dir) / "tampered.joblib"
+        tampered_art.write_bytes(art_path.read_bytes() + b"\x00\x00")
+        res = verify_preprocessing_artifact(tampered_art, manifest_path=man_path)
+        assert res["status"] == "FAIL"
+        assert any("Artifact SHA-256 mismatch" in e for e in res["errors"])
+
+        # 4. Companion manifest with mismatched split_manifest_sha256
+        man_content = json.loads(man_path.read_text(encoding="utf-8"))
+        mismatched_sm = copy.deepcopy(man_content)
+        mismatched_sm["split_manifest_sha256"] = "mismatched_hash_value"
+        bad_sm_man = Path(tmp_dir) / "bad_sm.json"
+        bad_sm_man.write_text(json.dumps(mismatched_sm), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bad_sm_man)
+        assert res["status"] == "FAIL"
+        assert any("Split manifest SHA-256 mismatch" in e for e in res["errors"])
+
+        # 5. Companion manifest with mismatched feature contract version
+        mismatched_fc = copy.deepcopy(man_content)
+        mismatched_fc["feature_contract_version"] = "wrong-contract-version"
+        bad_fc_man = Path(tmp_dir) / "bad_fc.json"
+        bad_fc_man.write_text(json.dumps(mismatched_fc), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bad_fc_man)
+        assert res["status"] == "FAIL"
+        assert any("Invalid feature_contract_version" in e for e in res["errors"])
+
+        # 6. Companion manifest with mismatched preprocessing policy version
+        mismatched_pv = copy.deepcopy(man_content)
+        mismatched_pv["preprocessing_policy_version"] = "v999.0"
+        bad_pv_man = Path(tmp_dir) / "bad_pv.json"
+        bad_pv_man.write_text(json.dumps(mismatched_pv), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bad_pv_man)
+        assert res["status"] == "FAIL"
+        assert any("Invalid preprocessing_policy_version" in e for e in res["errors"])
+
+        # 7. Companion manifest with tampered feature order
+        tampered_order = copy.deepcopy(man_content)
+        tampered_order["baseline_ml_features_in_order"].reverse()
+        bad_order_man = Path(tmp_dir) / "bad_order.json"
+        bad_order_man.write_text(json.dumps(tampered_order), encoding="utf-8")
+        res = verify_preprocessing_artifact(art_path, manifest_path=bad_order_man)
+        assert res["status"] == "FAIL"
+        assert any("baseline_ml_features_in_order" in e for e in res["errors"])
+
+        # 8. Mismatched dataset SHA-256
+        res = verify_preprocessing_artifact(
+            art_path, manifest_path=man_path, expected_dataset_sha256="wrong_ds_hash"
+        )
+        assert res["status"] == "FAIL"
+        assert any("Dataset SHA-256" in e for e in res["errors"])
+
+
+def test_audit_column_tokens_distinguishes_empty_from_nan():
+    """Verify audit_column_tokens separates empty string '' from 'nan', 'inf', '-inf'."""
+    s = pd.Series(["", "nan", "NaN", "inf", "+inf", "-inf", "42.0", "100.5"])
+    counts, cleaned, masks = audit_column_tokens(s, "test_col", return_masks=True)
+
+    assert counts["missing"] == 1
+    assert counts["nan"] == 2
+    assert counts["positive_infinity"] == 2
+    assert counts["negative_infinity"] == 1
+    assert counts["finite"] == 2
+
+    assert bool(masks["missing"][0]) is True
+    assert bool(masks["nan"][1]) is True
+    assert bool(masks["nan"][2]) is True
+    assert bool(masks["pos_inf"][3]) is True
+    assert bool(masks["pos_inf"][4]) is True
+    assert bool(masks["neg_inf"][5]) is True
+
+
+def test_add_missing_indicators_behavior(synthetic_47_feature_data):
+    """Test add_missing_indicators learns strictly on Train and transforms Val/Test consistently."""
+    df_train, df_val, _ = synthetic_47_feature_data
+
+    col_with_missing = "SRC_TO_DST_SECOND_BYTES"
+    col_with_nan = "IN_BYTES"
+
+    df_train_mod = df_train.copy()
+    df_train_mod.loc[0, col_with_missing] = np.nan
+    df_train_mod.loc[1, col_with_nan] = np.nan
+
+    config = PreprocessingConfig(add_missing_indicators=True)
+    prep = TrainOnlyPreprocessor(config=config)
+    prep.fit(df_train_mod)
+
+    assert len(prep.indicator_features_) >= 2
+    indicator_cols = [f"{c}__is_{t}" for c, t in prep.indicator_features_]
+
+    out_train = prep.transform(df_train_mod)
+    assert all(c in out_train.columns for c in indicator_cols)
+    assert len(out_train.columns) == 47 + len(prep.indicator_features_)
+
+    # Validation missingness in unseen column does NOT add a new column to Val
+    df_val_mod = df_val.copy()
+    col_clean_in_train = "OUT_BYTES"
+    df_val_mod.loc[0, col_clean_in_train] = np.nan
+
+    out_val = prep.transform(df_val_mod)
+    assert list(out_val.columns) == list(out_train.columns)
+    assert f"{col_clean_in_train}__is_nan" not in out_val.columns
+
+    # Test persistence of indicators across save and load
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        loaded_prep = TrainOnlyPreprocessor.load(art_path)
+        assert loaded_prep.indicator_features_ == prep.indicator_features_
+        out_loaded = loaded_prep.transform(df_train_mod)
+        pd.testing.assert_frame_equal(out_train, out_loaded)
+
+
+def test_handle_unknown_categories_strategies(synthetic_47_feature_data):
+    """Test handle_unknown_categories: passthrough, sentinel, error, and invalid rejection."""
+    # 1. Invalid strategy rejected
+    with pytest.raises(ValueError, match="Invalid handle_unknown_categories"):
+        PreprocessingConfig(handle_unknown_categories="invalid_strategy")
+
+    df_train, df_val, _ = synthetic_47_feature_data
+    cat_col = "PROTOCOL"
+
+    df_train_mod = df_train.copy()
+    df_train_mod[cat_col] = 6  # known vocabulary is [6]
+
+    df_val_mod = df_val.copy()
+    df_val_mod[cat_col] = 99  # unknown category in Val
+
+    # 2. Strategy: error
+    config_err = PreprocessingConfig(handle_unknown_categories="error")
+    prep_err = TrainOnlyPreprocessor(config=config_err)
+    prep_err.fit(df_train_mod)
+    with pytest.raises(ValueError, match="Unseen category encountered"):
+        prep_err.transform(df_val_mod)
+
+    # 3. Strategy: sentinel (replaces unknown with train mode, which is 6)
+    config_sentinel = PreprocessingConfig(handle_unknown_categories="sentinel")
+    prep_sentinel = TrainOnlyPreprocessor(config=config_sentinel)
+    prep_sentinel.fit(df_train_mod)
+    out_val_sentinel = prep_sentinel.transform(df_val_mod)
+    assert (out_val_sentinel[cat_col] == 6).all()
+
+    # 4. Strategy: passthrough (preserves unseen 99)
+    config_pass = PreprocessingConfig(handle_unknown_categories="passthrough")
+    prep_pass = TrainOnlyPreprocessor(config=config_pass)
+    prep_pass.fit(df_train_mod)
+    out_val_pass = prep_pass.transform(df_val_mod)
+    assert (out_val_pass[cat_col] == 99).all()

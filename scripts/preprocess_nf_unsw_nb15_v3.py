@@ -88,6 +88,18 @@ def parse_args() -> argparse.Namespace:
         help="Scaler for quantitative columns (default: none)",
     )
     parser.add_argument(
+        "--add-missing-indicators",
+        action="store_true",
+        help="Add binary indicator columns for missingness learned strictly on Train",
+    )
+    parser.add_argument(
+        "--handle-unknown-categories",
+        type=str,
+        default="passthrough",
+        choices=["passthrough", "sentinel", "error"],
+        help="Strategy for unseen discrete categories in Validation/Test (default: passthrough)",
+    )
+    parser.add_argument(
         "--verify-only",
         action="store_true",
         help="Verify existing preprocessing artifact without refitting",
@@ -105,6 +117,8 @@ def run_reproducibility_check(
     manifest_path: Path,
     indices_dir: Path,
     scaler_type: str,
+    add_missing_indicators: bool = False,
+    handle_unknown_categories: str = "passthrough",
 ) -> None:
     """Verify that two independent fit runs produce identical parameters and transformations."""
     print("[preprocess] ========================================================")
@@ -126,6 +140,8 @@ def run_reproducibility_check(
             dataset_path=dataset_path,
             indices_dir=indices_dir,
             scaler_type=scaler_type,
+            add_missing_indicators=add_missing_indicators,
+            handle_unknown_categories=handle_unknown_categories,
             save_artifact_path=art1,
             save_manifest_path=man1,
         )
@@ -136,6 +152,8 @@ def run_reproducibility_check(
             dataset_path=dataset_path,
             indices_dir=indices_dir,
             scaler_type=scaler_type,
+            add_missing_indicators=add_missing_indicators,
+            handle_unknown_categories=handle_unknown_categories,
             save_artifact_path=art2,
             save_manifest_path=man2,
         )
@@ -151,6 +169,9 @@ def run_reproducibility_check(
         assert (
             prep1.constant_features_ == prep2.constant_features_
         ), "Constant features mismatch between runs"
+        assert (
+            prep1.indicator_features_ == prep2.indicator_features_
+        ), "Indicator features mismatch between runs"
 
         # Check numeric output identity
         np.testing.assert_array_equal(t_data1[0].to_numpy(), t_data2[0].to_numpy())
@@ -171,12 +192,13 @@ def main(argv: Optional[list] = None) -> int:
         print(f"PREPROCESSING: SKIPPED (raw dataset absent at {args.dataset})")
         return 0
 
-    # 2. Verify-only mode
+    # 2. Verify-only mode (strictly fail-closed: companion manifest is mandatory)
     if args.verify_only:
         print(f"[preprocess] Verifying existing preprocessor artifact: {args.output_artifact}...")
         result = verify_preprocessing_artifact(
             artifact_path=args.output_artifact,
-            manifest_path=args.output_manifest if args.output_manifest.is_file() else None,
+            manifest_path=args.output_manifest,
+            split_manifest_path=args.manifest if args.manifest.is_file() else None,
         )
         if result["status"] == "PASS":
             print("[preprocess] PASS: artifact integrity and schema verified.")
@@ -192,6 +214,8 @@ def main(argv: Optional[list] = None) -> int:
             manifest_path=args.manifest,
             indices_dir=args.indices_dir,
             scaler_type=args.scaler,
+            add_missing_indicators=args.add_missing_indicators,
+            handle_unknown_categories=args.handle_unknown_categories,
         )
 
     # 4. Standard execution
@@ -202,6 +226,8 @@ def main(argv: Optional[list] = None) -> int:
         dataset_path=args.dataset,
         indices_dir=args.indices_dir,
         scaler_type=args.scaler,
+        add_missing_indicators=args.add_missing_indicators,
+        handle_unknown_categories=args.handle_unknown_categories,
         save_artifact_path=args.output_artifact,
         save_manifest_path=args.output_manifest,
     )

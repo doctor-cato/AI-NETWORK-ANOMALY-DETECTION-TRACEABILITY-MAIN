@@ -34,7 +34,13 @@ def test_preprocessing_pipeline_integration():
 
 def test_real_preprocessor_artifact_verification():
     artifact_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-    if artifact_path.is_file():
-        res = verify_preprocessing_artifact(artifact_path)
+    manifest_path = (
+        ARTIFACTS.parent
+        / "reports"
+        / "preprocessing"
+        / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    )
+    if artifact_path.is_file() and manifest_path.is_file():
+        res = verify_preprocessing_artifact(artifact_path, manifest_path=manifest_path)
         assert res["status"] == "PASS"
         assert res["metadata"]["train_row_count"] == 1655797
