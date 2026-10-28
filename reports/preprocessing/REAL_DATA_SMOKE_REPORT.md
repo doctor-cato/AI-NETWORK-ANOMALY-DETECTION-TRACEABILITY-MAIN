@@ -16,10 +16,10 @@
 | Raw Dataset SHA-256 | `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5` |
 | Split Protocol Version | `nf-unsw-nb15-v3-chronological-group-purged-v1` |
 | Split Manifest Path | `data/processed/nf_unsw_nb15_v3_split_manifest.json` |
-| Split Manifest SHA-256 | `69b1df1649f807eaecff29b9f3032d1645e9f8541a0dbfc41cf1a5806c55d0a6` |
+| Split Manifest SHA-256 | `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88` |
 | Partition Indices Dir | `data/processed/splits` |
-| Preprocessing Policy Version | `v1-fit-train-only-median-mode` |
-| Feature Contract Version | `v1-baseline-47-features` |
+| Preprocessing Policy Version | `nf-unsw-nb15-v3-preprocessing-v1` |
+| Feature Contract Version | `nf-unsw-nb15-v3-baseline-47` |
 
 ---
 
@@ -83,7 +83,7 @@ python scripts/preprocess_nf_unsw_nb15_v3.py --verify-only
 [preprocess] Verifying existing preprocessor artifact: artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib...
 [preprocess] PASS: artifact integrity and schema verified.
 ```
-**Result:** `PASS` (Raw 577MB CSV SHA-256, companion manifest schema, and artifact bytes match without loading joblib).
+**Result:** `PASS` (Raw 577MB CSV SHA-256, companion manifest schema, and artifact integrity verified without refitting; pre-deserialization integrity and post-load metadata cross-verified).
 
 ### 4.3. Deterministic Dual-Pass Reproducibility Verification
 

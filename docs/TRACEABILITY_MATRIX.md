@@ -7,7 +7,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 |---|---|---|---|---|
 | C0 | Governance, scope, architecture, backlog | #23 | docs, backlog, PR evidence | IMPLEMENTED; trạng thái remote phải đọc lại theo từng PR |
 | C1 | NF-UNSW-NB15-v3 provenance, quality, EDA, leakage | #4–#7 | v3 manifest, schema, real numeric/duplicate audit, EDA report, leakage decision | `SOURCE_INTEGRITY: PASS`; `RAW_QUALITY: FINDINGS_RECORDED`; EDA IMPLEMENTED/TESTED on real data; real split/leakage audit PASS (PR #41); `ML_READY: BLOCKED` |
-| C2 | Preprocessing không leakage | #8 | train-only pipeline artifact, fit-boundary tests, verified loader | IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED on verified v3 bytes; artifact manifest and smoke verification PASS; `ML_READY: BLOCKED` |
+| C2 | Preprocessing không leakage | #8 | train-only pipeline artifact, fit-boundary tests, single-load verified loader | IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED on verified v3 bytes; AC1–AC4 PASS (provenance synchronized across artifact, manifest, split bb84c1e0..., smoke report); `ML_READY: BLOCKED` |
 | C3 | RF và XGBoost supervised | #9, #10, #12, #31 | model artifacts, metrics, reproduction | PLANNED |
 | C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED |
 | C5 | Behavioral Vector | #28 | versioned schemas, fixtures, correlation tests | PLANNED |

@@ -768,10 +768,12 @@ class TrainOnlyPreprocessor:
             err_msg = "; ".join(report.get("errors", []))
             raise ValueError(f"Preprocessor artifact verification failed: {err_msg}")
 
-        return cls.load(
-            artifact_path=artifact_path,
-            expected_dataset_sha256=expected_dataset_sha256,
-        )
+        preprocessor = report.get("preprocessor")
+        if not isinstance(preprocessor, cls):
+            raise ValueError(
+                "Verified preprocessor instance not available after successful verification"
+            )
+        return preprocessor
 
 
 def load_and_preprocess_split(
@@ -961,7 +963,9 @@ def verify_preprocessing_artifact(
     schema, required contract fields, and the exact SHA-256 hash of the artifact
     file BEFORE invoking deserialization. If any integrity check or checksum
     mismatch is detected, this function immediately returns FAIL without loading
-    the joblib artifact.
+    the joblib artifact. Once all pre-deserialization integrity checks pass, the
+    preprocessor artifact is deserialized exactly once to cross-validate embedded
+    provenance metadata without refitting.
     Note that a checksum declared in a companion manifest stored alongside the
     artifact provides consistency checking, but is not an independent authenticity
     guarantee if both files can be modified by an attacker.
@@ -984,7 +988,8 @@ def verify_preprocessing_artifact(
     Returns
     -------
     dict
-        Verification findings with PASS/FAIL status and detailed error list.
+        Verification findings with PASS/FAIL status, detailed error list, metadata,
+        and the loaded TrainOnlyPreprocessor instance (when status is PASS).
     """
     errors: List[str] = []
     artifact_path = Path(artifact_path)
@@ -1298,4 +1303,5 @@ def verify_preprocessing_artifact(
         "artifact_path": str(artifact_path),
         "manifest_path": str(manifest_path),
         "metadata": meta,
+        "preprocessor": preprocessor if status == "PASS" else None,
     }

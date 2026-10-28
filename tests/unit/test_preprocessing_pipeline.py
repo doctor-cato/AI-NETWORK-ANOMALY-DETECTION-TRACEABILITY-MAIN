@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Dict, Tuple
 from unittest.mock import patch
 
+import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -39,10 +40,13 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
 )
 from network_anomaly.preprocessing.pipeline import (
     EXPECTED_DATASET_SHA256,
+    FEATURE_CONTRACT_VERSION,
+    PREPROCESSING_POLICY_VERSION,
     REQUIRED_COMPANION_MANIFEST_FIELDS,
     SPLIT_PROTOCOL_VERSION,
     PreprocessingConfig,
     TrainOnlyPreprocessor,
+    _sha256_file,
     audit_column_tokens,
     verify_preprocessing_artifact,
 )
@@ -1354,3 +1358,129 @@ def test_zero_duration_flows_regression(synthetic_47_feature_data):
         loaded = TrainOnlyPreprocessor.load_verified(art_path, manifest_path=man_path)
         out_loaded = loaded.transform(df_val, partition_name="val")
         pd.testing.assert_frame_equal(out_val, out_loaded)
+
+
+def test_load_verified_deserializes_exactly_once(synthetic_47_feature_data):
+    """Verify that load_verified() calls joblib.load exactly once on success.
+
+    Also proves that on artifact checksum mismatch, joblib.load is called ZERO times
+    and raises ValueError fail-closed before any deserialization.
+    """
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        # 1. Happy path: joblib.load() is called EXACTLY ONCE
+        with patch("joblib.load", wraps=joblib.load) as mock_load:
+            loaded_prep = TrainOnlyPreprocessor.load_verified(art_path, manifest_path=man_path)
+            assert mock_load.call_count == 1
+            assert isinstance(loaded_prep, TrainOnlyPreprocessor)
+            # Verify transform output is preserved
+            out_orig = prep.transform(df_train)
+            out_loaded = loaded_prep.transform(df_train)
+            pd.testing.assert_frame_equal(out_orig, out_loaded)
+
+        # 2. Checksum mismatch: joblib.load() is called ZERO times
+        art_path.write_bytes(b"tampered_bytes_with_checksum_mismatch")
+        with patch("joblib.load", wraps=joblib.load) as mock_load:
+            with pytest.raises(ValueError, match="Artifact SHA-256 mismatch"):
+                TrainOnlyPreprocessor.load_verified(art_path, manifest_path=man_path)
+            assert mock_load.call_count == 0
+
+
+def test_load_verified_rejects_provenance_mismatches(synthetic_47_feature_data):
+    """Verify that load_verified() strictly validates split manifest and dataset provenance."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="canonical_split_sha256",
+    )
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        split_path = Path(tmp_dir) / "split_manifest.json"
+        ds_path = Path(tmp_dir) / "dataset.csv"
+
+        prep.save(art_path, manifest_path=man_path)
+
+        # Create valid split manifest and raw dataset
+        split_path.write_text(
+            json.dumps(
+                {
+                    "dataset_sha256": EXPECTED_DATASET_SHA256,
+                    "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+                }
+            ),
+            encoding="utf-8",
+        )
+        ds_path.write_bytes(b"sample_dataset_bytes")
+
+        # Split manifest mismatch between disk and companion manifest
+        with pytest.raises(ValueError, match="does not match current split manifest hash"):
+            TrainOnlyPreprocessor.load_verified(
+                art_path,
+                manifest_path=man_path,
+                split_manifest_path=split_path,
+            )
+
+        # Raw dataset SHA-256 mismatch
+        with pytest.raises(ValueError, match="Raw dataset file SHA-256 mismatch"):
+            TrainOnlyPreprocessor.load_verified(
+                art_path,
+                manifest_path=man_path,
+                dataset_path=ds_path,
+            )
+
+
+def test_smoke_report_matches_canonical_provenance_metadata():
+    """Verify that REAL_DATA_SMOKE_REPORT.md strictly matches companion manifest and constants."""
+    smoke_report_path = REPOSITORY_ROOT / "reports" / "preprocessing" / "REAL_DATA_SMOKE_REPORT.md"
+    manifest_path = (
+        REPOSITORY_ROOT
+        / "reports"
+        / "preprocessing"
+        / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    )
+    split_manifest_path = (
+        REPOSITORY_ROOT / "data" / "processed" / "nf_unsw_nb15_v3_split_manifest.json"
+    )
+
+    if not smoke_report_path.is_file():
+        pytest.skip("REAL_DATA_SMOKE_REPORT.md not found")
+
+    assert manifest_path.is_file(), "Companion manifest must exist alongside smoke report"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    report_text = smoke_report_path.read_text(encoding="utf-8")
+
+    # 1. Split manifest hash consistency
+    recorded_sm_sha = manifest["split_manifest_sha256"]
+    assert f"`{recorded_sm_sha}`" in report_text
+    if split_manifest_path.is_file():
+        actual_sm_sha = _sha256_file(split_manifest_path)
+        assert recorded_sm_sha == actual_sm_sha
+
+    # 2. Canonical version strings consistency
+    assert manifest["preprocessing_policy_version"] == PREPROCESSING_POLICY_VERSION
+    assert f"`{PREPROCESSING_POLICY_VERSION}`" in report_text
+
+    assert manifest["feature_contract_version"] == FEATURE_CONTRACT_VERSION
+    assert f"`{FEATURE_CONTRACT_VERSION}`" in report_text
+
+    assert manifest["split_protocol_version"] == SPLIT_PROTOCOL_VERSION
+    assert f"`{SPLIT_PROTOCOL_VERSION}`" in report_text
+
+    # 3. Artifact SHA-256 consistency
+    assert f"`{manifest['artifact_sha256']}`" in report_text
+
+    # 4. Verify description does not claim 'without loading joblib'
+    assert "without loading joblib" not in report_text
