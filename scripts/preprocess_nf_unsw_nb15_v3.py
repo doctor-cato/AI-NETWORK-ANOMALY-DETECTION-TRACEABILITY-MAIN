@@ -106,6 +106,12 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
         help="Verify existing preprocessing artifact without refitting",
     )
     parser.add_argument(
+        "--expected-dataset-sha256",
+        type=str,
+        default=EXPECTED_DATASET_SHA256,
+        help="Expected dataset SHA-256 hash (default: official NF-UNSW-NB15-v3 hash)",
+    )
+    parser.add_argument(
         "--check-reproducibility",
         action="store_true",
         help="Run fit independently twice and verify exact identity of output and parameters",
@@ -213,7 +219,8 @@ def main(argv: Optional[list] = None) -> int:
             artifact_path=args.output_artifact,
             manifest_path=args.output_manifest,
             split_manifest_path=args.manifest,
-            expected_dataset_sha256=EXPECTED_DATASET_SHA256,
+            dataset_path=args.dataset,
+            expected_dataset_sha256=args.expected_dataset_sha256,
         )
         if result["status"] == "PASS":
             print("[preprocess] PASS: artifact integrity and schema verified.")

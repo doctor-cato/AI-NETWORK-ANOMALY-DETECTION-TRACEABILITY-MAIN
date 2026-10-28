@@ -163,13 +163,16 @@ def audit_column_tokens(series: pd.Series, column_name: str, return_masks: bool 
         # Object / string dtype: inspect individual elements
         cleaned_array = np.empty(total, dtype=np.float64)
         for i, val in enumerate(series):
-            if val is None or val == "" or pd.isna(val):
-                if val == "":
-                    missing_count += 1
-                    missing_mask[i] = True
-                else:
-                    nan_count += 1
-                    nan_mask[i] = True
+            # Check for literal empty cell first, safely avoiding boolean evaluation on pd.NA
+            if isinstance(val, str) and val == "":
+                missing_count += 1
+                missing_mask[i] = True
+                cleaned_array[i] = np.nan
+                continue
+
+            if val is None or pd.isna(val):
+                nan_count += 1
+                nan_mask[i] = True
                 cleaned_array[i] = np.nan
                 continue
 
@@ -586,7 +589,22 @@ class TrainOnlyPreprocessor:
         expected_dataset_sha256: Optional[str] = None,
         expected_manifest_sha256: Optional[str] = None,
     ) -> "TrainOnlyPreprocessor":
-        """Load and verify a saved preprocessor artifact.
+        """Load a saved preprocessor artifact from disk.
+
+        IMPORTANT SAFETY AND PROVENANCE NOTICE:
+        This is a low-level compatibility loader that deserializes the artifact
+        using joblib.load() without verifying an independent companion manifest.
+        For production and inference environments, callers SHOULD use
+        `TrainOnlyPreprocessor.load_verified()` instead, which guarantees integrity
+        checks (artifact SHA-256, companion manifest schema, split/dataset hashes)
+        BEFORE any deserialization occurs.
+
+        This method validates all embedded contract metadata:
+        - artifact_type, dataset_name, feature_contract_version,
+        - preprocessing_policy_version, split_protocol_version,
+        - baseline_ml_features columns and order,
+        - output_features count and order,
+        - expected checksums (if provided).
 
         Parameters
         ----------
@@ -630,9 +648,30 @@ class TrainOnlyPreprocessor:
                 f"got {metadata.get('feature_contract_version')}"
             )
 
+        if metadata.get("preprocessing_policy_version") != PREPROCESSING_POLICY_VERSION:
+            raise ValueError(
+                f"Preprocessing policy version mismatch: expected {PREPROCESSING_POLICY_VERSION}, "
+                f"got {metadata.get('preprocessing_policy_version')}"
+            )
+
+        if metadata.get("split_protocol_version") != SPLIT_PROTOCOL_VERSION:
+            raise ValueError(
+                f"Split protocol version mismatch: expected {SPLIT_PROTOCOL_VERSION}, "
+                f"got {metadata.get('split_protocol_version')}"
+            )
+
         features_in_order = metadata.get("baseline_ml_features_in_order")
         if features_in_order != list(ML_FEATURE_COLUMNS):
             raise ValueError("Artifact baseline feature columns or order do not match contract")
+
+        out_features = metadata.get("output_features_in_order")
+        out_count = metadata.get("output_features_count")
+        if (
+            not isinstance(out_features, list)
+            or not isinstance(out_count, int)
+            or len(out_features) != out_count
+        ):
+            raise ValueError("Corrupted output features contract in artifact metadata")
 
         # Validate checksums if supplied
         if expected_dataset_sha256 is not None:
@@ -675,6 +714,64 @@ class TrainOnlyPreprocessor:
         preprocessor.is_fitted_ = True
 
         return preprocessor
+
+    @classmethod
+    def load_verified(
+        cls,
+        artifact_path: Union[str, Path],
+        manifest_path: Union[str, Path],
+        split_manifest_path: Optional[Union[str, Path]] = None,
+        dataset_path: Optional[Union[str, Path]] = None,
+        expected_dataset_sha256: str = EXPECTED_DATASET_SHA256,
+    ) -> "TrainOnlyPreprocessor":
+        """Load and verify a preprocessor artifact with strict provenance checking.
+
+        This is the RECOMMENDED entrypoint for production and inference.
+        It strictly verifies:
+        1. Companion manifest existence, JSON syntax, and schema completeness.
+        2. Exact SHA-256 integrity of the .joblib artifact BEFORE deserialization.
+        3. Feature contract version, policy version, split protocol version, and dataset hash.
+        4. Consistency with split manifest and raw dataset file (if provided).
+        5. Internal artifact metadata consistency with companion manifest.
+
+        Parameters
+        ----------
+        artifact_path : str or Path
+            Path to the saved .joblib artifact.
+        manifest_path : str or Path
+            Path to the companion .json manifest.
+        split_manifest_path : str or Path, optional
+            Path to the official split manifest.
+        dataset_path : str or Path, optional
+            Path to the raw dataset CSV file for direct byte verification.
+        expected_dataset_sha256 : str
+            Expected SHA-256 of the dataset (defaults to official contract).
+
+        Returns
+        -------
+        preprocessor : TrainOnlyPreprocessor
+            Verified and loaded preprocessor instance.
+
+        Raises
+        ------
+        ValueError
+            If any verification check fails.
+        """
+        report = verify_preprocessing_artifact(
+            artifact_path=artifact_path,
+            manifest_path=manifest_path,
+            split_manifest_path=split_manifest_path,
+            dataset_path=dataset_path,
+            expected_dataset_sha256=expected_dataset_sha256,
+        )
+        if report["status"] != "PASS":
+            err_msg = "; ".join(report.get("errors", []))
+            raise ValueError(f"Preprocessor artifact verification failed: {err_msg}")
+
+        return cls.load(
+            artifact_path=artifact_path,
+            expected_dataset_sha256=expected_dataset_sha256,
+        )
 
 
 def load_and_preprocess_split(
@@ -849,12 +946,25 @@ def verify_preprocessing_artifact(
     artifact_path: Union[str, Path],
     manifest_path: Union[str, Path],
     split_manifest_path: Optional[Union[str, Path]] = None,
+    dataset_path: Optional[Union[str, Path]] = None,
     expected_dataset_sha256: str = EXPECTED_DATASET_SHA256,
 ) -> Dict[str, Any]:
     """Inspect and verify a preprocessor artifact, companion manifest, and split consistency.
 
     Fails closed if the companion manifest is missing, if any file hash mismatches,
     or if metadata fields (feature contract, policy version, split ID) do not align.
+
+    CRITICAL SECURITY & INTEGRITY NOTICE:
+    A joblib artifact must only be loaded from a trusted source. Pickle-based
+    deserialization is dangerous if an artifact has been tampered with.
+    Therefore, this function rigorously validates file existence, manifest JSON
+    schema, required contract fields, and the exact SHA-256 hash of the artifact
+    file BEFORE invoking deserialization. If any integrity check or checksum
+    mismatch is detected, this function immediately returns FAIL without loading
+    the joblib artifact.
+    Note that a checksum declared in a companion manifest stored alongside the
+    artifact provides consistency checking, but is not an independent authenticity
+    guarantee if both files can be modified by an attacker.
 
     Parameters
     ----------
@@ -865,6 +975,9 @@ def verify_preprocessing_artifact(
     split_manifest_path : Path or str, optional
         Path to official split manifest. When provided, verifies consistency of
         split_manifest_sha256, split_protocol_version, and dataset_sha256.
+    dataset_path : Path or str, optional
+        Path to raw dataset CSV file. When provided, computes actual SHA-256
+        directly from file bytes on disk and cross-checks against expected hash.
     expected_dataset_sha256 : str
         Expected dataset SHA-256 hash.
 
@@ -891,6 +1004,7 @@ def verify_preprocessing_artifact(
             "errors": errors,
             "artifact_path": str(artifact_path),
             "manifest_path": str(manifest_path),
+            "metadata": {},
         }
 
     # 3. Load and validate companion manifest JSON first
@@ -913,18 +1027,14 @@ def verify_preprocessing_artifact(
             else:
                 val = manifest_json[field]
                 if exp_type is int and isinstance(val, bool):
-                    errors.append(
-                        f"Companion manifest field '{field}' must be int, got bool"
-                    )
+                    errors.append(f"Companion manifest field '{field}' must be int, got bool")
                 elif not isinstance(val, exp_type):
                     errors.append(
                         f"Companion manifest field '{field}' must be {exp_type.__name__}, "
                         f"got {type(val).__name__}"
                     )
                 elif isinstance(val, str) and not val.strip():
-                    errors.append(
-                        f"Companion manifest field '{field}' must not be empty"
-                    )
+                    errors.append(f"Companion manifest field '{field}' must not be empty")
 
         # Validate companion manifest semantics and contract values
         if manifest_json.get("artifact_type") != "nf-unsw-nb15-v3-train-only-preprocessor":
@@ -1013,7 +1123,86 @@ def verify_preprocessing_artifact(
                 f"expected {actual_artifact_sha256}, recorded {recorded_artifact_sha}"
             )
 
-    # 6. Load and validate artifact .joblib
+    # 6. Verify actual raw dataset bytes if dataset_path is provided
+    actual_ds_sha256: Optional[str] = None
+    if dataset_path is not None:
+        ds_p = Path(dataset_path)
+        if not ds_p.is_file():
+            errors.append(f"Referenced raw dataset file not found: {ds_p}")
+        else:
+            try:
+                actual_ds_sha256 = _sha256_file(ds_p)
+                if actual_ds_sha256 != expected_dataset_sha256:
+                    errors.append(
+                        f"Raw dataset file SHA-256 mismatch: "
+                        f"expected {expected_dataset_sha256}, got {actual_ds_sha256}"
+                    )
+                if manifest_json and manifest_json.get("dataset_sha256") != actual_ds_sha256:
+                    errors.append(
+                        f"Raw dataset SHA-256 ({actual_ds_sha256}) does not match "
+                        f"companion manifest dataset_sha256 ({manifest_json.get('dataset_sha256')})"
+                    )
+            except Exception as e:
+                errors.append(f"Error computing raw dataset SHA-256: {e}")
+
+    # 7. Verify split manifest if provided
+    actual_sm_sha256: Optional[str] = None
+    sm_json: Dict[str, Any] = {}
+    if split_manifest_path is not None:
+        split_p = Path(split_manifest_path)
+        if not split_p.is_file():
+            errors.append(f"Referenced split manifest not found: {split_p}")
+        else:
+            try:
+                parsed_sm = json.loads(split_p.read_text(encoding="utf-8"))
+                if not isinstance(parsed_sm, dict) or len(parsed_sm) == 0:
+                    errors.append(f"Split manifest is empty or not a valid JSON object: {split_p}")
+                else:
+                    sm_json = parsed_sm
+                    actual_sm_sha256 = _sha256_file(split_p)
+                    if (
+                        manifest_json
+                        and manifest_json.get("split_manifest_sha256") != actual_sm_sha256
+                    ):
+                        man_sm = manifest_json.get("split_manifest_sha256")
+                        errors.append(
+                            f"Companion manifest split_manifest_sha256 ({man_sm}) "
+                            f"does not match current split manifest hash ({actual_sm_sha256})"
+                        )
+                    if sm_json.get("dataset_sha256") != expected_dataset_sha256:
+                        errors.append(
+                            f"Split manifest dataset_sha256 mismatch: "
+                            f"expected {expected_dataset_sha256}, "
+                            f"got {sm_json.get('dataset_sha256')}"
+                        )
+                    if (
+                        actual_ds_sha256 is not None
+                        and sm_json.get("dataset_sha256") != actual_ds_sha256
+                    ):
+                        errors.append(
+                            f"Raw dataset file SHA-256 ({actual_ds_sha256}) does not match "
+                            f"split manifest dataset_sha256 ({sm_json.get('dataset_sha256')})"
+                        )
+                    if sm_json.get("split_protocol_version") != SPLIT_PROTOCOL_VERSION:
+                        errors.append(
+                            f"Split manifest protocol version mismatch: "
+                            f"expected {SPLIT_PROTOCOL_VERSION}, "
+                            f"got {sm_json.get('split_protocol_version')}"
+                        )
+            except Exception as e:
+                errors.append(f"Error reading split manifest JSON: {e}")
+
+    # CRITICAL: Fail closed BEFORE deserialization if any integrity check failed!
+    if errors:
+        return {
+            "status": "FAIL",
+            "errors": errors,
+            "artifact_path": str(artifact_path),
+            "manifest_path": str(manifest_path),
+            "metadata": {},
+        }
+
+    # 8. Load and validate artifact .joblib (SAFE: all pre-deserialization integrity checks passed)
     preprocessor = None
     meta: Dict[str, Any] = {}
     try:
@@ -1025,13 +1214,18 @@ def verify_preprocessing_artifact(
     except Exception as e:
         errors.append(f"Error loading/validating preprocessor artifact: {e}")
 
-    # 7. Cross-verify hashes and contract metadata between artifact and companion manifest
+    # 9. Cross-verify hashes and contract metadata between artifact and companion manifest
     if preprocessor is not None and manifest_json:
         # Check dataset SHA-256
         if manifest_json.get("dataset_sha256") != meta.get("dataset_sha256"):
             errors.append(
                 f"Dataset SHA-256 mismatch between artifact ({meta.get('dataset_sha256')}) "
                 f"and companion manifest ({manifest_json.get('dataset_sha256')})"
+            )
+        if actual_ds_sha256 is not None and meta.get("dataset_sha256") != actual_ds_sha256:
+            errors.append(
+                f"Raw dataset SHA-256 ({actual_ds_sha256}) does not match "
+                f"artifact recorded dataset_sha256 ({meta.get('dataset_sha256')})"
             )
 
         # Check split manifest SHA-256
@@ -1040,6 +1234,12 @@ def verify_preprocessing_artifact(
                 f"Split manifest SHA-256 mismatch between artifact "
                 f"({meta.get('split_manifest_sha256')}) and companion manifest "
                 f"({manifest_json.get('split_manifest_sha256')})"
+            )
+        if actual_sm_sha256 is not None and meta.get("split_manifest_sha256") != actual_sm_sha256:
+            errors.append(
+                f"Artifact was not fit on current split manifest: "
+                f"artifact recorded {meta.get('split_manifest_sha256')}, "
+                f"current split manifest has {actual_sm_sha256}"
             )
 
         # Check split protocol version
@@ -1056,6 +1256,16 @@ def verify_preprocessing_artifact(
                 f"Feature contract version mismatch: artifact has "
                 f"'{meta.get('feature_contract_version')}', companion manifest has "
                 f"'{manifest_json.get('feature_contract_version')}'"
+            )
+
+        # Check preprocessing policy version
+        if manifest_json.get("preprocessing_policy_version") != meta.get(
+            "preprocessing_policy_version"
+        ):
+            errors.append(
+                f"Preprocessing policy version mismatch: artifact has "
+                f"'{meta.get('preprocessing_policy_version')}', companion manifest has "
+                f"'{manifest_json.get('preprocessing_policy_version')}'"
             )
 
         # Check output feature count and order
@@ -1080,51 +1290,6 @@ def verify_preprocessing_artifact(
         # Check config
         if manifest_json.get("config") != meta.get("config"):
             errors.append("Config mismatch between artifact and companion manifest")
-
-    # 8. Verify against official split manifest if provided
-    if split_manifest_path is not None:
-        split_p = Path(split_manifest_path)
-        if not split_p.is_file():
-            errors.append(f"Referenced split manifest not found: {split_p}")
-        else:
-            try:
-                sm_json = json.loads(split_p.read_text(encoding="utf-8"))
-                if not isinstance(sm_json, dict) or len(sm_json) == 0:
-                    errors.append(
-                        f"Split manifest is empty or not a valid JSON object: {split_p}"
-                    )
-                else:
-                    actual_sm_sha256 = _sha256_file(split_p)
-                    # Verify artifact was fit on this split manifest
-                    if meta and meta.get("split_manifest_sha256") != actual_sm_sha256:
-                        errors.append(
-                            f"Artifact was not fit on current split manifest: "
-                            f"artifact recorded {meta.get('split_manifest_sha256')}, "
-                            f"current split manifest has {actual_sm_sha256}"
-                        )
-                    if (
-                        manifest_json
-                        and manifest_json.get("split_manifest_sha256") != actual_sm_sha256
-                    ):
-                        man_sm = manifest_json.get("split_manifest_sha256")
-                        errors.append(
-                            f"Companion manifest split_manifest_sha256 ({man_sm}) "
-                            f"does not match current split manifest hash ({actual_sm_sha256})"
-                        )
-                    if sm_json.get("dataset_sha256") != expected_dataset_sha256:
-                        errors.append(
-                            f"Split manifest dataset_sha256 mismatch: "
-                            f"expected {expected_dataset_sha256}, "
-                            f"got {sm_json.get('dataset_sha256')}"
-                        )
-                    if sm_json.get("split_protocol_version") != SPLIT_PROTOCOL_VERSION:
-                        errors.append(
-                            f"Split manifest protocol version mismatch: "
-                            f"expected {SPLIT_PROTOCOL_VERSION}, "
-                            f"got {sm_json.get('split_protocol_version')}"
-                        )
-            except Exception as e:
-                errors.append(f"Error reading split manifest JSON: {e}")
 
     status = "PASS" if not errors else "FAIL"
     return {

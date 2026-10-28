@@ -166,7 +166,7 @@
     "handle_unknown_categories": "passthrough"
   },
   "train_row_count": 1655797,
-  "fitted_at_utc": "2026-10-28T08:41:44.882883+00:00",
+  "fitted_at_utc": "2026-10-28T10:48:52.492315+00:00",
   "constant_features": [],
   "all_missing_columns": [],
   "indicator_features": [],
@@ -177,7 +177,7 @@
     "joblib": "1.6.0"
   },
   "artifact_path": "nf_unsw_nb15_v3_preprocessor.joblib",
-  "artifact_sha256": "ffb0979fe72158c2aa8f27dfc90c09030bd9c7baa9bbd64f6da1f26f25148a1b",
+  "artifact_sha256": "1de9448b3dc66bc9860ddf159f3f2b74f0ce667cea4e11265a29e8708a3d6611",
   "fitted_parameters_summary": {
     "imputed_values_count": 47,
     "scaler_params_count": 0,

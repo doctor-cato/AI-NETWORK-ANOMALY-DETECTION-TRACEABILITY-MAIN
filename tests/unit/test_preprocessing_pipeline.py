@@ -24,6 +24,7 @@ import json
 import tempfile
 from pathlib import Path
 from typing import Dict, Tuple
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -83,7 +84,10 @@ def synthetic_47_feature_data() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFram
 def test_criterion_1_exact_47_features_in_exact_order(synthetic_47_feature_data):
     """Criterion 1: Exactly 47 baseline ML features in exact order."""
     df_train, df_val, df_test = synthetic_47_feature_data
-    prep = TrainOnlyPreprocessor()
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
     prep.fit(df_train)
 
     out_train = prep.transform(df_train)
@@ -129,7 +133,10 @@ def test_criterion_3_fit_strictly_on_train(synthetic_47_feature_data):
     # Set completely different values in Val
     df_val[col_q] = np.array([999.0] * len(df_val))
 
-    prep = TrainOnlyPreprocessor()
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
     prep.fit(df_train)
 
     assert prep.imputed_values_[col_q] == expected_median
@@ -147,7 +154,10 @@ def test_criterion_3_fit_strictly_on_train(synthetic_47_feature_data):
 def test_criterion_4_changing_val_test_does_not_affect_fitted_state(synthetic_47_feature_data):
     """Criterion 4: Modifying Validation/Test data does not alter fitted state."""
     df_train, df_val, df_test = synthetic_47_feature_data
-    prep = TrainOnlyPreprocessor()
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
     prep.fit(df_train)
 
     imputed_before = copy.deepcopy(prep.imputed_values_)
@@ -203,7 +213,10 @@ def test_criterion_6_nan_infinity_and_invalid_numeric_handling(synthetic_47_feat
     df_train.loc[1, col] = np.inf
     df_train.loc[2, col] = -np.inf
 
-    prep = TrainOnlyPreprocessor()
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
     prep.fit(df_train)
 
     # Assert audit counts on train recorded non-finite values correctly
@@ -309,7 +322,10 @@ def test_criterion_10_input_dataframe_not_modified_in_place(synthetic_47_feature
 
     df_val_before = df_val.copy(deep=True)
 
-    prep = TrainOnlyPreprocessor()
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
     prep.fit(df_train)
     out_val = prep.transform(df_val)
 
@@ -450,26 +466,28 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
 
     df_train, _, _ = synthetic_47_feature_data
     with tempfile.TemporaryDirectory() as tmp_dir:
+        from network_anomaly.preprocessing.pipeline import _sha256_file
+
+        fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
+        fake_ds_path.write_text("dummy", encoding="utf-8")
+        fake_ds_hash = _sha256_file(fake_ds_path)
+
         fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
         split_content = {
-            "dataset_sha256": EXPECTED_DATASET_SHA256,
+            "dataset_sha256": fake_ds_hash,
             "split_protocol_version": SPLIT_PROTOCOL_VERSION,
         }
         fake_split_manifest.write_text(json.dumps(split_content), encoding="utf-8")
-        from network_anomaly.preprocessing.pipeline import _sha256_file
-
         sm_hash = _sha256_file(fake_split_manifest)
 
         prep = TrainOnlyPreprocessor(
-            dataset_sha256=EXPECTED_DATASET_SHA256,
+            dataset_sha256=fake_ds_hash,
             split_manifest_sha256=sm_hash,
         )
         prep.fit(df_train)
 
         art_path = Path(tmp_dir) / "preprocessor.joblib"
         man_path = Path(tmp_dir) / "manifest.json"
-        fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
-        fake_ds_path.write_text("dummy", encoding="utf-8")
         prep.save(art_path, manifest_path=man_path)
 
         fake_args = [
@@ -482,6 +500,8 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
             str(art_path),
             "--output-manifest",
             str(man_path),
+            "--expected-dataset-sha256",
+            fake_ds_hash,
             "--verify-only",
         ]
         monkeypatch.setattr("sys.argv", fake_args)
@@ -489,27 +509,94 @@ def test_cli_preprocess_verify_only(synthetic_47_feature_data, monkeypatch):
         assert exit_code == 0
 
 
+def test_cli_preprocess_verify_only_tampered_dataset_fails(synthetic_47_feature_data, monkeypatch):
+    """Test CLI --verify-only fails closed (exit code 1) when raw dataset bytes are modified."""
+    prep_cli = _load_preprocess_cli()
+
+    df_train, _, _ = synthetic_47_feature_data
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        from network_anomaly.preprocessing.pipeline import _sha256_file
+
+        fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
+        fake_ds_path.write_text("original content", encoding="utf-8")
+        fake_ds_hash = _sha256_file(fake_ds_path)
+
+        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
+        fake_split_manifest.write_text(
+            json.dumps(
+                {
+                    "dataset_sha256": fake_ds_hash,
+                    "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+                }
+            ),
+            encoding="utf-8",
+        )
+        sm_hash = _sha256_file(fake_split_manifest)
+
+        prep = TrainOnlyPreprocessor(
+            dataset_sha256=fake_ds_hash,
+            split_manifest_sha256=sm_hash,
+        )
+        prep.fit(df_train)
+
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        # Tamper with the raw dataset AFTER artifact creation
+        fake_ds_path.write_text("tampered content modifying raw bytes", encoding="utf-8")
+
+        fake_args = [
+            "preprocess_nf_unsw_nb15_v3.py",
+            "--dataset",
+            str(fake_ds_path),
+            "--manifest",
+            str(fake_split_manifest),
+            "--output-artifact",
+            str(art_path),
+            "--output-manifest",
+            str(man_path),
+            "--expected-dataset-sha256",
+            fake_ds_hash,
+            "--verify-only",
+        ]
+        monkeypatch.setattr("sys.argv", fake_args)
+        exit_code = prep_cli.main()
+        assert exit_code == 1
+
+
 def test_cli_preprocess_verify_only_missing_manifest_fails(synthetic_47_feature_data, monkeypatch):
     """Test CLI --verify-only fails closed (exit code 1) when manifest is missing."""
     prep_cli = _load_preprocess_cli()
 
     df_train, _, _ = synthetic_47_feature_data
-    prep = TrainOnlyPreprocessor(dataset_sha256=EXPECTED_DATASET_SHA256)
-    prep.fit(df_train)
-
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
-        fake_split_manifest.write_text(
-            json.dumps({
-                "dataset_sha256": EXPECTED_DATASET_SHA256,
-                "split_protocol_version": SPLIT_PROTOCOL_VERSION,
-            }),
-            encoding="utf-8",
-        )
-        art_path = Path(tmp_dir) / "preprocessor.joblib"
-        prep.save(art_path)  # saves artifact only, no companion manifest
+        from network_anomaly.preprocessing.pipeline import _sha256_file
+
         fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
         fake_ds_path.write_text("dummy", encoding="utf-8")
+        fake_ds_hash = _sha256_file(fake_ds_path)
+
+        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
+        fake_split_manifest.write_text(
+            json.dumps(
+                {
+                    "dataset_sha256": fake_ds_hash,
+                    "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+                }
+            ),
+            encoding="utf-8",
+        )
+        sm_hash = _sha256_file(fake_split_manifest)
+
+        prep = TrainOnlyPreprocessor(
+            dataset_sha256=fake_ds_hash,
+            split_manifest_sha256=sm_hash,
+        )
+        prep.fit(df_train)
+
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        prep.save(art_path)  # saves artifact only, no companion manifest
         nonexistent_man = Path(tmp_dir) / "missing_manifest.json"
 
         fake_args = [
@@ -522,6 +609,8 @@ def test_cli_preprocess_verify_only_missing_manifest_fails(synthetic_47_feature_
             str(art_path),
             "--output-manifest",
             str(nonexistent_man),
+            "--expected-dataset-sha256",
+            fake_ds_hash,
             "--verify-only",
         ]
         monkeypatch.setattr("sys.argv", fake_args)
@@ -535,16 +624,18 @@ def test_cli_preprocess_verify_only_missing_dataset_fails(synthetic_47_feature_d
 
     df_train, _, _ = synthetic_47_feature_data
     with tempfile.TemporaryDirectory() as tmp_dir:
-        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
-        fake_split_manifest.write_text(
-            json.dumps({
-                "dataset_sha256": EXPECTED_DATASET_SHA256,
-                "split_protocol_version": SPLIT_PROTOCOL_VERSION,
-            }),
-            encoding="utf-8",
-        )
         from network_anomaly.preprocessing.pipeline import _sha256_file
 
+        fake_split_manifest = Path(tmp_dir) / "split_manifest.json"
+        fake_split_manifest.write_text(
+            json.dumps(
+                {
+                    "dataset_sha256": EXPECTED_DATASET_SHA256,
+                    "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+                }
+            ),
+            encoding="utf-8",
+        )
         sm_hash = _sha256_file(fake_split_manifest)
 
         prep = TrainOnlyPreprocessor(
@@ -584,14 +675,17 @@ def test_cli_preprocess_verify_only_missing_split_manifest_fails(
 
     df_train, _, _ = synthetic_47_feature_data
     with tempfile.TemporaryDirectory() as tmp_dir:
-        art_path = Path(tmp_dir) / "preprocessor.joblib"
-        man_path = Path(tmp_dir) / "manifest.json"
+        from network_anomaly.preprocessing.pipeline import _sha256_file
+
         fake_ds_path = Path(tmp_dir) / "fake_dataset.csv"
         fake_ds_path.write_text("dummy", encoding="utf-8")
+        fake_ds_hash = _sha256_file(fake_ds_path)
         nonexistent_sm = Path(tmp_dir) / "absent_split_manifest.json"
 
-        prep = TrainOnlyPreprocessor(dataset_sha256=EXPECTED_DATASET_SHA256)
+        prep = TrainOnlyPreprocessor(dataset_sha256=fake_ds_hash)
         prep.fit(df_train)
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
         prep.save(art_path, manifest_path=man_path)
 
         fake_args = [
@@ -604,6 +698,8 @@ def test_cli_preprocess_verify_only_missing_split_manifest_fails(
             str(art_path),
             "--output-manifest",
             str(man_path),
+            "--expected-dataset-sha256",
+            fake_ds_hash,
             "--verify-only",
         ]
         monkeypatch.setattr("sys.argv", fake_args)
@@ -827,10 +923,12 @@ def test_verify_artifact_negative_cases(synthetic_47_feature_data):
         # 16c. Split manifest with dataset_sha256 mismatch
         bad_ds_sm = Path(tmp_dir) / "bad_ds_sm.json"
         bad_ds_sm.write_text(
-            json.dumps({
-                "dataset_sha256": "wrong_hash",
-                "split_protocol_version": SPLIT_PROTOCOL_VERSION,
-            }),
+            json.dumps(
+                {
+                    "dataset_sha256": "wrong_hash",
+                    "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+                }
+            ),
             encoding="utf-8",
         )
         res = verify_preprocessing_artifact(
@@ -844,10 +942,12 @@ def test_verify_artifact_negative_cases(synthetic_47_feature_data):
         # 16d. Split manifest with split_protocol_version mismatch
         bad_ver_sm = Path(tmp_dir) / "bad_ver_sm.json"
         bad_ver_sm.write_text(
-            json.dumps({
-                "dataset_sha256": EXPECTED_DATASET_SHA256,
-                "split_protocol_version": "v0.0.1",
-            }),
+            json.dumps(
+                {
+                    "dataset_sha256": EXPECTED_DATASET_SHA256,
+                    "split_protocol_version": "v0.0.1",
+                }
+            ),
             encoding="utf-8",
         )
         res = verify_preprocessing_artifact(
@@ -956,3 +1056,301 @@ def test_handle_unknown_categories_strategies(synthetic_47_feature_data):
     prep_pass.fit(df_train_mod)
     out_val_pass = prep_pass.transform(df_val_mod)
     assert (out_val_pass[cat_col] == 99).all()
+
+
+def test_audit_column_tokens_safe_with_pd_na_and_nullable_dtypes():
+    """Verify audit_column_tokens handles pd.NA, nullable dtypes, and invalid tokens safely."""
+    # 1. Object series containing pd.NA, None, '', 'nan', 'null', np.nan, +Inf, -Inf, finite
+    s_obj = pd.Series(["", pd.NA, None, "nan", "null", np.nan, "+Inf", "-inf", "42.0", "100.5"])
+    counts, cleaned, masks = audit_column_tokens(s_obj, "test_obj_col", return_masks=True)
+
+    assert counts["missing"] == 1  # only ""
+    assert counts["nan"] == 5  # pd.NA, None, 'nan', 'null', np.nan
+    assert counts["positive_infinity"] == 1
+    assert counts["negative_infinity"] == 1
+    assert counts["finite"] == 2
+    assert counts["invalid_numeric"] == 0
+
+    assert bool(masks["missing"][0]) is True
+    assert bool(masks["nan"][1]) is True  # pd.NA safely mapped to nan without ambiguous bool error
+    assert bool(masks["nan"][2]) is True  # None
+    assert bool(masks["nan"][3]) is True  # 'nan'
+    assert bool(masks["nan"][4]) is True  # 'null'
+    assert bool(masks["nan"][5]) is True  # np.nan
+    assert bool(masks["pos_inf"][6]) is True
+    assert bool(masks["neg_inf"][7]) is True
+
+    # 2. Nullable Float64 series
+    s_float = pd.Series([1.5, pd.NA, np.nan, np.inf, -np.inf, 20.0], dtype="Float64")
+    f_counts, _ = audit_column_tokens(s_float, "test_float_col")
+    assert f_counts["nan"] == 2  # pd.NA + np.nan
+    assert f_counts["positive_infinity"] == 1
+    assert f_counts["negative_infinity"] == 1
+    assert f_counts["finite"] == 2
+
+    # 3. Nullable Int64 series
+    s_int = pd.Series([10, pd.NA, 20], dtype="Int64")
+    i_counts, _ = audit_column_tokens(s_int, "test_int_col")
+    assert i_counts["nan"] == 1  # pd.NA
+    assert i_counts["finite"] == 2
+
+    # 4. Fail-closed on invalid numeric string
+    s_inv = pd.Series(["12.3", "not_a_valid_number", "45.6"])
+    with pytest.raises(ValueError, match="invalid numeric token"):
+        audit_column_tokens(s_inv, "test_inv_col")
+
+
+def test_deserialization_prevented_on_artifact_checksum_mismatch(synthetic_47_feature_data):
+    """Verify that joblib.load is NEVER called when artifact checksum mismatches."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(dataset_sha256=EXPECTED_DATASET_SHA256)
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        # Tamper artifact bytes on disk
+        art_path.write_bytes(art_path.read_bytes() + b"\x00\x00_tampered_payload")
+
+        with patch("joblib.load") as mock_joblib_load:
+            res = verify_preprocessing_artifact(
+                artifact_path=art_path,
+                manifest_path=man_path,
+            )
+            assert res["status"] == "FAIL"
+            assert any("Artifact SHA-256 mismatch" in e for e in res["errors"])
+            mock_joblib_load.assert_not_called()
+
+        with patch("joblib.load") as mock_joblib_load:
+            with pytest.raises(ValueError, match="Artifact SHA-256 mismatch"):
+                TrainOnlyPreprocessor.load_verified(
+                    artifact_path=art_path,
+                    manifest_path=man_path,
+                )
+            mock_joblib_load.assert_not_called()
+
+
+def test_verify_artifact_with_raw_dataset_bytes(synthetic_47_feature_data):
+    """Verify that verify_preprocessing_artifact validates actual raw dataset bytes."""
+    from network_anomaly.preprocessing.pipeline import _sha256_file
+
+    df_train, _, _ = synthetic_47_feature_data
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        fake_ds = Path(tmp_dir) / "raw_dataset.csv"
+        fake_ds.write_text("legitimate raw dataset content", encoding="utf-8")
+        actual_ds_hash = _sha256_file(fake_ds)
+
+        fake_sm = Path(tmp_dir) / "split_manifest.json"
+        fake_sm.write_text(
+            json.dumps(
+                {
+                    "dataset_sha256": actual_ds_hash,
+                    "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+                }
+            ),
+            encoding="utf-8",
+        )
+        sm_hash = _sha256_file(fake_sm)
+
+        prep = TrainOnlyPreprocessor(
+            dataset_sha256=actual_ds_hash,
+            split_manifest_sha256=sm_hash,
+        )
+        prep.fit(df_train)
+
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        # 1. Valid dataset bytes -> PASS
+        res_pass = verify_preprocessing_artifact(
+            artifact_path=art_path,
+            manifest_path=man_path,
+            split_manifest_path=fake_sm,
+            dataset_path=fake_ds,
+            expected_dataset_sha256=actual_ds_hash,
+        )
+        assert res_pass["status"] == "PASS"
+
+        # 2. Tampered dataset bytes -> FAIL
+        tampered_ds = Path(tmp_dir) / "tampered_dataset.csv"
+        tampered_ds.write_text("tampered bytes that differ from manifest", encoding="utf-8")
+        res_fail = verify_preprocessing_artifact(
+            artifact_path=art_path,
+            manifest_path=man_path,
+            split_manifest_path=fake_sm,
+            dataset_path=tampered_ds,
+            expected_dataset_sha256=actual_ds_hash,
+        )
+        assert res_fail["status"] == "FAIL"
+        assert any("Raw dataset file SHA-256 mismatch" in e for e in res_fail["errors"])
+
+        # 3. Missing dataset file -> FAIL
+        res_missing = verify_preprocessing_artifact(
+            artifact_path=art_path,
+            manifest_path=man_path,
+            split_manifest_path=fake_sm,
+            dataset_path=Path(tmp_dir) / "nonexistent.csv",
+            expected_dataset_sha256=actual_ds_hash,
+        )
+        assert res_missing["status"] == "FAIL"
+        assert any("Referenced raw dataset file not found" in e for e in res_missing["errors"])
+
+
+def test_load_verified_provenance_enforcement(synthetic_47_feature_data):
+    """Test TrainOnlyPreprocessor.load_verified enforces schema, checksums, and policy."""
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        # 1. Valid verified load
+        loaded = TrainOnlyPreprocessor.load_verified(
+            artifact_path=art_path,
+            manifest_path=man_path,
+        )
+        assert loaded.is_fitted_ is True
+        out = loaded.transform(df_train)
+        assert len(out) == len(df_train)
+
+        # 2. Missing manifest -> raises ValueError
+        with pytest.raises(ValueError, match="Companion manifest file not found"):
+            TrainOnlyPreprocessor.load_verified(
+                artifact_path=art_path,
+                manifest_path=Path(tmp_dir) / "missing_manifest.json",
+            )
+
+        # 3. Wrong policy version in manifest -> raises ValueError
+        man_dict = json.loads(man_path.read_text(encoding="utf-8"))
+        bad_pv_man = Path(tmp_dir) / "bad_pv_man.json"
+        bad_pv = copy.deepcopy(man_dict)
+        bad_pv["preprocessing_policy_version"] = "invalid_v99"
+        bad_pv_man.write_text(json.dumps(bad_pv), encoding="utf-8")
+        with pytest.raises(ValueError, match="Invalid preprocessing_policy_version"):
+            TrainOnlyPreprocessor.load_verified(
+                artifact_path=art_path,
+                manifest_path=bad_pv_man,
+            )
+
+        # 4. Wrong feature contract in manifest -> raises ValueError
+        bad_fc_man = Path(tmp_dir) / "bad_fc_man.json"
+        bad_fc = copy.deepcopy(man_dict)
+        bad_fc["feature_contract_version"] = "wrong_contract_v0"
+        bad_fc_man.write_text(json.dumps(bad_fc), encoding="utf-8")
+        with pytest.raises(ValueError, match="Invalid feature_contract_version"):
+            TrainOnlyPreprocessor.load_verified(
+                artifact_path=art_path,
+                manifest_path=bad_fc_man,
+            )
+
+
+def test_direct_load_embedded_metadata_validation(synthetic_47_feature_data):
+    """Test TrainOnlyPreprocessor.load() validates embedded policy version and schema."""
+    import joblib
+
+    df_train, _, _ = synthetic_47_feature_data
+    prep = TrainOnlyPreprocessor(dataset_sha256=EXPECTED_DATASET_SHA256)
+    prep.fit(df_train)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        prep.save(art_path)
+
+        payload = joblib.load(art_path)
+
+        # 1. Embedded policy version tampered
+        bad_payload = copy.deepcopy(payload)
+        bad_payload["metadata"]["preprocessing_policy_version"] = "tampered_policy_v2"
+        bad_art = Path(tmp_dir) / "bad_art.joblib"
+        joblib.dump(bad_payload, bad_art)
+
+        with pytest.raises(ValueError, match="Preprocessing policy version mismatch"):
+            TrainOnlyPreprocessor.load(bad_art)
+
+        # 2. Embedded split protocol version tampered
+        bad_sp_payload = copy.deepcopy(payload)
+        bad_sp_payload["metadata"]["split_protocol_version"] = "wrong_split_v9"
+        bad_sp_art = Path(tmp_dir) / "bad_sp_art.joblib"
+        joblib.dump(bad_sp_payload, bad_sp_art)
+
+        with pytest.raises(ValueError, match="Split protocol version mismatch"):
+            TrainOnlyPreprocessor.load(bad_sp_art)
+
+
+def test_zero_duration_flows_regression(synthetic_47_feature_data):
+    """Regression test for zero-duration and near-zero duration flows under policy.
+
+    Verifies:
+    1. Flows with FLOW_DURATION_MILLISECONDS == 0.0 and <= 1.0 are retained (not dropped).
+    2. FLOW_DURATION_MILLISECONDS is not altered or modified.
+    3. Throughput features containing infinities (+/- inf) are imputed with Train median,
+       never silently zeroed.
+    4. Transform outputs strictly 47 features with all finite values.
+    5. Save and load maintains bit-identical output.
+    """
+    df_train, df_val, df_test = synthetic_47_feature_data
+
+    # Inject zero-duration and short-duration edge cases into Train, Val, Test
+    for df in (df_train, df_val, df_test):
+        df.loc[0, "FLOW_DURATION_MILLISECONDS"] = 0.0
+        df.loc[0, "SRC_TO_DST_SECOND_BYTES"] = np.inf
+        df.loc[0, "DST_TO_SRC_SECOND_BYTES"] = np.inf
+
+        df.loc[1, "FLOW_DURATION_MILLISECONDS"] = 0.5
+        df.loc[1, "SRC_TO_DST_SECOND_BYTES"] = -np.inf
+        df.loc[1, "DST_TO_SRC_SECOND_BYTES"] = 100.0
+
+        df.loc[2, "FLOW_DURATION_MILLISECONDS"] = 1.0
+        df.loc[2, "SRC_TO_DST_SECOND_BYTES"] = np.nan
+        df.loc[2, "DST_TO_SRC_SECOND_BYTES"] = 200.0
+
+    prep = TrainOnlyPreprocessor(
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="test_split_manifest_sha256",
+    )
+    prep.fit(df_train)
+
+    # Ensure train median was computed from finite values only
+    med = prep.imputed_values_["SRC_TO_DST_SECOND_BYTES"]
+    assert np.isfinite(med)
+    assert med > 0  # Imputed with finite median, NOT silently replaced with zero!
+
+    # Transform all three partitions
+    out_train = prep.transform(df_train, partition_name="train")
+    out_val = prep.transform(df_val, partition_name="val")
+    out_test = prep.transform(df_test, partition_name="test")
+
+    for out, original in ((out_train, df_train), (out_val, df_val), (out_test, df_test)):
+        # 1. No rows dropped
+        assert len(out) == len(original)
+        # 2. Exact 47 baseline columns
+        assert list(out.columns) == list(ML_FEATURE_COLUMNS)
+        # 3. All finite values
+        assert np.all(np.isfinite(out.to_numpy()))
+        # 4. Duration values preserved exactly
+        assert out.loc[0, "FLOW_DURATION_MILLISECONDS"] == 0.0
+        assert out.loc[1, "FLOW_DURATION_MILLISECONDS"] == 0.5
+        assert out.loc[2, "FLOW_DURATION_MILLISECONDS"] == 1.0
+        # 5. Throughput infinities imputed with finite Train median (not zero)
+        assert out.loc[0, "SRC_TO_DST_SECOND_BYTES"] == med
+        assert out.loc[1, "SRC_TO_DST_SECOND_BYTES"] == med
+        assert out.loc[2, "SRC_TO_DST_SECOND_BYTES"] == med
+
+    # 6. Save and load maintains bit-identical output
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        art_path = Path(tmp_dir) / "preprocessor.joblib"
+        man_path = Path(tmp_dir) / "manifest.json"
+        prep.save(art_path, manifest_path=man_path)
+
+        loaded = TrainOnlyPreprocessor.load_verified(art_path, manifest_path=man_path)
+        out_loaded = loaded.transform(df_val, partition_name="val")
+        pd.testing.assert_frame_equal(out_val, out_loaded)

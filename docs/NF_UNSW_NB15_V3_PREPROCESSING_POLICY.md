@@ -73,6 +73,25 @@ fingerprint repeats are not automatically deduplicated. The baseline does not cl
 outliers. When scaling is requested, statistics are fit on train only; the baseline default is
 passthrough (`scaler_type="none"`) for tree-based models (Random Forest, XGBoost, Isolation Forest).
 
+## Zero-duration and near-zero duration flow handling policy
+
+Network flow records with zero duration (`FLOW_DURATION_MILLISECONDS == 0.0`) or near-zero duration
+(`<= 1.0 ms`) frequently exhibit non-finite throughput values (e.g. `SRC_TO_DST_SECOND_BYTES == inf`,
+`DST_TO_SRC_SECOND_BYTES == inf`) due to division by zero in flow meters or upstream collectors.
+
+The policy for handling these records is strictly defined:
+1. **100% row retention:** no network flow record is ever discarded or dropped due to zero duration or
+   infinite throughput. All rows across Train, Validation, and Test are preserved.
+2. **Raw duration fidelity:** measured flow durations (including exact `0.0` ms) are preserved as valid
+   physical measurements and are not artificially shifted or clipped.
+3. **Train-derived finite median imputation:** infinite throughput tokens (`inf`, `-inf`, and `nan`)
+   are mapped to missing sentinels during preprocessing and imputed using the finite medians computed
+   strictly from the training partition.
+4. **No silent zeroing:** infinite throughput values are NEVER silently zeroed (replaced with `0.0`), as
+   zeroing would distort the distribution and falsely imply zero network activity.
+5. **Exact schema preservation:** the resulting dataset retains the exact 47 baseline ML features in
+   canonical contract order without any NaN or Inf remaining.
+
 ## Executable interface for downstream models
 
 Downstream model implementations consume:
@@ -91,11 +110,26 @@ X_val, y_val_label, y_val_attack = val_data
 X_test, y_test_label, y_test_attack = test_data
 ```
 
-Or for standalone inference:
+### Standalone inference and security trust boundary
+
+For production and inference serving, `TrainOnlyPreprocessor.load_verified()` is the **recommended**
+safe API. It enforces fail-closed artifact checksum and companion manifest validation BEFORE
+deserializing the joblib binary:
+
 ```python
-preprocessor = TrainOnlyPreprocessor.load("artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib")
+# Recommended: fail-closed verified loader
+preprocessor = TrainOnlyPreprocessor.load_verified(
+    artifact_path="artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+    manifest_path="reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+    dataset_path="data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv",
+)
 X_clean = preprocessor.transform(X_new)
 ```
+
+`TrainOnlyPreprocessor.load()` remains available as a low-level compatibility loader for strictly
+trusted environments. It validates embedded provenance metadata (`preprocessing_policy_version`,
+`feature_contract_version`, `split_protocol_version`, output schema) post-load, but does not provide
+pre-deserialization integrity verification. Untrusted artifact paths should always use `load_verified()`.
 
 ## Acceptance gate
 
