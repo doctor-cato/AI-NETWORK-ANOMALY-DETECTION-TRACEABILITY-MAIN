@@ -27,7 +27,7 @@
 
 | Artifact | Path | SHA-256 |
 |---|---|---|
-| Fitted Preprocessor Joblib | `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | `f7d86b119800beebe7b93872335cf820c576135e28736905c920a94ced2c28a5` |
+| Fitted Preprocessor Joblib | `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19` |
 | Companion Manifest JSON | `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json` | Verified schema and hashes |
 
 ---
@@ -61,16 +61,16 @@ python scripts/preprocess_nf_unsw_nb15_v3.py
 **Output:**
 ```
 [preprocess] Loading and fitting train-only preprocessor on NF-UNSW-NB15-v3...
-[preprocess] Success in 25.78s:
+[preprocess] Success in 22.86s:
   Train shape:      (1655797, 47) (finite: True)
   Validation shape: (345371, 47) (finite: True)
   Test shape:       (345953, 47) (finite: True)
   Features count:   47 in exact contract order
   Scaler type:      none
-  Artifact saved:   artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib (SHA-256: f7d86b119800beebe7b93872335cf820c576135e28736905c920a94ced2c28a5)
+  Artifact saved:   artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib (SHA-256: 12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19)
   Manifest saved:   reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json
 ```
-**Result:** `PASS` (25.78s execution time).
+**Result:** `PASS` (22.86s execution time).
 
 ### 4.2. Fail-Closed Artifact and Raw Dataset Byte Verification
 

@@ -776,6 +776,122 @@ class TrainOnlyPreprocessor:
         return preprocessor
 
 
+def verify_zero_duration_retention(
+    X_before: pd.DataFrame,
+    X_after: pd.DataFrame,
+    duration_col: str = "FLOW_DURATION_MILLISECONDS",
+) -> Dict[str, Any]:
+    """Verify that zero-duration flows in X_before are retained with exact duration in X_after.
+
+    Integrity checks:
+    1. Schema & Type: Both inputs must be pandas DataFrames and contain duration_col.
+    2. Identity: Indices must be unique to guarantee unambiguous row identification.
+    3. Row count: Total row count must match between X_before and X_after.
+    4. Retention: All rows where duration == 0 in X_before must exist in X_after.
+    5. Invariance: Transformed duration at those indices must remain exactly 0.0.
+
+    Parameters
+    ----------
+    X_before : pd.DataFrame
+        Partition features before transformation.
+    X_after : pd.DataFrame
+        Partition features after transformation.
+    duration_col : str, optional
+        Column name representing flow duration. Default is 'FLOW_DURATION_MILLISECONDS'.
+
+    Returns
+    -------
+    dict
+        Verification result containing status ('PASS', 'FAIL', 'NOT APPLICABLE', 'NOT VERIFIED'),
+        zero_duration_flows_count, zero_duration_retained (bool), and explanation reason.
+    """
+    if not isinstance(X_before, pd.DataFrame) or not isinstance(X_after, pd.DataFrame):
+        return {
+            "status": "NOT VERIFIED",
+            "reason": "Both X_before and X_after must be pandas DataFrames",
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": False,
+        }
+
+    if duration_col not in X_before.columns or duration_col not in X_after.columns:
+        return {
+            "status": "NOT VERIFIED",
+            "reason": (
+                f"Column '{duration_col}' must be present in both before and after DataFrames"
+            ),
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": False,
+        }
+
+    if X_before.index.has_duplicates or X_after.index.has_duplicates:
+        return {
+            "status": "NOT VERIFIED",
+            "reason": "Non-unique index prevents unambiguous row identity tracking",
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": False,
+        }
+
+    raw_series = X_before[duration_col]
+    raw_num = pd.to_numeric(raw_series, errors="coerce")
+    zero_mask = (raw_num == 0.0) & raw_num.notna()
+    zero_indices = X_before.index[zero_mask]
+    zero_count = int(len(zero_indices))
+
+    if zero_count == 0:
+        return {
+            "status": "NOT APPLICABLE",
+            "reason": "No zero-duration flows present in input data",
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": True,
+        }
+
+    if len(X_after) != len(X_before):
+        return {
+            "status": "FAIL",
+            "reason": (
+                f"Row count changed after transform: before={len(X_before)}, "
+                f"after={len(X_after)}"
+            ),
+            "zero_duration_flows_count": zero_count,
+            "zero_duration_retained": False,
+        }
+
+    missing_indices = zero_indices.difference(X_after.index)
+    if len(missing_indices) > 0:
+        return {
+            "status": "FAIL",
+            "reason": (
+                f"{len(missing_indices)} zero-duration flows were dropped in transformation"
+            ),
+            "zero_duration_flows_count": zero_count,
+            "zero_duration_retained": False,
+        }
+
+    after_series = X_after.loc[zero_indices, duration_col]
+    after_num = pd.to_numeric(after_series, errors="coerce")
+    altered_mask = (after_num != 0.0) | after_num.isna()
+    if altered_mask.any():
+        num_altered = int(altered_mask.sum())
+        return {
+            "status": "FAIL",
+            "reason": (
+                f"{num_altered} zero-duration flows had their duration altered "
+                f"during transformation"
+            ),
+            "zero_duration_flows_count": zero_count,
+            "zero_duration_retained": False,
+        }
+
+    return {
+        "status": "PASS",
+        "reason": (
+            f"All {zero_count} zero-duration flows verified retained with exact duration == 0.0"
+        ),
+        "zero_duration_flows_count": zero_count,
+        "zero_duration_retained": True,
+    }
+
+
 def load_and_preprocess_split(
     manifest_path: Union[str, Path],
     dataset_path: Union[str, Path],
@@ -918,7 +1034,12 @@ def load_and_preprocess_split(
             manifest_path=Path(save_manifest_path) if save_manifest_path else None,
         )
 
-    # 8. Compile audit report
+    # 8. Verify zero-duration retention on actual transformed data
+    zd_train = verify_zero_duration_retention(X_train_raw, X_train)
+    zd_val = verify_zero_duration_retention(X_val_raw, X_val)
+    zd_test = verify_zero_duration_retention(X_test_raw, X_test)
+
+    # 9. Compile audit report
     audit_report = {
         "status": "PASS",
         "dataset_sha256": dataset_sha256,
@@ -930,6 +1051,11 @@ def load_and_preprocess_split(
             "train": len(X_train),
             "validation": len(X_val),
             "test": len(X_test),
+        },
+        "zero_duration_retention": {
+            "train": zd_train,
+            "validation": zd_val,
+            "test": zd_test,
         },
         "constant_features": preprocessor.constant_features_,
         "all_missing_columns": preprocessor.all_missing_columns_,

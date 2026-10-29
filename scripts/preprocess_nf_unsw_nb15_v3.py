@@ -377,18 +377,25 @@ def main(argv: Optional[list] = None) -> int:
     X_val, y_val, _ = val_data
     X_test, y_test, _ = test_data
 
-    # Read split manifest to get purged rows
+    # Read split manifest to get canonical purged and total rows
     split_manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    purged_rows = (
-        split_manifest.get("audit_summary", {})
-        .get("purged_records", {})
-        .get("total_purged_rows", 18303)
+    purged_records = split_manifest.get("audit_summary", {}).get("purged_records", {})
+    purged_rows = purged_records.get("total_purged_rows")
+    if purged_rows is None:
+        purged_rows = sum(
+            p.get("row_count", 0)
+            for k, p in split_manifest.get("partitions", {}).items()
+            if "purged" in k
+        )
+    total_rows = split_manifest.get(
+        "total_source_rows",
+        len(X_train) + len(X_val) + len(X_test) + purged_rows,
     )
-    total_rows = len(X_train) + len(X_val) + len(X_test) + purged_rows
 
-    train_zero_dur = int((X_train["FLOW_DURATION_MILLISECONDS"] == 0.0).sum())
-    val_zero_dur = int((X_val["FLOW_DURATION_MILLISECONDS"] == 0.0).sum())
-    test_zero_dur = int((X_test["FLOW_DURATION_MILLISECONDS"] == 0.0).sum())
+    zd_results = audit_report.get("zero_duration_retention", {})
+    train_zd = zd_results.get("train", {})
+    val_zd = zd_results.get("validation", {})
+    test_zd = zd_results.get("test", {})
 
     fit_evidence = {
         "status": "PASS",
@@ -403,22 +410,25 @@ def main(argv: Optional[list] = None) -> int:
                 "row_count": len(X_train),
                 "feature_count": X_train.shape[1],
                 "all_finite": bool(np.all(np.isfinite(X_train.to_numpy()))),
-                "zero_duration_flows_count": train_zero_dur,
-                "zero_duration_retained": True,
+                "zero_duration_flows_count": train_zd.get("zero_duration_flows_count", 0),
+                "zero_duration_retained": train_zd.get("zero_duration_retained", False),
+                "zero_duration_retention_status": train_zd.get("status", "NOT VERIFIED"),
             },
             "validation": {
                 "row_count": len(X_val),
                 "feature_count": X_val.shape[1],
                 "all_finite": bool(np.all(np.isfinite(X_val.to_numpy()))),
-                "zero_duration_flows_count": val_zero_dur,
-                "zero_duration_retained": True,
+                "zero_duration_flows_count": val_zd.get("zero_duration_flows_count", 0),
+                "zero_duration_retained": val_zd.get("zero_duration_retained", False),
+                "zero_duration_retention_status": val_zd.get("status", "NOT VERIFIED"),
             },
             "test": {
                 "row_count": len(X_test),
                 "feature_count": X_test.shape[1],
                 "all_finite": bool(np.all(np.isfinite(X_test.to_numpy()))),
-                "zero_duration_flows_count": test_zero_dur,
-                "zero_duration_retained": True,
+                "zero_duration_flows_count": test_zd.get("zero_duration_flows_count", 0),
+                "zero_duration_retained": test_zd.get("zero_duration_retained", False),
+                "zero_duration_retention_status": test_zd.get("status", "NOT VERIFIED"),
             },
         },
         "purged_rows": purged_rows,

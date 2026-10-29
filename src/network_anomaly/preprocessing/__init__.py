@@ -9,6 +9,7 @@ from network_anomaly.preprocessing.pipeline import (
     audit_column_tokens,
     load_and_preprocess_split,
     verify_preprocessing_artifact,
+    verify_zero_duration_retention,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "audit_column_tokens",
     "load_and_preprocess_split",
     "verify_preprocessing_artifact",
+    "verify_zero_duration_retention",
 ]

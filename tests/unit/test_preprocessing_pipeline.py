@@ -49,6 +49,7 @@ from network_anomaly.preprocessing.pipeline import (
     _sha256_file,
     audit_column_tokens,
     verify_preprocessing_artifact,
+    verify_zero_duration_retention,
 )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -1507,6 +1508,11 @@ def _create_mini_smoke_fixture(tmp_dir: Path, df_train: pd.DataFrame):
         "dataset_name": "NF-UNSW-NB15-v3",
         "dataset_sha256": ds_sha,
         "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+        "total_source_rows": len(df_train) + 40 + 5,
+        "features": {
+            "baseline_ml_features_count": len(ML_FEATURE_COLUMNS),
+            "baseline_ml_features_in_order": list(ML_FEATURE_COLUMNS),
+        },
         "partitions": {
             "train": {"row_count": len(df_train)},
             "validation": {"row_count": 20},
@@ -1539,24 +1545,31 @@ def _create_mini_smoke_fixture(tmp_dir: Path, df_train: pd.DataFrame):
             "status": "PASS",
             "execution_time_seconds": 1.23,
             "scaler_type": "none",
+            "features_count": 47,
             "partitions": {
                 "train": {
                     "row_count": len(df_train),
                     "feature_count": 47,
                     "all_finite": True,
+                    "zero_duration_flows_count": 2,
                     "zero_duration_retained": True,
+                    "zero_duration_retention_status": "PASS",
                 },
                 "validation": {
                     "row_count": 20,
                     "feature_count": 47,
                     "all_finite": True,
+                    "zero_duration_flows_count": 1,
                     "zero_duration_retained": True,
+                    "zero_duration_retention_status": "PASS",
                 },
                 "test": {
                     "row_count": 20,
                     "feature_count": 47,
                     "all_finite": True,
+                    "zero_duration_flows_count": 1,
                     "zero_duration_retained": True,
+                    "zero_duration_retention_status": "PASS",
                 },
             },
             "purged_rows": 5,
@@ -1895,6 +1908,516 @@ def test_smoke_generator_check_consistency_mode():
     # Inconsistent manifest path fails
     nonexistent_man = REPOSITORY_ROOT / "reports" / "preprocessing" / "nonexistent.json"
     assert not gen_mod.verify_report_consistency(smoke_report_path, nonexistent_man)
+
+
+def test_smoke_generator_fails_when_evidence_train_rows_mismatch(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence train row_count mismatches split manifest."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["partitions"]["train"]["row_count"] += 1
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_evidence_val_rows_mismatch(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence validation row_count mismatches split manifest."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["partitions"]["validation"]["row_count"] += 1
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_evidence_test_rows_mismatch(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence test row_count mismatches split manifest."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["partitions"]["test"]["row_count"] += 1
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_evidence_purged_rows_mismatch(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence purged_rows mismatches split manifest."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["purged_rows"] += 1
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_evidence_total_rows_mismatch(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence total_rows mismatches canonical sum."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["total_rows"] += 1
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_evidence_partition_count_missing(synthetic_47_feature_data):
+    """Negative test: fail-closed if required partition is missing in evidence."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        del ev["fit_and_transform"]["partitions"]["validation"]
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_evidence_row_count_not_strict_int(synthetic_47_feature_data):
+    """Negative test: reject bool, float, or negative integers for row counts in evidence."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    for invalid_val in (True, 20.5, -1, "20"):
+        with tempfile.TemporaryDirectory() as tmp_dir_str:
+            tmp_dir = Path(tmp_dir_str)
+            dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+                tmp_dir, df_train
+            )
+            rep_p = tmp_dir / "REPORT.md"
+
+            ev = json.loads(ev_p.read_text(encoding="utf-8"))
+            ev["fit_and_transform"]["partitions"]["validation"]["row_count"] = invalid_val
+            ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+            success = gen_mod.generate_smoke_report(
+                report_path=rep_p,
+                manifest_path=man_p,
+                artifact_path=art_p,
+                split_manifest_path=split_p,
+                dataset_path=dataset_p,
+                evidence_path=ev_p,
+                expected_dataset_sha256=ds_sha,
+            )
+            assert not success
+            assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_row_count_tampered_with_unchanged_hashes(
+    synthetic_47_feature_data,
+):
+    """Negative test: modifying row counts while keeping checksums identical fails verification."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["partitions"]["train"]["row_count"] = 999999
+        ev["fit_and_transform"]["total_rows"] = 999999 + 40 + 5
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+            verify_real_data=True,
+        )
+        assert not success
+
+
+def test_smoke_generator_fails_when_evidence_features_count_mismatch(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence features_count != 47."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["features_count"] = 46
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_companion_manifest_features_count_mismatch(
+    synthetic_47_feature_data,
+):
+    """Negative test: fail-closed if companion manifest output_features_count != 47."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        man = json.loads(man_p.read_text(encoding="utf-8"))
+        man["output_features_count"] = 46
+        man_p.write_text(json.dumps(man), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_companion_manifest_features_order_mismatch(
+    synthetic_47_feature_data,
+):
+    """Negative test: fail-closed if companion manifest feature ordering is altered."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        man = json.loads(man_p.read_text(encoding="utf-8"))
+        order = list(man["output_features_in_order"])
+        order[0], order[1] = order[1], order[0]
+        man["output_features_in_order"] = order
+        man_p.write_text(json.dumps(man), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_evidence_partition_shape_mismatch(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence partition shape does not match (N, 47)."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["partitions"]["train"]["shape"] = [len(df_train), 46]
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_zero_duration_retention_when_flows_retained():
+    """Positive test: zero-duration flows preserved with exact 0.0 duration returns PASS."""
+    df_before = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [0.0, 150.0, 0.0, 25.0],
+            "IN_BYTES": [100, 200, 300, 400],
+        },
+        index=[0, 1, 2, 3],
+    )
+    df_after = df_before.copy()
+
+    res = verify_zero_duration_retention(df_before, df_after)
+    assert res["status"] == "PASS"
+    assert res["zero_duration_flows_count"] == 2
+    assert res["zero_duration_retained"] is True
+
+
+def test_zero_duration_retention_when_no_zero_duration_flows():
+    """Boundary test: input with no zero-duration flows returns NOT APPLICABLE."""
+    df_before = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [100.0, 150.0, 25.0],
+        },
+        index=[0, 1, 2],
+    )
+    df_after = df_before.copy()
+
+    res = verify_zero_duration_retention(df_before, df_after)
+    assert res["status"] == "NOT APPLICABLE"
+    assert res["zero_duration_flows_count"] == 0
+    assert res["zero_duration_retained"] is True
+
+
+def test_zero_duration_retention_when_flow_dropped():
+    """Negative test: dropping a zero-duration row returns FAIL."""
+    df_before = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [0.0, 100.0, 0.0],
+        },
+        index=[0, 1, 2],
+    )
+    df_after = df_before.loc[[0, 1]].copy()
+
+    res = verify_zero_duration_retention(df_before, df_after)
+    assert res["status"] == "FAIL"
+    assert res["zero_duration_retained"] is False
+
+
+def test_zero_duration_retention_when_duration_modified():
+    """Negative test: altering duration value from 0.0 to non-zero returns FAIL."""
+    df_before = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [0.0, 100.0],
+        },
+        index=[0, 1],
+    )
+    df_after = df_before.copy()
+    df_after.loc[0, "FLOW_DURATION_MILLISECONDS"] = 1.0
+
+    res = verify_zero_duration_retention(df_before, df_after)
+    assert res["status"] == "FAIL"
+    assert res["zero_duration_retained"] is False
+
+
+def test_zero_duration_retention_with_duplicate_records():
+    """Duplicate records with distinct indices retain unambiguous 1-to-1 mapping."""
+    df_before = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [0.0, 0.0],
+            "IN_BYTES": [100, 100],
+        },
+        index=[10, 20],
+    )
+    df_after = df_before.copy()
+
+    res = verify_zero_duration_retention(df_before, df_after)
+    assert res["status"] == "PASS"
+    assert res["zero_duration_flows_count"] == 2
+    assert res["zero_duration_retained"] is True
+
+
+def test_zero_duration_retention_ambiguous_row_identity():
+    """Ambiguous row identity (duplicate index labels) returns NOT VERIFIED."""
+    df_before = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [0.0, 0.0],
+        },
+        index=[0, 0],
+    )
+    df_after = df_before.copy()
+
+    res = verify_zero_duration_retention(df_before, df_after)
+    assert res["status"] == "NOT VERIFIED"
+    assert res["zero_duration_retained"] is False
+
+
+def test_zero_duration_retention_missing_column():
+    """Missing duration column returns NOT VERIFIED."""
+    df_before = pd.DataFrame({"IN_BYTES": [100]})
+    df_after = pd.DataFrame({"IN_BYTES": [100]})
+
+    res = verify_zero_duration_retention(df_before, df_after)
+    assert res["status"] == "NOT VERIFIED"
+    assert res["zero_duration_retained"] is False
+
+
+def test_zero_duration_retention_does_not_mutate_inputs_or_policy():
+    """Verification is read-only and does not mutate DataFrames or imputation policy."""
+    df_before = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [0.0, 50.0],
+        }
+    )
+    df_after = df_before.copy()
+    orig_before = df_before.copy(deep=True)
+    orig_after = df_after.copy(deep=True)
+
+    verify_zero_duration_retention(df_before, df_after)
+    pd.testing.assert_frame_equal(df_before, orig_before)
+    pd.testing.assert_frame_equal(df_after, orig_after)
+
+
+def test_smoke_generator_fails_when_evidence_zero_duration_not_retained(synthetic_47_feature_data):
+    """Negative test: fail-closed if evidence records zero_duration_retained as False or FAIL."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        ev = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev["fit_and_transform"]["partitions"]["train"]["zero_duration_retention_status"] = "FAIL"
+        ev["fit_and_transform"]["partitions"]["train"]["zero_duration_retained"] = False
+        ev_p.write_text(json.dumps(ev), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
 
 
 def test_real_data_smoke_report_in_repo_is_fully_verified():

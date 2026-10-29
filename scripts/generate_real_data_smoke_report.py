@@ -28,6 +28,7 @@ from typing import Any, Dict
 from network_anomaly.preprocessing.pipeline import (
     EXPECTED_DATASET_SHA256,
     FEATURE_CONTRACT_VERSION,
+    ML_FEATURE_COLUMNS,
     PREPROCESSING_POLICY_VERSION,
     SPLIT_PROTOCOL_VERSION,
     _sha256_file,
@@ -71,6 +72,18 @@ def build_report_text(
     elapsed = fit_ev["execution_time_seconds"]
     scaler = fit_ev.get("scaler_type", "none")
     date_str = fit_ev.get("executed_at_utc", "2026-10-28")[:10]
+
+    train_fc = train_info.get("feature_count", 47)
+    val_fc = val_info.get("feature_count", 47)
+    test_fc = test_info.get("feature_count", 47)
+
+    def _zd_desc(p_dict: Dict[str, Any]) -> str:
+        if (
+            p_dict.get("zero_duration_retained") is True
+            or p_dict.get("zero_duration_retention_status") == "PASS"
+        ):
+            return "Yes (exact duration preserved)"
+        return "FAILED (not retained)"
 
     lines = [
         "# NF-UNSW-NB15-v3 Real-Data Preprocessing Smoke Evidence Report",
@@ -118,19 +131,19 @@ def build_report_text(
         "| Partition | Input Rows | Output Matrix Shape | Finite Status | Zero Duration Retained |",
         "|---|---|---|---|---|",
         (
-            f"| Train | {train_rows:,} | `({train_rows}, 47)` | "
+            f"| Train | {train_rows:,} | `({train_rows}, {train_fc})` | "
             f"{'100% Finite (`True`)' if train_info.get('all_finite') else 'HAS NON-FINITE'} | "
-            "Yes (exact duration preserved) |"
+            f"{_zd_desc(train_info)} |"
         ),
         (
-            f"| Validation | {val_rows:,} | `({val_rows}, 47)` | "
+            f"| Validation | {val_rows:,} | `({val_rows}, {val_fc})` | "
             f"{'100% Finite (`True`)' if val_info.get('all_finite') else 'HAS NON-FINITE'} | "
-            "Yes (exact duration preserved) |"
+            f"{_zd_desc(val_info)} |"
         ),
         (
-            f"| Test | {test_rows:,} | `({test_rows}, 47)` | "
+            f"| Test | {test_rows:,} | `({test_rows}, {test_fc})` | "
             f"{'100% Finite (`True`)' if test_info.get('all_finite') else 'HAS NON-FINITE'} | "
-            "Yes (exact duration preserved) |"
+            f"{_zd_desc(test_info)} |"
         ),
         (
             f"| Purged Gaps | {purged_rows:,} | N/A (held out) | "
@@ -418,28 +431,228 @@ def generate_smoke_report(
         print(f"[smoke-report] FAIL: Artifact verification failed: {art_verify['errors']}")
         return False
 
-    # 6. Validate execution claims against execution evidence (Finding P2-C)
+    # 6. Validate execution claims against execution evidence (Finding P2-C, Review Findings 1 & 2)
     if not isinstance(evidence, dict):
         print("[smoke-report] FAIL: Execution evidence is not a valid JSON dictionary")
         return False
 
-    # Check fit and transform evidence
+    def _is_strict_int(val: Any) -> bool:
+        """Strict non-negative integer check (rejects bool, float, str, negative)."""
+        return type(val) is int and val >= 0
+
+    # 6.1 Validate canonical split manifest row counts
+    sm_parts = split_manifest.get("partitions")
+    if not isinstance(sm_parts, dict):
+        print("[smoke-report] FAIL: Split manifest missing 'partitions' dictionary")
+        return False
+
+    can_train_rows = sm_parts.get("train", {}).get("row_count")
+    can_val_rows = sm_parts.get("validation", {}).get("row_count")
+    can_test_rows = sm_parts.get("test", {}).get("row_count")
+
+    if not (
+        _is_strict_int(can_train_rows)
+        and _is_strict_int(can_val_rows)
+        and _is_strict_int(can_test_rows)
+    ):
+        print("[smoke-report] FAIL: Split manifest partitions missing valid integer row_counts")
+        return False
+
+    can_purged_rows = (
+        split_manifest.get("audit_summary", {}).get("purged_records", {}).get("total_purged_rows")
+    )
+    purged_part_sum = sum(p.get("row_count", 0) for k, p in sm_parts.items() if "purged" in k)
+    if can_purged_rows is None:
+        can_purged_rows = purged_part_sum
+    elif not _is_strict_int(can_purged_rows) or (
+        purged_part_sum > 0 and can_purged_rows != purged_part_sum
+    ):
+        print("[smoke-report] FAIL: Split manifest purged rows inconsistent with partitions")
+        return False
+
+    can_total_rows = split_manifest.get("total_source_rows")
+    expected_sum = can_train_rows + can_val_rows + can_test_rows + can_purged_rows
+    if can_total_rows is None:
+        can_total_rows = expected_sum
+    elif not _is_strict_int(can_total_rows) or can_total_rows != expected_sum:
+        print("[smoke-report] FAIL: Split manifest total rows inconsistent with partition sum")
+        return False
+
+    # 6.2 Validate canonical feature contract schema across all sources
+    can_features = list(ML_FEATURE_COLUMNS)
+    can_feat_count = len(can_features)
+
+    sm_feats = split_manifest.get("features", {})
+    if sm_feats:
+        if sm_feats.get("baseline_ml_features_count") != can_feat_count:
+            print("[smoke-report] FAIL: Split manifest baseline_ml_features_count mismatch")
+            return False
+        if sm_feats.get("baseline_ml_features_in_order") != can_features:
+            print("[smoke-report] FAIL: Split manifest baseline_ml_features_in_order mismatch")
+            return False
+
+    if manifest.get("output_features_count") != can_feat_count:
+        print(f"[smoke-report] FAIL: Companion manifest output_features_count != {can_feat_count}")
+        return False
+    if manifest.get("output_features_in_order") != can_features:
+        print("[smoke-report] FAIL: Companion manifest output_features_in_order mismatch")
+        return False
+
+    art_meta = art_verify.get("metadata", {})
+    if art_meta.get("output_features_count") != can_feat_count:
+        print(f"[smoke-report] FAIL: Artifact metadata output_features_count != {can_feat_count}")
+        return False
+    if art_meta.get("output_features_in_order") != can_features:
+        print("[smoke-report] FAIL: Artifact metadata output_features_in_order mismatch")
+        return False
+
+    # 6.3 Validate fit and transform evidence
     fit_ev = evidence.get("fit_and_transform")
     if not fit_ev or fit_ev.get("status") != "PASS":
         print("[smoke-report] FAIL: Execution evidence missing successful 'fit_and_transform'")
         return False
 
-    partitions = fit_ev.get("partitions", {})
+    ev_feat_count = fit_ev.get("features_count")
+    if not _is_strict_int(ev_feat_count) or ev_feat_count != can_feat_count:
+        print(
+            f"[smoke-report] FAIL: Evidence features_count invalid or mismatch: "
+            f"evidence={ev_feat_count}, canonical={can_feat_count}"
+        )
+        return False
+
+    ev_purged_rows = fit_ev.get("purged_rows")
+    if not _is_strict_int(ev_purged_rows) or ev_purged_rows != can_purged_rows:
+        print(
+            f"[smoke-report] FAIL: Evidence purged_rows invalid or mismatch: "
+            f"evidence={ev_purged_rows}, canonical={can_purged_rows}"
+        )
+        return False
+
+    ev_total_rows = fit_ev.get("total_rows")
+    if not _is_strict_int(ev_total_rows) or ev_total_rows != can_total_rows:
+        print(
+            f"[smoke-report] FAIL: Evidence total_rows invalid or mismatch: "
+            f"evidence={ev_total_rows}, canonical={can_total_rows}"
+        )
+        return False
+
+    partitions = fit_ev.get("partitions")
+    if not isinstance(partitions, dict):
+        print("[smoke-report] FAIL: Execution evidence missing 'partitions' dictionary")
+        return False
+
+    expected_partition_counts = {
+        "train": can_train_rows,
+        "validation": can_val_rows,
+        "test": can_test_rows,
+    }
+
+    running_sum = 0
     for part in ("train", "validation", "test"):
         if part not in partitions:
             print(f"[smoke-report] FAIL: Execution evidence missing partition '{part}'")
             return False
-        if not partitions[part].get("all_finite"):
+        p_info = partitions[part]
+        if not isinstance(p_info, dict):
+            print(f"[smoke-report] FAIL: Partition '{part}' in evidence is not a dictionary")
+            return False
+
+        # Partition row_count check
+        p_row_count = p_info.get("row_count")
+        if not _is_strict_int(p_row_count):
+            print(
+                f"[smoke-report] FAIL: Partition '{part}' row_count is not strict int: "
+                f"{p_row_count}"
+            )
+            return False
+        if p_row_count != expected_partition_counts[part]:
+            print(
+                f"[smoke-report] FAIL: Partition '{part}' row_count mismatch: "
+                f"evidence={p_row_count}, canonical={expected_partition_counts[part]}"
+            )
+            return False
+        running_sum += p_row_count
+
+        # Partition feature_count check
+        p_feat_count = p_info.get("feature_count")
+        if not _is_strict_int(p_feat_count):
+            print(
+                f"[smoke-report] FAIL: Partition '{part}' feature_count is not strict int: "
+                f"{p_feat_count}"
+            )
+            return False
+        if p_feat_count != can_feat_count:
+            print(
+                f"[smoke-report] FAIL: Partition '{part}' feature_count mismatch: "
+                f"evidence={p_feat_count}, canonical={can_feat_count}"
+            )
+            return False
+
+        # Shape check if present
+        if "shape" in p_info:
+            p_shape = p_info["shape"]
+            if not (
+                isinstance(p_shape, (list, tuple))
+                and len(p_shape) == 2
+                and p_shape[0] == expected_partition_counts[part]
+                and p_shape[1] == can_feat_count
+            ):
+                print(
+                    f"[smoke-report] FAIL: Partition '{part}' shape invalid or mismatch: {p_shape}"
+                )
+                return False
+
+        # Finite check
+        if not p_info.get("all_finite"):
             print(f"[smoke-report] FAIL: Execution evidence partition '{part}' is not all finite")
             return False
-        if not partitions[part].get("zero_duration_retained"):
-            print(f"[smoke-report] FAIL: Zero duration not retained in '{part}'")
+
+        # Zero duration retention check
+        p_zd_count = p_info.get("zero_duration_flows_count")
+        if p_zd_count is not None and not _is_strict_int(p_zd_count):
+            print(
+                f"[smoke-report] FAIL: Partition '{part}' zero_duration_flows_count "
+                f"not strict int: {p_zd_count}"
+            )
             return False
+
+        p_zd_retained = p_info.get("zero_duration_retained")
+        p_zd_status = p_info.get("zero_duration_retention_status")
+
+        if p_zd_status in ("FAIL", "NOT VERIFIED"):
+            print(
+                f"[smoke-report] FAIL: Zero duration retention status '{p_zd_status}' in '{part}'"
+            )
+            return False
+
+        if p_zd_count is not None and p_zd_count > 0:
+            if p_zd_retained is not True or p_zd_status not in ("PASS", None):
+                print(
+                    f"[smoke-report] FAIL: Zero duration not verified retained in '{part}' "
+                    f"(retained={p_zd_retained}, status={p_zd_status})"
+                )
+                return False
+        else:
+            if p_zd_retained is False:
+                print(f"[smoke-report] FAIL: Zero duration retained reported False in '{part}'")
+                return False
+
+    # Check purged partition if present in partitions dict
+    if "purged" in partitions:
+        purged_p = partitions["purged"]
+        if isinstance(purged_p, dict):
+            p_p_row = purged_p.get("row_count")
+            if not _is_strict_int(p_p_row) or p_p_row != can_purged_rows:
+                print(f"[smoke-report] FAIL: Partition 'purged' row_count mismatch: {p_p_row}")
+                return False
+
+    # Check that partition sum + purged == total_rows
+    if running_sum + ev_purged_rows != ev_total_rows:
+        print(
+            f"[smoke-report] FAIL: Evidence partitions row sum mismatch: "
+            f"{running_sum} + {ev_purged_rows} != {ev_total_rows}"
+        )
+        return False
 
     # Check verify-only evidence
     verify_ev = evidence.get("verify_only")
