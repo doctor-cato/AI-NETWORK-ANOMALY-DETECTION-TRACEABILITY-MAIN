@@ -1,7 +1,7 @@
 # NF-UNSW-NB15-v3 Real-Data Preprocessing Smoke Evidence Report
 
 **Status:** `PASS`
-**Date:** 2026-10-28
+**Date:** 2026-10-29
 **Scope:** Issue #8 — Train-Only Preprocessing Pipeline
 **Dataset Readiness:** `ML_READY: BLOCKED` (model training unauthorized until Issue #9+)
 
@@ -27,7 +27,7 @@
 
 | Artifact | Path | SHA-256 |
 |---|---|---|
-| Fitted Preprocessor Joblib | `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | `1de9448b3dc66bc9860ddf159f3f2b74f0ce667cea4e11265a29e8708a3d6611` |
+| Fitted Preprocessor Joblib | `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | `f7d86b119800beebe7b93872335cf820c576135e28736905c920a94ced2c28a5` |
 | Companion Manifest JSON | `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json` | Verified schema and hashes |
 
 ---
@@ -61,16 +61,16 @@ python scripts/preprocess_nf_unsw_nb15_v3.py
 **Output:**
 ```
 [preprocess] Loading and fitting train-only preprocessor on NF-UNSW-NB15-v3...
-[preprocess] Success in 21.20s:
+[preprocess] Success in 25.78s:
   Train shape:      (1655797, 47) (finite: True)
   Validation shape: (345371, 47) (finite: True)
   Test shape:       (345953, 47) (finite: True)
   Features count:   47 in exact contract order
   Scaler type:      none
-  Artifact saved:   artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib (SHA-256: 1de9448b3dc66bc9860ddf159f3f2b74f0ce667cea4e11265a29e8708a3d6611)
+  Artifact saved:   artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib (SHA-256: f7d86b119800beebe7b93872335cf820c576135e28736905c920a94ced2c28a5)
   Manifest saved:   reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json
 ```
-**Result:** `PASS` (21.20s execution time).
+**Result:** `PASS` (25.78s execution time).
 
 ### 4.2. Fail-Closed Artifact and Raw Dataset Byte Verification
 

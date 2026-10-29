@@ -1,0 +1,70 @@
+{
+  "schema_version": "v1",
+  "environment": {
+    "python_version": "3.14.6",
+    "platform": "win32"
+  },
+  "git_commit": "e61567610512c4a191ac01600b3254579c169a9d",
+  "dataset_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv",
+  "dataset_bytes": 577360958,
+  "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+  "split_manifest_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/data/processed/nf_unsw_nb15_v3_split_manifest.json",
+  "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+  "artifact_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+  "artifact_sha256": "f7d86b119800beebe7b93872335cf820c576135e28736905c920a94ced2c28a5",
+  "companion_manifest_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+  "check_reproducibility": {
+    "status": "PASS",
+    "command": "python scripts/preprocess_nf_unsw_nb15_v3.py --check-reproducibility",
+    "exit_code": 0,
+    "executed_at_utc": "2026-10-29T04:36:10.994528+00:00",
+    "pass_1_artifact_sha256": "211511814c069455f2542dca6e5b3cc2c292513a7309340d57ca2ac0a9d8e1a0",
+    "pass_2_artifact_sha256": "9b1ecfc1cb1c3bc942296335bbad469ebaf91dc9017597d88eeaec71ab0c8783",
+    "parameters_identical": true,
+    "outputs_identical": true
+  },
+  "last_updated_at_utc": "2026-10-29T04:36:51.550257+00:00",
+  "fit_and_transform": {
+    "status": "PASS",
+    "command": "python scripts/preprocess_nf_unsw_nb15_v3.py",
+    "exit_code": 0,
+    "executed_at_utc": "2026-10-29T04:36:37.492944+00:00",
+    "execution_time_seconds": 25.78,
+    "scaler_type": "none",
+    "features_count": 47,
+    "partitions": {
+      "train": {
+        "row_count": 1655797,
+        "feature_count": 47,
+        "all_finite": true,
+        "zero_duration_flows_count": 69717,
+        "zero_duration_retained": true
+      },
+      "validation": {
+        "row_count": 345371,
+        "feature_count": 47,
+        "all_finite": true,
+        "zero_duration_flows_count": 25697,
+        "zero_duration_retained": true
+      },
+      "test": {
+        "row_count": 345953,
+        "feature_count": 47,
+        "all_finite": true,
+        "zero_duration_flows_count": 25969,
+        "zero_duration_retained": true
+      }
+    },
+    "purged_rows": 18303,
+    "total_rows": 2365424
+  },
+  "verify_only": {
+    "status": "PASS",
+    "command": "python scripts/preprocess_nf_unsw_nb15_v3.py --verify-only",
+    "exit_code": 0,
+    "executed_at_utc": "2026-10-29T04:36:51.049724+00:00",
+    "artifact_integrity_verified": true,
+    "dataset_bytes_verified": true,
+    "manifest_schema_verified": true
+  }
+}

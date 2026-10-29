@@ -53,10 +53,20 @@ from network_anomaly.preprocessing.pipeline import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PREPROCESS_SCRIPT = REPOSITORY_ROOT / "scripts" / "preprocess_nf_unsw_nb15_v3.py"
+SMOKE_REPORT_SCRIPT = REPOSITORY_ROOT / "scripts" / "generate_real_data_smoke_report.py"
 
 
 def _load_preprocess_cli():
     spec = importlib.util.spec_from_file_location("preprocess_cli", PREPROCESS_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_smoke_report_generator():
+    spec = importlib.util.spec_from_file_location(
+        "generate_real_data_smoke_report", SMOKE_REPORT_SCRIPT
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -1484,3 +1494,416 @@ def test_smoke_report_matches_canonical_provenance_metadata():
 
     # 4. Verify description does not claim 'without loading joblib'
     assert "without loading joblib" not in report_text
+
+
+def _create_mini_smoke_fixture(tmp_dir: Path, df_train: pd.DataFrame):
+    """Helper to create a fully consistent, self-contained mini real-data fixture."""
+    dataset_p = tmp_dir / "NF-UNSW-NB15-v3.csv"
+    dataset_p.write_bytes(b"dummy_dataset_bytes_for_fail_closed_testing")
+    ds_sha = _sha256_file(dataset_p)
+
+    split_p = tmp_dir / "split_manifest.json"
+    split_manifest = {
+        "dataset_name": "NF-UNSW-NB15-v3",
+        "dataset_sha256": ds_sha,
+        "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+        "partitions": {
+            "train": {"row_count": len(df_train)},
+            "validation": {"row_count": 20},
+            "test": {"row_count": 20},
+        },
+        "audit_summary": {"purged_records": {"total_purged_rows": 5}},
+    }
+    split_p.write_text(json.dumps(split_manifest), encoding="utf-8")
+    sm_sha = _sha256_file(split_p)
+
+    art_p = tmp_dir / "preprocessor.joblib"
+    man_p = tmp_dir / "manifest.json"
+    prep = TrainOnlyPreprocessor(dataset_sha256=ds_sha, split_manifest_sha256=sm_sha)
+    prep.fit(df_train)
+    prep.save(art_p, manifest_path=man_p)
+    art_sha = _sha256_file(art_p)
+
+    ev_p = tmp_dir / "execution_evidence.json"
+    evidence = {
+        "schema_version": "v1",
+        "dataset_path": dataset_p.as_posix(),
+        "dataset_sha256": ds_sha,
+        "dataset_bytes": len(dataset_p.read_bytes()),
+        "split_manifest_path": split_p.as_posix(),
+        "split_manifest_sha256": sm_sha,
+        "artifact_path": art_p.as_posix(),
+        "artifact_sha256": art_sha,
+        "companion_manifest_path": man_p.as_posix(),
+        "fit_and_transform": {
+            "status": "PASS",
+            "execution_time_seconds": 1.23,
+            "scaler_type": "none",
+            "partitions": {
+                "train": {
+                    "row_count": len(df_train),
+                    "feature_count": 47,
+                    "all_finite": True,
+                    "zero_duration_retained": True,
+                },
+                "validation": {
+                    "row_count": 20,
+                    "feature_count": 47,
+                    "all_finite": True,
+                    "zero_duration_retained": True,
+                },
+                "test": {
+                    "row_count": 20,
+                    "feature_count": 47,
+                    "all_finite": True,
+                    "zero_duration_retained": True,
+                },
+            },
+            "purged_rows": 5,
+            "total_rows": len(df_train) + 40 + 5,
+        },
+        "verify_only": {
+            "status": "PASS",
+            "exit_code": 0,
+            "artifact_integrity_verified": True,
+            "dataset_bytes_verified": True,
+            "manifest_schema_verified": True,
+        },
+        "check_reproducibility": {
+            "status": "PASS",
+            "exit_code": 0,
+            "parameters_identical": True,
+            "outputs_identical": True,
+        },
+    }
+    ev_p.write_text(json.dumps(evidence), encoding="utf-8")
+    return dataset_p, split_p, art_p, man_p, ev_p, ds_sha
+
+
+def test_smoke_generator_fails_when_raw_dataset_missing(synthetic_47_feature_data):
+    """Negative test: fail-closed if raw dataset is missing (no fallback!)."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Delete raw dataset file
+        dataset_p.unlink()
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_split_manifest_missing(synthetic_47_feature_data):
+    """Negative test: fail-closed if split manifest is missing (no fallback to companion!)."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Delete split manifest file
+        split_p.unlink()
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_artifact_missing(synthetic_47_feature_data):
+    """Negative test: fail-closed if artifact .joblib is missing (no fallback!)."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Delete artifact file
+        art_p.unlink()
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_companion_manifest_missing(synthetic_47_feature_data):
+    """Negative test: fail-closed if companion manifest is missing."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Delete companion manifest file
+        man_p.unlink()
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_execution_evidence_missing(synthetic_47_feature_data):
+    """Negative test: fail-closed if execution evidence is missing."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Delete execution evidence file
+        ev_p.unlink()
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_execution_evidence_not_pass(synthetic_47_feature_data):
+    """Negative test: fail-closed if execution evidence recorded a FAIL status."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Corrupt evidence status to FAIL
+        ev_data = json.loads(ev_p.read_text(encoding="utf-8"))
+        ev_data["fit_and_transform"]["status"] = "FAIL"
+        ev_p.write_text(json.dumps(ev_data), encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_artifact_tampered_before_deserialization(
+    synthetic_47_feature_data,
+):
+    """Negative test: checksum mismatch fails closed BEFORE joblib.load is called."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Tamper artifact bytes on disk
+        art_p.write_bytes(b"tampered_artifact_bytes")
+
+        with patch("joblib.load") as mock_load:
+            success = gen_mod.generate_smoke_report(
+                report_path=rep_p,
+                manifest_path=man_p,
+                artifact_path=art_p,
+                split_manifest_path=split_p,
+                dataset_path=dataset_p,
+                evidence_path=ev_p,
+                expected_dataset_sha256=ds_sha,
+            )
+            assert not success
+            assert mock_load.call_count == 0
+            assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_dataset_tampered(synthetic_47_feature_data):
+    """Negative test: dataset bytes tampered after manifest generation fails closed."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Tamper dataset bytes
+        dataset_p.write_bytes(b"tampered_dataset_bytes")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_fails_when_split_tampered(synthetic_47_feature_data):
+    """Negative test: split manifest modified after companion generation fails closed."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # Tamper split manifest
+        split_p.write_text('{"modified": true}', encoding="utf-8")
+
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert not success
+        assert not rep_p.is_file()
+
+
+def test_smoke_generator_succeeds_with_valid_fixture(synthetic_47_feature_data):
+    """Positive test: complete, consistent fixture generates report and passes verify_real_data."""
+    df_train, _, _ = synthetic_47_feature_data
+    gen_mod = _load_smoke_report_generator()
+
+    with tempfile.TemporaryDirectory() as tmp_dir_str:
+        tmp_dir = Path(tmp_dir_str)
+        dataset_p, split_p, art_p, man_p, ev_p, ds_sha = _create_mini_smoke_fixture(
+            tmp_dir, df_train
+        )
+        rep_p = tmp_dir / "REPORT.md"
+
+        # 1. Generate report
+        success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+        )
+        assert success
+        assert rep_p.is_file()
+        rep_text = rep_p.read_text(encoding="utf-8")
+        assert "1.23s execution time" in rep_text
+        assert "REAL-DATA VERIFIED" not in rep_text or "Status:" in rep_text
+
+        # 2. Verify with verify_real_data=True
+        verify_success = gen_mod.generate_smoke_report(
+            report_path=rep_p,
+            manifest_path=man_p,
+            artifact_path=art_p,
+            split_manifest_path=split_p,
+            dataset_path=dataset_p,
+            evidence_path=ev_p,
+            expected_dataset_sha256=ds_sha,
+            verify_real_data=True,
+        )
+        assert verify_success
+
+
+def test_smoke_generator_check_consistency_mode():
+    """Test check-report-consistency mode verifies Markdown syntax without requiring raw CSV."""
+    gen_mod = _load_smoke_report_generator()
+    smoke_report_path = REPOSITORY_ROOT / "reports" / "preprocessing" / "REAL_DATA_SMOKE_REPORT.md"
+    manifest_path = (
+        REPOSITORY_ROOT
+        / "reports"
+        / "preprocessing"
+        / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    )
+
+    if not smoke_report_path.is_file():
+        pytest.skip("REAL_DATA_SMOKE_REPORT.md not found")
+
+    # Consistent report passes
+    assert gen_mod.verify_report_consistency(smoke_report_path, manifest_path)
+
+    # Inconsistent manifest path fails
+    nonexistent_man = REPOSITORY_ROOT / "reports" / "preprocessing" / "nonexistent.json"
+    assert not gen_mod.verify_report_consistency(smoke_report_path, nonexistent_man)
+
+
+def test_real_data_smoke_report_in_repo_is_fully_verified():
+    """Verify that the repository's REAL_DATA_SMOKE_REPORT.md passes full verification."""
+    gen_mod = _load_smoke_report_generator()
+    dataset_p = (
+        REPOSITORY_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
+    )
+    if not dataset_p.is_file():
+        pytest.skip("Raw dataset not present in this environment")
+
+    assert gen_mod.generate_smoke_report(verify_real_data=True)
