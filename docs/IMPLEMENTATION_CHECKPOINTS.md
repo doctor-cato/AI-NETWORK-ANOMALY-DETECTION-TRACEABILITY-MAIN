@@ -44,8 +44,6 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 
 ## C1–C11
 
-## C1–C11
-
 C1 đã có provenance/schema, real-data quality/duplicate audit và EDA tái lập được cho
 NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA chạy trên
 2.365.424 dòng và tái lập khớp các finding đã xác minh. Real split và leakage audit hoàn thành

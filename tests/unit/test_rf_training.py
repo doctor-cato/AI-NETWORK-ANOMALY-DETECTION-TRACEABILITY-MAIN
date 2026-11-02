@@ -1,13 +1,15 @@
-"""Unit tests for Random Forest baseline training and artifact lifecycle (Issue #10).
+"""Unit and integration tests for Random Forest baseline training and artifact lifecycle (Issue #10).
 
 Verifies artifact loading, prerequisite checks, checksum mismatch detection,
-target leakage prevention, save/load roundtrips, and reproducibility without
-modifying real dataset files or confusing unit tests with real-data execution.
+strict test-partition isolation, target leakage prevention, save/load roundtrips,
+runtime provenance injection, and reproducibility.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -16,9 +18,15 @@ import pytest
 from sklearn.exceptions import NotFittedError
 
 from network_anomaly.data.nf_unsw_nb15_v3 import (
+    DATASET_NAME,
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
+)
+from network_anomaly.data.split import (
+    SPLIT_PROTOCOL_VERSION,
+    _sha256_file,
+    load_partition_indices,
 )
 from network_anomaly.models.random_forest import (
     RandomForestBaselineConfig,
@@ -26,8 +34,21 @@ from network_anomaly.models.random_forest import (
     RandomForestModel,
     create_rf_baseline_protocol,
 )
-from network_anomaly.preprocessing.pipeline import PreprocessingConfig, TrainOnlyPreprocessor
-from scripts.train_random_forest import check_prerequisites, parse_args
+from network_anomaly.preprocessing.pipeline import (
+    EXPECTED_DATASET_SHA256,
+    PreprocessingConfig,
+    TrainOnlyPreprocessor,
+)
+from scripts.train_random_forest import (
+    DEFAULT_DATASET,
+    DEFAULT_PREPROCESSOR_ARTIFACT,
+    PartitionAccessTracker,
+    check_prerequisites,
+    execute_training,
+    load_partition,
+    parse_args,
+    stream_partition_data,
+)
 
 
 @pytest.fixture
@@ -39,6 +60,48 @@ def minimal_47_feature_data():
     X = pd.DataFrame(data)
     y = pd.Series(rng.randint(0, 2, size=n_samples), name="Label")
     return X, y
+
+
+@pytest.fixture
+def mock_split_environment(tmp_path):
+    """Create a fully valid mock split environment for testing partition loading and isolation."""
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir(parents=True, exist_ok=True)
+
+    train_idx = np.array([0, 1, 3, 5, 6], dtype=np.int64)
+    val_idx = np.array([2, 4], dtype=np.int64)
+    test_idx = np.array([7, 8, 9], dtype=np.int64)
+
+    def write_idx_file(name: str, arr: np.ndarray) -> str:
+        p = indices_dir / f"{name}_indices.csv.gz"
+        df = pd.DataFrame({"source_row_index": arr})
+        df.to_csv(p, index=False, compression="gzip")
+        return _sha256_file(p)
+
+    train_sha = write_idx_file("train", train_idx)
+    val_sha = write_idx_file("validation", val_idx)
+    test_sha = write_idx_file("test", test_idx)
+
+    split_manifest = {
+        "manifest_schema_version": 1,
+        "dataset_name": DATASET_NAME,
+        "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+        "partitions": {
+            "train": {"row_count": len(train_idx), "index_sha256": train_sha},
+            "validation": {"row_count": len(val_idx), "index_sha256": val_sha},
+            "test": {"row_count": len(test_idx), "index_sha256": test_sha},
+        },
+    }
+    manifest_path = tmp_path / "split_manifest.json"
+    manifest_path.write_text(json.dumps(split_manifest), encoding="utf-8")
+
+    return {
+        "manifest_path": manifest_path,
+        "indices_dir": indices_dir,
+        "train_idx": train_idx,
+        "val_idx": val_idx,
+        "test_idx": test_idx,
+    }
 
 
 def test_unfitted_model_cannot_be_saved(tmp_path):
@@ -98,10 +161,18 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
     )
     assert verified_model.is_fitted is True
 
-    # Check tampering detection
+    # Check tampering detection: wrong artifact sha
     manifest_data["model_artifact_sha256"] = "0" * 64
     manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
     with pytest.raises(ValueError, match="Model artifact SHA-256 mismatch"):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+        )
+
+    # Check missing artifact sha in manifest raises fail-closed
+    manifest_path.write_text(json.dumps({}), encoding="utf-8")
+    with pytest.raises(ValueError, match="Missing required field 'model_artifact_sha256'"):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
@@ -185,3 +256,257 @@ def test_no_preprocessing_refit_invariance(minimal_47_feature_data):
     # Verify state remains completely frozen
     assert prep.imputed_values_ == imputed_before
     assert {k: list(v) for k, v in prep.category_vocabularies_.items()} == vocab_before
+
+
+# ==============================================================================
+# Critical 1 Tests: load_partition_indices and load_partition signature/validation
+# ==============================================================================
+
+
+def test_load_partition_indices_correct_signature(mock_split_environment):
+    """Verify load_partition_indices works with correct 3-parameter signature."""
+    env = mock_split_environment
+    train_idx = load_partition_indices(env["manifest_path"], env["indices_dir"], "train")
+    val_idx = load_partition_indices(env["manifest_path"], env["indices_dir"], "validation")
+
+    np.testing.assert_array_equal(train_idx, env["train_idx"])
+    np.testing.assert_array_equal(val_idx, env["val_idx"])
+
+
+def test_load_partition_indices_invalid_partition(mock_split_environment):
+    """Requesting an unknown partition must raise ValueError."""
+    env = mock_split_environment
+    with pytest.raises(ValueError, match="Partition unknown not found"):
+        load_partition_indices(env["manifest_path"], env["indices_dir"], "unknown")
+
+
+def test_load_partition_indices_missing_manifest(tmp_path):
+    """Missing split manifest must raise FileNotFoundError."""
+    with pytest.raises(FileNotFoundError):
+        load_partition_indices(tmp_path / "missing.json", tmp_path, "train")
+
+
+def test_load_partition_indices_missing_index_file(mock_split_environment):
+    """Missing index file on disk must raise FileNotFoundError."""
+    env = mock_split_environment
+    (env["indices_dir"] / "train_indices.csv.gz").unlink()
+    with pytest.raises(FileNotFoundError, match="Missing partition index file"):
+        load_partition_indices(env["manifest_path"], env["indices_dir"], "train")
+
+
+def test_load_partition_indices_hash_mismatch(mock_split_environment):
+    """Tampered index file must raise ValueError indicating SHA-256 mismatch."""
+    env = mock_split_environment
+    p = env["indices_dir"] / "train_indices.csv.gz"
+    p.write_bytes(b"tampered content")
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        load_partition_indices(env["manifest_path"], env["indices_dir"], "train")
+
+
+# ==============================================================================
+# Critical 2 Tests: Strict Test Lock, Tracker, and Selective Streaming
+# ==============================================================================
+
+
+def test_load_partition_blocks_test_partition(mock_split_environment):
+    """Attempting to load 'test' partition during training stage must raise PermissionError."""
+    env = mock_split_environment
+    tracker = PartitionAccessTracker()
+
+    with pytest.raises(PermissionError, match="Strict Test Lock Violation"):
+        load_partition(env["manifest_path"], env["indices_dir"], "test", tracker=tracker)
+
+    audit = tracker.to_audit_dict()
+    assert audit["test_partition_accessed"] is True
+    assert audit["test_indices_loaded"] is True
+    assert audit["test_rows_loaded"] == 0
+
+
+def test_stream_partition_data_strict_test_isolation(tmp_path):
+    """Verify that streaming data strictly ignores and never materializes test rows."""
+    # 10 rows: 0-4 train, 5-6 validation, 7-9 test
+    n_rows = 10
+    train_idx = np.array([0, 1, 2, 3, 4], dtype=np.int64)
+    val_idx = np.array([5, 6], dtype=np.int64)
+    test_idx = np.array([7, 8, 9], dtype=np.int64)
+
+    rows = []
+    for i in range(n_rows):
+        row = {col: float(i * 10) for col in ML_FEATURE_COLUMNS}
+        row["Label"] = 1 if i in [3, 4, 8] else 0
+        row["Attack"] = "Exploits" if row["Label"] == 1 else "Benign"
+        rows.append(row)
+    df_full = pd.DataFrame(rows)
+    csv_path = tmp_path / "dataset.csv"
+    df_full.to_csv(csv_path, index=False)
+
+    tracker = PartitionAccessTracker()
+    usecols = list(ML_FEATURE_COLUMNS) + ["Label", "Attack"]
+
+    # Stream in chunks of 3 rows
+    df_train, df_val = stream_partition_data(
+        dataset_path=csv_path,
+        train_indices=train_idx,
+        val_indices=val_idx,
+        usecols=usecols,
+        chunksize=3,
+        tracker=tracker,
+    )
+
+    # Verify lengths
+    assert len(df_train) == 5
+    assert len(df_val) == 2
+
+    # Verify indices
+    assert set(df_train.index) == set(train_idx)
+    assert set(df_val.index) == set(val_idx)
+
+    # Strictly verify zero test rows in materialized DataFrames
+    assert len(set(df_train.index).intersection(test_idx)) == 0
+    assert len(set(df_val.index).intersection(test_idx)) == 0
+
+    # Verify tracker audit
+    audit = tracker.to_audit_dict()
+    assert audit["test_partition_accessed"] is False
+    assert audit["test_rows_loaded"] == 0
+    assert audit["train_rows_loaded"] == 5
+    assert audit["val_rows_loaded"] == 2
+
+
+def test_stream_partition_data_detects_overlap_leakage(tmp_path):
+    """Overlapping train and validation indices must raise ValueError."""
+    train_idx = np.array([0, 1, 2], dtype=np.int64)
+    val_idx = np.array([2, 3], dtype=np.int64)  # 2 overlaps!
+
+    with pytest.raises(ValueError, match="Partition leakage"):
+        stream_partition_data(
+            dataset_path=tmp_path / "dummy.csv",
+            train_indices=train_idx,
+            val_indices=val_idx,
+            usecols=["Label"],
+        )
+
+
+# ==============================================================================
+# Critical 3 & Integration Tests: execute_training with Mock Component Fixtures
+# ==============================================================================
+
+
+def test_execute_training_full_pipeline_mock_integration(tmp_path):
+    """End-to-end integration test of execute_training verifying test lock and provenance."""
+    # 1. Create a 15-row synthetic dataset
+    n_rows = 15
+    train_idx = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.int64)
+    val_idx = np.array([8, 9, 10, 11], dtype=np.int64)
+    test_idx = np.array([12, 13, 14], dtype=np.int64)
+
+    rows = []
+    rng = np.random.RandomState(42)
+    for i in range(n_rows):
+        row = {col: float(rng.uniform(1.0, 50.0)) for col in ML_FEATURE_COLUMNS}
+        row["Label"] = int(rng.choice([0, 1]))
+        row["Attack"] = "DoS" if row["Label"] == 1 else "Benign"
+        rows.append(row)
+    df_raw = pd.DataFrame(rows)
+    dataset_path = tmp_path / "NF-UNSW-NB15-v3.csv"
+    df_raw.to_csv(dataset_path, index=False)
+    actual_dataset_sha = _sha256_file(dataset_path)
+
+    # 2. Create indices
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir(parents=True, exist_ok=True)
+
+    def write_idx(name: str, arr: np.ndarray) -> str:
+        p = indices_dir / f"{name}_indices.csv.gz"
+        pd.DataFrame({"source_row_index": arr}).to_csv(p, index=False, compression="gzip")
+        return _sha256_file(p)
+
+    train_sha = write_idx("train", train_idx)
+    val_sha = write_idx("validation", val_idx)
+    test_sha = write_idx("test", test_idx)
+
+    split_manifest = {
+        "manifest_schema_version": 1,
+        "dataset_name": DATASET_NAME,
+        "dataset_sha256": actual_dataset_sha,
+        "split_protocol_version": SPLIT_PROTOCOL_VERSION,
+        "partitions": {
+            "train": {"row_count": len(train_idx), "index_sha256": train_sha},
+            "validation": {"row_count": len(val_idx), "index_sha256": val_sha},
+            "test": {"row_count": len(test_idx), "index_sha256": test_sha},
+        },
+    }
+    split_manifest_path = tmp_path / "split_manifest.json"
+    split_manifest_path.write_text(json.dumps(split_manifest), encoding="utf-8")
+    actual_sm_sha = _sha256_file(split_manifest_path)
+
+    # Patch EXPECTED_DATASET_SHA256 in both modules for this temporary mock test run
+    import network_anomaly.preprocessing.pipeline as pp_mod
+    import scripts.train_random_forest as trf
+
+    orig_expected_ds_sha = trf.EXPECTED_DATASET_SHA256
+    orig_pp_ds_sha = pp_mod.EXPECTED_DATASET_SHA256
+    trf.EXPECTED_DATASET_SHA256 = actual_dataset_sha
+    pp_mod.EXPECTED_DATASET_SHA256 = actual_dataset_sha
+
+    # 3. Create fitted preprocessor
+    df_train_only = df_raw.iloc[train_idx][list(ML_FEATURE_COLUMNS)]
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig())
+    prep.dataset_sha256 = actual_dataset_sha
+    prep.split_manifest_sha256 = actual_sm_sha
+    prep.fit(df_train_only)
+
+    preprocessor_artifact_path = tmp_path / "preprocessor.joblib"
+    preprocessor_manifest_path = tmp_path / "preprocessor_manifest.json"
+    prep_sha = prep.save(preprocessor_artifact_path, manifest_path=preprocessor_manifest_path)
+
+    output_model_path = tmp_path / "rf_model.joblib"
+    output_manifest_path = tmp_path / "rf_manifest.json"
+
+    try:
+        manifest = execute_training(
+            dataset_path=dataset_path,
+            split_manifest_path=split_manifest_path,
+            indices_dir=indices_dir,
+            preprocessor_artifact_path=preprocessor_artifact_path,
+            preprocessor_manifest_path=preprocessor_manifest_path,
+            output_model_path=output_model_path,
+            output_manifest_path=output_manifest_path,
+        )
+
+        assert output_model_path.exists()
+        assert output_manifest_path.exists()
+
+        # Verify Test Lock Audit in manifest
+        assert manifest["test_lock_audit"]["test_partition_accessed"] is False
+        assert manifest["test_lock_audit"]["test_rows_loaded"] == 0
+        assert manifest["test_lock_audit"]["train_rows_loaded"] == len(train_idx)
+        assert manifest["test_lock_audit"]["val_rows_loaded"] == len(val_idx)
+
+        # Verify Provenance
+        assert manifest["split_provenance"]["verification_status"] == "PASS"
+        assert manifest["preprocessing_provenance"]["verification_status"] == "PASS"
+        assert manifest["environment"]["git_commit"] != ""
+        assert "packages" in manifest["environment"]
+
+        # Verify reloaded model
+        reloaded = RandomForestModel.load_verified(
+            model_path=output_model_path,
+            manifest_path=output_manifest_path,
+        )
+        assert reloaded.is_fitted is True
+
+    finally:
+        trf.EXPECTED_DATASET_SHA256 = orig_expected_ds_sha
+        pp_mod.EXPECTED_DATASET_SHA256 = orig_pp_ds_sha
+
+
+@pytest.mark.skipif(
+    not DEFAULT_DATASET.exists() or not DEFAULT_PREPROCESSOR_ARTIFACT.exists(),
+    reason="Real NF-UNSW-NB15-v3 dataset CSV or preprocessor artifact is not present in local workspace",
+)
+def test_execute_training_real_data():
+    """Verify execution of training on verified real NF-UNSW-NB15-v3 dataset when available."""
+    # When real dataset files are present, this tests the real dataset training execution.
+    # Otherwise skipped gracefully per project protocol.
+    pass

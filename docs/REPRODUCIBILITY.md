@@ -135,11 +135,11 @@ python scripts/train_random_forest.py
 The script trains the baseline Random Forest model strictly following the protocol `rf-baseline-nf-unsw-nb15-v3-v1`
 locked in Issue #9:
 - Uses verified raw dataset `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` (SHA-256 `4ebb97...`).
-- Reads partition indices from `data/processed/splits/` (`train`: 1,655,797 rows; `validation`: 363,674 rows).
+- Reads partition indices from `data/processed/splits/` (`train`: 1,655,797 rows; `validation`: 345,371 rows).
 - Reuses the existing fitted preprocessor artifact `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` without refitting.
 - Preserves the 47 baseline ML feature ordering and excludes all metadata and target columns.
 - Locks the `test` partition completely (never loaded or evaluated during training).
-- Produces model binary `artifacts/models/rf_baseline/nf_unsw_nb15_v3_random_forest_baseline.joblib` and execution manifest `reports/models/rf_baseline/run_manifest.json`.
+- Produces model binary `artifacts/models/random_forest/random_forest_baseline.joblib` and execution manifest `artifacts/models/random_forest/random_forest_manifest.json` (also saved to `reports/models/random_forest_manifest.json`).
 - Fail-closed prerequisite audit: If the raw dataset or preprocessor artifact is missing or altered, training stops immediately with exit code 1. Mock/synthetic data is strictly prohibited for benchmark results.
 
 ## What runs where

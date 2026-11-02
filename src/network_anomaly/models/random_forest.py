@@ -187,22 +187,26 @@ class RandomForestModel:
             manifest = json.load(f)
 
         expected_model_sha256 = manifest.get("model_artifact_sha256")
+        if not expected_model_sha256:
+            raise ValueError(
+                f"Missing required field 'model_artifact_sha256' in manifest: {manifest_path}"
+            )
         actual_model_sha256 = _sha256_file(Path(model_path))
-        if expected_model_sha256 and actual_model_sha256 != expected_model_sha256:
+        if actual_model_sha256 != expected_model_sha256:
             raise ValueError(
                 f"Model artifact SHA-256 mismatch: expected {expected_model_sha256}, got {actual_model_sha256}"
             )
 
         if expected_dataset_sha256:
             ds_sha = manifest.get("dataset_sha256")
-            if ds_sha and ds_sha != expected_dataset_sha256:
+            if not ds_sha or ds_sha != expected_dataset_sha256:
                 raise ValueError(
                     f"Dataset SHA-256 mismatch in manifest: expected {expected_dataset_sha256}, got {ds_sha}"
                 )
 
         if expected_split_manifest_sha256:
             sm_sha = manifest.get("split_manifest_sha256")
-            if sm_sha and sm_sha != expected_split_manifest_sha256:
+            if not sm_sha or sm_sha != expected_split_manifest_sha256:
                 raise ValueError(
                     f"Split manifest SHA-256 mismatch in manifest: expected {expected_split_manifest_sha256}, got {sm_sha}"
                 )

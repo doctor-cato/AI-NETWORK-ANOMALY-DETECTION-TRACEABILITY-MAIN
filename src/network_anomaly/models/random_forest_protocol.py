@@ -22,7 +22,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
 
 PROTOCOL_IDENTIFIER: str = "rf-baseline-nf-unsw-nb15-v3-v1"
 FEATURE_CONTRACT_VERSION: str = "nf-unsw-nb15-v3-baseline-47"
-SPLIT_PROTOCOL_ID: str = "nf-unsw-nb15-v3-temporal-group-v1"
+SPLIT_PROTOCOL_ID: str = "nf-unsw-nb15-v3-chronological-group-purged-v1"
 PREPROCESSING_CONTRACT_ID: str = "nf-unsw-nb15-v3-preproc-v1"
 
 TARGET_COLUMN: str = "Label"
@@ -351,7 +351,7 @@ class SplitReference:
     dataset_csv_sha256: str = DATASET_CSV_SHA256
     dataset_archive_sha256: str = DATASET_ARCHIVE_SHA256
     split_protocol_id: str = SPLIT_PROTOCOL_ID
-    split_id: str = "nf-unsw-nb15-v3-temporal-group-v1"
+    split_id: str = SPLIT_PROTOCOL_ID
     split_manifest_sha256: Optional[str] = None
     split_status: str = "PLANNED / NOT VERIFIED"
     ml_ready: bool = False
@@ -572,7 +572,7 @@ class RandomForestBaselineProtocol:
 
 
 def create_rf_baseline_protocol(
-    split_id: str = "nf-unsw-nb15-v3-temporal-group-v1",
+    split_id: str = SPLIT_PROTOCOL_ID,
     random_seed: int = RANDOM_SEED,
     n_estimators: int = 200,
     max_depth: Optional[int] = 16,

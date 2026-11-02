@@ -116,26 +116,24 @@ Tuân thủ nghiêm ngặt feature contract hiện hành được định nghĩa
 
 ## 4. Split Policy & Phụ thuộc Issue #7
 
-- Protocol tham chiếu giao thức chia tập có kiểm soát `nf-unsw-nb15-v3-temporal-group-v1`:
-  - Phân chia: `train` (~70%), `validation` (~15%), `test` (~15%).
-  - Nhóm luồng: 5-tuple hai chiều kết hợp time-bucket 5 phút để hạn chế flow leakage.
+- Protocol tham chiếu giao thức chia tập có kiểm soát `nf-unsw-nb15-v3-chronological-group-purged-v1` (PR #41):
+  - Phân chia: `train` (1.655.797 dòng ~ 70%), `validation` (345.371 dòng ~ 14,6%), `test` (345.953 dòng ~ 14,6%), purged gaps (18.303 dòng).
+  - Nhóm luồng: 5-tuple hai chiều kết hợp time-bucket 5 phút và khoảng ngắt 5 phút để loại trừ hoàn toàn flow leakage.
   - Khóa trùng lặp: cấm trùng lặp exact-row, source-feature và ml-feature giữa các tập.
-- **Hiện trạng:** Dữ liệu thật hiện có trạng thái chất lượng `RAW_QUALITY: FINDINGS_RECORDED`
-  (chứa giá trị vô hạn và khuyết thiếu ở trường throughput), do đó `ML_READY: BLOCKED`.
-  Real split thật sự đang ở trạng thái `PLANNED / NOT VERIFIED`.
-- Protocol Issue #9 tham chiếu split mà **không giả lập dữ liệu mock** hay tự ý gọi
+- **Hiện trạng:** Real split đã hoàn thành và được kiểm chứng qua PR #41 (`reports/splits/nf_unsw_nb15_v3_split_manifest.json`, SHA-256: `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`).
+- Protocol Issue #9 tái sử dụng split chính thức mà **không giả lập dữ liệu mock** hay tự ý gọi
   `train_test_split()` ngẫu nhiên.
 
 ---
 
 ## 5. Preprocessing Policy & Phụ thuộc Issue #8
 
-- Protocol tham chiếu contract tiền xử lý `nf-unsw-nb15-v3-preproc-v1`:
-  - **Ranh giới fit:** `train_only`.
+- Protocol tham chiếu contract tiền xử lý `nf-unsw-nb15-v3-preproc-v1` (PR #42):
+  - **Ranh giới fit:** `train_only` (fit duy nhất trên 1.655.797 dòng của tập train).
   - Imputer (median), scaler, encoder hoặc indicator parameters chỉ được tính toán trên tập `train`.
   - Frozen transform được áp dụng bất biến cho `validation` và `test`.
-- **Hiện trạng:** Fitted artifact chưa được sinh vì Issue #8 chưa thực thi trên real split.
-  Protocol ghi nhận phụ thuộc mà không tự tạo preprocessing artifact giả.
+- **Hiện trạng:** Fitted artifact đã được hoàn thành và kiểm chứng qua PR #42 (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`, SHA-256: `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`, manifest SHA-256: `977f6b4a530eb7cb0594dbf068779848fd6ee0c46b5a1b3dd62eb4bca28e7545`).
+- Khi chạy training tại runtime cục bộ, nếu tệp CSV thô hoặc artifact chưa hiện diện, entrypoint sẽ dừng fail-closed với mã lỗi 1 mà không tạo preprocessing artifact giả.
 
 ---
 

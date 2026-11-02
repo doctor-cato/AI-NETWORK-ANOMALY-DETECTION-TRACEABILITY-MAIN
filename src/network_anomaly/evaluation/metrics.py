@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Sequence, Union
 
+import numpy as np
 from sklearn.metrics import (
     confusion_matrix,
     f1_score,
@@ -128,23 +129,27 @@ def compute_attack_category_breakdown(
     if len(y_true) != len(y_pred) or len(y_true) != len(attack_categories):
         raise ValueError("y_true, y_pred, and attack_categories must have identical lengths")
 
-    categories = sorted(set(attack_categories))
+    y_t = np.asarray(y_true)
+    y_p = np.asarray(y_pred)
+    att = np.asarray(attack_categories)
+
+    categories = sorted(set(att))
     breakdown: Dict[str, Dict[str, Union[int, float]]] = {}
 
     for cat in categories:
-        indices = [i for i, c in enumerate(attack_categories) if c == cat]
+        indices = [i for i, c in enumerate(att) if c == cat]
         total = len(indices)
 
         if cat == "Benign":
             false_positive = sum(
                 1
                 for i in indices
-                if _is_negative_benign(y_true[i]) and _is_positive_attack(y_pred[i])
+                if _is_negative_benign(y_t[i]) and _is_positive_attack(y_p[i])
             )
             true_negative = sum(
                 1
                 for i in indices
-                if _is_negative_benign(y_true[i]) and _is_negative_benign(y_pred[i])
+                if _is_negative_benign(y_t[i]) and _is_negative_benign(y_p[i])
             )
             fp_rate = float(false_positive / total) if total > 0 else 0.0
 
@@ -158,12 +163,12 @@ def compute_attack_category_breakdown(
             detected = sum(
                 1
                 for i in indices
-                if _is_positive_attack(y_true[i]) and _is_positive_attack(y_pred[i])
+                if _is_positive_attack(y_t[i]) and _is_positive_attack(y_p[i])
             )
             missed = sum(
                 1
                 for i in indices
-                if _is_positive_attack(y_true[i]) and _is_negative_benign(y_pred[i])
+                if _is_positive_attack(y_t[i]) and _is_negative_benign(y_p[i])
             )
             detection_rate = float(detected / total) if total > 0 else 0.0
 
