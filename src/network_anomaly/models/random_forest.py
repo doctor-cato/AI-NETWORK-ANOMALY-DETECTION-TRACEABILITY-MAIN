@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
+import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import NotFittedError
 
@@ -125,6 +129,93 @@ class RandomForestModel:
                 "Call 'fit' with verified NF-UNSW-NB15-v3 training data before using 'predict_proba'."
             )
         return self._estimator.predict_proba(X)
+
+    def save(
+        self,
+        path: Union[str, Path],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Save fitted model artifact using joblib and return file SHA-256."""
+        if not self._is_fitted:
+            raise NotFittedError("Cannot save an unfitted RandomForestModel.")
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "model_type": self.model_type,
+            "task": self.task,
+            "target": self.target,
+            "positive_class": self.positive_class,
+            "config": self.config.to_dict(),
+            "estimator": self._estimator,
+            "feature_names": list(self.feature_names),
+            "metadata": metadata or {},
+        }
+        joblib.dump(payload, p, compress=3)
+        return _sha256_file(p)
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "RandomForestModel":
+        """Load a fitted RandomForestModel from a joblib artifact."""
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(f"Model artifact not found: {path}")
+        payload = joblib.load(p)
+        if not isinstance(payload, dict) or "estimator" not in payload:
+            raise ValueError(f"Invalid model artifact payload at {path}")
+        config_dict = payload.get("config", {})
+        config = RandomForestBaselineConfig.from_dict(config_dict)
+        model = cls(config=config)
+        model._estimator = payload["estimator"]
+        model._is_fitted = True
+        if "feature_names" in payload:
+            model.feature_names = tuple(payload["feature_names"])
+        return model
+
+    @classmethod
+    def load_verified(
+        cls,
+        model_path: Union[str, Path],
+        manifest_path: Union[str, Path],
+        expected_dataset_sha256: Optional[str] = None,
+        expected_split_manifest_sha256: Optional[str] = None,
+    ) -> "RandomForestModel":
+        """Load and strictly verify a Random Forest model artifact against its companion manifest."""
+        m_path = Path(manifest_path)
+        if not m_path.exists():
+            raise FileNotFoundError(f"Model manifest not found: {manifest_path}")
+        with m_path.open("r", encoding="utf-8") as f:
+            manifest = json.load(f)
+
+        expected_model_sha256 = manifest.get("model_artifact_sha256")
+        actual_model_sha256 = _sha256_file(Path(model_path))
+        if expected_model_sha256 and actual_model_sha256 != expected_model_sha256:
+            raise ValueError(
+                f"Model artifact SHA-256 mismatch: expected {expected_model_sha256}, got {actual_model_sha256}"
+            )
+
+        if expected_dataset_sha256:
+            ds_sha = manifest.get("dataset_sha256")
+            if ds_sha and ds_sha != expected_dataset_sha256:
+                raise ValueError(
+                    f"Dataset SHA-256 mismatch in manifest: expected {expected_dataset_sha256}, got {ds_sha}"
+                )
+
+        if expected_split_manifest_sha256:
+            sm_sha = manifest.get("split_manifest_sha256")
+            if sm_sha and sm_sha != expected_split_manifest_sha256:
+                raise ValueError(
+                    f"Split manifest SHA-256 mismatch in manifest: expected {expected_split_manifest_sha256}, got {sm_sha}"
+                )
+
+        return cls.load(model_path)
+
+
+def _sha256_file(path: Path, chunk_bytes: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(chunk_bytes), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def build_model(

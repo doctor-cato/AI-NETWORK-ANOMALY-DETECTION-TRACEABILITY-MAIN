@@ -29,12 +29,14 @@
   chọn threshold hay chọn mô hình. Test chỉ được đánh giá một lần duy nhất ở bước cuối cùng.
 - Tuning policy: Chỉ chạy trên `train` và `validation` với search space và budget được version hóa.
 - Cố định random seed (42) cho split, initialization và tuning để đảm bảo tái lập.
-- Chưa có experiment thật trên dữ liệu NF-UNSW-NB15-v3; việc huấn luyện thuộc Issue #10,
-  đánh giá thuộc Issue #12. Mọi kết quả ML hiện tại vẫn ở trạng thái `PLANNED`.
+- Chưa có experiment thật trên dữ liệu NF-UNSW-NB15-v3; training architecture và fail-closed entrypoint
+  thuộc Issue #10 đã `IMPLEMENTED / TESTED`. Huấn luyện thật: `BLOCKED` (raw CSV và preprocessor
+  `.joblib` chưa mount cục bộ). Đánh giá thuộc Issue #12 (`PLANNED`).
+  Mọi kết quả ML hiện tại vẫn ở trạng thái `PLANNED`.
 
 ## Ghi nhận metric
 
 - Mỗi lượt chạy lưu seed, phiên bản dataset, danh sách feature, cấu hình model, metric theo lớp và macro, confusion matrix dạng CSV/PNG, thời gian và thông tin môi trường.
 - Kết quả đặt tại `reports/figures/` và `artifacts/` (không commit nếu lớn; vẫn lưu config).
 
-Cập nhật: 2026-10-22 (đồng bộ với Issue #9 — RF Baseline Protocol)
+Cập nhật: 2026-11-02 (đồng bộ Issue #10 training architecture status, blocker)

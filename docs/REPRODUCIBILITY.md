@@ -125,6 +125,23 @@ Reproducibility properties:
 - Verify-only mode (`--verify-only`) validates artifact schema, companion manifest integrity, and dataset/split checksums without retraining (fails closed if companion manifest is missing or hashes mismatch).
 - Absent raw bytes: prints `PREPROCESSING: SKIPPED (raw dataset absent)` and exits `0`.
 
+## Reproduce Random Forest baseline training (Issue #10)
+
+```text
+python scripts/train_random_forest.py --verify-only
+python scripts/train_random_forest.py
+```
+
+The script trains the baseline Random Forest model strictly following the protocol `rf-baseline-nf-unsw-nb15-v3-v1`
+locked in Issue #9:
+- Uses verified raw dataset `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` (SHA-256 `4ebb97...`).
+- Reads partition indices from `data/processed/splits/` (`train`: 1,655,797 rows; `validation`: 363,674 rows).
+- Reuses the existing fitted preprocessor artifact `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` without refitting.
+- Preserves the 47 baseline ML feature ordering and excludes all metadata and target columns.
+- Locks the `test` partition completely (never loaded or evaluated during training).
+- Produces model binary `artifacts/models/rf_baseline/nf_unsw_nb15_v3_random_forest_baseline.joblib` and execution manifest `reports/models/rf_baseline/run_manifest.json`.
+- Fail-closed prerequisite audit: If the raw dataset or preprocessor artifact is missing or altered, training stops immediately with exit code 1. Mock/synthetic data is strictly prohibited for benchmark results.
+
 ## What runs where
 
 | Check | Environment | Result |
@@ -134,6 +151,7 @@ Reproducibility properties:
 | `scripts/verify_eda_reproducibility.py` | local, raw package present | two runs compared per metric |
 | `scripts/split_and_audit_nf_unsw_nb15_v3.py` | local, raw package present | split manifest and leakage audit executed |
 | `scripts/preprocess_nf_unsw_nb15_v3.py` | local, raw package present | train-only preprocessing executed and verified |
+| `scripts/train_random_forest.py` | local, raw package & artifacts present | trains baseline RF on 1,655,797 train rows; exits `1` if raw dataset or preprocessor artifact is missing |
 | `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
 | `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
 | `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |

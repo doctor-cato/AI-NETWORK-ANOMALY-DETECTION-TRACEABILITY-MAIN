@@ -55,17 +55,28 @@ C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, tr
 (#10) và đánh giá (#12) đang được triển khai. C4–C11 vẫn `PLANNED`.
 
 ```text
-Checkpoint: C3 — Random Forest Baseline Protocol
+Checkpoint: C3 — Random Forest Baseline Protocol & Training Architecture
 Branch: feat/issue-9-rf-baseline-protocol
-Completed: IMPLEMENTED / TESTED — RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1`
-  đã được chuẩn hóa và khóa theo đúng 47 đặc trưng ML (Issue #7), target Label nhị phân
-  (Positive: Attack), ranh giới fit preprocessing train_only (Issue #8), TEST lock policy
-  bảo vệ tập test, tuning policy cách ly, và metric protocol hỗ trợ Precision/Recall/F1/Macro-F1/FPR
-  cùng error analysis theo 9 loại Attack.
-Tests: PASS — unit tests trong `tests/unit/test_rf_baseline_protocol.py` và `tests/unit/test_rf_model_structure.py`;
-  git diff --check PASS.
-Issues: #9 (Protocol & Criteria); #10 (RF Training) và #12 (Evaluation).
-Remaining: Hoàn tất huấn luyện RF trên dữ liệu thật NF-UNSW-NB15-v3 theo Issue #10.
+Completed: IMPLEMENTED / TESTED —
+  - Issue #9: RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1` đã được chuẩn hóa và khóa
+    theo đúng 47 đặc trưng ML, target Label nhị phân, TEST lock policy, tuning policy cách ly,
+    metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 đã được
+    khắc phục hoàn toàn (`compute_attack_category_breakdown` phân loại theo cặp (y_true, y_pred),
+    xử lý Benign riêng biệt báo false_positive/true_negative; `compute_metrics` FPR bất biến theo
+    thứ tự nhãn [0, 1] vs [1, 0] và an toàn với mẫu đơn lớp).
+  - Issue #10: Cấu trúc mô hình Random Forest hoàn thiện với model serialization (`save`, `load`,
+    `load_verified` kèm hash SHA-256), training script `scripts/train_random_forest.py` hỗ trợ
+    kiểm tra điều kiện tiên quyết fail-closed, cách ly hoàn toàn tập test, và không refit preprocessor.
+Tests: PASS — 27 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
+  `tests/unit/test_rf_model_structure.py`, 8 tests trong `tests/unit/test_rf_training.py`;
+  git diff --check PASS; check_environment PASS.
+Issues: #9 (Protocol & Criteria); #10 (RF Training Architecture & Verification); #12 (Evaluation).
+Blocker: Huấn luyện thực tế trên 1.655.797 dòng của tập train bị BLOCKED fail-closed vì tệp CSV thô
+  `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` và preprocessor artifact
+  `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` chưa hiện diện trong workspace
+  cục bộ hiện tại (đã được kiểm chứng ở máy ban đầu theo reports/preprocessing/execution_evidence.json).
+  Tuyệt đối không dùng dữ liệu synthetic/mock để train thay thế.
+Remaining: Đưa tệp CSV và preprocessor artifact vào đúng đường dẫn để thực hiện real training run.
 ```
 
 ## Migration NF-UNSW-NB15-v3 — A–H

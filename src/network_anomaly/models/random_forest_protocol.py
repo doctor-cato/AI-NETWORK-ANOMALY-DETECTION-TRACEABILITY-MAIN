@@ -352,6 +352,7 @@ class SplitReference:
     dataset_archive_sha256: str = DATASET_ARCHIVE_SHA256
     split_protocol_id: str = SPLIT_PROTOCOL_ID
     split_id: str = "nf-unsw-nb15-v3-temporal-group-v1"
+    split_manifest_sha256: Optional[str] = None
     split_status: str = "PLANNED / NOT VERIFIED"
     ml_ready: bool = False
     partitions: Tuple[str, ...] = ("train", "validation", "test")
@@ -373,6 +374,7 @@ class SplitReference:
             "dataset_archive_sha256": self.dataset_archive_sha256,
             "split_protocol_id": self.split_protocol_id,
             "split_id": self.split_id,
+            "split_manifest_sha256": self.split_manifest_sha256,
             "split_status": self.split_status,
             "ml_ready": self.ml_ready,
             "partitions": list(self.partitions),
@@ -397,6 +399,7 @@ class PreprocessingReference:
     fit_boundary: str = "train_only"
     preprocessing_status: str = "PLANNED / NOT VERIFIED"
     fitted_artifact_path: Optional[str] = None
+    fitted_artifact_sha256: Optional[str] = None
 
     def validate(self) -> None:
         """Validate preprocessing reference invariants."""

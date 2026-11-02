@@ -16,6 +16,16 @@ from sklearn.metrics import (
 )
 
 
+def _is_positive_attack(label: Any) -> bool:
+    """Check if label indicates positive attack class."""
+    return label == 1 or label == "1" or label == "Attack"
+
+
+def _is_negative_benign(label: Any) -> bool:
+    """Check if label indicates negative benign class."""
+    return label == 0 or label == "0" or label == "Benign"
+
+
 def compute_metrics(
     y_true: Sequence[Any],
     y_pred: Sequence[Any],
@@ -40,31 +50,48 @@ def compute_metrics(
     target_labels = [0, 1] if labels is None else list(labels)
     cm = confusion_matrix(y_true, y_pred, labels=target_labels)
 
+    # Resolve positions of negative (Benign) and positive (Attack) classes
+    neg_idx = next(
+        (i for i, lbl in enumerate(target_labels) if _is_negative_benign(lbl)), None
+    )
+    pos_idx = next(
+        (i for i, lbl in enumerate(target_labels) if _is_positive_attack(lbl)), None
+    )
+
     fpr = 0.0
-    if cm.shape == (2, 2):
-        tn, fp, fn, tp = cm.ravel()
+    if neg_idx is not None and pos_idx is not None and cm.shape == (len(target_labels), len(target_labels)):
+        tn = cm[neg_idx, neg_idx]
+        fp = cm[neg_idx, pos_idx]
+        if (fp + tn) > 0:
+            fpr = float(fp / (fp + tn))
+    elif cm.shape == (2, 2):
+        # Fallback if custom unmapped labels are supplied
+        tn, fp = cm[0, 0], cm[0, 1]
         if (fp + tn) > 0:
             fpr = float(fp / (fp + tn))
 
+    # Identify positive label for binary precision/recall/f1 calculation
+    pos_label: Any = 1
+    if pos_idx is not None:
+        pos_label = target_labels[pos_idx]
+    elif any(_is_positive_attack(y) for y in y_true):
+        pos_label = next(y for y in y_true if _is_positive_attack(y))
+
     return {
-        "precision": float(precision_score(y_true, y_pred, average="binary", zero_division=0)),
-        "recall": float(recall_score(y_true, y_pred, average="binary", zero_division=0)),
-        "f1": float(f1_score(y_true, y_pred, average="binary", zero_division=0)),
+        "precision": float(
+            precision_score(y_true, y_pred, pos_label=pos_label, average="binary", zero_division=0)
+        ),
+        "recall": float(
+            recall_score(y_true, y_pred, pos_label=pos_label, average="binary", zero_division=0)
+        ),
+        "f1": float(
+            f1_score(y_true, y_pred, pos_label=pos_label, average="binary", zero_division=0)
+        ),
         "macro_f1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
         "false_positive_rate": fpr,
         "fpr": fpr,
         "confusion_matrix": cm.tolist(),
     }
-
-
-def _is_positive_attack(label: Any) -> bool:
-    """Check if label indicates positive attack class."""
-    return label == 1 or label == "1" or label == "Attack"
-
-
-def _is_negative_benign(label: Any) -> bool:
-    """Check if label indicates negative benign class."""
-    return label == 0 or label == "0" or label == "Benign"
 
 
 def compute_attack_category_breakdown(

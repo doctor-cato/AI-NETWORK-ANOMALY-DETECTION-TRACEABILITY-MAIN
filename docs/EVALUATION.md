@@ -6,7 +6,7 @@
 
 - Huấn luyện trên tập `train` có nhãn theo protocol `rf-baseline-nf-unsw-nb15-v3-v1`
   (chi tiết tại [RF_BASELINE_PROTOCOL.md](RF_BASELINE_PROTOCOL.md)).
-- Split NF-UNSW-NB15-v3 theo temporal/group-aware contract (`nf-unsw-nb15-v3-temporal-group-v1`);
+- Split NF-UNSW-NB15-v3 theo chronological/group-purged contract (`nf-unsw-nb15-v3-chronological-group-purged-v1`, PR #41);
   tuyệt đối không dùng `test` để chọn feature, imputation, threshold hoặc hyperparameter.
 - Dự đoán trên validation và test bằng pipeline đã fit (fit `train_only`).
 - Lớp dương tính (Positive Class): `Attack` (Label = 1).
@@ -61,7 +61,7 @@
 - Repo này không tuyên bố độ chính xác, F1 cụ thể, hoặc kết quả benchmark cho đến khi thực nghiệm thật
   hoàn thành và kết quả được ghi cùng seed/phiên bản.
 - Mọi kết quả phải ghi rõ: `PLANNED / IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`.
-- Hiện tại ở Issue #9, protocol đánh giá là `IMPLEMENTED / TESTED` (bằng code contracts và unit tests);
-  kết quả thực nghiệm trên dữ liệu thật vẫn là `PLANNED` và thuộc phạm vi Issue #12.
+- Hiện tại protocol đánh giá là `IMPLEMENTED / TESTED` (bằng code contracts và unit tests);
+  kết quả thực nghiệm trên dữ liệu thật vẫn là `BLOCKED` (raw dataset và preprocessor artifact chưa mount cục bộ) và thuộc phạm vi Issue #10 (training) và Issue #12 (evaluation).
 
-Cập nhật: 2026-10-22 (đồng bộ với Issue #9 — RF Baseline Protocol)
+Cập nhật: 2026-11-02 (đồng bộ split protocol ID, cập nhật trạng thái training blocker)

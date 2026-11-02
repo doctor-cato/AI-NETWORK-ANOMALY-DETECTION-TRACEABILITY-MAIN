@@ -383,6 +383,123 @@ def test_attack_category_breakdown_all_confusion_cases():
     assert "detected" not in breakdown["Benign"]
 
 
+def test_attack_category_breakdown_correct_benign_and_attack():
+    """Verify clean 100% accurate predictions across benign and multiple attack categories."""
+    y_true = [0, 0, 1, 1]
+    y_pred = [0, 0, 1, 1]
+    attack_cats = ["Benign", "Benign", "Exploits", "DoS"]
+
+    breakdown = compute_attack_category_breakdown(y_true, y_pred, attack_cats)
+
+    assert breakdown["Benign"]["total"] == 2
+    assert breakdown["Benign"]["false_positive"] == 0
+    assert breakdown["Benign"]["true_negative"] == 2
+    assert breakdown["Benign"]["false_positive_rate"] == 0.0
+
+    assert breakdown["Exploits"]["total"] == 1
+    assert breakdown["Exploits"]["detected"] == 1
+    assert breakdown["Exploits"]["missed"] == 0
+    assert breakdown["Exploits"]["detection_rate"] == 1.0
+
+    assert breakdown["DoS"]["total"] == 1
+    assert breakdown["DoS"]["detected"] == 1
+    assert breakdown["DoS"]["missed"] == 0
+    assert breakdown["DoS"]["detection_rate"] == 1.0
+
+
+def test_attack_category_breakdown_mixed_categories():
+    """Verify error breakdown with multiple attack categories and varying prediction outcomes."""
+    # Exploits: 2 samples, 1 TP, 1 FN
+    # DoS: 1 sample, 1 TP
+    # Worms: 1 sample, 1 FN
+    # Benign: 3 samples, 2 TN, 1 FP
+    y_true = [1, 1, 1, 1, 0, 0, 0]
+    y_pred = [1, 0, 1, 0, 0, 0, 1]
+    attack_cats = ["Exploits", "Exploits", "DoS", "Worms", "Benign", "Benign", "Benign"]
+
+    breakdown = compute_attack_category_breakdown(y_true, y_pred, attack_cats)
+
+    assert breakdown["Exploits"]["detected"] == 1
+    assert breakdown["Exploits"]["missed"] == 1
+    assert breakdown["Exploits"]["detection_rate"] == 0.5
+
+    assert breakdown["DoS"]["detected"] == 1
+    assert breakdown["DoS"]["missed"] == 0
+    assert breakdown["DoS"]["detection_rate"] == 1.0
+
+    assert breakdown["Worms"]["detected"] == 0
+    assert breakdown["Worms"]["missed"] == 1
+    assert breakdown["Worms"]["detection_rate"] == 0.0
+
+    assert breakdown["Benign"]["total"] == 3
+    assert breakdown["Benign"]["false_positive"] == 1
+    assert breakdown["Benign"]["true_negative"] == 2
+    assert pytest.approx(breakdown["Benign"]["false_positive_rate"], 1e-4) == 1.0 / 3.0
+
+
+def test_fpr_calculation_invariant_to_label_order():
+    """Verify FPR remains identical regardless of confusion matrix label ordering."""
+    # 4 benign samples: 3 TN, 1 FP -> FPR = 1 / (3 + 1) = 0.25
+    # 2 attack samples: 1 FN, 1 TP -> FNR = 1 / (1 + 1) = 0.50
+    y_true = [0, 0, 0, 0, 1, 1]
+    y_pred = [0, 0, 0, 1, 0, 1]
+
+    metrics_01 = compute_metrics(y_true, y_pred, labels=[0, 1])
+    metrics_10 = compute_metrics(y_true, y_pred, labels=[1, 0])
+    metrics_default = compute_metrics(y_true, y_pred)
+
+    expected_fpr = 0.25
+    assert metrics_01["false_positive_rate"] == expected_fpr
+    assert metrics_10["false_positive_rate"] == expected_fpr
+    assert metrics_default["false_positive_rate"] == expected_fpr
+    assert metrics_01["fpr"] == metrics_10["fpr"] == expected_fpr
+
+    # Verify string label ordering invariance
+    y_true_str = ["Benign", "Benign", "Benign", "Benign", "Attack", "Attack"]
+    y_pred_str = ["Benign", "Benign", "Benign", "Attack", "Benign", "Attack"]
+
+    metrics_str_ba = compute_metrics(y_true_str, y_pred_str, labels=["Benign", "Attack"])
+    metrics_str_ab = compute_metrics(y_true_str, y_pred_str, labels=["Attack", "Benign"])
+
+    assert metrics_str_ba["false_positive_rate"] == expected_fpr
+    assert metrics_str_ab["false_positive_rate"] == expected_fpr
+    assert metrics_str_ba["precision"] == metrics_str_ab["precision"]
+    assert metrics_str_ba["recall"] == metrics_str_ab["recall"]
+
+
+def test_fpr_calculation_missing_classes_and_zero_denominators():
+    """Verify safe zero-denominator behavior and handling of missing classes in FPR."""
+    # 1. No negative samples (only positive attacks) -> FPR denominator is 0 -> fpr = 0.0
+    y_true_all_pos = [1, 1, 1]
+    y_pred_all_pos = [1, 0, 1]
+    m_all_pos_01 = compute_metrics(y_true_all_pos, y_pred_all_pos, labels=[0, 1])
+    m_all_pos_10 = compute_metrics(y_true_all_pos, y_pred_all_pos, labels=[1, 0])
+    assert m_all_pos_01["false_positive_rate"] == 0.0
+    assert m_all_pos_10["false_positive_rate"] == 0.0
+
+    # 2. No positive samples (only benign) -> all TN -> FPR = 0 / 2 = 0.0
+    y_true_all_neg = [0, 0]
+    y_pred_all_neg = [0, 0]
+    m_all_neg_01 = compute_metrics(y_true_all_neg, y_pred_all_neg, labels=[0, 1])
+    m_all_neg_10 = compute_metrics(y_true_all_neg, y_pred_all_neg, labels=[1, 0])
+    assert m_all_neg_01["false_positive_rate"] == 0.0
+    assert m_all_neg_10["false_positive_rate"] == 0.0
+
+    # 3. Only benign, all predicted as attack -> all FP -> FPR = 2 / 2 = 1.0
+    y_true_all_fp = [0, 0]
+    y_pred_all_fp = [1, 1]
+    m_all_fp_01 = compute_metrics(y_true_all_fp, y_pred_all_fp, labels=[0, 1])
+    m_all_fp_10 = compute_metrics(y_true_all_fp, y_pred_all_fp, labels=[1, 0])
+    assert m_all_fp_01["false_positive_rate"] == 1.0
+    assert m_all_fp_10["false_positive_rate"] == 1.0
+
+    # 4. Partial labels list containing only one class
+    m_only_pos_label = compute_metrics([0, 1], [0, 1], labels=[1])
+    assert m_only_pos_label["false_positive_rate"] == 0.0
+    m_only_neg_label = compute_metrics([0, 1], [0, 1], labels=[0])
+    assert m_only_neg_label["false_positive_rate"] == 0.0
+
+
 def test_metadata_and_traceability():
     """Verify protocol metadata traceability and truthful non-claim of ML benchmark."""
     protocol = create_rf_baseline_protocol()

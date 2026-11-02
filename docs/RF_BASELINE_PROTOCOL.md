@@ -1,11 +1,11 @@
 # NF-UNSW-NB15-v3 Random Forest Baseline Protocol
 
-**Issue:** #9 — Xác định protocol baseline Random Forest và tiêu chí so sánh  
-**Status:** Protocol & Configuration: `IMPLEMENTED / TESTED`; Model Training: `PLANNED` (Issue #10); Model Evaluation: `PLANNED` (Issue #12); Real Split: `PLANNED / NOT VERIFIED` (Issue #7); Preprocessing Artifact: `PLANNED / NOT VERIFIED` (Issue #8).  
-**Protocol Identifier:** `rf-baseline-nf-unsw-nb15-v3-v1`  
-**Feature Contract Version:** `nf-unsw-nb15-v3-baseline-47`  
-**Split Protocol Reference:** `nf-unsw-nb15-v3-temporal-group-v1`  
-**Preprocessing Contract Reference:** `nf-unsw-nb15-v3-preproc-v1`  
+**Issue:** #9 — Xác định protocol baseline Random Forest và tiêu chí so sánh<br>
+**Status:** Protocol & Configuration: `IMPLEMENTED / TESTED`; Model Architecture & Entrypoint: `IMPLEMENTED / TESTED` (Issue #10); Real-Data Training: `BLOCKED` (raw CSV & preprocessor `.joblib` absent locally); Model Evaluation: `PLANNED` (Issue #12); Real Split: `PASS (PR #41)`; Preprocessing Artifact: `PASS (PR #42)`.<br>
+**Protocol Identifier:** `rf-baseline-nf-unsw-nb15-v3-v1`<br>
+**Feature Contract Version:** `nf-unsw-nb15-v3-baseline-47`<br>
+**Split Protocol Reference:** `nf-unsw-nb15-v3-chronological-group-purged-v1` (PR #41)<br>
+**Preprocessing Contract Reference:** `nf-unsw-nb15-v3-preproc-v1` (PR #42)
 
 ---
 
@@ -243,18 +243,18 @@ Protocol được triển khai bằng các lớp Python strongly-typed, kiểm t
 
 ```mermaid
 flowchart LR
-    I7["#7 Acquisition & Split"] --> I8["#8 Preprocessing Contract"]
-    I8 --> I9["#9 RF Baseline Protocol (HIỆN TẠI)"]
-    I9 --> I10["#10 RF Model Training"]
-    I10 --> I12["#12 Model Evaluation"]
+    I7["#7 Acquisition & Split (PR #41 PASS)"] --> I8["#8 Preprocessing Contract (PR #42 PASS)"]
+    I8 --> I9["#9 RF Baseline Protocol (PR #39 REVIEWS FIXED)"]
+    I9 --> I10["#10 RF Training Architecture (TESTED / REAL-DATA BLOCKED)"]
+    I10 --> I12["#12 Model Evaluation (PLANNED)"]
 ```
 
-- **Issue #7:** `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, real split `NOT VERIFIED`.
-- **Issue #8:** Preprocessing handling contract `TESTED`, fitted artifact `NOT VERIFIED`.
-- **Issue #9:** Protocol & configuration `IMPLEMENTED / TESTED`, 20 tests `PASS`.
-- **Issue #10:** Training Random Forest `PLANNED`.
+- **Issue #7:** `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, real split `PASS (PR #41)`, split manifest SHA-256 `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`.
+- **Issue #8:** Preprocessing handling contract `PASS (PR #42)`, preprocessor manifest SHA-256 `977f6b4a530eb7cb0594dbf068779848fd6ee0c46b5a1b3dd62eb4bca28e7545`.
+- **Issue #9:** Protocol & configuration `IMPLEMENTED / TESTED`, PR #39 reviewer findings fixed (`compute_attack_category_breakdown` logic, `compute_metrics` FPR invariance), 27 unit tests `PASS`.
+- **Issue #10:** Training architecture, model serialization and fail-closed training entrypoint `IMPLEMENTED / TESTED` (`scripts/train_random_forest.py`, 8 unit tests `PASS`). Huấn luyện thực tế trên dữ liệu thật: `BLOCKED` do tệp CSV thô và preprocessor `.joblib` chưa được mount vào clone cục bộ hiện tại.
 - **Issue #12:** Đánh giá và báo cáo benchmark `PLANNED`.
 
 ---
 
-Cập nhật: 2026-10-22 (Issue #9 implementation)
+Cập nhật: 2026-11-02 (PR #39 review fixes, Issue #9 & #10 updates, training entrypoint implementation)
