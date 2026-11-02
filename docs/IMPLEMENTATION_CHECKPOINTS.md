@@ -44,12 +44,15 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 
 ## C1–C11
 
-C1 đã có provenance/schema và real-data quality/duplicate audit cho NF-UNSW-NB15-v3:
-`SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA đầy đủ và split thật vẫn
-`NOT VERIFIED`. C2 có 47-feature/split/handling contracts và synthetic guard tests nhưng chưa có
-fitted preprocessing artifact, nên `ML_READY: BLOCKED`.
+## C1–C11
+
+C1 đã có provenance/schema, real-data quality/duplicate audit và EDA tái lập được cho
+NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA chạy trên
+2.365.424 dòng và tái lập khớp các finding đã xác minh. Real split và leakage audit hoàn thành
+qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.655.797 dòng train
+và kiểm chứng qua PR #42.
 C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, trong khi huấn luyện
-(#10) và đánh giá (#12) vẫn `PLANNED`. C4–C11 vẫn `PLANNED`.
+(#10) và đánh giá (#12) đang được triển khai. C4–C11 vẫn `PLANNED`.
 
 ```text
 Checkpoint: C3 — Random Forest Baseline Protocol
@@ -59,14 +62,10 @@ Completed: IMPLEMENTED / TESTED — RF baseline protocol `rf-baseline-nf-unsw-nb
   (Positive: Attack), ranh giới fit preprocessing train_only (Issue #8), TEST lock policy
   bảo vệ tập test, tuning policy cách ly, và metric protocol hỗ trợ Precision/Recall/F1/Macro-F1/FPR
   cùng error analysis theo 9 loại Attack.
-Tests: PASS — 20 unit tests trong `tests/unit/test_rf_baseline_protocol.py`; toàn bộ test suite
-  214 passed, 2 skipped; git diff --check PASS.
-Issues: #9 (Protocol & Criteria); #10 (RF Training) và #12 (Evaluation) vẫn PLANNED.
-Remaining: Training và evaluation trên dữ liệu thật NF-UNSW-NB15-v3; phụ thuộc mở gate
-  split/preprocessing ở Issue #7 và #8.
-Blockers: Real split và fitted preprocessing artifact chưa materialize (`ML_READY: BLOCKED`),
-  không được train model hoặc tạo benchmark ML giả.
-Next Action: Hoàn tất bàn giao Issue #9; chờ giải quyết Issue #7 và #8 trước khi tiến hành Issue #10.
+Tests: PASS — unit tests trong `tests/unit/test_rf_baseline_protocol.py` và `tests/unit/test_rf_model_structure.py`;
+  git diff --check PASS.
+Issues: #9 (Protocol & Criteria); #10 (RF Training) và #12 (Evaluation).
+Remaining: Hoàn tất huấn luyện RF trên dữ liệu thật NF-UNSW-NB15-v3 theo Issue #10.
 ```
 
 ## Migration NF-UNSW-NB15-v3 — A–H
@@ -217,4 +216,67 @@ Completed: branch pushed to the existing PR #36; Issues #6, #7, #8, #17 and #20 
   read back OPEN with the 47-feature contract, structured quality gates and remaining blockers.
 Remote verification: PR remains OPEN and unmerged; CI matrix PASS; no reviews/comments pending at
   the recorded readback. Repository-wide Ruff/Black and ML readiness blockers remain explicit.
+```
+
+```text
+Checkpoint 9 — reproducible EDA (Issue #6)
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: recorded by final PR readback.
+Completed: streaming EDA for NF-UNSW-NB15-v3 in src/network_anomaly/eda plus the CLI
+  scripts/eda_nf_unsw_nb15_v3.py; generated report docs/dataset/NF_UNSW_NB15_V3_EDA.md and
+  machine-readable summary reports/eda/nf_unsw_nb15_v3_eda_summary.json. The run re-verifies the
+  source SHA-256, reuses the validator contract, profiles the whole population in bounded memory
+  and reproduces the inherited quality findings exactly.
+Tests: PASS — 15 EDA unit tests on synthetic fixtures; full pytest suite; Ruff and Black on every
+  changed Python file; real-data EDA run on 2,365,424 rows with MATCH on rows, labels, exact
+  duplicate rows and repeated rows.
+Issues: #6 implemented; #7 (real split, leakage audit) and #8 (train-only fitted preprocessing)
+  remain OPEN; #37 keeps the repository-wide lint debt.
+PR: #36 updated in place, still OPEN, not merged; reviewer re-review requested.
+Remaining: ML_READY stays BLOCKED. No feature selection, no fitted transformer, no model, no
+  evaluation. Repository-wide Ruff/Black debt is unchanged and tracked by #37.
+```
+
+```text
+Checkpoint 10 — EDA reproducibility evidence
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: recorded by final PR readback.
+Completed: scripts/verify_eda_reproducibility.py runs the EDA twice on the verified raw CSV
+  and writes one retrievable bundle per run under reports/eda/evidence/ (run_metadata.json,
+  stdout.log, stderr.log, eda_summary.json, eda_report.md) plus a PASS/FAIL comparison per
+  metric in reproducibility_comparison.md and .json. The EDA report now states explicitly
+  what ran on real data, what is skipped in CI and what only proves code behaviour.
+Tests: PASS — 8 new reproducibility tests on synthetic fixtures; full pytest suite 219 PASS;
+  Ruff and Black PASS on every changed Python file; the two real runs agree on every
+  deterministic metric (rows, labels, categories, quality tokens, duplicates, quantiles,
+  correlations, time coverage, contract, readiness, leakage boundary) and on the run
+  evidence (command, exit code, git HEAD, dataset SHA-256, manifest and row verification).
+Issues: #6 implemented; #7, #8 and #37 remain OPEN and unchanged.
+PR: #36 updated in place, still OPEN, not merged; re-review requested on the new HEAD.
+Remaining: ML_READY stays BLOCKED. Repository-wide Ruff (5 findings) and Black (11 files)
+  remain FAIL and tracked by #37; they are never reported as PASS.
+```
+
+```text
+Checkpoint 11 — Data leakage audit, data splitting and feature contract (Issue #7)
+Branch: feat/issue-7-data-splitting-leakage-audit
+HEAD: recorded by commit/PR readback at handoff.
+Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED.
+  - Deterministic chronological train/val/test split with 5-minute canonical group purge gaps
+    implemented in src/network_anomaly/data/split.py and CLI scripts/split_and_audit_nf_unsw_nb15_v3.py.
+  - Full-dataset cross-partition leakage audit executed on verified NF-UNSW-NB15-v3 bytes (2,365,424 rows).
+  - Split manifest generated at data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json,
+    reports/splits/nf_unsw_nb15_v3_split_manifest.json, and data/processed/nf_unsw_nb15_v3_split_manifest.json.
+  - Leakage audit report rendered at docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md and
+    reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md with comprehensive analysis of ML duplicates
+    (53.21% Test affected), evaluation limitations (non-i.i.d. feature representation), and methodology boundaries.
+  - Partition row indices generated under data/processed/splits/*.csv.gz using deterministic gzip (mtime=0.0)
+    with 100% byte-for-byte SHA-256 match across independent runs.
+  - Baseline 47 feature contract strictly preserved; 6 trace metadata and 2 target columns excluded.
+Tests: PASS — 12 dedicated unit tests (test_split_protocol.py); full test suite passed;
+  artifact reproducibility verified byte-for-byte on disk via independent dual-pass runs; audit status PASS.
+  Exact full-row overlap: 0; source-feature overlap: 0; flow-group overlap: 0;
+  temporal boundary violations: 0; binary label conflicts: 0.
+Issues: #7 review feedback fully addressed; #8 ready to consume verified split contract.
+Remaining: ML_READY remains BLOCKED pending train-only fitted preprocessing in Issue #8.
 ```

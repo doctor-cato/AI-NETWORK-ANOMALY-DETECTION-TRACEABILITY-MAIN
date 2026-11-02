@@ -77,6 +77,35 @@ ML_FEATURE_COLUMNS = tuple(
 SOURCE_FEATURE_COLUMNS = tuple(column for column in ALL_COLUMNS if column not in TARGET_COLUMNS)
 BEHAVIORAL_FINGERPRINT_COLUMNS = ML_FEATURE_COLUMNS
 
+# Numeric-coded categorical fields of the 47-feature baseline. The published CSV
+# stores them as integers, but the preprocessing contract requires treating them
+# as categories and never as continuous variables.
+CATEGORICAL_CODED_COLUMNS = (
+    "PROTOCOL",
+    "L7_PROTO",
+    "TCP_FLAGS",
+    "CLIENT_TCP_FLAGS",
+    "SERVER_TCP_FLAGS",
+    "ICMP_TYPE",
+    "ICMP_IPV4_TYPE",
+    "DNS_QUERY_ID",
+    "DNS_QUERY_TYPE",
+    "FTP_COMMAND_RET_CODE",
+)
+# Quantitative (continuous) part of the 47-feature baseline.
+QUANTITATIVE_ML_COLUMNS = tuple(
+    column for column in ML_FEATURE_COLUMNS if column not in set(CATEGORICAL_CODED_COLUMNS)
+)
+
+
+def validate_semantic_column_roles():
+    """Reject a semantic split that does not cover the 47-feature baseline exactly."""
+    if set(CATEGORICAL_CODED_COLUMNS) & set(QUANTITATIVE_ML_COLUMNS):
+        raise ValueError("categorical-coded and quantitative baseline columns overlap")
+    if set(CATEGORICAL_CODED_COLUMNS) | set(QUANTITATIVE_ML_COLUMNS) != set(ML_FEATURE_COLUMNS):
+        raise ValueError("semantic column roles must cover the 47-feature baseline exactly")
+    return True
+
 
 def validate_feature_selection(columns, require_complete=True):
     """Reject targets, trace-only identifiers, unknowns and duplicate features."""

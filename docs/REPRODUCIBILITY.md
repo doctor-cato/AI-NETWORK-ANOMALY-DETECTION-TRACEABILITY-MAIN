@@ -47,6 +47,110 @@ source-valid but ML-blocked audit exits `1`; integrity/corruption errors exit `2
 behavior permits CI without a 577 MB raw CSV, but it is not real-data evidence. Synthetic test PASS
 only demonstrates validator behavior.
 
+## Reproduce the exploratory analysis
+
+```text
+python scripts/eda_nf_unsw_nb15_v3.py
+```
+
+The EDA reuses the manifest contract and the byte verification of `scripts/validate_data.py`, so
+`scripts/validate_data.py` has to run first. The run streams the population in bounded memory and
+writes the machine-readable summary `reports/eda/nf_unsw_nb15_v3_eda_summary.json`, the generated
+report `docs/dataset/NF_UNSW_NB15_V3_EDA.md` and the labelled figures under
+`reports/figures/nf_unsw_nb15_v3/` (excluded from Git, regenerated locally).
+
+Reproducibility properties of the recorded run:
+
+- Source identity: SHA-256 of the raw CSV is re-verified against the manifest before the analysis.
+- Sampling: figures and shape statistics use a reservoir sample of 200,000 rows with seed `42` and
+  the method is recorded in the summary. Counts, means, extremes, exact population quantiles and
+  complete-case correlations are computed over every row.
+- Float aggregation: means and standard deviations are accumulated per streaming chunk, so their
+  last decimal digits depend on the chunk size. The recorded run uses the default chunk size of
+  100,000 rows; counts and quantiles are unaffected.
+- Stability: two runs of the same command on the same bytes produce identical counts and
+  quantiles. Re-running the command regenerates the report and the summary; the summary records
+  the run timestamp, the report records the dataset SHA-256.
+- Absent raw bytes: the command prints `EDA: SKIPPED` and exits `0`. A skip is not a result and
+  writes no artifact.
+
+The analysis is descriptive only. It does not fit a transformer, does not select features, does not
+remove a row and does not create a split, so `ML_READY` stays `BLOCKED`.
+
+## Reproduce the EDA twice and compare the two runs
+
+```text
+python scripts/verify_eda_reproducibility.py
+```
+
+The command executes `scripts/eda_nf_unsw_nb15_v3.py` twice on the same verified source file and
+writes one retrievable evidence bundle per run:
+
+| Artifact | Path | Content |
+|---|---|---|
+| Run metadata | `reports/eda/evidence/run-{1,2}/run_metadata.json` | git HEAD, branch, commit date, interpreter, OS, dependency versions, dataset identity, manifest and schema verification, key aggregates, command, exit code, start/end timestamps, SHA-256 of the summary and report |
+| Captured output | `reports/eda/evidence/run-{1,2}/stdout.log`, `stderr.log` | the real stdout and stderr of that run |
+| Summary of that run | `reports/eda/evidence/run-{1,2}/eda_summary.json` | the exact machine-readable summary the run produced |
+| Report of that run | `reports/eda/evidence/run-{1,2}/eda_report.md` | the exact generated report of that run |
+| Comparison | `reports/eda/evidence/reproducibility_comparison.md`, `.json` | PASS/FAIL per metric and the list of differences |
+
+The comparison walks both summaries and both evidence bundles. Only the metadata that is allowed to
+differ between two runs of the same command is excluded: the run timestamp and the environment
+description. The two summary artifacts have different file hashes because each artifact embeds its
+own run timestamp; the deterministic content comparison is the authoritative check.
+
+Exit codes: `0` when both runs succeeded and the deterministic content is identical, or when the raw
+package is absent and the check was skipped, `1` when a run failed or the two runs disagree. A
+skipped check prints `SKIPPED`, never `PASS`, and writes no artifact.
+
+## Reproduce the train-only preprocessing pipeline
+
+```text
+python scripts/preprocess_nf_unsw_nb15_v3.py
+python scripts/preprocess_nf_unsw_nb15_v3.py --check-reproducibility
+python scripts/preprocess_nf_unsw_nb15_v3.py --verify-only
+```
+
+The script consumes the verified split manifest (`data/processed/nf_unsw_nb15_v3_split_manifest.json`)
+and partition indices (`data/processed/splits/*.csv.gz`). It extracts the 47 baseline ML features,
+fits imputers and vocabularies strictly on the Train partition (1,655,797 rows), and transforms Train,
+Validation, and Test partitions with the frozen state.
+
+Artifacts produced:
+- Preprocessor binary: `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`
+- Companion manifest: `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`
+
+Reproducibility properties:
+- Independent dual-pass check (`--check-reproducibility`) verifies 100% parameter and numeric output identity.
+- Verify-only mode (`--verify-only`) validates artifact schema, companion manifest integrity, and dataset/split checksums without retraining (fails closed if companion manifest is missing or hashes mismatch).
+- Absent raw bytes: prints `PREPROCESSING: SKIPPED (raw dataset absent)` and exits `0`.
+
+## What runs where
+
+| Check | Environment | Result |
+|---|---|---|
+| `scripts/validate_data.py` | local, raw package present | real-data audit, exit `1` while `ML_READY: BLOCKED` |
+| `scripts/eda_nf_unsw_nb15_v3.py` | local, raw package present | EDA executed on the verified population |
+| `scripts/verify_eda_reproducibility.py` | local, raw package present | two runs compared per metric |
+| `scripts/split_and_audit_nf_unsw_nb15_v3.py` | local, raw package present | split manifest and leakage audit executed |
+| `scripts/preprocess_nf_unsw_nb15_v3.py` | local, raw package present | train-only preprocessing executed and verified |
+| `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
+| `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+| `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+| `scripts/preprocess_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
+
+A skipped CI step is never reported as evidence that the validator or the EDA ran on real data.
+
+## Lint scope
+
+| Scope | Ruff 0.17.1 | Black 26.10.1 | Tracking |
+|---|---|---|---|
+| Files owned by the current change set | PASS | PASS | — |
+| Whole repository | 5 findings, exit `1` | 11 files, exit `1` | Issue #37 |
+
+The repository-wide result is a FAIL while the findings remain. The Linux and CI-compatible
+re-check is the manual or pull-request workflow `.github/workflows/lint-audit.yml`.
+
 ## Split and experiment identity
 
 No real v3 split or benchmark currently exists. A future accepted run must record:

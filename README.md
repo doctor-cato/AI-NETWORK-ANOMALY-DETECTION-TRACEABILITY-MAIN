@@ -18,6 +18,7 @@ Current verified scope:
 | Reproducible download, cache, checksum, rollback and locking | IMPLEMENTED / TESTED | `scripts/fetch_nf_unsw_nb15_v3.py` and acquisition tests |
 | Package manifest and 55-column schema | VERIFIED on real bytes | `data/NF_UNSW_NB15_V3_MANIFEST.json` |
 | Streaming quality audit | `SOURCE_INTEGRITY: PASS`; `RAW_QUALITY: FINDINGS_RECORDED`; `ML_READY: BLOCKED` | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
+| Reproducible exploratory data analysis (Issue #6) | IMPLEMENTED / TESTED on real data | `docs/dataset/NF_UNSW_NB15_V3_EDA.md`, `reports/eda/nf_unsw_nb15_v3_eda_summary.json` |
 | 47-feature baseline exclusion and split leakage guards | IMPLEMENTED / TESTED on synthetic fixtures | `src/network_anomaly/data/nf_unsw_nb15_v3.py` |
 | Real train/validation/test split | PLANNED / NOT VERIFIED | blocked on an approved missing/non-finite and duplicate policy |
 | Model training, benchmark and deployment | PLANNED / NOT VERIFIED | no real experiment result is claimed |
@@ -26,6 +27,13 @@ The real-data audit confirms 2,365,424 rows and the expected label/category dist
 also finds missing/positive-infinity values, exact duplicates and substantial 47-feature/
 behavioral-v1 equivalence. Source integrity passes; raw findings are recorded; ML readiness remains
 blocked.
+
+The exploratory data analysis of Issue #6 profiles the same verified population and reproduces the
+quality findings independently: 2,237,731 benign against 127,693 attack flows (17.52:1), 122,493
+zero-duration flows that carry the non-finite rate values, 14,815 exact duplicate rows and
+1,134,553 repeated rows under 47-feature equivalence, with 1,270 groups that mix several malicious
+attack categories. The traffic is concentrated on three UTC days inside a 27-day capture window.
+The analysis is descriptive only: it selects no feature, fits no transformer and creates no split.
 
 ## Architecture
 
@@ -80,6 +88,7 @@ python scripts/check_environment.py
 python scripts/fetch_nf_unsw_nb15_v3.py
 python scripts/dataset_manifest.py verify
 python scripts/validate_data.py
+python scripts/eda_nf_unsw_nb15_v3.py
 ```
 
 The fetcher resolves a signed URL from the official UQRDM API, streams into staging with a pinned
@@ -92,6 +101,13 @@ SQLite database for duplicate fingerprints. It reports `SOURCE_INTEGRITY: PASS`,
 `RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`; exit `1` is expected while the ML gate is
 blocked. Integrity/corruption errors use exit `2`. If raw bytes are absent, default validation is
 `SOURCE_INTEGRITY: SKIPPED` with exit `0`; this is not a PASS.
+
+`eda_nf_unsw_nb15_v3.py` runs the reproducible exploratory analysis of Issue #6. It re-verifies the
+source SHA-256, reuses the manifest contract of the validator, streams the population in bounded
+memory and writes the machine-readable summary `reports/eda/nf_unsw_nb15_v3_eda_summary.json`, the
+generated report `docs/dataset/NF_UNSW_NB15_V3_EDA.md` and the labelled figures under
+`reports/figures/nf_unsw_nb15_v3/` (excluded from Git). The run is descriptive only: it fits no
+transformer, selects no feature, removes no row and leaves `ML_READY: BLOCKED`.
 
 ## Split and leakage safeguards
 
@@ -146,10 +162,34 @@ experiment result. Every claim follows:
 
 `Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment Results`.
 
+### What runs where
+
+| Check | Environment | Result |
+|---|---|---|
+| `scripts/validate_data.py` on the real CSV | local checkout, raw package present | `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED` (exit `1`) |
+| `scripts/eda_nf_unsw_nb15_v3.py` on the real CSV | local checkout, raw package present | EDA executed on 2,365,424 rows, exit `0` |
+| `scripts/verify_eda_reproducibility.py` | local checkout, raw package present | two independent runs, deterministic content comparison PASS per metric |
+| Unit and integration tests | CI and local, synthetic fixtures | PASS — proves code behavior only |
+| `scripts/validate_data.py` in GitHub Actions | CI runner without the raw CSV | `SKIPPED` — not a real-data result |
+| `scripts/eda_nf_unsw_nb15_v3.py` in GitHub Actions | CI runner without the raw CSV | `SKIPPED` — not a real-data result |
+
+A `SKIPPED` step in CI is never presented as evidence that the validator or the EDA ran on real
+data. The real-data evidence is versioned under `reports/data_quality/` and `reports/eda/`.
+
+### Lint scope
+
+| Scope | Ruff | Black | Tracking |
+|---|---|---|---|
+| Files owned by this change set | PASS | PASS | — |
+| Whole repository | 5 findings | 11 files | Issue #37 |
+
+Repository-wide lint is **not** PASS while the findings remain.
+
 ## Documentation map
 
 - Dataset use and commands: `docs/DATASET.md`
 - Decision, provenance, schema and impact: `docs/dataset/`
+- Exploratory data analysis of NF-UNSW-NB15-v3: `docs/dataset/NF_UNSW_NB15_V3_EDA.md`
 - Migration component map: `docs/NF_UNSW_NB15_V3_MIGRATION_ARCHITECTURE.md`
 - Split/leakage protocol: `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`
 - Methodology and evaluation: `docs/METHODOLOGY.md`, `docs/EVALUATION.md`
@@ -160,6 +200,8 @@ experiment result. Every claim follows:
 
 - The verified v3 package was released in 2025, but its observed timestamps cover January-February
   2015; it does not prove performance on contemporary traffic.
+- The EDA shows that the traffic is concentrated on three UTC days inside a 27-day window, so a
+  chronological split has to decide explicitly how those days are distributed.
 - Missing/non-finite values and duplicates block direct model use.
 - The real duplicate audit found no binary-label conflicts, but found 1,270 fingerprints spanning
   multiple malicious categories; a real cross-split audit is still NOT VERIFIED.
