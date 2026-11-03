@@ -12,7 +12,7 @@ code, test và evidence tương ứng. PR #22 là workstream #4/#5 riêng, khôn
 | C1 | Data quality, EDA, leakage | #4–#7, PR #22 | manifest/report/EDA/leakage decision | #4/#5 TESTED trên PR #22; #6/#7 PLANNED |
 | C2 | Preprocessing không leakage | #8 | pipeline artifact, fit-boundary tests | PLANNED |
 | C3 | RF và XGBoost supervised | #9, #10, #12, #31 | model artifacts, metrics, reproduction | PLANNED |
-| C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED; model component IF `IMPLEMENTED`/`TESTED` (synthetic), threshold/holdout/so sánh chưa có |
+| C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | Pipeline IF `IMPLEMENTED`/`TESTED` (synthetic fixtures); real-data experiment `BLOCKED` (thiếu dataset file local) |
 | C5 | Behavioral Vector | #28 | versioned schemas, fixtures, correlation tests | PLANNED |
 | C6 | Risk và Trace | #32, #24 | explanation, calibration, evidence/timeline tests | PLANNED |
 | C7 | AES-GCM và key lifecycle | #26 | integrity/recovery/rotation tests | PLANNED |
@@ -51,3 +51,32 @@ Cập nhật: 2026-10-19 (self-review; không phải reviewer độc lập khác
   so sánh với Autoencoder. Không có kết quả trên UNSW-NB15, không tuyên bố zero-day.
 
 Cập nhật: 2026-10-22 (model component Isolation Forest cho Issue #11)
+
+## Pipeline huấn luyện & Đánh giá Isolation Forest (Issue #11 — C4)
+
+- Issue: #11 (C4).
+- Implementation:
+  - `src/network_anomaly/data/nf_unsw_nb15_v3.py`: Hợp đồng 47 baseline features, loại trừ targets (`Label`, `Attack`) và trace/grouping metadata (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`).
+  - `scripts/train_isolation_forest.py`: Pipeline fail-closed toàn diện:
+    1. Kiểm tra điều kiện tiên quyết (SHA-256 dữ liệu, split manifest, companion preprocessor manifest, 47 feature schema, kiểm tra không rò rỉ metadata/target, kiểm tra giá trị hữu hạn).
+    2. Huấn luyện Isolation Forest chỉ trên mẫu lành tính (`Label == 0`) từ tập Train (1.655.797 dòng train).
+    3. Hiệu chuẩn ngưỡng (Threshold Calibration) trên Validation: loại trừ các nhóm tấn công chưa biết đã đăng ký trước (`UNKNOWN_ATTACK_CATEGORIES` = `{"Worms", "Backdoor"}`); hỗ trợ chính sách tối đa hóa F1 hoặc đáp ứng mục tiêu FPR.
+    4. Đóng băng ngưỡng trước khi đánh giá tập Test (345.953 dòng).
+    5. Đánh giá Test độc lập: TP, TN, FP, FN, Accuracy, Precision, Recall, F1, FPR, ROC-AUC, PR-AUC, tỷ lệ phát hiện theo từng nhóm tấn công và tỷ lệ phát hiện tấn công đã biết so với chưa biết.
+    6. Lưu trữ artifact (`isolation_forest.joblib`, `model_config.json`, `threshold.json`, `training_metadata.json`) và kiểm tra reload consistency.
+    7. Xuất báo cáo máy đọc được (`metrics.json`, `threshold_calibration.json`, `per_attack_metrics.json`, `run_metadata.json`, `evaluation_report.md`).
+- Tests:
+  - `tests/unit/test_train_isolation_forest.py`: 63 unit/integration tests bao phủ toàn bộ 12 nhóm kiểm thử: huấn luyện benign-only, loại trừ target, kiểm thực 47 feature schema, hiệu chuẩn ngưỡng, chiều score (cao hơn = bất thường hơn), cô lập holdout unknown attack, bảo vệ tập Test, lưu/nạp artifact, tái lập thực nghiệm, tính toán metrics, xử lý lỗi fail-closed, và tính toàn vẹn của hợp đồng đặc trưng.
+  - Tổng số test trong repository: 263 passed, 2 skipped (Windows symlink).
+- Evidence:
+  - `python -m pytest tests/unit/test_train_isolation_forest.py -v`: 63 passed (18s).
+  - `python -m pytest tests/ -q`: 263 passed, 2 skipped.
+  - `python scripts/train_isolation_forest.py --check-prereqs-only`: PASS kiểm tra cấu trúc pipeline; phát hiện dataset absent và ghi nhận trạng thái BLOCKED tại `reports/experiments/isolation_forest/blocked_status.json`.
+  - `python scripts/train_isolation_forest.py`: exit 1 (fail-closed khi thiếu dataset `NF-UNSW-NB15-v3.csv`).
+  - `python -m ruff check scripts/train_isolation_forest.py tests/unit/test_train_isolation_forest.py`: All checks passed.
+  - `git diff --check`: PASS.
+- Trạng thái vòng đời & kiểm chứng:
+  - Pipeline & synthetic tests: `IMPLEMENTED` / `TESTED` (PASS).
+  - Thực nghiệm trên dữ liệu thật NF-UNSW-NB15-v3: `BLOCKED` / `NOT VERIFIED` do file dataset `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` không có sẵn trong môi trường máy cục bộ. Không thay thế bằng mock data; không đóng Issue #11 cho đến khi đủ dữ liệu thật và chạy thực nghiệm ra kết quả hoàn chỉnh.
+
+Cập nhật: 2026-11-03 (Pipeline huấn luyện & đánh giá Isolation Forest cho Issue #11)

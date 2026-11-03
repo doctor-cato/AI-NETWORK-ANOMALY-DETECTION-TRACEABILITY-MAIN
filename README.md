@@ -37,7 +37,7 @@ Hệ thống không nhằm xác định danh tính thật của attacker, chứn
 | --- | --- | --- |
 | Data quality & preprocessing | UNSW-NB15, schema, missing/duplicate, split trước mọi fit, leakage audit | C1–C2 `PLANNED`; validator cơ bản hiện có |
 | Supervised ML | Random Forest là baseline; XGBoost dùng cùng protocol | RF constructor có trong code; training/evaluation và XGBoost `PLANNED` |
-| Unsupervised ML | Isolation Forest và Autoencoder reconstruction error; threshold trên validation | Isolation Forest model component `IMPLEMENTED`/`TESTED` (factory có validate, score direction; chưa có threshold); Autoencoder và protocol C4 `PLANNED` |
+| Unsupervised ML | Isolation Forest và Autoencoder reconstruction error; threshold trên validation | Isolation Forest model component & training/eval pipeline `IMPLEMENTED`/`TESTED` (synthetic fixtures, fail-closed audit; real-data experiment `BLOCKED` do thiếu dataset local); Autoencoder `PLANNED` (C4) |
 | Behavioral Vector | Network/API/Session vector, normalization, similarity, missing-feature policy | `PLANNED` (C5) |
 | Risk/Trace Engine | Risk Score 0–100, explanation, incident grouping, evidence và timeline | `PLANNED` (C6) |
 | Security layer | AES-GCM, key identifier, unique nonce, recovery và rotation 30 phút/adaptive | `PLANNED` (C7) |

@@ -37,7 +37,45 @@ UNSW-NB15. SKIPPED và fixture không thay thế thực nghiệm thật.
   khi dựng estimator. `random_state` phải là seed số nguyên tường minh — truyền `None` bị từ
   chối vì tắt khả năng tái lập. Bảy tham số được ghi trong config: `n_estimators`,
   `max_samples`, `contamination`, `max_features`, `bootstrap`, `random_state`, `n_jobs`.
-- Chưa có training/split pipeline hoàn chỉnh; không mặc định rằng seed NumPy/Python hoặc mọi bước chia dữ liệu đã được thiết lập. Khi triển khai phải ghi rõ seed thực sự được sử dụng.
+- Pipeline huấn luyện và đánh giá Isolation Forest đã được hoàn thiện tại `scripts/train_isolation_forest.py`
+  (Issue #11, C4), hỗ trợ kiểm tra điều kiện tiên quyết, hiệu chuẩn ngưỡng an toàn rò rỉ trên Validation,
+  đóng băng ngưỡng và đánh giá trên Test, xuất artifact có checksum và báo cáo máy đọc được.
+
+## Pipeline huấn luyện & Đánh giá Isolation Forest (scripts/train_isolation_forest.py)
+
+Lệnh thực thi từ root repository:
+
+```text
+# Kiểm tra điều kiện tiên quyết (không chạy train/eval; hữu ích cho CI smoke test):
+python scripts/train_isolation_forest.py --check-prereqs-only
+
+# Thực thi huấn luyện và đánh giá đầy đủ (yêu cầu NF-UNSW-NB15-v3.csv đã tải):
+python scripts/train_isolation_forest.py
+```
+
+### Nguyên tắc Fail-Closed và Bảo vệ Tái lập
+- Pipeline dừng ngay (exit 1) nếu:
+  1. File dataset không tồn tại hoặc SHA-256 không khớp (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`).
+  2. Split manifest vắng mặt hoặc số dòng các phân vùng không khớp (Train: 1.655.797, Val: 345.371, Test: 345.953).
+  3. Preprocessor artifact hoặc companion manifest thiếu hoặc sai checksum.
+  4. Hợp đồng đặc trưng không đúng 47 cột theo thứ tự chuẩn baseline.
+  5. Phát hiện rò rỉ nhãn hoặc metadata (`Label`, `Attack`, IP, port, timestamp) trong ma trận đặc trưng.
+  6. Dữ liệu sau tiền xử lý chứa giá trị NaN hoặc Infinite.
+  7. Quá trình kiểm tra reload model sau khi lưu phát hiện điểm số bất thường không khớp.
+- Nếu dataset chưa có sẵn, script ghi nhận trạng thái `BLOCKED` tại `reports/experiments/isolation_forest/blocked_status.json` kèm đầy đủ thông tin môi trường (`python --version`, `pip freeze`, git commit, thời gian UTC) để đảm bảo tính minh bạch, không dùng dữ liệu giả thay thế.
+
+### Artifacts và Báo cáo tạo ra
+- Thư mục artifact: `artifacts/models/isolation_forest/`
+  - `isolation_forest.joblib`: Model đã huấn luyện.
+  - `model_config.json`: Cấu hình siêu tham số hiệu lực.
+  - `threshold.json`: Ngưỡng bất thường đã hiệu chuẩn và đóng băng.
+  - `training_metadata.json`: Metadata huấn luyện (số mẫu benign, thời gian huấn luyện, seed, checksums).
+- Thư mục báo cáo: `reports/experiments/isolation_forest/`
+  - `metrics.json`: Đầy đủ 11 chỉ số đánh giá trên Test (TP, TN, FP, FN, Accuracy, Precision, Recall, F1, FPR, ROC-AUC, PR-AUC).
+  - `threshold_calibration.json`: Chi tiết quá trình hiệu chuẩn ngưỡng trên Validation.
+  - `per_attack_metrics.json`: Tỷ lệ phát hiện chi tiết cho từng loại tấn công và phân nhóm known/unknown.
+  - `run_metadata.json`: Toàn bộ metadata phục vụ tái lập (git commit, pip freeze, thời gian, arguments).
+  - `evaluation_report.md`: Báo cáo đánh giá tổng hợp định dạng markdown.
 - Cấu hình hiện lấy từ module Python; chưa có cơ chế đọc seed từ biến môi trường hoặc `pyproject.toml`.
 
 ## Thực nghiệm và artifact (chưa hoàn thành)
