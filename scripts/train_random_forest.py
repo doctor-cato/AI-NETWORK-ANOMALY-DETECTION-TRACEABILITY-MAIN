@@ -378,11 +378,18 @@ def check_prerequisites(
 
         try:
             pm_data = json.loads(preprocessor_manifest_path.read_text(encoding="utf-8"))
-            pm_art_sha = pm_data.get("preprocessor_artifact_sha256")
-            if pm_art_sha and pm_art_sha != EXPECTED_PREPROCESSOR_ARTIFACT_SHA256:
+            if not isinstance(pm_data, dict):
+                raise ValueError("Companion manifest must be a JSON object")
+            if "artifact_sha256" not in pm_data:
                 missing.append(
-                    f"Preprocessor manifest artifact SHA-256 mismatch: expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {pm_art_sha}"
+                    f"Preprocessor companion manifest missing required canonical field 'artifact_sha256': {preprocessor_manifest_path}"
                 )
+            else:
+                pm_art_sha = pm_data.get("artifact_sha256")
+                if pm_art_sha != EXPECTED_PREPROCESSOR_ARTIFACT_SHA256:
+                    missing.append(
+                        f"Preprocessor manifest artifact SHA-256 mismatch: expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {pm_art_sha}"
+                    )
             findings["preprocessor_manifest"] = {
                 "status": "EXISTS",
                 "path": str(preprocessor_manifest_path),
@@ -403,6 +410,16 @@ def check_prerequisites(
                 expected_dataset_sha256=EXPECTED_DATASET_SHA256,
             )
             findings["preprocessor_verification"] = prep_audit
+            if not isinstance(prep_audit, dict) or "status" not in prep_audit:
+                missing.append(
+                    "Preprocessor verification returned invalid audit schema: missing 'status' field"
+                )
+            elif prep_audit["status"] != "PASS":
+                err_msgs = prep_audit.get("errors", [])
+                err_str = "; ".join(err_msgs) if err_msgs else "unknown verification failure"
+                missing.append(
+                    f"Preprocessor artifact verification failed (status={prep_audit['status']}): {err_str}"
+                )
         except Exception as e:
             missing.append(f"Preprocessor artifact verification failed: {e}")
             findings["preprocessor_verification"] = {"status": "FAIL", "error": str(e)}
@@ -458,7 +475,11 @@ def stream_partition_data(
        threshold selection, validation, or feature selection.
     2. Contract B: Zero Test partition rows are ever materialized or converted into DataFrames.
        Test rows are intercepted and discarded at the raw text stream boundary prior to DataFrame creation.
-    3. Memory footprint is strictly bounded by chunksize.
+    3. Memory Architecture: chunksize controls the batch buffer size for CSV line parsing
+       (preventing reading multi-GB text into memory at once). Full Train (1,655,797 rows)
+       and Validation (345,371 rows) sets are materialized into memory DataFrames as required
+       for scikit-learn RandomForestClassifier.fit(). Peak memory occurs during DataFrame
+       concatenation and tree fitting.
     4. Preserves exact index alignment with partition indices.
     """
     train_idx_set = set(train_indices)
@@ -848,11 +869,21 @@ def execute_training(
     reloaded_val_preds = reloaded_model.predict(X_val_trans)
     reloaded_val_probs = reloaded_model.predict_proba(X_val_trans)
 
+    if orig_val_preds.shape != reloaded_val_preds.shape:
+        raise ValueError(
+            f"Validation prediction shape mismatch: original {orig_val_preds.shape} != reloaded {reloaded_val_preds.shape}"
+        )
+    if orig_val_probs.shape != reloaded_val_probs.shape:
+        raise ValueError(
+            f"Validation probability shape mismatch: original {orig_val_probs.shape} != reloaded {reloaded_val_probs.shape}"
+        )
+    if not np.all(np.isfinite(reloaded_val_probs)):
+        raise ValueError("Validation probabilities contain non-finite values (NaN or Inf)!")
     if not np.array_equal(orig_val_preds, reloaded_val_preds):
         raise ValueError("Validation prediction mismatch between original and reloaded model!")
-    if not np.allclose(orig_val_probs, reloaded_val_probs, atol=1e-7):
+    if not np.allclose(orig_val_probs, reloaded_val_probs, atol=1e-7, rtol=0):
         raise ValueError(
-            "Validation probability mismatch beyond numerical tolerance (atol=1e-7)!"
+            "Validation probability mismatch beyond numerical tolerance (atol=1e-7, rtol=0)!"
         )
     if model.feature_names != reloaded_model.feature_names:
         raise ValueError(
@@ -868,7 +899,7 @@ def execute_training(
             f"Sample count mismatch: expected {len(val_indices)}, got {len(reloaded_val_preds)}"
         )
     print(
-        "[train_random_forest] Verified reload check passed: predictions and probabilities identical (atol=1e-7)."
+        "[train_random_forest] Verified reload check passed: predictions and probabilities identical (atol=1e-7, rtol=0)."
     )
 
     return manifest

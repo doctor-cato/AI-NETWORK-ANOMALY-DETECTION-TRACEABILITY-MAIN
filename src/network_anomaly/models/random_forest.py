@@ -74,8 +74,9 @@ class RandomForestModel:
             self.protocol = None
             self.config = RandomForestBaselineConfig.from_dict(config)
         elif config is None:
-            self.protocol = None
-            self.config = RandomForestBaselineConfig()
+            proto = create_rf_baseline_protocol()
+            self.protocol = proto
+            self.config = proto.model_config
         else:
             raise TypeError(f"Unsupported config type: {type(config)}")
 
@@ -176,11 +177,13 @@ class RandomForestModel:
         config_dict = payload.get("config", {})
         config = RandomForestBaselineConfig.from_dict(config_dict)
         protocol = None
-        if payload.get("protocol"):
+        if "protocol" in payload and payload["protocol"] is not None:
             try:
                 protocol = RandomForestBaselineProtocol.from_dict(payload["protocol"])
-            except Exception:
-                protocol = None
+            except Exception as e:
+                raise ValueError(
+                    f"Failed to deserialize model protocol from artifact payload at {path}: {e}"
+                ) from e
         model = cls(config=config, protocol=protocol)
         model._estimator = payload["estimator"]
         model._is_fitted = True
@@ -291,26 +294,52 @@ class RandomForestModel:
                     f"Split manifest SHA-256 mismatch in manifest: expected {exp_sm}, got {manifest_sm_sha}"
                 )
 
+        manifest_prep_sha_raw = manifest.get("preprocessor_artifact_sha256")
+        prov_prep_sha_raw = None
+        if isinstance(manifest.get("preprocessing_provenance"), dict):
+            prov_prep_sha_raw = manifest["preprocessing_provenance"].get(
+                "preprocessor_artifact_sha256"
+            )
+
+        if (
+            manifest_prep_sha_raw
+            and prov_prep_sha_raw
+            and manifest_prep_sha_raw != prov_prep_sha_raw
+        ):
+            raise ValueError(
+                f"Conflicting preprocessor_artifact_sha256 in manifest: "
+                f"top-level {manifest_prep_sha_raw} != preprocessing_provenance {prov_prep_sha_raw}"
+            )
+
         if expected_preprocessor_artifact_sha256:
             exp_prep = _validate_hex_sha256(
                 expected_preprocessor_artifact_sha256,
                 "expected_preprocessor_artifact_sha256",
             )
-            man_prep = manifest.get("preprocessor_artifact_sha256")
-            if not man_prep and isinstance(manifest.get("preprocessing_provenance"), dict):
-                man_prep = manifest["preprocessing_provenance"].get(
-                    "preprocessor_artifact_sha256"
+            if not manifest_prep_sha_raw and not prov_prep_sha_raw:
+                raise ValueError(
+                    f"Missing required field 'preprocessor_artifact_sha256' in manifest: {manifest_path}"
                 )
-            if man_prep:
-                clean_man_prep = _validate_hex_sha256(
-                    man_prep, "preprocessor_artifact_sha256"
+            clean_man_prep = _validate_hex_sha256(
+                manifest_prep_sha_raw or prov_prep_sha_raw,
+                "preprocessor_artifact_sha256",
+            )
+            if clean_man_prep != exp_prep:
+                raise ValueError(
+                    f"Preprocessor artifact SHA-256 mismatch in manifest: expected {exp_prep}, got {clean_man_prep}"
                 )
-                if clean_man_prep != exp_prep:
-                    raise ValueError(
-                        f"Preprocessor artifact SHA-256 mismatch in manifest: expected {exp_prep}, got {clean_man_prep}"
-                    )
+        elif manifest_prep_sha_raw or prov_prep_sha_raw:
+            _validate_hex_sha256(
+                manifest_prep_sha_raw or prov_prep_sha_raw,
+                "preprocessor_artifact_sha256",
+            )
 
-        return cls.load(model_path)
+        model = cls.load(model_path)
+        if model.protocol is None:
+            raise ValueError(
+                f"Model artifact at {model_path} lacks required protocol provenance for verified loading."
+            )
+        return model
 
 
 def _sha256_file(path: Path, chunk_bytes: int = 1024 * 1024) -> str:

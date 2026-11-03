@@ -181,7 +181,9 @@ Khi thực hiện hyperparameter tuning (tùy chọn trong Issue #10):
 
 ---
 
-## 8. Test Lock Policy & Semantics (P0-04)
+## 8. Test Lock Policy, Memory Architecture & Verification (P0-04, P1-03, P1-04)
+
+### 8.1. Test Isolation Contracts (Contract A & Contract B)
 
 Tập dữ liệu kiểm thử độc lập (`test`) được bảo vệ nghiêm ngặt bằng hai hợp đồng an ninh rành mạch:
 
@@ -215,10 +217,31 @@ TEST:
 4. Cấm fit tham số tiền xử lý (`preprocessing_fitting`).
 5. Cấm lựa chọn thuật toán/mô hình (`model_selection`).
 6. Cấm lặp cải tiến mô hình dựa trên điểm test (`model_iteration`).
-3. Cấm căn chỉnh ngưỡng phát hiện (`threshold_selection`).
-4. Cấm fit tham số tiền xử lý (`preprocessing_fitting`).
-5. Cấm lựa chọn thuật toán/mô hình (`model_selection`).
-6. Cấm lặp cải tiến mô hình dựa trên điểm test (`model_iteration`).
+
+### 8.2. Kiến trúc Bộ nhớ & Streaming Contract (P1-03 — Option B)
+
+- **Cơ chế đọc theo batch (Chunking):** Tham số `chunksize` (mặc định 100.000 dòng) kiểm soát kích thước bộ đệm dòng văn bản thô khi đọc CSV. Cơ chế này tránh việc nạp toàn bộ tệp CSV thô hàng gigabyte vào bộ nhớ dưới dạng chuỗi văn bản.
+- **Ranh giới hiện thực hóa DataFrame (Materialization):** Thuật toán `RandomForestClassifier` của scikit-learn yêu cầu toàn bộ mảng dữ liệu trong bộ nhớ (in-memory arrays) để xây dựng các cây quyết định độc lập. Do đó:
+  - Các khối dòng của tập Train (1.655.797 dòng) và Validation (345.371 dòng) được giải mã thành DataFrame theo batch và tích lũy để nối (`pd.concat`) thành ma trận đầy đủ trong RAM.
+  - Bộ nhớ đỉnh (Peak Memory) đạt cực đại tại thời điểm nối DataFrame và fit rừng cây (~4–8 GB RAM khuyến nghị cho tập dữ liệu đầy đủ). `chunksize` giới hạn bộ đệm phân tích cú pháp CSV nhưng không giới hạn tổng RAM toàn cục tại bước fit.
+  - Zero dòng Test nào bị nạp vào bộ nhớ trong suốt chu trình này (Contract B).
+
+### 8.3. Kiểm tra Nhất quán Reload & Ngưỡng Sai số (P1-04)
+
+Sau khi mô hình được lưu ra artifact `.joblib`, entrypoint huấn luyện thực hiện nạp lại và kiểm định:
+- **Kiểm tra shape & tính hữu hạn:** Ma trận xác suất dự đoán phải có cùng shape và toàn bộ giá trị phải hữu hạn (`np.all(np.isfinite(...))`, không có `NaN` hay `Inf`).
+- **Dự đoán nhãn nhị phân:** Dự đoán nhãn trước và sau khi lưu/nạp phải trùng khớp tuyệt đối 100% (`np.array_equal(orig_preds, reloaded_preds)`).
+- **Phân phối xác suất:** Độ sai lệch xác suất giữa mô hình gốc và mô hình nạp lại phải nằm trong ngưỡng tuyệt đối:
+  $$\text{allclose}(\text{orig\_probs}, \text{reloaded\_probs}, \text{atol}=10^{-7}, \text{rtol}=0)$$
+  Việc khóa `rtol=0` bắt buộc mọi phần tử phải có sai số tuyệt đối không vượt quá $10^{-7}$, loại bỏ hoàn toàn khả năng sai số lớn hơn bị bỏ qua do dung sai tương đối mặc định của NumPy.
+- **Bất biến cấu trúc:** Tên đặc trưng (`feature_names`), thứ tự đặc trưng và thứ tự lớp (`classes_`) được kiểm tra đồng nhất tuyệt đối.
+
+### 8.4. Fail-Closed Artifact Verification (P0-01, P0-02, P1-01, P1-02)
+
+- **P0-01 (Prerequisite Verification Status):** `check_prerequisites()` bắt buộc kiểm tra `prep_audit["status"] == "PASS"`. Nếu verifier trả về `FAIL`, thiếu trường `status`, hoặc trạng thái không hợp lệ, toàn bộ quá trình audit báo `BLOCKED` và lệnh CLI `--verify-only` thoát với mã lỗi 1.
+- **P0-02 (Elimination of Fail-Open in load_verified):** Khi caller truyền `expected_preprocessor_artifact_sha256`, manifest bắt buộc phải chứa trường `preprocessor_artifact_sha256` hợp lệ. Thiếu trường, sai định dạng hex 64 ký tự, hoặc sai lệch hash đều bị từ chối fail-closed. Đồng thời, đối chiếu chéo bắt buộc giữa top-level manifest và `preprocessing_provenance` (nếu khác nhau sẽ reject ngay lập tức).
+- **P1-01 (Canonical Preprocessor Manifest Field):** Companion manifest của tiền xử lý được chuẩn hóa theo schema chính thức `TrainOnlyPreprocessor.save()` với tên trường canonical là `artifact_sha256`.
+- **P1-02 (Fail-Closed Protocol Deserialization):** Phương thức `RandomForestModel.load()` yêu cầu giải mã protocol thành công nếu payload có chứa trường protocol; mọi lỗi cú pháp hoặc schema protocol đều kích hoạt ngoại lệ `ValueError`. Phương thức `RandomForestModel.load_verified()` kiên quyết từ chối các model thiếu protocol provenance.
 
 ---
 
@@ -267,9 +290,9 @@ flowchart LR
 - **Issue #7:** `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, real split `PASS (PR #41)`, split manifest SHA-256 `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`.
 - **Issue #8:** Preprocessing handling contract `PASS (PR #42)`, preprocessor manifest SHA-256 `af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441`.
 - **Issue #9:** Protocol & configuration `IMPLEMENTED / TESTED`, PR #39 và PR #43 reviewer findings fixed (canonical baseline locking, validation reload consistency, attack category detection logic), 27 unit tests `PASS`.
-- **Issue #10:** Training architecture, model serialization, verified reload consistency, strict test isolation Contract A & B, fail-closed prerequisite audit và `scripts/run_experiments.py` integration `IMPLEMENTED / TESTED` (`scripts/train_random_forest.py`, 22 unit tests `PASS` / 1 test `SKIPPED / NOT VERIFIED` do thiếu CSV thô). Huấn luyện thực nghiệm trên 1.655.797 dòng của tập train: `BLOCKED / NOT VERIFIED` do tệp CSV thô và preprocessor `.joblib` chưa được mount vào workspace cục bộ. Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10; Issue #10 giữ trạng thái OPEN cho đến khi thực hiện xong real-data run.
+- **Issue #10:** Training architecture, model serialization, verified reload consistency (atol=1e-7, rtol=0), strict test isolation Contract A & B, fail-closed prerequisite audit và `scripts/run_experiments.py` integration `IMPLEMENTED / TESTED` (`scripts/train_random_forest.py`, 28 unit tests `PASS` / 1 test `SKIPPED / NOT VERIFIED` do thiếu CSV thô). Huấn luyện thực nghiệm trên 1.655.797 dòng của tập train: `BLOCKED / NOT VERIFIED` do tệp CSV thô và preprocessor `.joblib` chưa được mount vào workspace cục bộ. Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10; Issue #10 giữ trạng thái OPEN cho đến khi thực hiện xong real-data run.
 - **Issue #12:** Đánh giá và báo cáo benchmark `PLANNED`.
 
 ---
 
-Cập nhật: 2026-11-03 (PR #43 review fixes, Issues #9 & #10 canonical locking, verified reload, strict test isolation Contract A & B)
+Cập nhật: 2026-11-03 (PR #43 review 5748067153 fixes: fail-closed verification P0-01/P0-02, artifact_sha256 schema P1-01, protocol deserialization P1-02, memory contract Option B P1-03, probability tolerance rtol=0 P1-04)

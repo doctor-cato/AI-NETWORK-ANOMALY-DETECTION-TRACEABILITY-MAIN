@@ -140,8 +140,11 @@ locked in Issue #9:
 - Reuses the existing fitted preprocessor artifact `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` without refitting.
 - Preserves the 47 baseline ML feature ordering and excludes all metadata and target columns.
 - Strict Test Lock: Enforces Contract A (no test data in fitting, tuning, selection, or reporting) and Contract B (test rows are strictly filtered at the raw line stream boundary and never materialized into DataFrames).
+- Memory Architecture (Option B): `chunksize` (default 100,000) limits the raw text buffer during CSV parsing; full Train (1,655,797 rows) and Validation (345,371 rows) partitions are materialized into in-memory DataFrames as required for fitting standard scikit-learn `RandomForestClassifier`. Peak memory occurs during DataFrame concatenation and tree fitting (~4-8 GB RAM recommended).
 - Produces model binary `artifacts/models/random_forest/random_forest_baseline.joblib` and execution manifest `artifacts/models/random_forest/random_forest_manifest.json` (also saved to `reports/models/random_forest_manifest.json`).
-- Verifies model reload consistency using `RandomForestModel.load_verified()` with bitwise identical predictions and probability tolerance `atol=1e-7`.
+- Verifies model reload consistency using `RandomForestModel.load_verified()` with bitwise identical predictions and probability tolerance `atol=1e-7, rtol=0` (along with finite value and shape checks).
+- Preprocessor companion manifest verification strictly enforces canonical `artifact_sha256` schema and `prep_audit["status"] == "PASS"`.
+- `RandomForestModel.load_verified()` enforces top-level and nested provenance consistency and rejects missing or malformed hashes fail-closed.
 - Experiment runner integration: `python scripts/run_experiments.py --step baseline` delegates directly to `scripts/train_random_forest.py` and forwards exit codes.
 - Fail-closed prerequisite audit: If the raw dataset or preprocessor artifact is missing or altered, training stops immediately with exit code 1. Mock/synthetic data is strictly prohibited for benchmark results.
 
