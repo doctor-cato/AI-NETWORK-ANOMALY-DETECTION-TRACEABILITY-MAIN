@@ -49,6 +49,22 @@ ALL_ATTACK_CATEGORIES: Tuple[str, ...] = ("Benign",) + EXPECTED_ATTACK_CATEGORIE
 DATASET_CSV_SHA256: str = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
 DATASET_ARCHIVE_SHA256: str = "6d51554df43e324ba8d68fc31a02a83d860ba0a3a93d63320a4a6fc314c9cdfd"
 
+CANONICAL_BASELINE_PARAMS: Dict[str, Any] = {
+    "model_type": "RandomForest",
+    "task": "binary_classification",
+    "target": "Label",
+    "positive_class": "Attack",
+    "n_estimators": 200,
+    "max_depth": 16,
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "criterion": "gini",
+    "max_features": "sqrt",
+    "class_weight": None,
+    "random_state": 42,
+    "bootstrap": True,
+}
+
 
 @dataclass(frozen=True)
 class RandomForestBaselineConfig:
@@ -68,9 +84,11 @@ class RandomForestBaselineConfig:
     random_state: int = RANDOM_SEED
     n_jobs: int = -1
     bootstrap: bool = True
+    configuration_id: str = "rf-baseline-canonical-v1"
+    is_canonical_baseline: bool = True
 
     def validate(self) -> None:
-        """Validate hyperparameter invariants."""
+        """Validate hyperparameter invariants and baseline configuration lock."""
         if self.model_type != "RandomForest":
             raise ValueError(f"model_type must be 'RandomForest', got {self.model_type}")
         if self.task != "binary_classification":
@@ -91,6 +109,42 @@ class RandomForestBaselineConfig:
             raise ValueError(f"Unsupported criterion: {self.criterion}")
         if self.random_state is None:
             raise ValueError("random_state must be an integer seed for reproducibility")
+
+        canonical_matches = (
+            self.model_type == CANONICAL_BASELINE_PARAMS["model_type"]
+            and self.task == CANONICAL_BASELINE_PARAMS["task"]
+            and self.target == CANONICAL_BASELINE_PARAMS["target"]
+            and self.positive_class == CANONICAL_BASELINE_PARAMS["positive_class"]
+            and self.n_estimators == CANONICAL_BASELINE_PARAMS["n_estimators"]
+            and self.max_depth == CANONICAL_BASELINE_PARAMS["max_depth"]
+            and self.min_samples_split == CANONICAL_BASELINE_PARAMS["min_samples_split"]
+            and self.min_samples_leaf == CANONICAL_BASELINE_PARAMS["min_samples_leaf"]
+            and self.criterion == CANONICAL_BASELINE_PARAMS["criterion"]
+            and self.max_features == CANONICAL_BASELINE_PARAMS["max_features"]
+            and self.class_weight == CANONICAL_BASELINE_PARAMS["class_weight"]
+            and self.random_state == CANONICAL_BASELINE_PARAMS["random_state"]
+            and self.bootstrap == CANONICAL_BASELINE_PARAMS["bootstrap"]
+        )
+
+        if self.is_canonical_baseline:
+            if not canonical_matches:
+                raise ValueError(
+                    "Configuration claims canonical baseline status (is_canonical_baseline=True), "
+                    "but parameters differ from locked canonical baseline. "
+                    "Set is_canonical_baseline=False and provide an experimental configuration_id to use custom hyperparameters."
+                )
+            if self.configuration_id != "rf-baseline-canonical-v1":
+                raise ValueError(
+                    f"Canonical baseline configuration must have configuration_id 'rf-baseline-canonical-v1', "
+                    f"got '{self.configuration_id}'"
+                )
+        else:
+            if self.configuration_id == "rf-baseline-canonical-v1":
+                raise ValueError(
+                    "Non-canonical / experimental configuration cannot use canonical configuration_id 'rf-baseline-canonical-v1'"
+                )
+            if not self.configuration_id or not self.configuration_id.strip():
+                raise ValueError("Experimental configuration must have a non-empty configuration_id")
 
     def to_sklearn_params(self) -> Dict[str, Any]:
         """Extract only the kwargs accepted by sklearn's RandomForestClassifier."""
@@ -116,6 +170,18 @@ class RandomForestBaselineConfig:
         """Create and validate configuration from dictionary."""
         valid_fields = cls.__annotations__.keys()
         filtered = {k: v for k, v in data.items() if k in valid_fields}
+
+        # If is_canonical_baseline was not explicitly passed, infer it from parameters
+        if "is_canonical_baseline" not in data:
+            matches_canonical = all(
+                filtered.get(k, CANONICAL_BASELINE_PARAMS[k])
+                == CANONICAL_BASELINE_PARAMS[k]
+                for k in CANONICAL_BASELINE_PARAMS
+            )
+            filtered["is_canonical_baseline"] = matches_canonical
+            if not matches_canonical and "configuration_id" not in data:
+                filtered["configuration_id"] = "rf-experimental-custom"
+
         config = cls(**filtered)
         config.validate()
         return config
@@ -493,6 +559,13 @@ class RandomForestBaselineProtocol:
         self.split_reference.validate()
         self.preprocessing_reference.validate()
 
+        # 4. Canonical baseline protocol lock
+        if self.protocol_version == PROTOCOL_IDENTIFIER and not self.model_config.is_canonical_baseline:
+            raise ValueError(
+                f"Protocol claiming official canonical version '{PROTOCOL_IDENTIFIER}' must have "
+                "model_config.is_canonical_baseline=True"
+            )
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert protocol to serializable dictionary."""
         return {
@@ -576,18 +649,67 @@ def create_rf_baseline_protocol(
     random_seed: int = RANDOM_SEED,
     n_estimators: int = 200,
     max_depth: Optional[int] = 16,
+    is_canonical_baseline: Optional[bool] = None,
+    configuration_id: Optional[str] = None,
+    protocol_version: Optional[str] = None,
     **kwargs: Any,
 ) -> RandomForestBaselineProtocol:
     """Factory function to instantiate a validated Random Forest baseline protocol."""
+    matches_canonical = (
+        n_estimators == CANONICAL_BASELINE_PARAMS["n_estimators"]
+        and max_depth == CANONICAL_BASELINE_PARAMS["max_depth"]
+        and random_seed == CANONICAL_BASELINE_PARAMS["random_state"]
+        and not any(
+            k in CANONICAL_BASELINE_PARAMS and kwargs.get(k) != CANONICAL_BASELINE_PARAMS[k]
+            for k in kwargs
+        )
+    )
+
+    if is_canonical_baseline is None:
+        is_canonical = matches_canonical
+    else:
+        is_canonical = is_canonical_baseline
+
+    if configuration_id is None:
+        cfg_id = (
+            "rf-baseline-canonical-v1"
+            if is_canonical
+            else f"rf-experimental-e{n_estimators}-d{max_depth}-s{random_seed}"
+        )
+    else:
+        cfg_id = configuration_id
+
+    if protocol_version is None:
+        proto_ver = PROTOCOL_IDENTIFIER if is_canonical else f"rf-experimental-{cfg_id}"
+    else:
+        proto_ver = protocol_version
+
+    filtered_kwargs = {
+        k: v
+        for k, v in kwargs.items()
+        if k in RandomForestBaselineConfig.__annotations__
+        and k
+        not in (
+            "n_estimators",
+            "max_depth",
+            "random_state",
+            "is_canonical_baseline",
+            "configuration_id",
+        )
+    }
+
     model_cfg = RandomForestBaselineConfig(
         n_estimators=n_estimators,
         max_depth=max_depth,
         random_state=random_seed,
-        **{k: v for k, v in kwargs.items() if k in RandomForestBaselineConfig.__annotations__},
+        is_canonical_baseline=is_canonical,
+        configuration_id=cfg_id,
+        **filtered_kwargs,
     )
     split_ref = SplitReference(split_id=split_id)
     tuning_cfg = TuningConfig(random_state=random_seed)
     protocol = RandomForestBaselineProtocol(
+        protocol_version=proto_ver,
         model_config=model_cfg,
         split_reference=split_ref,
         tuning_policy=tuning_cfg,

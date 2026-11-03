@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 
+import joblib
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -29,6 +31,7 @@ from network_anomaly.data.split import (
     load_partition_indices,
 )
 from network_anomaly.models.random_forest import (
+    CANONICAL_BASELINE_PARAMS,
     RandomForestBaselineConfig,
     RandomForestBaselineProtocol,
     RandomForestModel,
@@ -41,7 +44,15 @@ from network_anomaly.preprocessing.pipeline import (
 )
 from scripts.train_random_forest import (
     DEFAULT_DATASET,
+    DEFAULT_INDICES_DIR,
     DEFAULT_PREPROCESSOR_ARTIFACT,
+    DEFAULT_PREPROCESSOR_MANIFEST,
+    DEFAULT_SPLIT_MANIFEST,
+    EXPECTED_PREPROCESSOR_ARTIFACT_SHA256,
+    EXPECTED_PREPROCESSOR_MANIFEST_SHA256,
+    EXPECTED_SPLIT_MANIFEST_SHA256,
+    EXPECTED_TRAIN_ROWS,
+    EXPECTED_VAL_ROWS,
     PartitionAccessTracker,
     check_prerequisites,
     execute_training,
@@ -178,11 +189,126 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
             manifest_path=manifest_path,
         )
 
+    # Check missing dataset_sha256 raises fail-closed
+    manifest_path.write_text(
+        json.dumps({"model_artifact_sha256": sha}), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="Missing required field 'dataset_sha256'"):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+        )
+
+    # Check missing split_manifest_sha256 raises fail-closed
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "model_artifact_sha256": sha,
+                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError, match="Missing required field 'split_manifest_sha256'"
+    ):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+        )
+
+    # Check invalid 64-char hex format raises fail-closed
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "model_artifact_sha256": "invalid_hash_too_short",
+                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Invalid or malformed 64-character hexadecimal SHA-256"):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+        )
+
+    # Check dataset SHA-256 mismatch detection
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "model_artifact_sha256": sha,
+                "dataset_sha256": "1" * 64,
+                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Dataset SHA-256 mismatch"):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+            expected_dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+        )
+
+    # Check split manifest SHA-256 mismatch detection
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "model_artifact_sha256": sha,
+                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+                "split_manifest_sha256": "1" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Split manifest SHA-256 mismatch"):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+            expected_split_manifest_sha256="bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+        )
+
+    # Check split_provenance conflict detection
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "model_artifact_sha256": sha,
+                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "split_provenance": {
+                    "split_manifest_sha256": "1" * 64,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Conflicting split_manifest_sha256"):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+        )
+
+    # Check malformed JSON detection
+    manifest_path.write_text("{not-valid-json", encoding="utf-8")
+    with pytest.raises(ValueError, match="Malformed model manifest JSON"):
+        RandomForestModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+        )
+
 
 def test_reproducibility_with_same_seed(minimal_47_feature_data):
     """Two models initialized with the same seed produce bitwise identical trees."""
     X, y = minimal_47_feature_data
-    cfg = RandomForestBaselineConfig(n_estimators=10, max_depth=4, random_state=42)
+    cfg = RandomForestBaselineConfig(
+        n_estimators=10,
+        max_depth=4,
+        random_state=42,
+        is_canonical_baseline=False,
+        configuration_id="rf-repro-test-10",
+    )
 
     m1 = RandomForestModel(config=cfg).fit(X, y)
     m2 = RandomForestModel(config=cfg).fit(X, y)
@@ -505,8 +631,192 @@ def test_execute_training_full_pipeline_mock_integration(tmp_path):
     not DEFAULT_DATASET.exists() or not DEFAULT_PREPROCESSOR_ARTIFACT.exists(),
     reason="Real NF-UNSW-NB15-v3 dataset CSV or preprocessor artifact is not present in local workspace",
 )
-def test_execute_training_real_data():
+def test_execute_training_real_data(tmp_path):
     """Verify execution of training on verified real NF-UNSW-NB15-v3 dataset when available."""
-    # When real dataset files are present, this tests the real dataset training execution.
-    # Otherwise skipped gracefully per project protocol.
-    pass
+    if not DEFAULT_DATASET.exists() or not DEFAULT_PREPROCESSOR_ARTIFACT.exists():
+        pytest.skip(
+            "Real NF-UNSW-NB15-v3 raw CSV or preprocessor artifact absent in local workspace: SKIPPED / NOT VERIFIED"
+        )
+
+    out_model = tmp_path / "real_rf_model.joblib"
+    out_manifest = tmp_path / "real_rf_manifest.json"
+
+    manifest = execute_training(
+        dataset_path=DEFAULT_DATASET,
+        split_manifest_path=DEFAULT_SPLIT_MANIFEST,
+        indices_dir=DEFAULT_INDICES_DIR,
+        preprocessor_artifact_path=DEFAULT_PREPROCESSOR_ARTIFACT,
+        preprocessor_manifest_path=DEFAULT_PREPROCESSOR_MANIFEST,
+        output_model_path=out_model,
+        output_manifest_path=out_manifest,
+    )
+
+    assert out_model.exists()
+    assert out_manifest.exists()
+    assert manifest["split_provenance"]["train_rows_count"] == EXPECTED_TRAIN_ROWS
+    assert manifest["split_provenance"]["val_rows_count"] == EXPECTED_VAL_ROWS
+    assert manifest["preprocessing_provenance"]["features_count"] == 47
+    assert manifest["test_lock_audit"]["test_partition_accessed"] is False
+    assert manifest["test_lock_audit"]["test_rows_loaded"] == 0
+    assert manifest["test_lock_audit"]["train_rows_loaded"] == EXPECTED_TRAIN_ROWS
+    assert manifest["test_lock_audit"]["val_rows_loaded"] == EXPECTED_VAL_ROWS
+
+    # Verified reload check
+    reloaded = RandomForestModel.load_verified(
+        model_path=out_model,
+        manifest_path=out_manifest,
+        expected_dataset_sha256=EXPECTED_DATASET_SHA256,
+        expected_split_manifest_sha256=EXPECTED_SPLIT_MANIFEST_SHA256,
+        expected_preprocessor_artifact_sha256=EXPECTED_PREPROCESSOR_ARTIFACT_SHA256,
+    )
+    assert reloaded.is_fitted is True
+    assert reloaded.feature_names == ML_FEATURE_COLUMNS
+    assert len(reloaded.feature_names) == 47
+
+
+def test_canonical_baseline_config_locking():
+    """Verify locking of canonical baseline configuration and rejection of unauthorized overrides."""
+    # 1. Default canonical baseline passes validation
+    canonical_cfg = RandomForestBaselineConfig()
+    canonical_cfg.validate()
+    assert canonical_cfg.is_canonical_baseline is True
+    assert canonical_cfg.configuration_id == "rf-baseline-canonical-v1"
+
+    # 2. Unauthorized override claiming canonical status raises ValueError
+    unauthorized_cfg = RandomForestBaselineConfig(
+        n_estimators=100, is_canonical_baseline=True
+    )
+    with pytest.raises(
+        ValueError, match="Configuration claims canonical baseline status"
+    ):
+        unauthorized_cfg.validate()
+
+    # 3. Explicit experimental configuration passes validation
+    experimental_cfg = RandomForestBaselineConfig(
+        n_estimators=100,
+        is_canonical_baseline=False,
+        configuration_id="rf-tuning-exp-100",
+    )
+    experimental_cfg.validate()
+    assert experimental_cfg.is_canonical_baseline is False
+    assert experimental_cfg.configuration_id == "rf-tuning-exp-100"
+
+    # 4. Experimental configuration cannot hijack canonical configuration_id
+    bad_id_cfg = RandomForestBaselineConfig(
+        n_estimators=100,
+        is_canonical_baseline=False,
+        configuration_id="rf-baseline-canonical-v1",
+    )
+    with pytest.raises(
+        ValueError,
+        match="Non-canonical / experimental configuration cannot use canonical",
+    ):
+        bad_id_cfg.validate()
+
+    # 5. Protocol validation checks canonical consistency
+    with pytest.raises(
+        ValueError, match="Protocol claiming official canonical version"
+    ):
+        RandomForestBaselineProtocol(
+            protocol_version="rf-baseline-nf-unsw-nb15-v3-v1",
+            model_config=experimental_cfg,
+        ).validate()
+
+
+def test_model_persistence_preserves_protocol_and_classes(
+    tmp_path, minimal_47_feature_data
+):
+    """Verify that saving and loading persists protocol context, class ordering, and configuration."""
+    X, y = minimal_47_feature_data
+    protocol = create_rf_baseline_protocol()
+    model = RandomForestModel(protocol=protocol)
+    model.fit(X, y)
+
+    model_path = tmp_path / "model_proto.joblib"
+    sha = model.save(model_path)
+    assert len(sha) == 64
+
+    # Inspect raw saved payload
+    payload = joblib.load(model_path)
+    assert payload["configuration_id"] == "rf-baseline-canonical-v1"
+    assert payload["is_canonical_baseline"] is True
+    assert payload["classes"] == [0, 1]
+    assert payload["protocol"] is not None
+    assert payload["protocol"]["protocol_version"] == protocol.protocol_version
+
+    # Reconstruct model
+    reloaded = RandomForestModel.load(model_path)
+    assert reloaded.protocol is not None
+    assert reloaded.protocol.protocol_version == protocol.protocol_version
+    assert reloaded.config.configuration_id == "rf-baseline-canonical-v1"
+    assert reloaded.config.is_canonical_baseline is True
+
+
+def test_check_prerequisites_detects_preprocessor_manifest_mismatch(tmp_path):
+    """check_prerequisites catches companion preprocessor manifest hash mismatch."""
+    pm_path = tmp_path / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    pm_path.write_text(json.dumps({"tampered": True}), encoding="utf-8")
+
+    import scripts.train_random_forest as trf
+
+    orig_def = trf.DEFAULT_PREPROCESSOR_MANIFEST
+    trf.DEFAULT_PREPROCESSOR_MANIFEST = pm_path
+    try:
+        audit = check_prerequisites(
+            dataset_path=tmp_path / "dummy.csv",
+            split_manifest_path=tmp_path / "sm.json",
+            indices_dir=tmp_path / "splits",
+            preprocessor_artifact_path=tmp_path / "prep.joblib",
+            preprocessor_manifest_path=pm_path,
+        )
+        assert audit["status"] == "BLOCKED"
+        assert any(
+            "Preprocessor companion manifest SHA-256 mismatch" in msg
+            for msg in audit["missing_prerequisites"]
+        )
+    finally:
+        trf.DEFAULT_PREPROCESSOR_MANIFEST = orig_def
+
+
+def test_check_prerequisites_indices_audits(tmp_path, mock_split_environment):
+    """check_prerequisites audits index row counts, duplicates, overlaps, and boundaries."""
+    env = mock_split_environment
+
+    # Test duplicate indices detection
+    dup_p = env["indices_dir"] / "train_indices.csv.gz"
+    pd.DataFrame({"source_row_index": [0, 0, 1, 2]}).to_csv(
+        dup_p, index=False, compression="gzip"
+    )
+    new_sha = _sha256_file(dup_p)
+
+    sm_data = json.loads(env["manifest_path"].read_text(encoding="utf-8"))
+    sm_data["partitions"]["train"]["row_count"] = 4
+    sm_data["partitions"]["train"]["index_sha256"] = new_sha
+    env["manifest_path"].write_text(json.dumps(sm_data), encoding="utf-8")
+
+    audit = check_prerequisites(
+        dataset_path=tmp_path / "ds.csv",
+        split_manifest_path=env["manifest_path"],
+        indices_dir=env["indices_dir"],
+        preprocessor_artifact_path=tmp_path / "prep.joblib",
+        preprocessor_manifest_path=tmp_path / "pm.json",
+    )
+    assert audit["status"] == "BLOCKED"
+    assert any("duplicate row indices" in msg for msg in audit["missing_prerequisites"])
+
+    # Test overlap detection
+    pd.DataFrame({"source_row_index": [0, 1, 2, 4]}).to_csv(
+        dup_p, index=False, compression="gzip"
+    )
+    sm_data["partitions"]["train"]["index_sha256"] = _sha256_file(dup_p)
+    env["manifest_path"].write_text(json.dumps(sm_data), encoding="utf-8")
+
+    audit = check_prerequisites(
+        dataset_path=tmp_path / "ds.csv",
+        split_manifest_path=env["manifest_path"],
+        indices_dir=env["indices_dir"],
+        preprocessor_artifact_path=tmp_path / "prep.joblib",
+        preprocessor_manifest_path=tmp_path / "pm.json",
+    )
+    assert audit["status"] == "BLOCKED"
+    assert any("indices overlap" in msg for msg in audit["missing_prerequisites"])

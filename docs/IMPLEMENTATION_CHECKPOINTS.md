@@ -58,22 +58,33 @@ Branch: feat/issue-9-rf-baseline-protocol
 Completed: IMPLEMENTED / TESTED —
   - Issue #9: RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1` đã được chuẩn hóa và khóa
     theo đúng 47 đặc trưng ML, target Label nhị phân, TEST lock policy, tuning policy cách ly,
-    metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 đã được
-    khắc phục hoàn toàn (`compute_attack_category_breakdown` phân loại theo cặp (y_true, y_pred),
-    xử lý Benign riêng biệt báo false_positive/true_negative; `compute_metrics` FPR bất biến theo
-    thứ tự nhãn [0, 1] vs [1, 0] và an toàn với mẫu đơn lớp).
-  - Issue #10: Cấu trúc mô hình Random Forest hoàn thiện với model serialization (`save`, `load`,
-    `load_verified` kèm hash SHA-256), training script `scripts/train_random_forest.py` hỗ trợ
-    kiểm tra điều kiện tiên quyết fail-closed, cách ly hoàn toàn tập test, và không refit preprocessor.
+    metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 và PR #43 đã được
+    khắc phục hoàn toàn:
+      * Canonical baseline locking (`RandomForestBaselineConfig.is_canonical_baseline`, `configuration_id`),
+        ngăn chặn unauthorized overrides nhận danh baseline chính thức.
+      * Phân loại phát hiện theo cặp (y_true, y_pred), Benign xử lý riêng biệt.
+      * Compute metrics FPR bất biến theo thứ tự nhãn [0, 1] vs [1, 0].
+  - Issue #10: Cấu trúc mô hình Random Forest hoàn thiện:
+      * Model serialization (`save`, `load`, `load_verified` với schema thống nhất và kiểm tra mã hex 64 ký tự).
+      * Script `scripts/train_random_forest.py` hỗ trợ `--verify-only` kiểm tra toàn diện điều kiện tiên quyết:
+        hash dataset, split manifest, companion preprocessor manifest, số dòng phân vùng (1.655.797 train,
+        345.371 val), tính duy nhất và không chồng lấn giữa các index.
+      * Strict Test Lock Contract A & Contract B: lọc trực tiếp ở luồng chuỗi dòng văn bản thô (line stream),
+        tuyệt đối không khởi tạo hay nạp bất kỳ bản ghi DataFrame nào thuộc tập Test.
+      * Kiểm chứng tính nhất quán khi reload (`orig_preds == reloaded_preds`, sai số xác suất atol=1e-7,
+        thứ tự đặc trưng và thứ tự lớp).
+      * Tích hợp `--step baseline` vào `scripts/run_experiments.py` ủy quyền gọi và chuyển tiếp mã thoát.
 Tests: PASS — 27 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
-  `tests/unit/test_rf_model_structure.py`, 8 tests trong `tests/unit/test_rf_training.py`;
-  git diff --check PASS; check_environment PASS.
-Issues: #9 (Protocol & Criteria); #10 (RF Training Architecture & Verification); #12 (Evaluation).
+  `tests/unit/test_rf_model_structure.py`, 22 tests trong `tests/unit/test_rf_training.py`
+  (21 PASS, 1 SKIPPED / NOT VERIFIED do thiếu file CSV thô cục bộ), 14 tests trong
+  `tests/unit/test_run_experiments.py`; git diff --check PASS; check_environment PASS.
+Issues: #9 (Protocol & Criteria — TESTED); #10 (RF Training Architecture & Verification — TESTED;
+  Real-data training — BLOCKED / OPEN); #12 (Evaluation — PLANNED).
 Blocker: Huấn luyện thực tế trên 1.655.797 dòng của tập train bị BLOCKED fail-closed vì tệp CSV thô
   `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` và preprocessor artifact
   `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` chưa hiện diện trong workspace
-  cục bộ hiện tại (đã được kiểm chứng ở máy ban đầu theo reports/preprocessing/execution_evidence.json).
-  Tuyệt đối không dùng dữ liệu synthetic/mock để train thay thế.
+  cục bộ hiện tại. Issue #10 giữ trạng thái OPEN cho đến khi hoàn thành huấn luyện thực tế.
+  Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10.
 Remaining: Đưa tệp CSV và preprocessor artifact vào đúng đường dẫn để thực hiện real training run.
 ```
 

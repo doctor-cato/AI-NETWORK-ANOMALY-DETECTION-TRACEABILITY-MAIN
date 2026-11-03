@@ -130,6 +130,7 @@ Reproducibility properties:
 ```text
 python scripts/train_random_forest.py --verify-only
 python scripts/train_random_forest.py
+python scripts/run_experiments.py --step baseline
 ```
 
 The script trains the baseline Random Forest model strictly following the protocol `rf-baseline-nf-unsw-nb15-v3-v1`
@@ -138,8 +139,10 @@ locked in Issue #9:
 - Reads partition indices from `data/processed/splits/` (`train`: 1,655,797 rows; `validation`: 345,371 rows).
 - Reuses the existing fitted preprocessor artifact `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` without refitting.
 - Preserves the 47 baseline ML feature ordering and excludes all metadata and target columns.
-- Locks the `test` partition completely (never loaded or evaluated during training).
+- Strict Test Lock: Enforces Contract A (no test data in fitting, tuning, selection, or reporting) and Contract B (test rows are strictly filtered at the raw line stream boundary and never materialized into DataFrames).
 - Produces model binary `artifacts/models/random_forest/random_forest_baseline.joblib` and execution manifest `artifacts/models/random_forest/random_forest_manifest.json` (also saved to `reports/models/random_forest_manifest.json`).
+- Verifies model reload consistency using `RandomForestModel.load_verified()` with bitwise identical predictions and probability tolerance `atol=1e-7`.
+- Experiment runner integration: `python scripts/run_experiments.py --step baseline` delegates directly to `scripts/train_random_forest.py` and forwards exit codes.
 - Fail-closed prerequisite audit: If the raw dataset or preprocessor artifact is missing or altered, training stops immediately with exit code 1. Mock/synthetic data is strictly prohibited for benchmark results.
 
 ## What runs where
@@ -152,6 +155,7 @@ locked in Issue #9:
 | `scripts/split_and_audit_nf_unsw_nb15_v3.py` | local, raw package present | split manifest and leakage audit executed |
 | `scripts/preprocess_nf_unsw_nb15_v3.py` | local, raw package present | train-only preprocessing executed and verified |
 | `scripts/train_random_forest.py` | local, raw package & artifacts present | trains baseline RF on 1,655,797 train rows; exits `1` if raw dataset or preprocessor artifact is missing |
+| `scripts/run_experiments.py --step baseline` | local, delegates to `train_random_forest.py` | fail-closed prerequisite check or baseline training |
 | `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
 | `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
 | `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |

@@ -8,7 +8,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | C0 | Governance, scope, architecture, backlog | #23 | docs, backlog, PR evidence | IMPLEMENTED; trạng thái remote phải đọc lại theo từng PR |
 | C1 | NF-UNSW-NB15-v3 provenance, quality, EDA, leakage | #4–#7 | v3 manifest, schema, real numeric/duplicate audit, EDA report, leakage decision | `SOURCE_INTEGRITY: PASS`; `RAW_QUALITY: FINDINGS_RECORDED`; EDA IMPLEMENTED/TESTED on real data; real split/leakage audit PASS (PR #41); `ML_READY: BLOCKED` |
 | C2 | Preprocessing không leakage | #8 | train-only pipeline artifact, fit-boundary tests, single-load verified loader, execution evidence | IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED on verified v3 bytes; AC1–AC4 PASS (fail-closed byte verification, execution evidence recorded, REAL-DATA VERIFIED); `ML_READY: BLOCKED` |
-| C3 | RF và XGBoost supervised | #9, #10, #12, #31 | RF baseline protocol (#9), model artifacts & training entrypoint (#10), metrics (#12), reproduction | Protocol #9: TESTED (PR #39 review fixes PASS); Training #10 architecture: IMPLEMENTED / TESTED (8 tests PASS); Real training: BLOCKED (missing local raw dataset CSV and fitted preprocessor .joblib); Evaluation #12: PLANNED |
+| C3 | RF và XGBoost supervised | #9, #10, #12, #31 | RF baseline protocol (#9), model artifacts & training entrypoint (#10), metrics (#12), reproduction | Protocol #9: TESTED (canonical config locking, PR #43 review fixes PASS); Training #10 architecture: IMPLEMENTED / TESTED (fail-closed entrypoint, strict test lock Contract A & B, verified loading, run_experiments integration, 22 unit tests PASS / 1 SKIPPED); Real training: BLOCKED (raw dataset CSV and fitted preprocessor .joblib absent locally); Evaluation #12: PLANNED |
 | C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED |
 | C5 | Behavioral Vector | #28 | versioned schemas, fixtures, correlation tests | PLANNED |
 | C6 | Risk và Trace | #32, #24 | explanation, calibration, evidence/timeline tests | PLANNED |
@@ -41,4 +41,4 @@ Chuỗi bắt buộc cho mọi claim:
 Synthetic fixture/CI không thay thế real-data experiment. Mỗi result phải gắn commit,
 dataset/split identifier, dependency versions, seed/config, artifact và reproduction command.
 
-Cập nhật: 2026-11-02 (PR #39 review fixes, Issue #9/#10 status, training blocker documented)
+Cập nhật: 2026-11-03 (PR #43 review fixes for Issues #9 & #10: canonical baseline locking, verified model reload consistency, strict test isolation Contract A & B, run_experiments delegation, fail-closed prerequisite audit)

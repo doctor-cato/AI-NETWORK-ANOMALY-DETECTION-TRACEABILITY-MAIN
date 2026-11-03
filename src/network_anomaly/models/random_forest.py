@@ -15,6 +15,7 @@ from network_anomaly.config import RANDOM_FOREST_DEFAULTS
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.models.random_forest_protocol import (
     ALL_ATTACK_CATEGORIES,
+    CANONICAL_BASELINE_PARAMS,
     EXPECTED_ATTACK_CATEGORIES,
     FEATURE_CONTRACT_VERSION,
     NEGATIVE_CLASS_LABEL,
@@ -146,6 +147,16 @@ class RandomForestModel:
             "target": self.target,
             "positive_class": self.positive_class,
             "config": self.config.to_dict(),
+            "protocol": self.protocol.to_dict() if self.protocol is not None else None,
+            "classes": (
+                list(self._estimator.classes_)
+                if hasattr(self._estimator, "classes_")
+                else None
+            ),
+            "configuration_id": getattr(
+                self.config, "configuration_id", "rf-baseline-canonical-v1"
+            ),
+            "is_canonical_baseline": getattr(self.config, "is_canonical_baseline", True),
             "estimator": self._estimator,
             "feature_names": list(self.feature_names),
             "metadata": metadata or {},
@@ -164,7 +175,13 @@ class RandomForestModel:
             raise ValueError(f"Invalid model artifact payload at {path}")
         config_dict = payload.get("config", {})
         config = RandomForestBaselineConfig.from_dict(config_dict)
-        model = cls(config=config)
+        protocol = None
+        if payload.get("protocol"):
+            try:
+                protocol = RandomForestBaselineProtocol.from_dict(payload["protocol"])
+            except Exception:
+                protocol = None
+        model = cls(config=config, protocol=protocol)
         model._estimator = payload["estimator"]
         model._is_fitted = True
         if "feature_names" in payload:
@@ -178,38 +195,120 @@ class RandomForestModel:
         manifest_path: Union[str, Path],
         expected_dataset_sha256: Optional[str] = None,
         expected_split_manifest_sha256: Optional[str] = None,
+        expected_preprocessor_artifact_sha256: Optional[str] = None,
     ) -> "RandomForestModel":
         """Load and strictly verify a Random Forest model artifact against its companion manifest."""
         m_path = Path(manifest_path)
         if not m_path.exists():
             raise FileNotFoundError(f"Model manifest not found: {manifest_path}")
-        with m_path.open("r", encoding="utf-8") as f:
-            manifest = json.load(f)
+        try:
+            with m_path.open("r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception as e:
+            raise ValueError(f"Malformed model manifest JSON at {manifest_path}: {e}")
 
-        expected_model_sha256 = manifest.get("model_artifact_sha256")
-        if not expected_model_sha256:
+        if not isinstance(manifest, dict):
+            raise ValueError(
+                f"Model manifest must be a JSON object, got {type(manifest).__name__}"
+            )
+
+        def _validate_hex_sha256(val: Any, field_name: str) -> str:
+            if (
+                not val
+                or not isinstance(val, str)
+                or len(val) != 64
+                or not all(c in "0123456789abcdefABCDEF" for c in val)
+            ):
+                raise ValueError(
+                    f"Invalid or malformed 64-character hexadecimal SHA-256 for '{field_name}': {val!r}"
+                )
+            return val.lower()
+
+        # 1. Model artifact SHA-256
+        if "model_artifact_sha256" not in manifest:
             raise ValueError(
                 f"Missing required field 'model_artifact_sha256' in manifest: {manifest_path}"
             )
-        actual_model_sha256 = _sha256_file(Path(model_path))
+        expected_model_sha256 = _validate_hex_sha256(
+            manifest["model_artifact_sha256"], "model_artifact_sha256"
+        )
+
+        # 2. Dataset SHA-256
+        if "dataset_sha256" not in manifest:
+            raise ValueError(
+                f"Missing required field 'dataset_sha256' in manifest: {manifest_path}"
+            )
+        manifest_dataset_sha = _validate_hex_sha256(
+            manifest["dataset_sha256"], "dataset_sha256"
+        )
+
+        # 3. Split manifest SHA-256 (top-level canonical, with cross-check against split_provenance)
+        manifest_sm_sha_raw = manifest.get("split_manifest_sha256")
+        prov_sm_sha_raw = None
+        if isinstance(manifest.get("split_provenance"), dict):
+            prov_sm_sha_raw = manifest["split_provenance"].get("split_manifest_sha256")
+
+        if not manifest_sm_sha_raw and not prov_sm_sha_raw:
+            raise ValueError(
+                f"Missing required field 'split_manifest_sha256' in manifest: {manifest_path}"
+            )
+
+        if (
+            manifest_sm_sha_raw
+            and prov_sm_sha_raw
+            and manifest_sm_sha_raw != prov_sm_sha_raw
+        ):
+            raise ValueError(
+                f"Conflicting split_manifest_sha256 in manifest: top-level {manifest_sm_sha_raw} != split_provenance {prov_sm_sha_raw}"
+            )
+        manifest_sm_sha = _validate_hex_sha256(
+            manifest_sm_sha_raw or prov_sm_sha_raw, "split_manifest_sha256"
+        )
+
+        # Check model file existence and hash
+        mod_path = Path(model_path)
+        if not mod_path.exists():
+            raise FileNotFoundError(f"Model artifact not found: {model_path}")
+        actual_model_sha256 = _sha256_file(mod_path)
         if actual_model_sha256 != expected_model_sha256:
             raise ValueError(
                 f"Model artifact SHA-256 mismatch: expected {expected_model_sha256}, got {actual_model_sha256}"
             )
 
         if expected_dataset_sha256:
-            ds_sha = manifest.get("dataset_sha256")
-            if not ds_sha or ds_sha != expected_dataset_sha256:
+            exp_ds = _validate_hex_sha256(expected_dataset_sha256, "expected_dataset_sha256")
+            if manifest_dataset_sha != exp_ds:
                 raise ValueError(
-                    f"Dataset SHA-256 mismatch in manifest: expected {expected_dataset_sha256}, got {ds_sha}"
+                    f"Dataset SHA-256 mismatch in manifest: expected {exp_ds}, got {manifest_dataset_sha}"
                 )
 
         if expected_split_manifest_sha256:
-            sm_sha = manifest.get("split_manifest_sha256")
-            if not sm_sha or sm_sha != expected_split_manifest_sha256:
+            exp_sm = _validate_hex_sha256(
+                expected_split_manifest_sha256, "expected_split_manifest_sha256"
+            )
+            if manifest_sm_sha != exp_sm:
                 raise ValueError(
-                    f"Split manifest SHA-256 mismatch in manifest: expected {expected_split_manifest_sha256}, got {sm_sha}"
+                    f"Split manifest SHA-256 mismatch in manifest: expected {exp_sm}, got {manifest_sm_sha}"
                 )
+
+        if expected_preprocessor_artifact_sha256:
+            exp_prep = _validate_hex_sha256(
+                expected_preprocessor_artifact_sha256,
+                "expected_preprocessor_artifact_sha256",
+            )
+            man_prep = manifest.get("preprocessor_artifact_sha256")
+            if not man_prep and isinstance(manifest.get("preprocessing_provenance"), dict):
+                man_prep = manifest["preprocessing_provenance"].get(
+                    "preprocessor_artifact_sha256"
+                )
+            if man_prep:
+                clean_man_prep = _validate_hex_sha256(
+                    man_prep, "preprocessor_artifact_sha256"
+                )
+                if clean_man_prep != exp_prep:
+                    raise ValueError(
+                        f"Preprocessor artifact SHA-256 mismatch in manifest: expected {exp_prep}, got {clean_man_prep}"
+                    )
 
         return cls.load(model_path)
 
@@ -257,6 +356,7 @@ def build_model(
 __all__ = [
     "RandomForestModel",
     "build_model",
+    "CANONICAL_BASELINE_PARAMS",
     "PROTOCOL_IDENTIFIER",
     "FEATURE_CONTRACT_VERSION",
     "SPLIT_PROTOCOL_ID",

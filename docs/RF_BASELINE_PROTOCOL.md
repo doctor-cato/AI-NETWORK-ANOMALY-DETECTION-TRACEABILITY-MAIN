@@ -132,7 +132,7 @@ Tuân thủ nghiêm ngặt feature contract hiện hành được định nghĩa
   - **Ranh giới fit:** `train_only` (fit duy nhất trên 1.655.797 dòng của tập train).
   - Imputer (median), scaler, encoder hoặc indicator parameters chỉ được tính toán trên tập `train`.
   - Frozen transform được áp dụng bất biến cho `validation` và `test`.
-- **Hiện trạng:** Fitted artifact đã được hoàn thành và kiểm chứng qua PR #42 (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`, SHA-256: `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`, manifest SHA-256: `977f6b4a530eb7cb0594dbf068779848fd6ee0c46b5a1b3dd62eb4bca28e7545`).
+- **Hiện trạng:** Fitted artifact đã được hoàn thành và kiểm chứng qua PR #42 (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`, SHA-256: `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`, manifest SHA-256: `af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441`).
 - Khi chạy training tại runtime cục bộ, nếu tệp CSV thô hoặc artifact chưa hiện diện, entrypoint sẽ dừng fail-closed với mã lỗi 1 mà không tạo preprocessing artifact giả.
 
 ---
@@ -154,6 +154,11 @@ Cấu hình baseline được khóa cố định nhằm đảm bảo tính tái 
 | `random_state` | `42` | Seed cố định đồng bộ toàn repository (`RANDOM_SEED`) |
 | `n_jobs` | `-1` | Tối đa hóa khả năng xử lý song song trên phần cứng |
 | `bootstrap` | `True` | Lấy mẫu có hoàn lại khi xây dựng cây |
+| `configuration_id` | `"rf-baseline-canonical-v1"` | Định danh cấu hình canonical baseline được khóa |
+| `is_canonical_baseline` | `True` | Cờ bảo vệ: từ chối các thay đổi siêu tham số tự ý nhận danh baseline |
+
+> [!NOTE]
+> **Baseline Configuration Locking (P1-03):** Cấu hình `RandomForestBaselineConfig` khóa cứng các giá trị trên. Nếu một thử nghiệm điều chỉnh siêu tham số, nó bắt buộc phải đặt `is_canonical_baseline=False` và gán một `configuration_id` riêng biệt của thử nghiệm (ví dụ `rf-tuning-exp-100`). Mọi cấu hình có tham số khác biệt mà cố tình nhận `is_canonical_baseline=True` hoặc dùng ID canonical sẽ bị từ chối fail-closed qua `validate()`.
 
 ---
 
@@ -176,9 +181,17 @@ Khi thực hiện hyperparameter tuning (tùy chọn trong Issue #10):
 
 ---
 
-## 8. Test Lock Policy
+## 8. Test Lock Policy & Semantics (P0-04)
 
-Tập dữ liệu kiểm thử độc lập (`test`) được bảo vệ nghiêm ngặt:
+Tập dữ liệu kiểm thử độc lập (`test`) được bảo vệ nghiêm ngặt bằng hai hợp đồng an ninh rành mạch:
+
+- **Contract A (Huấn luyện và Đánh giá):**
+  - Tuyệt đối không dùng dữ liệu Test cho: huấn luyện (`.fit()`), fit biến đổi tiền xử lý, căn chỉnh siêu tham số (`tuning`), lựa chọn ngưỡng (`threshold calibration`), chọn lọc đặc trưng (`feature selection`), hoặc đánh giá trung gian.
+  - Test chỉ dùng duy nhất 1 lần cho đánh giá cuối cùng độc lập (one-shot final evaluation) ở Issue #12.
+
+- **Contract B (Cách ly Tải Dữ liệu tại Runtime):**
+  - Zero dòng của tập Test được hiện thực hóa (materialized) thành các bản ghi DataFrame trong quá trình huấn luyện.
+  - Dữ liệu CSV thô được phân tách ở ranh giới dòng văn bản thô (raw line stream boundary). Các dòng Test bị loại bỏ trực tiếp trước khi khởi tạo DataFrame. Tracker `test_rows_loaded` ghi nhận đúng `0`.
 
 ```text
 TRAIN:
@@ -198,6 +211,10 @@ TEST:
 **Các hành vi bị nghiêm cấm trên tập TEST:**
 1. Cấm lựa chọn đặc trưng (`feature_selection`).
 2. Cấm tinh chỉnh siêu tham số (`hyperparameter_tuning`).
+3. Cấm căn chỉnh ngưỡng phát hiện (`threshold_selection`).
+4. Cấm fit tham số tiền xử lý (`preprocessing_fitting`).
+5. Cấm lựa chọn thuật toán/mô hình (`model_selection`).
+6. Cấm lặp cải tiến mô hình dựa trên điểm test (`model_iteration`).
 3. Cấm căn chỉnh ngưỡng phát hiện (`threshold_selection`).
 4. Cấm fit tham số tiền xử lý (`preprocessing_fitting`).
 5. Cấm lựa chọn thuật toán/mô hình (`model_selection`).
@@ -248,11 +265,11 @@ flowchart LR
 ```
 
 - **Issue #7:** `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, real split `PASS (PR #41)`, split manifest SHA-256 `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`.
-- **Issue #8:** Preprocessing handling contract `PASS (PR #42)`, preprocessor manifest SHA-256 `977f6b4a530eb7cb0594dbf068779848fd6ee0c46b5a1b3dd62eb4bca28e7545`.
-- **Issue #9:** Protocol & configuration `IMPLEMENTED / TESTED`, PR #39 reviewer findings fixed (`compute_attack_category_breakdown` logic, `compute_metrics` FPR invariance), 27 unit tests `PASS`.
-- **Issue #10:** Training architecture, model serialization and fail-closed training entrypoint `IMPLEMENTED / TESTED` (`scripts/train_random_forest.py`, 8 unit tests `PASS`). Huấn luyện thực tế trên dữ liệu thật: `BLOCKED` do tệp CSV thô và preprocessor `.joblib` chưa được mount vào clone cục bộ hiện tại.
+- **Issue #8:** Preprocessing handling contract `PASS (PR #42)`, preprocessor manifest SHA-256 `af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441`.
+- **Issue #9:** Protocol & configuration `IMPLEMENTED / TESTED`, PR #39 và PR #43 reviewer findings fixed (canonical baseline locking, validation reload consistency, attack category detection logic), 27 unit tests `PASS`.
+- **Issue #10:** Training architecture, model serialization, verified reload consistency, strict test isolation Contract A & B, fail-closed prerequisite audit và `scripts/run_experiments.py` integration `IMPLEMENTED / TESTED` (`scripts/train_random_forest.py`, 22 unit tests `PASS` / 1 test `SKIPPED / NOT VERIFIED` do thiếu CSV thô). Huấn luyện thực nghiệm trên 1.655.797 dòng của tập train: `BLOCKED / NOT VERIFIED` do tệp CSV thô và preprocessor `.joblib` chưa được mount vào workspace cục bộ. Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10; Issue #10 giữ trạng thái OPEN cho đến khi thực hiện xong real-data run.
 - **Issue #12:** Đánh giá và báo cáo benchmark `PLANNED`.
 
 ---
 
-Cập nhật: 2026-11-02 (PR #39 review fixes, Issue #9 & #10 updates, training entrypoint implementation)
+Cập nhật: 2026-11-03 (PR #43 review fixes, Issues #9 & #10 canonical locking, verified reload, strict test isolation Contract A & B)
