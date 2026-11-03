@@ -46,9 +46,52 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 
 C1 đã có provenance/schema, real-data quality/duplicate audit và EDA tái lập được cho
 NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA chạy trên
-2.365.424 dòng và tái lập khớp các finding đã xác minh, còn split thật vẫn `NOT VERIFIED`.
-C2 có 47-feature/split/handling contracts và synthetic guard tests nhưng chưa có
-fitted preprocessing artifact, nên `ML_READY: BLOCKED`. C3–C11 vẫn `PLANNED`.
+2.365.424 dòng và tái lập khớp các finding đã xác minh. Real split và leakage audit hoàn thành
+qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.655.797 dòng train
+và kiểm chứng qua PR #42.
+C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, trong khi huấn luyện
+(#10) và đánh giá (#12) đang được triển khai. C4–C11 vẫn `PLANNED`.
+
+```text
+Checkpoint: C3 — Random Forest Baseline Protocol & Training Architecture
+Branch: feat/issue-9-rf-baseline-protocol
+Completed: IMPLEMENTED / TESTED —
+  - Issue #9: RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1` đã được chuẩn hóa và khóa
+    theo đúng 47 đặc trưng ML, target Label nhị phân, TEST lock policy, tuning policy cách ly,
+    metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 và PR #43 đã được
+    khắc phục hoàn toàn:
+      * Canonical baseline locking (`RandomForestBaselineConfig.is_canonical_baseline`, `configuration_id`),
+        ngăn chặn unauthorized overrides nhận danh baseline chính thức.
+      * Phân loại phát hiện theo cặp (y_true, y_pred), Benign xử lý riêng biệt.
+      * Compute metrics FPR bất biến theo thứ tự nhãn [0, 1] vs [1, 0].
+  - Issue #10: Cấu trúc mô hình Random Forest hoàn thiện:
+      * Model serialization (`save`, `load`, `load_verified` với schema thống nhất và kiểm tra mã hex 64 ký tự).
+      * Script `scripts/train_random_forest.py` hỗ trợ `--verify-only` kiểm tra toàn diện điều kiện tiên quyết:
+        hash dataset, split manifest, companion preprocessor manifest, số dòng phân vùng (1.655.797 train,
+        345.371 val), tính duy nhất và không chồng lấn giữa các index.
+      * Strict Test Lock Contract A & Contract B: lọc trực tiếp ở luồng chuỗi dòng văn bản thô (line stream),
+        tuyệt đối không khởi tạo hay nạp bất kỳ bản ghi DataFrame nào thuộc tập Test.
+      * Memory Architecture (Option B): `chunksize` (100.000 dòng) kiểm soát bộ đệm phân tích cú pháp CSV;
+        toàn bộ tập train (1.655.797 dòng) và val (345.371 dòng) được hiện thực hóa trong RAM để fit Random Forest.
+      * Kiểm chứng tính nhất quán khi reload (`orig_preds == reloaded_preds`, sai số xác suất atol=1e-7, rtol=0,
+        kiểm tra tính hữu hạn finite, thứ tự đặc trưng và thứ tự lớp).
+      * Bắt buộc trạng thái verification `prep_audit["status"] == "PASS"` và schema `artifact_sha256` của preprocessor manifest.
+      * Loại bỏ hoàn toàn nhánh fail-open trong `load_verified()`, đối chiếu chéo top-level và nested provenance.
+      * Tích hợp `--step baseline` vào `scripts/run_experiments.py` ủy quyền gọi và chuyển tiếp mã thoát.
+Tests: PASS — 27 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
+  `tests/unit/test_rf_model_structure.py`, 29 tests trong `tests/unit/test_rf_training.py`
+  (28 PASS, 1 SKIPPED / NOT VERIFIED do thiếu file CSV thô cục bộ), 14 tests trong
+  `tests/unit/test_run_experiments.py`; toàn bộ test suite 373 PASS, 5 SKIPPED, 0 FAILED;
+  git diff --check PASS; check_environment PASS.
+Issues: #9 (Protocol & Criteria — TESTED); #10 (RF Training Architecture & Verification — TESTED;
+  Real-data training — BLOCKED / OPEN); #12 (Evaluation — PLANNED).
+Blocker: Huấn luyện thực tế trên 1.655.797 dòng của tập train bị BLOCKED fail-closed vì tệp CSV thô
+  `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` và preprocessor artifact
+  `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` chưa hiện diện trong workspace
+  cục bộ hiện tại. Issue #10 giữ trạng thái OPEN cho đến khi hoàn thành huấn luyện thực tế.
+  Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10.
+Remaining: Đưa tệp CSV và preprocessor artifact vào đúng đường dẫn để thực hiện real training run.
+```
 
 ## Migration NF-UNSW-NB15-v3 — A–H
 

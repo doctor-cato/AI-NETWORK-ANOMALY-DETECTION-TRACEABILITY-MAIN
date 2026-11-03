@@ -50,18 +50,49 @@ def run_cli(*args, cwd=None):
     )
 
 
-@pytest.mark.parametrize("step", ["baseline", "evaluate", "inference"])
+@pytest.mark.parametrize("step", ["evaluate", "inference"])
 def test_unimplemented_step_never_reports_success(step):
     result = run_cli("--step", step)
     assert result.returncode == EXIT_NOT_IMPLEMENTED, result.stdout + result.stderr
     assert "NOT IMPLEMENTED" in result.stdout
 
 
-@pytest.mark.parametrize("step", ["baseline", "evaluate", "inference"])
+@pytest.mark.parametrize("step", ["evaluate", "inference"])
 def test_unimplemented_step_is_independent_of_working_directory(step, tmp_path):
     """Reporting an unimplemented step must not depend on cwd or relative layout."""
     result = run_cli("--step", step, cwd=str(tmp_path))
     assert result.returncode == EXIT_NOT_IMPLEMENTED, result.stdout + result.stderr
+
+
+def fake_trainer(exit_code):
+    """Stand-in for the train_random_forest module that records how it was called."""
+    calls = []
+
+    def main(argv):
+        calls.append(argv)
+        return exit_code
+
+    module = type("FakeTrainRandomForest", (), {"main": staticmethod(main)})
+    module.calls = calls
+    return module
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_baseline_delegates_to_train_random_forest_and_forwards_exit_code(
+    runner, monkeypatch, exit_code, capsys
+):
+    trainer = fake_trainer(exit_code)
+    monkeypatch.setitem(sys.modules, "train_random_forest", trainer)
+    assert runner.main(["--step", "baseline"]) == exit_code
+    assert trainer.calls == [[]]
+    assert "delegating to scripts/train_random_forest.py" in capsys.readouterr().out
+
+
+def test_baseline_cli_fail_closed_on_missing_prerequisites():
+    """CLI execution of --step baseline without raw data fails closed with exit code 1."""
+    result = run_cli("--step", "baseline")
+    assert result.returncode == 1
+    assert "BLOCKER DETECTED" in result.stdout
 
 
 def test_usage_error_has_a_different_exit_code_than_not_implemented():

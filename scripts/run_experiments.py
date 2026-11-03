@@ -22,10 +22,6 @@ EXIT_NOT_IMPLEMENTED = 3  # see docstring; 2 stays reserved for argparse usage e
 
 # step -> (what the step will do, why it is not implemented yet)
 NOT_IMPLEMENTED_STEPS = {
-    "baseline": (
-        "train the Random Forest baseline",
-        "NF-UNSW-NB15-v3 quality/split gates are unresolved; " "training belongs to M2 / issue #10",
-    ),
     "evaluate": (
         "evaluate a trained model",
         "training and evaluation belong to M3 / issues #12 and #13",
@@ -41,7 +37,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Run experiment steps")
     parser.add_argument(
         "--step",
-        choices=["check-data", *NOT_IMPLEMENTED_STEPS],
+        choices=["check-data", "baseline", *NOT_IMPLEMENTED_STEPS],
         default="check-data",
         help="Experiment step to run",
     )
@@ -54,6 +50,12 @@ def main(argv=None):
 
         print("[run_experiments] Step check-data: delegating to scripts/validate_data.py")
         return validate_data.main([])
+
+    if args.step == "baseline":
+        import train_random_forest
+
+        print("[run_experiments] Step baseline: delegating to scripts/train_random_forest.py")
+        return train_random_forest.main([])
 
     planned, reason = NOT_IMPLEMENTED_STEPS[args.step]
     print(f"[run_experiments] Planned: {planned}")
