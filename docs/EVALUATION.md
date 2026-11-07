@@ -65,7 +65,11 @@
 - Repo này không tuyên bố độ chính xác, F1 cụ thể, hoặc kết quả benchmark cho đến khi thực nghiệm thật
   hoàn thành và kết quả được ghi cùng seed/phiên bản.
 - Mọi kết quả phải ghi rõ: `PLANNED / IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`.
-- Hiện tại protocol đánh giá là `IMPLEMENTED / TESTED` (bằng code contracts và unit tests);
-  kết quả thực nghiệm trên dữ liệu thật vẫn là `BLOCKED` (raw dataset và preprocessor artifact chưa mount cục bộ) và thuộc phạm vi Issue #10 (training) và Issue #12 (evaluation).
+- Hiện tại protocol đánh giá là `IMPLEMENTED / TESTED` (bằng code contracts và unit tests).
+- Huấn luyện Random Forest baseline và đánh giá trên phân vùng **Validation** (`345.371` dòng) thuộc Issue #10 đã đạt trạng thái `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` trên dữ liệu thật `NF-UNSW-NB15-v3` (`reports/models/random_forest_manifest.json`, `reports/models/rf_baseline_training_report.md`):
+  - Model artifact SHA-256: `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea` (`917.227` bytes, tái lập 100% byte-for-byte).
+  - Validation metrics (`345.371` dòng): `Precision = 0.999836`, `Recall = 0.999902`, `F1 = 0.999869`, `Macro-F1 = 0.999928`, `FPR = 0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]` (`TN = 314.866`, `FP = 5`, `FN = 3`, `TP = 30.497`), cùng phân rã đầy đủ 10 lớp cột `Attack`.
+  - Kiểm toán khóa tập Test: `test_partition_accessed = false`, `test_rows_loaded = 0`, `test_indices_loaded = false`.
+- Đánh giá một lần cuối cùng (one-shot final evaluation) trên phân vùng **Test** (`345.953` dòng) thuộc phạm vi Issue #12 và vẫn giữ trạng thái `PLANNED`.
 
-Cập nhật: 2026-11-07 (đồng bộ split protocol ID, giới hạn `ml_feature_overlap`, cập nhật trạng thái training blocker)
+Cập nhật: 2026-11-07 (cập nhật kết quả huấn luyện và đánh giá Validation thực nghiệm của Random Forest baseline Issue #10; giữ khóa tập Test cho Issue #12)

@@ -31,14 +31,16 @@
   chọn threshold hay chọn mô hình. Test chỉ được đánh giá một lần duy nhất ở bước cuối cùng.
 - Tuning policy: Chỉ chạy trên `train` và `validation` với search space và budget được version hóa.
 - Cố định random seed (42) cho split, initialization và tuning để đảm bảo tái lập.
-- Chưa có experiment thật trên dữ liệu NF-UNSW-NB15-v3; training architecture và fail-closed entrypoint
-  thuộc Issue #10 đã `IMPLEMENTED / TESTED`. Huấn luyện thật: `BLOCKED` (raw CSV và preprocessor
-  `.joblib` chưa mount cục bộ). Đánh giá thuộc Issue #12 (`PLANNED`).
-  Mọi kết quả ML hiện tại vẫn ở trạng thái `PLANNED`.
+- Huấn luyện Random Forest baseline (Issue #10) đã đạt trạng thái `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` trên dữ liệu thật `NF-UNSW-NB15-v3`:
+  - Fit duy nhất trên `1.655.797` dòng `train` (`87,73s`), áp dụng frozen preprocessor `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`.
+  - Model artifact: `artifacts/models/random_forest/random_forest_baseline.joblib` (`917.227` bytes, SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`).
+  - Kết quả đánh giá trên tập `validation` (`345.371` dòng): `Precision = 0.999836`, `Recall = 0.999902`, `F1 = 0.999869`, `Macro-F1 = 0.999928`, `FPR = 0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]` (chi tiết tại `reports/models/random_forest_manifest.json` và `reports/models/rf_baseline_training_report.md`).
+  - Kiểm toán khóa tập Test: `test_partition_accessed = false`, `test_rows_loaded = 0`, `test_indices_loaded = false`.
+- Đánh giá cuối cùng trên phân vùng `test` (`345.953` dòng) thuộc phạm vi Issue #12 và vẫn giữ trạng thái `PLANNED`.
 
 ## Ghi nhận metric
 
 - Mỗi lượt chạy lưu seed, phiên bản dataset, danh sách feature, cấu hình model, metric theo lớp và macro, confusion matrix dạng CSV/PNG, thời gian và thông tin môi trường.
-- Kết quả đặt tại `reports/figures/` và `artifacts/` (không commit nếu lớn; vẫn lưu config).
+- Kết quả đặt tại `reports/models/`, `reports/figures/` và `artifacts/` (không commit artifact nhị phân lớn; lưu manifest và báo cáo kiểm chứng).
 
-Cập nhật: 2026-11-07 (đồng bộ canonical `n_jobs=-1` lock và trạng thái Issue #10 training architecture / blocker)
+Cập nhật: 2026-11-07 (hoàn thành huấn luyện thực nghiệm Random Forest baseline Issue #10 trên dữ liệu thật NF-UNSW-NB15-v3)

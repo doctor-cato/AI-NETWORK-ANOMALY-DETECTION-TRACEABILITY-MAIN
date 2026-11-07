@@ -179,7 +179,7 @@ re-check is the manual or pull-request workflow `.github/workflows/lint-audit.ym
 
 ## Split and experiment identity
 
-The official NF-UNSW-NB15-v3 chronological group-purged split (`reports/splits/nf_unsw_nb15_v3_split_manifest.json`, PR #41) and train-only preprocessing contract (`reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`, PR #42) are recorded and verified. Real-data model training and benchmark evaluation remain `BLOCKED / NOT VERIFIED` until the raw dataset CSV and fitted preprocessor `.joblib` are mounted for execution. Every accepted model run must record:
+The official NF-UNSW-NB15-v3 chronological group-purged split (`reports/splits/nf_unsw_nb15_v3_split_manifest.json`, PR #41), train-only preprocessing contract (`reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`, PR #42), and Random Forest baseline training run (`reports/models/random_forest_manifest.json`, `reports/models/rf_baseline_training_report.md`, Issue #10 / PR #43, model artifact SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`) are recorded and verified on real `NF-UNSW-NB15-v3` bytes. Held-out Test partition benchmark evaluation remains `PLANNED` under Issue #12 (`test_partition_accessed: false`, `test_rows_loaded: 0`). Every accepted model run must record:
 
 - Git commit and dependency snapshot;
 - dataset SHA-256 and split identifier;

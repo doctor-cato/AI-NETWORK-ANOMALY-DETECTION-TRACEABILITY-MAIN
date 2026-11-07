@@ -310,3 +310,35 @@ Tests: PASS — 12 dedicated unit tests (test_split_protocol.py); full test suit
 Issues: #7 review feedback fully addressed; #8 ready to consume verified split contract.
 Remaining: ML_READY remains BLOCKED pending train-only fitted preprocessing in Issue #8.
 ```
+
+```text
+Checkpoint 12 — Random Forest Baseline Protocol & Real-Data Training (Issues #9 & #10)
+Branch: feat/issue-9-rf-baseline-protocol
+HEAD: recorded by commit/PR readback at handoff.
+Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED on real NF-UNSW-NB15-v3 bytes.
+  - Issue #9 protocol (`rf-baseline-nf-unsw-nb15-v3-v1`) and canonical baseline locking (`n_jobs=-1`,
+    `configuration_id="rf-baseline-canonical-v1"`, `is_canonical_baseline=True`) implemented in
+    `src/network_anomaly/models/random_forest_protocol.py` and `src/network_anomaly/models/random_forest.py`.
+  - Official prerequisites verified byte-for-byte via `python scripts/train_random_forest.py --verify-only`:
+    raw CSV (`4ebb97bd...`), split manifest (`bb84c1e0...`), train/val/gap/test `.csv.gz` indices,
+    and fitted train-only preprocessor `.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`).
+  - Real-data Random Forest training executed via `python scripts/run_experiments.py --step baseline`
+    on 1,655,797 Train rows (`87.73s`, `peak_memory_mb=3863.38 MB`) and evaluated on 345,371 Validation rows.
+  - Model artifact saved to `artifacts/models/random_forest/random_forest_baseline.joblib`
+    (`917,227` bytes, SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`),
+    reproduced 100% byte-for-byte across two independent real-data training runs.
+  - Run manifest recorded at `reports/models/random_forest_manifest.json` and detailed evidence report
+    at `reports/models/rf_baseline_training_report.md`.
+  - Validation metrics on 345,371 rows: `Precision=0.999836`, `Recall=0.999902`, `F1=0.999869`,
+    `Macro-F1=0.999928`, `FPR=0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]`.
+  - Verified reload consistency (`RandomForestModel.load_verified`): `PASSED` on all 345,371 Validation rows
+    (`predictions_identical=true`, `max_abs_probability_diff=0.0`, `atol=1e-7`, `rtol=0`).
+  - Strict Test Lock (Contract A & Contract B): `test_partition_accessed=false`, `test_rows_loaded=0`,
+    `test_indices_loaded=false`.
+Tests: PASS — 33/33 unit and real-data integration tests in `tests/unit/test_rf_training.py`
+  (including `test_execute_training_real_data` PASS on real NF-UNSW-NB15-v3 bytes), 36/36 in
+  `tests/unit/test_rf_baseline_protocol.py`, 7/7 in `tests/unit/test_rf_model_structure.py`,
+  and 15/15 in `tests/unit/test_run_experiments.py`.
+Issues: #9 and #10 all Acceptance Criteria verified on real data; #12 (held-out Test evaluation) remains PLANNED.
+Remaining: One-shot held-out Test partition evaluation belongs to Issue #12.
+```
