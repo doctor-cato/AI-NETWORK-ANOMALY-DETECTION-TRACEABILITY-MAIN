@@ -1,4 +1,4 @@
-"""Unit and integration tests for Random Forest baseline training and artifact lifecycle (Issue #10).
+"""Unit and integration tests for Random Forest baseline training (Issue #10).
 
 Verifies artifact loading, prerequisite checks, checksum mismatch detection,
 strict test-partition isolation, target leakage prevention, save/load roundtrips,
@@ -7,13 +7,9 @@ runtime provenance injection, and reproducibility.
 
 from __future__ import annotations
 
-import gzip
 import json
-import os
-from pathlib import Path
 
 import joblib
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -22,7 +18,6 @@ from sklearn.exceptions import NotFittedError
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     DATASET_NAME,
     ML_FEATURE_COLUMNS,
-    TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
 from network_anomaly.data.split import (
@@ -31,7 +26,6 @@ from network_anomaly.data.split import (
     load_partition_indices,
 )
 from network_anomaly.models.random_forest import (
-    CANONICAL_BASELINE_PARAMS,
     RandomForestBaselineConfig,
     RandomForestBaselineProtocol,
     RandomForestModel,
@@ -49,7 +43,6 @@ from scripts.train_random_forest import (
     DEFAULT_PREPROCESSOR_MANIFEST,
     DEFAULT_SPLIT_MANIFEST,
     EXPECTED_PREPROCESSOR_ARTIFACT_SHA256,
-    EXPECTED_PREPROCESSOR_MANIFEST_SHA256,
     EXPECTED_SPLIT_MANIFEST_SHA256,
     EXPECTED_TRAIN_ROWS,
     EXPECTED_VAL_ROWS,
@@ -57,7 +50,6 @@ from scripts.train_random_forest import (
     check_prerequisites,
     execute_training,
     load_partition,
-    parse_args,
     stream_partition_data,
 )
 
@@ -190,9 +182,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         )
 
     # Check missing dataset_sha256 raises fail-closed
-    manifest_path.write_text(
-        json.dumps({"model_artifact_sha256": sha}), encoding="utf-8"
-    )
+    manifest_path.write_text(json.dumps({"model_artifact_sha256": sha}), encoding="utf-8")
     with pytest.raises(ValueError, match="Missing required field 'dataset_sha256'"):
         RandomForestModel.load_verified(
             model_path=model_path,
@@ -200,18 +190,20 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         )
 
     # Check missing split_manifest_sha256 raises fail-closed
+    ds_hex = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    sm_hex = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
+    prep_hex = "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
+
     manifest_path.write_text(
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+                "dataset_sha256": ds_hex,
             }
         ),
         encoding="utf-8",
     )
-    with pytest.raises(
-        ValueError, match="Missing required field 'split_manifest_sha256'"
-    ):
+    with pytest.raises(ValueError, match="Missing required field 'split_manifest_sha256'"):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
@@ -222,8 +214,8 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": "invalid_hash_too_short",
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
             }
         ),
         encoding="utf-8",
@@ -240,7 +232,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
             {
                 "model_artifact_sha256": sha,
                 "dataset_sha256": "1" * 64,
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "split_manifest_sha256": sm_hex,
             }
         ),
         encoding="utf-8",
@@ -249,7 +241,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
-            expected_dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+            expected_dataset_sha256=ds_hex,
         )
 
     # Check split manifest SHA-256 mismatch detection
@@ -257,7 +249,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+                "dataset_sha256": ds_hex,
                 "split_manifest_sha256": "1" * 64,
             }
         ),
@@ -267,7 +259,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
-            expected_split_manifest_sha256="bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+            expected_split_manifest_sha256=sm_hex,
         )
 
     # Check split_provenance conflict detection
@@ -275,8 +267,8 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
                 "split_provenance": {
                     "split_manifest_sha256": "1" * 64,
                 },
@@ -303,19 +295,17 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
             }
         ),
         encoding="utf-8",
     )
-    with pytest.raises(
-        ValueError, match="Missing required field 'preprocessor_artifact_sha256'"
-    ):
+    with pytest.raises(ValueError, match="Missing required field 'preprocessor_artifact_sha256'"):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
-            expected_preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+            expected_preprocessor_artifact_sha256=prep_hex,
         )
 
     # P0-02: Malformed preprocessor hash
@@ -323,20 +313,18 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
                 "preprocessor_artifact_sha256": "not_64_chars",
             }
         ),
         encoding="utf-8",
     )
-    with pytest.raises(
-        ValueError, match="Invalid or malformed 64-character hexadecimal SHA-256"
-    ):
+    with pytest.raises(ValueError, match="Invalid or malformed 64-character hexadecimal SHA-256"):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
-            expected_preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+            expected_preprocessor_artifact_sha256=prep_hex,
         )
 
     # P0-02: Preprocessor hash mismatch
@@ -344,20 +332,18 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
                 "preprocessor_artifact_sha256": "3" * 64,
             }
         ),
         encoding="utf-8",
     )
-    with pytest.raises(
-        ValueError, match="Preprocessor artifact SHA-256 mismatch"
-    ):
+    with pytest.raises(ValueError, match="Preprocessor artifact SHA-256 mismatch"):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
-            expected_preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+            expected_preprocessor_artifact_sha256=prep_hex,
         )
 
     # P0-02: Preprocessor provenance conflict between top-level and nested
@@ -365,9 +351,9 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-                "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
+                "preprocessor_artifact_sha256": prep_hex,
                 "preprocessing_provenance": {
                     "preprocessor_artifact_sha256": "4" * 64,
                 },
@@ -375,9 +361,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         ),
         encoding="utf-8",
     )
-    with pytest.raises(
-        ValueError, match="Conflicting preprocessor_artifact_sha256"
-    ):
+    with pytest.raises(ValueError, match="Conflicting preprocessor_artifact_sha256"):
         RandomForestModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,
@@ -388,11 +372,11 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         json.dumps(
             {
                 "model_artifact_sha256": sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-                "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
+                "preprocessor_artifact_sha256": prep_hex,
                 "preprocessing_provenance": {
-                    "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+                    "preprocessor_artifact_sha256": prep_hex,
                 },
             }
         ),
@@ -401,7 +385,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
     v_model = RandomForestModel.load_verified(
         model_path=model_path,
         manifest_path=manifest_path,
-        expected_preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        expected_preprocessor_artifact_sha256=prep_hex,
     )
     assert v_model.is_fitted is True
 
@@ -691,7 +675,7 @@ def test_execute_training_full_pipeline_mock_integration(tmp_path):
 
     preprocessor_artifact_path = tmp_path / "preprocessor.joblib"
     preprocessor_manifest_path = tmp_path / "preprocessor_manifest.json"
-    prep_sha = prep.save(preprocessor_artifact_path, manifest_path=preprocessor_manifest_path)
+    prep.save(preprocessor_artifact_path, manifest_path=preprocessor_manifest_path)
 
     output_model_path = tmp_path / "rf_model.joblib"
     output_manifest_path = tmp_path / "rf_manifest.json"
@@ -736,13 +720,17 @@ def test_execute_training_full_pipeline_mock_integration(tmp_path):
 
 @pytest.mark.skipif(
     not DEFAULT_DATASET.exists() or not DEFAULT_PREPROCESSOR_ARTIFACT.exists(),
-    reason="Real NF-UNSW-NB15-v3 dataset CSV or preprocessor artifact is not present in local workspace",
+    reason=(
+        "Real NF-UNSW-NB15-v3 dataset CSV or preprocessor artifact "
+        "is not present in local workspace"
+    ),
 )
 def test_execute_training_real_data(tmp_path):
     """Verify execution of training on verified real NF-UNSW-NB15-v3 dataset when available."""
     if not DEFAULT_DATASET.exists() or not DEFAULT_PREPROCESSOR_ARTIFACT.exists():
         pytest.skip(
-            "Real NF-UNSW-NB15-v3 raw CSV or preprocessor artifact absent in local workspace: SKIPPED / NOT VERIFIED"
+            "Real NF-UNSW-NB15-v3 raw CSV or preprocessor artifact absent "
+            "in local workspace: SKIPPED / NOT VERIFIED"
         )
 
     out_model = tmp_path / "real_rf_model.joblib"
@@ -782,7 +770,7 @@ def test_execute_training_real_data(tmp_path):
 
 
 def test_canonical_baseline_config_locking():
-    """Verify locking of canonical baseline configuration and rejection of unauthorized overrides."""
+    """Verify locking of canonical baseline config and rejection of unauthorized overrides."""
     # 1. Default canonical baseline passes validation
     canonical_cfg = RandomForestBaselineConfig()
     canonical_cfg.validate()
@@ -790,12 +778,8 @@ def test_canonical_baseline_config_locking():
     assert canonical_cfg.configuration_id == "rf-baseline-canonical-v1"
 
     # 2. Unauthorized override claiming canonical status raises ValueError
-    unauthorized_cfg = RandomForestBaselineConfig(
-        n_estimators=100, is_canonical_baseline=True
-    )
-    with pytest.raises(
-        ValueError, match="Configuration claims canonical baseline status"
-    ):
+    unauthorized_cfg = RandomForestBaselineConfig(n_estimators=100, is_canonical_baseline=True)
+    with pytest.raises(ValueError, match="Configuration claims canonical baseline status"):
         unauthorized_cfg.validate()
 
     # 3. Explicit experimental configuration passes validation
@@ -821,19 +805,15 @@ def test_canonical_baseline_config_locking():
         bad_id_cfg.validate()
 
     # 5. Protocol validation checks canonical consistency
-    with pytest.raises(
-        ValueError, match="Protocol claiming official canonical version"
-    ):
+    with pytest.raises(ValueError, match="Protocol claiming official canonical version"):
         RandomForestBaselineProtocol(
             protocol_version="rf-baseline-nf-unsw-nb15-v3-v1",
             model_config=experimental_cfg,
         ).validate()
 
 
-def test_model_persistence_preserves_protocol_and_classes(
-    tmp_path, minimal_47_feature_data
-):
-    """Verify that saving and loading persists protocol context, class ordering, and configuration."""
+def test_model_persistence_preserves_protocol_and_classes(tmp_path, minimal_47_feature_data):
+    """Verify that saving and loading persists protocol context, classes, and config."""
     X, y = minimal_47_feature_data
     protocol = create_rf_baseline_protocol()
     model = RandomForestModel(protocol=protocol)
@@ -891,9 +871,7 @@ def test_check_prerequisites_indices_audits(tmp_path, mock_split_environment):
 
     # Test duplicate indices detection
     dup_p = env["indices_dir"] / "train_indices.csv.gz"
-    pd.DataFrame({"source_row_index": [0, 0, 1, 2]}).to_csv(
-        dup_p, index=False, compression="gzip"
-    )
+    pd.DataFrame({"source_row_index": [0, 0, 1, 2]}).to_csv(dup_p, index=False, compression="gzip")
     new_sha = _sha256_file(dup_p)
 
     sm_data = json.loads(env["manifest_path"].read_text(encoding="utf-8"))
@@ -912,9 +890,7 @@ def test_check_prerequisites_indices_audits(tmp_path, mock_split_environment):
     assert any("duplicate row indices" in msg for msg in audit["missing_prerequisites"])
 
     # Test overlap detection
-    pd.DataFrame({"source_row_index": [0, 1, 2, 4]}).to_csv(
-        dup_p, index=False, compression="gzip"
-    )
+    pd.DataFrame({"source_row_index": [0, 1, 2, 4]}).to_csv(dup_p, index=False, compression="gzip")
     sm_data["partitions"]["train"]["index_sha256"] = _sha256_file(dup_p)
     env["manifest_path"].write_text(json.dumps(sm_data), encoding="utf-8")
 
@@ -936,12 +912,9 @@ def test_check_prerequisites_fails_when_verify_preprocessing_artifact_returns_fa
     prep_art = tmp_path / "prep.joblib"
     prep_art.write_bytes(b"dummy_art")
     pm_path = tmp_path / "pm.json"
+    prep_hex = "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
     pm_path.write_text(
-        json.dumps(
-            {
-                "artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-            }
-        ),
+        json.dumps({"artifact_sha256": prep_hex}),
         encoding="utf-8",
     )
 
@@ -976,12 +949,9 @@ def test_check_prerequisites_fails_when_verify_preprocessing_artifact_invalid_st
     prep_art = tmp_path / "prep.joblib"
     prep_art.write_bytes(b"dummy_art")
     pm_path = tmp_path / "pm.json"
+    prep_hex = "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
     pm_path.write_text(
-        json.dumps(
-            {
-                "artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-            }
-        ),
+        json.dumps({"artifact_sha256": prep_hex}),
         encoding="utf-8",
     )
 
@@ -1020,19 +990,14 @@ def test_check_prerequisites_fails_when_verify_preprocessing_artifact_invalid_st
     assert any("status=UNKNOWN_STATE" in err for err in audit2["missing_prerequisites"])
 
 
-def test_check_prerequisites_fails_when_verify_preprocessing_artifact_raises(
-    tmp_path, monkeypatch
-):
+def test_check_prerequisites_fails_when_verify_preprocessing_artifact_raises(tmp_path, monkeypatch):
     """P0-01: verify_preprocessing_artifact raising an exception fails closed."""
     prep_art = tmp_path / "prep.joblib"
     prep_art.write_bytes(b"dummy_art")
     pm_path = tmp_path / "pm.json"
+    prep_hex = "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
     pm_path.write_text(
-        json.dumps(
-            {
-                "artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-            }
-        ),
+        json.dumps({"artifact_sha256": prep_hex}),
         encoding="utf-8",
     )
 
@@ -1069,7 +1034,10 @@ def test_check_prerequisites_preprocessor_manifest_schema_enforcement(tmp_path):
         preprocessor_manifest_path=pm_missing,
     )
     assert audit1["status"] == "BLOCKED"
-    assert any("missing required canonical field 'artifact_sha256'" in err for err in audit1["missing_prerequisites"])
+    assert any(
+        "missing required canonical field 'artifact_sha256'" in err
+        for err in audit1["missing_prerequisites"]
+    )
 
     # Case 2: Mismatched artifact_sha256
     pm_mismatch = tmp_path / "pm_mismatch.json"
@@ -1082,7 +1050,10 @@ def test_check_prerequisites_preprocessor_manifest_schema_enforcement(tmp_path):
         preprocessor_manifest_path=pm_mismatch,
     )
     assert audit2["status"] == "BLOCKED"
-    assert any("Preprocessor manifest artifact SHA-256 mismatch" in err for err in audit2["missing_prerequisites"])
+    assert any(
+        "Preprocessor manifest artifact SHA-256 mismatch" in err
+        for err in audit2["missing_prerequisites"]
+    )
 
 
 def test_model_load_fails_on_malformed_protocol(tmp_path, minimal_47_feature_data):
@@ -1099,12 +1070,14 @@ def test_model_load_fails_on_malformed_protocol(tmp_path, minimal_47_feature_dat
     payload["protocol"] = {"selected_features": ["invalid_unknown_feature"]}
     joblib.dump(payload, model_path)
 
-    with pytest.raises(ValueError, match="Failed to deserialize model protocol from artifact payload"):
+    with pytest.raises(
+        ValueError, match="Failed to deserialize model protocol from artifact payload"
+    ):
         RandomForestModel.load(model_path)
 
 
 def test_model_load_verified_rejects_missing_protocol(tmp_path, minimal_47_feature_data):
-    """P1-02: RandomForestModel.load_verified() rejects legacy payload lacking protocol provenance."""
+    """P1-02: RandomForestModel.load_verified() rejects legacy payload lacking protocol."""
     X, y = minimal_47_feature_data
     model = RandomForestModel()
     model.fit(X, y)
@@ -1125,12 +1098,14 @@ def test_model_load_verified_rejects_missing_protocol(tmp_path, minimal_47_featu
 
     # load_verified() strictly rejects unverified legacy model without protocol
     manifest_path = tmp_path / "manifest.json"
+    ds_hex = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    sm_hex = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
     manifest_path.write_text(
         json.dumps(
             {
                 "model_artifact_sha256": actual_sha,
-                "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-                "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+                "dataset_sha256": ds_hex,
+                "split_manifest_sha256": sm_hex,
             }
         ),
         encoding="utf-8",
@@ -1141,7 +1116,7 @@ def test_model_load_verified_rejects_missing_protocol(tmp_path, minimal_47_featu
 
 
 def test_reload_probability_tolerance_enforces_rtol_zero():
-    """P1-04: Reload probability check strictly enforces absolute tolerance atol=1e-7 with rtol=0."""
+    """P1-04: Reload probability check enforces absolute tolerance atol=1e-7 with rtol=0."""
     orig = np.array([[0.8, 0.2], [0.3, 0.7]], dtype=np.float64)
 
     # Identical: passes
@@ -1160,3 +1135,186 @@ def test_reload_probability_tolerance_enforces_rtol_zero():
     reloaded_scaled = orig + 1e-6
     assert np.allclose(orig, reloaded_scaled, atol=1e-7)  # Passes with default rtol=1e-5!
     assert not np.allclose(orig, reloaded_scaled, atol=1e-7, rtol=0)  # Fails with rtol=0!
+
+
+def test_load_verified_rejects_empty_expected_hashes_and_malformed_top_level_fields(
+    tmp_path, minimal_47_feature_data
+):
+    """Fail-closed: empty expected hash args or empty top-level hashes raise ValueError."""
+    X, y = minimal_47_feature_data
+    model = RandomForestModel()
+    model.fit(X, y)
+
+    model_path = tmp_path / "model.joblib"
+    actual_sha = model.save(model_path)
+
+    valid_ds = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    valid_sm = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
+    valid_prep = "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
+
+    manifest_path = tmp_path / "manifest.json"
+    base_manifest = {
+        "model_artifact_sha256": actual_sha,
+        "dataset_sha256": valid_ds,
+        "split_manifest_sha256": valid_sm,
+        "preprocessor_artifact_sha256": valid_prep,
+    }
+    manifest_path.write_text(json.dumps(base_manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="expected_dataset_sha256"):
+        RandomForestModel.load_verified(model_path, manifest_path, expected_dataset_sha256="")
+
+    with pytest.raises(ValueError, match="expected_split_manifest_sha256"):
+        RandomForestModel.load_verified(
+            model_path, manifest_path, expected_split_manifest_sha256=""
+        )
+
+    with pytest.raises(ValueError, match="expected_preprocessor_artifact_sha256"):
+        RandomForestModel.load_verified(
+            model_path, manifest_path, expected_preprocessor_artifact_sha256=""
+        )
+
+    # Empty top-level split_manifest_sha256 with valid nested split_provenance fails closed
+    bad_sm_manifest = dict(base_manifest)
+    bad_sm_manifest["split_manifest_sha256"] = ""
+    bad_sm_manifest["split_provenance"] = {"split_manifest_sha256": valid_sm}
+    manifest_path.write_text(json.dumps(bad_sm_manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="split_manifest_sha256"):
+        RandomForestModel.load_verified(model_path, manifest_path)
+
+    # Empty top-level preprocessor_artifact_sha256 with valid nested provenance fails closed
+    bad_prep_manifest = dict(base_manifest)
+    bad_prep_manifest["preprocessor_artifact_sha256"] = ""
+    bad_prep_manifest["preprocessing_provenance"] = {"preprocessor_artifact_sha256": valid_prep}
+    manifest_path.write_text(json.dumps(bad_prep_manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="preprocessor_artifact_sha256"):
+        RandomForestModel.load_verified(model_path, manifest_path)
+
+
+def test_load_verified_rejects_incomplete_provenance_or_unknown_git_commit(
+    tmp_path, minimal_47_feature_data
+):
+    """Fail-closed: manifests marking provenance incomplete or git_commit UNKNOWN fail."""
+    X, y = minimal_47_feature_data
+    model = RandomForestModel()
+    model.fit(X, y)
+
+    model_path = tmp_path / "model.joblib"
+    actual_sha = model.save(model_path)
+
+    valid_ds = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    valid_sm = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
+
+    manifest_path = tmp_path / "manifest.json"
+    base_manifest = {
+        "model_artifact_sha256": actual_sha,
+        "dataset_sha256": valid_ds,
+        "split_manifest_sha256": valid_sm,
+    }
+
+    for bad_update, match_pattern in [
+        ({"provenance_complete": False}, "incomplete provenance"),
+        ({"provenance_status": "INCOMPLETE"}, "incomplete provenance"),
+        ({"environment": {"git_commit": "UNKNOWN"}}, "git_commit"),
+        ({"environment": {"git_commit": ""}}, "git_commit"),
+    ]:
+        m = dict(base_manifest)
+        m.update(bad_update)
+        manifest_path.write_text(json.dumps(m), encoding="utf-8")
+        with pytest.raises(ValueError, match=match_pattern):
+            RandomForestModel.load_verified(model_path, manifest_path)
+
+
+def test_check_prerequisites_fails_when_split_manifest_missing_index_sha256(
+    tmp_path, mock_split_environment
+):
+    """Fail-closed: missing index_sha256 in split manifest marks audit BLOCKED."""
+    env = mock_split_environment
+    sm_data = json.loads(env["manifest_path"].read_text(encoding="utf-8"))
+    del sm_data["partitions"]["train"]["index_sha256"]
+    env["manifest_path"].write_text(json.dumps(sm_data), encoding="utf-8")
+
+    audit = check_prerequisites(
+        dataset_path=tmp_path / "ds.csv",
+        split_manifest_path=env["manifest_path"],
+        indices_dir=env["indices_dir"],
+        preprocessor_artifact_path=tmp_path / "prep.joblib",
+        preprocessor_manifest_path=tmp_path / "pm.json",
+    )
+    assert audit["status"] == "BLOCKED"
+    assert any("index_sha256" in msg for msg in audit["missing_prerequisites"])
+    assert audit["findings"]["indices_audit"]["status"] == "FAIL"
+
+
+def test_execute_training_rejects_nan_in_transformed_features(
+    tmp_path, mock_split_environment, monkeypatch
+):
+    """Fail-closed: NaN/Inf in transformed features aborts execute_training before fit."""
+    env = mock_split_environment
+    rng = np.random.default_rng(42)
+    n_total = 10
+
+    data = {col: rng.uniform(0, 100, size=n_total) for col in ML_FEATURE_COLUMNS}
+    for col in TRACE_METADATA_COLUMNS:
+        data[col] = ["10.0.0.1"] * n_total
+    data["Label"] = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]
+    data["Attack"] = [
+        "Benign",
+        "Exploits",
+        "Benign",
+        "DoS",
+        "Benign",
+        "Fuzzers",
+        "Benign",
+        "Generic",
+        "Benign",
+        "Worms",
+    ]
+
+    df_raw = pd.DataFrame(data)
+    dataset_path = tmp_path / "nan_dataset.csv"
+    df_raw.to_csv(dataset_path, index=False)
+    actual_dataset_sha = _sha256_file(dataset_path)
+
+    split_manifest_path = env["manifest_path"]
+    sm_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+    sm_data["dataset_sha256"] = actual_dataset_sha
+    split_manifest_path.write_text(json.dumps(sm_data), encoding="utf-8")
+    indices_dir = env["indices_dir"]
+    actual_sm_sha = _sha256_file(split_manifest_path)
+
+    import network_anomaly.preprocessing.pipeline as pp_mod
+    import scripts.train_random_forest as trf
+
+    monkeypatch.setattr(trf, "EXPECTED_DATASET_SHA256", actual_dataset_sha)
+    monkeypatch.setattr(pp_mod, "EXPECTED_DATASET_SHA256", actual_dataset_sha)
+
+    df_train_only = df_raw.iloc[env["train_idx"]][list(ML_FEATURE_COLUMNS)]
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig())
+    prep.dataset_sha256 = actual_dataset_sha
+    prep.split_manifest_sha256 = actual_sm_sha
+    prep.fit(df_train_only)
+
+    prep_art = tmp_path / "prep.joblib"
+    prep_man = tmp_path / "prep_man.json"
+    prep.save(prep_art, manifest_path=prep_man)
+
+    orig_transform = TrainOnlyPreprocessor.transform
+
+    def _corrupted_transform(self, df):
+        res = orig_transform(self, df).copy()
+        res.iloc[0, 0] = np.nan
+        return res
+
+    monkeypatch.setattr(TrainOnlyPreprocessor, "transform", _corrupted_transform)
+
+    with pytest.raises(ValueError, match="Transformed X_train contains non-finite values"):
+        execute_training(
+            dataset_path=dataset_path,
+            split_manifest_path=split_manifest_path,
+            indices_dir=indices_dir,
+            preprocessor_artifact_path=prep_art,
+            preprocessor_manifest_path=prep_man,
+            output_model_path=tmp_path / "out_model.joblib",
+            output_manifest_path=tmp_path / "out_man.json",
+        )

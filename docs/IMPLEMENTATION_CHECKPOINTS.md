@@ -60,8 +60,11 @@ Completed: IMPLEMENTED / TESTED —
     theo đúng 47 đặc trưng ML, target Label nhị phân, TEST lock policy, tuning policy cách ly,
     metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 và PR #43 đã được
     khắc phục hoàn toàn:
-      * Canonical baseline locking (`RandomForestBaselineConfig.is_canonical_baseline`, `configuration_id`),
-        ngăn chặn unauthorized overrides nhận danh baseline chính thức.
+      * Canonical baseline locking (`RandomForestBaselineConfig.is_canonical_baseline`, `configuration_id`,
+        khóa toàn bộ `CANONICAL_BASELINE_PARAMS` bao gồm cả `n_jobs=-1`), ngăn chặn unauthorized overrides
+        nhận danh baseline chính thức.
+      * Đồng bộ tài liệu split protocol với split manifest chính thức (`REVIEWED_AND_JUSTIFIED` cho `ml_feature_overlap`,
+        bổ sung test chống trôi tài liệu).
       * Phân loại phát hiện theo cặp (y_true, y_pred), Benign xử lý riêng biệt.
       * Compute metrics FPR bất biến theo thứ tự nhãn [0, 1] vs [1, 0].
   - Issue #10: Cấu trúc mô hình Random Forest hoàn thiện:
@@ -76,12 +79,14 @@ Completed: IMPLEMENTED / TESTED —
       * Kiểm chứng tính nhất quán khi reload (`orig_preds == reloaded_preds`, sai số xác suất atol=1e-7, rtol=0,
         kiểm tra tính hữu hạn finite, thứ tự đặc trưng và thứ tự lớp).
       * Bắt buộc trạng thái verification `prep_audit["status"] == "PASS"` và schema `artifact_sha256` của preprocessor manifest.
-      * Loại bỏ hoàn toàn nhánh fail-open trong `load_verified()`, đối chiếu chéo top-level và nested provenance.
-      * Tích hợp `--step baseline` vào `scripts/run_experiments.py` ủy quyền gọi và chuyển tiếp mã thoát.
-Tests: PASS — 27 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
-  `tests/unit/test_rf_model_structure.py`, 29 tests trong `tests/unit/test_rf_training.py`
-  (28 PASS, 1 SKIPPED / NOT VERIFIED do thiếu file CSV thô cục bộ), 14 tests trong
-  `tests/unit/test_run_experiments.py`; toàn bộ test suite 373 PASS, 5 SKIPPED, 0 FAILED;
+      * Loại bỏ hoàn toàn nhánh fail-open trong `load_verified()`, đối chiếu chéo top-level và nested provenance,
+        từ chối `git_commit == "UNKNOWN"` hoặc `provenance_complete == False`.
+      * Tích hợp `--step baseline` vào `scripts/run_experiments.py` ủy quyền gọi và chuyển tiếp mã thoát,
+        đồng bộ docstring và CLI help.
+Tests: PASS — 36 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
+  `tests/unit/test_rf_model_structure.py`, 33 tests trong `tests/unit/test_rf_training.py`
+  (32 PASS, 1 SKIPPED / NOT VERIFIED do thiếu file CSV thô cục bộ), 15 tests trong
+  `tests/unit/test_run_experiments.py`; toàn bộ test suite 387 PASS, 5 SKIPPED, 0 FAILED;
   git diff --check PASS; check_environment PASS.
 Issues: #9 (Protocol & Criteria — TESTED); #10 (RF Training Architecture & Verification — TESTED;
   Real-data training — BLOCKED / OPEN); #12 (Evaluation — PLANNED).

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Train Random Forest baseline model for NF-UNSW-NB15-v3.
 
-This script implements the training execution for Issue #10 according to the locked Issue #9 protocol:
+Implements training execution for Issue #10 according to the locked Issue #9 protocol:
 1. Validates all prerequisite artifacts (raw CSV, split manifest, indices, preprocessor artifact).
-2. Verifies dataset, split, and preprocessor integrity fail-closed; halts cleanly if prerequisites are unavailable.
+2. Verifies dataset, split, and preprocessor integrity fail-closed; halts if unavailable.
 3. Reuses the existing fitted train-only preprocessor from Issue #8 without refitting.
 4. Enforces strict test-partition isolation: test indices and data are never loaded or materialized.
 5. Streams raw dataset in bounded chunks, extracting only Train and Validation partition rows.
 6. Extracts 47 baseline ML features matrix X_train and binary target Label (0=Benign, 1=Attack).
-7. Fits RandomForestClassifier with locked protocol hyperparameters (n_estimators=200, max_depth=16, seed=42).
-8. Records training execution time, environment, git commit, package versions, and full run metadata.
+7. Fits RandomForestClassifier with locked parameters (n_estimators=200, max_depth=16, seed=42).
+8. Records training duration, environment, git commit, package versions, and full run metadata.
 9. Saves the trained model artifact and companion run manifest with runtime provenance.
 10. Verifies model reload and predictions on validation partition.
 """
@@ -17,10 +17,8 @@ This script implements the training execution for Issue #10 according to the loc
 from __future__ import annotations
 
 import argparse
-import hashlib
 import io
 import json
-import os
 import platform
 import subprocess
 import sys
@@ -28,7 +26,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_SOURCE = PROJECT_ROOT / "src"
@@ -43,7 +41,6 @@ import sklearn  # noqa: E402
 from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     DATASET_NAME,
     ML_FEATURE_COLUMNS,
-    validate_feature_selection,
 )
 from network_anomaly.data.split import (  # noqa: E402
     SPLIT_PROTOCOL_VERSION,
@@ -58,7 +55,6 @@ from network_anomaly.models.random_forest import (  # noqa: E402
     FEATURE_CONTRACT_VERSION,
     PREPROCESSING_CONTRACT_ID,
     PreprocessingReference,
-    RandomForestBaselineConfig,
     RandomForestBaselineProtocol,
     RandomForestModel,
     SplitReference,
@@ -70,9 +66,7 @@ from network_anomaly.preprocessing.pipeline import (  # noqa: E402
     verify_preprocessing_artifact,
 )
 
-EXPECTED_SPLIT_MANIFEST_SHA256 = (
-    "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
-)
+EXPECTED_SPLIT_MANIFEST_SHA256 = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
 EXPECTED_PREPROCESSOR_ARTIFACT_SHA256 = (
     "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
 )
@@ -83,12 +77,8 @@ EXPECTED_TRAIN_ROWS = 1655797
 EXPECTED_VAL_ROWS = 345371
 EXPECTED_TEST_ROWS = 345953
 
-DEFAULT_DATASET = (
-    PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
-)
-DEFAULT_SPLIT_MANIFEST = (
-    PROJECT_ROOT / "reports" / "splits" / "nf_unsw_nb15_v3_split_manifest.json"
-)
+DEFAULT_DATASET = PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
+DEFAULT_SPLIT_MANIFEST = PROJECT_ROOT / "reports" / "splits" / "nf_unsw_nb15_v3_split_manifest.json"
 DEFAULT_INDICES_DIR = PROJECT_ROOT / "data" / "processed" / "splits"
 DEFAULT_PREPROCESSOR_ARTIFACT = (
     PROJECT_ROOT / "artifacts" / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
@@ -98,12 +88,8 @@ DEFAULT_PREPROCESSOR_MANIFEST = (
 )
 DEFAULT_OUTPUT_MODEL_DIR = PROJECT_ROOT / "artifacts" / "models" / "random_forest"
 DEFAULT_OUTPUT_MODEL_PATH = DEFAULT_OUTPUT_MODEL_DIR / "random_forest_baseline.joblib"
-DEFAULT_OUTPUT_MANIFEST_PATH = (
-    DEFAULT_OUTPUT_MODEL_DIR / "random_forest_manifest.json"
-)
-DEFAULT_REPORT_MANIFEST_PATH = (
-    PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
-)
+DEFAULT_OUTPUT_MANIFEST_PATH = DEFAULT_OUTPUT_MODEL_DIR / "random_forest_manifest.json"
+DEFAULT_REPORT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
 
 
 def _safe_relpath(path: Path, root: Path = PROJECT_ROOT) -> str:
@@ -245,41 +231,56 @@ def check_prerequisites(
         }
         if not match:
             missing.append(
-                f"Split manifest SHA-256 mismatch: expected {EXPECTED_SPLIT_MANIFEST_SHA256}, got {actual_sm_sha}"
+                f"Split manifest SHA-256 mismatch: "
+                f"expected {EXPECTED_SPLIT_MANIFEST_SHA256}, got {actual_sm_sha}"
             )
-        else:
-            try:
-                split_manifest_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
-            except Exception as e:
-                missing.append(f"Split manifest invalid JSON: {e}")
+        try:
+            split_manifest_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            missing.append(f"Split manifest invalid JSON: {e}")
 
     # 3. Partition Index files and verification against split manifest
     train_idx_path = indices_dir / "train_indices.csv.gz"
     val_idx_path = indices_dir / "validation_indices.csv.gz"
+    idx_errors: List[str] = []
 
     if not train_idx_path.exists():
         missing.append(f"Train partition indices not found at {train_idx_path}")
-    elif split_manifest_data:
+    elif isinstance(split_manifest_data, dict):
         train_spec = split_manifest_data.get("partitions", {}).get("train", {})
         expected_train_sha = train_spec.get("index_sha256")
-        if expected_train_sha:
+        if not expected_train_sha:
+            err = "Split manifest missing required 'index_sha256' for 'train' partition"
+            idx_errors.append(err)
+            missing.append(err)
+        else:
             actual_train_sha = _sha256_file(train_idx_path)
             if actual_train_sha != expected_train_sha:
-                missing.append(
-                    f"Train indices SHA-256 mismatch: expected {expected_train_sha}, got {actual_train_sha}"
+                err = (
+                    f"Train indices SHA-256 mismatch: "
+                    f"expected {expected_train_sha}, got {actual_train_sha}"
                 )
+                idx_errors.append(err)
+                missing.append(err)
 
     if not val_idx_path.exists():
         missing.append(f"Validation partition indices not found at {val_idx_path}")
-    elif split_manifest_data:
+    elif isinstance(split_manifest_data, dict):
         val_spec = split_manifest_data.get("partitions", {}).get("validation", {})
         expected_val_sha = val_spec.get("index_sha256")
-        if expected_val_sha:
+        if not expected_val_sha:
+            err = "Split manifest missing required 'index_sha256' for 'validation' partition"
+            idx_errors.append(err)
+            missing.append(err)
+        else:
             actual_val_sha = _sha256_file(val_idx_path)
             if actual_val_sha != expected_val_sha:
-                missing.append(
-                    f"Validation indices SHA-256 mismatch: expected {expected_val_sha}, got {actual_val_sha}"
+                err = (
+                    f"Validation indices SHA-256 mismatch: "
+                    f"expected {expected_val_sha}, got {actual_val_sha}"
                 )
+                idx_errors.append(err)
+                missing.append(err)
 
     findings["indices"] = {
         "train_indices_exists": train_idx_path.exists(),
@@ -294,48 +295,63 @@ def check_prerequisites(
 
             exp_train_rows = (
                 split_manifest_data.get("partitions", {}).get("train", {}).get("row_count")
-                if split_manifest_data
+                if isinstance(split_manifest_data, dict)
                 else EXPECTED_TRAIN_ROWS
             ) or EXPECTED_TRAIN_ROWS
 
             exp_val_rows = (
                 split_manifest_data.get("partitions", {}).get("validation", {}).get("row_count")
-                if split_manifest_data
+                if isinstance(split_manifest_data, dict)
                 else EXPECTED_VAL_ROWS
             ) or EXPECTED_VAL_ROWS
 
             if len(train_idx) != exp_train_rows:
-                missing.append(
-                    f"Train indices row count mismatch: expected {exp_train_rows}, got {len(train_idx)}"
+                err = (
+                    f"Train indices row count mismatch: "
+                    f"expected {exp_train_rows}, got {len(train_idx)}"
                 )
+                idx_errors.append(err)
+                missing.append(err)
             if len(val_idx) != exp_val_rows:
-                missing.append(
-                    f"Validation indices row count mismatch: expected {exp_val_rows}, got {len(val_idx)}"
+                err = (
+                    f"Validation indices row count mismatch: "
+                    f"expected {exp_val_rows}, got {len(val_idx)}"
                 )
+                idx_errors.append(err)
+                missing.append(err)
 
             if len(np.unique(train_idx)) != len(train_idx):
-                missing.append("Train partition indices contain duplicate row indices")
+                err = "Train partition indices contain duplicate row indices"
+                idx_errors.append(err)
+                missing.append(err)
             if len(np.unique(val_idx)) != len(val_idx):
-                missing.append("Validation partition indices contain duplicate row indices")
+                err = "Validation partition indices contain duplicate row indices"
+                idx_errors.append(err)
+                missing.append(err)
 
             overlap = set(train_idx).intersection(set(val_idx))
             if overlap:
-                missing.append(
-                    f"Train and validation partition indices overlap ({len(overlap)} rows)"
-                )
+                err = f"Train and validation partition indices overlap ({len(overlap)} rows)"
+                idx_errors.append(err)
+                missing.append(err)
 
             if len(train_idx) > 0 and train_idx.min() < 0:
-                missing.append("Train partition indices contain negative index values")
+                err = "Train partition indices contain negative index values"
+                idx_errors.append(err)
+                missing.append(err)
             if len(val_idx) > 0 and val_idx.min() < 0:
-                missing.append("Validation partition indices contain negative index values")
+                err = "Validation partition indices contain negative index values"
+                idx_errors.append(err)
+                missing.append(err)
 
             findings["indices_audit"] = {
-                "status": "PASS",
+                "status": "PASS" if not idx_errors else "FAIL",
                 "train_rows": len(train_idx),
                 "val_rows": len(val_idx),
                 "overlap_count": len(overlap),
                 "unique_train": len(np.unique(train_idx)) == len(train_idx),
                 "unique_val": len(np.unique(val_idx)) == len(val_idx),
+                "errors": list(idx_errors),
             }
         except Exception as e:
             missing.append(f"Partition indices audit failed: {e}")
@@ -359,7 +375,8 @@ def check_prerequisites(
         }
         if not match:
             missing.append(
-                f"Preprocessor artifact SHA-256 mismatch: expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {actual_art_sha}"
+                f"Preprocessor artifact SHA-256 mismatch: "
+                f"expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {actual_art_sha}"
             )
 
     if not preprocessor_manifest_path.exists():
@@ -373,7 +390,8 @@ def check_prerequisites(
         if preprocessor_manifest_path == DEFAULT_PREPROCESSOR_MANIFEST:
             if actual_pm_sha != EXPECTED_PREPROCESSOR_MANIFEST_SHA256:
                 missing.append(
-                    f"Preprocessor companion manifest SHA-256 mismatch: expected {EXPECTED_PREPROCESSOR_MANIFEST_SHA256}, got {actual_pm_sha}"
+                    f"Preprocessor companion manifest SHA-256 mismatch: "
+                    f"expected {EXPECTED_PREPROCESSOR_MANIFEST_SHA256}, got {actual_pm_sha}"
                 )
 
         try:
@@ -382,13 +400,15 @@ def check_prerequisites(
                 raise ValueError("Companion manifest must be a JSON object")
             if "artifact_sha256" not in pm_data:
                 missing.append(
-                    f"Preprocessor companion manifest missing required canonical field 'artifact_sha256': {preprocessor_manifest_path}"
+                    f"Preprocessor companion manifest missing required canonical field "
+                    f"'artifact_sha256': {preprocessor_manifest_path}"
                 )
             else:
                 pm_art_sha = pm_data.get("artifact_sha256")
                 if pm_art_sha != EXPECTED_PREPROCESSOR_ARTIFACT_SHA256:
                     missing.append(
-                        f"Preprocessor manifest artifact SHA-256 mismatch: expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {pm_art_sha}"
+                        f"Preprocessor manifest artifact SHA-256 mismatch: "
+                        f"expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {pm_art_sha}"
                     )
             findings["preprocessor_manifest"] = {
                 "status": "EXISTS",
@@ -412,13 +432,15 @@ def check_prerequisites(
             findings["preprocessor_verification"] = prep_audit
             if not isinstance(prep_audit, dict) or "status" not in prep_audit:
                 missing.append(
-                    "Preprocessor verification returned invalid audit schema: missing 'status' field"
+                    "Preprocessor verification returned invalid audit schema: "
+                    "missing 'status' field"
                 )
             elif prep_audit["status"] != "PASS":
                 err_msgs = prep_audit.get("errors", [])
                 err_str = "; ".join(err_msgs) if err_msgs else "unknown verification failure"
                 missing.append(
-                    f"Preprocessor artifact verification failed (status={prep_audit['status']}): {err_str}"
+                    f"Preprocessor artifact verification failed "
+                    f"(status={prep_audit['status']}): {err_str}"
                 )
         except Exception as e:
             missing.append(f"Preprocessor artifact verification failed: {e}")
@@ -468,13 +490,13 @@ def stream_partition_data(
     chunksize: int = 100_000,
     tracker: Optional[PartitionAccessTracker] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Stream raw CSV and extract strictly Train and Validation rows without materializing Test rows.
+    """Stream raw CSV and extract strictly Train and Validation rows without Test rows.
 
     Guarantees:
     1. Contract A: Zero Test data is used in model fitting, hyperparameter selection,
        threshold selection, validation, or feature selection.
     2. Contract B: Zero Test partition rows are ever materialized or converted into DataFrames.
-       Test rows are intercepted and discarded at the raw text stream boundary prior to DataFrame creation.
+       Test rows are intercepted and discarded at the raw text stream boundary.
     3. Memory Architecture: chunksize controls the batch buffer size for CSV line parsing
        (preventing reading multi-GB text into memory at once). Full Train (1,655,797 rows)
        and Validation (345,371 rows) sets are materialized into memory DataFrames as required
@@ -505,7 +527,7 @@ def stream_partition_data(
             return
         content = header_line + "".join(train_line_buffer)
         df = pd.read_csv(io.StringIO(content), usecols=usecols, keep_default_na=False)
-        target_indices = train_row_offsets[-len(train_line_buffer):]
+        target_indices = train_row_offsets[-len(train_line_buffer) :]
         df.index = target_indices
         train_chunks.append(df)
         train_line_buffer.clear()
@@ -515,7 +537,7 @@ def stream_partition_data(
             return
         content = header_line + "".join(val_line_buffer)
         df = pd.read_csv(io.StringIO(content), usecols=usecols, keep_default_na=False)
-        target_indices = val_row_offsets[-len(val_line_buffer):]
+        target_indices = val_row_offsets[-len(val_line_buffer) :]
         df.index = target_indices
         val_chunks.append(df)
         val_line_buffer.clear()
@@ -560,7 +582,9 @@ def stream_partition_data(
     df_train = df_train_raw.loc[train_indices].copy()
     df_val = df_val_raw.loc[val_indices].copy()
 
-    del df_train_raw, df_val_raw, train_chunks, val_chunks
+    train_chunks.clear()
+    val_chunks.clear()
+    del df_train_raw, df_val_raw
 
     if len(df_train) != len(train_indices):
         raise ValueError(
@@ -596,22 +620,19 @@ def execute_training(
         expected_dataset_sha256=EXPECTED_DATASET_SHA256,
     )
     print(
-        f"[train_random_forest] Preprocessor loaded successfully (fitted on {preprocessor.train_row_count_} rows)."
+        f"[train_random_forest] Preprocessor loaded successfully "
+        f"(fitted on {preprocessor.train_row_count_} rows)."
     )
 
     # 2. Load Train and Validation partition indices (Strict Test Lock enforced)
     print("[train_random_forest] Loading partition indices with test-isolation guard...")
-    train_indices = load_partition(
-        split_manifest_path, indices_dir, "train", tracker=tracker
-    )
-    val_indices = load_partition(
-        split_manifest_path, indices_dir, "validation", tracker=tracker
-    )
+    train_indices = load_partition(split_manifest_path, indices_dir, "train", tracker=tracker)
+    val_indices = load_partition(split_manifest_path, indices_dir, "validation", tracker=tracker)
     print(
         f"[train_random_forest] Loaded indices: train={len(train_indices)}, val={len(val_indices)}."
     )
 
-    # 3. Stream dataset rows strictly matching Train and Validation (Test rows are NEVER materialized)
+    # 3. Stream dataset rows strictly matching Train and Validation (Test rows never materialized)
     print(
         f"[train_random_forest] Streaming training and validation partitions from {dataset_path}..."
     )
@@ -643,9 +664,7 @@ def execute_training(
             f"Expected X_train shape {(len(train_indices), 47)}, got {X_train_trans.shape}"
         )
     if X_val_trans.shape != (len(val_indices), 47):
-        raise ValueError(
-            f"Expected X_val shape {(len(val_indices), 47)}, got {X_val_trans.shape}"
-        )
+        raise ValueError(f"Expected X_val shape {(len(val_indices), 47)}, got {X_val_trans.shape}")
 
     arr_train = np.asarray(X_train_trans)
     arr_val = np.asarray(X_val_trans)
@@ -708,19 +727,19 @@ def execute_training(
     model = RandomForestModel(protocol=protocol)
 
     print(
-        "[train_random_forest] Fitting Random Forest model (n_estimators=200, max_depth=16, seed=42)..."
+        "[train_random_forest] Fitting Random Forest model "
+        "(n_estimators=200, max_depth=16, seed=42)..."
     )
     start_time = time.perf_counter()
     trained_at_utc = datetime.now(timezone.utc).isoformat()
     model.fit(X_train_trans, y_train)
     training_duration = time.perf_counter() - start_time
-    print(
-        f"[train_random_forest] Model fitting completed in {training_duration:.2f} seconds."
-    )
+    print(f"[train_random_forest] Model fitting completed in {training_duration:.2f} seconds.")
 
     # 6. Capture original validation predictions & probabilities before serialization
     print(
-        "[train_random_forest] Capturing validation predictions and probabilities on in-memory model..."
+        "[train_random_forest] Capturing validation predictions and probabilities "
+        "on in-memory model..."
     )
     orig_val_preds = model.predict(X_val_trans)
     orig_val_probs = model.predict_proba(X_val_trans)
@@ -740,14 +759,16 @@ def execute_training(
     val_metrics = compute_metrics(y_val, orig_val_preds, labels=[0, 1])
     val_breakdown = compute_attack_category_breakdown(y_val, orig_val_preds, attack_val)
     print(
-        f"[train_random_forest] Validation Metrics: F1={val_metrics['f1']:.4f}, Macro-F1={val_metrics['macro_f1']:.4f}, FPR={val_metrics['false_positive_rate']:.4f}"
+        f"[train_random_forest] Validation Metrics: F1={val_metrics['f1']:.4f}, "
+        f"Macro-F1={val_metrics['macro_f1']:.4f}, FPR={val_metrics['false_positive_rate']:.4f}"
     )
 
     # 7. Save model artifact
     output_model_path.parent.mkdir(parents=True, exist_ok=True)
     model_sha256 = model.save(output_model_path)
     print(
-        f"[train_random_forest] Model artifact saved to {output_model_path} (SHA-256: {model_sha256})."
+        f"[train_random_forest] Model artifact saved to {output_model_path} "
+        f"(SHA-256: {model_sha256})."
     )
 
     # 8. Create run manifest with unified schema and runtime provenance
@@ -856,7 +877,8 @@ def execute_training(
 
     # 9. Reload and strictly verify using RandomForestModel.load_verified()
     print(
-        "[train_random_forest] Performing verified model reload and checking prediction consistency..."
+        "[train_random_forest] Performing verified model reload "
+        "and checking prediction consistency..."
     )
     reloaded_model = RandomForestModel.load_verified(
         model_path=output_model_path,
@@ -871,11 +893,13 @@ def execute_training(
 
     if orig_val_preds.shape != reloaded_val_preds.shape:
         raise ValueError(
-            f"Validation prediction shape mismatch: original {orig_val_preds.shape} != reloaded {reloaded_val_preds.shape}"
+            f"Validation prediction shape mismatch: "
+            f"original {orig_val_preds.shape} != reloaded {reloaded_val_preds.shape}"
         )
     if orig_val_probs.shape != reloaded_val_probs.shape:
         raise ValueError(
-            f"Validation probability shape mismatch: original {orig_val_probs.shape} != reloaded {reloaded_val_probs.shape}"
+            f"Validation probability shape mismatch: "
+            f"original {orig_val_probs.shape} != reloaded {reloaded_val_probs.shape}"
         )
     if not np.all(np.isfinite(reloaded_val_probs)):
         raise ValueError("Validation probabilities contain non-finite values (NaN or Inf)!")
@@ -892,14 +916,16 @@ def execute_training(
     if hasattr(model.estimator, "classes_") and hasattr(reloaded_model.estimator, "classes_"):
         if not np.array_equal(model.estimator.classes_, reloaded_model.estimator.classes_):
             raise ValueError(
-                f"Class ordering mismatch: {model.estimator.classes_} != {reloaded_model.estimator.classes_}"
+                f"Class ordering mismatch: "
+                f"{model.estimator.classes_} != {reloaded_model.estimator.classes_}"
             )
     if len(reloaded_val_preds) != len(val_indices):
         raise ValueError(
             f"Sample count mismatch: expected {len(val_indices)}, got {len(reloaded_val_preds)}"
         )
     print(
-        "[train_random_forest] Verified reload check passed: predictions and probabilities identical (atol=1e-7, rtol=0)."
+        "[train_random_forest] Verified reload check passed: "
+        "predictions and probabilities identical (atol=1e-7, rtol=0)."
     )
 
     return manifest

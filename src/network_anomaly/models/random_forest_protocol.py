@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from network_anomaly.config import RANDOM_FOREST_DEFAULTS, RANDOM_SEED
+from network_anomaly.config import RANDOM_SEED
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     DATASET_NAME,
     ML_FEATURE_COLUMNS,
@@ -62,6 +62,7 @@ CANONICAL_BASELINE_PARAMS: Dict[str, Any] = {
     "max_features": "sqrt",
     "class_weight": None,
     "random_state": 42,
+    "n_jobs": -1,
     "bootstrap": True,
 }
 
@@ -82,7 +83,7 @@ class RandomForestBaselineConfig:
     max_features: Union[str, int, float, None] = "sqrt"
     class_weight: Optional[Union[str, Dict[Any, Any]]] = None
     random_state: int = RANDOM_SEED
-    n_jobs: int = -1
+    n_jobs: Optional[int] = -1
     bootstrap: bool = True
     configuration_id: str = "rf-baseline-canonical-v1"
     is_canonical_baseline: bool = True
@@ -109,6 +110,12 @@ class RandomForestBaselineConfig:
             raise ValueError(f"Unsupported criterion: {self.criterion}")
         if self.random_state is None:
             raise ValueError("random_state must be an integer seed for reproducibility")
+        if isinstance(self.n_jobs, bool) or (
+            self.n_jobs is not None and not isinstance(self.n_jobs, int)
+        ):
+            raise ValueError(f"n_jobs must be an integer or None, got {self.n_jobs!r}")
+        if self.n_jobs is not None and (self.n_jobs == 0 or self.n_jobs < -1):
+            raise ValueError(f"n_jobs must be -1, >= 1, or None, got {self.n_jobs}")
 
         canonical_matches = (
             self.model_type == CANONICAL_BASELINE_PARAMS["model_type"]
@@ -123,6 +130,7 @@ class RandomForestBaselineConfig:
             and self.max_features == CANONICAL_BASELINE_PARAMS["max_features"]
             and self.class_weight == CANONICAL_BASELINE_PARAMS["class_weight"]
             and self.random_state == CANONICAL_BASELINE_PARAMS["random_state"]
+            and self.n_jobs == CANONICAL_BASELINE_PARAMS["n_jobs"]
             and self.bootstrap == CANONICAL_BASELINE_PARAMS["bootstrap"]
         )
 
@@ -131,20 +139,24 @@ class RandomForestBaselineConfig:
                 raise ValueError(
                     "Configuration claims canonical baseline status (is_canonical_baseline=True), "
                     "but parameters differ from locked canonical baseline. "
-                    "Set is_canonical_baseline=False and provide an experimental configuration_id to use custom hyperparameters."
+                    "Set is_canonical_baseline=False and provide an experimental "
+                    "configuration_id to use custom hyperparameters."
                 )
             if self.configuration_id != "rf-baseline-canonical-v1":
                 raise ValueError(
-                    f"Canonical baseline configuration must have configuration_id 'rf-baseline-canonical-v1', "
-                    f"got '{self.configuration_id}'"
+                    f"Canonical baseline configuration must have configuration_id "
+                    f"'rf-baseline-canonical-v1', got '{self.configuration_id}'"
                 )
         else:
             if self.configuration_id == "rf-baseline-canonical-v1":
                 raise ValueError(
-                    "Non-canonical / experimental configuration cannot use canonical configuration_id 'rf-baseline-canonical-v1'"
+                    "Non-canonical / experimental configuration cannot use canonical "
+                    "configuration_id 'rf-baseline-canonical-v1'"
                 )
             if not self.configuration_id or not self.configuration_id.strip():
-                raise ValueError("Experimental configuration must have a non-empty configuration_id")
+                raise ValueError(
+                    "Experimental configuration must have a non-empty configuration_id"
+                )
 
     def to_sklearn_params(self) -> Dict[str, Any]:
         """Extract only the kwargs accepted by sklearn's RandomForestClassifier."""
@@ -174,8 +186,7 @@ class RandomForestBaselineConfig:
         # If is_canonical_baseline was not explicitly passed, infer it from parameters
         if "is_canonical_baseline" not in data:
             matches_canonical = all(
-                filtered.get(k, CANONICAL_BASELINE_PARAMS[k])
-                == CANONICAL_BASELINE_PARAMS[k]
+                filtered.get(k, CANONICAL_BASELINE_PARAMS[k]) == CANONICAL_BASELINE_PARAMS[k]
                 for k in CANONICAL_BASELINE_PARAMS
             )
             filtered["is_canonical_baseline"] = matches_canonical
@@ -502,13 +513,9 @@ class RandomForestBaselineProtocol:
     model_config: RandomForestBaselineConfig = field(default_factory=RandomForestBaselineConfig)
     tuning_policy: TuningConfig = field(default_factory=TuningConfig)
     test_lock: TestLockPolicy = field(default_factory=TestLockPolicy)
-    evaluation_protocol: EvaluationMetricProtocol = field(
-        default_factory=EvaluationMetricProtocol
-    )
+    evaluation_protocol: EvaluationMetricProtocol = field(default_factory=EvaluationMetricProtocol)
     split_reference: SplitReference = field(default_factory=SplitReference)
-    preprocessing_reference: PreprocessingReference = field(
-        default_factory=PreprocessingReference
-    )
+    preprocessing_reference: PreprocessingReference = field(default_factory=PreprocessingReference)
     metadata: Dict[str, Any] = field(
         default_factory=lambda: {
             "issue": 9,
@@ -531,7 +538,8 @@ class RandomForestBaselineProtocol:
             )
         if len(self.selected_features) != 47:
             raise ValueError(
-                f"selected_features must have exactly 47 features, got {len(self.selected_features)}"
+                f"selected_features must have exactly 47 features, "
+                f"got {len(self.selected_features)}"
             )
 
         # 2. Strict target and metadata exclusion
@@ -560,7 +568,10 @@ class RandomForestBaselineProtocol:
         self.preprocessing_reference.validate()
 
         # 4. Canonical baseline protocol lock
-        if self.protocol_version == PROTOCOL_IDENTIFIER and not self.model_config.is_canonical_baseline:
+        if (
+            self.protocol_version == PROTOCOL_IDENTIFIER
+            and not self.model_config.is_canonical_baseline
+        ):
             raise ValueError(
                 f"Protocol claiming official canonical version '{PROTOCOL_IDENTIFIER}' must have "
                 "model_config.is_canonical_baseline=True"
@@ -607,9 +618,7 @@ class RandomForestBaselineProtocol:
 
         protocol = cls(
             protocol_version=d.get("protocol_version", PROTOCOL_IDENTIFIER),
-            protocol_name=d.get(
-                "protocol_name", "NF-UNSW-NB15-v3 Random Forest Baseline Protocol"
-            ),
+            protocol_name=d.get("protocol_name", "NF-UNSW-NB15-v3 Random Forest Baseline Protocol"),
             feature_contract_version=d.get("feature_contract_version", FEATURE_CONTRACT_VERSION),
             selected_features=selected_features,
             excluded_metadata=excluded_metadata,

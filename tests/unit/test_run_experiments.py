@@ -130,3 +130,17 @@ def test_check_data_with_invalid_dataset_fails(runner, monkeypatch, tmp_path):
 
     monkeypatch.setattr(validate_data, "DATASET_PATH", dataset)
     assert runner.main(["--step", "check-data"]) == 2
+
+
+def test_run_experiments_docstring_and_cli_help_reflect_baseline_implementation(runner):
+    """Verify P2-01: docstring and CLI help accurately document --step baseline behavior."""
+    doc = runner.__doc__ or ""
+    assert "exits 3 until M2 implements it" not in doc
+    assert "train_random_forest.py" in doc
+    assert "baseline" not in runner.NOT_IMPLEMENTED_STEPS
+    assert set(runner.NOT_IMPLEMENTED_STEPS) == {"evaluate", "inference"}
+
+    help_result = run_cli("--help")
+    assert help_result.returncode == 0
+    assert "baseline" in help_result.stdout
+    assert "train_random_forest.py" in help_result.stdout

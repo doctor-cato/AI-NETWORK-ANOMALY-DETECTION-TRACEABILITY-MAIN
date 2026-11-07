@@ -128,7 +128,8 @@ class RandomForestModel:
         if not self._is_fitted:
             raise NotFittedError(
                 "This RandomForestModel instance is not fitted yet. "
-                "Call 'fit' with verified NF-UNSW-NB15-v3 training data before using 'predict_proba'."
+                "Call 'fit' with verified NF-UNSW-NB15-v3 training data "
+                "before using 'predict_proba'."
             )
         return self._estimator.predict_proba(X)
 
@@ -150,9 +151,7 @@ class RandomForestModel:
             "config": self.config.to_dict(),
             "protocol": self.protocol.to_dict() if self.protocol is not None else None,
             "classes": (
-                list(self._estimator.classes_)
-                if hasattr(self._estimator, "classes_")
-                else None
+                list(self._estimator.classes_) if hasattr(self._estimator, "classes_") else None
             ),
             "configuration_id": getattr(
                 self.config, "configuration_id", "rf-baseline-canonical-v1"
@@ -200,7 +199,7 @@ class RandomForestModel:
         expected_split_manifest_sha256: Optional[str] = None,
         expected_preprocessor_artifact_sha256: Optional[str] = None,
     ) -> "RandomForestModel":
-        """Load and strictly verify a Random Forest model artifact against its companion manifest."""
+        """Load and strictly verify a Random Forest model artifact against its manifest."""
         m_path = Path(manifest_path)
         if not m_path.exists():
             raise FileNotFoundError(f"Model manifest not found: {manifest_path}")
@@ -211,9 +210,7 @@ class RandomForestModel:
             raise ValueError(f"Malformed model manifest JSON at {manifest_path}: {e}")
 
         if not isinstance(manifest, dict):
-            raise ValueError(
-                f"Model manifest must be a JSON object, got {type(manifest).__name__}"
-            )
+            raise ValueError(f"Model manifest must be a JSON object, got {type(manifest).__name__}")
 
         def _validate_hex_sha256(val: Any, field_name: str) -> str:
             if (
@@ -223,9 +220,29 @@ class RandomForestModel:
                 or not all(c in "0123456789abcdefABCDEF" for c in val)
             ):
                 raise ValueError(
-                    f"Invalid or malformed 64-character hexadecimal SHA-256 for '{field_name}': {val!r}"
+                    f"Invalid or malformed 64-character hexadecimal SHA-256 "
+                    f"for '{field_name}': {val!r}"
                 )
             return val.lower()
+
+        # 0. Provenance completeness and git_commit integrity checks
+        if manifest.get("provenance_complete") is False or (
+            manifest.get("provenance_status") == "INCOMPLETE"
+        ):
+            raise ValueError(
+                f"Manifest indicates incomplete provenance and cannot be verified: {manifest_path}"
+            )
+        env = manifest.get("environment")
+        if isinstance(env, dict) and "git_commit" in env:
+            git_commit = env.get("git_commit")
+            if (
+                not isinstance(git_commit, str)
+                or not git_commit.strip()
+                or git_commit.strip().upper() == "UNKNOWN"
+            ):
+                raise ValueError(
+                    f"Invalid or unknown environment.git_commit in manifest: {git_commit!r}"
+                )
 
         # 1. Model artifact SHA-256
         if "model_artifact_sha256" not in manifest:
@@ -241,9 +258,7 @@ class RandomForestModel:
             raise ValueError(
                 f"Missing required field 'dataset_sha256' in manifest: {manifest_path}"
             )
-        manifest_dataset_sha = _validate_hex_sha256(
-            manifest["dataset_sha256"], "dataset_sha256"
-        )
+        manifest_dataset_sha = _validate_hex_sha256(manifest["dataset_sha256"], "dataset_sha256")
 
         # 3. Split manifest SHA-256 (top-level canonical, with cross-check against split_provenance)
         manifest_sm_sha_raw = manifest.get("split_manifest_sha256")
@@ -251,21 +266,29 @@ class RandomForestModel:
         if isinstance(manifest.get("split_provenance"), dict):
             prov_sm_sha_raw = manifest["split_provenance"].get("split_manifest_sha256")
 
-        if not manifest_sm_sha_raw and not prov_sm_sha_raw:
+        if manifest_sm_sha_raw is None and prov_sm_sha_raw is None:
             raise ValueError(
                 f"Missing required field 'split_manifest_sha256' in manifest: {manifest_path}"
             )
 
+        if manifest_sm_sha_raw is not None:
+            manifest_sm_sha_raw = _validate_hex_sha256(manifest_sm_sha_raw, "split_manifest_sha256")
+        if prov_sm_sha_raw is not None:
+            prov_sm_sha_raw = _validate_hex_sha256(
+                prov_sm_sha_raw, "split_provenance.split_manifest_sha256"
+            )
+
         if (
-            manifest_sm_sha_raw
-            and prov_sm_sha_raw
+            manifest_sm_sha_raw is not None
+            and prov_sm_sha_raw is not None
             and manifest_sm_sha_raw != prov_sm_sha_raw
         ):
             raise ValueError(
-                f"Conflicting split_manifest_sha256 in manifest: top-level {manifest_sm_sha_raw} != split_provenance {prov_sm_sha_raw}"
+                f"Conflicting split_manifest_sha256 in manifest: "
+                f"top-level {manifest_sm_sha_raw} != split_provenance {prov_sm_sha_raw}"
             )
-        manifest_sm_sha = _validate_hex_sha256(
-            manifest_sm_sha_raw or prov_sm_sha_raw, "split_manifest_sha256"
+        manifest_sm_sha = (
+            manifest_sm_sha_raw if manifest_sm_sha_raw is not None else prov_sm_sha_raw
         )
 
         # Check model file existence and hash
@@ -275,23 +298,26 @@ class RandomForestModel:
         actual_model_sha256 = _sha256_file(mod_path)
         if actual_model_sha256 != expected_model_sha256:
             raise ValueError(
-                f"Model artifact SHA-256 mismatch: expected {expected_model_sha256}, got {actual_model_sha256}"
+                f"Model artifact SHA-256 mismatch: "
+                f"expected {expected_model_sha256}, got {actual_model_sha256}"
             )
 
-        if expected_dataset_sha256:
+        if expected_dataset_sha256 is not None:
             exp_ds = _validate_hex_sha256(expected_dataset_sha256, "expected_dataset_sha256")
             if manifest_dataset_sha != exp_ds:
                 raise ValueError(
-                    f"Dataset SHA-256 mismatch in manifest: expected {exp_ds}, got {manifest_dataset_sha}"
+                    f"Dataset SHA-256 mismatch in manifest: "
+                    f"expected {exp_ds}, got {manifest_dataset_sha}"
                 )
 
-        if expected_split_manifest_sha256:
+        if expected_split_manifest_sha256 is not None:
             exp_sm = _validate_hex_sha256(
                 expected_split_manifest_sha256, "expected_split_manifest_sha256"
             )
             if manifest_sm_sha != exp_sm:
                 raise ValueError(
-                    f"Split manifest SHA-256 mismatch in manifest: expected {exp_sm}, got {manifest_sm_sha}"
+                    f"Split manifest SHA-256 mismatch in manifest: "
+                    f"expected {exp_sm}, got {manifest_sm_sha}"
                 )
 
         manifest_prep_sha_raw = manifest.get("preprocessor_artifact_sha256")
@@ -301,9 +327,18 @@ class RandomForestModel:
                 "preprocessor_artifact_sha256"
             )
 
+        if manifest_prep_sha_raw is not None:
+            manifest_prep_sha_raw = _validate_hex_sha256(
+                manifest_prep_sha_raw, "preprocessor_artifact_sha256"
+            )
+        if prov_prep_sha_raw is not None:
+            prov_prep_sha_raw = _validate_hex_sha256(
+                prov_prep_sha_raw, "preprocessing_provenance.preprocessor_artifact_sha256"
+            )
+
         if (
-            manifest_prep_sha_raw
-            and prov_prep_sha_raw
+            manifest_prep_sha_raw is not None
+            and prov_prep_sha_raw is not None
             and manifest_prep_sha_raw != prov_prep_sha_raw
         ):
             raise ValueError(
@@ -311,33 +346,31 @@ class RandomForestModel:
                 f"top-level {manifest_prep_sha_raw} != preprocessing_provenance {prov_prep_sha_raw}"
             )
 
-        if expected_preprocessor_artifact_sha256:
+        clean_man_prep = (
+            manifest_prep_sha_raw if manifest_prep_sha_raw is not None else prov_prep_sha_raw
+        )
+
+        if expected_preprocessor_artifact_sha256 is not None:
             exp_prep = _validate_hex_sha256(
                 expected_preprocessor_artifact_sha256,
                 "expected_preprocessor_artifact_sha256",
             )
-            if not manifest_prep_sha_raw and not prov_prep_sha_raw:
+            if clean_man_prep is None:
                 raise ValueError(
-                    f"Missing required field 'preprocessor_artifact_sha256' in manifest: {manifest_path}"
+                    f"Missing required field 'preprocessor_artifact_sha256' "
+                    f"in manifest: {manifest_path}"
                 )
-            clean_man_prep = _validate_hex_sha256(
-                manifest_prep_sha_raw or prov_prep_sha_raw,
-                "preprocessor_artifact_sha256",
-            )
             if clean_man_prep != exp_prep:
                 raise ValueError(
-                    f"Preprocessor artifact SHA-256 mismatch in manifest: expected {exp_prep}, got {clean_man_prep}"
+                    f"Preprocessor artifact SHA-256 mismatch in manifest: "
+                    f"expected {exp_prep}, got {clean_man_prep}"
                 )
-        elif manifest_prep_sha_raw or prov_prep_sha_raw:
-            _validate_hex_sha256(
-                manifest_prep_sha_raw or prov_prep_sha_raw,
-                "preprocessor_artifact_sha256",
-            )
 
         model = cls.load(model_path)
         if model.protocol is None:
             raise ValueError(
-                f"Model artifact at {model_path} lacks required protocol provenance for verified loading."
+                f"Model artifact at {model_path} lacks required protocol provenance "
+                f"for verified loading."
             )
         return model
 

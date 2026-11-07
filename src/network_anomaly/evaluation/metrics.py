@@ -1,7 +1,7 @@
 """Evaluation metrics for network anomaly detection.
 
 Supports binary supervised evaluation, FPR calculation, and per-attack-category error analysis.
-Isolation Forest evaluation requires separate score-to-label protocol (documented in docs/EVALUATION.md).
+Isolation Forest evaluation requires a separate score-to-label protocol (see docs/EVALUATION.md).
 """
 
 from __future__ import annotations
@@ -52,15 +52,15 @@ def compute_metrics(
     cm = confusion_matrix(y_true, y_pred, labels=target_labels)
 
     # Resolve positions of negative (Benign) and positive (Attack) classes
-    neg_idx = next(
-        (i for i, lbl in enumerate(target_labels) if _is_negative_benign(lbl)), None
-    )
-    pos_idx = next(
-        (i for i, lbl in enumerate(target_labels) if _is_positive_attack(lbl)), None
-    )
+    neg_idx = next((i for i, lbl in enumerate(target_labels) if _is_negative_benign(lbl)), None)
+    pos_idx = next((i for i, lbl in enumerate(target_labels) if _is_positive_attack(lbl)), None)
 
     fpr = 0.0
-    if neg_idx is not None and pos_idx is not None and cm.shape == (len(target_labels), len(target_labels)):
+    if (
+        neg_idx is not None
+        and pos_idx is not None
+        and cm.shape == (len(target_labels), len(target_labels))
+    ):
         tn = cm[neg_idx, neg_idx]
         fp = cm[neg_idx, pos_idx]
         if (fp + tn) > 0:
@@ -142,14 +142,10 @@ def compute_attack_category_breakdown(
 
         if cat == "Benign":
             false_positive = sum(
-                1
-                for i in indices
-                if _is_negative_benign(y_t[i]) and _is_positive_attack(y_p[i])
+                1 for i in indices if _is_negative_benign(y_t[i]) and _is_positive_attack(y_p[i])
             )
             true_negative = sum(
-                1
-                for i in indices
-                if _is_negative_benign(y_t[i]) and _is_negative_benign(y_p[i])
+                1 for i in indices if _is_negative_benign(y_t[i]) and _is_negative_benign(y_p[i])
             )
             fp_rate = float(false_positive / total) if total > 0 else 0.0
 
@@ -161,14 +157,10 @@ def compute_attack_category_breakdown(
             }
         else:
             detected = sum(
-                1
-                for i in indices
-                if _is_positive_attack(y_t[i]) and _is_positive_attack(y_p[i])
+                1 for i in indices if _is_positive_attack(y_t[i]) and _is_positive_attack(y_p[i])
             )
             missed = sum(
-                1
-                for i in indices
-                if _is_positive_attack(y_t[i]) and _is_negative_benign(y_p[i])
+                1 for i in indices if _is_positive_attack(y_t[i]) and _is_negative_benign(y_p[i])
             )
             detection_rate = float(detected / total) if total > 0 else 0.0
 

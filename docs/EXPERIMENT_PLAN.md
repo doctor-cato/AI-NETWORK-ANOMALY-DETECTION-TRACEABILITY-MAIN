@@ -16,8 +16,10 @@
 
 - Dùng Random Forest với cấu hình baseline chuẩn hóa theo protocol `rf-baseline-nf-unsw-nb15-v3-v1`
   (chi tiết tại [RF_BASELINE_PROTOCOL.md](RF_BASELINE_PROTOCOL.md)).
-- Hyperparameters khóa: `n_estimators=200`, `max_depth=16`, `min_samples_split=2`,
-  `min_samples_leaf=1`, `criterion='gini'`, `max_features='sqrt'`, `random_state=42`, `n_jobs=-1`.
+- Hyperparameters khóa (`CANONICAL_BASELINE_PARAMS`, `configuration_id="rf-baseline-canonical-v1"`, `is_canonical_baseline=True`):
+  `n_estimators=200`, `max_depth=16`, `min_samples_split=2`, `min_samples_leaf=1`, `criterion='gini'`,
+  `max_features='sqrt'`, `class_weight=None`, `random_state=42`, `n_jobs=-1`, `bootstrap=True`.
+  Mọi cấu hình tùy biến (kể cả thay đổi `n_jobs`) phải đặt `is_canonical_baseline=False` và dùng `configuration_id` riêng.
 - Input matrix: Đúng 47 đặc trưng ML (`ML_FEATURE_COLUMNS`), loại trừ 6 metadata và 2 targets.
 - Target: `Label` (nhị phân, Positive = `Attack` / 1, Negative = `Benign` / 0).
 
@@ -39,4 +41,4 @@
 - Mỗi lượt chạy lưu seed, phiên bản dataset, danh sách feature, cấu hình model, metric theo lớp và macro, confusion matrix dạng CSV/PNG, thời gian và thông tin môi trường.
 - Kết quả đặt tại `reports/figures/` và `artifacts/` (không commit nếu lớn; vẫn lưu config).
 
-Cập nhật: 2026-11-02 (đồng bộ Issue #10 training architecture status, blocker)
+Cập nhật: 2026-11-07 (đồng bộ canonical `n_jobs=-1` lock và trạng thái Issue #10 training architecture / blocker)

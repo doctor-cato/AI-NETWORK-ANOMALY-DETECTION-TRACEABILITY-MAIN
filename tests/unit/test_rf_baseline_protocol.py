@@ -29,6 +29,7 @@ from network_anomaly.models.random_forest import (
     create_rf_baseline_protocol,
 )
 from network_anomaly.models.random_forest_protocol import (
+    CANONICAL_BASELINE_PARAMS,
     FEATURE_CONTRACT_VERSION,
     PREPROCESSING_CONTRACT_ID,
     PROTOCOL_IDENTIFIER,
@@ -275,7 +276,7 @@ def test_build_rf_model_integration():
 
 
 def test_metric_computation_and_fpr():
-    """Test compute_metrics with synthetic binary predictions (strictly mathematical verification)."""
+    """Test compute_metrics with synthetic binary predictions (mathematical verification)."""
     # 4 samples: TN, FP, FN, TP
     # y_true: [0, 0, 1, 1]
     # y_pred: [0, 1, 0, 1]
@@ -511,3 +512,121 @@ def test_metadata_and_traceability():
     assert protocol.metadata["evaluation_status"] == "PLANNED (Issue #12)"
     assert protocol.metadata["benchmark_claim"] == "NOT_AVAILABLE_YET"
     assert protocol.metadata["synthetic_data_used"] is False
+
+
+def test_canonical_baseline_locks_n_jobs(tmp_path):
+    """Verify P1-01: n_jobs=-1 is locked in canonical baseline and validated strictly."""
+    assert CANONICAL_BASELINE_PARAMS["n_jobs"] == -1
+
+    # Default canonical configuration works with n_jobs=-1
+    default_cfg = RandomForestBaselineConfig()
+    default_cfg.validate()
+    assert default_cfg.n_jobs == -1
+    assert default_cfg.is_canonical_baseline is True
+    assert default_cfg.configuration_id == "rf-baseline-canonical-v1"
+
+    # Non-canonical n_jobs values cannot claim canonical baseline status
+    for custom_n_jobs in (1, 2, None):
+        with pytest.raises(ValueError, match="claims canonical baseline status"):
+            RandomForestBaselineConfig(
+                n_jobs=custom_n_jobs,
+                is_canonical_baseline=True,
+                configuration_id="rf-baseline-canonical-v1",
+            ).validate()
+
+        with pytest.raises(ValueError, match="cannot use canonical configuration_id"):
+            RandomForestBaselineConfig(
+                n_jobs=custom_n_jobs,
+                is_canonical_baseline=False,
+                configuration_id="rf-baseline-canonical-v1",
+            ).validate()
+
+        with pytest.raises(ValueError, match="claims canonical baseline status"):
+            create_rf_baseline_protocol(n_jobs=custom_n_jobs, is_canonical_baseline=True)
+
+        # Experimental configuration with explicit non-canonical ID succeeds
+        exp_id = f"rf-exp-njobs-{custom_n_jobs}"
+        exp_cfg = RandomForestBaselineConfig(
+            n_jobs=custom_n_jobs,
+            is_canonical_baseline=False,
+            configuration_id=exp_id,
+        )
+        exp_cfg.validate()
+        assert exp_cfg.to_sklearn_params()["n_jobs"] == custom_n_jobs
+
+        # Factory and from_dict infer non-canonical status and experimental ID when n_jobs != -1
+        inferred_cfg = RandomForestBaselineConfig.from_dict({"n_jobs": custom_n_jobs})
+        assert inferred_cfg.n_jobs == custom_n_jobs
+        assert inferred_cfg.is_canonical_baseline is False
+        assert inferred_cfg.configuration_id != "rf-baseline-canonical-v1"
+
+        with pytest.raises(ValueError, match="claims canonical baseline status"):
+            RandomForestBaselineConfig.from_dict(
+                {"n_jobs": custom_n_jobs, "is_canonical_baseline": True}
+            )
+
+        proto = create_rf_baseline_protocol(n_jobs=custom_n_jobs)
+        assert proto.model_config.n_jobs == custom_n_jobs
+        assert proto.model_config.is_canonical_baseline is False
+        assert proto.model_config.configuration_id != "rf-baseline-canonical-v1"
+        assert proto.protocol_version != PROTOCOL_IDENTIFIER
+
+        # Serialization roundtrip preserves n_jobs and experimental identity
+        reconstructed = RandomForestBaselineProtocol.from_json(proto.to_json())
+        assert reconstructed == proto
+        assert reconstructed.model_config.n_jobs == custom_n_jobs
+        assert reconstructed.model_config.is_canonical_baseline is False
+
+        file_path = tmp_path / f"proto_njobs_{custom_n_jobs}.json"
+        proto.save(file_path)
+        assert RandomForestBaselineProtocol.load(file_path) == proto
+
+
+@pytest.mark.parametrize("invalid_n_jobs", [0, -2, -99, True, False, "auto", 1.5])
+def test_rejection_of_invalid_n_jobs(invalid_n_jobs):
+    """Verify invalid n_jobs values (0, < -1, bool, non-int) fail validation."""
+    with pytest.raises(ValueError, match="n_jobs"):
+        RandomForestBaselineConfig(
+            n_jobs=invalid_n_jobs,
+            is_canonical_baseline=False,
+            configuration_id="rf-exp-invalid-njobs",
+        ).validate()
+
+
+def test_rf_baseline_protocol_doc_matches_split_manifest_contract():
+    """Verify P1-02: docs/RF_BASELINE_PROTOCOL.md matches audited split manifest findings."""
+    repo_root = Path(__file__).resolve().parents[2]
+    doc_path = repo_root / "docs" / "RF_BASELINE_PROTOCOL.md"
+    manifest_path = repo_root / "reports" / "splits" / "nf_unsw_nb15_v3_split_manifest.json"
+
+    doc_text = doc_path.read_text(encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    audit = manifest["audit_summary"]
+    pair_audits = audit["pair_audits"]
+
+    # Document must not claim zero ML-feature overlap or that ML-feature overlap is forbidden
+    assert "cấm trùng lặp exact-row, source-feature và ml-feature" not in doc_text
+
+    # Document must accurately reflect the 0-overlap guarantees and the audited ML-feature overlap
+    assert audit["exact_full_row_overlap"] == 0
+    assert audit["source_feature_overlap"] == 0
+    assert audit["canonical_flow_group_overlap"] == 0
+    assert audit["temporal_boundary_violations"] == 0
+
+    tv_ml = pair_audits["train_vs_validation"]["ml_feature_overlap"]
+    tt_ml = pair_audits["train_vs_test"]["ml_feature_overlap"]
+    vt_ml = pair_audits["validation_vs_test"]["ml_feature_overlap"]
+
+    assert tv_ml["distinct_fingerprints"] == 61007
+    assert tt_ml["distinct_fingerprints"] == 59966
+    assert vt_ml["distinct_fingerprints"] == 24143
+    assert tv_ml["status"] == "REVIEWED_AND_JUSTIFIED"
+
+    assert "REVIEWED_AND_JUSTIFIED" in doc_text
+    assert "61.007" in doc_text or "61,007" in doc_text or "61007" in doc_text
+    assert "59.966" in doc_text or "59,966" in doc_text or "59966" in doc_text
+    assert "24.143" in doc_text or "24,143" in doc_text or "24143" in doc_text
+    assert "exact_full_row_overlap" in doc_text
+    assert "source_feature_overlap" in doc_text
+    assert "canonical_flow_group_overlap" in doc_text
+    assert "temporal_boundary_violations" in doc_text

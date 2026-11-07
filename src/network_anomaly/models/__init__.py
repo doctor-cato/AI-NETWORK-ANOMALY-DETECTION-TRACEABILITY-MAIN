@@ -5,8 +5,10 @@ from network_anomaly.models.random_forest import (
     RandomForestBaselineConfig,
     RandomForestBaselineProtocol,
     RandomForestModel,
-    build_model as build_rf_model,
     create_rf_baseline_protocol,
+)
+from network_anomaly.models.random_forest import (
+    build_model as build_rf_model,
 )
 
 __all__ = [

@@ -117,9 +117,22 @@ Tuân thủ nghiêm ngặt feature contract hiện hành được định nghĩa
 ## 4. Split Policy & Phụ thuộc Issue #7
 
 - Protocol tham chiếu giao thức chia tập có kiểm soát `nf-unsw-nb15-v3-chronological-group-purged-v1` (PR #41):
-  - Phân chia: `train` (1.655.797 dòng ~ 70%), `validation` (345.371 dòng ~ 14,6%), `test` (345.953 dòng ~ 14,6%), purged gaps (18.303 dòng).
-  - Nhóm luồng: 5-tuple hai chiều kết hợp time-bucket 5 phút và khoảng ngắt 5 phút để loại trừ hoàn toàn flow leakage.
-  - Khóa trùng lặp: cấm trùng lặp exact-row, source-feature và ml-feature giữa các tập.
+  - Phân chia: `train` (1.655.797 dòng ~ 70,00%), `validation` (345.371 dòng ~ 14,60%), `test` (345.953 dòng ~ 14,63%), purged gaps (18.303 dòng: `purged_train_val_gap` 9.443 dòng và `purged_val_test_gap` 8.860 dòng).
+  - Nhóm luồng và cách ly biên thời gian: Sử dụng proxy heuristic 5-tuple hai chiều kết hợp time-bucket 5 phút và khoảng ngắt `purge_gap = 300.000 ms` (5 phút) giữa các phân vùng.
+  - **Các chỉ số kiểm toán bằng 0 (`status: PASS`):**
+    - `exact_full_row_overlap`: `0` (không trùng lặp dòng dữ liệu đầy đủ giữa các phân vùng).
+    - `source_feature_overlap`: `0` (không trùng lặp fingerprint nguồn khi tính cả metadata định danh/thời gian).
+    - `canonical_flow_group_overlap`: `0` (không có canonical flow-group nào vắt ngang hai phân vùng).
+    - `temporal_boundary_violations`: `0` (`flow_end_crossings`: `0` luồng từ `train` tràn sang `validation` với biên `236.165 ms`; `0` luồng từ `validation` tràn sang `test` với biên `252.058 ms`).
+  - **Hiện trạng `ml_feature_overlap` (`status: REVIEWED_AND_JUSTIFIED`, `binary_label_conflicts: 0`):**
+    - Sau khi loại bỏ 6 cột `TRACE_METADATA_COLUMNS` (IP, port, timestamps), sự trùng lặp mẫu vector 47 đặc trưng ML giữa các phân vùng có tồn tại và đã được kiểm toán định lượng trong split manifest:
+      - `train_vs_validation`: `61.007` distinct ML-feature fingerprints (`551.167` dòng `train` ~ `33,29%`; `172.621` dòng `validation` ~ `49,98%`; `binary_label_conflicts: 0`; `attack_category_variations: 580`).
+      - `train_vs_test`: `59.966` distinct ML-feature fingerprints (`548.253` dòng `train` ~ `33,11%`; `184.067` dòng `test` ~ `53,21%`; `binary_label_conflicts: 0`; `attack_category_variations: 889`).
+      - `validation_vs_test`: `24.143` distinct ML-feature fingerprints (`105.218` dòng `validation` ~ `30,47%`; `114.622` dòng `test` ~ `33,13%`; `binary_label_conflicts: 0`; `attack_category_variations: 586`).
+    - **Ý nghĩa và giới hạn phương pháp luận:**
+      1. Các mẫu `ml_feature_overlap` đại diện cho các cấu hình lưu lượng giao thức phổ biến lặp lại theo thời gian (ví dụ: mẫu TCP handshake hoặc DNS query chuẩn) giữa các cặp endpoint khác nhau ở các thời điểm khác nhau; không được đồng nhất các fingerprint giống nhau này với cùng một phiên kết nối vật lý (session) thật, nhưng cũng **không được tuyên bố mọi dạng rò rỉ đều đã bị loại bỏ hoàn toàn**.
+      2. Định nghĩa canonical flow-group (5-tuple + bucket 5 phút) chỉ là heuristic proxy do dữ liệu NetFlow v3 không có PCAP session ID gốc; `canonical_flow_group_overlap = 0` đảm bảo cô lập theo định nghĩa này nhưng không chứng minh triệt tiêu hoàn toàn các phiên ứng dụng đa kết nối hoặc kéo dài qua nhiều bucket.
+      3. Việc `53,21%` dòng `test` và `49,98%` dòng `validation` chia sẻ vector 47 đặc trưng với `train` (dù `binary_label_conflicts = 0`) đồng nghĩa các mẫu đánh giá không hoàn toàn độc lập trong không gian đặc trưng ML; không được tự ý xóa dữ liệu hay sửa split policy chỉ để đạt số 0, mà phải ghi nhận rõ giới hạn này khi phân tích kết quả ở Issue #12 và không suy diễn khả năng tổng quát hóa sang lưu lượng mạng hiện đại hay phát hiện zero-day.
 - **Hiện trạng:** Real split đã hoàn thành và được kiểm chứng qua PR #41 (`reports/splits/nf_unsw_nb15_v3_split_manifest.json`, SHA-256: `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`).
 - Protocol Issue #9 tái sử dụng split chính thức mà **không giả lập dữ liệu mock** hay tự ý gọi
   `train_test_split()` ngẫu nhiên.
@@ -152,13 +165,13 @@ Cấu hình baseline được khóa cố định nhằm đảm bảo tính tái 
 | `max_features` | `"sqrt"` | Số đặc trưng ngẫu nhiên mỗi split |
 | `class_weight` | `None` | Giữ nguyên tỷ lệ gốc cho baseline (tùy chọn `"balanced"` trong tuning) |
 | `random_state` | `42` | Seed cố định đồng bộ toàn repository (`RANDOM_SEED`) |
-| `n_jobs` | `-1` | Tối đa hóa khả năng xử lý song song trên phần cứng |
+| `n_jobs` | `-1` | Khóa trong `CANONICAL_BASELINE_PARAMS`: tối đa hóa khả năng xử lý song song |
 | `bootstrap` | `True` | Lấy mẫu có hoàn lại khi xây dựng cây |
 | `configuration_id` | `"rf-baseline-canonical-v1"` | Định danh cấu hình canonical baseline được khóa |
 | `is_canonical_baseline` | `True` | Cờ bảo vệ: từ chối các thay đổi siêu tham số tự ý nhận danh baseline |
 
 > [!NOTE]
-> **Baseline Configuration Locking (P1-03):** Cấu hình `RandomForestBaselineConfig` khóa cứng các giá trị trên. Nếu một thử nghiệm điều chỉnh siêu tham số, nó bắt buộc phải đặt `is_canonical_baseline=False` và gán một `configuration_id` riêng biệt của thử nghiệm (ví dụ `rf-tuning-exp-100`). Mọi cấu hình có tham số khác biệt mà cố tình nhận `is_canonical_baseline=True` hoặc dùng ID canonical sẽ bị từ chối fail-closed qua `validate()`.
+> **Baseline Configuration Locking (P1-01, P1-03):** Cấu hình `RandomForestBaselineConfig` khóa cứng toàn bộ các giá trị trong `CANONICAL_BASELINE_PARAMS` (bao gồm cả `n_jobs=-1`). Nếu một thử nghiệm điều chỉnh bất kỳ tham số nào (kể cả `n_jobs=1`, `n_jobs=2` hoặc `n_jobs=None`), nó bắt buộc phải đặt `is_canonical_baseline=False` và gán một `configuration_id` riêng biệt của thử nghiệm (ví dụ `rf-tuning-exp-100`). Mọi cấu hình có tham số khác biệt mà cố tình nhận `is_canonical_baseline=True` hoặc dùng ID canonical `"rf-baseline-canonical-v1"` sẽ bị từ chối fail-closed qua `validate()`. Các giá trị `n_jobs` không hợp lệ (`0`, `< -1`, `bool`, kiểu không phải `int`/`None`) đều bị từ chối ngay khi khởi tạo/validate.
 
 ---
 
@@ -289,10 +302,10 @@ flowchart LR
 
 - **Issue #7:** `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, real split `PASS (PR #41)`, split manifest SHA-256 `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`.
 - **Issue #8:** Preprocessing handling contract `PASS (PR #42)`, preprocessor manifest SHA-256 `af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441`.
-- **Issue #9:** Protocol & configuration `IMPLEMENTED / TESTED`, PR #39 và PR #43 reviewer findings fixed (canonical baseline locking, validation reload consistency, attack category detection logic), 27 unit tests `PASS`.
-- **Issue #10:** Training architecture, model serialization, verified reload consistency (atol=1e-7, rtol=0), strict test isolation Contract A & B, fail-closed prerequisite audit và `scripts/run_experiments.py` integration `IMPLEMENTED / TESTED` (`scripts/train_random_forest.py`, 28 unit tests `PASS` / 1 test `SKIPPED / NOT VERIFIED` do thiếu CSV thô). Huấn luyện thực nghiệm trên 1.655.797 dòng của tập train: `BLOCKED / NOT VERIFIED` do tệp CSV thô và preprocessor `.joblib` chưa được mount vào workspace cục bộ. Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10; Issue #10 giữ trạng thái OPEN cho đến khi thực hiện xong real-data run.
+- **Issue #9:** Protocol & configuration `IMPLEMENTED / TESTED`, PR #39 và PR #43 reviewer findings fixed (canonical baseline locking kể cả `n_jobs=-1`, đồng bộ contract split manifest `REVIEWED_AND_JUSTIFIED`, validation reload consistency, attack category detection logic), 36 unit tests `PASS` trong `tests/unit/test_rf_baseline_protocol.py` và 7 unit tests `PASS` trong `tests/unit/test_rf_model_structure.py`.
+- **Issue #10:** Training architecture, model serialization, verified reload consistency (atol=1e-7, rtol=0), strict test isolation Contract A & B, fail-closed prerequisite audit và `scripts/run_experiments.py` integration `IMPLEMENTED / TESTED` (`scripts/train_random_forest.py`, 32 unit tests `PASS` / 1 test `SKIPPED / NOT VERIFIED` do thiếu CSV thô trong `tests/unit/test_rf_training.py`, 15 unit tests `PASS` trong `tests/unit/test_run_experiments.py`). Huấn luyện thực nghiệm trên 1.655.797 dòng của tập train: `BLOCKED / NOT VERIFIED` do tệp CSV thô và preprocessor `.joblib` chưa được mount vào workspace cục bộ. Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10; Issue #10 giữ trạng thái OPEN cho đến khi thực hiện xong real-data run.
 - **Issue #12:** Đánh giá và báo cáo benchmark `PLANNED`.
 
 ---
 
-Cập nhật: 2026-11-03 (PR #43 review 5748067153 fixes: fail-closed verification P0-01/P0-02, artifact_sha256 schema P1-01, protocol deserialization P1-02, memory contract Option B P1-03, probability tolerance rtol=0 P1-04)
+Cập nhật: 2026-11-07 (PR #43 review fixes: canonical `n_jobs=-1` lock P1-01, split manifest `ml_feature_overlap` contract alignment P1-02, `run_experiments.py` docstring & CLI help P2-01, fail-closed verification & provenance hardening)

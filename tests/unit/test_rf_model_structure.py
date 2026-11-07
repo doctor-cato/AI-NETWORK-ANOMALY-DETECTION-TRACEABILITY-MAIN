@@ -14,9 +14,7 @@ from network_anomaly.config import RANDOM_SEED
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.models.random_forest import (
     RandomForestBaselineConfig,
-    RandomForestBaselineProtocol,
     RandomForestModel,
-    build_model,
     create_rf_baseline_protocol,
 )
 

@@ -139,6 +139,7 @@ locked in Issue #9:
 - Reads partition indices from `data/processed/splits/` (`train`: 1,655,797 rows; `validation`: 345,371 rows).
 - Reuses the existing fitted preprocessor artifact `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` without refitting.
 - Preserves the 47 baseline ML feature ordering and excludes all metadata and target columns.
+- Locks canonical baseline hyperparameters in `CANONICAL_BASELINE_PARAMS` (including `n_jobs=-1`, `n_estimators=200`, `max_depth=16`, `random_state=42`, `configuration_id="rf-baseline-canonical-v1"`).
 - Strict Test Lock: Enforces Contract A (no test data in fitting, tuning, selection, or reporting) and Contract B (test rows are strictly filtered at the raw line stream boundary and never materialized into DataFrames).
 - Memory Architecture (Option B): `chunksize` (default 100,000) limits the raw text buffer during CSV parsing; full Train (1,655,797 rows) and Validation (345,371 rows) partitions are materialized into in-memory DataFrames as required for fitting standard scikit-learn `RandomForestClassifier`. Peak memory occurs during DataFrame concatenation and tree fitting (~4-8 GB RAM recommended).
 - Produces model binary `artifacts/models/random_forest/random_forest_baseline.joblib` and execution manifest `artifacts/models/random_forest/random_forest_manifest.json` (also saved to `reports/models/random_forest_manifest.json`).
@@ -178,7 +179,7 @@ re-check is the manual or pull-request workflow `.github/workflows/lint-audit.ym
 
 ## Split and experiment identity
 
-No real v3 split or benchmark currently exists. A future accepted run must record:
+The official NF-UNSW-NB15-v3 chronological group-purged split (`reports/splits/nf_unsw_nb15_v3_split_manifest.json`, PR #41) and train-only preprocessing contract (`reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`, PR #42) are recorded and verified. Real-data model training and benchmark evaluation remain `BLOCKED / NOT VERIFIED` until the raw dataset CSV and fitted preprocessor `.joblib` are mounted for execution. Every accepted model run must record:
 
 - Git commit and dependency snapshot;
 - dataset SHA-256 and split identifier;
@@ -199,8 +200,7 @@ actual seed or deterministic split algorithm.
   L4 ports or absolute timestamps in it.
 - Fit imputer, non-finite policy, encoder, scaler, selector and resampler only on train.
 - Validation selects configuration and thresholds; test is not reused for tuning.
-- Fail when exact, source-feature or ML-feature fingerprints, or canonical flow groups, cross
-  partitions. Enforce chronological boundaries and any configured purge gap.
+- Enforce zero `exact_full_row_overlap`, zero `source_feature_overlap`, zero `canonical_flow_group_overlap`, and zero `temporal_boundary_violations` across partitions (`status: PASS`), with a 300,000 ms purge gap. Audited `ml_feature_overlap` across partitions (`61,007` train/val, `59,966` train/test, `24,143` val/test; `binary_label_conflicts: 0`) is recorded as `REVIEWED_AND_JUSTIFIED` and must be documented as a non-i.i.d. feature-space limitation during evaluation.
 - Treat the five-minute bidirectional 5-tuple group as a documented heuristic, not a proven session.
 
 See `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.

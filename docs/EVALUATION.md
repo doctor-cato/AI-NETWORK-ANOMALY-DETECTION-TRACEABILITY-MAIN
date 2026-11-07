@@ -50,7 +50,11 @@
   mô tả nguyên nhân có thể (loại bất thường thiếu dữ liệu như Worms/Analysis; chưa bắt được đặc trưng;
   ngưỡng quá bảo thủ).
 - Hạn chế dữ liệu: mất cân bằng lớp (Attack chỉ chiếm ~5,4%), giá trị thiếu/vô hạn ở throughput fields,
-  bản ghi trùng lặp luồng, rò rỉ định danh.
+  và sự lặp lại mẫu đặc trưng ML giữa các phân vùng thời gian (`ml_feature_overlap` ở trạng thái `REVIEWED_AND_JUSTIFIED`:
+  `61.007` fingerprints giữa train/validation ~ `49,98%` dòng validation; `59.966` fingerprints giữa train/test ~ `53,21%` dòng test;
+  `24.143` fingerprints giữa validation/test ~ `33,13%` dòng test; `binary_label_conflicts: 0`, trong khi `exact_full_row_overlap = 0`,
+  `source_feature_overlap = 0`, `canonical_flow_group_overlap = 0`, `temporal_boundary_violations = 0`).
+  Các mẫu đánh giá chia sẻ vector 47 đặc trưng với tập `train` không hoàn toàn độc lập trong không gian đặc trưng (non-i.i.d. feature space).
 - Báo cáo riêng theo 10 giá trị `Attack`; không che rare-class failure bằng accuracy tổng.
 - Hạn chế mô hình: Random Forest có thể overfit nếu độ sâu không giới hạn (khóa `max_depth=16`);
   Isolation Forest giả định dữ liệu bình thường phân cụm khác với bất thường; không tuyên bố phát hiện
@@ -64,4 +68,4 @@
 - Hiện tại protocol đánh giá là `IMPLEMENTED / TESTED` (bằng code contracts và unit tests);
   kết quả thực nghiệm trên dữ liệu thật vẫn là `BLOCKED` (raw dataset và preprocessor artifact chưa mount cục bộ) và thuộc phạm vi Issue #10 (training) và Issue #12 (evaluation).
 
-Cập nhật: 2026-11-02 (đồng bộ split protocol ID, cập nhật trạng thái training blocker)
+Cập nhật: 2026-11-07 (đồng bộ split protocol ID, giới hạn `ml_feature_overlap`, cập nhật trạng thái training blocker)
