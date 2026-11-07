@@ -748,13 +748,34 @@ def test_execute_training_real_data(tmp_path):
 
     assert out_model.exists()
     assert out_manifest.exists()
+    assert manifest["configuration_id"] == "rf-baseline-canonical-v1"
+    assert manifest["is_canonical_baseline"] is True
+    assert manifest["model_artifact_sha256"] == _sha256_file(out_model)
+    assert manifest["model_artifact_size_bytes"] == out_model.stat().st_size
+    assert manifest["hyperparameters"]["n_estimators"] == 200
+    assert manifest["hyperparameters"]["max_depth"] == 16
+    assert manifest["hyperparameters"]["criterion"] == "gini"
+    assert manifest["hyperparameters"]["random_state"] == 42
+    assert manifest["hyperparameters"]["n_jobs"] == -1
+    assert manifest["selected_features"] == list(ML_FEATURE_COLUMNS)
+    assert manifest["class_mapping"] == {"0": "Benign", "1": "Attack"}
     assert manifest["split_provenance"]["train_rows_count"] == EXPECTED_TRAIN_ROWS
     assert manifest["split_provenance"]["val_rows_count"] == EXPECTED_VAL_ROWS
     assert manifest["preprocessing_provenance"]["features_count"] == 47
+    assert (
+        manifest["preprocessing_provenance"]["preprocessor_artifact_sha256"]
+        == EXPECTED_PREPROCESSOR_ARTIFACT_SHA256
+    )
     assert manifest["test_lock_audit"]["test_partition_accessed"] is False
     assert manifest["test_lock_audit"]["test_rows_loaded"] == 0
+    assert manifest["test_lock_audit"]["test_indices_loaded"] is False
     assert manifest["test_lock_audit"]["train_rows_loaded"] == EXPECTED_TRAIN_ROWS
     assert manifest["test_lock_audit"]["val_rows_loaded"] == EXPECTED_VAL_ROWS
+    assert manifest["validation_summary"]["rows_evaluated"] == EXPECTED_VAL_ROWS
+    assert "f1" in manifest["validation_summary"]
+    assert "confusion_matrix" in manifest["validation_summary"]
+    assert len(manifest["validation_summary"]["per_category_breakdown"]) == 10
+    assert manifest["reload_verification"]["status"] == "PASSED"
 
     # Verified reload check
     reloaded = RandomForestModel.load_verified(
@@ -767,6 +788,8 @@ def test_execute_training_real_data(tmp_path):
     assert reloaded.is_fitted is True
     assert reloaded.feature_names == ML_FEATURE_COLUMNS
     assert len(reloaded.feature_names) == 47
+    assert list(reloaded.estimator.classes_) == [0, 1]
+    assert len(reloaded.estimator.estimators_) == 200
 
 
 def test_canonical_baseline_config_locking():

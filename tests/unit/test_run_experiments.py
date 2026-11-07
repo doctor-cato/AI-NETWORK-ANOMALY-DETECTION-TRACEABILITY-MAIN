@@ -88,11 +88,13 @@ def test_baseline_delegates_to_train_random_forest_and_forwards_exit_code(
     assert "delegating to scripts/train_random_forest.py" in capsys.readouterr().out
 
 
-def test_baseline_cli_fail_closed_on_missing_prerequisites():
+def test_baseline_cli_fail_closed_on_missing_prerequisites(runner, monkeypatch, tmp_path, capsys):
     """CLI execution of --step baseline without raw data fails closed with exit code 1."""
-    result = run_cli("--step", "baseline")
-    assert result.returncode == 1
-    assert "BLOCKER DETECTED" in result.stdout
+    import train_random_forest
+
+    monkeypatch.setattr(train_random_forest, "DEFAULT_DATASET", tmp_path / "NF-UNSW-NB15-v3.csv")
+    assert runner.main(["--step", "baseline"]) == 1
+    assert "BLOCKER DETECTED" in capsys.readouterr().out
 
 
 def test_usage_error_has_a_different_exit_code_than_not_implemented():

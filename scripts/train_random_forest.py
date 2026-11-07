@@ -17,8 +17,10 @@ Implements training execution for Issue #10 according to the locked Issue #9 pro
 from __future__ import annotations
 
 import argparse
+import gc
 import io
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -93,11 +95,55 @@ DEFAULT_REPORT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "random_for
 
 
 def _safe_relpath(path: Path, root: Path = PROJECT_ROOT) -> str:
-    """Return path relative to root if possible, otherwise absolute string."""
+    """Return POSIX path relative to root if possible, otherwise POSIX string."""
     try:
-        return str(path.relative_to(root))
+        return path.relative_to(root).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
+
+
+def _get_peak_memory_mb() -> Optional[float]:
+    """Return peak working set / RSS of the current process in MB if supported by OS."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            import ctypes.wintypes
+
+            class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ("cb", ctypes.wintypes.DWORD),
+                    ("PageFaultCount", ctypes.wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            pmc = PROCESS_MEMORY_COUNTERS()
+            pmc.cb = ctypes.sizeof(pmc)
+            k32 = ctypes.windll.kernel32
+            k32.GetCurrentProcess.restype = ctypes.wintypes.HANDLE
+            psapi = ctypes.windll.psapi
+            psapi.GetProcessMemoryInfo.argtypes = [
+                ctypes.wintypes.HANDLE,
+                ctypes.POINTER(PROCESS_MEMORY_COUNTERS),
+                ctypes.wintypes.DWORD,
+            ]
+            if psapi.GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb):
+                return round(pmc.PeakWorkingSetSize / (1024 * 1024), 2)
+        else:
+            import resource  # type: ignore[import-not-found]
+
+            rusage = resource.getrusage(resource.RUSAGE_SELF)
+            divisor = (1024 * 1024) if sys.platform == "darwin" else 1024
+            return round(rusage.ru_maxrss / divisor, 2)
+    except Exception:
+        pass
+    return None
 
 
 @dataclass
@@ -526,7 +572,12 @@ def stream_partition_data(
         if not train_line_buffer:
             return
         content = header_line + "".join(train_line_buffer)
-        df = pd.read_csv(io.StringIO(content), usecols=usecols, keep_default_na=False)
+        df = pd.read_csv(
+            io.StringIO(content),
+            usecols=usecols,
+            keep_default_na=False,
+            low_memory=False,
+        )
         target_indices = train_row_offsets[-len(train_line_buffer) :]
         df.index = target_indices
         train_chunks.append(df)
@@ -536,7 +587,12 @@ def stream_partition_data(
         if not val_line_buffer:
             return
         content = header_line + "".join(val_line_buffer)
-        df = pd.read_csv(io.StringIO(content), usecols=usecols, keep_default_na=False)
+        df = pd.read_csv(
+            io.StringIO(content),
+            usecols=usecols,
+            keep_default_na=False,
+            low_memory=False,
+        )
         target_indices = val_row_offsets[-len(val_line_buffer) :]
         df.index = target_indices
         val_chunks.append(df)
@@ -657,7 +713,10 @@ def execute_training(
     # 4. Transform features using frozen preprocessor (NO refitting)
     print("[train_random_forest] Transforming features using frozen preprocessor...")
     X_train_trans = preprocessor.transform(X_train_raw)
+    del X_train_raw
     X_val_trans = preprocessor.transform(X_val_raw)
+    del X_val_raw
+    gc.collect()
 
     if X_train_trans.shape != (len(train_indices), 47):
         raise ValueError(
@@ -672,6 +731,8 @@ def execute_training(
         raise ValueError("Transformed X_train contains non-finite values (NaN, Inf)")
     if not np.isfinite(arr_val).all():
         raise ValueError("Transformed X_val contains non-finite values (NaN, Inf)")
+    del arr_train, arr_val
+    gc.collect()
     print("[train_random_forest] Feature matrices validated: 47 features, all finite.")
 
     # 5. Build Random Forest model with runtime verified protocol provenance
@@ -734,6 +795,8 @@ def execute_training(
     trained_at_utc = datetime.now(timezone.utc).isoformat()
     model.fit(X_train_trans, y_train)
     training_duration = time.perf_counter() - start_time
+    del X_train_trans, y_train
+    gc.collect()
     print(f"[train_random_forest] Model fitting completed in {training_duration:.2f} seconds.")
 
     # 6. Capture original validation predictions & probabilities before serialization
@@ -758,17 +821,34 @@ def execute_training(
     # Compute validation metrics
     val_metrics = compute_metrics(y_val, orig_val_preds, labels=[0, 1])
     val_breakdown = compute_attack_category_breakdown(y_val, orig_val_preds, attack_val)
+    cm = val_metrics["confusion_matrix"]
+    cm_labeled = {
+        "tn": int(cm[0][0]),
+        "fp": int(cm[0][1]),
+        "fn": int(cm[1][0]),
+        "tp": int(cm[1][1]),
+    }
     print(
-        f"[train_random_forest] Validation Metrics: F1={val_metrics['f1']:.4f}, "
-        f"Macro-F1={val_metrics['macro_f1']:.4f}, FPR={val_metrics['false_positive_rate']:.4f}"
+        f"[train_random_forest] Validation Metrics: "
+        f"Precision={val_metrics['precision']:.6f}, Recall={val_metrics['recall']:.6f}, "
+        f"F1={val_metrics['f1']:.6f}, Macro-F1={val_metrics['macro_f1']:.6f}, "
+        f"FPR={val_metrics['false_positive_rate']:.6f}"
+    )
+    print(
+        f"[train_random_forest] Validation Confusion Matrix: "
+        f"TN={cm_labeled['tn']}, FP={cm_labeled['fp']}, "
+        f"FN={cm_labeled['fn']}, TP={cm_labeled['tp']}"
     )
 
     # 7. Save model artifact
     output_model_path.parent.mkdir(parents=True, exist_ok=True)
     model_sha256 = model.save(output_model_path)
+    model_size_bytes = output_model_path.stat().st_size
+    peak_memory_mb = _get_peak_memory_mb()
     print(
         f"[train_random_forest] Model artifact saved to {output_model_path} "
-        f"(SHA-256: {model_sha256})."
+        f"(size={model_size_bytes:,} bytes, SHA-256: {model_sha256}, "
+        f"peak_memory_mb={peak_memory_mb})."
     )
 
     # 8. Create run manifest with unified schema and runtime provenance
@@ -798,6 +878,7 @@ def execute_training(
         "task": "binary_classification",
         "target": "Label",
         "positive_class": "Attack",
+        "class_mapping": {"0": "Benign", "1": "Attack"},
         "configuration_id": protocol.model_config.configuration_id,
         "is_canonical_baseline": protocol.model_config.is_canonical_baseline,
         "protocol_version": protocol.protocol_version,
@@ -809,6 +890,7 @@ def execute_training(
         "random_state": protocol.model_config.random_state,
         "model_artifact_path": _safe_relpath(output_model_path),
         "model_artifact_sha256": model_sha256,
+        "model_artifact_size_bytes": model_size_bytes,
         "dataset_name": DATASET_NAME,
         "dataset_sha256": EXPECTED_DATASET_SHA256,
         "split_manifest_sha256": actual_sm_sha,
@@ -840,10 +922,12 @@ def execute_training(
         },
         "test_lock_audit": tracker.to_audit_dict(),
         "training_duration_seconds": round(training_duration, 2),
+        "peak_memory_mb": peak_memory_mb,
         "trained_at_utc": trained_at_utc,
         "environment": {
             "python_version": platform.python_version(),
             "platform": platform.platform(),
+            "cpu_count": os.cpu_count(),
             "git_commit": git_commit,
             "git_dirty": git_dirty,
             "provenance_complete": provenance_complete,
@@ -855,12 +939,18 @@ def execute_training(
             },
         },
         "validation_summary": {
+            "rows_evaluated": len(val_indices),
             "precision": val_metrics["precision"],
             "recall": val_metrics["recall"],
             "f1": val_metrics["f1"],
             "macro_f1": val_metrics["macro_f1"],
             "false_positive_rate": val_metrics["false_positive_rate"],
+            "confusion_matrix": cm,
+            "confusion_matrix_labeled": cm_labeled,
             "per_category_breakdown": val_breakdown,
+        },
+        "reload_verification": {
+            "status": "PENDING",
         },
     }
 
@@ -923,6 +1013,22 @@ def execute_training(
         raise ValueError(
             f"Sample count mismatch: expected {len(val_indices)}, got {len(reloaded_val_preds)}"
         )
+    max_prob_diff = float(np.max(np.abs(orig_val_probs - reloaded_val_probs)))
+    manifest["reload_verification"] = {
+        "status": "PASSED",
+        "samples_verified": len(val_indices),
+        "predictions_identical": True,
+        "probabilities_allclose": True,
+        "atol": 1e-7,
+        "rtol": 0.0,
+        "max_abs_probability_diff": max_prob_diff,
+    }
+    with output_manifest_path.open("w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    if output_manifest_path == DEFAULT_OUTPUT_MANIFEST_PATH:
+        with DEFAULT_REPORT_MANIFEST_PATH.open("w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+
     print(
         "[train_random_forest] Verified reload check passed: "
         "predictions and probabilities identical (atol=1e-7, rtol=0)."
