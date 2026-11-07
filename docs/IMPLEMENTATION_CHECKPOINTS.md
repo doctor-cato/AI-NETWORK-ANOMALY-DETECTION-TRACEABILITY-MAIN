@@ -323,7 +323,7 @@ Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED on real NF-UNSW-NB1
     raw CSV (`4ebb97bd...`), split manifest (`bb84c1e0...`), train/val/gap/test `.csv.gz` indices,
     and fitted train-only preprocessor `.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`).
   - Real-data Random Forest training executed via `python scripts/run_experiments.py --step baseline`
-    on 1,655,797 Train rows (`87.73s`, `peak_memory_mb=3863.38 MB`) and evaluated on 345,371 Validation rows.
+    on 1,655,797 Train rows (`83.73s`, `peak_memory_mb=3863.41 MB`, run manifest `rf-baseline-1794068628`) and evaluated on 345,371 Validation rows.
   - Model artifact saved to `artifacts/models/random_forest/random_forest_baseline.joblib`
     (`917,227` bytes, SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`),
     reproduced 100% byte-for-byte across two independent real-data training runs.
@@ -332,13 +332,22 @@ Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED on real NF-UNSW-NB1
   - Validation metrics on 345,371 rows: `Precision=0.999836`, `Recall=0.999902`, `F1=0.999869`,
     `Macro-F1=0.999928`, `FPR=0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]`.
   - Verified reload consistency (`RandomForestModel.load_verified`): `PASSED` on all 345,371 Validation rows
-    (`predictions_identical=true`, `max_abs_probability_diff=0.0`, `atol=1e-7`, `rtol=0`).
+    (`predictions_identical=true`, `max_abs_probability_diff=2.220446049250313e-16`, `atol=1e-7`, `rtol=0`;
+     giá trị khác 0 do cộng gộp xác suất đa luồng `n_jobs=-1`, nằm trong dung sai).
   - Strict Test Lock (Contract A & Contract B): `test_partition_accessed=false`, `test_rows_loaded=0`,
     `test_indices_loaded=false`.
+  - Independent validation audit & diagnostic ablation (`scripts/audit_rf_validation_diagnostics.py` ->
+    `reports/models/rf_baseline_validation_audit.json`, Train/Validation only): stratified canonical RF
+    (200 trees) evaluation on fingerprint-overlapping (`172,621` rows, `Accuracy=1.000000`) vs
+    non-overlapping (`172,750` rows, `Accuracy=0.999954`, `F1=0.999823`, `FP=5`, `FN=3`) validation flows,
+    plus 10 non-canonical diagnostic experiments (`C0`–`C9`: 60-tree RF ablations/deduplication/label-shuffle
+    and depth-3/8 single Decision Trees) separating code/pipeline leakage, fingerprint memorisation, and
+    testbed-specific shortcuts (`MIN_TTL`/`MAX_TTL`).
 Tests: PASS — 33/33 unit and real-data integration tests in `tests/unit/test_rf_training.py`
   (including `test_execute_training_real_data` PASS on real NF-UNSW-NB15-v3 bytes), 36/36 in
   `tests/unit/test_rf_baseline_protocol.py`, 7/7 in `tests/unit/test_rf_model_structure.py`,
-  and 15/15 in `tests/unit/test_run_experiments.py`.
+  15/15 in `tests/unit/test_run_experiments.py`, and 7/7 in
+  `tests/unit/test_audit_rf_validation_diagnostics.py` (full test suite: `397 passed, 2 skipped`).
 Issues: #9 and #10 all Acceptance Criteria verified on real data; #12 (held-out Test evaluation) remains PLANNED.
 Remaining: One-shot held-out Test partition evaluation belongs to Issue #12.
 ```
