@@ -125,6 +125,23 @@ Reproducibility properties:
 - Verify-only mode (`--verify-only`) validates artifact schema, companion manifest integrity, and dataset/split checksums without retraining (fails closed if companion manifest is missing or hashes mismatch).
 - Absent raw bytes: prints `PREPROCESSING: SKIPPED (raw dataset absent)` and exits `0`.
 
+## Reproduce CSV inference on new network flows
+
+```text
+python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv
+python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv --model random_forest
+```
+
+The script executes the verified inference pipeline (Issue #15):
+- Validates the 47-feature baseline schema and contract ordering without data leakage.
+- Loads the verified train-only preprocessor (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`) from Issue #8 (fails closed if artifact or companion manifest is missing or altered).
+- Loads the trained model artifact and validates provenance.
+- Executes transform and prediction without refitting.
+- Emits prediction results (`results/predictions.csv`) preserving row identity, plus companion traceability metadata (`results/predictions.metadata.json`).
+- When the model artifact is absent (Issue #10 baseline model pending merge to `main`), the CLI reports fail-closed error with exit code `1` and does not fake execution.
+
+See `docs/INFERENCE_PIPELINE.md` for complete contract and schema details.
+
 ## What runs where
 
 | Check | Environment | Result |
@@ -134,6 +151,7 @@ Reproducibility properties:
 | `scripts/verify_eda_reproducibility.py` | local, raw package present | two runs compared per metric |
 | `scripts/split_and_audit_nf_unsw_nb15_v3.py` | local, raw package present | split manifest and leakage audit executed |
 | `scripts/preprocess_nf_unsw_nb15_v3.py` | local, raw package present | train-only preprocessing executed and verified |
+| `scripts/predict.py` | local / production with trained artifacts | real model inference and metadata; fail-closed if model absent |
 | `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
 | `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
 | `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
