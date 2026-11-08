@@ -46,9 +46,55 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 
 C1 đã có provenance/schema, real-data quality/duplicate audit và EDA tái lập được cho
 NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA chạy trên
-2.365.424 dòng và tái lập khớp các finding đã xác minh, còn split thật vẫn `NOT VERIFIED`.
-C2 có 47-feature/split/handling contracts và synthetic guard tests nhưng chưa có
-fitted preprocessing artifact, nên `ML_READY: BLOCKED`. C3–C11 vẫn `PLANNED`.
+2.365.424 dòng và tái lập khớp các finding đã xác minh. Real split và leakage audit hoàn thành
+qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.655.797 dòng train
+và kiểm chứng qua PR #42.
+C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, huấn luyện trên dữ liệu
+thực (Issue #10) đạt `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`, trong khi đánh giá trên tập
+held-out Test (Issue #12) vẫn `PLANNED`. C4–C11 vẫn `PLANNED`.
+
+```text
+Checkpoint: C3 — Random Forest Baseline Protocol & Training Architecture
+Branch: feat/issue-9-rf-baseline-protocol
+Completed: Issue #9 IMPLEMENTED / TESTED; Issue #10 IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED —
+  - Issue #9: RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1` đã được chuẩn hóa và khóa
+    theo đúng 47 đặc trưng ML, target Label nhị phân, TEST lock policy, tuning policy cách ly,
+    metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 và PR #43 đã được
+    khắc phục hoàn toàn:
+      * Canonical baseline locking (`RandomForestBaselineConfig.is_canonical_baseline`, `configuration_id`,
+        khóa toàn bộ `CANONICAL_BASELINE_PARAMS` bao gồm cả `n_jobs=-1`), ngăn chặn unauthorized overrides
+        nhận danh baseline chính thức.
+      * Đồng bộ tài liệu split protocol với split manifest chính thức (`REVIEWED_AND_JUSTIFIED` cho `ml_feature_overlap`,
+        bổ sung test chống trôi tài liệu).
+      * Phân loại phát hiện theo cặp (y_true, y_pred), Benign xử lý riêng biệt.
+      * Compute metrics FPR bất biến theo thứ tự nhãn [0, 1] vs [1, 0].
+  - Issue #10: Cấu trúc mô hình Random Forest và huấn luyện trên dữ liệu thực hoàn thiện:
+      * Model serialization (`save`, `load`, `load_verified` với schema thống nhất và kiểm tra mã hex 64 ký tự).
+      * Script `scripts/train_random_forest.py` hỗ trợ `--verify-only` kiểm tra toàn diện điều kiện tiên quyết:
+        hash dataset, split manifest, companion preprocessor manifest, số dòng phân vùng (1.655.797 train,
+        345.371 val), tính duy nhất và không chồng lấn giữa các index.
+      * Strict Test Lock Contract A & Contract B: lọc trực tiếp ở luồng chuỗi dòng văn bản thô (line stream),
+        tuyệt đối không khởi tạo hay nạp bất kỳ bản ghi DataFrame nào thuộc tập Test.
+      * Memory Architecture (Option B): `chunksize` (100.000 dòng) kiểm soát bộ đệm phân tích cú pháp CSV;
+        toàn bộ tập train (1.655.797 dòng) và val (345.371 dòng) được hiện thực hóa trong RAM để fit Random Forest.
+      * Kiểm chứng tính nhất quán khi reload (`orig_preds == reloaded_preds`, sai số xác suất atol=1e-7, rtol=0,
+        kiểm tra tính hữu hạn finite, thứ tự đặc trưng và thứ tự lớp).
+      * Bắt buộc trạng thái verification `prep_audit["status"] == "PASS"` và schema `artifact_sha256` của preprocessor manifest.
+      * Loại bỏ hoàn toàn nhánh fail-open trong `load_verified()`, đối chiếu chéo top-level và nested provenance,
+        từ chối `git_commit == "UNKNOWN"` hoặc `provenance_complete == False`.
+      * Tích hợp `--step baseline` vào `scripts/run_experiments.py` ủy quyền gọi và chuyển tiếp mã thoát,
+        đồng bộ docstring và CLI help.
+      * Đã thực thi huấn luyện thực nghiệm trên 1.655.797 dòng Train và kiểm toán chẩn đoán độc lập trên
+        345.371 dòng Validation (chi tiết bằng chứng tại Checkpoint 12 bên dưới).
+Tests: PASS — 36 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
+  `tests/unit/test_rf_model_structure.py`, 33 tests trong `tests/unit/test_rf_training.py`
+  (bao gồm `test_execute_training_real_data` PASS trên dữ liệu thực NF-UNSW-NB15-v3), 15 tests trong
+  `tests/unit/test_run_experiments.py`, 7 tests trong `tests/unit/test_audit_rf_validation_diagnostics.py`;
+  toàn bộ test suite 397 PASS, 2 SKIPPED, 0 FAILED; git diff --check PASS; check_environment PASS.
+Issues: #9 (Protocol & Criteria — IMPLEMENTED / TESTED); #10 (RF Training & Validation —
+  IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED); #12 (Held-out Test Evaluation — PLANNED).
+Remaining: Đánh giá cuối cùng một lần (one-shot evaluation) trên tập held-out Test thuộc phạm vi Issue #12.
+```
 
 ## Migration NF-UNSW-NB15-v3 — A–H
 
@@ -261,4 +307,45 @@ Tests: PASS — 12 dedicated unit tests (test_split_protocol.py); full test suit
   temporal boundary violations: 0; binary label conflicts: 0.
 Issues: #7 review feedback fully addressed; #8 ready to consume verified split contract.
 Remaining: ML_READY remains BLOCKED pending train-only fitted preprocessing in Issue #8.
+```
+
+```text
+Checkpoint 12 — Random Forest Baseline Protocol & Real-Data Training (Issues #9 & #10)
+Branch: feat/issue-9-rf-baseline-protocol
+HEAD: recorded by commit/PR readback at handoff.
+Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED on real NF-UNSW-NB15-v3 bytes.
+  - Issue #9 protocol (`rf-baseline-nf-unsw-nb15-v3-v1`) and canonical baseline locking (`n_jobs=-1`,
+    `configuration_id="rf-baseline-canonical-v1"`, `is_canonical_baseline=True`) implemented in
+    `src/network_anomaly/models/random_forest_protocol.py` and `src/network_anomaly/models/random_forest.py`.
+  - Official prerequisites verified byte-for-byte via `python scripts/train_random_forest.py --verify-only`:
+    raw CSV (`4ebb97bd...`), split manifest (`bb84c1e0...`), train/val/gap/test `.csv.gz` indices,
+    and fitted train-only preprocessor `.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`).
+  - Real-data Random Forest training executed via `python scripts/run_experiments.py --step baseline`
+    on 1,655,797 Train rows (`83.73s`, `peak_memory_mb=3863.41 MB`, run manifest `rf-baseline-1794068628`) and evaluated on 345,371 Validation rows.
+  - Model artifact saved to `artifacts/models/random_forest/random_forest_baseline.joblib`
+    (`917,227` bytes, SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`),
+    reproduced 100% byte-for-byte across two independent real-data training runs.
+  - Run manifest recorded at `reports/models/random_forest_manifest.json` and detailed evidence report
+    at `reports/models/rf_baseline_training_report.md`.
+  - Validation metrics on 345,371 rows: `Precision=0.999836`, `Recall=0.999902`, `F1=0.999869`,
+    `Macro-F1=0.999928`, `FPR=0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]`.
+  - Verified reload consistency (`RandomForestModel.load_verified`): `PASSED` on all 345,371 Validation rows
+    (`predictions_identical=true`, `max_abs_probability_diff=2.220446049250313e-16`, `atol=1e-7`, `rtol=0`;
+     giá trị khác 0 do cộng gộp xác suất đa luồng `n_jobs=-1`, nằm trong dung sai).
+  - Strict Test Lock (Contract A & Contract B): `test_partition_accessed=false`, `test_rows_loaded=0`,
+    `test_indices_loaded=false`.
+  - Independent validation audit & diagnostic ablation (`scripts/audit_rf_validation_diagnostics.py` ->
+    `reports/models/rf_baseline_validation_audit.json`, Train/Validation only): stratified canonical RF
+    (200 trees) evaluation on fingerprint-overlapping (`172,621` rows, `Accuracy=1.000000`) vs
+    non-overlapping (`172,750` rows, `Accuracy=0.999954`, `F1=0.999823`, `FP=5`, `FN=3`) validation flows,
+    plus 10 non-canonical diagnostic experiments (`C0`–`C9`: 60-tree RF ablations/deduplication/label-shuffle
+    and depth-3/8 single Decision Trees) separating code/pipeline leakage, fingerprint memorisation, and
+    testbed-specific shortcuts (`MIN_TTL`/`MAX_TTL`).
+Tests: PASS — 33/33 unit and real-data integration tests in `tests/unit/test_rf_training.py`
+  (including `test_execute_training_real_data` PASS on real NF-UNSW-NB15-v3 bytes), 36/36 in
+  `tests/unit/test_rf_baseline_protocol.py`, 7/7 in `tests/unit/test_rf_model_structure.py`,
+  15/15 in `tests/unit/test_run_experiments.py`, and 7/7 in
+  `tests/unit/test_audit_rf_validation_diagnostics.py` (full test suite: `397 passed, 2 skipped`).
+Issues: #9 and #10 all Acceptance Criteria verified on real data; #12 (held-out Test evaluation) remains PLANNED.
+Remaining: One-shot held-out Test partition evaluation belongs to Issue #12.
 ```
