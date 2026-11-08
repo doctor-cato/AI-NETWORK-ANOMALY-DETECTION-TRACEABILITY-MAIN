@@ -2,18 +2,22 @@
 """Experiment runner - step status is decided by implementation, not by exit code 0.
 
 Exit codes:
-  0 - ``check-data`` completed, or its optional default-dataset check was
-      intentionally skipped because the raw CSV is absent.
-  1 - ``check-data`` verified the dataset but reports ``ML_READY: BLOCKED``;
-      for the current v3 audit this includes ``RAW_QUALITY: FINDINGS_RECORDED``.
+  0 - ``check-data`` completed (or its optional default-dataset check was
+      intentionally skipped because the raw CSV is absent), or ``baseline``
+      training and verified reload completed via ``scripts/train_random_forest.py``.
+  1 - ``check-data`` verified the dataset but reports ``ML_READY: BLOCKED``
+      (for the current v3 audit this includes ``RAW_QUALITY: FINDINGS_RECORDED``),
+      or ``baseline`` failed closed due to missing prerequisites / verification
+      failure in ``scripts/train_random_forest.py``.
   2 - invalid command line (argparse default), or ``check-data`` found a
       source-integrity/corruption failure.
-  3 - step is planned but NOT implemented. This is not a result and must not be
-      reported as a successful experiment.
+  3 - step (``evaluate``, ``inference``) is planned but NOT implemented. This is
+      not a result and must not be reported as a successful experiment.
 
 Usage:
   python scripts/run_experiments.py --step check-data
-  python scripts/run_experiments.py --step baseline   # exits 3 until M2 implements it
+  python scripts/run_experiments.py --step baseline  # delegates to train_random_forest.py
+  python scripts/run_experiments.py --step evaluate  # exits 3 until M3 implements it
 """
 
 import argparse
@@ -22,10 +26,6 @@ EXIT_NOT_IMPLEMENTED = 3  # see docstring; 2 stays reserved for argparse usage e
 
 # step -> (what the step will do, why it is not implemented yet)
 NOT_IMPLEMENTED_STEPS = {
-    "baseline": (
-        "train the Random Forest baseline",
-        "NF-UNSW-NB15-v3 quality/split gates are unresolved; " "training belongs to M2 / issue #10",
-    ),
     "evaluate": (
         "evaluate a trained model",
         "training and evaluation belong to M3 / issues #12 and #13",
@@ -38,10 +38,16 @@ NOT_IMPLEMENTED_STEPS = {
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Run experiment steps")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run experiment steps ('check-data' delegates to scripts/validate_data.py; "
+            "'baseline' delegates to scripts/train_random_forest.py and propagates its exit code; "
+            "'evaluate' and 'inference' remain NOT IMPLEMENTED and exit 3)."
+        )
+    )
     parser.add_argument(
         "--step",
-        choices=["check-data", *NOT_IMPLEMENTED_STEPS],
+        choices=["check-data", "baseline", *NOT_IMPLEMENTED_STEPS],
         default="check-data",
         help="Experiment step to run",
     )
@@ -54,6 +60,12 @@ def main(argv=None):
 
         print("[run_experiments] Step check-data: delegating to scripts/validate_data.py")
         return validate_data.main([])
+
+    if args.step == "baseline":
+        import train_random_forest
+
+        print("[run_experiments] Step baseline: delegating to scripts/train_random_forest.py")
+        return train_random_forest.main([])
 
     planned, reason = NOT_IMPLEMENTED_STEPS[args.step]
     print(f"[run_experiments] Planned: {planned}")

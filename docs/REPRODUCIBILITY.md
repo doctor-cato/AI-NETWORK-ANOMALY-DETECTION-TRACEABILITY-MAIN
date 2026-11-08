@@ -15,6 +15,8 @@ python -m black --check .
 git diff --check
 ```
 
+Detailed unit, integration, and failure-path testing guidelines are documented in [docs/TESTING.md](TESTING.md).
+
 ## Reproduce official bytes
 
 ```text
@@ -125,7 +127,31 @@ Reproducibility properties:
 - Verify-only mode (`--verify-only`) validates artifact schema, companion manifest integrity, and dataset/split checksums without retraining (fails closed if companion manifest is missing or hashes mismatch).
 - Absent raw bytes: prints `PREPROCESSING: SKIPPED (raw dataset absent)` and exits `0`.
 
-## Reproduce the Isolation Forest pipeline (scripts/train_isolation_forest.py)
+## Reproduce Random Forest baseline training (Issue #10)
+
+```text
+python scripts/train_random_forest.py --verify-only
+python scripts/train_random_forest.py
+python scripts/run_experiments.py --step baseline
+```
+
+The script trains the baseline Random Forest model strictly following the protocol `rf-baseline-nf-unsw-nb15-v3-v1`
+locked in Issue #9:
+- Uses verified raw dataset `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` (SHA-256 `4ebb97...`).
+- Reads partition indices from `data/processed/splits/` (`train`: 1,655,797 rows; `validation`: 345,371 rows).
+- Reuses the existing fitted preprocessor artifact `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` without refitting.
+- Preserves the 47 baseline ML feature ordering and excludes all metadata and target columns.
+- Locks canonical baseline hyperparameters in `CANONICAL_BASELINE_PARAMS` (including `n_jobs=-1`, `n_estimators=200`, `max_depth=16`, `random_state=42`, `configuration_id="rf-baseline-canonical-v1"`).
+- Strict Test Lock: Enforces Contract A (no test data in fitting, tuning, selection, or reporting) and Contract B (test rows are strictly filtered at the raw line stream boundary and never materialized into DataFrames).
+- Memory Architecture (Option B): `chunksize` (default 100,000) limits the raw text buffer during CSV parsing; full Train (1,655,797 rows) and Validation (345,371 rows) partitions are materialized into in-memory DataFrames as required for fitting standard scikit-learn `RandomForestClassifier`. Peak memory occurs during DataFrame concatenation and tree fitting (~4-8 GB RAM recommended).
+- Produces model binary `artifacts/models/random_forest/random_forest_baseline.joblib` and execution manifest `artifacts/models/random_forest/random_forest_manifest.json` (also saved to `reports/models/random_forest_manifest.json`).
+- Verifies model reload consistency using `RandomForestModel.load_verified()` with bitwise identical predictions and probability tolerance `atol=1e-7, rtol=0` (along with finite value and shape checks).
+- Preprocessor companion manifest verification strictly enforces canonical `artifact_sha256` schema and `prep_audit["status"] == "PASS"`.
+- `RandomForestModel.load_verified()` enforces top-level and nested provenance consistency and rejects missing or malformed hashes fail-closed.
+- Experiment runner integration: `python scripts/run_experiments.py --step baseline` delegates directly to `scripts/train_random_forest.py` and forwards exit codes.
+- Fail-closed prerequisite audit: If the raw dataset or preprocessor artifact is missing or altered, training stops immediately with exit code 1. Mock/synthetic data is strictly prohibited for benchmark results.
+
+## Reproduce the Isolation Forest pipeline (scripts/train_isolation_forest.py) (Issue #11)
 
 ```text
 # Prerequisite check (fails closed if dataset or preprocessor artifact is absent; safe for CI):
@@ -139,8 +165,25 @@ Fail-closed properties:
 - Halts execution (exit code 1) if dataset file, split manifest, or preprocessor artifact hashes mismatch.
 - Excludes unknown attack categories (`Worms`, `Backdoor`) from validation threshold calibration.
 - Enforces strict test-partition protection; frozen threshold is applied to test evaluation without retraining.
+- Streams partition loading by chunks (default 100,000 via `--chunksize`) to minimize memory usage.
 - Saves model artifacts under `artifacts/models/isolation_forest/` and metrics under `reports/experiments/isolation_forest/`.
 
+## Reproduce CSV inference on new network flows (Issue #15)
+
+```text
+python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv
+python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv --model random_forest
+```
+
+The script executes the verified inference pipeline (Issue #15):
+- Validates the 47-feature baseline schema and contract ordering without data leakage.
+- Loads the verified train-only preprocessor (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`) from Issue #8 (fails closed if artifact or companion manifest is missing or altered).
+- Loads the trained model artifact and validates provenance.
+- Executes transform and prediction without refitting.
+- Emits prediction results (`results/predictions.csv`) preserving row identity, plus companion traceability metadata (`results/predictions.metadata.json`).
+- When the model artifact binary is absent (e.g. if the local environment has not yet trained or restored the `.joblib` binary under `.gitignore`), the CLI reports fail-closed error with exit code `1` and does not fake execution.
+
+See `docs/INFERENCE_PIPELINE.md` for complete contract and schema details.
 
 ## What runs where
 
@@ -151,6 +194,9 @@ Fail-closed properties:
 | `scripts/verify_eda_reproducibility.py` | local, raw package present | two runs compared per metric |
 | `scripts/split_and_audit_nf_unsw_nb15_v3.py` | local, raw package present | split manifest and leakage audit executed |
 | `scripts/preprocess_nf_unsw_nb15_v3.py` | local, raw package present | train-only preprocessing executed and verified |
+| `scripts/train_random_forest.py` | local, raw package & artifacts present | trains baseline RF on 1,655,797 train rows; exits `1` if raw dataset or preprocessor artifact is missing |
+| `scripts/run_experiments.py --step baseline` | local, delegates to `train_random_forest.py` | fail-closed prerequisite check or baseline training |
+| `scripts/predict.py` | local / production with trained artifacts | real model inference and metadata; fail-closed if model absent |
 | `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
 | `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
 | `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |
@@ -170,7 +216,7 @@ re-check is the manual or pull-request workflow `.github/workflows/lint-audit.ym
 
 ## Split and experiment identity
 
-No real v3 split or benchmark currently exists. A future accepted run must record:
+The official NF-UNSW-NB15-v3 chronological group-purged split (`reports/splits/nf_unsw_nb15_v3_split_manifest.json`, PR #41), train-only preprocessing contract (`reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`, PR #42), and Random Forest baseline training run (`reports/models/random_forest_manifest.json`, `reports/models/rf_baseline_training_report.md`, Issue #10 / PR #43, model artifact SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`) are recorded and verified on real `NF-UNSW-NB15-v3` bytes. Held-out Test partition benchmark evaluation remains `PLANNED` under Issue #12 (`test_partition_accessed: false`, `test_rows_loaded: 0`). Every accepted model run must record:
 
 - Git commit and dependency snapshot;
 - dataset SHA-256 and split identifier;
@@ -191,8 +237,7 @@ actual seed or deterministic split algorithm.
   L4 ports or absolute timestamps in it.
 - Fit imputer, non-finite policy, encoder, scaler, selector and resampler only on train.
 - Validation selects configuration and thresholds; test is not reused for tuning.
-- Fail when exact, source-feature or ML-feature fingerprints, or canonical flow groups, cross
-  partitions. Enforce chronological boundaries and any configured purge gap.
+- Enforce zero `exact_full_row_overlap`, zero `source_feature_overlap`, zero `canonical_flow_group_overlap`, and zero `temporal_boundary_violations` across partitions (`status: PASS`), with a 300,000 ms purge gap. Audited `ml_feature_overlap` across partitions (`61,007` train/val, `59,966` train/test, `24,143` val/test; `binary_label_conflicts: 0`) is recorded as `REVIEWED_AND_JUSTIFIED` and must be documented as a non-i.i.d. feature-space limitation during evaluation.
 - Treat the five-minute bidirectional 5-tuple group as a documented heuristic, not a proven session.
 
 See `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
