@@ -152,6 +152,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
         "model_artifact_sha256": sha,
         "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
         "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+        "environment": {"git_commit": "73c6f32a0cc7b94bbe938edda0a331db97e55a6b"},
     }
     manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
 
@@ -378,6 +379,7 @@ def test_model_load_verified(tmp_path, minimal_47_feature_data):
                 "preprocessing_provenance": {
                     "preprocessor_artifact_sha256": prep_hex,
                 },
+                "environment": {"git_commit": "73c6f32a0cc7b94bbe938edda0a331db97e55a6b"},
             }
         ),
         encoding="utf-8",
@@ -1129,6 +1131,7 @@ def test_model_load_verified_rejects_missing_protocol(tmp_path, minimal_47_featu
                 "model_artifact_sha256": actual_sha,
                 "dataset_sha256": ds_hex,
                 "split_manifest_sha256": sm_hex,
+                "environment": {"git_commit": "73c6f32a0cc7b94bbe938edda0a331db97e55a6b"},
             }
         ),
         encoding="utf-8",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -12,7 +13,12 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import NotFittedError
 
 from network_anomaly.config import RANDOM_FOREST_DEFAULTS
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.nf_unsw_nb15_v3 import (
+    ML_FEATURE_COLUMNS,
+    TARGET_COLUMNS,
+    TRACE_METADATA_COLUMNS,
+    validate_feature_selection,
+)
 from network_anomaly.models.random_forest_protocol import (
     ALL_ATTACK_CATEGORIES,
     CANONICAL_BASELINE_PARAMS,
@@ -62,12 +68,17 @@ class RandomForestModel:
         protocol: Optional[RandomForestBaselineProtocol] = None,
     ) -> None:
         if protocol is not None:
+            protocol.validate()
             self.protocol: Optional[RandomForestBaselineProtocol] = protocol
             self.config: RandomForestBaselineConfig = protocol.model_config
+            self.config.validate()
         elif isinstance(config, RandomForestBaselineProtocol):
+            config.validate()
             self.protocol = config
             self.config = config.model_config
+            self.config.validate()
         elif isinstance(config, RandomForestBaselineConfig):
+            config.validate()
             self.protocol = None
             self.config = config
         elif isinstance(config, dict):
@@ -75,8 +86,10 @@ class RandomForestModel:
             self.config = RandomForestBaselineConfig.from_dict(config)
         elif config is None:
             proto = create_rf_baseline_protocol()
+            proto.validate()
             self.protocol = proto
             self.config = proto.model_config
+            self.config.validate()
         else:
             raise TypeError(f"Unsupported config type: {type(config)}")
 
@@ -96,6 +109,9 @@ class RandomForestModel:
 
     def build_model(self) -> RandomForestClassifier:
         """Construct the underlying scikit-learn RandomForestClassifier from config."""
+        self.config.validate()
+        if self.protocol is not None:
+            self.protocol.validate()
         return RandomForestClassifier(**self.config.to_sklearn_params())
 
     @property
@@ -109,7 +125,37 @@ class RandomForestModel:
         return self._is_fitted
 
     def fit(self, X: Any, y: Any, **fit_params: Any) -> "RandomForestModel":
-        """Fit interface for future training on verified NF-UNSW-NB15-v3 data."""
+        """Fit interface on verified NF-UNSW-NB15-v3 feature data."""
+        # 1. Feature schema validation before delegating to estimator
+        if hasattr(X, "columns"):
+            cols = list(X.columns)
+            if self.config.is_canonical_baseline:
+                validate_feature_selection(cols, require_complete=True)
+            else:
+                if len(cols) != len(set(cols)):
+                    raise ValueError("feature selection contains duplicate columns")
+                forbidden = sorted(set(cols) & set(TRACE_METADATA_COLUMNS + TARGET_COLUMNS))
+                if forbidden:
+                    raise ValueError(f"feature selection contains forbidden columns: {forbidden}")
+                if tuple(cols) != tuple(self.feature_names):
+                    raise ValueError(
+                        f"Input DataFrame columns {cols} do not match model feature names "
+                        f"{list(self.feature_names)}"
+                    )
+        else:
+            # ndarray-like input
+            if hasattr(X, "ndim") and X.ndim != 2:
+                raise ValueError(f"Expected 2D feature matrix X, got array with ndim={X.ndim}")
+            if hasattr(X, "shape"):
+                if len(X.shape) != 2:
+                    raise ValueError(f"Expected 2D feature matrix X, got shape {X.shape}")
+                expected_width = len(self.feature_names)
+                if X.shape[1] != expected_width:
+                    raise ValueError(
+                        f"Expected {expected_width} feature columns, "
+                        f"got matrix with {X.shape[1]} columns"
+                    )
+
         self._estimator.fit(X, y, **fit_params)
         self._is_fitted = True
         return self
@@ -148,6 +194,7 @@ class RandomForestModel:
             "task": self.task,
             "target": self.target,
             "positive_class": self.positive_class,
+            "is_fitted": self._is_fitted,
             "config": self.config.to_dict(),
             "protocol": self.protocol.to_dict() if self.protocol is not None else None,
             "classes": (
@@ -185,7 +232,10 @@ class RandomForestModel:
                 ) from e
         model = cls(config=config, protocol=protocol)
         model._estimator = payload["estimator"]
-        model._is_fitted = True
+        is_fitted_flag = payload.get("is_fitted", True)
+        est = payload["estimator"]
+        has_estimators = hasattr(est, "estimators_") and len(getattr(est, "estimators_", [])) > 0
+        model._is_fitted = bool(is_fitted_flag and has_estimators)
         if "feature_names" in payload:
             model.feature_names = tuple(payload["feature_names"])
         return model
@@ -224,25 +274,6 @@ class RandomForestModel:
                     f"for '{field_name}': {val!r}"
                 )
             return val.lower()
-
-        # 0. Provenance completeness and git_commit integrity checks
-        if manifest.get("provenance_complete") is False or (
-            manifest.get("provenance_status") == "INCOMPLETE"
-        ):
-            raise ValueError(
-                f"Manifest indicates incomplete provenance and cannot be verified: {manifest_path}"
-            )
-        env = manifest.get("environment")
-        if isinstance(env, dict) and "git_commit" in env:
-            git_commit = env.get("git_commit")
-            if (
-                not isinstance(git_commit, str)
-                or not git_commit.strip()
-                or git_commit.strip().upper() == "UNKNOWN"
-            ):
-                raise ValueError(
-                    f"Invalid or unknown environment.git_commit in manifest: {git_commit!r}"
-                )
 
         # 1. Model artifact SHA-256
         if "model_artifact_sha256" not in manifest:
@@ -366,12 +397,148 @@ class RandomForestModel:
                     f"expected {exp_prep}, got {clean_man_prep}"
                 )
 
+        # Provenance completeness and environment.git_commit integrity checks
+        if manifest.get("provenance_complete") is False or (
+            manifest.get("provenance_status") in {"INCOMPLETE", "FAIL", "FAILED", "BLOCKED"}
+        ):
+            raise ValueError(
+                f"Manifest indicates incomplete provenance and cannot be verified: {manifest_path}"
+            )
+        if "environment" not in manifest or not isinstance(manifest["environment"], dict):
+            raise ValueError(
+                f"Missing or invalid required 'environment' object in manifest: {manifest_path}"
+            )
+        env = manifest["environment"]
+        if "git_commit" not in env:
+            raise ValueError(
+                f"Missing required 'environment.git_commit' in manifest: {manifest_path}"
+            )
+        git_commit = env["git_commit"]
+        if (
+            not isinstance(git_commit, str)
+            or not git_commit.strip()
+            or git_commit.strip().upper() == "UNKNOWN"
+        ):
+            raise ValueError(
+                f"Invalid or unknown environment.git_commit in manifest: {git_commit!r}"
+            )
+        if not re.fullmatch(r"[0-9a-fA-F]{7,40}", git_commit.strip()):
+            raise ValueError(
+                f"Invalid format for environment.git_commit (expected 7-40 hex characters): "
+                f"{git_commit!r}"
+            )
+
         model = cls.load(model_path)
         if model.protocol is None:
             raise ValueError(
                 f"Model artifact at {model_path} lacks required protocol provenance "
                 f"for verified loading."
             )
+        if not model.is_fitted:
+            raise ValueError(f"Model artifact at {model_path} is not fitted.")
+        if not isinstance(model.estimator, RandomForestClassifier):
+            raise ValueError(
+                f"Underlying estimator in {model_path} must be RandomForestClassifier, "
+                f"got {type(model.estimator).__name__}"
+            )
+
+        # Cross-check protocol and configuration between model payload and manifest
+        if "protocol_version" in manifest:
+            if manifest["protocol_version"] != model.protocol.protocol_version:
+                raise ValueError(
+                    f"Protocol version mismatch: manifest has '{manifest['protocol_version']}', "
+                    f"model payload has '{model.protocol.protocol_version}'"
+                )
+
+        if "configuration_id" in manifest:
+            if manifest["configuration_id"] != model.config.configuration_id:
+                raise ValueError(
+                    f"Configuration ID mismatch: manifest has '{manifest['configuration_id']}', "
+                    f"model payload has '{model.config.configuration_id}'"
+                )
+
+        if "is_canonical_baseline" in manifest:
+            if manifest["is_canonical_baseline"] != model.config.is_canonical_baseline:
+                raise ValueError(
+                    f"Canonical baseline flag mismatch: manifest has "
+                    f"'{manifest['is_canonical_baseline']}', "
+                    f"model payload has '{model.config.is_canonical_baseline}'"
+                )
+
+        if "feature_contract_version" in manifest:
+            if manifest["feature_contract_version"] != model.protocol.feature_contract_version:
+                raise ValueError(
+                    f"Feature contract version mismatch: manifest has "
+                    f"'{manifest['feature_contract_version']}', "
+                    f"model payload has '{model.protocol.feature_contract_version}'"
+                )
+
+        if "selected_features" in manifest:
+            if list(manifest["selected_features"]) != list(model.protocol.selected_features):
+                raise ValueError("Selected features mismatch between manifest and model protocol.")
+
+        if "hyperparameters" in manifest and isinstance(manifest["hyperparameters"], dict):
+            m_hp = manifest["hyperparameters"]
+            c_hp = model.config.to_dict()
+            for hp_key in (
+                "n_estimators",
+                "max_depth",
+                "min_samples_split",
+                "min_samples_leaf",
+                "criterion",
+                "max_features",
+                "random_state",
+                "n_jobs",
+                "bootstrap",
+            ):
+                if hp_key in m_hp and m_hp[hp_key] != c_hp.get(hp_key):
+                    raise ValueError(
+                        f"Hyperparameter '{hp_key}' mismatch: manifest has {m_hp[hp_key]!r}, "
+                        f"model config has {c_hp.get(hp_key)!r}"
+                    )
+
+        n_feat_in = getattr(model.estimator, "n_features_in_", None)
+        if n_feat_in is not None and n_feat_in != len(model.feature_names):
+            raise ValueError(
+                f"Estimator n_features_in_ ({n_feat_in}) does not match "
+                f"model feature count ({len(model.feature_names)})"
+            )
+
+        feat_names_in = getattr(model.estimator, "feature_names_in_", None)
+        if feat_names_in is not None:
+            if list(feat_names_in) != list(model.feature_names):
+                raise ValueError("Estimator feature_names_in_ does not match model feature names.")
+
+        if model.estimator.n_estimators != model.config.n_estimators:
+            raise ValueError(
+                f"Estimator n_estimators ({model.estimator.n_estimators}) != "
+                f"config n_estimators ({model.config.n_estimators})"
+            )
+        if model.estimator.max_depth != model.config.max_depth:
+            raise ValueError(
+                f"Estimator max_depth ({model.estimator.max_depth}) != "
+                f"config max_depth ({model.config.max_depth})"
+            )
+        if model.estimator.random_state != model.config.random_state:
+            raise ValueError(
+                f"Estimator random_state ({model.estimator.random_state}) != "
+                f"config random_state ({model.config.random_state})"
+            )
+
+        if manifest.get("is_canonical_baseline") is True:
+            if not model.config.is_canonical_baseline:
+                raise ValueError(
+                    "Manifest claims is_canonical_baseline=True, but "
+                    "model payload has is_canonical_baseline=False."
+                )
+            if model.config.configuration_id != "rf-baseline-canonical-v1":
+                raise ValueError(
+                    f"Canonical baseline configuration_id must be 'rf-baseline-canonical-v1', "
+                    f"got {model.config.configuration_id!r}"
+                )
+            model.config.validate()
+            model.protocol.validate()
+
         return model
 
 
@@ -392,24 +559,15 @@ def build_model(
     if config is None:
         cfg = RANDOM_FOREST_DEFAULTS.copy()
     elif isinstance(config, RandomForestBaselineProtocol):
+        config.validate()
+        config.model_config.validate()
         cfg = config.model_config.to_sklearn_params()
     elif isinstance(config, RandomForestBaselineConfig):
+        config.validate()
         cfg = config.to_sklearn_params()
     elif isinstance(config, dict):
-        cfg = config.copy()
-        sklearn_keys = {
-            "n_estimators",
-            "max_depth",
-            "min_samples_split",
-            "min_samples_leaf",
-            "criterion",
-            "max_features",
-            "class_weight",
-            "random_state",
-            "n_jobs",
-            "bootstrap",
-        }
-        cfg = {k: v for k, v in cfg.items() if k in sklearn_keys}
+        cfg_obj = RandomForestBaselineConfig.from_dict(config)
+        cfg = cfg_obj.to_sklearn_params()
     else:
         raise TypeError(f"Unsupported config type: {type(config)}")
     return RandomForestClassifier(**cfg)

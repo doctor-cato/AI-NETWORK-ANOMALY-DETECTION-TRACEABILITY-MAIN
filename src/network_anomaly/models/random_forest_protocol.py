@@ -85,8 +85,39 @@ class RandomForestBaselineConfig:
     random_state: int = RANDOM_SEED
     n_jobs: Optional[int] = -1
     bootstrap: bool = True
-    configuration_id: str = "rf-baseline-canonical-v1"
-    is_canonical_baseline: bool = True
+    configuration_id: Optional[str] = None
+    is_canonical_baseline: Optional[bool] = None
+
+    def __post_init__(self) -> None:
+        """Validate hyperparameter invariants upon instantiation."""
+        canonical_matches = (
+            self.model_type == CANONICAL_BASELINE_PARAMS["model_type"]
+            and self.task == CANONICAL_BASELINE_PARAMS["task"]
+            and self.target == CANONICAL_BASELINE_PARAMS["target"]
+            and self.positive_class == CANONICAL_BASELINE_PARAMS["positive_class"]
+            and self.n_estimators == CANONICAL_BASELINE_PARAMS["n_estimators"]
+            and self.max_depth == CANONICAL_BASELINE_PARAMS["max_depth"]
+            and self.min_samples_split == CANONICAL_BASELINE_PARAMS["min_samples_split"]
+            and self.min_samples_leaf == CANONICAL_BASELINE_PARAMS["min_samples_leaf"]
+            and self.criterion == CANONICAL_BASELINE_PARAMS["criterion"]
+            and self.max_features == CANONICAL_BASELINE_PARAMS["max_features"]
+            and self.class_weight == CANONICAL_BASELINE_PARAMS["class_weight"]
+            and self.random_state == CANONICAL_BASELINE_PARAMS["random_state"]
+            and self.n_jobs == CANONICAL_BASELINE_PARAMS["n_jobs"]
+            and self.bootstrap == CANONICAL_BASELINE_PARAMS["bootstrap"]
+        )
+        if self.is_canonical_baseline is None:
+            object.__setattr__(self, "is_canonical_baseline", canonical_matches)
+        if self.configuration_id is None:
+            object.__setattr__(
+                self,
+                "configuration_id",
+                (
+                    "rf-baseline-canonical-v1"
+                    if self.is_canonical_baseline
+                    else "rf-experimental-custom"
+                ),
+            )
 
     def validate(self) -> None:
         """Validate hyperparameter invariants and baseline configuration lock."""

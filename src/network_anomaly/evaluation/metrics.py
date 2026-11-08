@@ -41,14 +41,32 @@ def compute_metrics(
     y_pred : array-like
         Predicted binary target values.
     labels : array-like, optional
-        Order of labels for the confusion matrix. Defaults to [0, 1] for binary classification.
+        Order of labels for the confusion matrix. When None, inferred from unique
+        values in (y_true, y_pred) if canonical binary representation ({0, 1},
+        {"0", "1"}, or {"Benign", "Attack"}), else raises ValueError.
 
     Returns
     -------
     Dict[str, Any]
         Dictionary with precision, recall, f1, macro_f1, false_positive_rate, and confusion_matrix.
     """
-    target_labels = [0, 1] if labels is None else list(labels)
+    if labels is None:
+        y_all = list(y_true) + list(y_pred)
+        unique_vals = set(y_all)
+        if unique_vals.issubset({0, 1}):
+            target_labels = [0, 1]
+        elif unique_vals.issubset({"0", "1"}):
+            target_labels = ["0", "1"]
+        elif unique_vals.issubset({"Benign", "Attack"}):
+            target_labels = ["Benign", "Attack"]
+        else:
+            raise ValueError(
+                f"Cannot infer canonical label order from unique labels "
+                f"{sorted(str(v) for v in unique_vals)}. Please specify 'labels' explicitly."
+            )
+    else:
+        target_labels = list(labels)
+
     cm = confusion_matrix(y_true, y_pred, labels=target_labels)
 
     # Resolve positions of negative (Benign) and positive (Attack) classes
@@ -77,6 +95,10 @@ def compute_metrics(
         pos_label = target_labels[pos_idx]
     elif any(_is_positive_attack(y) for y in y_true):
         pos_label = next(y for y in y_true if _is_positive_attack(y))
+    elif len(target_labels) > 1:
+        pos_label = target_labels[1]
+    elif len(target_labels) == 1:
+        pos_label = target_labels[0]
 
     return {
         "precision": float(
@@ -88,7 +110,9 @@ def compute_metrics(
         "f1": float(
             f1_score(y_true, y_pred, pos_label=pos_label, average="binary", zero_division=0)
         ),
-        "macro_f1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+        "macro_f1": float(
+            f1_score(y_true, y_pred, labels=target_labels, average="macro", zero_division=0)
+        ),
         "false_positive_rate": fpr,
         "fpr": fpr,
         "confusion_matrix": cm.tolist(),
