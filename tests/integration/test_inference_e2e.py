@@ -388,5 +388,6 @@ def test_real_preprocessor_artifact_smoke():
         # Document explicit blocker
         print(
             "\n[SMOKE REPORT] Real preprocessor: PASS (1,655,797 rows trained).\n"
-            "[SMOKE REPORT] Real model: SKIPPED (RF baseline joblib binary not present in local working tree; excluded via .gitignore)."
+            "[SMOKE REPORT] Real model: SKIPPED (RF baseline binary not present "
+            "in working tree; excluded via .gitignore)."
         )

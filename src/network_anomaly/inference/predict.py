@@ -281,12 +281,20 @@ def load_verified_model(
     model_sha256 = _sha256_file(model_path)
 
     if manifest_path is None:
+        stem_lower = model_path.stem.lower()
         candidates = [
             model_path.with_suffix(".json"),
             PROJECT_ROOT / "reports" / "models" / f"{model_path.stem}_manifest.json",
-            PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json",
             model_path.parent / "manifest.json",
         ]
+        if "random_forest" in stem_lower:
+            candidates.insert(
+                2, PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
+            )
+        elif "isolation_forest" in stem_lower:
+            candidates.insert(
+                2, PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
+            )
         for c in candidates:
             if c.is_file():
                 manifest_path = c
