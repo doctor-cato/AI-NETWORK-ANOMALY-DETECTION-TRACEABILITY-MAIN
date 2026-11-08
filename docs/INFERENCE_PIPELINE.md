@@ -14,24 +14,24 @@ flowchart TD
     B -->|"Check 47 ML Features & Order"| C["Ordered X (47 features)"]
     B -.->|"Exclude from X"| D["Targets & Trace Metadata"]
     B -->|"Preserve"| E["Row Identifiers (row_id)"]
-    
+
     F["Preprocessor Artifact (.joblib)"] --> G["load_verified_preprocessor()"]
     H["Companion Manifest (.json)"] --> G
     G -->|"Verify SHA-256 & Schema"| I["TrainOnlyPreprocessor (Frozen)"]
-    
+
     J["Model Artifact (.joblib)"] --> K["load_verified_model()"]
     L["Model Manifest (.json)"] --> K
     K -->|"Verify SHA-256 & Provenance"| M["Trained Model (Frozen)"]
-    
+
     C --> N["preprocessor.transform(X)"]
     I --> N
     N -->|"Cleaned & Imputed Features"| O["model.predict(X_trans)"]
     M --> O
-    
+
     O --> P["Predictions & Probabilities"]
     E --> Q["Output CSV (predictions.csv)"]
     P --> Q
-    
+
     Q --> R["Compute Output SHA-256"]
     R --> S["Traceability Metadata (predictions.metadata.json)"]
 ```
@@ -187,6 +187,6 @@ Mỗi lần inference tạo ra file `<output>.metadata.json`:
 
 - **Preprocessing Artifact**: Đã sẵn sàng trong repository (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` và manifest `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`), đã qua xác minh (`PASS`).
 - **Trained Model Artifact**:
-  - Trạng thái hiện tại: **SKIPPED / NOT VERIFIED trên branch main**.
-  - Lý do: Issue #10 (Random Forest baseline) và Issue #11 (Isolation Forest) đang trong quá trình review PR, chưa được merge vào nhánh `main`.
-  - Để chạy inference với model thật: cần có file trọng số `artifacts/models/random_forest/random_forest_baseline.joblib` và manifest `reports/models/random_forest_manifest.json` từ nhánh Issue #10.
+  - Trạng thái hiện tại: Kiến trúc, giao thức huấn luyện và companion manifest của Random Forest baseline (Issue #10) đã được hoàn thành và tích hợp vào `main` tại PR #43 (`reports/models/random_forest_manifest.json`).
+  - Do quy chuẩn repository không lưu trữ file trọng số nhị phân lớn vào Git, file `artifacts/models/random_forest/random_forest_baseline.joblib` được quản lý ngoài Git (qua `.gitignore`).
+  - Để chạy inference với mô hình thật: cần có file trọng số `artifacts/models/random_forest/random_forest_baseline.joblib` (tạo cục bộ bằng `python scripts/train_random_forest.py` hoặc cung cấp qua `--model-artifact <path>`). Nếu thiếu file binary cục bộ, CLI sẽ kích hoạt cơ chế fail-closed và dừng lại an toàn với exit code 1.
