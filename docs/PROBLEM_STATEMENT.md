@@ -11,7 +11,8 @@ Lưu lượng mạng có cả mẫu kết nối bình thường và bất thư�
 
 ## Đầu vào
 
-- Bản ghi có cấu trúc từ UNSW-NB15 (CSV / parquet tùy phiên bản): IP/port nguồn-đích, protocol, service, duration, state, số packet, byte, metric flow và thống kê dẫn xuất.
+- Bản ghi NetFlow từ NF-UNSW-NB15-v3: timestamp, IPv4/port nguồn-đích, protocol, duration,
+  bytes/packets, throughput, IAT, `Label` và `Attack`.
 - Nhãn mục tiêu nhị phân hoặc đa lớp, biểu thị normal và các nhóm anomaly.
 
 ## Đầu ra
@@ -22,7 +23,7 @@ Lưu lượng mạng có cả mẫu kết nối bình thường và bất thư�
 
 ## Câu hỏi nghiên cứu / thiết kế
 
-1. Đặc trưng nào của UNSW-NB15 dự đoán anomaly mà không gây target leakage, chẳng hạn cột định danh mã hóa thời gian hoặc session?
+1. Đặc trưng nào của NF-UNSW-NB15-v3 dự đoán anomaly mà không gây target/identifier leakage?
 2. Random Forest hoạt động thế nào với vai trò baseline giám sát trên dataset này?
 3. Isolation Forest có phát hiện không giám sát hữu ích không, và đánh giá khác gì về threshold và diễn giải score?
 4. Đánh đổi false positive là gì, và mất cân bằng lớp hoặc missing value ảnh hưởng độ tin cậy ra sao?
@@ -39,4 +40,4 @@ Phát hiện bất thường mạng hỗ trợ vận hành bảo mật nhưng ph
 - Không chặn hoặc phản công tự động.
 - Không triển khai giám sát mạng doanh nghiệp.
 
-Cập nhật: 2026-10-17
+Cập nhật: 2026-10-20

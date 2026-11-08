@@ -1,0 +1,439 @@
+{
+  "manifest_schema_version": 1,
+  "dataset_name": "NF-UNSW-NB15-v3",
+  "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+  "split_protocol_version": "nf-unsw-nb15-v3-chronological-group-purged-v1",
+  "fingerprint_schema_version": "nf-unsw-nb15-v3-fingerprint-v1",
+  "generated_at_utc": "2026-10-27T10:46:58.474159+00:00",
+  "total_source_rows": 2365424,
+  "random_seed": 42,
+  "features": {
+    "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+    "baseline_ml_features_count": 47,
+    "baseline_ml_features_in_order": [
+      "PROTOCOL",
+      "L7_PROTO",
+      "IN_BYTES",
+      "IN_PKTS",
+      "OUT_BYTES",
+      "OUT_PKTS",
+      "TCP_FLAGS",
+      "CLIENT_TCP_FLAGS",
+      "SERVER_TCP_FLAGS",
+      "FLOW_DURATION_MILLISECONDS",
+      "DURATION_IN",
+      "DURATION_OUT",
+      "MIN_TTL",
+      "MAX_TTL",
+      "LONGEST_FLOW_PKT",
+      "SHORTEST_FLOW_PKT",
+      "MIN_IP_PKT_LEN",
+      "MAX_IP_PKT_LEN",
+      "SRC_TO_DST_SECOND_BYTES",
+      "DST_TO_SRC_SECOND_BYTES",
+      "RETRANSMITTED_IN_BYTES",
+      "RETRANSMITTED_IN_PKTS",
+      "RETRANSMITTED_OUT_BYTES",
+      "RETRANSMITTED_OUT_PKTS",
+      "SRC_TO_DST_AVG_THROUGHPUT",
+      "DST_TO_SRC_AVG_THROUGHPUT",
+      "NUM_PKTS_UP_TO_128_BYTES",
+      "NUM_PKTS_128_TO_256_BYTES",
+      "NUM_PKTS_256_TO_512_BYTES",
+      "NUM_PKTS_512_TO_1024_BYTES",
+      "NUM_PKTS_1024_TO_1514_BYTES",
+      "TCP_WIN_MAX_IN",
+      "TCP_WIN_MAX_OUT",
+      "ICMP_TYPE",
+      "ICMP_IPV4_TYPE",
+      "DNS_QUERY_ID",
+      "DNS_QUERY_TYPE",
+      "DNS_TTL_ANSWER",
+      "FTP_COMMAND_RET_CODE",
+      "SRC_TO_DST_IAT_MIN",
+      "SRC_TO_DST_IAT_MAX",
+      "SRC_TO_DST_IAT_AVG",
+      "SRC_TO_DST_IAT_STDDEV",
+      "DST_TO_SRC_IAT_MIN",
+      "DST_TO_SRC_IAT_MAX",
+      "DST_TO_SRC_IAT_AVG",
+      "DST_TO_SRC_IAT_STDDEV"
+    ],
+    "categorical_coded_columns": [
+      "PROTOCOL",
+      "L7_PROTO",
+      "TCP_FLAGS",
+      "CLIENT_TCP_FLAGS",
+      "SERVER_TCP_FLAGS",
+      "ICMP_TYPE",
+      "ICMP_IPV4_TYPE",
+      "DNS_QUERY_ID",
+      "DNS_QUERY_TYPE",
+      "FTP_COMMAND_RET_CODE"
+    ],
+    "quantitative_ml_columns": [
+      "IN_BYTES",
+      "IN_PKTS",
+      "OUT_BYTES",
+      "OUT_PKTS",
+      "FLOW_DURATION_MILLISECONDS",
+      "DURATION_IN",
+      "DURATION_OUT",
+      "MIN_TTL",
+      "MAX_TTL",
+      "LONGEST_FLOW_PKT",
+      "SHORTEST_FLOW_PKT",
+      "MIN_IP_PKT_LEN",
+      "MAX_IP_PKT_LEN",
+      "SRC_TO_DST_SECOND_BYTES",
+      "DST_TO_SRC_SECOND_BYTES",
+      "RETRANSMITTED_IN_BYTES",
+      "RETRANSMITTED_IN_PKTS",
+      "RETRANSMITTED_OUT_BYTES",
+      "RETRANSMITTED_OUT_PKTS",
+      "SRC_TO_DST_AVG_THROUGHPUT",
+      "DST_TO_SRC_AVG_THROUGHPUT",
+      "NUM_PKTS_UP_TO_128_BYTES",
+      "NUM_PKTS_128_TO_256_BYTES",
+      "NUM_PKTS_256_TO_512_BYTES",
+      "NUM_PKTS_512_TO_1024_BYTES",
+      "NUM_PKTS_1024_TO_1514_BYTES",
+      "TCP_WIN_MAX_IN",
+      "TCP_WIN_MAX_OUT",
+      "DNS_TTL_ANSWER",
+      "SRC_TO_DST_IAT_MIN",
+      "SRC_TO_DST_IAT_MAX",
+      "SRC_TO_DST_IAT_AVG",
+      "SRC_TO_DST_IAT_STDDEV",
+      "DST_TO_SRC_IAT_MIN",
+      "DST_TO_SRC_IAT_MAX",
+      "DST_TO_SRC_IAT_AVG",
+      "DST_TO_SRC_IAT_STDDEV"
+    ],
+    "target_columns": [
+      "Label",
+      "Attack"
+    ],
+    "excluded_trace_metadata_columns": [
+      "FLOW_START_MILLISECONDS",
+      "FLOW_END_MILLISECONDS",
+      "IPV4_SRC_ADDR",
+      "IPV4_DST_ADDR",
+      "L4_SRC_PORT",
+      "L4_DST_PORT"
+    ]
+  },
+  "split_policy": {
+    "strategy": "chronological_with_canonical_flow_group_purge_gap",
+    "timezone": "UTC",
+    "purge_gap_milliseconds": 300000,
+    "target_proportions": {
+      "train": 0.7,
+      "validation": 0.15,
+      "test": 0.15
+    },
+    "boundaries": {
+      "t_train_end_epoch_ms": 1424238133382,
+      "t_train_end_utc": "2015-02-18T05:42:13.382000+00:00",
+      "t_val_start_epoch_ms": 1424238433382,
+      "t_val_start_utc": "2015-02-18T05:47:13.382000+00:00",
+      "t_val_end_epoch_ms": 1424250496133,
+      "t_val_end_utc": "2015-02-18T09:08:16.133000+00:00",
+      "t_test_start_epoch_ms": 1424250796133,
+      "t_test_start_utc": "2015-02-18T09:13:16.133000+00:00",
+      "actual_train_val_gap_ms": 300004,
+      "actual_val_test_gap_ms": 300027
+    },
+    "stable_identifier_strategy": "0-based source line index (header excluded) valid for dataset bytes matching SHA-256 4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5."
+  },
+  "partitions": {
+    "train": {
+      "row_count": 1655797,
+      "percentage_of_total": 70.0,
+      "time_coverage": {
+        "count": 1655797,
+        "min_epoch_ms": 1421927376907,
+        "max_epoch_ms": 1424238133382,
+        "min_utc": "2015-01-22T11:49:36.907000+00:00",
+        "max_utc": "2015-02-18T05:42:13.382000+00:00"
+      },
+      "label_distribution": {
+        "0": 1590608,
+        "1": 65189
+      },
+      "attack_distribution": {
+        "Analysis": 646,
+        "Backdoor": 3253,
+        "Benign": 1590608,
+        "DoS": 3238,
+        "Exploits": 21416,
+        "Fuzzers": 17599,
+        "Generic": 9243,
+        "Reconnaissance": 8304,
+        "Shellcode": 1407,
+        "Worms": 83
+      },
+      "index_sha256": "a09ba1757484c65596a88fe22d5bd989a3cca60a01088364020e2f952b36c725"
+    },
+    "purged_train_val_gap": {
+      "row_count": 9443,
+      "percentage_of_total": 0.3992,
+      "time_coverage": {
+        "count": 9443,
+        "min_epoch_ms": 1424238133412,
+        "max_epoch_ms": 1424238433334,
+        "min_utc": "2015-02-18T05:42:13.412000+00:00",
+        "max_utc": "2015-02-18T05:47:13.334000+00:00"
+      },
+      "label_distribution": {
+        "0": 8546,
+        "1": 897
+      },
+      "attack_distribution": {
+        "Analysis": 1,
+        "Backdoor": 2,
+        "Benign": 8546,
+        "DoS": 63,
+        "Exploits": 223,
+        "Fuzzers": 335,
+        "Generic": 145,
+        "Reconnaissance": 115,
+        "Shellcode": 12,
+        "Worms": 1
+      },
+      "index_sha256": "3bdf9ef3ee6f62960a61205bf1c98c06786971c913c8dea837764a95742b15a9",
+      "exclusion_reason": "Purge gap of 300000 ms between Train and Validation to guarantee canonical flow-group isolation and eliminate temporal boundary leakage."
+    },
+    "validation": {
+      "row_count": 345371,
+      "percentage_of_total": 14.6008,
+      "time_coverage": {
+        "count": 345371,
+        "min_epoch_ms": 1424238433386,
+        "max_epoch_ms": 1424250496133,
+        "min_utc": "2015-02-18T05:47:13.386000+00:00",
+        "max_utc": "2015-02-18T09:08:16.133000+00:00"
+      },
+      "label_distribution": {
+        "0": 314871,
+        "1": 30500
+      },
+      "attack_distribution": {
+        "Analysis": 285,
+        "Backdoor": 144,
+        "Benign": 314871,
+        "DoS": 1445,
+        "Exploits": 10294,
+        "Fuzzers": 8495,
+        "Generic": 5137,
+        "Reconnaissance": 4107,
+        "Shellcode": 556,
+        "Worms": 37
+      },
+      "index_sha256": "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf"
+    },
+    "purged_val_test_gap": {
+      "row_count": 8860,
+      "percentage_of_total": 0.3746,
+      "time_coverage": {
+        "count": 8860,
+        "min_epoch_ms": 1424250496143,
+        "max_epoch_ms": 1424250796107,
+        "min_utc": "2015-02-18T09:08:16.143000+00:00",
+        "max_utc": "2015-02-18T09:13:16.107000+00:00"
+      },
+      "label_distribution": {
+        "0": 8349,
+        "1": 511
+      },
+      "attack_distribution": {
+        "Benign": 8349,
+        "DoS": 41,
+        "Exploits": 295,
+        "Fuzzers": 65,
+        "Generic": 15,
+        "Reconnaissance": 84,
+        "Shellcode": 10,
+        "Worms": 1
+      },
+      "index_sha256": "ac7f1de36b7bf1e26fce85869be0c5d0adef5c367eac8dd95f0ce50199e4a7c3",
+      "exclusion_reason": "Purge gap of 300000 ms between Validation and Test to guarantee canonical flow-group isolation and eliminate temporal boundary leakage."
+    },
+    "test": {
+      "row_count": 345953,
+      "percentage_of_total": 14.6254,
+      "time_coverage": {
+        "count": 345953,
+        "min_epoch_ms": 1424250796160,
+        "max_epoch_ms": 1424262564927,
+        "min_utc": "2015-02-18T09:13:16.160000+00:00",
+        "max_utc": "2015-02-18T12:29:24.927000+00:00"
+      },
+      "label_distribution": {
+        "0": 315357,
+        "1": 30596
+      },
+      "attack_distribution": {
+        "Analysis": 294,
+        "Backdoor": 1260,
+        "Benign": 315357,
+        "DoS": 1193,
+        "Exploits": 10520,
+        "Fuzzers": 7322,
+        "Generic": 5111,
+        "Reconnaissance": 4464,
+        "Shellcode": 396,
+        "Worms": 36
+      },
+      "index_sha256": "63e2e081300955fe06835b0cf7405e07e53985ca3d84164e768be09116269d03"
+    }
+  },
+  "audit_summary": {
+    "status": "PASS",
+    "ML_READY": "BLOCKED",
+    "exact_full_row_overlap": 0,
+    "source_feature_overlap": 0,
+    "canonical_flow_group_overlap": 0,
+    "temporal_boundary_violations": 0,
+    "flow_end_crossings": {
+      "train_into_validation": 0,
+      "validation_into_test": 0,
+      "train_max_end_ms": 1424238197221,
+      "val_min_start_ms": 1424238433386,
+      "train_val_margin_ms": 236165,
+      "val_max_end_ms": 1424250544102,
+      "test_min_start_ms": 1424250796160,
+      "val_test_margin_ms": 252058,
+      "status": "PASS"
+    },
+    "binary_label_conflicts": 0,
+    "pair_audits": {
+      "train_vs_validation": {
+        "p1": "train",
+        "p2": "validation",
+        "exact_full_row_overlap": {
+          "distinct_fingerprints": 0,
+          "status": "PASS",
+          "policy": "Strict zero-overlap enforced by chronological partitions."
+        },
+        "source_feature_overlap": {
+          "distinct_fingerprints": 0,
+          "status": "PASS",
+          "policy": "Strict zero-overlap enforced by chronological partitions."
+        },
+        "canonical_flow_group_overlap": {
+          "distinct_groups": 0,
+          "status": "PASS",
+          "policy": "Zero-overlap guaranteed by 300,000ms purge gap matching 5-minute bucket."
+        },
+        "ml_feature_overlap": {
+          "distinct_fingerprints": 61007,
+          "p1_affected_rows": 551167,
+          "p1_affected_percent": 33.29,
+          "p2_affected_rows": 172621,
+          "p2_affected_percent": 49.98,
+          "binary_label_conflicts": 0,
+          "attack_category_variations": 580,
+          "status": "REVIEWED_AND_JUSTIFIED",
+          "policy": "Retained with justification. Overlaps represent common network traffic profiles (e.g. standard TCP handshake or DNS query patterns) occurring between different IP endpoints at different timestamps. They are NOT the same physical flow, nor session leakage. Zero binary label conflicts exist."
+        },
+        "behavioral_v1_overlap": {
+          "distinct_fingerprints": 61007,
+          "note": "In fingerprint schema v1, behavioral-v1 columns match the 47 baseline ML features under a separate namespace."
+        }
+      },
+      "validation_vs_test": {
+        "p1": "validation",
+        "p2": "test",
+        "exact_full_row_overlap": {
+          "distinct_fingerprints": 0,
+          "status": "PASS",
+          "policy": "Strict zero-overlap enforced by chronological partitions."
+        },
+        "source_feature_overlap": {
+          "distinct_fingerprints": 0,
+          "status": "PASS",
+          "policy": "Strict zero-overlap enforced by chronological partitions."
+        },
+        "canonical_flow_group_overlap": {
+          "distinct_groups": 0,
+          "status": "PASS",
+          "policy": "Zero-overlap guaranteed by 300,000ms purge gap matching 5-minute bucket."
+        },
+        "ml_feature_overlap": {
+          "distinct_fingerprints": 24143,
+          "p1_affected_rows": 105218,
+          "p1_affected_percent": 30.47,
+          "p2_affected_rows": 114622,
+          "p2_affected_percent": 33.13,
+          "binary_label_conflicts": 0,
+          "attack_category_variations": 586,
+          "status": "REVIEWED_AND_JUSTIFIED",
+          "policy": "Retained with justification. Overlaps represent common network traffic profiles (e.g. standard TCP handshake or DNS query patterns) occurring between different IP endpoints at different timestamps. They are NOT the same physical flow, nor session leakage. Zero binary label conflicts exist."
+        },
+        "behavioral_v1_overlap": {
+          "distinct_fingerprints": 24143,
+          "note": "In fingerprint schema v1, behavioral-v1 columns match the 47 baseline ML features under a separate namespace."
+        }
+      },
+      "train_vs_test": {
+        "p1": "train",
+        "p2": "test",
+        "exact_full_row_overlap": {
+          "distinct_fingerprints": 0,
+          "status": "PASS",
+          "policy": "Strict zero-overlap enforced by chronological partitions."
+        },
+        "source_feature_overlap": {
+          "distinct_fingerprints": 0,
+          "status": "PASS",
+          "policy": "Strict zero-overlap enforced by chronological partitions."
+        },
+        "canonical_flow_group_overlap": {
+          "distinct_groups": 0,
+          "status": "PASS",
+          "policy": "Zero-overlap guaranteed by 300,000ms purge gap matching 5-minute bucket."
+        },
+        "ml_feature_overlap": {
+          "distinct_fingerprints": 59966,
+          "p1_affected_rows": 548253,
+          "p1_affected_percent": 33.11,
+          "p2_affected_rows": 184067,
+          "p2_affected_percent": 53.21,
+          "binary_label_conflicts": 0,
+          "attack_category_variations": 889,
+          "status": "REVIEWED_AND_JUSTIFIED",
+          "policy": "Retained with justification. Overlaps represent common network traffic profiles (e.g. standard TCP handshake or DNS query patterns) occurring between different IP endpoints at different timestamps. They are NOT the same physical flow, nor session leakage. Zero binary label conflicts exist."
+        },
+        "behavioral_v1_overlap": {
+          "distinct_fingerprints": 59966,
+          "note": "In fingerprint schema v1, behavioral-v1 columns match the 47 baseline ML features under a separate namespace."
+        }
+      }
+    },
+    "purged_records": {
+      "purged_train_val_gap_rows": 9443,
+      "purged_val_test_gap_rows": 8860,
+      "total_purged_rows": 18303
+    }
+  },
+  "limitations_and_assumptions": [
+    "Dataset capture window spans only 3 distinct UTC days (2015-01-22, 2015-01-23, 2015-02-18).",
+    "2015-01-23 contains only 39,778 benign flows and 0 attacks; temporal split cuts inside 2015-02-18 to ensure all 9 attack classes exist across train, val, and test.",
+    "Canonical 5-tuple + 5-minute bucket flow group is a heuristic proxy; raw PCAP session identifiers are not present in published NetFlow v3 schema. 0 group overlap guarantees isolation under this definition, but does not prove complete elimination of complex multi-connection application sessions or sessions spanning across buckets.",
+    "Temporal boundaries verified on FLOW_END_MILLISECONDS: 0 flows originating in Train extend into the Validation time window (margin: 236,165 ms) and 0 flows from Validation extend into Test (margin: 252,058 ms), well protected by the 300,000 ms purge gap vs maximum flow duration of 120,948 ms in the entire dataset.",
+    "ML-feature pattern repetition across time (affecting 53.21% of Test and 49.98% of Validation rows against Train) represents common recurring protocol profiles (TCP handshakes, DNS queries) rather than session leakage.",
+    "Zero binary-label conflicts does not guarantee that repeated ML-feature patterns have zero impact on evaluation independence or model generalization. Evaluation samples sharing feature vectors with Train are not purely independent in feature space; actual impact must be audited during model evaluation.",
+    "ML pipeline readiness remains ML_READY: BLOCKED pending train-only fitted preprocessing in Issue #8.",
+    "Models evaluated on held-out test reflect chronological generalization within the 2015 capture; they do not prove zero-day or modern network generalization."
+  ],
+  "interface_for_issue_8": {
+    "ml_readiness": "BLOCKED",
+    "ml_readiness_reason": "Split and leakage audit PASS; however, ML pipeline readiness remains BLOCKED pending train-only fitted preprocessing transformers in Issue #8.",
+    "ready_for_issue_8": true,
+    "train_partition_name": "train",
+    "validation_partition_name": "validation",
+    "test_partition_name": "test",
+    "rule": "Transformers, scalers, imputers and encoders must fit exclusively on train partition indices."
+  }
+}

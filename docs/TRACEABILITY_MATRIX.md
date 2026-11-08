@@ -3,35 +3,42 @@
 Trạng thái vòng đời: `PLANNED`, `IMPLEMENTED`, `TESTED`, `EXPERIMENTALLY VALIDATED`.
 Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 
-C0 chỉ xác nhận governance/backlog. Mọi checkpoint C1–C11 vẫn `PLANNED` cho đến khi có
-code, test và evidence tương ứng. PR #22 là workstream #4/#5 riêng, không tự merge.
-
-| C | Requirement | Issue | Deliverable/evidence bắt buộc | Trạng thái C0 |
+| C | Requirement | Issue | Deliverable/evidence | Trạng thái hiện tại |
 |---|---|---|---|---|
-| C0 | Governance, scope, architecture, backlog | #23 | docs, GitHub readback, branch/commit/PR | IMPLEMENTED; VERIFY chờ CI/PR |
-| C1 | Data quality, EDA, leakage | #4–#7, PR #22 | manifest/report/EDA/leakage decision | #4/#5 TESTED trên PR #22; #6/#7 PLANNED |
-| C2 | Preprocessing không leakage | #8 | pipeline artifact, fit-boundary tests | PLANNED |
-| C3 | RF và XGBoost supervised | #9, #10, #12, #31 | model artifacts, metrics, reproduction | PLANNED |
+| C0 | Governance, scope, architecture, backlog | #23 | docs, backlog, PR evidence | IMPLEMENTED; trạng thái remote phải đọc lại theo từng PR |
+| C1 | NF-UNSW-NB15-v3 provenance, quality, EDA, leakage | #4–#7 | v3 manifest, schema, real numeric/duplicate audit, EDA report, leakage decision | `SOURCE_INTEGRITY: PASS`; `RAW_QUALITY: FINDINGS_RECORDED`; EDA IMPLEMENTED/TESTED on real data; real split/leakage audit PASS (PR #41); `ML_READY: BLOCKED` |
+| C2 | Preprocessing không leakage | #8 | train-only pipeline artifact, fit-boundary tests, single-load verified loader, execution evidence | IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED on verified v3 bytes; AC1–AC4 PASS (fail-closed byte verification, execution evidence recorded, REAL-DATA VERIFIED); `ML_READY: BLOCKED` |
+| C3 | RF và XGBoost supervised | #9, #10, #12, #31 | RF baseline protocol (#9), model artifacts & training entrypoint (#10), metrics (#12), reproduction | Protocol #9: IMPLEMENTED / TESTED (canonical config locking bao gồm `n_jobs=-1`, split manifest `ml_feature_overlap` contract alignment, 36 unit tests in `test_rf_baseline_protocol` + 7 in `test_rf_model_structure` PASS); Training #10: IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED on verified real NF-UNSW-NB15-v3 bytes (`1.655.797` train rows, `345.371` validation rows; model artifact `random_forest_baseline.joblib` `917.227` bytes SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea` reproduced 100% byte-for-byte across 2 runs; `reports/models/random_forest_manifest.json`, `reports/models/rf_baseline_training_report.md`, & `reports/models/rf_baseline_validation_audit.json`; Validation `F1=0.999869`, `Macro-F1=0.999928`, `FPR=0.000016`, `CM=[[314866, 5], [3, 30497]]`; non-overlap Validation `Accuracy=0.999954`, `F1=0.999823`; `max_abs_probability_diff=2.220446049250313e-16`; `test_partition_accessed=false`, `test_rows_loaded=0`; 33/33 tests in `test_rf_training` including `test_execute_training_real_data` PASS, 15/15 in `test_run_experiments` PASS, 7/7 in `test_audit_rf_validation_diagnostics` PASS; full pytest `397 passed, 2 skipped`); Held-out Test Evaluation #12: PLANNED |
 | C4 | IF, Autoencoder, unknown holdout | #11, #29 | thresholds, holdout protocol, results | PLANNED |
 | C5 | Behavioral Vector | #28 | versioned schemas, fixtures, correlation tests | PLANNED |
 | C6 | Risk và Trace | #32, #24 | explanation, calibration, evidence/timeline tests | PLANNED |
 | C7 | AES-GCM và key lifecycle | #26 | integrity/recovery/rotation tests | PLANNED |
 | C8 | Adaptive response | #27 | cooldown/rate/idempotency/concurrency audit | PLANNED |
 | C9 | API, persistence, dashboard | #30, #16, #17 | OpenAPI, DB recovery, E2E | PLANNED |
-| C10 | 7 experiments | #25 | protocol, artifact, results, limitations | PLANNED |
+| C10 | 7 experiments | #25 | protocol, artifacts, results, limitations | PLANNED |
 | C11 | Delivery | #18–#20 | PDF, slides, demo, guides, 5-role handoff | PLANNED |
 
-Chuỗi bắt buộc cho từng claim:
+## Dataset migration A–H
+
+| Gate | Implementation | Tests/evidence | Status |
+|---|---|---|---|
+| A — Research/source | decision, provenance, schema, impact records | official UQ/RDM bytes and metadata compared | VERIFIED |
+| B — Architecture | component inventory, default/historical paths, rollback boundary | `git diff --check` | PASS |
+| C — Acquisition/manifest | bounded fetch, safe ZIP, lock, transaction, checksums | synthetic safety tests + official download/cache verification | PASS |
+| D — Quality audit | streaming validator, disk-backed numeric/duplicate/label-conflict audit | real report on 2.365.424 rows | SOURCE_INTEGRITY PASS; RAW_QUALITY FINDINGS_RECORDED; ML_READY BLOCKED |
+| E — Split contract | 47-feature exclusion, versioned fingerprints, group/temporal guards | synthetic + real split tests (PR #41) | TESTED / EXPERIMENTALLY VALIDATED; real split/leakage audit PASS |
+| F — Architecture/docs | v3 default throughout current docs | link/text/status checks | IMPLEMENTED / VERIFIED |
+| G — Tests/CI | Windows/Linux matrix, migration regression tests, lint audit workflow | 219 pytest PASS (211 previous + 8 reproducibility tests); PR-scoped Ruff and Black PASS; repository-wide Ruff (5 findings) and Black (11 files) still FAIL on pre-existing files, tracked in #37; CI matrix PASS 4/4; lint audit workflow PASS on Linux | PARTIAL — remote CI PASS, repository-wide lint debt remains in #37 |
+| H — Issues/PR | #6–#15, #17, #18, #20, #25, #29, #31; historical notes #4/#5; M1–M5/M7 | #6/#7/#8/#17/#20 hardening contracts read back OPEN; PR #36 OPEN into `main` | VERIFIED; not merged |
+| I — EDA (Issue #6) | `scripts/eda_nf_unsw_nb15_v3.py`, `src/network_anomaly/eda/`, generated report + summary | 15 EDA unit tests + 8 reproducibility tests on synthetic fixtures PASS; real run on 2.365.424 rows; inherited findings reproduced (rows, labels, exact duplicates, repeated rows all MATCH) | IMPLEMENTED / TESTED; no split, no fitted artifact, `ML_READY: BLOCKED` |
+| J — EDA reproducibility evidence | `scripts/verify_eda_reproducibility.py`, `reports/eda/evidence/` | two independent real-data runs with captured stdout/stderr, git state, environment, dataset identity, manifest/schema verification and key aggregates; deterministic content comparison PASS per metric | VERIFIED — evidence retrievable per run |
+
+UNSW-NB15 (2015) evidence is preserved under `historical/`; its old validation cannot satisfy a v3
+gate. PR #22 and #35 are merged historical workstreams, not pending proof for this migration.
+
+Chuỗi bắt buộc cho mọi claim:
 `Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment Results`.
 Synthetic fixture/CI không thay thế real-data experiment. Mỗi result phải gắn commit,
 dataset/split identifier, dependency versions, seed/config, artifact và reproduction command.
 
-## Review PR #22 và Issue #4/#5 tại C0
-
-- Remote: PR #22 `OPEN`, `MERGEABLE`, chưa có `reviewDecision`; 4/4 CI jobs thành công.
-- Local review worktree: 105 tests PASS; manifest verify PASS; real split validation PASS
-  với duplicate warning; `git diff --check` PASS.
-- Giới hạn: SHA-256 là project-computed, UNSW không công bố checksum; duplicate/overlap
-  leakage thuộc #7. Không merge hoặc đóng #4/#5 trong C0.
-
-Cập nhật: 2026-10-19 (self-review; không phải reviewer độc lập khác)
+Cập nhật: 2026-11-07 (PR #43 hoàn thành huấn luyện thực nghiệm Random Forest baseline Issue #10 trên dữ liệu thật NF-UNSW-NB15-v3, xác minh toàn bộ AC1–AC7 và giữ khóa tập Test cho Issue #12)

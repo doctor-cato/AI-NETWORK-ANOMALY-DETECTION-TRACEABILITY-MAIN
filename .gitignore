@@ -50,6 +50,11 @@ Thumbs.db
 *.log
 logs/
 
+# The EDA reproducibility evidence keeps the captured stdout and stderr of the
+# two recorded real-data runs; they are part of the reviewable evidence.
+!reports/eda/evidence/**/stdout.log
+!reports/eda/evidence/**/stderr.log
+
 # Local session audit evidence (preserve on disk; not project source)
 /AUDIT_REPORT.md
 /AUDIT_LEDGER.md

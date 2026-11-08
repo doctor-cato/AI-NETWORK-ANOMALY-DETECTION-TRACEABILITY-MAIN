@@ -50,18 +50,51 @@ def run_cli(*args, cwd=None):
     )
 
 
-@pytest.mark.parametrize("step", ["baseline", "evaluate", "inference"])
+@pytest.mark.parametrize("step", ["evaluate", "inference"])
 def test_unimplemented_step_never_reports_success(step):
     result = run_cli("--step", step)
     assert result.returncode == EXIT_NOT_IMPLEMENTED, result.stdout + result.stderr
     assert "NOT IMPLEMENTED" in result.stdout
 
 
-@pytest.mark.parametrize("step", ["baseline", "evaluate", "inference"])
+@pytest.mark.parametrize("step", ["evaluate", "inference"])
 def test_unimplemented_step_is_independent_of_working_directory(step, tmp_path):
     """Reporting an unimplemented step must not depend on cwd or relative layout."""
     result = run_cli("--step", step, cwd=str(tmp_path))
     assert result.returncode == EXIT_NOT_IMPLEMENTED, result.stdout + result.stderr
+
+
+def fake_trainer(exit_code):
+    """Stand-in for the train_random_forest module that records how it was called."""
+    calls = []
+
+    def main(argv):
+        calls.append(argv)
+        return exit_code
+
+    module = type("FakeTrainRandomForest", (), {"main": staticmethod(main)})
+    module.calls = calls
+    return module
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_baseline_delegates_to_train_random_forest_and_forwards_exit_code(
+    runner, monkeypatch, exit_code, capsys
+):
+    trainer = fake_trainer(exit_code)
+    monkeypatch.setitem(sys.modules, "train_random_forest", trainer)
+    assert runner.main(["--step", "baseline"]) == exit_code
+    assert trainer.calls == [[]]
+    assert "delegating to scripts/train_random_forest.py" in capsys.readouterr().out
+
+
+def test_baseline_cli_fail_closed_on_missing_prerequisites(runner, monkeypatch, tmp_path, capsys):
+    """CLI execution of --step baseline without raw data fails closed with exit code 1."""
+    import train_random_forest
+
+    monkeypatch.setattr(train_random_forest, "DEFAULT_DATASET", tmp_path / "NF-UNSW-NB15-v3.csv")
+    assert runner.main(["--step", "baseline"]) == 1
+    assert "BLOCKER DETECTED" in capsys.readouterr().out
 
 
 def test_usage_error_has_a_different_exit_code_than_not_implemented():
@@ -87,14 +120,29 @@ def test_check_data_delegates_to_validator_and_forwards_its_exit_code(
 def test_check_data_without_dataset_is_an_intentional_skip(runner, monkeypatch, tmp_path, capsys):
     import validate_data
 
-    monkeypatch.setattr(validate_data, "DATA_RAW", tmp_path)
+    monkeypatch.setattr(validate_data, "DATASET_PATH", tmp_path / "NF-UNSW-NB15-v3.csv")
     assert runner.main(["--step", "check-data"]) == 0
     assert "SKIPPED" in capsys.readouterr().out
 
 
 def test_check_data_with_invalid_dataset_fails(runner, monkeypatch, tmp_path):
-    (tmp_path / "UNSW_NB15_training-set.csv").write_text("not-csv\n", encoding="utf-8")
+    dataset = tmp_path / "NF-UNSW-NB15-v3.csv"
+    dataset.write_text("not-csv\n", encoding="utf-8")
     import validate_data
 
-    monkeypatch.setattr(validate_data, "DATA_RAW", tmp_path)
-    assert runner.main(["--step", "check-data"]) == 1
+    monkeypatch.setattr(validate_data, "DATASET_PATH", dataset)
+    assert runner.main(["--step", "check-data"]) == 2
+
+
+def test_run_experiments_docstring_and_cli_help_reflect_baseline_implementation(runner):
+    """Verify P2-01: docstring and CLI help accurately document --step baseline behavior."""
+    doc = runner.__doc__ or ""
+    assert "exits 3 until M2 implements it" not in doc
+    assert "train_random_forest.py" in doc
+    assert "baseline" not in runner.NOT_IMPLEMENTED_STEPS
+    assert set(runner.NOT_IMPLEMENTED_STEPS) == {"evaluate", "inference"}
+
+    help_result = run_cli("--help")
+    assert help_result.returncode == 0
+    assert "baseline" in help_result.stdout
+    assert "train_random_forest.py" in help_result.stdout

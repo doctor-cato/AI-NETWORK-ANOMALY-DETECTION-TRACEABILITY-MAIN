@@ -1,38 +1,33 @@
 #!/usr/bin/env python3
-"""Stream and validate the selected UNSW-NB15 train/test CSV layout."""
+"""Stream and audit the official NF-UNSW-NB15-v3 CSV without loading it in RAM."""
 
 import argparse
 import csv
 import hashlib
+import ipaddress
 import json
 import math
 import os
+import sqlite3
+import tempfile
 from collections import Counter
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_RAW = PROJECT_ROOT / "data" / "raw"
-
-SKIPPED_NOT_A_PASS = (
-    "No real-data validation performed; SKIPPED is not PASS. "
-    "Download the dataset with scripts/fetch_unsw_nb15.py before treating CI as evidence."
+MANIFEST_PATH = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_MANIFEST.json"
+DATASET_PATH = PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
+REPORT_PATH = PROJECT_ROOT / "reports" / "data_quality" / "nf_unsw_nb15_v3_validation.json"
+SKIPPED_MESSAGE = (
+    "NF-UNSW-NB15-v3 bytes are absent; real-data validation is SKIPPED, not PASS. "
+    "Run python scripts/fetch_nf_unsw_nb15_v3.py first."
 )
-
-DEFAULT_FILES = ("UNSW_NB15_training-set.csv", "UNSW_NB15_testing-set.csv")
-EXPECTED_ROWS = {
-    "UNSW_NB15_training-set.csv": 175341,
-    "UNSW_NB15_testing-set.csv": 82332,
-}
-COLUMNS = (
-    "id dur proto service state spkts dpkts sbytes dbytes rate sttl dttl sload dload "
-    "sloss dloss sinpkt dinpkt sjit djit swin stcpb dtcpb dwin tcprtt synack ackdat "
-    "smean dmean trans_depth response_body_len ct_srv_src ct_state_ttl ct_dst_ltm "
-    "ct_src_dport_ltm ct_dst_sport_ltm ct_dst_src_ltm is_ftp_login ct_ftp_cmd "
-    "ct_flw_http_mthd ct_src_ltm ct_srv_dst is_sm_ips_ports attack_cat label"
-).split()
-TEXT_COLUMNS = {"proto", "service", "state", "attack_cat"}
-ATTACK_CATEGORIES = {
-    "Normal",
+IP_COLUMNS = ("IPV4_SRC_ADDR", "IPV4_DST_ADDR")
+PORT_COLUMNS = ("L4_SRC_PORT", "L4_DST_PORT")
+TIMESTAMP_COLUMNS = ("FLOW_START_MILLISECONDS", "FLOW_END_MILLISECONDS")
+TARGET_COLUMNS = ("Label", "Attack")
+NON_FEATURE_COLUMNS = set(IP_COLUMNS + PORT_COLUMNS + TIMESTAMP_COLUMNS + TARGET_COLUMNS)
+ATTACK_CATEGORIES = (
+    "Benign",
     "Analysis",
     "Backdoor",
     "DoS",
@@ -42,38 +37,40 @@ ATTACK_CATEGORIES = {
     "Reconnaissance",
     "Shellcode",
     "Worms",
+)
+VALID_ATTACKS = set(ATTACK_CATEGORIES)
+ATTACK_BITS = {attack: 1 << index for index, attack in enumerate(ATTACK_CATEGORIES)}
+FINGERPRINT_SCHEMA_VERSION = "nf-unsw-nb15-v3-fingerprint-v1"
+MAX_EXAMPLES = 20
+EXIT_ML_BLOCKED = 1
+EXIT_SOURCE_INTEGRITY_FAILURE = 2
+QUALITY_TOKEN_ISSUES = {
+    "missing",
+    "positive_infinity",
+    "negative_infinity",
+    "nan",
+    "invalid_numeric",
 }
-INTEGER_COLUMNS = {
-    "id",
-    "spkts",
-    "dpkts",
-    "sbytes",
-    "dbytes",
-    "sttl",
-    "dttl",
-    "sloss",
-    "dloss",
-    "swin",
-    "stcpb",
-    "dtcpb",
-    "dwin",
-    "smean",
-    "dmean",
-    "trans_depth",
-    "response_body_len",
-    "ct_srv_src",
-    "ct_state_ttl",
-    "ct_dst_ltm",
-    "ct_src_dport_ltm",
-    "ct_dst_sport_ltm",
-    "ct_dst_src_ltm",
-    "is_ftp_login",
-    "ct_ftp_cmd",
-    "ct_flw_http_mthd",
-    "ct_src_ltm",
-    "ct_srv_dst",
-    "is_sm_ips_ports",
-    "label",
+QUALITY_RELATION_COLUMNS = (
+    "FLOW_DURATION_MILLISECONDS",
+    "DURATION_IN",
+    "DURATION_OUT",
+    "IN_PKTS",
+    "OUT_PKTS",
+    "IN_BYTES",
+    "OUT_BYTES",
+)
+RAW_QUALITY_PREFIXES = {
+    "missing",
+    "positive_infinity",
+    "negative_infinity",
+    "nan",
+    "negative",
+}
+RAW_QUALITY_KEYS = {
+    "exact_duplicate_rows",
+    "ml_feature_equivalent_duplicate_rows",
+    "behavioral_fingerprint_duplicate_rows",
 }
 
 
@@ -85,224 +82,618 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
-def is_blank_line(row):
-    """True for a physical line carrying no delimiter and no value.
+def load_contract(manifest_path):
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("dataset") != "NF-UNSW-NB15-v3":
+        raise ValueError("manifest dataset is not NF-UNSW-NB15-v3")
+    columns = manifest["schema"]["columns_in_order"]
+    if len(columns) != 55 or len(set(columns)) != 55:
+        raise ValueError("manifest must define 55 distinct ordered columns")
+    if columns[-2:] != list(TARGET_COLUMNS):
+        raise ValueError("manifest target columns must be Label and Attack")
+    csv_entry = next(
+        entry for entry in manifest["files"] if entry.get("file") == "data/NF-UNSW-NB15-v3.csv"
+    )
+    return manifest, columns, csv_entry
 
-    A line that does contain delimiters is never blank here: an all-empty row of the
-    full width is a missing-value defect, and a short all-empty row is a width defect.
-    """
-    return len(row) == 0 or (len(row) == 1 and not row[0].strip())
+
+def verify_dataset_bytes(path, entry):
+    if path.stat().st_size != entry["size_bytes"]:
+        raise ValueError(
+            f"dataset size mismatch: expected {entry['size_bytes']}, got {path.stat().st_size}"
+        )
+    digest = sha256_file(path)
+    if digest != entry["sha256"]:
+        raise ValueError(f"dataset SHA-256 mismatch: expected {entry['sha256']}, got {digest}")
+    return digest
 
 
-def validate_file(target, expected_sha256=None, expected_size=None, expected_rows=None):
-    """Return a report for a valid CSV; raise for a blocking defect."""
-    digest = sha256_file(target)
-    if expected_size is not None and target.stat().st_size != expected_size:
-        raise ValueError(f"size mismatch: {target.name}")
-    if expected_sha256 is not None and digest != expected_sha256:
-        raise ValueError(f"SHA-256 mismatch: expected {expected_sha256}, got {digest}")
-    with target.open("r", encoding="utf-8-sig", newline="") as stream:
-        reader = csv.reader(stream, strict=True)
-        header = next(reader, [])
-        if header != COLUMNS:
-            raise ValueError("schema mismatch: expected the 45 train/test columns in order")
-        counts = Counter()
-        attack_counts = Counter()
-        missing = Counter()
-        seen = set()
-        duplicates = 0
-        rows = 0
-        blank_lines = 0
-        blank_positions = []
-        for row in reader:
-            # Blank lines are counted and rejected, never silently dropped, so the
-            # row/missing/duplicate/class counters below stay exact.
-            if is_blank_line(row):
-                blank_lines += 1
-                if len(blank_positions) < 5:
-                    blank_positions.append(reader.line_num)
-                continue
-            if len(row) != len(COLUMNS):
-                raise ValueError(f"wrong column count at CSV line {reader.line_num}")
-            record = dict(zip(COLUMNS, row))
-            if record["label"] not in {"0", "1"}:
-                raise ValueError(
-                    f"invalid label at CSV line {reader.line_num}: {record['label']!r}"
-                )
-            category = record["attack_cat"].strip()
-            if category not in ATTACK_CATEGORIES:
-                raise ValueError(f"invalid attack_cat at CSV line {reader.line_num}: {category!r}")
-            is_normal = category == "Normal"
-            if (record["label"] == "0") != is_normal:
-                raise ValueError(
-                    "inconsistent label/attack_cat at CSV line "
-                    f"{reader.line_num}: label={record['label']!r}, attack_cat={category!r}"
-                )
-            for name, value in record.items():
-                if not value.strip():
-                    missing[name] += 1
-                    if name in {"label", "proto", "state", "attack_cat"}:
-                        raise ValueError(
-                            f"missing required value {name} at CSV line {reader.line_num}"
-                        )
-                    continue
-                if name in TEXT_COLUMNS:
-                    continue
-                try:
-                    number = int(value) if name in INTEGER_COLUMNS else float(value)
-                except ValueError as error:
-                    raise ValueError(
-                        f"invalid numeric value in {name} at CSV line {reader.line_num}: {value!r}"
-                    ) from error
-                if not math.isfinite(number):
-                    raise ValueError(f"non-finite value in {name} at CSV line {reader.line_num}")
-            # The split's id is a row identifier, not a traffic attribute.
-            signature = tuple(row[1:])
-            if signature in seen:
-                duplicates += 1
-            else:
-                seen.add(signature)
-            counts[record["label"]] += 1
-            attack_counts[category] += 1
-            rows += 1
-        if blank_lines:
-            shown = ", ".join(str(line) for line in blank_positions)
-            if blank_lines > len(blank_positions):
-                shown += ", ..."
-            raise ValueError(
-                f"{blank_lines} blank CSV line(s) with no delimiter and no value "
-                f"at line(s) {shown}"
-            )
-        if not rows:
-            raise ValueError("no data rows")
-        if expected_rows is not None and rows != expected_rows:
-            raise ValueError(f"row count mismatch: expected {expected_rows}, got {rows}")
+def add_example(examples, issue, line_number):
+    values = examples.setdefault(issue, [])
+    if len(values) < MAX_EXAMPLES:
+        values.append(line_number)
+
+
+def parse_finite(value, column):
+    if value == "":
+        return None, "missing"
+    try:
+        number = float(value)
+    except ValueError:
+        return None, "invalid_numeric"
+    if math.isnan(number):
+        return None, "nan"
+    if math.isinf(number):
+        return None, "positive_infinity" if number > 0 else "negative_infinity"
+    if number < 0:
+        return number, "negative"
+    if column in PORT_COLUMNS and (not number.is_integer() or number > 65535):
+        return number, "invalid_port"
+    return number, None
+
+
+def numeric_state(value):
+    if value is None:
+        return "unavailable"
+    if value == 0:
+        return "zero"
+    if value < 0:
+        return "negative"
+    return "positive"
+
+
+def duration_bucket(value):
+    if value is None:
+        return "unavailable"
+    if value < 0:
+        return "negative"
+    if value == 0:
+        return "zero"
+    if value <= 1:
+        return "small_positive_le_1ms"
+    return "greater_than_1ms"
+
+
+def classify_dataset_status(issue_counts):
+    source_integrity_issues = {}
+    raw_quality_findings = {}
+    for issue, count in issue_counts.items():
+        prefix = issue.split(":", 1)[0]
+        target = (
+            raw_quality_findings
+            if prefix in RAW_QUALITY_PREFIXES or issue in RAW_QUALITY_KEYS
+            else source_integrity_issues
+        )
+        target[issue] = count
+    source_status = "PASS" if not source_integrity_issues else "FAIL"
+    raw_status = "PASS" if not raw_quality_findings else "FINDINGS_RECORDED"
+    blockers = ["real split and leakage audit are NOT VERIFIED"]
+    if source_integrity_issues:
+        blockers.insert(0, "source integrity defects must be resolved")
+    if raw_quality_findings:
+        blockers.insert(0, "raw quality findings require an approved train-only handling policy")
     return {
-        "file": target.name,
-        "sha256": digest,
-        "size_bytes": target.stat().st_size,
-        "rows": rows,
-        "blank_lines": blank_lines,
-        "columns": len(COLUMNS),
-        "schema_matches_profile": True,
-        "expected_rows": expected_rows,
-        "row_count_matches_expected": expected_rows is None or rows == expected_rows,
-        "invalid_labels": 0,
-        "invalid_attack_categories": 0,
-        "label_attack_category_inconsistencies": 0,
-        "label_distribution": dict(sorted(counts.items())),
-        "attack_category_distribution": dict(sorted(attack_counts.items())),
-        "class_ratio": (max(counts.values()) / min(counts.values()) if len(counts) == 2 else None),
-        "missing_by_column": dict(sorted(missing.items())),
-        "duplicate_rows": duplicates,
-        "warnings": [
-            message
-            for condition, message in (
-                (bool(missing), "missing feature values require review before preprocessing"),
-                (duplicates > 0, "duplicate records require leakage review before splitting"),
-                (len(counts) < 2, "only one binary class observed"),
-                (
-                    len(counts) == 2 and max(counts.values()) / min(counts.values()) > 10,
-                    "class imbalance exceeds 10:1",
-                ),
-            )
-            if condition
-        ],
-        "limitations": "Structural and value checks only; no leakage audit or feature selection.",
+        "SOURCE_INTEGRITY": source_status,
+        "RAW_QUALITY": raw_status,
+        "ML_READY": "BLOCKED",
+        "source_integrity_issues": source_integrity_issues,
+        "raw_quality_findings": raw_quality_findings,
+        "ml_readiness_blockers": blockers,
     }
+
+
+class NumericQualityAudit:
+    """Aggregate numeric-token findings without retaining source rows."""
+
+    def __init__(self):
+        self.affected_rows = 0
+        self.multi_finding_rows = 0
+        self.patterns = Counter()
+        self.finding_type_counts = Counter({issue: 0 for issue in QUALITY_TOKEN_ISSUES})
+        self.by_issue = {}
+
+    def add(self, issues, parsed, label, attack, protocol):
+        relevant = tuple(
+            sorted(issue for issue in issues if issue.split(":", 1)[0] in QUALITY_TOKEN_ISSUES)
+        )
+        if not relevant:
+            return
+        self.affected_rows += 1
+        if len(relevant) > 1:
+            self.multi_finding_rows += 1
+        self.patterns[" | ".join(relevant)] += 1
+        for issue in relevant:
+            self.finding_type_counts[issue.split(":", 1)[0]] += 1
+            aggregate = self.by_issue.setdefault(
+                issue,
+                {
+                    "labels": Counter(),
+                    "attacks": Counter(),
+                    "protocols": Counter(),
+                    "duration_buckets": {
+                        "FLOW_DURATION_MILLISECONDS": Counter(),
+                        "DURATION_IN": Counter(),
+                        "DURATION_OUT": Counter(),
+                    },
+                    "related_numeric_states": {
+                        column: Counter() for column in QUALITY_RELATION_COLUMNS[3:]
+                    },
+                },
+            )
+            aggregate["labels"][label] += 1
+            aggregate["attacks"][attack] += 1
+            aggregate["protocols"][protocol] += 1
+            for column in QUALITY_RELATION_COLUMNS[:3]:
+                aggregate["duration_buckets"][column][duration_bucket(parsed[column])] += 1
+            for column in QUALITY_RELATION_COLUMNS[3:]:
+                aggregate["related_numeric_states"][column][numeric_state(parsed[column])] += 1
+
+    def report(self):
+        def sorted_counter(counter):
+            return dict(sorted(counter.items(), key=lambda item: str(item[0])))
+
+        findings = {}
+        for issue, aggregate in sorted(self.by_issue.items()):
+            findings[issue] = {
+                "labels": sorted_counter(aggregate["labels"]),
+                "attacks": sorted_counter(aggregate["attacks"]),
+                "protocols": sorted_counter(aggregate["protocols"]),
+                "duration_buckets": {
+                    column: sorted_counter(counts)
+                    for column, counts in aggregate["duration_buckets"].items()
+                },
+                "related_numeric_states": {
+                    column: sorted_counter(counts)
+                    for column, counts in aggregate["related_numeric_states"].items()
+                },
+            }
+        return {
+            "affected_unique_rows": self.affected_rows,
+            "rows_with_one_finding": self.affected_rows - self.multi_finding_rows,
+            "rows_with_multiple_findings": self.multi_finding_rows,
+            "finding_type_counts": sorted_counter(self.finding_type_counts),
+            "overlap_patterns": sorted_counter(self.patterns),
+            "findings": findings,
+            "causality_note": (
+                "Aggregates describe observed associations only. They do not establish how "
+                "the published feature values were computed or why a value became non-finite."
+            ),
+        }
+
+
+def row_digest(values, namespace):
+    digest = hashlib.blake2b(digest_size=16)
+    digest.update(FINGERPRINT_SCHEMA_VERSION.encode("ascii"))
+    digest.update(namespace.encode("ascii"))
+    for value in values:
+        encoded = value.encode("utf-8", errors="surrogatepass")
+        digest.update(len(encoded).to_bytes(4, "big"))
+        digest.update(encoded)
+    return digest.digest()
+
+
+class DuplicateAudit:
+    """Disk-backed exact, ML-equivalent and behavioral-v1 audit."""
+
+    def __init__(self, directory=None):
+        handle, name = tempfile.mkstemp(
+            prefix="nf-unsw-v3-duplicates-", suffix=".sqlite3", dir=directory
+        )
+        os.close(handle)
+        self.path = Path(name)
+        self.connection = sqlite3.connect(self.path)
+        self.connection.execute("PRAGMA journal_mode=OFF")
+        self.connection.execute("PRAGMA synchronous=OFF")
+        self.connection.execute(
+            "CREATE TABLE exact (digest BLOB PRIMARY KEY, count INTEGER NOT NULL) WITHOUT ROWID"
+        )
+        self.connection.execute(
+            "CREATE TABLE ml (digest BLOB PRIMARY KEY, count INTEGER NOT NULL, "
+            "label_mask INTEGER NOT NULL, attack_mask INTEGER NOT NULL) WITHOUT ROWID"
+        )
+        self.connection.execute(
+            "CREATE TABLE behavior (digest BLOB PRIMARY KEY, count INTEGER NOT NULL) WITHOUT ROWID"
+        )
+        self.exact_duplicates = 0
+        self.ml_feature_equivalent_duplicates = 0
+        self.behavioral_duplicates = 0
+        self.exact_duplicate_labels = Counter()
+        self.exact_duplicate_attacks = Counter()
+
+    def add(self, row, columns):
+        index = {column: position for position, column in enumerate(columns)}
+        label = row[index["Label"]]
+        attack = row[index["Attack"]]
+        label_mask = 1 << int(label) if label in {"0", "1"} else 0
+        attack_mask = ATTACK_BITS.get(attack, 0)
+        exact = row_digest(row, "full-row")
+        ml_feature = row_digest(
+            (
+                value
+                for column, value in zip(columns, row, strict=True)
+                if column not in NON_FEATURE_COLUMNS
+            ),
+            "ml-feature",
+        )
+        behavior = row_digest(
+            (
+                value
+                for column, value in zip(columns, row, strict=True)
+                if column not in NON_FEATURE_COLUMNS
+            ),
+            "behavioral-v1",
+        )
+        if (
+            self.connection.execute("INSERT OR IGNORE INTO exact VALUES (?, 1)", (exact,)).rowcount
+            == 0
+        ):
+            self.exact_duplicates += 1
+            self.exact_duplicate_labels[label] += 1
+            self.exact_duplicate_attacks[attack] += 1
+            self.connection.execute("UPDATE exact SET count = count + 1 WHERE digest = ?", (exact,))
+        if (
+            self.connection.execute(
+                "INSERT OR IGNORE INTO ml VALUES (?, 1, ?, ?)",
+                (ml_feature, label_mask, attack_mask),
+            ).rowcount
+            == 0
+        ):
+            self.ml_feature_equivalent_duplicates += 1
+            self.connection.execute(
+                "UPDATE ml SET count = count + 1, label_mask = label_mask | ?, "
+                "attack_mask = attack_mask | ? WHERE digest = ?",
+                (label_mask, attack_mask, ml_feature),
+            )
+        if (
+            self.connection.execute(
+                "INSERT OR IGNORE INTO behavior VALUES (?, 1)", (behavior,)
+            ).rowcount
+            == 0
+        ):
+            self.behavioral_duplicates += 1
+            self.connection.execute(
+                "UPDATE behavior SET count = count + 1 WHERE digest = ?", (behavior,)
+            )
+
+    def report(self):
+        exact_groups = self.connection.execute(
+            "SELECT COUNT(*) FROM exact WHERE count > 1"
+        ).fetchone()[0]
+        ml_groups = 0
+        label_conflict_groups = 0
+        label_conflict_rows = 0
+        benign_attack_conflict_groups = 0
+        multiple_attack_values_groups = 0
+        rows_in_multiple_attack_values_groups = 0
+        multiple_malicious_categories_groups = 0
+        attack_value_conflict_patterns = {}
+        rare_conflicts = {
+            category: {"fingerprints": 0, "rows": 0} for category in ("Analysis", "Worms")
+        }
+        rare_multi_attack = {
+            category: {"fingerprints": 0, "rows": 0} for category in ("Analysis", "Worms")
+        }
+        benign_bit = ATTACK_BITS["Benign"]
+        malicious_mask = sum(bit for category, bit in ATTACK_BITS.items() if category != "Benign")
+        for count, label_mask, attack_mask in self.connection.execute(
+            "SELECT count, label_mask, attack_mask FROM ml"
+        ):
+            if count > 1:
+                ml_groups += 1
+            has_label_conflict = label_mask == 3
+            if has_label_conflict:
+                label_conflict_groups += 1
+                label_conflict_rows += count
+            has_benign_attack = bool(attack_mask & benign_bit) and bool(
+                attack_mask & malicious_mask
+            )
+            if has_benign_attack:
+                benign_attack_conflict_groups += 1
+            if attack_mask.bit_count() > 1:
+                multiple_attack_values_groups += 1
+                rows_in_multiple_attack_values_groups += count
+                categories = tuple(
+                    category
+                    for category in ATTACK_CATEGORIES
+                    if attack_mask & ATTACK_BITS[category]
+                )
+                pattern = " | ".join(categories)
+                pattern_counts = attack_value_conflict_patterns.setdefault(
+                    pattern, {"fingerprints": 0, "rows": 0}
+                )
+                pattern_counts["fingerprints"] += 1
+                pattern_counts["rows"] += count
+                for category in rare_multi_attack:
+                    if attack_mask & ATTACK_BITS[category]:
+                        rare_multi_attack[category]["fingerprints"] += 1
+                        rare_multi_attack[category]["rows"] += count
+            if (attack_mask & malicious_mask).bit_count() > 1:
+                multiple_malicious_categories_groups += 1
+            if has_label_conflict:
+                for category in rare_conflicts:
+                    if attack_mask & ATTACK_BITS[category]:
+                        rare_conflicts[category]["fingerprints"] += 1
+                        rare_conflicts[category]["rows"] += count
+        behavioral_groups = self.connection.execute(
+            "SELECT COUNT(*) FROM behavior WHERE count > 1"
+        ).fetchone()[0]
+        return {
+            "schema_version": FINGERPRINT_SCHEMA_VERSION,
+            "definitions": {
+                "exact_full_row": {
+                    "columns": "all 55 ordered CSV columns, including targets",
+                    "purpose": "byte-level parsed-row identity and exact-dedup impact audit",
+                },
+                "source_feature": {
+                    "columns": "all 53 published NetFlow fields; targets excluded",
+                    "purpose": "cross-split observation overlap even if labels differ",
+                },
+                "ml_feature_equivalent": {
+                    "columns": "the ordered 47-feature baseline; metadata and targets excluded",
+                    "purpose": "memorization risk and label-conflict audit",
+                },
+                "behavioral_v1": {
+                    "columns": "the ordered 47-feature baseline under a separate namespace",
+                    "purpose": "correlation-oriented equivalence; not an automatic dedup key",
+                },
+            },
+            "exact": {
+                "duplicate_rows": self.exact_duplicates,
+                "fingerprints_with_duplicates": exact_groups,
+                "duplicate_rows_by_label": dict(sorted(self.exact_duplicate_labels.items())),
+                "duplicate_rows_by_attack": dict(sorted(self.exact_duplicate_attacks.items())),
+            },
+            "ml_feature_equivalent": {
+                "duplicate_rows": self.ml_feature_equivalent_duplicates,
+                "fingerprints_with_duplicates": ml_groups,
+                "label_conflict_fingerprints": label_conflict_groups,
+                "rows_in_label_conflict_fingerprints": label_conflict_rows,
+                "benign_attack_conflict_fingerprints": benign_attack_conflict_groups,
+                "multiple_attack_values_fingerprints": multiple_attack_values_groups,
+                "rows_in_multiple_attack_values_fingerprints": (
+                    rows_in_multiple_attack_values_groups
+                ),
+                "multiple_malicious_categories_fingerprints": (
+                    multiple_malicious_categories_groups
+                ),
+                "attack_value_conflict_patterns": dict(
+                    sorted(attack_value_conflict_patterns.items())
+                ),
+                "rare_category_label_conflicts": rare_conflicts,
+                "rare_category_multi_attack_fingerprints": rare_multi_attack,
+            },
+            "behavioral_v1": {
+                "duplicate_rows": self.behavioral_duplicates,
+                "fingerprints_with_duplicates": behavioral_groups,
+                "automatic_removal_permitted": False,
+            },
+        }
+
+    def close(self):
+        self.connection.commit()
+        self.connection.close()
+        self.path.unlink(missing_ok=True)
+
+
+def validate_csv(path, columns, expected_rows, duplicate_directory=None):
+    counts = Counter()
+    examples = {}
+    labels = Counter()
+    attacks = Counter()
+    min_start = None
+    max_end = None
+    quality_audit = NumericQualityAudit()
+    duplicate_analysis = None
+    audit = DuplicateAudit(duplicate_directory)
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as stream:
+            reader = csv.reader(stream)
+            try:
+                header = next(reader)
+            except StopIteration as error:
+                raise ValueError("dataset is empty") from error
+            if header != columns:
+                raise ValueError("schema or column ordering does not match the manifest contract")
+            if len(set(header)) != len(header):
+                raise ValueError("header contains duplicate columns")
+            index = {name: position for position, name in enumerate(columns)}
+            numeric_columns = [name for name in columns if name not in IP_COLUMNS + ("Attack",)]
+            for line_number, row in enumerate(reader, start=2):
+                counts["rows"] += 1
+                if len(row) != len(columns):
+                    counts["wrong_width"] += 1
+                    add_example(examples, "wrong_width", line_number)
+                    continue
+                audit.add(row, columns)
+                parsed = {}
+                row_issues = []
+                for column in numeric_columns:
+                    number, issue = parse_finite(row[index[column]], column)
+                    if issue:
+                        issue_key = f"{issue}:{column}"
+                        counts[issue_key] += 1
+                        row_issues.append(issue_key)
+                        add_example(examples, issue_key, line_number)
+                    parsed[column] = number
+                for column in IP_COLUMNS:
+                    try:
+                        address = ipaddress.ip_address(row[index[column]])
+                        if address.version != 4:
+                            raise ValueError
+                    except ValueError:
+                        counts[f"invalid_ip:{column}"] += 1
+                        add_example(examples, f"invalid_ip:{column}", line_number)
+                label = row[index["Label"]]
+                attack = row[index["Attack"]]
+                quality_audit.add(
+                    row_issues,
+                    parsed,
+                    label,
+                    attack,
+                    row[index["PROTOCOL"]],
+                )
+                labels[label] += 1
+                attacks[attack] += 1
+                if label not in {"0", "1"}:
+                    counts["invalid_label"] += 1
+                    add_example(examples, "invalid_label", line_number)
+                if attack not in VALID_ATTACKS:
+                    counts["invalid_attack"] += 1
+                    add_example(examples, "invalid_attack", line_number)
+                if (label == "0" and attack != "Benign") or (label == "1" and attack == "Benign"):
+                    counts["label_attack_inconsistent"] += 1
+                    add_example(examples, "label_attack_inconsistent", line_number)
+                start = parsed["FLOW_START_MILLISECONDS"]
+                end = parsed["FLOW_END_MILLISECONDS"]
+                duration = parsed["FLOW_DURATION_MILLISECONDS"]
+                if start is not None:
+                    min_start = start if min_start is None else min(min_start, start)
+                if end is not None:
+                    max_end = end if max_end is None else max(max_end, end)
+                if start is not None and end is not None and end < start:
+                    counts["end_before_start"] += 1
+                    add_example(examples, "end_before_start", line_number)
+                if start is not None and end is not None and duration is not None:
+                    # nProbe reports integer millisecond boundaries; tolerate one
+                    # millisecond of rounding but flag larger inconsistencies.
+                    if abs((end - start) - duration) > 1:
+                        counts["duration_mismatch"] += 1
+                        add_example(examples, "duration_mismatch", line_number)
+            if counts["rows"] == 0:
+                raise ValueError("dataset has no data rows")
+            duplicate_analysis = audit.report()
+    finally:
+        audit.close()
+    counts["exact_duplicate_rows"] = duplicate_analysis["exact"]["duplicate_rows"]
+    counts["ml_feature_equivalent_duplicate_rows"] = duplicate_analysis["ml_feature_equivalent"][
+        "duplicate_rows"
+    ]
+    counts["behavioral_fingerprint_duplicate_rows"] = duplicate_analysis["behavioral_v1"][
+        "duplicate_rows"
+    ]
+    if counts["rows"] != expected_rows:
+        counts["row_count_mismatch"] = abs(counts["rows"] - expected_rows)
+    issue_counts = {key: value for key, value in sorted(counts.items()) if key != "rows" and value}
+    return {
+        "rows": counts["rows"],
+        "expected_rows": expected_rows,
+        "labels": dict(sorted(labels.items())),
+        "attacks": dict(sorted(attacks.items())),
+        "timestamp_range_epoch_ms": {"minimum_start": min_start, "maximum_end": max_end},
+        "issue_counts": issue_counts,
+        "example_line_numbers": examples,
+        "duplicate_analysis": {
+            **duplicate_analysis,
+            "hypothetical_exact_dedup_keep_first": {
+                "retained_by_label": {
+                    label: count
+                    - duplicate_analysis["exact"]["duplicate_rows_by_label"].get(label, 0)
+                    for label, count in sorted(labels.items())
+                },
+                "retained_by_attack": {
+                    attack: count
+                    - duplicate_analysis["exact"]["duplicate_rows_by_attack"].get(attack, 0)
+                    for attack, count in sorted(attacks.items())
+                },
+                "applied": False,
+            },
+        },
+        "numeric_quality_analysis": quality_audit.report(),
+    }
+
+
+def refuse_unsafe_report(report, protected):
+    resolved = report.resolve(strict=False)
+    if any(resolved == path.resolve(strict=False) for path in protected):
+        raise ValueError("report path must not overwrite an input or manifest")
+
+
+def write_report(path, report):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staged = path.with_name(f"{path.name}.{os.getpid()}.partial")
+    backup = path.with_name(f"{path.name}.{os.getpid()}.backup")
+    try:
+        with staged.open("x", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+        try:
+            os.replace(staged, path)
+        except PermissionError:
+            # Some Windows filesystems reject replace-over-existing. Keep the
+            # old report recoverable until the staged report owns the target.
+            if not path.exists():
+                raise
+            os.replace(path, backup)
+            try:
+                os.replace(staged, path)
+            except BaseException:
+                os.replace(backup, path)
+                raise
+            backup.unlink(missing_ok=True)
+    except BaseException:
+        staged.unlink(missing_ok=True)
+        raise
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", help="CSV under data/raw/, or an explicit path")
-    parser.add_argument(
-        "--manifest", type=Path, help="Local manifest produced by dataset_manifest.py"
-    )
-    parser.add_argument("--report", type=Path, help="Write JSON report after successful validation")
-    parser.add_argument(
-        "--no-row-count",
-        action="store_true",
-        help="Skip the published row count of the default splits (fixtures and subsets)",
-    )
+    parser.add_argument("--dataset", type=Path, default=DATASET_PATH)
+    parser.add_argument("--manifest", type=Path, default=MANIFEST_PATH)
+    parser.add_argument("--report", type=Path, default=REPORT_PATH)
+    parser.add_argument("--duplicate-directory", type=Path)
+    parser.add_argument("--no-byte-verification", action="store_true")
     args = parser.parse_args(argv)
-    if args.file:
-        targets = [DATA_RAW / args.file]
-    else:
-        present = [name for name in DEFAULT_FILES if (DATA_RAW / name).exists()]
-        if not present:
-            print("[validate_data] SKIPPED: UNSW-NB15 train/test CSV files are absent.")
-            print(f"[validate_data] {SKIPPED_NOT_A_PASS}")
-            if os.environ.get("GITHUB_ACTIONS") == "true":
-                print(f"::warning title=SKIPPED is not a PASS::{SKIPPED_NOT_A_PASS}")
-            return 0
-        if len(present) != len(DEFAULT_FILES):
-            missing = set(DEFAULT_FILES) - set(present)
-            print(f"[validate_data] ERROR: incomplete split; missing {', '.join(sorted(missing))}")
-            return 1
-        targets = [DATA_RAW / name for name in DEFAULT_FILES]
+    if not args.dataset.is_file() and args.dataset == DATASET_PATH:
+        print(f"[validate_data] SOURCE_INTEGRITY: SKIPPED — {SKIPPED_MESSAGE}")
+        print("[validate_data] RAW_QUALITY: NOT VERIFIED")
+        print("[validate_data] ML_READY: BLOCKED")
+        if os.getenv("GITHUB_ACTIONS") == "true":
+            print(f"::warning::{SKIPPED_MESSAGE}")
+        return 0
     try:
-        if args.report:
-            # The validator never mutates dataset bytes or its own provenance record, so
-            # a report path that resolves to an input file or to the manifest must be
-            # refused before anything is written.
-            report_path = args.report.resolve()
-            protected = list(targets) + ([args.manifest] if args.manifest else [])
-            for protected_path in protected:
-                if report_path == protected_path.resolve() or (
-                    report_path.exists() and os.path.samefile(report_path, protected_path)
-                ):
-                    raise ValueError(
-                        f"report path {args.report} resolves to {protected_path.name}; "
-                        f"refusing to overwrite it"
-                    )
-        manifest = json.loads(args.manifest.read_text(encoding="utf-8")) if args.manifest else None
-        reports = []
-        for target in targets:
-            expected = None
-            expected_size = None
-            if manifest is not None:
-                entries = {entry["file"]: entry for entry in manifest["files"]}
-                if target.name not in entries:
-                    raise ValueError(f"manifest has no entry for {target.name}")
-                expected = entries[target.name]["sha256"]
-                expected_size = entries[target.name]["size_bytes"]
-            expected_rows = None
-            if not args.no_row_count:
-                if manifest is not None:
-                    expected_rows = entries[target.name].get("expected_rows")
-                if expected_rows is None:
-                    # The published row count is a property of the split itself, so it is
-                    # enforced even without a manifest; a non-default file has no known
-                    # count. --no-row-count is applied first, so it also silences a count
-                    # that came from a manifest.
-                    expected_rows = EXPECTED_ROWS.get(target.name)
-            report = validate_file(target, expected, expected_size, expected_rows)
-            reports.append(report)
-            summary = (
-                f"[validate_data] PASS: {target.name} rows={report['rows']} "
-                f"sha256={report['sha256']}"
-            )
-            print(summary)
-            for warning in report["warnings"]:
-                print(f"[validate_data] WARNING: {warning}")
-        payload = {
-            "schema_profile": list(COLUMNS),
-            "cross_file_schema_consistent": (
-                all(report["schema_matches_profile"] for report in reports)
-                if len(reports) == len(DEFAULT_FILES)
-                else None
-            ),
-            "files": reports,
+        if not args.dataset.is_file():
+            raise ValueError(f"dataset file does not exist: {args.dataset}")
+        if not args.manifest.is_file():
+            raise ValueError(f"manifest file does not exist: {args.manifest}")
+        refuse_unsafe_report(args.report, (args.dataset, args.manifest))
+        _manifest, columns, entry = load_contract(args.manifest)
+        digest = None
+        if not args.no_byte_verification:
+            digest = verify_dataset_bytes(args.dataset, entry)
+        result = validate_csv(
+            args.dataset,
+            columns,
+            entry["expected_rows"],
+            args.duplicate_directory,
+        )
+        status = classify_dataset_status(result["issue_counts"])
+        report = {
+            "dataset": "NF-UNSW-NB15-v3",
+            "status": status,
+            "real_data": True,
+            "source_file": args.dataset.name,
+            "manifest": args.manifest.name,
+            "manifest_sha256_verified": not args.no_byte_verification,
+            "dataset_sha256": digest,
+            **result,
         }
-        if args.report:
-            args.report.parent.mkdir(parents=True, exist_ok=True)
-            args.report.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        else:
-            print(json.dumps(payload, indent=2))
-    except (OSError, UnicodeError, csv.Error, ValueError, KeyError, TypeError) as error:
+        write_report(args.report, report)
+        print(f"[validate_data] SOURCE_INTEGRITY: {status['SOURCE_INTEGRITY']}")
+        print(f"[validate_data] RAW_QUALITY: {status['RAW_QUALITY']}")
+        print(f"[validate_data] ML_READY: {status['ML_READY']}")
+        print(
+            f"[validate_data] rows={result['rows']} finding_occurrences="
+            f"{sum(result['issue_counts'].values())} report={args.report}"
+        )
+        if status["SOURCE_INTEGRITY"] == "FAIL":
+            return EXIT_SOURCE_INTEGRITY_FAILURE
+        return EXIT_ML_BLOCKED
+    except (OSError, ValueError, KeyError, StopIteration, json.JSONDecodeError) as error:
+        print("[validate_data] SOURCE_INTEGRITY: FAIL")
+        print("[validate_data] RAW_QUALITY: NOT EVALUATED")
+        print("[validate_data] ML_READY: BLOCKED")
         print(f"[validate_data] ERROR: {error}")
-        return 1
-    return 0
+        return EXIT_SOURCE_INTEGRITY_FAILURE
 
 
 if __name__ == "__main__":

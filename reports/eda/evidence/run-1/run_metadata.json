@@ -1,0 +1,688 @@
+{
+  "command": "python scripts/eda_nf_unsw_nb15_v3.py --dataset C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\raw\\NF-UNSW-NB15-v3\\data\\NF-UNSW-NB15-v3.csv --manifest C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\NF_UNSW_NB15_V3_MANIFEST.json --summary C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1\\eda_summary.json --report C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1\\eda_report.md --figures C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\figures\\nf_unsw_nb15_v3\\repro-run-1 --sample-size 200000 --seed 42 --chunk-size 100000",
+  "command_normalized": "python scripts/eda_nf_unsw_nb15_v3.py --dataset C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\raw\\NF-UNSW-NB15-v3\\data\\NF-UNSW-NB15-v3.csv --manifest C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\NF_UNSW_NB15_V3_MANIFEST.json --summary <run-directory>\\eda_summary.json --report <run-directory>\\eda_report.md --figures <figure-directory> --sample-size 200000 --seed 42 --chunk-size 100000",
+  "dataset": {
+    "name": "NF-UNSW-NB15-v3.csv",
+    "path": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\raw\\NF-UNSW-NB15-v3\\data\\NF-UNSW-NB15-v3.csv",
+    "sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+    "size_bytes": 577360958
+  },
+  "directory": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1",
+  "duration_seconds": 39.731,
+  "environment": {
+    "machine": "AMD64",
+    "operating_system": "Windows",
+    "operating_system_release": "11",
+    "packages": {
+      "matplotlib": "3.10.9",
+      "numpy": "2.5.3",
+      "pandas": "2.3.3"
+    },
+    "python_executable": "C:\\Program Files\\Python314\\python.exe",
+    "python_implementation": "CPython",
+    "python_version": "3.14.6"
+  },
+  "exit_code": 0,
+  "figure_directory": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\figures\\nf_unsw_nb15_v3\\repro-run-1",
+  "figure_files": [
+    "fig01_label_distribution.png",
+    "fig02_attack_category_distribution.png",
+    "fig03_protocol_distribution.png",
+    "fig04_capture_coverage_by_day.png",
+    "fig05_duration_distribution.png",
+    "fig06_byte_and_packet_distributions.png",
+    "fig07_throughput_distribution.png",
+    "fig08_duration_versus_throughput.png",
+    "fig09_correlation_heatmap.png",
+    "fig10_class_conditional_boxplots.png",
+    "fig11_duration_throughput_quality.png",
+    "fig12_feature_skewness.png"
+  ],
+  "finished_at_utc": "2026-10-22T08:48:12+00:00",
+  "git": {
+    "branch": "feat/migrate-nf-unsw-nb15-v3",
+    "commit_date": "2026-10-22T15:47:26+07:00",
+    "head": "435d56afb44817f5ac23272e96bb5dd5fd82f7af",
+    "remote": "https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN.git",
+    "working_tree_changes": [
+      "?? reports/eda/evidence/"
+    ],
+    "working_tree_clean": false
+  },
+  "key_aggregates": {
+    "attack_counts": {
+      "Analysis": 1226,
+      "Backdoor": 4659,
+      "Benign": 2237731,
+      "DoS": 5980,
+      "Exploits": 42748,
+      "Fuzzers": 33816,
+      "Generic": 19651,
+      "Reconnaissance": 17074,
+      "Shellcode": 2381,
+      "Worms": 158
+    },
+    "capture_window": {
+      "capture_window_days": 27.0276,
+      "daily_flow_counts": {
+        "2015-01-22": 1095574,
+        "2015-01-23": 39778,
+        "2015-02-18": 1230072
+      },
+      "maximum_end_utc": "2015-02-18T12:29:25.011000+00:00",
+      "minimum_start_utc": "2015-01-22T11:49:36.907000+00:00"
+    },
+    "class_conditional": {
+      "label_0": {
+        "FLOW_DURATION_MILLISECONDS": {
+          "finite_count": 2237731,
+          "maximum": 120895.0,
+          "mean": 551.3843214398871,
+          "minimum": 0.0,
+          "negative_value_count": 0,
+          "standard_deviation": 3437.0810563684627,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 2237731,
+            "positive_infinity": 0
+          },
+          "total": 1233849789.0,
+          "unavailable_count": 0,
+          "zero_count": 86704
+        },
+        "IN_BYTES": {
+          "finite_count": 2237731,
+          "maximum": 6305734.0,
+          "mean": 3841.7555827755878,
+          "minimum": 9.0,
+          "negative_value_count": 0,
+          "standard_deviation": 11841.06358428741,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 2237731,
+            "positive_infinity": 0
+          },
+          "total": 8596815562.0,
+          "unavailable_count": 0,
+          "zero_count": 0
+        },
+        "IN_PKTS": {
+          "finite_count": 2237731,
+          "maximum": 4658.0,
+          "mean": 36.173452930669505,
+          "minimum": 1.0,
+          "negative_value_count": 0,
+          "standard_deviation": 61.48625599441251,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 2237731,
+            "positive_infinity": 0
+          },
+          "total": 80946457.0,
+          "unavailable_count": 0,
+          "zero_count": 0
+        },
+        "OUT_BYTES": {
+          "finite_count": 2237731,
+          "maximum": 11335782.0,
+          "mean": 35669.68114576775,
+          "minimum": 0.0,
+          "negative_value_count": 0,
+          "standard_deviation": 152200.30816604948,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 2237731,
+            "positive_infinity": 0
+          },
+          "total": 79819151260.0,
+          "unavailable_count": 0,
+          "zero_count": 29335
+        },
+        "OUT_PKTS": {
+          "finite_count": 2237731,
+          "maximum": 8552.0,
+          "mean": 46.40126449515157,
+          "minimum": 0.0,
+          "negative_value_count": 0,
+          "standard_deviation": 113.82862471971856,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 2237731,
+            "positive_infinity": 0
+          },
+          "total": 103833548.0,
+          "unavailable_count": 0,
+          "zero_count": 29335
+        },
+        "SRC_TO_DST_AVG_THROUGHPUT": {
+          "finite_count": 2237731,
+          "maximum": 36000000.0,
+          "mean": 909100.4912565451,
+          "minimum": 11.0,
+          "negative_value_count": 0,
+          "standard_deviation": 1759748.783497231,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 2237731,
+            "positive_infinity": 0
+          },
+          "total": 2034322351400.0,
+          "unavailable_count": 0,
+          "zero_count": 0
+        }
+      },
+      "label_1": {
+        "FLOW_DURATION_MILLISECONDS": {
+          "finite_count": 127693,
+          "maximum": 120948.0,
+          "mean": 1077.1320902477037,
+          "minimum": 0.0,
+          "negative_value_count": 0,
+          "standard_deviation": 4468.076523717944,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 127693,
+            "positive_infinity": 0
+          },
+          "total": 137542228.0,
+          "unavailable_count": 0,
+          "zero_count": 35789
+        },
+        "IN_BYTES": {
+          "finite_count": 127693,
+          "maximum": 27020934.0,
+          "mean": 14434.61243764341,
+          "minimum": 1.0,
+          "negative_value_count": 0,
+          "standard_deviation": 286945.27458135725,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 127693,
+            "positive_infinity": 0
+          },
+          "total": 1843198966.0,
+          "unavailable_count": 0,
+          "zero_count": 0
+        },
+        "IN_PKTS": {
+          "finite_count": 127693,
+          "maximum": 20166.0,
+          "mean": 19.65412356198069,
+          "minimum": 1.0,
+          "negative_value_count": 0,
+          "standard_deviation": 217.55905769148,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 127693,
+            "positive_infinity": 0
+          },
+          "total": 2509694.0,
+          "unavailable_count": 0,
+          "zero_count": 0
+        },
+        "OUT_BYTES": {
+          "finite_count": 127693,
+          "maximum": 14656752.0,
+          "mean": 10668.289381563596,
+          "minimum": 0.0,
+          "negative_value_count": 0,
+          "standard_deviation": 197297.32066534835,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 127693,
+            "positive_infinity": 0
+          },
+          "total": 1362265876.0,
+          "unavailable_count": 0,
+          "zero_count": 36786
+        },
+        "OUT_PKTS": {
+          "finite_count": 127693,
+          "maximum": 11024.0,
+          "mean": 15.097397664711458,
+          "minimum": 0.0,
+          "negative_value_count": 0,
+          "standard_deviation": 150.85243841056203,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 127693,
+            "positive_infinity": 0
+          },
+          "total": 1927832.0,
+          "unavailable_count": 0,
+          "zero_count": 36786
+        },
+        "SRC_TO_DST_AVG_THROUGHPUT": {
+          "finite_count": 127693,
+          "maximum": 24000000.0,
+          "mean": 828430.9012788484,
+          "minimum": 17.0,
+          "negative_value_count": 0,
+          "standard_deviation": 2463708.967695769,
+          "token_counts": {
+            "blank": 0,
+            "invalid_numeric": 0,
+            "nan_literal": 0,
+            "negative_infinity": 0,
+            "null_literal": 0,
+            "numeric": 127693,
+            "positive_infinity": 0
+          },
+          "total": 105784827077.0,
+          "unavailable_count": 0,
+          "zero_count": 0
+        }
+      }
+    },
+    "correlation_observations": 2242931,
+    "duplicates": {
+      "behavioral_v1": {
+        "distinct_rows": 1230871,
+        "duplicate_rows": 1134553,
+        "note": "The v3 contract defines behavioral-v1 over the same ordered 47 columns as the ML baseline under a separate namespace, so the equivalence classes and counts coincide with ml_feature_equivalent."
+      },
+      "exact_full_row": {
+        "benign_attack_conflict_groups": 0,
+        "binary_label_conflict_groups": 0,
+        "distinct_rows": 2350609,
+        "duplicate_rows": 14815,
+        "groups_with_duplicates": 14815,
+        "multiple_attack_category_groups": 0,
+        "rows_in_benign_attack_conflict_groups": 0,
+        "rows_in_binary_label_conflict_groups": 0,
+        "rows_in_multiple_attack_category_groups": 0
+      },
+      "ml_feature_equivalent": {
+        "benign_attack_conflict_groups": 0,
+        "binary_label_conflict_groups": 0,
+        "distinct_rows": 1230871,
+        "duplicate_rows": 1134553,
+        "groups_with_duplicates": 189788,
+        "multiple_attack_category_groups": 1270,
+        "rows_in_benign_attack_conflict_groups": 0,
+        "rows_in_binary_label_conflict_groups": 0,
+        "rows_in_multiple_attack_category_groups": 20058
+      },
+      "source_feature": {
+        "distinct_rows": 2350609,
+        "duplicate_rows": 14815
+      }
+    },
+    "duration_throughput": {
+      "duration_zero=False,rate_non_finite=False,throughput_non_finite=False": 2242931,
+      "duration_zero=True,rate_non_finite=True,throughput_non_finite=False": 122493
+    },
+    "expected_rows": 2365424,
+    "l7_proto_counts": {
+      "other_distinct_values_at_least": 1,
+      "other_occurrences": 436,
+      "tracked_distinct_values": 64,
+      "tracked_values": {
+        "0.0": 140572,
+        "1.0": 62208,
+        "10.0": 410,
+        "10.16": 4877,
+        "10.41": 7,
+        "100.0": 678,
+        "11.0": 243420,
+        "111.0": 34,
+        "112.0": 141,
+        "114.0": 40,
+        "115.0": 1250,
+        "12.0": 25,
+        "13.0": 18787,
+        "131.0": 114,
+        "139.0": 307,
+        "14.0": 115,
+        "152.0": 1,
+        "154.0": 17,
+        "164.0": 40,
+        "17.0": 3505,
+        "172.0": 14,
+        "175.0": 1511,
+        "18.0": 79,
+        "2.0": 1582,
+        "20.0": 927,
+        "216.0": 14,
+        "222.0": 312,
+        "227.0": 14,
+        "3.0": 45010,
+        "30.0": 14,
+        "32.0": 123,
+        "353.0": 92,
+        "36.0": 466742,
+        "37.0": 710423,
+        "370.0": 1419,
+        "378.0": 24,
+        "4.0": 25585,
+        "41.0": 1099,
+        "410.0": 3,
+        "44.0": 17,
+        "5.0": 380620,
+        "50.0": 100,
+        "51.0": 90,
+        "65.0": 18,
+        "7.0": 184268,
+        "7.212": 7,
+        "7.253": 146,
+        "7.37": 18765,
+        "7.376": 45,
+        "7.5": 8,
+        "77.0": 156,
+        "79.0": 45,
+        "81.0": 401,
+        "82.0": 33,
+        "84.0": 73,
+        "85.0": 1411,
+        "87.0": 7,
+        "88.0": 25,
+        "89.0": 52,
+        "91.0": 172,
+        "92.0": 46427,
+        "95.0": 99,
+        "96.0": 435,
+        "97.0": 33
+      }
+    },
+    "label_counts": {
+      "0": 2237731,
+      "1": 127693
+    },
+    "leakage_boundary": {
+      "metadata_columns_in_baseline_x": false,
+      "not_permitted_now": [
+        "Selecting final ML features with held-out or test labels.",
+        "Fitting imputers, encoders, scalers or selectors on the full dataset.",
+        "Choosing thresholds or hyper-parameters with test information.",
+        "Claiming that cross-split leakage has been verified.",
+        "Creating an undocumented random split to bypass Issue #7.",
+        "Automatic de-duplication or label-dependent row filtering."
+      ],
+      "permitted_now": [
+        "Full-dataset source profiling of the verified population.",
+        "Data quality audits that do not modify the source bytes.",
+        "Descriptive label and attack-category distributions.",
+        "Clearly labelled exploratory visualisations."
+      ],
+      "split_manifest": {
+        "detail": "No verified train/validation/test split manifest exists. Train-dependent analysis must not be performed and no split may be created to bypass Issue #7.",
+        "path": "data/processed/nf_unsw_nb15_v3_split_manifest.json",
+        "present": false,
+        "status": "PENDING ISSUE #7"
+      },
+      "target_columns_in_baseline_x": false,
+      "train_dependent_recommendations": "PENDING ISSUE #7"
+    },
+    "non_finite_by_column": {
+      "DST_TO_SRC_SECOND_BYTES": {
+        "token_counts": {
+          "blank": 0,
+          "invalid_numeric": 0,
+          "nan_literal": 0,
+          "negative_infinity": 0,
+          "null_literal": 0,
+          "numeric": 2242931,
+          "positive_infinity": 122493
+        },
+        "unavailable_count": 122493
+      },
+      "SRC_TO_DST_SECOND_BYTES": {
+        "token_counts": {
+          "blank": 63425,
+          "invalid_numeric": 0,
+          "nan_literal": 0,
+          "negative_infinity": 0,
+          "null_literal": 0,
+          "numeric": 2242931,
+          "positive_infinity": 59068
+        },
+        "unavailable_count": 122493
+      }
+    },
+    "protocol_counts": {
+      "other_distinct_values_at_least": 1,
+      "other_occurrences": 1266,
+      "tracked_distinct_values": 64,
+      "tracked_values": {
+        "1.0": 401,
+        "132.0": 73,
+        "17.0": 556557,
+        "176.0": 7,
+        "177.0": 7,
+        "178.0": 7,
+        "179.0": 7,
+        "180.0": 7,
+        "181.0": 7,
+        "182.0": 7,
+        "183.0": 7,
+        "184.0": 7,
+        "185.0": 7,
+        "186.0": 7,
+        "187.0": 7,
+        "188.0": 7,
+        "189.0": 7,
+        "190.0": 7,
+        "191.0": 7,
+        "192.0": 7,
+        "193.0": 6,
+        "194.0": 6,
+        "195.0": 7,
+        "196.0": 7,
+        "197.0": 7,
+        "198.0": 7,
+        "199.0": 7,
+        "2.0": 33,
+        "200.0": 7,
+        "201.0": 7,
+        "202.0": 7,
+        "203.0": 7,
+        "204.0": 7,
+        "205.0": 7,
+        "206.0": 7,
+        "207.0": 7,
+        "208.0": 7,
+        "209.0": 7,
+        "210.0": 7,
+        "211.0": 7,
+        "212.0": 7,
+        "213.0": 7,
+        "214.0": 7,
+        "215.0": 7,
+        "216.0": 7,
+        "217.0": 7,
+        "218.0": 7,
+        "219.0": 7,
+        "220.0": 7,
+        "221.0": 7,
+        "246.0": 7,
+        "247.0": 7,
+        "248.0": 7,
+        "249.0": 7,
+        "250.0": 7,
+        "251.0": 7,
+        "252.0": 7,
+        "253.0": 7,
+        "254.0": 7,
+        "255.0": 7,
+        "33.0": 13,
+        "47.0": 14,
+        "6.0": 1805270,
+        "89.0": 1407
+      }
+    },
+    "readiness": {
+      "ML_READY": "BLOCKED",
+      "RAW_QUALITY": "FINDINGS_RECORDED",
+      "SOURCE_INTEGRITY": "PASS",
+      "ml_readiness_blockers": [
+        "raw quality findings require an approved train-only handling policy",
+        "real split and leakage audit are NOT VERIFIED (Issue #7)",
+        "train-only fitted preprocessing artifact is NOT VERIFIED (Issue #8)"
+      ],
+      "raw_quality_findings": [
+        "SRC_TO_DST_SECOND_BYTES: 122493 non-finite values",
+        "DST_TO_SRC_SECOND_BYTES: 122493 non-finite values",
+        "exact duplicate rows: 14815",
+        "repeated rows under 47-feature equivalence: 1134553"
+      ]
+    },
+    "row_count_matches_manifest": true,
+    "rows": 2365424,
+    "selected_quantiles": {
+      "DST_TO_SRC_AVG_THROUGHPUT": {
+        "p01": 0.0,
+        "p05": 4246.0,
+        "p25": 70588.0,
+        "p50": 712000.0,
+        "p75": 2805968.0,
+        "p95": 13439058.0,
+        "p99": 15965714.0
+      },
+      "FLOW_DURATION_MILLISECONDS": {
+        "p01": 0.0,
+        "p05": 0.0,
+        "p25": 4.0,
+        "p50": 31.0,
+        "p75": 406.0,
+        "p95": 1845.0,
+        "p99": 7552.0
+      },
+      "IN_BYTES": {
+        "p01": 9.0,
+        "p05": 130.0,
+        "p25": 481.0,
+        "p50": 1580.0,
+        "p75": 3048.0,
+        "p95": 18162.0,
+        "p99": 37462.0
+      },
+      "IN_PKTS": {
+        "p01": 1.0,
+        "p05": 2.0,
+        "p25": 4.0,
+        "p50": 16.0,
+        "p75": 44.0,
+        "p95": 122.0,
+        "p99": 356.0
+      },
+      "MAX_TTL": {
+        "p01": 0.0,
+        "p05": 31.0,
+        "p25": 32.0,
+        "p50": 32.0,
+        "p75": 32.0,
+        "p95": 63.0,
+        "p99": 255.0
+      },
+      "MIN_TTL": {
+        "p01": 0.0,
+        "p05": 31.0,
+        "p25": 31.0,
+        "p50": 31.0,
+        "p75": 31.0,
+        "p95": 62.0,
+        "p99": 254.0
+      },
+      "OUT_BYTES": {
+        "p01": 0.0,
+        "p05": 162.0,
+        "p25": 312.0,
+        "p50": 2456.0,
+        "p75": 14370.0,
+        "p95": 71158.0,
+        "p99": 1087890.0
+      },
+      "OUT_PKTS": {
+        "p01": 0.0,
+        "p05": 2.0,
+        "p25": 4.0,
+        "p50": 18.0,
+        "p75": 42.0,
+        "p95": 126.0,
+        "p99": 746.0
+      },
+      "SRC_TO_DST_AVG_THROUGHPUT": {
+        "p01": 2275.0,
+        "p05": 7087.0,
+        "p25": 38479.0,
+        "p50": 536585.0,
+        "p75": 1003368.0,
+        "p95": 2560000.0,
+        "p99": 11462153.0
+      }
+    }
+  },
+  "label": "run-1",
+  "manifest_verification": {
+    "declared_expected_rows": 2365424,
+    "declared_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+    "declared_size_bytes": 577360958,
+    "manifest_dataset": "NF-UNSW-NB15-v3",
+    "manifest_doi": "10.48610/6E0EDA1",
+    "manifest_path": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\NF_UNSW_NB15_V3_MANIFEST.json",
+    "observed_rows": 2365424,
+    "observed_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+    "observed_size_bytes": 577360958,
+    "row_count_matches": true,
+    "schema_columns": 55,
+    "schema_order_verified": true,
+    "sha256_matches": true,
+    "size_matches": true
+  },
+  "report_artifact": {
+    "path": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1\\eda_report.md",
+    "sha256": "cd8d7ffda252220d5fb47ea59dcc4e24aacf959032b32654f589f43f5e144d23"
+  },
+  "schema_version": "nf-unsw-nb15-v3-eda-evidence-v1",
+  "started_at_utc": "2026-10-22T08:47:32+00:00",
+  "stderr_log": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1\\stderr.log",
+  "stdout_log": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1\\stdout.log",
+  "summary_artifact": {
+    "path": "C:\\Users\\Admin\\Documents\\code_workspace\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\eda\\evidence\\run-1\\eda_summary.json",
+    "sha256": "7d712c3df71e67e7ffd46391d70ea126158c6b83c7441ef3d36d5d3822d45019"
+  }
+}
