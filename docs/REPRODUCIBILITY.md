@@ -15,6 +15,8 @@ python -m black --check .
 git diff --check
 ```
 
+Detailed unit, integration, and failure-path testing guidelines are documented in [docs/TESTING.md](TESTING.md).
+
 ## Reproduce official bytes
 
 ```text
@@ -149,6 +151,23 @@ locked in Issue #9:
 - Experiment runner integration: `python scripts/run_experiments.py --step baseline` delegates directly to `scripts/train_random_forest.py` and forwards exit codes.
 - Fail-closed prerequisite audit: If the raw dataset or preprocessor artifact is missing or altered, training stops immediately with exit code 1. Mock/synthetic data is strictly prohibited for benchmark results.
 
+## Reproduce CSV inference on new network flows (Issue #15)
+
+```text
+python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv
+python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv --model random_forest
+```
+
+The script executes the verified inference pipeline (Issue #15):
+- Validates the 47-feature baseline schema and contract ordering without data leakage.
+- Loads the verified train-only preprocessor (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`) from Issue #8 (fails closed if artifact or companion manifest is missing or altered).
+- Loads the trained model artifact and validates provenance.
+- Executes transform and prediction without refitting.
+- Emits prediction results (`results/predictions.csv`) preserving row identity, plus companion traceability metadata (`results/predictions.metadata.json`).
+- When the model artifact binary is absent (e.g. if the local environment has not yet trained or restored the `.joblib` binary under `.gitignore`), the CLI reports fail-closed error with exit code `1` and does not fake execution.
+
+See `docs/INFERENCE_PIPELINE.md` for complete contract and schema details.
+
 ## What runs where
 
 | Check | Environment | Result |
@@ -160,6 +179,7 @@ locked in Issue #9:
 | `scripts/preprocess_nf_unsw_nb15_v3.py` | local, raw package present | train-only preprocessing executed and verified |
 | `scripts/train_random_forest.py` | local, raw package & artifacts present | trains baseline RF on 1,655,797 train rows; exits `1` if raw dataset or preprocessor artifact is missing |
 | `scripts/run_experiments.py --step baseline` | local, delegates to `train_random_forest.py` | fail-closed prerequisite check or baseline training |
+| `scripts/predict.py` | local / production with trained artifacts | real model inference and metadata; fail-closed if model absent |
 | `python -m pytest tests -q` | CI and local, synthetic fixtures | proves code behaviour only |
 | `scripts/validate_data.py` in CI | CI runner without the raw CSV | `SKIPPED` |
 | `scripts/eda_nf_unsw_nb15_v3.py` in CI | CI runner without the raw CSV | `SKIPPED` |

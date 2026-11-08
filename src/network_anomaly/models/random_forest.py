@@ -124,6 +124,11 @@ class RandomForestModel:
         """Indicate whether the model has been fitted with real training data."""
         return self._is_fitted
 
+    @property
+    def classes_(self) -> Any:
+        """Class labels known to the classifier."""
+        return getattr(self._estimator, "classes_", None)
+
     def fit(self, X: Any, y: Any, **fit_params: Any) -> "RandomForestModel":
         """Fit interface on verified NF-UNSW-NB15-v3 feature data."""
         # 1. Feature schema validation before delegating to estimator
