@@ -7,16 +7,27 @@ Tài liệu kiểm toán tính tương thích nguồn dữ liệu mạng và án
 
 ---
 
-## 1. Hệ thống 4 Tầng Kiểm chứng Dữ liệu (4-Tier Data States)
+## 1. Hệ thống Phân định Trạng thái Dữ liệu & Ràng buộc Chứng cứ Benchmark
 
-Hệ thống bắt buộc phải phân định và báo cáo độc lập 4 tầng trạng thái cho từng nguồn dữ liệu nạp vào:
+Hệ thống phân định độc lập 6 trạng thái kiểm chứng và quyết định suy luận:
 
-| Tầng Kiểm chứng | Mã Trạng thái | Điều kiện Kỹ thuật | Hành vi Hệ thống |
+| Mã Trạng thái | Điều kiện Kỹ thuật | Trạng thái Suy luận (`eligibility`) | Hành vi Hệ thống |
 |---|---|---|---|
-| **Tầng 1** | `PARSEABLE` | Định dạng tệp vật lý (CSV, JSON, TSV, PCAP) được giải mã thành công; không bị hỏng định dạng hoặc lỗi cú pháp. | Cho phép chuyển bản ghi sang bộ chuyển đổi (Adapter). |
-| **Tầng 2** | `SCHEMA_COMPATIBLE` | Tệp chứa đầy đủ các trường bắt buộc và đúng kiểu dữ liệu theo lược đồ nguồn đã đăng ký trong `SourceRegistry`. | Bản ghi được chuẩn hóa thành `CanonicalNetworkEvent`. |
-| **Tầng 3** | `SEMANTICALLY_COMPATIBLE` | Các trường trong `CanonicalNetworkEvent` có cùng bản chất ngữ nghĩa, đơn vị đo, hướng luồng và phương thức tính toán với hợp đồng 47 đặc trưng ML. | Đủ điều kiện kỹ thuật để nạp vào pipeline tiền xử lý và mô hình ML. |
-| **Tầng 4** | `MODEL_VALIDATED` | Cặp (mô hình, nguồn dữ liệu) cụ thể đã được kiểm nghiệm thực nghiệm, có báo cáo benchmark đo lường FPR, F1 và phân tích lỗi trên phân phối thực tế. | Kết quả suy luận được xác thực độ tin cậy; không gắn cờ `VALIDATION_NOT_VERIFIED`. |
+| `PARSEABLE` | Định dạng tệp vật lý (CSV, JSON, TSV, PCAP) giải mã thành công; không lỗi cú pháp. | `SCHEMA_INVALID` | Chuyển bản ghi sang bộ chuyển đổi (Adapter). |
+| `SCHEMA_COMPATIBLE` | Tệp đủ các trường bắt buộc và đúng kiểu dữ liệu theo lược đồ nguồn trong `SourceRegistry`. | `FEATURE_INCOMPLETE` / `FEATURE_INCOMPATIBLE` | Bản ghi chuẩn hóa thành `CanonicalNetworkEvent`. Chưa đủ 47 đặc trưng ML. |
+| `SEMANTICALLY_COMPATIBLE` | Đủ 47 đặc trưng ML có cùng ngữ nghĩa, đơn vị đo và hướng luồng; dữ liệu finite (không NaN/Inf). | `VALIDATION_NOT_VERIFIED` | Đủ điều kiện kỹ thuật nhưng **chưa có chứng cứ benchmark xác thực**. Mặc định bị chặn suy luận chứng nhận (`can_proceed_to_ml=False`). |
+| `MODEL_VALIDATED` | Cặp (mô hình, preprocessor, nguồn dữ liệu) có `BenchmarkEvidence` hợp lệ với SHA-256 khớp và đạt ngưỡng chấp thuận (Recall $\ge 85\%$, FPR $\le 5\%$). | `PREDICTION_AVAILABLE` | **Cho phép Inference chứng nhận.** Xác thực độ tin cậy thực nghiệm. |
+| `BENCHMARK_FAILED` | Đã chạy benchmark thực nghiệm nhưng không đạt ngưỡng chấp thuận (ví dụ: Recall = 0.0 hoặc FPR > 5%), hoặc hash model/preprocessor không khớp. | `BENCHMARK_UNSATISFACTORY` | **Chặn Inference fail-closed.** Chuyển sang Trace và Risk engines. |
+| `ABSTAINED` | Vi phạm bất biến mạng vật lý (port ngoài $[0, 65535]$, protocol ngoài $[0, 255]$, duration âm, counter âm, TTL đảo ngược) hoặc tỷ lệ trôi dạt shortcut $\ge 50\%$. | `ABSTAINED` | **Từ chối suy luận an toàn (Fail-closed Prediction Abstention).** Ngăn ngừa cảnh báo giả và phán đoán sai. |
+
+### 1.1. Ràng buộc Chứng cứ Benchmark (`BenchmarkEvidence`)
+Chứng cứ benchmark được định danh phiên bản và gắn kết chặt chẽ với:
+- `model_identifier` & `model_artifact_sha256` (khóa cứng SHA-256 của model binary).
+- `preprocessor_artifact_sha256` (khóa cứng SHA-256 của preprocessor binary).
+- `feature_contract_version` (khóa cứng phiên bản hợp đồng đặc trưng).
+- `dataset_name`, `dataset_version`, `dataset_sha256`.
+- `evaluation_protocol`, `metrics` và `acceptance_criteria`.
+- Mô hình khác hoặc preprocessor khác tuyệt đối không được tự động kế thừa chứng cứ cũ; bất kỳ sự sai lệch hash nào đều kích hoạt `BENCHMARK_FAILED`.
 
 ---
 

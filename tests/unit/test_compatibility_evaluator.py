@@ -66,7 +66,8 @@ def test_evaluator_unbenchmarked_source_is_semantically_compatible_unverified():
     report = evaluator.evaluate_events([event])
     assert report.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE
     assert report.inference_eligibility == InferenceEligibility.VALIDATION_NOT_VERIFIED
-    assert report.is_eligible_for_inference is True
+    # Unverified benchmark sources are NOT certified for inference fail-closed
+    assert report.is_eligible_for_inference is False
 
 
 def test_evaluator_anti_imputation_rejects_nan_and_inf_values():

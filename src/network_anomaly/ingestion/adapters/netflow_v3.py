@@ -19,6 +19,73 @@ from network_anomaly.ingestion.schemas import (
 )
 
 
+def _parse_port(raw_record: Dict[str, Any], key: str) -> Tuple[int, Optional[str]]:
+    if key not in raw_record:
+        return 0, None
+    val = raw_record[key]
+    if val is None or val == "":
+        return -1, "missing_or_null"
+    try:
+        f = float(val)
+        if not math.isfinite(f):
+            return -1, "non_finite"
+        i = int(f)
+        # Preserve actual integer (including out of range like -1 or 70000) for OOD validation
+        return i, None
+    except (ValueError, TypeError):
+        return -1, f"invalid_type_{type(val).__name__}"
+
+
+def _parse_protocol(raw_record: Dict[str, Any], key: str) -> Tuple[int, Optional[str]]:
+    if key not in raw_record:
+        return 0, None
+    val = raw_record[key]
+    if val is None or val == "":
+        return -1, "missing_or_null"
+    try:
+        f = float(val)
+        if not math.isfinite(f):
+            return -1, "non_finite"
+        i = int(f)
+        return i, None
+    except (ValueError, TypeError):
+        return -1, f"invalid_type_{type(val).__name__}"
+
+
+def _parse_duration(raw_record: Dict[str, Any], key: str) -> Tuple[float, Optional[str]]:
+    if key not in raw_record:
+        return 0.0, None
+    val = raw_record[key]
+    if val is None or val == "":
+        return -1.0, "missing_or_null"
+    try:
+        f = float(val)
+        if not math.isfinite(f):
+            return -1.0, "non_finite"
+        # Preserve negative duration so OODValidator catches it as physical invariant violation
+        return f, None
+    except (ValueError, TypeError):
+        return -1.0, f"invalid_type_{type(val).__name__}"
+
+
+def _parse_counter(raw_record: Dict[str, Any], key: str) -> Tuple[int, Optional[str]]:
+    if key not in raw_record:
+        return 0, None
+    val = raw_record[key]
+    if val is None or val == "":
+        return 0, None
+    try:
+        f = float(val)
+        if not math.isfinite(f):
+            return -1, "non_finite"
+        i = int(f)
+        if i < 0:
+            return i, f"negative_counter_{i}"
+        return i, None
+    except (ValueError, TypeError):
+        return -1, f"invalid_type_{type(val).__name__}"
+
+
 def _safe_int(val: Any, default: int = 0) -> int:
     try:
         f = float(val)
@@ -42,6 +109,8 @@ class NetFlowV3Adapter(BaseSourceAdapter):
         super().__init__(source_id=source_id, schema_version=schema_version)
 
     def adapt_record(self, raw_record: Dict[str, Any], record_idx: Optional[int] = None) -> CanonicalNetworkEvent:
+        invalid_metadata: Dict[str, str] = {}
+
         # 1. Metadata
         meta = EventMetadata(
             source_id=self.source_id,
@@ -49,22 +118,61 @@ class NetFlowV3Adapter(BaseSourceAdapter):
             raw_record_id=str(record_idx) if record_idx is not None else None,
         )
 
-        # 2. 5-Tuple
+        # 2. 5-Tuple with explicit boundary validation
+        src_port, err_sp = _parse_port(raw_record, "L4_SRC_PORT")
+        if err_sp:
+            invalid_metadata["L4_SRC_PORT"] = err_sp
+
+        dst_port, err_dp = _parse_port(raw_record, "L4_DST_PORT")
+        if err_dp:
+            invalid_metadata["L4_DST_PORT"] = err_dp
+
+        proto_val, err_proto = _parse_protocol(raw_record, "PROTOCOL")
+        if err_proto:
+            invalid_metadata["PROTOCOL"] = err_proto
+
+        src_ip = str(raw_record.get("IPV4_SRC_ADDR", ""))
+        dst_ip = str(raw_record.get("IPV4_DST_ADDR", ""))
+        if "IPV4_SRC_ADDR" in raw_record and (not src_ip or src_ip == "None"):
+            invalid_metadata["IPV4_SRC_ADDR"] = "missing_or_empty"
+        if "IPV4_DST_ADDR" in raw_record and (not dst_ip or dst_ip == "None"):
+            invalid_metadata["IPV4_DST_ADDR"] = "missing_or_empty"
+
         five_tuple = Network5Tuple(
-            ipv4_src_addr=str(raw_record.get("IPV4_SRC_ADDR", "")),
-            l4_src_port=_safe_int(raw_record.get("L4_SRC_PORT", 0)),
-            ipv4_dst_addr=str(raw_record.get("IPV4_DST_ADDR", "")),
-            l4_dst_port=_safe_int(raw_record.get("L4_DST_PORT", 0)),
-            protocol=_safe_int(raw_record.get("PROTOCOL", 0)),
+            ipv4_src_addr=src_ip,
+            l4_src_port=src_port,
+            ipv4_dst_addr=dst_ip,
+            l4_dst_port=dst_port,
+            protocol=proto_val,
         )
 
-        # 3. Flow Metrics
+        # 3. Flow Metrics with explicit validation
+        in_bytes, err_ib = _parse_counter(raw_record, "IN_BYTES")
+        if err_ib:
+            invalid_metadata["IN_BYTES"] = err_ib
+
+        in_pkts, err_ip = _parse_counter(raw_record, "IN_PKTS")
+        if err_ip:
+            invalid_metadata["IN_PKTS"] = err_ip
+
+        out_bytes, err_ob = _parse_counter(raw_record, "OUT_BYTES")
+        if err_ob:
+            invalid_metadata["OUT_BYTES"] = err_ob
+
+        out_pkts, err_op = _parse_counter(raw_record, "OUT_PKTS")
+        if err_op:
+            invalid_metadata["OUT_PKTS"] = err_op
+
+        dur_ms, err_dur = _parse_duration(raw_record, "FLOW_DURATION_MILLISECONDS")
+        if err_dur:
+            invalid_metadata["FLOW_DURATION_MILLISECONDS"] = err_dur
+
         metrics = FlowMetrics(
-            in_bytes=_safe_int(raw_record.get("IN_BYTES", 0)),
-            in_pkts=_safe_int(raw_record.get("IN_PKTS", 0)),
-            out_bytes=_safe_int(raw_record.get("OUT_BYTES", 0)),
-            out_pkts=_safe_int(raw_record.get("OUT_PKTS", 0)),
-            flow_duration_ms=_safe_float(raw_record.get("FLOW_DURATION_MILLISECONDS", 0.0)),
+            in_bytes=in_bytes,
+            in_pkts=in_pkts,
+            out_bytes=out_bytes,
+            out_pkts=out_pkts,
+            flow_duration_ms=dur_ms,
         )
 
         # 4. Telemetry
@@ -112,7 +220,12 @@ class NetFlowV3Adapter(BaseSourceAdapter):
             except (ValueError, TypeError):
                 invalid_features_dict[col] = f"invalid_numeric_token_{type(val).__name__}"
 
-        is_complete = (len(missing_features_list) == 0) and (len(invalid_features_dict) == 0) and (len(ml_features) == len(ML_FEATURE_COLUMNS))
+        is_complete = (
+            (len(missing_features_list) == 0)
+            and (len(invalid_features_dict) == 0)
+            and (len(invalid_metadata) == 0)
+            and (len(ml_features) == len(ML_FEATURE_COLUMNS))
+        )
 
         # 7. Trace and Target Metadata (strictly preserved for evaluation and Trace Engine)
         trace_meta: Dict[str, Any] = {}
@@ -145,6 +258,7 @@ class NetFlowV3Adapter(BaseSourceAdapter):
             ml_features=ml_features if is_complete else None,
             missing_features=missing_features_list,
             invalid_features=invalid_features_dict,
+            invalid_metadata=invalid_metadata,
             trace_metadata=trace_meta,
             eligibility=eligibility,
             validation_status=val_status,

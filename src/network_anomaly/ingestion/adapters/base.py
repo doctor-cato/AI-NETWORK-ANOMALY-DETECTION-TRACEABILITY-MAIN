@@ -76,3 +76,29 @@ class BaseSourceAdapter(ABC):
             return pd.DataFrame(columns=list(ML_FEATURE_COLUMNS)), []
 
         return pd.DataFrame(eligible_rows, columns=list(ML_FEATURE_COLUMNS)), eligible_indices
+
+    @staticmethod
+    def extract_metadata_dataframe(events: List[CanonicalNetworkEvent]) -> Tuple[pd.DataFrame, List[int]]:
+        """Extract network metadata DataFrame from events for invariant, port, and OOD auditing."""
+        rows = []
+        indices = []
+        for idx, ev in enumerate(events):
+            row = {
+                "IPV4_SRC_ADDR": ev.network_5tuple.ipv4_src_addr,
+                "L4_SRC_PORT": ev.network_5tuple.l4_src_port,
+                "IPV4_DST_ADDR": ev.network_5tuple.ipv4_dst_addr,
+                "L4_DST_PORT": ev.network_5tuple.l4_dst_port,
+                "PROTOCOL": ev.network_5tuple.protocol,
+                "FLOW_DURATION_MILLISECONDS": ev.metrics.flow_duration_ms,
+                "IN_BYTES": ev.metrics.in_bytes,
+                "IN_PKTS": ev.metrics.in_pkts,
+                "OUT_BYTES": ev.metrics.out_bytes,
+                "OUT_PKTS": ev.metrics.out_pkts,
+                "MIN_TTL": ev.telemetry.min_ttl,
+                "MAX_TTL": ev.telemetry.max_ttl,
+                "LONGEST_FLOW_PKT": ev.telemetry.longest_flow_pkt,
+                "SHORTEST_FLOW_PKT": ev.telemetry.shortest_flow_pkt,
+            }
+            rows.append(row)
+            indices.append(idx)
+        return pd.DataFrame(rows), indices

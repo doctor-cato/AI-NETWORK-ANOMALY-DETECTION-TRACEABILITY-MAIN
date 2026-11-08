@@ -124,6 +124,7 @@ class CanonicalNetworkEvent:
     ml_features: Optional[Dict[str, float]] = None
     missing_features: List[str] = field(default_factory=list)
     invalid_features: Dict[str, str] = field(default_factory=dict)
+    invalid_metadata: Dict[str, str] = field(default_factory=dict)
     trace_metadata: Dict[str, Any] = field(default_factory=dict)
     eligibility: InferenceEligibility = InferenceEligibility.FEATURE_INCOMPATIBLE
     validation_status: ValidationStatus = ValidationStatus.PARSEABLE
@@ -165,6 +166,7 @@ class CanonicalNetworkEvent:
             "ml_features_available": self.ml_features is not None,
             "missing_features": self.missing_features,
             "invalid_features": self.invalid_features,
+            "invalid_metadata": self.invalid_metadata,
             "trace_metadata": self.trace_metadata,
             "eligibility": self.eligibility.value,
             "validation_status": self.validation_status.value,

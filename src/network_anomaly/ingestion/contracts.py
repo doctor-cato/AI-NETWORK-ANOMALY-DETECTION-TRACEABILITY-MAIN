@@ -31,6 +31,12 @@ class APIIngestResponse:
     trace_route_eligible: bool = True
     risk_route_eligible: bool = True
     model_provenance: Optional[Dict[str, Any]] = None
+    accepted_indices: List[int] = field(default_factory=list)
+    rejected_indices: List[int] = field(default_factory=list)
+    abstained_indices: List[int] = field(default_factory=list)
+    accepted_count: int = 0
+    rejected_count: int = 0
+    abstained_count: int = 0
     timestamp_utc: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
@@ -48,6 +54,12 @@ class APIIngestResponse:
             "trace_route_eligible": self.trace_route_eligible,
             "risk_route_eligible": self.risk_route_eligible,
             "model_provenance": self.model_provenance,
+            "accepted_indices": self.accepted_indices,
+            "rejected_indices": self.rejected_indices,
+            "abstained_indices": self.abstained_indices,
+            "accepted_count": self.accepted_count,
+            "rejected_count": self.rejected_count,
+            "abstained_count": self.abstained_count,
             "timestamp_utc": self.timestamp_utc,
         }
 
@@ -119,6 +131,10 @@ def create_api_response(
     eff_source = events[0].metadata.source_id if events else "unknown"
     eff_ver = events[0].metadata.schema_version if events else "1.0.0"
 
+    acc_indices = decision.accepted_indices
+    rej_indices = decision.rejected_indices
+    abs_indices = decision.abstained_indices
+
     return APIIngestResponse(
         source_id=eff_source,
         schema_version=eff_ver,
@@ -133,6 +149,12 @@ def create_api_response(
         trace_route_eligible=decision.route_to_trace_engine,
         risk_route_eligible=decision.route_to_risk_engine,
         model_provenance=model_provenance,
+        accepted_indices=acc_indices,
+        rejected_indices=rej_indices,
+        abstained_indices=abs_indices,
+        accepted_count=len(acc_indices),
+        rejected_count=len(rej_indices),
+        abstained_count=len(abs_indices),
     )
 
 
@@ -147,6 +169,9 @@ def create_dashboard_view_model(decision: GateDecision, source_name: str) -> Das
     elif decision.can_proceed_to_ml:
         badge_color = "blue"
         summary = "Compatible: Full 47-feature inference active (domain validation unverified)."
+    elif tier == ValidationStatus.SEMANTICALLY_COMPATIBLE.value:
+        badge_color = "yellow"
+        summary = "Semantically Compatible: Awaiting empirical benchmark validation."
     elif eligibility == InferenceEligibility.FEATURE_INCOMPATIBLE.value:
         badge_color = "yellow"
         summary = "Telemetry Only: Lacks 47 micro-features. Routed to Trace and Risk engines."

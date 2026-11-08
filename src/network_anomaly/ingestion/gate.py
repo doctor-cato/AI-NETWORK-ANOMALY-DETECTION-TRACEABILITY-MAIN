@@ -49,6 +49,10 @@ class GateDecision:
     warning_flags: List[str] = field(default_factory=list)
     route_to_trace_engine: bool = True
     route_to_risk_engine: bool = True
+    accepted_indices: List[int] = field(default_factory=list)
+    rejected_indices: List[int] = field(default_factory=list)
+    abstained_indices: List[int] = field(default_factory=list)
+    row_rejection_reasons: Dict[int, str] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -59,6 +63,10 @@ class GateDecision:
             "warning_flags": self.warning_flags,
             "route_to_trace_engine": self.route_to_trace_engine,
             "route_to_risk_engine": self.route_to_risk_engine,
+            "accepted_indices": self.accepted_indices,
+            "rejected_indices": self.rejected_indices,
+            "abstained_indices": self.abstained_indices,
+            "row_rejection_reasons": {str(k): v for k, v in self.row_rejection_reasons.items()},
             "ood_summary": self.ood_report.summary() if self.ood_report else None,
         }
 
@@ -74,6 +82,10 @@ class InferenceEligibilityGate:
         strict_ood_abstain: bool = True,
         max_allowed_shortcut_drift_ratio: float = 0.50,
     ) -> None:
+        if not (0.0 <= max_allowed_shortcut_drift_ratio <= 1.0):
+            raise ValueError(
+                f"max_allowed_shortcut_drift_ratio must be in [0.0, 1.0], got {max_allowed_shortcut_drift_ratio}"
+            )
         self.registry = registry or SourceRegistry()
         self.evaluator = evaluator or FeatureCompatibilityEvaluator()
         self.ood_validator = ood_validator or OODValidator(check_shortcut_drift=True)
@@ -82,11 +94,16 @@ class InferenceEligibilityGate:
 
     def evaluate(
         self,
-        events: List[CanonicalNetworkEvent],
+        events: Optional[List[CanonicalNetworkEvent]] = None,
         source_id: Optional[str] = None,
         df: Optional[pd.DataFrame] = None,
+        model_identifier: Optional[str] = None,
+        model_artifact_sha256: Optional[str] = None,
+        preprocessor_artifact_sha256: Optional[str] = None,
+        feature_contract_version: Optional[str] = None,
+        allow_unverified: bool = False,
     ) -> GateDecision:
-        """Evaluate events against schema compatibility, OOD metrics, and abstention policies."""
+        """Evaluate events against schema compatibility, network metadata, OOD metrics, and abstention policies."""
         if not events and df is None:
             return GateDecision(
                 can_proceed_to_ml=False,
@@ -112,6 +129,7 @@ class InferenceEligibilityGate:
 
         # 2. Check if source is explicitly unsupported for ML (metadata-only e.g. Zeek, NetFlow v5)
         if not source_def.ml_supported:
+            total_n = len(events) if events else (len(df) if df is not None else 0)
             return GateDecision(
                 can_proceed_to_ml=False,
                 eligibility_status=InferenceEligibility.FEATURE_INCOMPATIBLE,
@@ -122,12 +140,32 @@ class InferenceEligibilityGate:
                 ],
                 route_to_trace_engine=source_def.trace_supported,
                 route_to_risk_engine=True,
+                rejected_indices=list(range(total_n)),
             )
 
-        # 3. Compatibility Evaluation
-        comp_report = self.evaluator.evaluate_events(events, source_id=eff_source)
+        # 3. Compatibility Evaluation with artifact binding verification
+        if df is not None:
+            comp_report = self.evaluator.evaluate_dataframe(
+                df,
+                source_id=eff_source,
+                model_identifier=model_identifier,
+                model_artifact_sha256=model_artifact_sha256,
+                preprocessor_artifact_sha256=preprocessor_artifact_sha256,
+                feature_contract_version=feature_contract_version,
+            )
+        else:
+            comp_report = self.evaluator.evaluate_events(
+                events or [],
+                source_id=eff_source,
+                model_identifier=model_identifier,
+                model_artifact_sha256=model_artifact_sha256,
+                preprocessor_artifact_sha256=preprocessor_artifact_sha256,
+                feature_contract_version=feature_contract_version,
+            )
 
-        # Check for benchmark failure (e.g. external source with Recall=0 and high FPR)
+        total_n = len(events) if events else (len(df) if df is not None else 0)
+
+        # Check for benchmark failure (e.g. external source with Recall=0 and high FPR or mismatched hashes)
         if comp_report.validation_status == ValidationStatus.BENCHMARK_FAILED:
             return GateDecision(
                 can_proceed_to_ml=False,
@@ -137,9 +175,11 @@ class InferenceEligibilityGate:
                 abstention_reasons=comp_report.rejection_reasons,
                 route_to_trace_engine=True,
                 route_to_risk_engine=True,
+                rejected_indices=list(range(total_n)),
             )
 
-        if not comp_report.is_eligible_for_inference:
+        # Check for feature incompleteness (missing columns, NaN/Inf values)
+        if comp_report.validation_status == ValidationStatus.SCHEMA_COMPATIBLE:
             return GateDecision(
                 can_proceed_to_ml=False,
                 eligibility_status=comp_report.inference_eligibility,
@@ -148,32 +188,95 @@ class InferenceEligibilityGate:
                 abstention_reasons=comp_report.rejection_reasons,
                 route_to_trace_engine=comp_report.trace_route_eligible,
                 route_to_risk_engine=comp_report.risk_route_eligible,
+                rejected_indices=list(range(total_n)),
             )
 
-        # 4. Extract feature matrix for OOD inspection
-        if df is not None:
-            X_df = df[[c for c in ML_FEATURE_COLUMNS if c in df.columns]]
-        else:
-            X_df, _ = BaseSourceAdapter.extract_ml_matrix(events)
+        # Unverified benchmark sources: refuse certified inference unless allow_unverified is explicitly granted
+        if comp_report.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE and not allow_unverified:
+            return GateDecision(
+                can_proceed_to_ml=False,
+                eligibility_status=InferenceEligibility.VALIDATION_NOT_VERIFIED,
+                validation_status=ValidationStatus.SEMANTICALLY_COMPATIBLE,
+                compatibility_report=comp_report,
+                abstention_reasons=[
+                    f"Source '{eff_source}' is semantically compatible but has no verified empirical benchmark evidence.",
+                    "Inference refused fail-closed: Pass allow_unverified=True for uncertified evaluation.",
+                ],
+                route_to_trace_engine=comp_report.trace_route_eligible,
+                route_to_risk_engine=comp_report.risk_route_eligible,
+                rejected_indices=list(range(total_n)),
+            )
 
-        # 5. OOD & Range Audit
-        ood_report = self.ood_validator.audit_dataframe(X_df)
+        if not comp_report.is_eligible_for_inference and not allow_unverified:
+            return GateDecision(
+                can_proceed_to_ml=False,
+                eligibility_status=comp_report.inference_eligibility,
+                validation_status=comp_report.validation_status,
+                compatibility_report=comp_report,
+                abstention_reasons=comp_report.rejection_reasons,
+                route_to_trace_engine=comp_report.trace_route_eligible,
+                route_to_risk_engine=comp_report.risk_route_eligible,
+                rejected_indices=list(range(total_n)),
+            )
+
+        # 4. Extract feature and metadata matrices for OOD & network invariant inspection
+        metadata_violations: List[str] = []
+        rejected_indices: List[int] = []
+        row_rejection_reasons: Dict[int, str] = {}
+
+        if df is not None:
+            audit_df = df
+            eligible_indices = list(range(len(df)))
+        else:
+            X_df, eligible_indices = BaseSourceAdapter.extract_ml_matrix(events or [])
+            meta_df, _ = BaseSourceAdapter.extract_metadata_dataframe(events or [])
+            audit_df = X_df.copy()
+            for col in meta_df.columns:
+                if col not in audit_df.columns:
+                    audit_df[col] = meta_df[col]
+
+            for idx, ev in enumerate(events or []):
+                if ev.invalid_metadata:
+                    rejected_indices.append(idx)
+                    row_rejection_reasons[idx] = f"Invalid metadata: {ev.invalid_metadata}"
+                    metadata_violations.append(f"Row {idx}: {ev.invalid_metadata}")
+                elif ev.ml_features is None or ev.missing_features or ev.invalid_features:
+                    rejected_indices.append(idx)
+                    row_rejection_reasons[idx] = "Incomplete or non-finite ML feature vector."
+
+        # 5. OOD & Physical Network Invariant Audit
+        ood_report = self.ood_validator.audit_dataframe(audit_df)
         warning_flags = list(ood_report.ood_flags)
 
-        # Fail-closed condition A: Hard boundary / protocol violation
-        if ood_report.hard_violation_count > 0:
+        total_hard_violations = ood_report.hard_violation_count + len(metadata_violations)
+
+        # Fail-closed condition A: Hard boundary / physical protocol invariant violation
+        if total_hard_violations > 0:
+            combined_reasons = []
+            if ood_report.hard_violation_count > 0:
+                combined_reasons.append(
+                    f"Hard constraint violation: {ood_report.hard_violation_count} row(s) violate physical network invariants."
+                )
+            if metadata_violations:
+                combined_reasons.append(
+                    f"Hard constraint violation: {len(metadata_violations)} record(s) have invalid network metadata."
+                )
+            combined_reasons.extend(ood_report.ood_flags[:3])
+            combined_reasons.extend(metadata_violations[:3])
+
             return GateDecision(
                 can_proceed_to_ml=False,
                 eligibility_status=InferenceEligibility.ABSTAINED,
                 validation_status=comp_report.validation_status,
                 ood_report=ood_report,
                 compatibility_report=comp_report,
-                abstention_reasons=[
-                    f"Hard constraint violation: {ood_report.hard_violation_count} row(s) violate physical network invariants."
-                ] + ood_report.ood_flags[:3],
+                abstention_reasons=combined_reasons,
                 warning_flags=warning_flags,
                 route_to_trace_engine=True,
                 route_to_risk_engine=True,
+                abstained_indices=list(range(total_n)),
+                rejected_indices=rejected_indices,
+                row_rejection_reasons=row_rejection_reasons,
             )
 
         # Fail-closed condition B: Critical shortcut drift across batch
@@ -195,9 +298,16 @@ class InferenceEligibilityGate:
                 warning_flags=warning_flags,
                 route_to_trace_engine=True,
                 route_to_risk_engine=True,
+                abstained_indices=list(range(total_n)),
+                rejected_indices=rejected_indices,
+                row_rejection_reasons=row_rejection_reasons,
             )
 
-        # 6. Approved for inference
+        # 7. Approved for inference with row-level tracking
+        accepted_set = set(eligible_indices)
+        all_indices = set(range(total_n))
+        rejected_set = all_indices - accepted_set
+
         return GateDecision(
             can_proceed_to_ml=True,
             eligibility_status=comp_report.inference_eligibility,
@@ -207,4 +317,7 @@ class InferenceEligibilityGate:
             warning_flags=warning_flags,
             route_to_trace_engine=True,
             route_to_risk_engine=True,
+            accepted_indices=sorted(accepted_set),
+            rejected_indices=sorted(rejected_set),
+            row_rejection_reasons=row_rejection_reasons,
         )

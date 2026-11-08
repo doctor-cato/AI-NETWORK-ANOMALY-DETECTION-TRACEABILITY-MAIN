@@ -138,5 +138,5 @@ python scripts/evaluate_cross_dataset.py
 
 ### Chạy toàn bộ bộ kiểm thử Ingestion & M6 Contracts:
 ```bash
-python -m pytest tests/unit/test_ingestion_registry.py tests/unit/test_ingestion_adapters.py tests/unit/test_compatibility_evaluator.py tests/unit/test_ood_gate.py tests/contract/test_canonical_event.py tests/contract/test_m6_integration_contracts.py tests/integration/test_multi_source_inference.py tests/integration/test_cross_dataset_evaluation.py -v
+python -m pytest tests/unit/test_ingestion_registry.py tests/unit/test_ingestion_adapters.py tests/unit/test_compatibility_evaluator.py tests/unit/test_ood_gate.py tests/unit/test_anti_imputation_and_label_integrity.py tests/unit/test_pr47_audit_remediation.py tests/contract/test_canonical_event.py tests/contract/test_m6_integration_contracts.py tests/integration/test_multi_source_inference.py tests/integration/test_cross_dataset_evaluation.py -v
 ```
