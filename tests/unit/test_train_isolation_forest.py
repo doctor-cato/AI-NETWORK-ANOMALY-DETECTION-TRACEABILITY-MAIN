@@ -45,6 +45,9 @@ from network_anomaly.models.isolation_forest import (  # noqa: E402
 )
 from scripts.train_isolation_forest import (  # noqa: E402
     EXPECTED_N_FEATURES,
+    EXPECTED_TEST_ROWS,
+    EXPECTED_TRAIN_ROWS,
+    EXPECTED_VAL_ROWS,
     KNOWN_ATTACK_CATEGORIES,
     UNKNOWN_ATTACK_CATEGORIES,
     _save_blocked_report,
@@ -53,10 +56,13 @@ from scripts.train_isolation_forest import (  # noqa: E402
     check_feature_schema,
     check_finite_values,
     check_no_leakage_in_matrix,
+    check_preprocessor_artifact,
+    check_split_manifest,
     compute_full_metrics,
     compute_per_category_metrics,
     parse_args,
     save_artifacts,
+    sha256_file,
     verify_saved_model,
 )
 
@@ -710,3 +716,98 @@ class TestFeatureContract:
 
     def test_expected_n_features_matches_contract(self):
         assert EXPECTED_N_FEATURES == len(ML_FEATURE_COLUMNS)
+
+
+# ---------------------------------------------------------------------------
+# 13. Official split & preprocessor manifest integration tests (Issue #7 & #8)
+# ---------------------------------------------------------------------------
+
+
+class TestOfficialManifestSchemaAndPrerequisites:
+    def test_check_split_manifest_official_nested_schema_passes(self, tmp_path):
+        manifest_data = {
+            "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+            "partitions": {
+                "train": {
+                    "row_count": EXPECTED_TRAIN_ROWS,
+                    "index_file": "train_indices.csv.gz",
+                },
+                "validation": {
+                    "row_count": EXPECTED_VAL_ROWS,
+                    "index_file": "validation_indices.csv.gz",
+                },
+                "test": {
+                    "row_count": EXPECTED_TEST_ROWS,
+                    "index_file": "test_indices.csv.gz",
+                },
+            },
+        }
+        manifest_path = tmp_path / "split_manifest.json"
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        result = check_split_manifest(manifest_path)
+        assert result["status"] == "PASS"
+        assert "verified" in result["message"].lower()
+
+    def test_check_split_manifest_rejects_missing_file(self, tmp_path):
+        result = check_split_manifest(tmp_path / "nonexistent_manifest.json")
+        assert result["status"] == "BLOCKED"
+        assert "not found" in result["message"].lower()
+
+    def test_check_split_manifest_rejects_row_count_mismatch(self, tmp_path):
+        manifest_data = {
+            "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+            "partitions": {
+                "train": {"row_count": 999, "index_file": "train_indices.csv.gz"},
+                "validation": {
+                    "row_count": EXPECTED_VAL_ROWS,
+                    "index_file": "validation_indices.csv.gz",
+                },
+                "test": {
+                    "row_count": EXPECTED_TEST_ROWS,
+                    "index_file": "test_indices.csv.gz",
+                },
+            },
+        }
+        manifest_path = tmp_path / "bad_split_manifest.json"
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        result = check_split_manifest(manifest_path)
+        assert result["status"] == "BLOCKED"
+        assert "row count" in result["message"].lower()
+
+    def test_check_preprocessor_artifact_verified_with_companion_manifest(self, tmp_path):
+        art_path = tmp_path / "preprocessor.joblib"
+        art_path.write_bytes(b"dummy_preprocessor_artifact_bytes")
+        art_hash = sha256_file(art_path)
+
+        manifest_data = {
+            "artifact_sha256": art_hash,
+            "artifact_type": "nf-unsw-nb15-v3-train-only-preprocessor",
+            "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+        }
+        man_path = tmp_path / "preprocessor_manifest.json"
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        result = check_preprocessor_artifact(art_path, man_path)
+        assert result["status"] == "PASS"
+
+    def test_check_preprocessor_artifact_rejects_hash_mismatch(self, tmp_path):
+        art_path = tmp_path / "preprocessor.joblib"
+        art_path.write_bytes(b"corrupted_artifact_bytes")
+
+        manifest_data = {
+            "artifact_sha256": "0" * 64,
+            "artifact_type": "nf-unsw-nb15-v3-train-only-preprocessor",
+        }
+        man_path = tmp_path / "preprocessor_manifest.json"
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        result = check_preprocessor_artifact(art_path, man_path)
+        assert result["status"] == "BLOCKED"
+        assert "mismatch" in result["message"].lower()
+
+    def test_check_preprocessor_artifact_rejects_missing_artifact(self, tmp_path):
+        man_path = tmp_path / "manifest.json"
+        man_path.write_text("{}", encoding="utf-8")
+        result = check_preprocessor_artifact(tmp_path / "missing.joblib", man_path)
+        assert result["status"] == "BLOCKED"
+        assert "not found" in result["message"].lower()

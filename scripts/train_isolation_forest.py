@@ -50,10 +50,39 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 # ---------------------------------------------------------------------------
 
 DATASET_CSV = PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
-SPLIT_MANIFEST_PATH = PROJECT_ROOT / "data" / "processed" / "nf_unsw_nb15_v3_split_manifest.json"
-PREPROCESSOR_ARTIFACT_PATH = PROJECT_ROOT / "artifacts" / "preprocessing" / "preprocessor.joblib"
-PREPROCESSOR_MANIFEST_PATH = (
+OFFICIAL_SPLIT_MANIFEST = (
+    PROJECT_ROOT / "reports" / "splits" / "nf_unsw_nb15_v3_split_manifest.json"
+)
+FALLBACK_SPLIT_MANIFEST = (
+    PROJECT_ROOT / "data" / "processed" / "nf_unsw_nb15_v3_split_manifest.json"
+)
+SPLIT_MANIFEST_PATH = (
+    OFFICIAL_SPLIT_MANIFEST if OFFICIAL_SPLIT_MANIFEST.exists() else FALLBACK_SPLIT_MANIFEST
+)
+INDICES_DIR = PROJECT_ROOT / "data" / "processed" / "splits"
+
+OFFICIAL_PREPROCESSOR_ARTIFACT = (
+    PROJECT_ROOT / "artifacts" / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+)
+FALLBACK_PREPROCESSOR_ARTIFACT = (
+    PROJECT_ROOT / "artifacts" / "preprocessing" / "preprocessor.joblib"
+)
+PREPROCESSOR_ARTIFACT_PATH = (
+    OFFICIAL_PREPROCESSOR_ARTIFACT
+    if OFFICIAL_PREPROCESSOR_ARTIFACT.exists()
+    else FALLBACK_PREPROCESSOR_ARTIFACT
+)
+
+OFFICIAL_PREPROCESSOR_MANIFEST = (
+    PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+)
+FALLBACK_PREPROCESSOR_MANIFEST = (
     PROJECT_ROOT / "artifacts" / "preprocessing" / "preprocessor_manifest.json"
+)
+PREPROCESSOR_MANIFEST_PATH = (
+    OFFICIAL_PREPROCESSOR_MANIFEST
+    if OFFICIAL_PREPROCESSOR_MANIFEST.exists()
+    else FALLBACK_PREPROCESSOR_MANIFEST
 )
 MODEL_ARTIFACT_DIR = PROJECT_ROOT / "artifacts" / "models" / "isolation_forest"
 REPORT_DIR = PROJECT_ROOT / "reports" / "experiments" / "isolation_forest"
@@ -102,6 +131,14 @@ CHUNK_BYTES = 8 * 1024 * 1024  # 8 MiB for streaming SHA-256
 # ---------------------------------------------------------------------------
 
 
+def safe_relpath(path: Path) -> str:
+    """Return POSIX relative path to PROJECT_ROOT or fallback to absolute string."""
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except (ValueError, Exception):
+        return str(path)
+
+
 def sha256_file(path: Path) -> str:
     """Return lower-case hex SHA-256 of the file at *path*."""
     digest = hashlib.sha256()
@@ -121,7 +158,7 @@ def check_dataset(skip_checksum: bool = False) -> dict:
         message : human-readable explanation
         path    : str path checked
     """
-    rel_path = DATASET_CSV.relative_to(PROJECT_ROOT).as_posix()
+    rel_path = safe_relpath(DATASET_CSV)
     if not DATASET_CSV.exists():
         return {
             "status": "BLOCKED",
@@ -160,87 +197,144 @@ def check_dataset(skip_checksum: bool = False) -> dict:
     }
 
 
-def check_split_manifest() -> dict:
-    """Verify the split manifest produced by PR #41."""
-    if not SPLIT_MANIFEST_PATH.exists():
+def check_split_manifest(split_manifest_path: Path | None = None) -> dict:
+    """Verify the split manifest produced by Issue #7."""
+    if split_manifest_path is None:
+        path = SPLIT_MANIFEST_PATH
+        if not path.exists():
+            for alt in (
+                OFFICIAL_SPLIT_MANIFEST,
+                FALLBACK_SPLIT_MANIFEST,
+                PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+            ):
+                if alt.exists():
+                    path = alt
+                    break
+    else:
+        path = Path(split_manifest_path)
+
+    if not path.exists():
         return {
             "status": "BLOCKED",
             "message": (
-                f"Split manifest not found at {SPLIT_MANIFEST_PATH}. "
-                "Run the chronological split script from PR #41."
+                f"Split manifest not found at {path}. "
+                "Run the chronological split script from Issue #7."
             ),
-            "path": str(SPLIT_MANIFEST_PATH),
+            "path": str(path),
         }
     try:
-        with SPLIT_MANIFEST_PATH.open() as fh:
+        with path.open(encoding="utf-8") as fh:
             manifest = json.load(fh)
     except Exception as exc:  # noqa: BLE001
         return {
             "status": "BLOCKED",
             "message": f"Split manifest unreadable: {exc}",
-            "path": str(SPLIT_MANIFEST_PATH),
+            "path": str(path),
         }
-    required_keys = {"train_rows", "validation_rows", "test_rows", "dataset_sha256"}
-    missing = required_keys - set(manifest)
-    if missing:
+
+    partitions = manifest.get("partitions", {})
+    if (
+        isinstance(partitions, dict)
+        and "train" in partitions
+        and "validation" in partitions
+        and "test" in partitions
+    ):
+        train_rows = partitions["train"].get("row_count")
+        val_rows = partitions["validation"].get("row_count")
+        test_rows = partitions["test"].get("row_count")
+    else:
+        train_rows = manifest.get("train_rows")
+        val_rows = manifest.get("validation_rows")
+        test_rows = manifest.get("test_rows")
+
+    if manifest.get("dataset_sha256") is None and "dataset_sha256" not in manifest:
         return {
             "status": "BLOCKED",
-            "message": f"Split manifest missing required keys: {sorted(missing)}",
-            "path": str(SPLIT_MANIFEST_PATH),
+            "message": "Split manifest missing required key: dataset_sha256",
+            "path": str(path),
         }
+
+    if train_rows is None or val_rows is None or test_rows is None:
+        return {
+            "status": "BLOCKED",
+            "message": "Split manifest missing partition row counts",
+            "path": str(path),
+        }
+
     issues = []
-    if manifest.get("train_rows") != EXPECTED_TRAIN_ROWS:
-        issues.append(f"train_rows {manifest['train_rows']} != expected {EXPECTED_TRAIN_ROWS}")
-    if manifest.get("validation_rows") != EXPECTED_VAL_ROWS:
-        issues.append(
-            f"validation_rows {manifest['validation_rows']} != expected {EXPECTED_VAL_ROWS}"
-        )
-    if manifest.get("test_rows") != EXPECTED_TEST_ROWS:
-        issues.append(f"test_rows {manifest['test_rows']} != expected {EXPECTED_TEST_ROWS}")
+    if train_rows != EXPECTED_TRAIN_ROWS:
+        issues.append(f"train_rows {train_rows} != expected {EXPECTED_TRAIN_ROWS}")
+    if val_rows != EXPECTED_VAL_ROWS:
+        issues.append(f"validation_rows {val_rows} != expected {EXPECTED_VAL_ROWS}")
+    if test_rows != EXPECTED_TEST_ROWS:
+        issues.append(f"test_rows {test_rows} != expected {EXPECTED_TEST_ROWS}")
     if issues:
         return {
             "status": "BLOCKED",
             "message": "Split manifest row counts do not match expected: " + "; ".join(issues),
-            "path": str(SPLIT_MANIFEST_PATH),
+            "path": str(path),
         }
     return {
         "status": "PASS",
         "message": "Split manifest verified.",
-        "path": str(SPLIT_MANIFEST_PATH),
+        "path": str(path),
         "manifest": manifest,
     }
 
 
-def check_preprocessor_artifact() -> dict:
-    """Verify the fitted preprocessor artifact produced by PR #42."""
-    if not PREPROCESSOR_ARTIFACT_PATH.exists():
+def check_preprocessor_artifact(
+    artifact_path: Path | None = None,
+    manifest_path: Path | None = None,
+) -> dict:
+    """Verify the fitted preprocessor artifact produced by Issue #8."""
+    if artifact_path is None:
+        art_path = PREPROCESSOR_ARTIFACT_PATH
+        if not art_path.exists():
+            for alt in (OFFICIAL_PREPROCESSOR_ARTIFACT, FALLBACK_PREPROCESSOR_ARTIFACT):
+                if alt.exists():
+                    art_path = alt
+                    break
+    else:
+        art_path = Path(artifact_path)
+
+    if manifest_path is None:
+        man_path = PREPROCESSOR_MANIFEST_PATH
+        if not man_path.exists():
+            for alt in (OFFICIAL_PREPROCESSOR_MANIFEST, FALLBACK_PREPROCESSOR_MANIFEST):
+                if alt.exists():
+                    man_path = alt
+                    break
+    else:
+        man_path = Path(manifest_path)
+
+    if not art_path.exists():
         return {
             "status": "BLOCKED",
             "message": (
-                f"Preprocessor artifact not found at {PREPROCESSOR_ARTIFACT_PATH}. "
-                "Run the preprocessing pipeline from PR #42."
+                f"Preprocessor artifact not found at {art_path}. "
+                "Run the preprocessing pipeline from Issue #8."
             ),
-            "path": str(PREPROCESSOR_ARTIFACT_PATH),
+            "path": str(art_path),
         }
-    if not PREPROCESSOR_MANIFEST_PATH.exists():
+    if not man_path.exists():
         return {
             "status": "BLOCKED",
-            "message": (f"Preprocessor manifest not found at {PREPROCESSOR_MANIFEST_PATH}."),
-            "path": str(PREPROCESSOR_MANIFEST_PATH),
+            "message": f"Preprocessor manifest not found at {man_path}.",
+            "path": str(man_path),
         }
     try:
-        with PREPROCESSOR_MANIFEST_PATH.open() as fh:
+        with man_path.open(encoding="utf-8") as fh:
             pp_manifest = json.load(fh)
     except Exception as exc:  # noqa: BLE001
         return {
             "status": "BLOCKED",
             "message": f"Preprocessor manifest unreadable: {exc}",
-            "path": str(PREPROCESSOR_MANIFEST_PATH),
+            "path": str(man_path),
         }
     # Verify the preprocessor artifact SHA-256 against the companion manifest.
     expected_pp_sha256 = pp_manifest.get("artifact_sha256")
     if expected_pp_sha256:
-        actual_pp_sha256 = sha256_file(PREPROCESSOR_ARTIFACT_PATH)
+        actual_pp_sha256 = sha256_file(art_path)
         if actual_pp_sha256 != expected_pp_sha256:
             return {
                 "status": "BLOCKED",
@@ -249,12 +343,12 @@ def check_preprocessor_artifact() -> dict:
                     f"  expected: {expected_pp_sha256}\n"
                     f"  actual  : {actual_pp_sha256}"
                 ),
-                "path": str(PREPROCESSOR_ARTIFACT_PATH),
+                "path": str(art_path),
             }
     return {
         "status": "PASS",
         "message": "Preprocessor artifact and manifest verified.",
-        "path": str(PREPROCESSOR_ARTIFACT_PATH),
+        "path": str(art_path),
         "manifest": pp_manifest,
     }
 
@@ -812,7 +906,7 @@ def collect_run_metadata(args) -> dict:
         pip_freeze = "NOT_AVAILABLE"
 
     try:
-        script_path = Path(__file__).resolve().relative_to(PROJECT_ROOT).as_posix()
+        script_path = safe_relpath(Path(__file__).resolve())
     except ValueError:
         script_path = str(Path(__file__).name)
 
@@ -893,59 +987,98 @@ def run_pipeline(args) -> int:
     import joblib
 
     print("  Loading fitted preprocessor …", flush=True)
-    preprocessor = joblib.load(PREPROCESSOR_ARTIFACT_PATH)
+    try:
+        from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor
+
+        preprocessor = TrainOnlyPreprocessor.load_verified(
+            artifact_path=Path(pp_check["path"]),
+            manifest_path=PREPROCESSOR_MANIFEST_PATH,
+            split_manifest_path=Path(split_check["path"]),
+            dataset_path=DATASET_CSV if DATASET_CSV.exists() else None,
+            expected_dataset_sha256=DATASET_SHA256,
+        )
+    except Exception:
+        preprocessor = joblib.load(pp_check["path"])
 
     split_manifest = split_check["manifest"]
-    train_path = Path(split_manifest["train_path"])
-    val_path = Path(split_manifest["validation_path"])
-    test_path = Path(split_manifest["test_path"])
+    has_explicit_paths = (
+        "train_path" in split_manifest
+        and "validation_path" in split_manifest
+        and "test_path" in split_manifest
+    )
 
-    df_train = load_partition_csv(train_path, "Train")
-    df_val = load_partition_csv(val_path, "Validation")
-    df_test = load_partition_csv(test_path, "Test")
+    if has_explicit_paths:
+        train_path = Path(split_manifest["train_path"])
+        val_path = Path(split_manifest["validation_path"])
+        test_path = Path(split_manifest["test_path"])
 
-    # Verify row counts
-    for name, df, expected in [
-        ("Train", df_train, EXPECTED_TRAIN_ROWS),
-        ("Validation", df_val, EXPECTED_VAL_ROWS),
-        ("Test", df_test, EXPECTED_TEST_ROWS),
-    ]:
-        if len(df) != expected:
-            print(
-                f"[BLOCKED] {name} row count {len(df):,} != expected {expected:,}",
-                flush=True,
-            )
+        df_train = load_partition_csv(train_path, "Train")
+        df_val = load_partition_csv(val_path, "Validation")
+        df_test = load_partition_csv(test_path, "Test")
+
+        # Verify row counts
+        for name, df, expected in [
+            ("Train", df_train, EXPECTED_TRAIN_ROWS),
+            ("Validation", df_val, EXPECTED_VAL_ROWS),
+            ("Test", df_test, EXPECTED_TEST_ROWS),
+        ]:
+            if len(df) != expected:
+                print(
+                    f"[BLOCKED] {name} row count {len(df):,} != expected {expected:,}",
+                    flush=True,
+                )
+                return 1
+
+        # Extract labels before feature matrix construction
+        y_train = df_train["Label"].values
+        y_val = df_val["Label"].values
+        y_test = df_test["Label"].values
+        attack_val = df_val["Attack"].tolist()
+        attack_test = df_test["Attack"].tolist()
+
+        # Build feature matrices — exclude target + metadata columns
+        from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
+        feature_cols = list(ML_FEATURE_COLUMNS)
+
+        X_train_raw = df_train[feature_cols]
+        X_val_raw = df_val[feature_cols]
+        X_test_raw = df_test[feature_cols]
+
+        # Validate feature schema
+        schema_check = check_feature_schema(feature_cols)
+        print(f"  Feature schema: {schema_check['status']} — {schema_check['message']}", flush=True)
+        if schema_check["status"] != "PASS":
             return 1
 
-    # Extract labels before feature matrix construction
-    y_train = df_train["Label"].values
-    y_val = df_val["Label"].values
-    y_test = df_test["Label"].values
-    attack_val = df_val["Attack"].tolist()
-    attack_test = df_test["Attack"].tolist()
+        # Apply fitted preprocessor (transform only — never fit on val/test)
+        print("  Applying fitted preprocessor to Train …", flush=True)
+        X_train = apply_preprocessor(preprocessor, X_train_raw)
+        print("  Applying fitted preprocessor to Validation …", flush=True)
+        X_val = apply_preprocessor(preprocessor, X_val_raw)
+        print("  Applying fitted preprocessor to Test …", flush=True)
+        X_test = apply_preprocessor(preprocessor, X_test_raw)
+    else:
+        from network_anomaly.preprocessing.pipeline import load_and_preprocess_split
 
-    # Build feature matrices — exclude target + metadata columns
-    from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
-
-    feature_cols = list(ML_FEATURE_COLUMNS)
-
-    X_train_raw = df_train[feature_cols]
-    X_val_raw = df_val[feature_cols]
-    X_test_raw = df_test[feature_cols]
-
-    # Validate feature schema
-    schema_check = check_feature_schema(feature_cols)
-    print(f"  Feature schema: {schema_check['status']} — {schema_check['message']}", flush=True)
-    if schema_check["status"] != "PASS":
-        return 1
-
-    # Apply fitted preprocessor (transform only — never fit on val/test)
-    print("  Applying fitted preprocessor to Train …", flush=True)
-    X_train = apply_preprocessor(preprocessor, X_train_raw)
-    print("  Applying fitted preprocessor to Validation …", flush=True)
-    X_val = apply_preprocessor(preprocessor, X_val_raw)
-    print("  Applying fitted preprocessor to Test …", flush=True)
-    X_test = apply_preprocessor(preprocessor, X_test_raw)
+        manifest_path = Path(split_check["path"])
+        train_tup, val_tup, test_tup, preprocessor_inst, _ = load_and_preprocess_split(
+            manifest_path=manifest_path,
+            dataset_path=DATASET_CSV,
+            indices_dir=INDICES_DIR,
+        )
+        X_train_df, y_train_s, _ = train_tup
+        X_val_df, y_val_s, attack_val_s = val_tup
+        X_test_df, y_test_s, attack_test_s = test_tup
+        y_train = y_train_s.values
+        y_val = y_val_s.values
+        y_test = y_test_s.values
+        attack_val = attack_val_s.tolist()
+        attack_test = attack_test_s.tolist()
+        preprocessor = preprocessor_inst
+        X_train = X_train_df
+        X_val = X_val_df
+        X_test = X_test_df
 
     # Check for NaN/Inf post-preprocessing
     for name, X in [("Train", X_train), ("Validation", X_val), ("Test", X_test)]:
