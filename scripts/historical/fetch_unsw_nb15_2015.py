@@ -22,7 +22,7 @@ try:  # POSIX
 except ImportError:  # pragma: no cover - Windows
     fcntl = None  # type: ignore[assignment]
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DESTINATION = PROJECT_ROOT / "data" / "raw"
 REVISION = "44bbd02b9e70f74dd915218d5eb702f125341ffc"
 BASE_URL = (

@@ -5,6 +5,10 @@ cập nhật #11, #16, #18–#20, tạo #23–#32 và bổ sung M6/M7. Nội dun
 hoặc tối đa 3 thành viên bên dưới không còn là backlog hiện hành.
 Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` thay vì sửa file này.
 
+Ngày 2026-10-20, migration NF-UNSW-NB15-v3 đã bổ sung contract trực tiếp vào các Issue
+và Milestone liên quan. #4/#5 vẫn CLOSED như evidence lịch sử của UNSW-NB15 (2015);
+#6/#8 đã đổi title sang dataset v3. Bảng dưới đây không thay thế readback GitHub hiện hành.
+
 ## Các Issue liên quan đã audit (từ API)
 
 | # | Trạng thái | Tiêu đề | Milestone | Ghi chú đề xuất |
@@ -14,13 +18,13 @@ Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` 
 | 8 | open | Preprocessing pipeline design and reproducibility | M2 | Giữ nguyên; chỉ bổ sung yêu cầu fit chỉ trên train, lưu artifact. |
 | 15 | open | Inference pipeline — load artifacts and predict new input | M4 | **Bổ sung kiểm thử thực tế**: cần CLI/script dự đoán trên CSV; kiểm tra cột bắt buộc, dữ liệu thiếu; dùng preprocessing đã fit; sinh CSV kết quả; báo lỗi nếu artifact chưa có. |
 | 16 | open | Demo and visualization — minimal demo and result plots | M4 | **Ưu tiên Streamlit** nếu chưa có giải pháp tương đương. Cho phép upload CSV, hiển thị số dự đoán bình thường/bất thường theo bản ghi, tải CSV đầu ra, báo lỗi rõ khi schema sai hoặc artifact thiếu. Dùng chính pipeline inference đã kiểm thử. |
-| 17 | open | Unit and integration tests — import, pipeline, basic predictions | M4 | Phân biệt rõ fixture synthetic (`fixture_small.csv`) với đánh giá thực tế UNSW-NB15. CI có thể SKIP phần đánh giá dữ liệu thật có chủ đích; không coi SKIP là bằng chứng model đã đánh giá thật. |
+| 17 | open | Unit and integration tests — import, pipeline, basic predictions | M4 | Phân biệt fixture synthetic với đánh giá thực tế NF-UNSW-NB15-v3. CI có thể SKIP raw-data audit có chủ đích; SKIP không phải model evaluation. |
 
 ## Đề xuất nội dung bổ sung chung cho Inference / Demo / Test (mức Issue hoặc note)
 
 **A. Train và đánh giá thực tế**
-- Tải UNSW-NB15 từ nguồn xác nhận (`docs/DATASET.md`).
-- Kiểm tra schema, nhãn (`label`), missing values, kiểu dữ liệu.
+- Tải NF-UNSW-NB15-v3 từ UQRDM chính thức (`docs/DATASET.md`).
+- Kiểm tra schema, nhãn (`Label`, `Attack`), missing values, kiểu dữ liệu.
 - Xác định bài toán nhị phân normal/anomaly hay phân loại đa lớp.
 - Chia train/val/test đúng (stratified hoặc theo thời gian; ghi chiến lược + seed).
 - Fit preprocessing chỉ trên train.
@@ -52,7 +56,7 @@ Nếu cần thay đổi mới, mở issue riêng theo `.github/ISSUE_TEMPLATE/` 
 - Unit: preprocessing, load model, schema check.
 - Integration: nạp artifact → dự đoán → xuất kết quả.
 - Fixture nhỏ cố định cho CI không cần tải dataset lớn.
-- Phân biệt smoke test synthetic và đánh giá thực tế UNSW-NB15.
+- Phân biệt smoke test synthetic và đánh giá thực tế NF-UNSW-NB15-v3.
 - Khi dataset chưa có, CI SKIP rõ ràng; không coi SKIP là bằng chứng model đã đánh giá.
 
 ## Đề xuất chỉnh sửa Milestone (đã Vietnamese một phần từ trước)

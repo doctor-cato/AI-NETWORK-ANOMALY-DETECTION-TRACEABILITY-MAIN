@@ -2,12 +2,14 @@
 
 ## Giả thuyết
 
-- H1: Random Forest cho kết quả phát hiện giám sát có thể sử dụng trên UNSW-NB15 sau khi preprocessing và chia tập đúng cách.
+- H1: Random Forest là supervised baseline trên NF-UNSW-NB15-v3 sau khi quality findings được xử
+  lý bằng transform fit trên train và split temporal/group-aware được audit.
 - H2: Isolation Forest có thể phát hiện bất thường không cần nhãn, nhưng đánh giá cần chọn threshold và cho profile metric khác đánh giá giám sát.
 
 ## Biến số
 
-- Độc lập: loại mô hình (RF hoặc IF), lựa chọn preprocessing (encoding, đặc trưng được chọn), chiến lược split, random seed.
+- Độc lập: loại mô hình (RF, XGBoost, Isolation Forest hoặc Autoencoder), preprocessing,
+  duplicate policy, temporal/group split và seed.
 - Phụ thuộc: Precision, Recall, F1, Macro-F1, confusion matrix, FPR.
 
 ## Baseline
@@ -26,5 +28,8 @@
 - Cố định random seed (ví dụ 42) để split và khởi tạo model tái lập được.
 - Chạy nhiều seed nếu thời gian cho phép; chỉ báo mean/std khi thực sự đã chạy.
 - Ghi mọi sai khác, ví dụ Isolation Forest chưa triển khai do thiếu thời gian.
+- So sánh có kiểm soát các temporal/IAT features; IP và absolute timestamp không được đưa vào
+  default `X`. Không dùng test để quyết định feature set.
+- Chưa có experiment thật; mọi hypothesis và model ngoài code hiện có vẫn `PLANNED`.
 
-Cập nhật: 2026-10-17
+Cập nhật: 2026-10-20

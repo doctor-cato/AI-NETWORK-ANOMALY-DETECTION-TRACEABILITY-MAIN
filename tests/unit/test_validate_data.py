@@ -17,9 +17,11 @@ from urllib.error import URLError
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "validate_data.py"
-MANIFEST_SCRIPT = SCRIPT.with_name("dataset_manifest.py")
-FETCH_SCRIPT = SCRIPT.with_name("fetch_unsw_nb15.py")
+SCRIPT = (
+    Path(__file__).resolve().parents[2] / "scripts" / "historical" / "validate_unsw_nb15_2015.py"
+)
+MANIFEST_SCRIPT = SCRIPT.with_name("dataset_manifest_unsw_nb15_2015.py")
+FETCH_SCRIPT = SCRIPT.with_name("fetch_unsw_nb15_2015.py")
 
 
 @pytest.fixture
@@ -1824,7 +1826,9 @@ def test_verify_rejects_nested_naive_provenance_timestamp(tmp_path):
 
 def test_shipped_manifest_timestamps_are_utc(manifest_module):
     root = Path(__file__).resolve().parents[2]
-    manifest = json.loads((root / "data" / "UNSW_NB15_MANIFEST.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (root / "data" / "historical" / "UNSW_NB15_MANIFEST_2015.json").read_text(encoding="utf-8")
+    )
     stamps = list(manifest_module.iter_timestamps(manifest))
     assert stamps, "shipped manifest must carry provenance timestamps"
     for field, value in stamps:

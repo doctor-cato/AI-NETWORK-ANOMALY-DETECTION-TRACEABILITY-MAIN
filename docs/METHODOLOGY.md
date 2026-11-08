@@ -4,9 +4,14 @@
 
 1. Đọc dữ liệu (sau khi tải về `data/raw/`)
 2. Kiểm tra schema / nhãn (`scripts/validate_data.py`)
-3. Khám phá (notebook EDA) — phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra rò rỉ dữ liệu
-4. Chia train/val/test (mặc định giữ official test partition; tạo validation chỉ từ official training partition;
-   nếu chọn stratified/group/time-aware khác thì ghi lý do và ảnh hưởng trong `REPRODUCIBILITY.md`)
+3. Khám phá (EDA tái lập được — `scripts/eda_nf_unsw_nb15_v3.py`, báo cáo
+   `docs/dataset/NF_UNSW_NB15_V3_EDA.md`): phân bố lớp, giá trị thiếu, bản ghi trùng, kiểm tra
+   rò rỉ dữ liệu. EDA chỉ mô tả population đã xác minh, không chọn feature, không fit
+   transformer, không xóa dòng và không tạo split; mọi khuyến nghị phụ thuộc train ở trạng
+   thái `PENDING ISSUE #7`.
+4. Tạo split mới cho NF-UNSW-NB15-v3: temporal ordering, versioned duplicate/equivalence audit và
+   bidirectional 5-tuple/time-bucket grouping; không kế thừa split UNSW-NB15 (2015) và không tự
+   động loại behavioral-equivalent rows.
 5. Tiền xử lý (fit chỉ trên train): mã hóa, chuẩn hóa, chọn đặc trưng; lưu pipeline
 6. Huấn luyện mô hình: Random Forest/XGBoost theo supervised protocol; Isolation Forest
    và Autoencoder theo anomaly protocol riêng của C4.
@@ -44,6 +49,13 @@
 - Transform val/test bằng đối tượng đã fit.
 - Lưu đối tượng đã fit cùng artifact mô hình.
 - Ghi rõ cột nào được bao gồm / loại bỏ và lý do (kết quả kiểm tra rò rỉ).
+- Baseline `X` có 47 fields. `Label`, `Attack`, IP identifier, hai L4 port và absolute timestamp
+  không thuộc default `X`; sáu metadata fields vẫn được giữ riêng cho grouping/Trace Engine.
+- Cấu hình 49 features có thêm hai port chỉ là experiment tương lai; PR migration không triển khai
+  hoặc tuyên bố kết quả so sánh này.
+- Chính sách missing/positive-infinity phải được chọn và fit chỉ trên train. Report hiện ghi
+  `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`; chưa có
+  split/model thật được chấp nhận.
 
 ## Định nghĩa metric
 
@@ -57,4 +69,4 @@
 C4 còn yêu cầu Autoencoder reconstruction-error và unknown-attack holdout; threshold của
 cả hai chỉ được chọn trên validation, không dùng test/holdout để tối ưu.
 
-Cập nhật: 2026-10-19 (C0).
+Cập nhật: 2026-10-22 (migration NF-UNSW-NB15-v3 + EDA Issue #6).

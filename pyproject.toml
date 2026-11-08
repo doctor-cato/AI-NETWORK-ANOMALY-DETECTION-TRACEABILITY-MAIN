@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [
     {name = "Project Team", email = "example@institution.edu"},
 ]
-keywords = ["network anomaly", "machine learning", "UNSW-NB15", "security"]
+keywords = ["network anomaly", "machine learning", "NF-UNSW-NB15-v3", "security"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -51,6 +51,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["src"]
 
 [tool.black]
 line-length = 100
@@ -58,4 +59,6 @@ target-version = ['py311', 'py312']
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I"]

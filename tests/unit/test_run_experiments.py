@@ -87,14 +87,15 @@ def test_check_data_delegates_to_validator_and_forwards_its_exit_code(
 def test_check_data_without_dataset_is_an_intentional_skip(runner, monkeypatch, tmp_path, capsys):
     import validate_data
 
-    monkeypatch.setattr(validate_data, "DATA_RAW", tmp_path)
+    monkeypatch.setattr(validate_data, "DATASET_PATH", tmp_path / "NF-UNSW-NB15-v3.csv")
     assert runner.main(["--step", "check-data"]) == 0
     assert "SKIPPED" in capsys.readouterr().out
 
 
 def test_check_data_with_invalid_dataset_fails(runner, monkeypatch, tmp_path):
-    (tmp_path / "UNSW_NB15_training-set.csv").write_text("not-csv\n", encoding="utf-8")
+    dataset = tmp_path / "NF-UNSW-NB15-v3.csv"
+    dataset.write_text("not-csv\n", encoding="utf-8")
     import validate_data
 
-    monkeypatch.setattr(validate_data, "DATA_RAW", tmp_path)
-    assert runner.main(["--step", "check-data"]) == 1
+    monkeypatch.setattr(validate_data, "DATASET_PATH", dataset)
+    assert runner.main(["--step", "check-data"]) == 2

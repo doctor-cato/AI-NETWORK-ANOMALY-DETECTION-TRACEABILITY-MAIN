@@ -10,8 +10,8 @@ Autoencoder là các nhánh so sánh bắt buộc trong roadmap C3–C4.
 
 ## Nguyên tắc chấp nhận
 
-- UNSW-NB15 là dataset chính. Published train/test partition có 45 cột gồm
-  `attack_cat` và `label`; không mô tả nhầm là 49 feature của biến thể khác.
+- NF-UNSW-NB15-v3 là dataset network-flow chính duy nhất: một CSV gồm 53 feature và hai target
+  `Label`/`Attack`. Split phải được tạo mới; UNSW-NB15 (2015) chỉ là historical evidence.
 - Split trước mọi fit; preprocessing/feature selection/threshold/calibration chỉ học từ
   train/validation theo protocol, không từ test.
 - Behavioral correlation là confidence trong phạm vi dữ liệu được phép giám sát, không
@@ -39,4 +39,4 @@ LSTM/Transformer/GNN và mọi tuyên bố zero-day hoặc attacker identity kh�
 requirement/checkpoint/issue/evidence. Mỗi checkpoint dùng branch, commit và PR riêng;
 không tự merge. M0–M5 được giữ như lịch sử, M6/M7 mở rộng Phương án B.
 
-Cập nhật: 2026-10-19 (C0)
+Cập nhật: 2026-10-20 (dataset migration)
