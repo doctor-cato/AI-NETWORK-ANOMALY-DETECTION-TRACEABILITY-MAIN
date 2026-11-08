@@ -353,8 +353,14 @@ def check_preprocessor_artifact(
             "path": str(man_path),
         }
     expected_pp_sha256 = pp_manifest.get("artifact_sha256")
+    if not expected_pp_sha256:
+        return {
+            "status": "BLOCKED",
+            "message": "Preprocessor manifest missing required field: artifact_sha256",
+            "path": str(man_path),
+        }
     actual_pp_sha256 = sha256_file(art_path)
-    if expected_pp_sha256 and actual_pp_sha256 != expected_pp_sha256:
+    if actual_pp_sha256 != expected_pp_sha256:
         return {
             "status": "BLOCKED",
             "message": (
@@ -438,18 +444,8 @@ def check_finite_values(X_array, partition_name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Data loading helpers (chunked / streaming to manage memory)
+# Preprocessing helper
 # ---------------------------------------------------------------------------
-
-
-def load_partition_csv(path: Path, label: str) -> Any:
-    """Load a partition CSV and return a DataFrame with all columns."""
-    import pandas as pd
-
-    print(f"  Loading {label} partition from {path} …", flush=True)
-    df = pd.read_csv(path, low_memory=False)
-    print(f"    {len(df):,} rows, {df.shape[1]} columns", flush=True)
-    return df
 
 
 def apply_preprocessor(preprocessor, X_df: Any) -> Any:
@@ -554,6 +550,25 @@ def calibrate_threshold(
                     "fpr": float(fprs[best_cand]),
                 }
                 policy = f"max-recall-at-FPR<={fpr_target}"
+            else:
+                # Operating point zero-alert (max_score + eps): guarantees FPR=0.0 <= fpr_target
+                eps = 1e-4
+                best_thresh = float(np.max(all_scores) + eps)
+                best_stats = {
+                    "tp": 0,
+                    "tn": int(N),
+                    "fp": 0,
+                    "fn": int(P),
+                    "precision": 0.0,
+                    "recall": 0.0,
+                    "f1": 0.0,
+                    "fpr": 0.0,
+                    "zero_alert_operating_point": True,
+                }
+                policy = (
+                    f"zero-alert-at-FPR<={fpr_target} "
+                    "(no positive recall achievable under constraint)"
+                )
         else:
             # Maximise F1
             best_cand = int(np.argmax(f1s))
@@ -1082,54 +1097,39 @@ def run_pipeline(args) -> int:
     feature_cols = list(ML_FEATURE_COLUMNS)
 
     split_manifest = split_check["manifest"]
-    has_explicit_paths = (
-        "train_path" in split_manifest
-        and "validation_path" in split_manifest
-        and "test_path" in split_manifest
+    print("  Partitioning dataset via official partition indices …", flush=True)
+    import pandas as pd
+
+    from network_anomaly.data.split import load_partition_indices
+
+    partitions = split_manifest.get("partitions", {})
+    if not all(p in partitions for p in ("train", "validation", "test")):
+        print("[BLOCKED] Split manifest missing partitions definition.", flush=True)
+        return 1
+
+    indices_dir = INDICES_DIR
+    try:
+        train_indices = load_partition_indices(split_manifest, indices_dir, "train")
+        val_indices = load_partition_indices(split_manifest, indices_dir, "validation")
+        test_indices = load_partition_indices(split_manifest, indices_dir, "test")
+    except FileNotFoundError as fnf:
+        print(f"[BLOCKED] Partition index file not found: {fnf}", flush=True)
+        return 1
+    except ValueError as val_err:
+        print(f"[BLOCKED] Partition index verification failed: {val_err}", flush=True)
+        return 1
+
+    cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
+    df_raw = pd.read_csv(
+        DATASET_CSV,
+        usecols=cols_to_read,
+        keep_default_na=False,
+        low_memory=False,
     )
 
-    if has_explicit_paths:
-        train_path = Path(split_manifest["train_path"])
-        val_path = Path(split_manifest["validation_path"])
-        test_path = Path(split_manifest["test_path"])
-
-        df_train = load_partition_csv(train_path, "Train")
-        df_val = load_partition_csv(val_path, "Validation")
-        df_test = load_partition_csv(test_path, "Test")
-    else:
-        print("  Partitioning dataset via official partition indices …", flush=True)
-        import pandas as pd
-
-        from network_anomaly.data.split import load_partition_indices
-
-        partitions = split_manifest.get("partitions", {})
-        if not all(p in partitions for p in ("train", "validation", "test")):
-            print("[BLOCKED] Split manifest missing partitions definition.", flush=True)
-            return 1
-
-        indices_dir = INDICES_DIR
-        try:
-            train_indices = load_partition_indices(split_manifest, indices_dir, "train")
-            val_indices = load_partition_indices(split_manifest, indices_dir, "validation")
-            test_indices = load_partition_indices(split_manifest, indices_dir, "test")
-        except FileNotFoundError as fnf:
-            print(f"[BLOCKED] Partition index file not found: {fnf}", flush=True)
-            return 1
-        except ValueError as val_err:
-            print(f"[BLOCKED] Partition index verification failed: {val_err}", flush=True)
-            return 1
-
-        cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
-        df_raw = pd.read_csv(
-            DATASET_CSV,
-            usecols=cols_to_read,
-            keep_default_na=False,
-            low_memory=False,
-        )
-
-        df_train = df_raw.iloc[train_indices]
-        df_val = df_raw.iloc[val_indices]
-        df_test = df_raw.iloc[test_indices]
+    df_train = df_raw.iloc[train_indices]
+    df_val = df_raw.iloc[val_indices]
+    df_test = df_raw.iloc[test_indices]
 
     # Verify row counts
     for name, df, expected in [

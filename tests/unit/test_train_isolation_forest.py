@@ -799,6 +799,16 @@ class TestOfficialManifestSchemaAndPrerequisites:
         assert result["status"] == "BLOCKED"
         assert "not found" in result["message"].lower()
 
+    def test_check_preprocessor_artifact_rejects_missing_artifact_sha256(self, tmp_path):
+        """P0 regression test: manifest missing artifact_sha256 must fail closed."""
+        art_path = tmp_path / "preprocessor.joblib"
+        art_path.write_bytes(b"dummy_bytes")
+        man_path = tmp_path / "manifest.json"
+        man_path.write_text(json.dumps({"artifact_type": "preprocessor"}), encoding="utf-8")
+        result = check_preprocessor_artifact(art_path, man_path)
+        assert result["status"] == "BLOCKED"
+        assert "artifact_sha256" in result["message"]
+
     def test_check_split_manifest_verifies_indices_files_if_indices_dir_provided(self, tmp_path):
         manifest_data = {
             "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
@@ -885,14 +895,15 @@ class TestReviewerFindingsAndE2EIntegration:
         with pytest.raises(SystemExit):
             parse_args(["--fpr-target", "1.1"])
 
-        # 3. Valid fpr_target=0.0 where constraint cannot be met triggers explicit fallback policy
+        # 3. Valid fpr_target=0.0 where no positive recall achievable -> zero-alert point
         benign = [0.0, 1.0, 2.0, 3.0]
         known_attacks = [0.5, 1.5, 2.5]
         res = calibrate_threshold(benign, known_attacks, fpr_target=0.0)
-        assert "FALLBACK-95th-percentile" in res["policy"]
-        assert "NOT satisfied" in res["policy"]
-        assert "fallback" in res["validation_stats"]
-        assert "fpr" in res["validation_stats"]
+        assert "zero-alert" in res["policy"]
+        assert res["threshold"] > max(benign + known_attacks)
+        assert res["validation_stats"]["fpr"] == 0.0
+        assert res["validation_stats"]["recall"] == 0.0
+        assert res["validation_stats"]["zero_alert_operating_point"] is True
 
     def test_calibrate_threshold_vectorized_performance_on_large_val(self):
         """Finding F test: verify calibrate_threshold is O(N) vectorized and fast on large val."""
