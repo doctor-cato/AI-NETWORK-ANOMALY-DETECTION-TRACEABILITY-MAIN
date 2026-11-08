@@ -444,13 +444,106 @@ def check_finite_values(X_array, partition_name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Preprocessing helper
+# Preprocessing and data loading helpers
 # ---------------------------------------------------------------------------
 
 
 def apply_preprocessor(preprocessor, X_df: Any) -> Any:
     """Apply the fitted preprocessor transform (never fit on val/test)."""
     return preprocessor.transform(X_df)
+
+
+def load_partitions_by_indices(
+    dataset_csv: Path,
+    cols_to_read: list[str],
+    train_indices: Any,
+    val_indices: Any,
+    test_indices: Any,
+    chunksize: int = 100_000,
+) -> tuple[Any, Any, Any]:
+    """Load train, validation, and test partitions in chunks to manage memory footprint.
+
+    Instead of reading the entire multi-gigabyte CSV into memory simultaneously
+    with partition slices, this streams chunksize rows at a time, maps each row
+    to its destination partition, and accumulates partition chunks incrementally.
+    """
+    import numpy as np
+    import pandas as pd
+
+    valid_indices = [idx for idx in (train_indices, val_indices, test_indices) if len(idx) > 0]
+    if not valid_indices:
+        empty = pd.DataFrame(columns=cols_to_read)
+        return empty, empty, empty
+
+    max_idx = max(int(np.max(idx)) for idx in valid_indices)
+    partition_map = np.full(max_idx + 1, -1, dtype=np.int8)
+    if len(train_indices) > 0:
+        partition_map[train_indices] = 0
+    if len(val_indices) > 0:
+        partition_map[val_indices] = 1
+    if len(test_indices) > 0:
+        partition_map[test_indices] = 2
+
+    train_chunks: list[pd.DataFrame] = []
+    val_chunks: list[pd.DataFrame] = []
+    test_chunks: list[pd.DataFrame] = []
+
+    current_row = 0
+    reader = pd.read_csv(
+        dataset_csv,
+        usecols=cols_to_read,
+        keep_default_na=False,
+        chunksize=chunksize,
+        low_memory=False,
+    )
+
+    for chunk in reader:
+        n_rows = len(chunk)
+        end_row = current_row + n_rows
+        if current_row <= max_idx:
+            valid_len = min(n_rows, max_idx + 1 - current_row)
+            chunk_mask = partition_map[current_row : current_row + valid_len]
+            if valid_len < n_rows:
+                chunk_mask = np.pad(chunk_mask, (0, n_rows - valid_len), constant_values=-1)
+        else:
+            chunk_mask = np.full(n_rows, -1, dtype=np.int8)
+
+        m0 = np.where(chunk_mask == 0)[0]
+        if len(m0) > 0:
+            sub0 = chunk.iloc[m0].copy()
+            sub0["_src_row_idx"] = current_row + m0
+            train_chunks.append(sub0)
+
+        m1 = np.where(chunk_mask == 1)[0]
+        if len(m1) > 0:
+            sub1 = chunk.iloc[m1].copy()
+            sub1["_src_row_idx"] = current_row + m1
+            val_chunks.append(sub1)
+
+        m2 = np.where(chunk_mask == 2)[0]
+        if len(m2) > 0:
+            sub2 = chunk.iloc[m2].copy()
+            sub2["_src_row_idx"] = current_row + m2
+            test_chunks.append(sub2)
+
+        current_row = end_row
+
+    def _finalize_partition(chunks: list[Any], indices: Any) -> Any:
+        if not chunks:
+            return pd.DataFrame(columns=cols_to_read)
+        df_p = pd.concat(chunks, ignore_index=True)
+        if len(indices) > 1 and not np.all(indices[:-1] <= indices[1:]):
+            df_p.set_index("_src_row_idx", inplace=True)
+            df_p = df_p.loc[indices].reset_index(drop=True)
+        elif "_src_row_idx" in df_p.columns:
+            df_p.drop(columns=["_src_row_idx"], inplace=True)
+        return df_p
+
+    df_train = _finalize_partition(train_chunks, train_indices)
+    df_val = _finalize_partition(val_chunks, val_indices)
+    df_test = _finalize_partition(test_chunks, test_indices)
+
+    return df_train, df_val, df_test
 
 
 # ---------------------------------------------------------------------------
@@ -1098,7 +1191,6 @@ def run_pipeline(args) -> int:
 
     split_manifest = split_check["manifest"]
     print("  Partitioning dataset via official partition indices …", flush=True)
-    import pandas as pd
 
     from network_anomaly.data.split import load_partition_indices
 
@@ -1120,16 +1212,15 @@ def run_pipeline(args) -> int:
         return 1
 
     cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
-    df_raw = pd.read_csv(
+    chunksize = getattr(args, "chunksize", 100_000)
+    df_train, df_val, df_test = load_partitions_by_indices(
         DATASET_CSV,
-        usecols=cols_to_read,
-        keep_default_na=False,
-        low_memory=False,
+        cols_to_read=cols_to_read,
+        train_indices=train_indices,
+        val_indices=val_indices,
+        test_indices=test_indices,
+        chunksize=chunksize,
     )
-
-    df_train = df_raw.iloc[train_indices]
-    df_val = df_raw.iloc[val_indices]
-    df_test = df_raw.iloc[test_indices]
 
     # Verify row counts
     for name, df, expected in [
@@ -1525,7 +1616,15 @@ def parse_args(argv=None):
             "maximising F1 on known-attack validation samples is selected."
         ),
     )
+    parser.add_argument(
+        "--chunksize",
+        type=int,
+        default=100_000,
+        help="Chunk size for streaming partition loading to manage RAM (default: 100000).",
+    )
     args = parser.parse_args(argv)
+    if args.chunksize <= 0:
+        parser.error(f"--chunksize must be a positive integer, got: {args.chunksize}")
     if args.fpr_target is not None and not (0.0 <= args.fpr_target <= 1.0):
         parser.error(f"--fpr-target must be between 0.0 and 1.0, got: {args.fpr_target}")
     return args

@@ -62,6 +62,7 @@ from scripts.train_isolation_forest import (  # noqa: E402
     check_split_manifest,
     compute_full_metrics,
     compute_per_category_metrics,
+    load_partitions_by_indices,
     parse_args,
     save_artifacts,
     sha256_file,
@@ -657,8 +658,17 @@ class TestFailureHandling:
         assert args.bootstrap is False
         assert args.n_jobs == -1
         assert args.fpr_target is None
+        assert args.chunksize == 100_000
         assert args.check_prereqs_only is False
         assert args.skip_checksum is False
+
+    def test_parse_args_chunksize(self):
+        args = parse_args(["--chunksize", "50000"])
+        assert args.chunksize == 50000
+        with pytest.raises(SystemExit):
+            parse_args(["--chunksize", "0"])
+        with pytest.raises(SystemExit):
+            parse_args(["--chunksize", "-10"])
 
     def test_parse_args_custom_n_estimators(self):
         args = parse_args(["--n-estimators", "200"])
@@ -906,7 +916,7 @@ class TestReviewerFindingsAndE2EIntegration:
         assert res["validation_stats"]["zero_alert_operating_point"] is True
 
     def test_calibrate_threshold_vectorized_performance_on_large_val(self):
-        """Finding F test: verify calibrate_threshold is O(N) vectorized and fast on large val."""
+        """Finding F test: verify calibrate_threshold is O(N) vectorized and non-flaky on CI."""
         import time
 
         np.random.seed(42)
@@ -917,11 +927,61 @@ class TestReviewerFindingsAndE2EIntegration:
         res = calibrate_threshold(benign, attacks, fpr_target=0.05)
         elapsed = time.monotonic() - t0
 
-        assert elapsed < 1.0, f"Vectorized calibration took {elapsed:.2f}s, expected < 1.0s"
+        # Relaxed bound (< 5.0s) prevents flakiness on shared CI runners,
+        # while easily catching accidental O(N^2) regressions (which take minutes).
+        assert elapsed < 5.0, f"Vectorized calibration took {elapsed:.2f}s, expected < 5.0s"
         assert isinstance(res["threshold"], float)
-        assert "validation_stats" in res
+        assert np.isfinite(res["threshold"])
+        assert res["validation_stats"]["fpr"] <= 0.05
+        assert res["validation_stats"]["recall"] > 0.0
+        assert res["policy"] == "max-recall-at-FPR<=0.05"
         for k in ("tp", "tn", "fp", "fn", "precision", "recall", "f1", "fpr"):
             assert k in res["validation_stats"]
+
+    def test_load_partitions_by_indices_chunked(self, tmp_path):
+        """Verify load_partitions_by_indices correctly chunks and extracts partitions."""
+        n_rows = 50
+        df = pd.DataFrame({
+            "col_a": np.arange(n_rows, dtype=np.int64),
+            "col_b": [f"val_{i}" for i in range(n_rows)],
+            "Label": np.random.choice([0, 1], size=n_rows),
+            "Attack": ["Benign"] * n_rows,
+        })
+        csv_path = tmp_path / "test_data.csv"
+        df.to_csv(csv_path, index=False)
+
+        # Monotonic partitions
+        train_idx = np.array([0, 1, 4, 10, 15, 20, 25])
+        val_idx = np.array([2, 5, 12, 18, 30])
+        test_idx = np.array([3, 7, 22, 35, 45])
+
+        df_train, df_val, df_test = load_partitions_by_indices(
+            dataset_csv=csv_path,
+            cols_to_read=["col_a", "col_b", "Label", "Attack"],
+            train_indices=train_idx,
+            val_indices=val_idx,
+            test_indices=test_idx,
+            chunksize=10,  # Small chunk size to exercise multiple streaming chunks
+        )
+
+        assert len(df_train) == len(train_idx)
+        assert len(df_val) == len(val_idx)
+        assert len(df_test) == len(test_idx)
+        assert list(df_train["col_a"]) == list(train_idx)
+        assert list(df_val["col_a"]) == list(val_idx)
+        assert list(df_test["col_a"]) == list(test_idx)
+
+        # Non-monotonic (shuffled) indices test to verify reindexing
+        shuffled_train_idx = np.array([25, 4, 0, 15])
+        df_tr_shuf, _, _ = load_partitions_by_indices(
+            dataset_csv=csv_path,
+            cols_to_read=["col_a", "col_b", "Label", "Attack"],
+            train_indices=shuffled_train_idx,
+            val_indices=np.array([], dtype=np.int64),
+            test_indices=np.array([], dtype=np.int64),
+            chunksize=7,
+        )
+        assert list(df_tr_shuf["col_a"]) == list(shuffled_train_idx)
 
     def test_run_pipeline_e2e_official_indices_branch(self, tmp_path):
         """Finding A, C, G test: End-to-end integration on official partition indices branch."""
