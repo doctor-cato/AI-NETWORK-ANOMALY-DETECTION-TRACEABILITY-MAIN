@@ -24,6 +24,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
+    average_precision_score,
     confusion_matrix,
     f1_score,
     precision_recall_curve,
@@ -31,6 +32,7 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
+from sklearn.model_selection import GroupShuffleSplit
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 
@@ -65,10 +67,13 @@ class ExperimentMetrics:
     false_positive_rate: float
     false_negative_rate: float
     roc_auc: Optional[float]
+    pr_auc: Optional[float]
     confusion_matrix: Dict[str, Any]
     total_evaluated_rows: int
     duration_seconds: float
     per_attack_recall: Dict[str, float] = field(default_factory=dict)
+    evaluation_level: str = "CROSS_DOMAIN_TRANSFER"
+    leakage_audit: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -80,11 +85,79 @@ class ExperimentMetrics:
             "false_positive_rate": round(self.false_positive_rate, 6),
             "false_negative_rate": round(self.false_negative_rate, 6),
             "roc_auc": round(self.roc_auc, 6) if self.roc_auc is not None else None,
+            "pr_auc": round(self.pr_auc, 6) if self.pr_auc is not None else None,
             "confusion_matrix": self.confusion_matrix,
             "total_evaluated_rows": self.total_evaluated_rows,
             "duration_seconds": round(self.duration_seconds, 2),
             "per_attack_recall": self.per_attack_recall,
+            "evaluation_level": self.evaluation_level,
+            "leakage_audit": self.leakage_audit,
         }
+
+
+def compute_fingerprint_disjoint_split(
+    df: pd.DataFrame,
+    train_size: float = 0.20,
+    random_state: int = 42,
+    feature_cols: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, Any]]:
+    """Compute a strictly 5-tuple fingerprint-disjoint split with full duplicate leakage audit."""
+    cols_to_check = feature_cols or FEATURES_E1
+
+    # 1. Compute canonical 5-tuple flow fingerprint (bidirectional)
+    if all(col in df.columns for col in ["IPV4_SRC_ADDR", "L4_SRC_PORT", "IPV4_DST_ADDR", "L4_DST_PORT", "PROTOCOL"]):
+        src_ep = df["IPV4_SRC_ADDR"].astype(str) + ":" + df["L4_SRC_PORT"].astype(str)
+        dst_ep = df["IPV4_DST_ADDR"].astype(str) + ":" + df["L4_DST_PORT"].astype(str)
+        cond = src_ep <= dst_ep
+        ep1 = np.where(cond, src_ep, dst_ep)
+        ep2 = np.where(cond, dst_ep, src_ep)
+        groups = pd.Series(ep1) + "__" + pd.Series(ep2) + "__" + df["PROTOCOL"].astype(str)
+    else:
+        # Fallback to feature hash grouping if 5-tuple is stripped
+        cols_to_hash = [c for c in df.columns if c not in {"Label", "Attack"}]
+        groups = pd.util.hash_pandas_object(df[cols_to_hash], index=False).astype(str)
+
+    gss = GroupShuffleSplit(n_splits=1, train_size=train_size, random_state=random_state)
+    train_idx, test_idx = next(gss.split(df, groups=groups))
+
+    df_train = df.iloc[train_idx].copy().reset_index(drop=True)
+    df_test = df.iloc[test_idx].copy().reset_index(drop=True)
+
+    # 2. Audit 5-tuple fingerprint overlap
+    train_fps = set(groups.iloc[train_idx])
+    test_fps = set(groups.iloc[test_idx])
+    overlap_fps = train_fps & test_fps
+
+    # 3. Audit exact feature vector overlap
+    train_feat_hashes = set(pd.util.hash_pandas_object(df_train[cols_to_check], index=False))
+    test_feat_hashes = pd.util.hash_pandas_object(df_test[cols_to_check], index=False)
+    feat_overlap_mask = test_feat_hashes.isin(train_feat_hashes)
+    feat_overlap_count = int(feat_overlap_mask.sum())
+    feat_overlap_ratio = float(feat_overlap_count / len(df_test)) if len(df_test) > 0 else 0.0
+
+    # 4. Check label conflicts across shared feature hashes
+    label_conflict_count = 0
+    if "Label" in df.columns:
+        train_map = dict(zip(pd.util.hash_pandas_object(df_train[cols_to_check], index=False), df_train["Label"]))
+        test_pairs = zip(pd.util.hash_pandas_object(df_test[cols_to_check], index=False), df_test["Label"])
+        for h, l in test_pairs:
+            if h in train_map and train_map[h] != l:
+                label_conflict_count += 1
+
+    audit_findings = {
+        "status": "PASS" if len(overlap_fps) == 0 else "FAIL",
+        "train_rows": len(df_train),
+        "test_rows": len(df_test),
+        "train_fingerprints": len(train_fps),
+        "test_fingerprints": len(test_fps),
+        "overlap_5tuple_fingerprints": len(overlap_fps),
+        "exact_feature_overlap_count": feat_overlap_count,
+        "exact_feature_overlap_ratio": round(feat_overlap_ratio, 6),
+        "label_conflict_count": label_conflict_count,
+        "fingerprint_disjoint_verified": len(overlap_fps) == 0,
+    }
+
+    return df_train, df_test, audit_findings
 
 
 class RobustModelExperiment:
@@ -98,20 +171,33 @@ class RobustModelExperiment:
         max_depth: int = 16,
         random_state: int = 42,
         model_name: Optional[str] = None,
+        model_family: str = "RandomForestClassifier",
     ) -> None:
         self.experiment_id = experiment_id
         self.feature_set = list(feature_set)
         self.n_estimators = n_estimators
         self.max_depth = max_depth
         self.random_state = random_state
-        self.model_name = model_name or f"robust_rf_{experiment_id.lower()}"
+        self.model_family = model_family
+        self.model_name = model_name or f"robust_{model_family.lower()[:2]}_{experiment_id.lower()}"
 
-        self.classifier = RandomForestClassifier(
-            n_estimators=self.n_estimators,
-            max_depth=self.max_depth,
-            random_state=self.random_state,
-            n_jobs=-1,
-        )
+        if self.model_family == "HistGradientBoostingClassifier":
+            from sklearn.ensemble import HistGradientBoostingClassifier
+            self.classifier = HistGradientBoostingClassifier(
+                max_iter=self.n_estimators,
+                max_depth=self.max_depth,
+                random_state=self.random_state,
+            )
+        elif self.model_family == "RandomForestClassifier":
+            self.classifier = RandomForestClassifier(
+                n_estimators=self.n_estimators,
+                max_depth=self.max_depth,
+                random_state=self.random_state,
+                n_jobs=-1,
+            )
+        else:
+            raise ValueError(f"Unsupported model family: {self.model_family}")
+
         self.is_fitted = False
         self.fitted_at_utc: Optional[str] = None
         self.training_duration_seconds: Optional[float] = None
@@ -154,6 +240,8 @@ class RobustModelExperiment:
         probs: Optional[np.ndarray] = None,
         attack_names: Optional[List[str]] = None,
         duration_seconds: float = 0.0,
+        evaluation_level: str = "CROSS_DOMAIN_TRANSFER",
+        leakage_audit: Optional[Dict[str, Any]] = None,
     ) -> ExperimentMetrics:
         """Compute standard ExperimentMetrics from true labels and predictions."""
         acc = float(accuracy_score(y_true, preds))
@@ -168,9 +256,14 @@ class RobustModelExperiment:
         fnr = float(fn / (fn + tp)) if (fn + tp) > 0 else 0.0
 
         roc_auc = None
+        pr_auc = None
         if probs is not None:
             try:
                 roc_auc = float(roc_auc_score(y_true, probs))
+            except Exception:
+                pass
+            try:
+                pr_auc = float(average_precision_score(y_true, probs))
             except Exception:
                 pass
 
@@ -195,6 +288,7 @@ class RobustModelExperiment:
             false_positive_rate=fpr,
             false_negative_rate=fnr,
             roc_auc=roc_auc,
+            pr_auc=pr_auc,
             confusion_matrix={
                 "labels": ["Benign (0)", "Attack (1)"],
                 "tn": int(tn),
@@ -205,6 +299,8 @@ class RobustModelExperiment:
             total_evaluated_rows=len(y_true),
             duration_seconds=duration_seconds,
             per_attack_recall=per_attack,
+            evaluation_level=evaluation_level,
+            leakage_audit=leakage_audit,
         )
 
     def evaluate(
@@ -212,6 +308,8 @@ class RobustModelExperiment:
         X_test: pd.DataFrame,
         y_test: np.ndarray,
         attack_names: Optional[List[str]] = None,
+        evaluation_level: str = "CROSS_DOMAIN_TRANSFER",
+        leakage_audit: Optional[Dict[str, Any]] = None,
     ) -> ExperimentMetrics:
         """Run multi-dimensional evaluation on external or validation dataset."""
         if not self.is_fitted:
@@ -233,6 +331,8 @@ class RobustModelExperiment:
             probs=probs,
             attack_names=attack_names,
             duration_seconds=dt,
+            evaluation_level=evaluation_level,
+            leakage_audit=leakage_audit,
         )
 
     def generate_manifest(
@@ -244,7 +344,7 @@ class RobustModelExperiment:
         return {
             "experiment_id": self.experiment_id,
             "model_name": self.model_name,
-            "model_family": "RandomForestClassifier",
+            "model_family": self.model_family,
             "feature_contract": {
                 "features_count": len(self.feature_set),
                 "feature_list": self.feature_set,

@@ -1,7 +1,8 @@
 {
   "E0": {
     "experiment_id": "E0",
-    "description": "Frozen Canonical Baseline with full 47 features (contains MIN_TTL/MAX_TTL shortcuts).",
+    "model_family": "RandomForestClassifier",
+    "description": "Frozen Canonical Baseline with full 47 features (contains MIN_TTL/MAX_TTL shortcuts, Issue #10).",
     "features_count": 47,
     "excluded_features": [],
     "in_domain_evaluation": {
@@ -12,7 +13,8 @@
       "macro_f1": 1.0,
       "false_positive_rate": 0.0,
       "false_negative_rate": 0.0,
-      "roc_auc": null,
+      "roc_auc": 1.0,
+      "pr_auc": 1.0,
       "confusion_matrix": {
         "labels": [
           "Benign (0)",
@@ -24,7 +26,7 @@
         "tp": 1305
       },
       "total_evaluated_rows": 15000,
-      "duration_seconds": 0.07,
+      "duration_seconds": 0.1,
       "per_attack_recall": {
         "Analysis": 1.0,
         "Backdoor": 1.0,
@@ -35,7 +37,9 @@
         "Generic": 1.0,
         "Reconnaissance": 1.0,
         "Shellcode": 1.0
-      }
+      },
+      "evaluation_level": "IN_DOMAIN_TEST",
+      "leakage_audit": null
     },
     "cross_domain_evaluation": {
       "accuracy": 0.43399,
@@ -45,7 +49,8 @@
       "macro_f1": 0.302645,
       "false_positive_rate": 0.380191,
       "false_negative_rate": 1.0,
-      "roc_auc": null,
+      "roc_auc": 0.290788,
+      "pr_auc": 0.374226,
       "confusion_matrix": {
         "labels": [
           "Benign (0)",
@@ -57,15 +62,18 @@
         "tp": 0
       },
       "total_evaluated_rows": 100000,
-      "duration_seconds": 0.23,
+      "duration_seconds": 0.29,
       "per_attack_recall": {
         "Benign_Specificity": 0.6198086261068266,
         "FTP-BruteForce": 0.0
-      }
+      },
+      "evaluation_level": "CROSS_DOMAIN_TRANSFER",
+      "leakage_audit": null
     }
   },
   "E1": {
     "experiment_id": "E1",
+    "model_family": "RandomForestClassifier",
     "description": "No-TTL Ablation Random Forest with 45 features (strictly excludes MIN_TTL & MAX_TTL).",
     "features_count": 45,
     "excluded_features": [
@@ -81,6 +89,7 @@
       "false_positive_rate": 7.3e-05,
       "false_negative_rate": 0.0,
       "roc_auc": 1.0,
+      "pr_auc": 0.999999,
       "confusion_matrix": {
         "labels": [
           "Benign (0)",
@@ -103,7 +112,9 @@
         "Generic": 1.0,
         "Reconnaissance": 1.0,
         "Shellcode": 1.0
-      }
+      },
+      "evaluation_level": "IN_DOMAIN_TEST",
+      "leakage_audit": null
     },
     "cross_domain_evaluation": {
       "accuracy": 0.50787,
@@ -114,6 +125,7 @@
       "false_positive_rate": 0.702842,
       "false_negative_rate": 0.0,
       "roc_auc": 0.977892,
+      "pr_auc": 0.945026,
       "confusion_matrix": {
         "labels": [
           "Benign (0)",
@@ -125,15 +137,18 @@
         "tp": 29980
       },
       "total_evaluated_rows": 100000,
-      "duration_seconds": 0.12,
+      "duration_seconds": 0.13,
       "per_attack_recall": {
         "Benign_Specificity": 0.29715795487003716,
         "FTP-BruteForce": 1.0
-      }
+      },
+      "evaluation_level": "CROSS_DOMAIN_TRANSFER",
+      "leakage_audit": null
     }
   },
   "E2": {
     "experiment_id": "E2",
+    "model_family": "RandomForestClassifier",
     "description": "Environment-Invariant Random Forest with 41 features (excludes TTL, DNS query, FTP ret code).",
     "features_count": 41,
     "excluded_features": [
@@ -153,6 +168,7 @@
       "false_positive_rate": 7.3e-05,
       "false_negative_rate": 0.0,
       "roc_auc": 1.0,
+      "pr_auc": 0.999999,
       "confusion_matrix": {
         "labels": [
           "Benign (0)",
@@ -175,7 +191,9 @@
         "Generic": 1.0,
         "Reconnaissance": 1.0,
         "Shellcode": 1.0
-      }
+      },
+      "evaluation_level": "IN_DOMAIN_TEST",
+      "leakage_audit": null
     },
     "cross_domain_evaluation": {
       "accuracy": 0.52092,
@@ -186,6 +204,7 @@
       "false_positive_rate": 0.684205,
       "false_negative_rate": 0.0,
       "roc_auc": 0.975486,
+      "pr_auc": 0.941879,
       "confusion_matrix": {
         "labels": [
           "Benign (0)",
@@ -201,19 +220,35 @@
       "per_attack_recall": {
         "Benign_Specificity": 0.31579548700371324,
         "FTP-BruteForce": 1.0
-      }
+      },
+      "evaluation_level": "CROSS_DOMAIN_TRANSFER",
+      "leakage_audit": null
     }
   },
   "E3": {
     "experiment_id": "E3",
-    "description": "Multi-Domain Joint Training Protocol (80% UNSW + 20% CIC-IDS on 45 features).",
+    "model_family": "RandomForestClassifier",
+    "description": "Multi-Domain Joint Training Protocol (70% UNSW + 20% CIC-IDS on 45 features).",
+    "scientific_reclassification": "IN_DOMAIN_HOLDOUT / MIXED_DOMAIN_INTERPOLATION (does not prove unseen domain generalization).",
     "features_count": 45,
     "excluded_features": [
       "MIN_TTL",
       "MAX_TTL"
     ],
-    "joint_training_rows": 55000,
-    "heldout_evaluation_target": "NF-CSE-CIC-IDS2018-v3 heldout 80k",
+    "joint_training_rows": 55181,
+    "heldout_evaluation_target": "NF-CSE-CIC-IDS2018-v3 heldout 79,819 rows (5-tuple disjoint)",
+    "leakage_audit": {
+      "status": "PASS",
+      "train_rows": 20181,
+      "test_rows": 79819,
+      "train_fingerprints": 15243,
+      "test_fingerprints": 60972,
+      "overlap_5tuple_fingerprints": 0,
+      "exact_feature_overlap_count": 30019,
+      "exact_feature_overlap_ratio": 0.376088,
+      "label_conflict_count": 0,
+      "fingerprint_disjoint_verified": true
+    },
     "cross_domain_evaluation": {
       "accuracy": 1.0,
       "precision": 1.0,
@@ -223,22 +258,155 @@
       "false_positive_rate": 0.0,
       "false_negative_rate": 0.0,
       "roc_auc": 1.0,
+      "pr_auc": 1.0,
       "confusion_matrix": {
         "labels": [
           "Benign (0)",
           "Attack (1)"
         ],
-        "tn": 56016,
+        "tn": 55751,
         "fp": 0,
         "fn": 0,
-        "tp": 23984
+        "tp": 24068
       },
-      "total_evaluated_rows": 80000,
-      "duration_seconds": 0.1,
+      "total_evaluated_rows": 79819,
+      "duration_seconds": 0.11,
       "per_attack_recall": {
         "Benign_Specificity": 1.0,
         "FTP-BruteForce": 1.0
+      },
+      "evaluation_level": "IN_DOMAIN_HOLDOUT",
+      "leakage_audit": {
+        "status": "PASS",
+        "train_rows": 20181,
+        "test_rows": 79819,
+        "train_fingerprints": 15243,
+        "test_fingerprints": 60972,
+        "overlap_5tuple_fingerprints": 0,
+        "exact_feature_overlap_count": 30019,
+        "exact_feature_overlap_ratio": 0.376088,
+        "label_conflict_count": 0,
+        "fingerprint_disjoint_verified": true
       }
+    }
+  },
+  "E4": {
+    "experiment_id": "E4",
+    "model_family": "RandomForestClassifier",
+    "description": "Leave-One-Dataset-Out (LODO): Trained on UNSW+CIC-IDS (45 features), Evaluated on unseen NF-ToN-IoT-v3.",
+    "features_count": 45,
+    "excluded_features": [
+      "MIN_TTL",
+      "MAX_TTL"
+    ],
+    "training_sources": [
+      "NF-UNSW-NB15-v3",
+      "NF-CSE-CIC-IDS2018-v3"
+    ],
+    "evaluation_target": "NF-ToN-IoT-v3 (unseen domain)",
+    "cross_domain_evaluation": {
+      "accuracy": 0.93744,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "macro_f1": 0.483855,
+      "false_positive_rate": 0.000149,
+      "false_negative_rate": 1.0,
+      "roc_auc": 0.625048,
+      "pr_auc": 0.099495,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 46872,
+        "fp": 7,
+        "fn": 3121,
+        "tp": 0
+      },
+      "total_evaluated_rows": 50000,
+      "duration_seconds": 0.06,
+      "per_attack_recall": {
+        "Benign_Specificity": 0.9998506794086904,
+        "scanning": 0.0
+      },
+      "evaluation_level": "LEAVE_ONE_DATASET_OUT",
+      "leakage_audit": null
+    }
+  },
+  "E5": {
+    "experiment_id": "E5",
+    "model_family": "HistGradientBoostingClassifier",
+    "description": "Gradient Boosting Comparison (HistGradientBoosting on 45 features, mirroring Issue #31 protocol).",
+    "features_count": 45,
+    "excluded_features": [
+      "MIN_TTL",
+      "MAX_TTL"
+    ],
+    "in_domain_evaluation": {
+      "accuracy": 0.999733,
+      "precision": 1.0,
+      "recall": 0.996935,
+      "f1": 0.998465,
+      "macro_f1": 0.99916,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.003065,
+      "roc_auc": 0.999636,
+      "pr_auc": 0.999269,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 13695,
+        "fp": 0,
+        "fn": 4,
+        "tp": 1301
+      },
+      "total_evaluated_rows": 15000,
+      "duration_seconds": 0.02,
+      "per_attack_recall": {
+        "Analysis": 1.0,
+        "Backdoor": 1.0,
+        "Benign_Specificity": 1.0,
+        "DoS": 1.0,
+        "Exploits": 0.9942307692307693,
+        "Fuzzers": 1.0,
+        "Generic": 0.9944444444444445,
+        "Reconnaissance": 1.0,
+        "Shellcode": 1.0
+      },
+      "evaluation_level": "IN_DOMAIN_TEST",
+      "leakage_audit": null
+    },
+    "cross_domain_evaluation": {
+      "accuracy": 0.63785,
+      "precision": 0.452904,
+      "recall": 1.0,
+      "f1": 0.623447,
+      "macro_f1": 0.637319,
+      "false_positive_rate": 0.517209,
+      "false_negative_rate": 0.0,
+      "roc_auc": 0.951607,
+      "pr_auc": 0.898412,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 33805,
+        "fp": 36215,
+        "fn": 0,
+        "tp": 29980
+      },
+      "total_evaluated_rows": 100000,
+      "duration_seconds": 0.11,
+      "per_attack_recall": {
+        "Benign_Specificity": 0.4827906312482148,
+        "FTP-BruteForce": 1.0
+      },
+      "evaluation_level": "CROSS_DOMAIN_TRANSFER",
+      "leakage_audit": null
     }
   }
 }

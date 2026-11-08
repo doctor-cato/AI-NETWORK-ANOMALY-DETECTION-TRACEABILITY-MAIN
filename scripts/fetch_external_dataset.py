@@ -43,21 +43,21 @@ DATASET_CONFIGS = {
         "uuid": "343e2e8c-6e6e-4a0c-813d-a46acea1b7f4",
         "archive_prefix": "02934b58528a226b_NFV3DATA-A11964_A11964/",
         "csv_name": "data/NF-ToN-IoT-v3.csv",
-        "sample_name": "NF-ToN-IoT-v3-sample100k.csv",
-        "stratified_sample_name": "NF-ToN-IoT-v3-stratified100k.csv",
+        "sample_name": "NF-ToN-IoT-v3-sample50k.csv",
+        "stratified_sample_name": "NF-ToN-IoT-v3-stratified50k.csv",
         "doi": "10.48610/44d7c5e",
         "default_sample_skip": 0,
-        "default_sample_take": 100000,
+        "default_sample_take": 50000,
     },
     "NF-BoT-IoT-v3": {
         "uuid": "db0187cc-1f78-4215-8e34-303364498866",
         "archive_prefix": "db0187cc_NFV3DATA/",
         "csv_name": "data/NF-BoT-IoT-v3.csv",
-        "sample_name": "NF-BoT-IoT-v3-sample100k.csv",
-        "stratified_sample_name": "NF-BoT-IoT-v3-stratified100k.csv",
+        "sample_name": "NF-BoT-IoT-v3-sample50k.csv",
+        "stratified_sample_name": "NF-BoT-IoT-v3-stratified50k.csv",
         "doi": "10.48610/73c4ebc",
         "default_sample_skip": 0,
-        "default_sample_take": 100000,
+        "default_sample_take": 50000,
     },
     "NF-UNSW-NB15-v3": {
         "uuid": "abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f",
@@ -149,6 +149,7 @@ def fetch_dataset_sample(
     skip_rows: Optional[int] = None,
     sample_mode: str = "slice",
     random_seed: int = 42,
+    max_scan_lines: Optional[int] = None,
 ) -> Path:
     """Stream-extract a verified chronological slice or stratified sample from UQ archive.
 
@@ -166,6 +167,8 @@ def fetch_dataset_sample(
         'slice' (sequential historical slice) or 'stratified' (multi-class quota sampling).
     random_seed : int
         Seed for deterministic sampling in stratified mode.
+    max_scan_lines : Optional[int]
+        Optional cap on scanned stream lines (defaults to scanning entire stream).
     """
     if dataset_name not in DATASET_CONFIGS:
         raise ValueError(f"Unknown dataset: {dataset_name}. Supported: {list(DATASET_CONFIGS)}")
@@ -224,32 +227,43 @@ def fetch_dataset_sample(
                 attack = line.strip().split(",")[-1]
                 attacks[attack] = attacks.get(attack, 0) + 1
         else:
-            # Stratified / Reservoir Multi-class sampling with fixed seed
-            # Enforce quota per class to capture diverse attacks
+            # Multi-class streaming reservoir sampling (Waterman's Algorithm R per class)
             quota_per_class = max(1000, sample_rows // 15)
-            class_lines: Dict[str, List[str]] = {}
+            class_reservoirs: Dict[str, List[str]] = {}
+            class_counts: Dict[str, int] = {}
             seen_lines = 0
 
-            # Scan up to 1,000,000 lines or until sample filled
-            while seen_lines < 1000000 and sum(len(v) for v in class_lines.values()) < sample_rows * 2:
+            while True:
                 line = text_io.readline()
                 if not line:
                     break
                 seen_lines += 1
-                attack = line.strip().split(",")[-1]
-                if attack not in class_lines:
-                    class_lines[attack] = []
+                if max_scan_lines is not None and seen_lines >= max_scan_lines:
+                    break
 
-                if len(class_lines[attack]) < quota_per_class:
-                    class_lines[attack].append(line)
-                elif rng.random() < 0.05 and len(class_lines[attack]) < quota_per_class * 2:
-                    # Reservoir insertion
-                    idx = rng.randint(0, len(class_lines[attack]) - 1)
-                    class_lines[attack][idx] = line
+                parts = line.strip().rsplit(",", 1)
+                if len(parts) < 2:
+                    continue
+                attack = parts[1]
 
-            # Assemble balanced/stratified sample
-            collected_sample = []
-            for atk, rows in class_lines.items():
+                class_counts[attack] = class_counts.get(attack, 0) + 1
+                count = class_counts[attack]
+
+                if attack not in class_reservoirs:
+                    class_reservoirs[attack] = []
+
+                res = class_reservoirs[attack]
+                if len(res) < quota_per_class:
+                    res.append(line)
+                else:
+                    # Reservoir replacement with probability quota_per_class / count
+                    j = rng.randint(0, count - 1)
+                    if j < quota_per_class:
+                        res[j] = line
+
+            # Assemble balanced / stratified sample across all collected attack families
+            collected_sample: List[str] = []
+            for atk, rows in class_reservoirs.items():
                 collected_sample.extend(rows)
                 attacks[atk] = len(rows)
 
@@ -275,10 +289,12 @@ def fetch_dataset_sample(
         "sample_mode": sample_mode,
         "sample_rows_extracted": len(lines) - 1,
         "sample_sha256": sha256,
-        "random_seed": random_seed if sample_mode == "stratified" else None,
+        "scanned_lines": seen_lines if sample_mode != "slice" else (skip + len(lines) - 1),
+        "random_seed": random_seed if sample_mode != "slice" else None,
         "source_doi": cfg["doi"],
         "source_archive_member": matched_member,
         "class_distribution": attacks,
+        "class_prevalence": {k: round(v / seen_lines, 6) for k, v in class_counts.items()} if sample_mode != "slice" else {},
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     with open(manifest_path, "w", encoding="utf-8") as mf:
@@ -327,6 +343,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Random seed for stratified sampling",
     )
     parser.add_argument(
+        "--max-scan-lines",
+        type=int,
+        default=None,
+        help="Maximum stream lines to scan during stratified sampling (default: entire stream)",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -358,6 +380,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             skip_rows=args.skip_rows,
             sample_mode=args.sample_mode,
             random_seed=args.random_seed,
+            max_scan_lines=args.max_scan_lines,
         )
         return 0
     except Exception as e:

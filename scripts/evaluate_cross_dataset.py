@@ -297,6 +297,7 @@ def evaluate_cross_dataset(
             "total_shortcut_drift_rows": total_ood_warnings,
             "shortcut_drift_pct": round(total_ood_warnings / total_rows * 100, 2) if total_rows > 0 else 0.0,
         },
+        "verification_status": "MODEL_VALIDATED" if (rec >= 0.85 and fpr <= 0.05) else "BENCHMARK_FAILED",
     }
 
     return results

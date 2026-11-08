@@ -15,6 +15,7 @@ from network_anomaly.models.robust_experiment import (
     SHORTCUT_TTL_FEATURES,
     ExperimentMetrics,
     RobustModelExperiment,
+    compute_fingerprint_disjoint_split,
 )
 
 
@@ -117,3 +118,49 @@ def test_compute_metrics_edge_cases() -> None:
     assert metrics.confusion_matrix["fp"] == 0
     assert metrics.confusion_matrix["fn"] == 0
     assert metrics.confusion_matrix["tp"] == 0
+
+
+def test_fingerprint_disjoint_split_zero_overlap() -> None:
+    """Verify compute_fingerprint_disjoint_split produces strictly zero 5-tuple overlap."""
+    rng = np.random.RandomState(42)
+    n = 200
+    df = pd.DataFrame({col: rng.randn(n) for col in FEATURES_E1})
+    df["IPV4_SRC_ADDR"] = [f"192.168.1.{i % 10}" for i in range(n)]
+    df["L4_SRC_PORT"] = [1000 + (i % 5) for i in range(n)]
+    df["IPV4_DST_ADDR"] = [f"10.0.0.{i % 10}" for i in range(n)]
+    df["L4_DST_PORT"] = [80 for _ in range(n)]
+    df["PROTOCOL"] = [6 for _ in range(n)]
+    df["Label"] = rng.choice([0, 1], size=n)
+    df["Attack"] = ["Benign" if yi == 0 else "Exploits" for yi in df["Label"]]
+
+    tr, te, audit = compute_fingerprint_disjoint_split(df, train_size=0.3, random_state=42)
+    assert audit["status"] == "PASS"
+    assert audit["overlap_5tuple_fingerprints"] == 0
+    assert audit["fingerprint_disjoint_verified"] is True
+    assert len(tr) + len(te) == n
+
+
+def test_gradient_boosting_model_family() -> None:
+    """Verify HistGradientBoostingClassifier lifecycle under RobustModelExperiment."""
+    rng = np.random.RandomState(42)
+    n = 80
+    df = pd.DataFrame({col: rng.randn(n) for col in FEATURES_E1})
+    y = rng.choice([0, 1], size=n)
+
+    exp = RobustModelExperiment(
+        experiment_id="E5_test",
+        feature_set=FEATURES_E1,
+        n_estimators=10,
+        max_depth=4,
+        random_state=42,
+        model_family="HistGradientBoostingClassifier",
+    )
+    assert exp.model_family == "HistGradientBoostingClassifier"
+    exp.fit(df, y)
+    assert exp.is_fitted
+
+    preds = exp.predict(df)
+    assert len(preds) == n
+    metrics = exp.evaluate(df, y, evaluation_level="IN_DOMAIN_TEST")
+    assert metrics.evaluation_level == "IN_DOMAIN_TEST"
+    assert 0.0 <= metrics.accuracy <= 1.0
