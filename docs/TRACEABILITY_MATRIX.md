@@ -71,17 +71,17 @@ Cập nhật: 2026-10-22 (model component Isolation Forest cho Issue #11)
     6. Lưu trữ artifact (`isolation_forest.joblib`, `model_config.json`, `threshold.json`, `training_metadata.json`) và kiểm tra reload consistency.
     7. Xuất báo cáo máy đọc được (`metrics.json`, `threshold_calibration.json`, `per_attack_metrics.json`, `run_metadata.json`, `evaluation_report.md`).
 - Tests:
-  - `tests/unit/test_train_isolation_forest.py`: 63 unit/integration tests bao phủ toàn bộ 12 nhóm kiểm thử: huấn luyện benign-only, loại trừ target, kiểm thực 47 feature schema, hiệu chuẩn ngưỡng, chiều score (cao hơn = bất thường hơn), cô lập holdout unknown attack, bảo vệ tập Test, lưu/nạp artifact, tái lập thực nghiệm, tính toán metrics, xử lý lỗi fail-closed, và tính toàn vẹn của hợp đồng đặc trưng.
-  - Tổng số test trong repository: 263 passed, 2 skipped (Windows symlink).
+  - `tests/unit/test_train_isolation_forest.py`: 75 unit/integration tests bao phủ toàn bộ 14 nhóm kiểm thử: huấn luyện benign-only, loại trừ target, kiểm thực 47 feature schema, hiệu chuẩn ngưỡng (O(N) vectorized), chiều score, cô lập holdout unknown attack, bảo vệ tập Test, lưu/nạp artifact, tái lập thực nghiệm, tính toán metrics, xử lý lỗi fail-closed, tính toàn vẹn hợp đồng đặc trưng, kiểm thực split/preprocessor manifest, và end-to-end integration trên partition indices.
+  - Tổng số test trong repository: 443 passed, 4 skipped (Windows symlink / dataset absent).
 - Evidence:
-  - `python -m pytest tests/unit/test_train_isolation_forest.py -v`: 63 passed (18s).
-  - `python -m pytest tests/ -q`: 263 passed, 2 skipped.
+  - `python -m pytest tests/unit/test_isolation_forest.py tests/unit/test_train_isolation_forest.py -v`: 133 passed.
+  - `python -m pytest tests/ -q`: 443 passed, 4 skipped.
   - `python scripts/train_isolation_forest.py --check-prereqs-only`: PASS kiểm tra cấu trúc pipeline; phát hiện dataset absent và ghi nhận trạng thái BLOCKED tại `reports/experiments/isolation_forest/blocked_status.json`.
   - `python scripts/train_isolation_forest.py`: exit 1 (fail-closed khi thiếu dataset `NF-UNSW-NB15-v3.csv`).
   - `python -m ruff check scripts/train_isolation_forest.py tests/unit/test_train_isolation_forest.py`: All checks passed.
   - `git diff --check`: PASS.
 - Trạng thái vòng đời & kiểm chứng:
-  - Pipeline & synthetic tests: `IMPLEMENTED` / `TESTED` (PASS).
-  - Thực nghiệm trên dữ liệu thật NF-UNSW-NB15-v3: `BLOCKED` / `NOT VERIFIED` do file dataset `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` không có sẵn trong môi trường máy cục bộ. Không thay thế bằng mock data; không đóng Issue #11 cho đến khi đủ dữ liệu thật và chạy thực nghiệm ra kết quả hoàn chỉnh.
+  - Pipeline, synthetic tests & integration: `IMPLEMENTED` / `TESTED` / `INTEGRATION VERIFIED` (PASS).
+  - Thực nghiệm trên dữ liệu thật NF-UNSW-NB15-v3: `BLOCKED` / `NOT EXPERIMENTALLY VALIDATED` do file dataset `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` không có sẵn trong môi trường máy cục bộ. Không thay thế bằng mock data; không đóng Issue #11 cho đến khi đủ dữ liệu thật và chạy thực nghiệm ra kết quả hoàn chỉnh.
 
-Cập nhật: 2026-11-03 (Pipeline huấn luyện & đánh giá Isolation Forest cho Issue #11)
+Cập nhật: 2026-11-08 (Pipeline huấn luyện & đánh giá Isolation Forest cho Issue #11)

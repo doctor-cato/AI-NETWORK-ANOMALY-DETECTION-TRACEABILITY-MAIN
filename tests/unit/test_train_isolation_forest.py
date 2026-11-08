@@ -18,9 +18,11 @@ Covered:
 - Failure handling (blocked prerequisites, bad schema, leakage detection).
 """
 
+import gzip
 import json
 import sys
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -811,3 +813,218 @@ class TestOfficialManifestSchemaAndPrerequisites:
         result = check_preprocessor_artifact(tmp_path / "missing.joblib", man_path)
         assert result["status"] == "BLOCKED"
         assert "not found" in result["message"].lower()
+
+    def test_check_split_manifest_verifies_indices_files_if_indices_dir_provided(self, tmp_path):
+        manifest_data = {
+            "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+            "partitions": {
+                "train": {
+                    "row_count": EXPECTED_TRAIN_ROWS,
+                    "index_file": "train_indices.csv.gz",
+                },
+                "validation": {
+                    "row_count": EXPECTED_VAL_ROWS,
+                    "index_file": "validation_indices.csv.gz",
+                },
+                "test": {
+                    "row_count": EXPECTED_TEST_ROWS,
+                    "index_file": "test_indices.csv.gz",
+                },
+            },
+        }
+        manifest_path = tmp_path / "split_manifest.json"
+        manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        indices_dir = tmp_path / "splits"
+        indices_dir.mkdir()
+
+        # Missing index files -> BLOCKED
+        result_missing = check_split_manifest(manifest_path, indices_dir=indices_dir)
+        assert result_missing["status"] == "BLOCKED"
+        assert "missing" in result_missing["message"].lower()
+
+        # Create the index files -> PASS
+        for name in ("train", "validation", "test"):
+            (indices_dir / f"{name}_indices.csv.gz").write_bytes(b"")
+        result_ok = check_split_manifest(manifest_path, indices_dir=indices_dir)
+        assert result_ok["status"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# 14. Reviewer Findings Regression & E2E Integration (Findings A, B, C, D, E, F, G)
+# ---------------------------------------------------------------------------
+
+
+class TestReviewerFindingsAndE2EIntegration:
+    def test_run_pipeline_fails_closed_when_preprocessor_load_verified_fails(self, tmp_path):
+        """Finding B regression test: load_verified failure must block pipeline without fallback."""
+        mock_pp_check = {
+            "status": "PASS",
+            "message": "PP verified.",
+            "path": str(tmp_path / "pp.joblib"),
+        }
+        mock_split_check = {
+            "status": "PASS",
+            "message": "Split verified.",
+            "path": str(tmp_path / "split.json"),
+            "manifest": {},
+        }
+        mock_dataset_check = {
+            "status": "PASS",
+            "message": "Dataset verified.",
+            "sha256": "dummy_sha",
+        }
+
+        import scripts.train_isolation_forest as tif
+
+        with mock.patch.object(tif, "check_dataset", return_value=mock_dataset_check), \
+             mock.patch.object(tif, "check_split_manifest", return_value=mock_split_check), \
+             mock.patch.object(tif, "check_preprocessor_artifact", return_value=mock_pp_check), \
+             mock.patch(
+                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                 side_effect=ValueError("Corrupted SHA-256 or invalid preprocessor manifest"),
+             ):
+            run_args = parse_args([])
+            exit_code = tif.run_pipeline(run_args)
+            assert exit_code == 1, "Pipeline must exit 1 (fail-closed) when load_verified fails"
+
+    def test_leakage_check_in_pipeline_blocks_trace_metadata_columns(self):
+        """Finding D test: check_no_leakage_in_matrix detects forbidden trace metadata."""
+        cols = list(ML_FEATURE_COLUMNS) + ["IPV4_SRC_ADDR", "FLOW_START_MILLISECONDS"]
+        bad_df = pd.DataFrame(np.zeros((5, len(cols))), columns=cols)
+        res = check_no_leakage_in_matrix(bad_df)
+        assert res["status"] == "FAIL"
+        assert "leakage detected" in res["message"].lower()
+
+    def test_calibrate_threshold_fpr_target_validation_and_fallback(self):
+        """Finding E test: validate fpr_target range and transparent fallback handling."""
+        # 1. Invalid fpr_target values raise ValueError
+        with pytest.raises(ValueError, match="fpr_target"):
+            calibrate_threshold([0.1, 0.2], [0.8, 0.9], fpr_target=-0.1)
+        with pytest.raises(ValueError, match="fpr_target"):
+            calibrate_threshold([0.1, 0.2], [0.8, 0.9], fpr_target=1.5)
+
+        # 2. CLI parse_args rejects invalid fpr-target
+        with pytest.raises(SystemExit):
+            parse_args(["--fpr-target", "-0.2"])
+        with pytest.raises(SystemExit):
+            parse_args(["--fpr-target", "1.1"])
+
+        # 3. Valid fpr_target=0.0 where constraint cannot be met triggers explicit fallback policy
+        benign = [0.0, 1.0, 2.0, 3.0]
+        known_attacks = [0.5, 1.5, 2.5]
+        res = calibrate_threshold(benign, known_attacks, fpr_target=0.0)
+        assert "FALLBACK-95th-percentile" in res["policy"]
+        assert "NOT satisfied" in res["policy"]
+        assert "fallback" in res["validation_stats"]
+        assert "fpr" in res["validation_stats"]
+
+    def test_calibrate_threshold_vectorized_performance_on_large_val(self):
+        """Finding F test: verify calibrate_threshold is O(N) vectorized and fast on large val."""
+        import time
+
+        np.random.seed(42)
+        benign = np.random.randn(40_000)
+        attacks = np.random.randn(10_000) + 1.5
+
+        t0 = time.monotonic()
+        res = calibrate_threshold(benign, attacks, fpr_target=0.05)
+        elapsed = time.monotonic() - t0
+
+        assert elapsed < 1.0, f"Vectorized calibration took {elapsed:.2f}s, expected < 1.0s"
+        assert isinstance(res["threshold"], float)
+        assert "validation_stats" in res
+        for k in ("tp", "tn", "fp", "fn", "precision", "recall", "f1", "fpr"):
+            assert k in res["validation_stats"]
+
+    def test_run_pipeline_e2e_official_indices_branch(self, tmp_path):
+        """Finding A, C, G test: End-to-end integration on official partition indices branch."""
+        import scripts.train_isolation_forest as tif
+
+        n_train, n_val, n_test = 60, 30, 20
+        n_total = n_train + n_val + n_test
+
+        np.random.seed(42)
+        df_data = {col: np.random.randn(n_total).astype(np.float32) for col in ML_FEATURE_COLUMNS}
+        df_data["Label"] = np.random.choice([0, 1], size=n_total, p=[0.7, 0.3])
+        df_data["Label"][:n_train] = np.random.choice([0, 1], size=n_train, p=[0.8, 0.2])
+        df_data["Label"][0] = 0
+        df_data["Label"][n_train] = 0
+        df_data["Label"][n_train + 1] = 1
+
+        attacks = []
+        for lbl in df_data["Label"]:
+            attacks.append("Benign" if lbl == 0 else np.random.choice(["Exploits", "Worms"]))
+        df_data["Attack"] = attacks
+        df = pd.DataFrame(df_data)
+
+        ds_csv = tmp_path / "dataset.csv"
+        df.to_csv(ds_csv, index=False)
+        ds_sha = tif.sha256_file(ds_csv)
+
+        indices_dir = tmp_path / "indices"
+        indices_dir.mkdir()
+        for name, s, e in [
+            ("train", 0, n_train),
+            ("validation", n_train, n_train + n_val),
+            ("test", n_train + n_val, n_total),
+        ]:
+            idx_p = indices_dir / f"{name}_indices.csv.gz"
+            with gzip.open(idx_p, "wt") as fh:
+                for i in range(s, e):
+                    fh.write(f"{i}\n")
+
+        split_man = {
+            "dataset_sha256": ds_sha,
+            "partitions": {
+                "train": {"row_count": n_train, "index_file": "train_indices.csv.gz"},
+                "validation": {"row_count": n_val, "index_file": "validation_indices.csv.gz"},
+                "test": {"row_count": n_test, "index_file": "test_indices.csv.gz"},
+            },
+        }
+        split_man_p = tmp_path / "split_manifest.json"
+        split_man_p.write_text(json.dumps(split_man), encoding="utf-8")
+
+        mock_pp = mock.MagicMock()
+        mock_pp.transform.side_effect = lambda X, **kwargs: np.asarray(X, dtype=np.float64)
+
+        art_p = tmp_path / "preprocessor.joblib"
+        art_p.write_bytes(b"dummy_artifact_bytes")
+        art_sha = tif.sha256_file(art_p)
+        pp_man = {
+            "artifact_sha256": art_sha,
+            "artifact_type": "nf-unsw-nb15-v3-train-only-preprocessor",
+        }
+        pp_man_p = tmp_path / "preprocessor_manifest.json"
+        pp_man_p.write_text(json.dumps(pp_man), encoding="utf-8")
+
+        model_art_dir = tmp_path / "model_artifacts"
+        rep_dir = tmp_path / "reports"
+        args = tif.parse_args(["--n-estimators", "5"])
+
+        with mock.patch.object(tif, "DATASET_CSV", ds_csv), \
+             mock.patch.object(tif, "DATASET_SHA256", ds_sha), \
+             mock.patch.object(tif, "EXPECTED_TRAIN_ROWS", n_train), \
+             mock.patch.object(tif, "EXPECTED_VAL_ROWS", n_val), \
+             mock.patch.object(tif, "EXPECTED_TEST_ROWS", n_test), \
+             mock.patch.object(tif, "SPLIT_MANIFEST_PATH", split_man_p), \
+             mock.patch.object(tif, "OFFICIAL_SPLIT_MANIFEST", split_man_p), \
+             mock.patch.object(tif, "INDICES_DIR", indices_dir), \
+             mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p), \
+             mock.patch.object(tif, "OFFICIAL_PREPROCESSOR_ARTIFACT", art_p), \
+             mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p), \
+             mock.patch.object(tif, "OFFICIAL_PREPROCESSOR_MANIFEST", pp_man_p), \
+             mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir), \
+             mock.patch.object(tif, "REPORT_DIR", rep_dir), \
+             mock.patch(
+                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                 return_value=mock_pp,
+             ):
+            exit_code = tif.run_pipeline(args)
+            assert exit_code == 0, f"Expected 0, got {exit_code}"
+            assert (model_art_dir / "isolation_forest.joblib").exists()
+            assert (model_art_dir / "threshold.json").exists()
+            assert (rep_dir / "metrics.json").exists()
+            assert (rep_dir / "run_metadata.json").exists()
+            run_meta = json.loads((rep_dir / "run_metadata.json").read_text(encoding="utf-8"))
+            assert run_meta["feature_columns"] == list(ML_FEATURE_COLUMNS)
+            assert run_meta["preprocessor_source"] == "TrainOnlyPreprocessor.load_verified"

@@ -197,7 +197,10 @@ def check_dataset(skip_checksum: bool = False) -> dict:
     }
 
 
-def check_split_manifest(split_manifest_path: Path | None = None) -> dict:
+def check_split_manifest(
+    split_manifest_path: Path | None = None,
+    indices_dir: Path | None = None,
+) -> dict:
     """Verify the split manifest produced by Issue #7."""
     if split_manifest_path is None:
         path = SPLIT_MANIFEST_PATH
@@ -274,6 +277,24 @@ def check_split_manifest(split_manifest_path: Path | None = None) -> dict:
             "message": "Split manifest row counts do not match expected: " + "; ".join(issues),
             "path": str(path),
         }
+
+    # Verify partition index files if indices_dir is supplied
+    if indices_dir is not None and isinstance(partitions, dict):
+        base_indices = Path(indices_dir)
+        missing_indices = []
+        for p_name in ("train", "validation", "test"):
+            idx_file = partitions.get(p_name, {}).get("index_file")
+            if idx_file and not (base_indices / idx_file).exists():
+                missing_indices.append(f"{p_name}: {base_indices / idx_file}")
+        if missing_indices:
+            return {
+                "status": "BLOCKED",
+                "message": (
+                    "Split manifest partition index files missing: " + "; ".join(missing_indices)
+                ),
+                "path": str(path),
+            }
+
     return {
         "status": "PASS",
         "message": "Split manifest verified.",
@@ -331,24 +352,23 @@ def check_preprocessor_artifact(
             "message": f"Preprocessor manifest unreadable: {exc}",
             "path": str(man_path),
         }
-    # Verify the preprocessor artifact SHA-256 against the companion manifest.
     expected_pp_sha256 = pp_manifest.get("artifact_sha256")
-    if expected_pp_sha256:
-        actual_pp_sha256 = sha256_file(art_path)
-        if actual_pp_sha256 != expected_pp_sha256:
-            return {
-                "status": "BLOCKED",
-                "message": (
-                    f"Preprocessor artifact SHA-256 mismatch.\n"
-                    f"  expected: {expected_pp_sha256}\n"
-                    f"  actual  : {actual_pp_sha256}"
-                ),
-                "path": str(art_path),
-            }
+    actual_pp_sha256 = sha256_file(art_path)
+    if expected_pp_sha256 and actual_pp_sha256 != expected_pp_sha256:
+        return {
+            "status": "BLOCKED",
+            "message": (
+                f"Preprocessor artifact SHA-256 mismatch.\n"
+                f"  expected: {expected_pp_sha256}\n"
+                f"  actual  : {actual_pp_sha256}"
+            ),
+            "path": str(art_path),
+        }
     return {
         "status": "PASS",
         "message": "Preprocessor artifact and manifest verified.",
         "path": str(art_path),
+        "sha256": actual_pp_sha256,
         "manifest": pp_manifest,
     }
 
@@ -463,72 +483,130 @@ def calibrate_threshold(
     calibration rationale.
     """
     import numpy as np
+    from sklearn.metrics import roc_curve
+
+    if fpr_target is not None and not (0.0 <= fpr_target <= 1.0):
+        raise ValueError(f"fpr_target must be between 0.0 and 1.0 or None, got {fpr_target}")
 
     scores_benign_val = np.asarray(scores_benign_val, dtype=np.float64)
     scores_attack_val = np.asarray(scores_attack_val, dtype=np.float64)
 
-    all_scores = np.concatenate([scores_benign_val, scores_attack_val])
-    all_labels = np.concatenate([np.zeros(len(scores_benign_val)), np.ones(len(scores_attack_val))])
-
-    # Candidate thresholds: sorted unique score values
-    candidates = np.unique(all_scores)
-    if len(candidates) > 10_000:
-        # Sample 10 000 evenly-spaced candidates for speed
-        idx = np.linspace(0, len(candidates) - 1, 10_000, dtype=int)
-        candidates = candidates[idx]
-
     best_thresh = None
-    best_metric = -1.0
     best_stats = {}
+    policy = None
 
-    for thresh in candidates:
-        preds = (all_scores >= thresh).astype(int)
-        tp = int(((preds == 1) & (all_labels == 1)).sum())
-        tn = int(((preds == 0) & (all_labels == 0)).sum())
-        fp = int(((preds == 1) & (all_labels == 0)).sum())
-        fn = int(((preds == 0) & (all_labels == 1)).sum())
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
-        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+    if len(scores_benign_val) > 0 and len(scores_attack_val) > 0:
+        all_scores = np.concatenate([scores_benign_val, scores_attack_val])
+        all_labels = np.concatenate([
+            np.zeros(len(scores_benign_val), dtype=np.int64),
+            np.ones(len(scores_attack_val), dtype=np.int64),
+        ])
+
+        fprs, tprs, thresholds = roc_curve(all_labels, all_scores)
+        P = len(scores_attack_val)
+        N = len(scores_benign_val)
+
+        tps = np.round(tprs * P).astype(np.int64)
+        fps = np.round(fprs * N).astype(np.int64)
+        fns = P - tps
+        tns = N - fps
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            precisions = np.where((tps + fps) > 0, tps / (tps + fps), 0.0)
+            recalls = tprs
+            f1s = np.where(
+                (precisions + recalls) > 0,
+                2 * precisions * recalls / (precisions + recalls),
+                0.0,
+            )
 
         if fpr_target is not None:
-            # Select highest recall that keeps FPR <= fpr_target
-            if fpr <= fpr_target and recall > best_metric:
-                best_metric = recall
-                best_thresh = thresh
+            mask = (fprs <= fpr_target) & (recalls > 0)
+            if mask.any():
+                valid_indices = np.where(mask)[0]
+                rec_valid = recalls[valid_indices]
+                max_rec = np.max(rec_valid)
+                best_candidates = valid_indices[rec_valid == max_rec]
+                # Tie-break: highest F1, then lowest FPR
+                f1_candidates = f1s[best_candidates]
+                max_f1 = np.max(f1_candidates)
+                top_f1_candidates = best_candidates[f1_candidates == max_f1]
+                fpr_candidates = fprs[top_f1_candidates]
+                best_cand = top_f1_candidates[np.argmin(fpr_candidates)]
+
+                if (
+                    best_cand == 0
+                    and len(thresholds) > 1
+                    and fprs[0] == fprs[1]
+                    and tprs[0] == tprs[1]
+                ):
+                    best_cand = 1
+
+                best_thresh = float(thresholds[best_cand])
                 best_stats = {
-                    "tp": tp,
-                    "tn": tn,
-                    "fp": fp,
-                    "fn": fn,
-                    "precision": precision,
-                    "recall": recall,
-                    "f1": f1,
-                    "fpr": fpr,
+                    "tp": int(tps[best_cand]),
+                    "tn": int(tns[best_cand]),
+                    "fp": int(fps[best_cand]),
+                    "fn": int(fns[best_cand]),
+                    "precision": float(precisions[best_cand]),
+                    "recall": float(recalls[best_cand]),
+                    "f1": float(f1s[best_cand]),
+                    "fpr": float(fprs[best_cand]),
                 }
+                policy = f"max-recall-at-FPR<={fpr_target}"
         else:
             # Maximise F1
-            if f1 > best_metric:
-                best_metric = f1
-                best_thresh = thresh
-                best_stats = {
-                    "tp": tp,
-                    "tn": tn,
-                    "fp": fp,
-                    "fn": fn,
-                    "precision": precision,
-                    "recall": recall,
-                    "f1": f1,
-                    "fpr": fpr,
-                }
+            best_cand = int(np.argmax(f1s))
+            if best_cand == 0 and len(thresholds) > 1 and f1s[0] == f1s[1]:
+                best_cand = 1
+
+            best_thresh = float(thresholds[best_cand])
+            best_stats = {
+                "tp": int(tps[best_cand]),
+                "tn": int(tns[best_cand]),
+                "fp": int(fps[best_cand]),
+                "fn": int(fns[best_cand]),
+                "precision": float(precisions[best_cand]),
+                "recall": float(recalls[best_cand]),
+                "f1": float(f1s[best_cand]),
+                "fpr": float(fprs[best_cand]),
+            }
+            policy = "max-F1-on-known-attacks"
 
     if best_thresh is None:
         # Fallback: use 95th percentile of benign scores
-        best_thresh = float(np.percentile(scores_benign_val, 95))
-        best_stats = {"fallback": "95th-percentile-benign"}
-
-    policy = "max-F1-on-known-attacks" if fpr_target is None else f"max-recall-at-FPR<={fpr_target}"
+        best_thresh = (
+            float(np.percentile(scores_benign_val, 95)) if len(scores_benign_val) > 0 else 0.0
+        )
+        preds_benign = (scores_benign_val >= best_thresh).astype(int)
+        preds_attack = (scores_attack_val >= best_thresh).astype(int)
+        actual_tp = int(preds_attack.sum())
+        actual_fp = int(preds_benign.sum())
+        actual_tn = len(scores_benign_val) - actual_fp
+        actual_fn = len(scores_attack_val) - actual_tp
+        actual_prec = actual_tp / (actual_tp + actual_fp) if (actual_tp + actual_fp) > 0 else 0.0
+        actual_rec = actual_tp / (actual_tp + actual_fn) if (actual_tp + actual_fn) > 0 else 0.0
+        actual_f1 = (
+            (2 * actual_prec * actual_rec / (actual_prec + actual_rec))
+            if (actual_prec + actual_rec) > 0
+            else 0.0
+        )
+        actual_fpr = actual_fp / (actual_fp + actual_tn) if (actual_fp + actual_tn) > 0 else 0.0
+        best_stats = {
+            "fallback": "95th-percentile-benign",
+            "tp": actual_tp,
+            "tn": actual_tn,
+            "fp": actual_fp,
+            "fn": actual_fn,
+            "precision": float(actual_prec),
+            "recall": float(actual_rec),
+            "f1": float(actual_f1),
+            "fpr": float(actual_fpr),
+        }
+        if fpr_target is not None:
+            policy = f"FALLBACK-95th-percentile (FPR constraint <= {fpr_target} NOT satisfied)"
+        else:
+            policy = "FALLBACK-95th-percentile"
 
     result = {
         "threshold": float(best_thresh),
@@ -984,12 +1062,10 @@ def run_pipeline(args) -> int:
     # ------------------------------------------------------------------
     print("\n[Step 2] Load partitions and apply preprocessor", flush=True)
 
-    import joblib
-
     print("  Loading fitted preprocessor …", flush=True)
-    try:
-        from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor
+    from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor
 
+    try:
         preprocessor = TrainOnlyPreprocessor.load_verified(
             artifact_path=Path(pp_check["path"]),
             manifest_path=PREPROCESSOR_MANIFEST_PATH,
@@ -997,8 +1073,13 @@ def run_pipeline(args) -> int:
             dataset_path=DATASET_CSV if DATASET_CSV.exists() else None,
             expected_dataset_sha256=DATASET_SHA256,
         )
-    except Exception:
-        preprocessor = joblib.load(pp_check["path"])
+    except Exception as exc:
+        print(f"[BLOCKED] Preprocessor artifact verification failed: {exc}", flush=True)
+        return 1
+
+    from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS, TARGET_COLUMNS
+
+    feature_cols = list(ML_FEATURE_COLUMNS)
 
     split_manifest = split_check["manifest"]
     has_explicit_paths = (
@@ -1015,70 +1096,90 @@ def run_pipeline(args) -> int:
         df_train = load_partition_csv(train_path, "Train")
         df_val = load_partition_csv(val_path, "Validation")
         df_test = load_partition_csv(test_path, "Test")
+    else:
+        print("  Partitioning dataset via official partition indices …", flush=True)
+        import pandas as pd
 
-        # Verify row counts
-        for name, df, expected in [
-            ("Train", df_train, EXPECTED_TRAIN_ROWS),
-            ("Validation", df_val, EXPECTED_VAL_ROWS),
-            ("Test", df_test, EXPECTED_TEST_ROWS),
-        ]:
-            if len(df) != expected:
-                print(
-                    f"[BLOCKED] {name} row count {len(df):,} != expected {expected:,}",
-                    flush=True,
-                )
-                return 1
-
-        # Extract labels before feature matrix construction
-        y_train = df_train["Label"].values
-        y_val = df_val["Label"].values
-        y_test = df_test["Label"].values
-        attack_val = df_val["Attack"].tolist()
-        attack_test = df_test["Attack"].tolist()
-
-        # Build feature matrices — exclude target + metadata columns
-        from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
-
-        feature_cols = list(ML_FEATURE_COLUMNS)
-
-        X_train_raw = df_train[feature_cols]
-        X_val_raw = df_val[feature_cols]
-        X_test_raw = df_test[feature_cols]
-
-        # Validate feature schema
-        schema_check = check_feature_schema(feature_cols)
-        print(f"  Feature schema: {schema_check['status']} — {schema_check['message']}", flush=True)
-        if schema_check["status"] != "PASS":
+        partitions = split_manifest.get("partitions", {})
+        if not all(p in partitions for p in ("train", "validation", "test")):
+            print("[BLOCKED] Split manifest missing partitions definition.", flush=True)
             return 1
 
-        # Apply fitted preprocessor (transform only — never fit on val/test)
-        print("  Applying fitted preprocessor to Train …", flush=True)
-        X_train = apply_preprocessor(preprocessor, X_train_raw)
-        print("  Applying fitted preprocessor to Validation …", flush=True)
-        X_val = apply_preprocessor(preprocessor, X_val_raw)
-        print("  Applying fitted preprocessor to Test …", flush=True)
-        X_test = apply_preprocessor(preprocessor, X_test_raw)
-    else:
-        from network_anomaly.preprocessing.pipeline import load_and_preprocess_split
+        indices_dir = INDICES_DIR
+        train_idx_path = indices_dir / partitions["train"]["index_file"]
+        val_idx_path = indices_dir / partitions["validation"]["index_file"]
+        test_idx_path = indices_dir / partitions["test"]["index_file"]
 
-        manifest_path = Path(split_check["path"])
-        train_tup, val_tup, test_tup, preprocessor_inst, _ = load_and_preprocess_split(
-            manifest_path=manifest_path,
-            dataset_path=DATASET_CSV,
-            indices_dir=INDICES_DIR,
+        for p_name, idx_p in [
+            ("train", train_idx_path),
+            ("validation", val_idx_path),
+            ("test", test_idx_path),
+        ]:
+            if not idx_p.exists():
+                print(f"[BLOCKED] Partition index file not found: {idx_p}", flush=True)
+                return 1
+
+        train_indices = pd.read_csv(train_idx_path, header=None).iloc[:, 0].values
+        val_indices = pd.read_csv(val_idx_path, header=None).iloc[:, 0].values
+        test_indices = pd.read_csv(test_idx_path, header=None).iloc[:, 0].values
+
+        cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
+        df_raw = pd.read_csv(
+            DATASET_CSV,
+            usecols=cols_to_read,
+            keep_default_na=False,
+            low_memory=False,
         )
-        X_train_df, y_train_s, _ = train_tup
-        X_val_df, y_val_s, attack_val_s = val_tup
-        X_test_df, y_test_s, attack_test_s = test_tup
-        y_train = y_train_s.values
-        y_val = y_val_s.values
-        y_test = y_test_s.values
-        attack_val = attack_val_s.tolist()
-        attack_test = attack_test_s.tolist()
-        preprocessor = preprocessor_inst
-        X_train = X_train_df
-        X_val = X_val_df
-        X_test = X_test_df
+
+        df_train = df_raw.iloc[train_indices]
+        df_val = df_raw.iloc[val_indices]
+        df_test = df_raw.iloc[test_indices]
+
+    # Verify row counts
+    for name, df, expected in [
+        ("Train", df_train, EXPECTED_TRAIN_ROWS),
+        ("Validation", df_val, EXPECTED_VAL_ROWS),
+        ("Test", df_test, EXPECTED_TEST_ROWS),
+    ]:
+        if len(df) != expected:
+            print(
+                f"[BLOCKED] {name} row count {len(df):,} != expected {expected:,}",
+                flush=True,
+            )
+            return 1
+
+    # Extract labels before feature matrix construction
+    y_train = df_train["Label"].values
+    y_val = df_val["Label"].values
+    y_test = df_test["Label"].values
+    attack_val = df_val["Attack"].tolist()
+    attack_test = df_test["Attack"].tolist()
+
+    X_train_raw = df_train[feature_cols]
+    X_val_raw = df_val[feature_cols]
+    X_test_raw = df_test[feature_cols]
+
+    # Validate feature schema
+    schema_check = check_feature_schema(feature_cols)
+    print(f"  Feature schema: {schema_check['status']} — {schema_check['message']}", flush=True)
+    if schema_check["status"] != "PASS":
+        return 1
+
+    # Validate no leakage in matrices (Finding D)
+    for name, raw_df in [("Train", X_train_raw), ("Validation", X_val_raw), ("Test", X_test_raw)]:
+        leakage_check = check_no_leakage_in_matrix(raw_df)
+        print(f"  Leakage check {name}: {leakage_check['status']}", flush=True)
+        if leakage_check["status"] != "PASS":
+            print(f"[BLOCKED] {leakage_check['message']}", flush=True)
+            return 1
+
+    # Apply fitted preprocessor (transform only — never fit on val/test)
+    print("  Applying fitted preprocessor to Train …", flush=True)
+    X_train = apply_preprocessor(preprocessor, X_train_raw)
+    print("  Applying fitted preprocessor to Validation …", flush=True)
+    X_val = apply_preprocessor(preprocessor, X_val_raw)
+    print("  Applying fitted preprocessor to Test …", flush=True)
+    X_test = apply_preprocessor(preprocessor, X_test_raw)
 
     # Check for NaN/Inf post-preprocessing
     for name, X in [("Train", X_train), ("Validation", X_val), ("Test", X_test)]:
@@ -1144,8 +1245,10 @@ def run_pipeline(args) -> int:
         "random_state": RANDOM_SEED,
         "hyperparameters": model_config,
         "dataset_sha256": dataset_check.get("sha256", "NOT_VERIFIED"),
-        "split_manifest": str(SPLIT_MANIFEST_PATH),
-        "preprocessor_artifact": str(PREPROCESSOR_ARTIFACT_PATH),
+        "split_manifest": str(split_check["path"]),
+        "preprocessor_artifact": str(pp_check["path"]),
+        "preprocessor_artifact_sha256": pp_check.get("sha256", "NOT_VERIFIED"),
+        "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
         "feature_columns": feature_cols,
         "n_features": len(feature_cols),
         "experiment_status": "IMPLEMENTED",
@@ -1273,7 +1376,7 @@ def run_pipeline(args) -> int:
     print("\n[Step 6] Save artifacts", flush=True)
     MODEL_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
-    pp_artifact_sha256 = sha256_file(PREPROCESSOR_ARTIFACT_PATH)
+    pp_artifact_sha256 = pp_check.get("sha256") or sha256_file(Path(pp_check["path"]))
     training_meta["preprocessor_artifact_sha256"] = pp_artifact_sha256
 
     artifacts_info = save_artifacts(
@@ -1311,6 +1414,7 @@ def run_pipeline(args) -> int:
     run_meta["artifacts"] = artifacts_info
     run_meta["dataset_sha256"] = dataset_check.get("sha256", "NOT_VERIFIED")
     run_meta["preprocessor_sha256"] = pp_artifact_sha256
+    run_meta["preprocessor_source"] = "TrainOnlyPreprocessor.load_verified"
     run_meta["threshold"] = threshold
     run_meta["threshold_policy"] = threshold_result["policy"]
     run_meta["unknown_attack_categories"] = sorted(UNKNOWN_ATTACK_CATEGORIES)
@@ -1421,11 +1525,14 @@ def parse_args(argv=None):
         type=float,
         default=None,
         help=(
-            "Target FPR for threshold calibration. If None, the threshold "
+            "Target FPR for threshold calibration in [0.0, 1.0]. If None, the threshold "
             "maximising F1 on known-attack validation samples is selected."
         ),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.fpr_target is not None and not (0.0 <= args.fpr_target <= 1.0):
+        parser.error(f"--fpr-target must be between 0.0 and 1.0, got: {args.fpr_target}")
+    return args
 
 
 def main(argv=None) -> int:
