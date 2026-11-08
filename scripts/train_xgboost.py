@@ -869,7 +869,7 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
             "- Random Forest reference manifest unavailable or dataset mismatch; "
             "comparison table not produced (no fabricated numbers)."
         )
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def main(argv: Optional[List[str]] = None) -> int:

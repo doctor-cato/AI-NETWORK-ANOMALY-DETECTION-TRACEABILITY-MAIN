@@ -1,7 +1,7 @@
 # NF-UNSW-NB15-v3 XGBoost Supervised Baseline Protocol
 
 **Issue:** #31 — Triển khai XGBoost theo protocol supervised dùng chung với Random Forest (Checkpoint C3)<br>
-**Status:** Protocol & Configuration: `IMPLEMENTED / TESTED` (Issue #31); Model Training: `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` (run `xgb-baseline-1794149746`, 2026-11-08, dữ liệu thật NF-UNSW-NB15-v3); Held-out Test Evaluation: `PLANNED` (Issue #12); Real Split: `PASS (PR #41)`; Preprocessing Artifact: `PASS (PR #42)`.<br>
+**Status:** Protocol & Configuration: `IMPLEMENTED / TESTED` (Issue #31); Model Training: `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` (run `xgb-baseline-1794151507`, 2026-11-08, dữ liệu thật NF-UNSW-NB15-v3); Held-out Test Evaluation: `PLANNED` (Issue #12); Real Split: `PASS (PR #41)`; Preprocessing Artifact: `PASS (PR #42)`.<br>
 **Protocol Identifier:** `xgb-baseline-nf-unsw-nb15-v3-v1`<br>
 **Feature Contract Version:** `nf-unsw-nb15-v3-baseline-47`<br>
 **Split Protocol Reference:** `nf-unsw-nb15-v3-chronological-group-purged-v1` (PR #41)<br>
@@ -95,12 +95,13 @@ python scripts/train_xgboost.py
 
 Script thực hiện 8 bước bắt buộc: (1) prereq audit fail-closed (dataset SHA-256, split manifest, preprocessor artifact và manifest, xgboost/sklearn available, artifact không tồn tại sẵn); (2) streaming load partition `train`/`validation` qua `scripts.train_random_forest` (dùng chung codebase với RF — parity); (3) transform qua preprocessor artifact đã fit train-only; (4) fit XGBClassifier canonical; (5) validation metrics dùng chung `network_anomaly.evaluation.metrics`; (6) save artifact + SHA-256; (7) `load_verified` reload fail-closed; (8) ghi markdown report.
 
-### 6.2 Run evidence (run `xgb-baseline-1794149746`, 2026-11-08)
+### 6.2 Run evidence (run `xgb-baseline-1794151507`, 2026-11-08)
 
-- **Git commit:** `89c32fa` (branch `feat/c3-xgboost-issue-31`); `git_dirty=true` vì run manifest/store của chính run được ghi trong repo (rủi ro chấp nhận được, đã ghi nhận provenance).
+- **Git commit:** `7d760e0` (branch `feat/c3-xgboost-issue-31`); `git_dirty=false` — run manifest và store của run được ghi ngoài Git (`.gitignore` cho `artifacts/**`), evidence report được commit ngay sau run.
 - **Provenance chain (runtime, VERIFIED):** dataset SHA `4ebb97bd…`; split manifest SHA `845d8863…` (content khớp canonical Oct, chỉ khác record timestamp); train indices `30ed493e…`, val indices `a3e4470c…`; preprocessor artifact `e1e89bde…` (fit train-only, 1.655.797 dòng).
 - **Hash chain canonical vs runtime:** artifact canonical từ thời điểm accept PR #41/#42 (`bb84c1e0…` split manifest, `12d4360a…` preprocessor artifact) không thể tái sinh byte-identical vì manifest record timestamp và preprocessor joblib ngoài Git bị ghi đè ngày 2026-11-03. Run này REGENERATE artifact set bằng scripts chính thức và verify bằng runtime hash chain; canonical hashes được giữ làm `canonical_reference_hashes` trong run manifest (`reports/models/xgboost_manifest.json`).
-- **Khối lượng:** Train 1.655.797 rows × 47 features; Validation 345.371 rows; fit 21.97 s; peak memory 4.425,76 MB (Python 3.13.9, xgboost 3.4.1, scikit-learn 1.9.1, pandas 3.0.6, numpy 2.5.3 — local Windows; CI matrix ubuntu/windows × Python 3.11/3.12 chỉ chạy unit/integration tests, không fit trên dataset thật).
+- **Khối lượng:** Train 1.655.797 rows × 47 features; Validation 345.371 rows; fit 19.66 s; peak memory 4.422,59 MB (Python 3.13.9, xgboost 3.4.1, scikit-learn 1.9.1, pandas 3.0.6, numpy 2.5.3 — local Windows; CI matrix ubuntu/windows × Python 3.11/3.12 chỉ chạy unit/integration tests, không fit trên dataset thật).
+- **Tái lập:** run thứ hai không phụ thuộc (không seed nội bộ thay đổi) cho ra metrics identical (Precision/Recall/F1/Macro-F1/FPR trùng đến 6 chữ số, CM trùng khớp); model artifact SHA khác giữa các run do joblib serialization không cố định byte (70.680 bytes cố định) — run manifest luôn ghi SHA của chính run đó.
 
 ### 6.3 Validation metrics
 
@@ -135,7 +136,7 @@ Script thực hiện 8 bước bắt buộc: (1) prereq audit fail-closed (datas
 
 ### 6.6 Artifact & reload verification
 
-- Model artifact: `artifacts/models/xgboost/xgboost_baseline.joblib` — 70.680 bytes, SHA-256 `f9837b78763e7f6df6ee7ea3b5379418efb3134a9eb0eb403b5f06f0264de05a` (nằm ngoài Git theo `.gitignore`; hash ghi trong run manifest).
+- Model artifact: `artifacts/models/xgboost/xgboost_baseline.joblib` — 70.680 bytes, SHA-256 `c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e` (nằm ngoài Git theo `.gitignore`; hash ghi trong run manifest).
 - Reload verification qua `XGBoostModel.load_verified`: PASSED — predictions identical trên 345.371 samples, max abs probability diff 0.0.
 
 ### 6.7 Ranh giới
