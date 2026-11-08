@@ -250,10 +250,11 @@ def check_split_manifest(
         val_rows = manifest.get("validation_rows")
         test_rows = manifest.get("test_rows")
 
-    if manifest.get("dataset_sha256") is None and "dataset_sha256" not in manifest:
+    ds_sha = manifest.get("dataset_sha256")
+    if not ds_sha or not str(ds_sha).strip():
         return {
             "status": "BLOCKED",
-            "message": "Split manifest missing required key: dataset_sha256",
+            "message": "Split manifest missing or empty required key: dataset_sha256",
             "path": str(path),
         }
 
@@ -374,6 +375,7 @@ def check_preprocessor_artifact(
         "status": "PASS",
         "message": "Preprocessor artifact and manifest verified.",
         "path": str(art_path),
+        "manifest_path": str(man_path),
         "sha256": actual_pp_sha256,
         "manifest": pp_manifest,
     }
@@ -572,7 +574,6 @@ def calibrate_threshold(
     calibration rationale.
     """
     import numpy as np
-    from sklearn.metrics import roc_curve
 
     if fpr_target is not None and not (0.0 <= fpr_target <= 1.0):
         raise ValueError(f"fpr_target must be between 0.0 and 1.0 or None, got {fpr_target}")
@@ -591,18 +592,31 @@ def calibrate_threshold(
             np.ones(len(scores_attack_val), dtype=np.int64),
         ])
 
-        fprs, tprs, thresholds = roc_curve(all_labels, all_scores)
-        P = len(scores_attack_val)
-        N = len(scores_benign_val)
+        P = int(len(scores_attack_val))
+        N = int(len(scores_benign_val))
 
-        tps = np.round(tprs * P).astype(np.int64)
-        fps = np.round(fprs * N).astype(np.int64)
+        order = np.argsort(all_scores)[::-1]
+        sorted_scores = all_scores[order]
+        sorted_labels = all_labels[order]
+
+        distinct_mask = np.empty(len(sorted_scores), dtype=bool)
+        distinct_mask[:-1] = sorted_scores[1:] != sorted_scores[:-1]
+        distinct_mask[-1] = True
+        cand_idxs = np.where(distinct_mask)[0]
+
+        cum_tp = np.cumsum(sorted_labels == 1)
+        cum_fp = np.cumsum(sorted_labels == 0)
+
+        tps = cum_tp[cand_idxs]
+        fps = cum_fp[cand_idxs]
+        thresholds = sorted_scores[cand_idxs]
         fns = P - tps
         tns = N - fps
 
+        recalls = tps / P
+        fprs = fps / N
         with np.errstate(divide="ignore", invalid="ignore"):
             precisions = np.where((tps + fps) > 0, tps / (tps + fps), 0.0)
-            recalls = tprs
             f1s = np.where(
                 (precisions + recalls) > 0,
                 2 * precisions * recalls / (precisions + recalls),
@@ -622,14 +636,6 @@ def calibrate_threshold(
                 top_f1_candidates = best_candidates[f1_candidates == max_f1]
                 fpr_candidates = fprs[top_f1_candidates]
                 best_cand = top_f1_candidates[np.argmin(fpr_candidates)]
-
-                if (
-                    best_cand == 0
-                    and len(thresholds) > 1
-                    and fprs[0] == fprs[1]
-                    and tprs[0] == tprs[1]
-                ):
-                    best_cand = 1
 
                 best_thresh = float(thresholds[best_cand])
                 best_stats = {
@@ -665,9 +671,6 @@ def calibrate_threshold(
         else:
             # Maximise F1
             best_cand = int(np.argmax(f1s))
-            if best_cand == 0 and len(thresholds) > 1 and f1s[0] == f1s[1]:
-                best_cand = 1
-
             best_thresh = float(thresholds[best_cand])
             best_stats = {
                 "tp": int(tps[best_cand]),
@@ -840,11 +843,11 @@ def save_artifacts(
     meta_path = output_dir / "training_metadata.json"
 
     joblib.dump(model, model_path)
-    with config_path.open("w") as fh:
+    with config_path.open("w", encoding="utf-8") as fh:
         json.dump(config, fh, indent=2)
-    with threshold_path.open("w") as fh:
+    with threshold_path.open("w", encoding="utf-8") as fh:
         json.dump({"threshold": threshold}, fh, indent=2)
-    with meta_path.open("w") as fh:
+    with meta_path.open("w", encoding="utf-8") as fh:
         json.dump(training_meta, fh, indent=2, default=str)
 
     checksums = {}
@@ -903,13 +906,13 @@ def save_reports(
     """Write machine-readable JSON reports and a markdown evaluation report."""
     report_dir.mkdir(parents=True, exist_ok=True)
 
-    with (report_dir / "metrics.json").open("w") as fh:
+    with (report_dir / "metrics.json").open("w", encoding="utf-8") as fh:
         json.dump(metrics, fh, indent=2, default=str)
-    with (report_dir / "threshold_calibration.json").open("w") as fh:
+    with (report_dir / "threshold_calibration.json").open("w", encoding="utf-8") as fh:
         json.dump(threshold_calibration, fh, indent=2, default=str)
-    with (report_dir / "per_attack_metrics.json").open("w") as fh:
+    with (report_dir / "per_attack_metrics.json").open("w", encoding="utf-8") as fh:
         json.dump(per_attack_metrics, fh, indent=2, default=str)
-    with (report_dir / "run_metadata.json").open("w") as fh:
+    with (report_dir / "run_metadata.json").open("w", encoding="utf-8") as fh:
         json.dump(run_metadata, fh, indent=2, default=str)
 
     _write_evaluation_report(
@@ -1176,7 +1179,7 @@ def run_pipeline(args) -> int:
     try:
         preprocessor = TrainOnlyPreprocessor.load_verified(
             artifact_path=Path(pp_check["path"]),
-            manifest_path=PREPROCESSOR_MANIFEST_PATH,
+            manifest_path=Path(pp_check.get("manifest_path", PREPROCESSOR_MANIFEST_PATH)),
             split_manifest_path=Path(split_check["path"]),
             dataset_path=DATASET_CSV if DATASET_CSV.exists() else None,
             expected_dataset_sha256=DATASET_SHA256,
@@ -1531,10 +1534,11 @@ def run_pipeline(args) -> int:
 def _save_blocked_report(run_meta: dict, dataset_check: dict) -> None:
     """Write a minimal BLOCKED status report when the dataset is absent."""
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
+    clean_meta = {k: v for k, v in run_meta.items() if k not in ("pip_freeze",)}
     blocked = {
         "status": "BLOCKED",
         "reason": dataset_check["message"],
-        "run_metadata": run_meta,
+        "run_metadata": clean_meta,
         "experiment_status": "IMPLEMENTED — NOT EXPERIMENTALLY VALIDATED",
         "instructions": (
             "Run `python scripts/fetch_nf_unsw_nb15_v3.py` to acquire the dataset, "
@@ -1542,8 +1546,9 @@ def _save_blocked_report(run_meta: dict, dataset_check: dict) -> None:
             "(PR #42) before re-running this script."
         ),
     }
-    with (REPORT_DIR / "blocked_status.json").open("w") as fh:
+    with (REPORT_DIR / "blocked_status.json").open("w", encoding="utf-8") as fh:
         json.dump(blocked, fh, indent=2, default=str)
+        fh.write("\n")
 
 
 # ---------------------------------------------------------------------------

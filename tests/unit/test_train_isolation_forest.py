@@ -275,6 +275,21 @@ class TestThresholdCalibration:
         for key in ("tp", "tn", "fp", "fn", "precision", "recall", "f1", "fpr"):
             assert key in result["validation_stats"], f"Missing key: {key}"
 
+    def test_calibration_exact_integer_confusion_matrix(self, rng):
+        """Integer counts must satisfy tp + fn == P and fp + tn == N exactly."""
+        P = 37
+        N = 83
+        benign = rng.normal(0, 1, N)
+        attack = rng.normal(2, 1, P)
+        result = calibrate_threshold(benign, attack, fpr_target=0.05)
+        stats = result["validation_stats"]
+        assert isinstance(stats["tp"], int)
+        assert isinstance(stats["fn"], int)
+        assert isinstance(stats["fp"], int)
+        assert isinstance(stats["tn"], int)
+        assert stats["tp"] + stats["fn"] == P
+        assert stats["fp"] + stats["tn"] == N
+
 
 # ---------------------------------------------------------------------------
 # 5. Score direction
@@ -639,14 +654,15 @@ class TestFailureHandling:
             "scripts.train_isolation_forest.REPORT_DIR",
             tmp_path / "reports",
         )
-        run_meta = {"run_id": "test", "timestamp": "2026-11-03"}
+        run_meta = {"run_id": "test", "timestamp": "2026-11-03", "pip_freeze": "dummy==1.0"}
         dataset_check = {"message": "dataset not found"}
         _save_blocked_report(run_meta, dataset_check)
         blocked_path = tmp_path / "reports" / "blocked_status.json"
         assert blocked_path.exists()
-        with blocked_path.open() as fh:
+        with blocked_path.open(encoding="utf-8") as fh:
             data = json.load(fh)
         assert data["status"] == "BLOCKED"
+        assert "pip_freeze" not in data["run_metadata"]
 
     def test_parse_args_defaults(self):
         """Default arguments must match documented configuration."""
@@ -770,6 +786,22 @@ class TestOfficialManifestSchemaAndPrerequisites:
         result = check_split_manifest(manifest_path)
         assert result["status"] == "BLOCKED"
         assert "row count" in result["message"].lower()
+
+    def test_check_split_manifest_rejects_none_or_empty_dataset_sha256(self, tmp_path):
+        for bad_val in (None, "", "   "):
+            manifest_data = {
+                "dataset_sha256": bad_val,
+                "partitions": {
+                    "train": {"row_count": EXPECTED_TRAIN_ROWS},
+                    "validation": {"row_count": EXPECTED_VAL_ROWS},
+                    "test": {"row_count": EXPECTED_TEST_ROWS},
+                },
+            }
+            manifest_path = tmp_path / "bad_sha_split_manifest.json"
+            manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+            result = check_split_manifest(manifest_path)
+            assert result["status"] == "BLOCKED"
+            assert "dataset_sha256" in result["message"].lower()
 
     def test_check_preprocessor_artifact_verified_with_companion_manifest(self, tmp_path):
         art_path = tmp_path / "preprocessor.joblib"
