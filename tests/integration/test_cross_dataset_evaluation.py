@@ -19,8 +19,12 @@ from scripts.evaluate_cross_dataset import (
 
 def test_cross_dataset_evaluation_runs_and_produces_valid_metrics(tmp_path: Path):
     """Test full cross-dataset evaluation execution and output schema."""
-    if not DEFAULT_DATASET_CSV.exists():
-        pytest.skip("External dataset sample not downloaded yet.")
+    if (
+        not DEFAULT_DATASET_CSV.exists()
+        or not DEFAULT_MODEL_ARTIFACT.is_file()
+        or not DEFAULT_PREP_ARTIFACT.is_file()
+    ):
+        pytest.skip("External dataset sample or canonical binary artifacts not present (excluded via .gitignore).")
 
     out_json = tmp_path / "test_eval_results.json"
     out_md = tmp_path / "test_eval_report.md"
@@ -59,8 +63,12 @@ def test_cross_dataset_evaluation_runs_and_produces_valid_metrics(tmp_path: Path
 
 def test_cross_dataset_evaluation_reproducibility():
     """Verify deterministic repeatability: Two independent runs produce identical metrics."""
-    if not DEFAULT_DATASET_CSV.exists():
-        pytest.skip("External dataset sample not downloaded yet.")
+    if (
+        not DEFAULT_DATASET_CSV.exists()
+        or not DEFAULT_MODEL_ARTIFACT.is_file()
+        or not DEFAULT_PREP_ARTIFACT.is_file()
+    ):
+        pytest.skip("External dataset sample or canonical binary artifacts not present (excluded via .gitignore).")
 
     run1 = evaluate_cross_dataset(
         dataset_csv=DEFAULT_DATASET_CSV,
