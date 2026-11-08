@@ -59,6 +59,16 @@ DATASET_CONFIGS = {
         "default_sample_skip": 0,
         "default_sample_take": 100000,
     },
+    "NF-UNSW-NB15-v3": {
+        "uuid": "abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f",
+        "archive_prefix": "f7546561558c07c5_NFV3DATA-A11964_A11964/",
+        "csv_name": "data/NF-UNSW-NB15-v3.csv",
+        "sample_name": "NF-UNSW-NB15-v3-sample50k.csv",
+        "stratified_sample_name": "NF-UNSW-NB15-v3-stratified50k.csv",
+        "doi": "10.48610/abd2f5d",
+        "default_sample_skip": 0,
+        "default_sample_take": 50000,
+    },
 }
 
 
@@ -319,8 +329,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_DESTINATION / "NF-CSE-CIC-IDS2018-v3",
-        help="Output directory",
+        default=None,
+        help="Output directory (default: data/raw/<dataset-name>)",
     )
     parser.add_argument(
         "--verify-only",
@@ -329,11 +339,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    output_dir = args.output_dir if args.output_dir is not None else DEFAULT_DESTINATION / args.dataset
 
     try:
         if args.verify_only:
             cfg = DATASET_CONFIGS[args.dataset]
-            target = args.output_dir / cfg["sample_name"]
+            target = output_dir / cfg["sample_name"]
             if not target.exists():
                 print(f"Target dataset file does not exist: {target}")
                 return 1
@@ -342,7 +353,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         fetch_dataset_sample(
             dataset_name=args.dataset,
-            output_dir=args.output_dir,
+            output_dir=output_dir,
             sample_rows=args.sample_rows,
             skip_rows=args.skip_rows,
             sample_mode=args.sample_mode,

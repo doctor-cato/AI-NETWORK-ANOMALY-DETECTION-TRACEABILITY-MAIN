@@ -307,16 +307,17 @@ def generate_markdown_report(results: Dict[str, Any], output_path: Path) -> str:
     m = results["metrics"]
     cm = m["confusion_matrix"]
     internal = results["canonical_model_provenance"].get("validation_summary_internal", {})
+    status_label = "MODEL_VALIDATED" if (m["recall"] >= 0.85 and m["false_positive_rate"] <= 0.05) else "BENCHMARK_FAILED (Chặn suy luận: Recall < 0.85 hoặc FPR > 0.05)"
 
     delta_str = r"$\Delta$"
     report = f"""# Báo cáo Đánh giá Tổng quát hóa Cross-Dataset (Issue #46)
 
-**Tập dữ liệu Kiểm định Ngoại vi:** `{results['dataset_name']}`  
-**Mô hình Đánh giá:** Canonical Random Forest (`{results['canonical_model_provenance']['configuration_id']}`)  
-**Thời gian Đánh giá:** `{results['evaluation_timestamp_utc']}`  
-**Số dòng Đánh giá:** `{results['rows_evaluated']:,}` dòng  
-**Thời gian Thực thi:** `{results['evaluation_duration_seconds']}` giây  
-**Trạng thái Tương thích:** `MODEL_VALIDATED`  
+**Tập dữ liệu Kiểm định Ngoại vi:** `{results['dataset_name']}`\
+**Mô hình Đánh giá:** Canonical Random Forest (`{results['canonical_model_provenance']['configuration_id']}`)\
+**Thời gian Đánh giá:** `{results['evaluation_timestamp_utc']}`\
+**Số dòng Đánh giá:** `{results['rows_evaluated']:,}` dòng\
+**Thời gian Thực thi:** `{results['evaluation_duration_seconds']}` giây\
+**Trạng thái Kiểm định Benchmark:** `{status_label}`
 
 ---
 

@@ -1,0 +1,244 @@
+{
+  "E0": {
+    "experiment_id": "E0",
+    "description": "Frozen Canonical Baseline with full 47 features (contains MIN_TTL/MAX_TTL shortcuts).",
+    "features_count": 47,
+    "excluded_features": [],
+    "in_domain_evaluation": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "macro_f1": 1.0,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.0,
+      "roc_auc": null,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 13695,
+        "fp": 0,
+        "fn": 0,
+        "tp": 1305
+      },
+      "total_evaluated_rows": 15000,
+      "duration_seconds": 0.07,
+      "per_attack_recall": {
+        "Analysis": 1.0,
+        "Backdoor": 1.0,
+        "Benign_Specificity": 1.0,
+        "DoS": 1.0,
+        "Exploits": 1.0,
+        "Fuzzers": 1.0,
+        "Generic": 1.0,
+        "Reconnaissance": 1.0,
+        "Shellcode": 1.0
+      }
+    },
+    "cross_domain_evaluation": {
+      "accuracy": 0.43399,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "macro_f1": 0.302645,
+      "false_positive_rate": 0.380191,
+      "false_negative_rate": 1.0,
+      "roc_auc": null,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 43399,
+        "fp": 26621,
+        "fn": 29980,
+        "tp": 0
+      },
+      "total_evaluated_rows": 100000,
+      "duration_seconds": 0.23,
+      "per_attack_recall": {
+        "Benign_Specificity": 0.6198086261068266,
+        "FTP-BruteForce": 0.0
+      }
+    }
+  },
+  "E1": {
+    "experiment_id": "E1",
+    "description": "No-TTL Ablation Random Forest with 45 features (strictly excludes MIN_TTL & MAX_TTL).",
+    "features_count": 45,
+    "excluded_features": [
+      "MIN_TTL",
+      "MAX_TTL"
+    ],
+    "in_domain_evaluation": {
+      "accuracy": 0.999933,
+      "precision": 0.999234,
+      "recall": 1.0,
+      "f1": 0.999617,
+      "macro_f1": 0.99979,
+      "false_positive_rate": 7.3e-05,
+      "false_negative_rate": 0.0,
+      "roc_auc": 1.0,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 13694,
+        "fp": 1,
+        "fn": 0,
+        "tp": 1305
+      },
+      "total_evaluated_rows": 15000,
+      "duration_seconds": 0.04,
+      "per_attack_recall": {
+        "Analysis": 1.0,
+        "Backdoor": 1.0,
+        "Benign_Specificity": 0.9999269806498722,
+        "DoS": 1.0,
+        "Exploits": 1.0,
+        "Fuzzers": 1.0,
+        "Generic": 1.0,
+        "Reconnaissance": 1.0,
+        "Shellcode": 1.0
+      }
+    },
+    "cross_domain_evaluation": {
+      "accuracy": 0.50787,
+      "precision": 0.378569,
+      "recall": 1.0,
+      "f1": 0.54922,
+      "macro_f1": 0.503694,
+      "false_positive_rate": 0.702842,
+      "false_negative_rate": 0.0,
+      "roc_auc": 0.977892,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 20807,
+        "fp": 49213,
+        "fn": 0,
+        "tp": 29980
+      },
+      "total_evaluated_rows": 100000,
+      "duration_seconds": 0.12,
+      "per_attack_recall": {
+        "Benign_Specificity": 0.29715795487003716,
+        "FTP-BruteForce": 1.0
+      }
+    }
+  },
+  "E2": {
+    "experiment_id": "E2",
+    "description": "Environment-Invariant Random Forest with 41 features (excludes TTL, DNS query, FTP ret code).",
+    "features_count": 41,
+    "excluded_features": [
+      "MIN_TTL",
+      "MAX_TTL",
+      "DNS_QUERY_ID",
+      "DNS_QUERY_TYPE",
+      "DNS_TTL_ANSWER",
+      "FTP_COMMAND_RET_CODE"
+    ],
+    "in_domain_evaluation": {
+      "accuracy": 0.999933,
+      "precision": 0.999234,
+      "recall": 1.0,
+      "f1": 0.999617,
+      "macro_f1": 0.99979,
+      "false_positive_rate": 7.3e-05,
+      "false_negative_rate": 0.0,
+      "roc_auc": 1.0,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 13694,
+        "fp": 1,
+        "fn": 0,
+        "tp": 1305
+      },
+      "total_evaluated_rows": 15000,
+      "duration_seconds": 0.04,
+      "per_attack_recall": {
+        "Analysis": 1.0,
+        "Backdoor": 1.0,
+        "Benign_Specificity": 0.9999269806498722,
+        "DoS": 1.0,
+        "Exploits": 1.0,
+        "Fuzzers": 1.0,
+        "Generic": 1.0,
+        "Reconnaissance": 1.0,
+        "Shellcode": 1.0
+      }
+    },
+    "cross_domain_evaluation": {
+      "accuracy": 0.52092,
+      "precision": 0.384912,
+      "recall": 1.0,
+      "f1": 0.555865,
+      "macro_f1": 0.517936,
+      "false_positive_rate": 0.684205,
+      "false_negative_rate": 0.0,
+      "roc_auc": 0.975486,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 22112,
+        "fp": 47908,
+        "fn": 0,
+        "tp": 29980
+      },
+      "total_evaluated_rows": 100000,
+      "duration_seconds": 0.12,
+      "per_attack_recall": {
+        "Benign_Specificity": 0.31579548700371324,
+        "FTP-BruteForce": 1.0
+      }
+    }
+  },
+  "E3": {
+    "experiment_id": "E3",
+    "description": "Multi-Domain Joint Training Protocol (80% UNSW + 20% CIC-IDS on 45 features).",
+    "features_count": 45,
+    "excluded_features": [
+      "MIN_TTL",
+      "MAX_TTL"
+    ],
+    "joint_training_rows": 55000,
+    "heldout_evaluation_target": "NF-CSE-CIC-IDS2018-v3 heldout 80k",
+    "cross_domain_evaluation": {
+      "accuracy": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "macro_f1": 1.0,
+      "false_positive_rate": 0.0,
+      "false_negative_rate": 0.0,
+      "roc_auc": 1.0,
+      "confusion_matrix": {
+        "labels": [
+          "Benign (0)",
+          "Attack (1)"
+        ],
+        "tn": 56016,
+        "fp": 0,
+        "fn": 0,
+        "tp": 23984
+      },
+      "total_evaluated_rows": 80000,
+      "duration_seconds": 0.1,
+      "per_attack_recall": {
+        "Benign_Specificity": 1.0,
+        "FTP-BruteForce": 1.0
+      }
+    }
+  }
+}
