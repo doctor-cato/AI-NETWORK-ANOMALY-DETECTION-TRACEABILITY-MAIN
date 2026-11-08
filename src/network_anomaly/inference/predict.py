@@ -360,9 +360,23 @@ def load_verified_model(
 
     # Deserialize model
     try:
-        model = joblib.load(model_path)
+        loaded_obj = joblib.load(model_path)
     except Exception as e:
         raise RuntimeError(f"Failed to deserialize model artifact from '{model_path}': {e}")
+
+    if isinstance(loaded_obj, dict) and "estimator" in loaded_obj:
+        # Artifact is a serialization payload dictionary (e.g. from RandomForestModel.save)
+        model = loaded_obj["estimator"]
+        if model_metadata.get("model_type") == "unknown":
+            model_metadata["model_type"] = loaded_obj.get("model_type", type(model).__name__)
+        if not model_metadata.get("class_mapping") and "classes" in loaded_obj:
+            classes = loaded_obj["classes"]
+            if classes is not None and isinstance(classes, list):
+                model_metadata["class_mapping"] = {
+                    str(c): "Attack" if str(c) == "1" else "Benign" for c in classes
+                }
+    else:
+        model = loaded_obj
 
     if model_metadata["model_type"] == "unknown":
         model_metadata["model_type"] = type(model).__name__
@@ -461,6 +475,8 @@ class InferencePipeline:
             try:
                 probas = self.model.predict_proba(X_trans)
                 classes = getattr(self.model, "classes_", None)
+                if classes is None and hasattr(self.model, "estimator"):
+                    classes = getattr(self.model.estimator, "classes_", None)
                 class_map = self.model_metadata.get("class_mapping") or {}
                 if classes is not None and len(classes) == probas.shape[1]:
                     for i, c in enumerate(classes):
