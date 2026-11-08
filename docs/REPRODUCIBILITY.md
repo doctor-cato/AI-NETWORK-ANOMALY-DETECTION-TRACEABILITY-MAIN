@@ -15,6 +15,8 @@ python -m black --check .
 git diff --check
 ```
 
+Detailed unit, integration, and failure-path testing guidelines are documented in [docs/TESTING.md](TESTING.md).
+
 ## Reproduce official bytes
 
 ```text
