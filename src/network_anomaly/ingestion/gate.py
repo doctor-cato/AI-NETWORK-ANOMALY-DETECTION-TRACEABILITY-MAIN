@@ -71,12 +71,14 @@ class InferenceEligibilityGate:
         registry: Optional[SourceRegistry] = None,
         evaluator: Optional[FeatureCompatibilityEvaluator] = None,
         ood_validator: Optional[OODValidator] = None,
-        strict_ood_abstain: bool = False,
+        strict_ood_abstain: bool = True,
+        max_allowed_shortcut_drift_ratio: float = 0.50,
     ) -> None:
         self.registry = registry or SourceRegistry()
         self.evaluator = evaluator or FeatureCompatibilityEvaluator()
         self.ood_validator = ood_validator or OODValidator(check_shortcut_drift=True)
         self.strict_ood_abstain = strict_ood_abstain
+        self.max_allowed_shortcut_drift_ratio = max_allowed_shortcut_drift_ratio
 
     def evaluate(
         self,
@@ -108,15 +110,15 @@ class InferenceEligibilityGate:
                 route_to_risk_engine=False,
             )
 
-        # 2. Check if source is explicitly unsupported for ML
+        # 2. Check if source is explicitly unsupported for ML (metadata-only e.g. Zeek, NetFlow v5)
         if not source_def.ml_supported:
             return GateDecision(
                 can_proceed_to_ml=False,
                 eligibility_status=InferenceEligibility.FEATURE_INCOMPATIBLE,
                 validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
                 abstention_reasons=[
-                    f"Source '{eff_source}' is a metadata-only telemetry source and does not support ML inference.",
-                    "Anti-imputation policy: Missing 47-feature vector cannot be imputed.",
+                    f"Source '{eff_source}' is a metadata-only telemetry source and does not provide 47 features for ML.",
+                    "Strict anti-imputation policy: Zero/median synthetic filling is prohibited.",
                 ],
                 route_to_trace_engine=source_def.trace_supported,
                 route_to_risk_engine=True,
@@ -124,6 +126,19 @@ class InferenceEligibilityGate:
 
         # 3. Compatibility Evaluation
         comp_report = self.evaluator.evaluate_events(events, source_id=eff_source)
+
+        # Check for benchmark failure (e.g. external source with Recall=0 and high FPR)
+        if comp_report.validation_status == ValidationStatus.BENCHMARK_FAILED:
+            return GateDecision(
+                can_proceed_to_ml=False,
+                eligibility_status=InferenceEligibility.BENCHMARK_UNSATISFACTORY,
+                validation_status=ValidationStatus.BENCHMARK_FAILED,
+                compatibility_report=comp_report,
+                abstention_reasons=comp_report.rejection_reasons,
+                route_to_trace_engine=True,
+                route_to_risk_engine=True,
+            )
+
         if not comp_report.is_eligible_for_inference:
             return GateDecision(
                 can_proceed_to_ml=False,
@@ -145,22 +160,42 @@ class InferenceEligibilityGate:
         ood_report = self.ood_validator.audit_dataframe(X_df)
         warning_flags = list(ood_report.ood_flags)
 
-        if ood_report.has_ood_warning:
-            if self.strict_ood_abstain and ood_report.affected_rows_count > 0:
-                # Abstain when strictly configured and critical boundary violated
-                return GateDecision(
-                    can_proceed_to_ml=False,
-                    eligibility_status=InferenceEligibility.ABSTAINED,
-                    validation_status=comp_report.validation_status,
-                    ood_report=ood_report,
-                    compatibility_report=comp_report,
-                    abstention_reasons=[
-                        f"Strict OOD abstention: {ood_report.affected_rows_count} row(s) violate boundary constraints."
-                    ],
-                    warning_flags=warning_flags,
-                    route_to_trace_engine=True,
-                    route_to_risk_engine=True,
-                )
+        # Fail-closed condition A: Hard boundary / protocol violation
+        if ood_report.hard_violation_count > 0:
+            return GateDecision(
+                can_proceed_to_ml=False,
+                eligibility_status=InferenceEligibility.ABSTAINED,
+                validation_status=comp_report.validation_status,
+                ood_report=ood_report,
+                compatibility_report=comp_report,
+                abstention_reasons=[
+                    f"Hard constraint violation: {ood_report.hard_violation_count} row(s) violate physical network invariants."
+                ] + ood_report.ood_flags[:3],
+                warning_flags=warning_flags,
+                route_to_trace_engine=True,
+                route_to_risk_engine=True,
+            )
+
+        # Fail-closed condition B: Critical shortcut drift across batch
+        if (
+            self.strict_ood_abstain
+            and ood_report.shortcut_drift_ratio >= self.max_allowed_shortcut_drift_ratio
+        ):
+            return GateDecision(
+                can_proceed_to_ml=False,
+                eligibility_status=InferenceEligibility.ABSTAINED,
+                validation_status=comp_report.validation_status,
+                ood_report=ood_report,
+                compatibility_report=comp_report,
+                abstention_reasons=[
+                    f"Strict OOD shortcut abstention: {ood_report.shortcut_drift_ratio*100:.1f}% rows exhibit "
+                    f"critical MIN_TTL distribution shift (>= {self.max_allowed_shortcut_drift_ratio*100:.0f}% threshold). "
+                    "Fail-closed prediction abstention engaged to prevent false alert flood."
+                ],
+                warning_flags=warning_flags,
+                route_to_trace_engine=True,
+                route_to_risk_engine=True,
+            )
 
         # 6. Approved for inference
         return GateDecision(

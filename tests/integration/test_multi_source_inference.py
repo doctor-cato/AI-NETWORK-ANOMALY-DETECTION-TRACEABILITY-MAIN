@@ -97,7 +97,7 @@ def test_deployment_readiness():
 
 
 def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict, tmp_path: Path):
-    """End-to-end flow: Ingest NetFlow v3 -> Gate -> ML Prediction -> Unified Response."""
+    """End-to-end flow: Ingest NetFlow v3 Canonical -> Gate Approved -> ML Prediction -> Unified Response."""
     v3_csv = synthetic_files_dir["v3_csv"]
     parser = StreamingChunkParser(chunk_size=10)
     gate = InferenceEligibilityGate()
@@ -115,7 +115,8 @@ def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict,
     model, _ = load_verified_model(m_path, manifest_path=m_man)
 
     all_preds = []
-    for chunk_events in parser.parse_file_chunks(v3_csv):
+    # 1. Test canonical internal source -> Approved for ML
+    for chunk_events in parser.parse_file_chunks(v3_csv, explicit_source_id="source:nf-v3-canonical"):
         decision = gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is True
         assert decision.eligibility_status == InferenceEligibility.PREDICTION_AVAILABLE
@@ -134,6 +135,14 @@ def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict,
         assert response.predictions_count == len(chunk_events)
 
     assert len(all_preds) == 5
+
+    # 2. Test external unverified/failed benchmark source -> Blocked fail-closed by Gate
+    for chunk_events in parser.parse_file_chunks(v3_csv, explicit_source_id="source:nf-v3-external"):
+        decision = gate.evaluate(chunk_events)
+        assert decision.can_proceed_to_ml is False
+        assert decision.eligibility_status == InferenceEligibility.BENCHMARK_UNSATISFACTORY
+        assert decision.validation_status == ValidationStatus.BENCHMARK_FAILED
+        assert decision.route_to_trace_engine is True
 
 
 def test_multi_source_zeek_abstention_and_trace_routing(synthetic_files_dir: dict):

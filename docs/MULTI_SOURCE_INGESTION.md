@@ -67,7 +67,7 @@ Module `src/network_anomaly/ingestion/adapters/` triển khai các bộ chuyển
 
 | Adapter Class | Source ID | Đầu vào Hỗ trợ | Đặc trưng ML | Trạng thái Mặc định | Chức năng Chính |
 |---|---|---|:---:|---|---|
-| `NetFlowV3Adapter` | `source:nf-v3-canonical`, `source:nf-v3-external` | NetFlow v3 nProbe CSV (55 cột) | 47/47 | `MODEL_VALIDATED` / `PREDICTION_AVAILABLE` | Tiếp nhận tập dữ liệu chuẩn hóa, ánh xạ 47 đặc trưng cho mô hình ML. |
+| `NetFlowV3Adapter` | `source:nf-v3-canonical`, `source:nf-v3-external` | NetFlow v3 nProbe CSV (55 cột) | 47/47 | `MODEL_VALIDATED` (Nội bộ) / `BENCHMARK_FAILED` (Ngoại vi AWS) | Tiếp nhận tập dữ liệu chuẩn hóa, kiểm tra toàn vẹn từng dòng. Nguồn ngoại vi có Recall=0 bị khóa suy luận fail-closed. |
 | `ZeekConnAdapter` | `source:zeek-conn` | Zeek `conn.log` (TSV / JSON) | 0/47 | `FEATURE_INCOMPATIBLE` | Trích xuất `uid`, 5-tuple, timestamp, duration làm chứng cứ đồ thị liên kết cho Trace Engine (#24). |
 | `NetFlowV5Adapter` | `source:netflow-v5` | Cisco NetFlow v5 (CSV / TSV) | 0/47 | `FEATURE_INCOMPATIBLE` | Trích xuất 5-tuple và volume counters đơn chiều cho Trace Engine (#24). |
 | `AWSVPCFlowAdapter` | `source:aws-vpc-flow` | AWS VPC Flow Logs v2 (TSV / Space) | 0/47 | `FEATURE_INCOMPATIBLE` | Tiếp nhận bản ghi mạng đám mây, lọc bỏ suy luận ML do tổng hợp cửa sổ thời gian. |
@@ -83,13 +83,17 @@ Module `src/network_anomaly/ingestion/adapters/` triển khai các bộ chuyển
 - Mọi nguồn thiếu dù chỉ 1 trong 47 đặc trưng ML đều bị gắn cờ `FEATURE_INCOMPATIBLE` và từ chối suy luận (`Abstain`). Toàn bộ metadata hợp lệ được định tuyến sang Trace/Risk Engine.
 
 ### 4.2. Cổng Kiểm soát OOD & Lệch Đường tắt (Shortcut Collapse Detection)
-- Kiểm tra tính hợp lệ giá trị biên:
-  - Thời lượng luồng không âm (`FLOW_DURATION_MILLISECONDS >= 0`).
-  - TTL hợp lệ (`MIN_TTL <= MAX_TTL`).
-  - Chiều dài gói tin hợp lệ (`SHORTEST_FLOW_PKT <= LONGEST_FLOW_PKT`).
-- **Phát hiện sụp đổ đường tắt phòng lab:**
-  - Mô hình Random Forest ban đầu phụ thuộc vào shortcut `MIN_TTL ∈ {31, 62, 254, 255}` sinh bởi máy phát lưu lượng IXIA trong lab.
-  - Khi `MIN_TTL` nằm ngoài tập giá trị này (như `MIN_TTL=0` trên AWS), `OODValidator` tự động phát cảnh báo `OOD_WARNING` để cảnh báo độ tin cậy của kết quả suy luận.
+- Phân biệt rõ hai cấp độ kiểm soát:
+  1. **Hard Protocol Invariants (Vi phạm vật lý/kỹ thuật):**
+     - Thời lượng luồng không âm (`FLOW_DURATION_MILLISECONDS >= 0`).
+     - TTL hợp lệ (`MIN_TTL <= MAX_TTL`).
+     - Chiều dài gói tin hợp lệ (`SHORTEST_FLOW_PKT <= LONGEST_FLOW_PKT`).
+     - Port trong dải $[0, 65535]$, counter không âm.
+     - $\rightarrow$ **Kích hoạt fail-closed ngay lập tức** (`can_proceed_to_ml = False`, `ABSTAINED`).
+  2. **Statistical & Shortcut Drift (Trôi dạt thống kê & phím tắt phòng lab):**
+     - Mô hình Random Forest ban đầu phụ thuộc vào shortcut `MIN_TTL ∈ {31, 62, 254, 255}` sinh bởi máy phát lưu lượng IXIA trong lab.
+     - Khi tỷ lệ bản ghi có TTL lệch miền $\ge 50\%$ (như `MIN_TTL=0` trên AWS chiếm tới 60.7% toàn mẫu và 100% tấn công FTP-BruteForce), `InferenceEligibilityGate` tự động kích hoạt **Cơ chế Từ chối Dự đoán (Prediction Abstention Fail-Closed)** để ngăn ngừa bão cảnh báo giả và nhận diện sai.
+     - Phân tích ngữ nghĩa: `MIN_TTL=0` phản ánh unobserved telemetry từ card mạng ảo AWS tap/veth, không phải giá trị TTL thông thường trên dây mạng vật lý.
 
 ---
 

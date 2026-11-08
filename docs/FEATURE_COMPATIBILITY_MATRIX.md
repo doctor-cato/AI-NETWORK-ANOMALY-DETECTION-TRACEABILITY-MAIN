@@ -36,7 +36,8 @@ Mỗi đặc trưng trong số 47 đặc trưng ML chuẩn hóa (`nf-unsw-nb15-v
 
 | Source ID | Tên Nguồn | Định dạng Vật lý | Số đặc trưng ML khả dụng (trên 47) | Tầng Đạt Được | Trạng thái ML | Hướng Xử lý trong Hệ thống M6 |
 |---|---|---|:---:|---|---|---|
-| `source:nf-v3-external` | NetFlow v3 CSV (`NF-CSE-CIC-IDS2018-v3`, `NF-ToN-IoT-v3`) | CSV | **47/47 (100%)** | `MODEL_VALIDATED` | `PREDICTION_AVAILABLE` | **Cho phép Inference trực tiếp.** Tích hợp OOD Gate phát hiện drift shortcut. |
+| `source:nf-v3-canonical` | NetFlow v3 Nội bộ (`NF-UNSW-NB15-v3`) | CSV | **47/47 (100%)** | `MODEL_VALIDATED` | `PREDICTION_AVAILABLE` | **Cho phép Inference trực tiếp.** Đã kiểm nghiệm đạt Recall 99.98%, FPR 0.0016%. |
+| `source:nf-v3-external` | NetFlow v3 Ngoại vi (`NF-CSE-CIC-IDS2018-v3`, AWS) | CSV | **47/47 (100%)** | `BENCHMARK_FAILED` | `BENCHMARK_UNSATISFACTORY` | **Chặn Inference fail-closed.** Benchmark thực nghiệm thất bại (Recall 0.0, FPR 38.02%) do sụp đổ phím tắt và lệch miền. |
 | `source:netflow-v5` | Cisco NetFlow v5 | Binary / Flow-tools | **6/47 (12.8%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Từ chối Inference (Abstain).** Trích xuất 5-tuple, byte, packet cho Trace Engine (#24). |
 | `source:netflow-v9-ipfix` | Enterprise NetFlow v9 / IPFIX (Cisco, Juniper) | Binary / JSON | **9/47 (19.1%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Từ chối Inference.** Thiếu IAT vi mô và histogram; chuyển sang Risk Engine để tính Volume Anomaly. |
 | `source:pcap` | Packet Capture (PCAP / PCAPNG) | Binary (libpcap) | **47/47 (nếu có Flow Exporter)** | `DERIVABLE` | `PENDING_EXPORTER` | Cần Flow Exporter Engine (nProbe/ipfixprobe) trích xuất luồng hai chiều trước khi suy luận. |
@@ -103,9 +104,28 @@ Mỗi đặc trưng trong số 47 đặc trưng ML chuẩn hóa (`nf-unsw-nb15-v
 
 ## 5. Chính sách Không Điền Giá trị Giả mạo (Anti-Imputation Policy)
 
-1. **Tuyệt đối cấm điền số 0, trung bình (mean), hoặc trung vị (median) vào các trường bị thiếu (`MISSING`) chỉ để ép vượt qua validation schema.**
-2. Việc điền giá trị giả mạo làm méo mó vector đặc trưng 47 chiều, khiến mô hình Random Forest đưa ra các suy đoán vô căn cứ hoặc dương tính giả hàng loạt.
-3. Nếu tệp đầu vào thiếu dù chỉ 1 đặc trưng bắt buộc mà không thể suy diễn toán học chính xác:
-   - Hệ thống chuyển trạng thái sang `FEATURE_INCOMPATIBLE`.
+1. **Tuyệt đối cấm điền số 0, trung bình (mean), hoặc trung vị (median) vào các trường bị thiếu (`MISSING`) hoặc chứa `NaN`/`Inf` chỉ để ép vượt qua validation schema.**
+2. Việc điền giá trị giả mạo làm méo mó vector đặc trưng 47 chiều, khiến imputer của mô hình gán median của môi trường lab vào môi trường thực tế, gây suy luận sai lệch.
+3. Nếu tệp đầu vào hoặc bản ghi thiếu dù chỉ 1 đặc trưng bắt buộc hoặc chứa giá trị không hợp lệ (NaN, Inf, chuỗi lỗi):
+   - Hệ thống đánh dấu `FEATURE_INCOMPLETE` hoặc `FEATURE_INCOMPATIBLE`.
    - Cổng quyết định tự động **Từ chối suy luận (`Abstain`)**.
    - Trích xuất toàn bộ metadata hợp lệ (IP nguồn/đích, Port, Protocol, Timestamp, Duration, Bytes, Packets) chuyển sang **Trace Engine (#24)** và **Risk Engine (#32)** để thực hiện tương quan sự cố không dùng ML.
+
+---
+
+## 6. Phân tích Chẩn đoán Đa biến & Cơ chế Lệch miền (Multivariate Diagnostic Analysis)
+
+Kết quả thực nghiệm trên 100.000 dòng `NF-CSE-CIC-IDS2018-v3` (AWS Canada) đối chiếu với `NF-UNSW-NB15-v3` (IXIA Lab):
+
+### A. Sự kiện đã xác minh (Verified Facts)
+1. **Lệch miền TTL:** Trong mẫu kiểm định AWS, 60.708 dòng (60.7%) có `MIN_TTL=0`, 24.551 dòng có `MIN_TTL=128`, và các giá trị còn lại phân bố quanh 100-106. Không có dòng nào nằm trong bộ phím tắt lab `{31, 62, 254, 255}`.
+2. **Họ tấn công `FTP-BruteForce`:** 100% bản ghi (29.980 dòng) đều có `MIN_TTL=0` và `FLOW_DURATION_MILLISECONDS=1.0`.
+3. **Cột & Thứ tự đặc trưng:** Toàn bộ 47 tên cột và kiểu dữ liệu đều khớp tuyệt đối (`EXACT`) giữa hai tập dữ liệu NetFlow v3.
+
+### B. Giả thuyết có bằng chứng thực nghiệm hỗ trợ (Supported Hypotheses)
+1. **Unobserved Telemetry:** Giá trị `MIN_TTL=0` xuất hiện từ việc probe thu thập trên card mạng ảo (tap/veth) của AWS không trích xuất được TTL gói tin khởi tạo hoặc flow timeout mà không có gói SYN, khác biệt hoàn toàn với máy phát phần cứng IXIA PerfectStorm luôn gán TTL cố định.
+2. **Cơ chế suy giảm dự đoán:** Cây quyết định của Random Forest baseline ưu tiên tách nhánh `MIN_TTL` ở những tầng cao nhất. Nhánh `MIN_TTL <= 15` được phân bổ vào Benign trong lab, dẫn đến việc nuốt trọn 29.980 luồng tấn công FTP-BruteForce (Recall = 0.0%). Đồng thời, các luồng Benign thật trên AWS có `MIN_TTL=128` (máy Windows) bị coi là giá trị bất thường và gán nhãn nhầm thành Attack (26.621 FP, FPR = 38.02%).
+
+### C. Yếu tố môi trường cần nghiên cứu thêm (Unproven Factors)
+1. Sự khác biệt về kiến trúc mạng thực tế (độ trễ WAN đám mây so với switch LAN nội bộ phòng thí nghiệm).
+2. Tác động của các họ tấn công khác (DoS, DDoS, Web Attacks) chưa có mặt trong lát cắt 100k dòng lịch sử.

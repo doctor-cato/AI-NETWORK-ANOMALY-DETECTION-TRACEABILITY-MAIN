@@ -36,20 +36,39 @@ class BaseSourceAdapter(ABC):
     def extract_ml_matrix(events: List[CanonicalNetworkEvent]) -> Tuple[pd.DataFrame, List[int]]:
         """Extract ordered 47-feature DataFrame for events eligible for ML inference.
 
+        Strict Anti-Imputation: Rows with missing features, NaN, or infinite values are
+        strictly rejected from the ML matrix to prevent synthetic median/mean imputation.
+
         Returns
         -------
         X_df : pd.DataFrame
-            Ordered DataFrame containing only eligible events with 47 features.
+            Ordered DataFrame containing only fully valid events with 47 finite numeric features.
         eligible_indices : List[int]
             Indices of the input events list that were eligible.
         """
+        import math
+
         eligible_rows = []
         eligible_indices = []
 
         for idx, event in enumerate(events):
-            if event.ml_features is not None:
-                # Ensure exact canonical column ordering
-                row = {col: event.ml_features.get(col, np.nan) for col in ML_FEATURE_COLUMNS}
+            if event.ml_features is None:
+                continue
+
+            # Ensure all 47 features are present and finite
+            row = {}
+            is_valid_row = True
+            for col in ML_FEATURE_COLUMNS:
+                if col not in event.ml_features:
+                    is_valid_row = False
+                    break
+                val = event.ml_features[col]
+                if val is None or not isinstance(val, (int, float)) or not math.isfinite(val):
+                    is_valid_row = False
+                    break
+                row[col] = float(val)
+
+            if is_valid_row and len(row) == len(ML_FEATURE_COLUMNS):
                 eligible_rows.append(row)
                 eligible_indices.append(idx)
 

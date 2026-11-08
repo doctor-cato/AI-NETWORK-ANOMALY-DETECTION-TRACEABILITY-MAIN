@@ -10,12 +10,13 @@ from typing import Any, Dict, List, Optional
 
 
 class ValidationStatus(str, Enum):
-    """Four mandatory data validation tiers defined in Issue #46 Section 4."""
+    """Four mandatory data validation tiers defined in Issue #46 Section 4, plus explicit benchmark evaluation status."""
 
     PARSEABLE = "PARSEABLE"
     SCHEMA_COMPATIBLE = "SCHEMA_COMPATIBLE"
     SEMANTICALLY_COMPATIBLE = "SEMANTICALLY_COMPATIBLE"
     MODEL_VALIDATED = "MODEL_VALIDATED"
+    BENCHMARK_FAILED = "BENCHMARK_FAILED"
 
 
 class InferenceEligibility(str, Enum):
@@ -24,11 +25,13 @@ class InferenceEligibility(str, Enum):
     PREDICTION_AVAILABLE = "PREDICTION_AVAILABLE"
     ABSTAINED = "ABSTAINED"
     FEATURE_INCOMPATIBLE = "FEATURE_INCOMPATIBLE"
+    FEATURE_INCOMPLETE = "FEATURE_INCOMPLETE"
     SOURCE_UNSUPPORTED = "SOURCE_UNSUPPORTED"
     SCHEMA_INVALID = "SCHEMA_INVALID"
     MODEL_NOT_READY = "MODEL_NOT_READY"
     SEMANTIC_MISMATCH = "SEMANTIC_MISMATCH"
     VALIDATION_NOT_VERIFIED = "VALIDATION_NOT_VERIFIED"
+    BENCHMARK_UNSATISFACTORY = "BENCHMARK_UNSATISFACTORY"
 
 
 class FeatureMappingStatus(str, Enum):
@@ -119,6 +122,8 @@ class CanonicalNetworkEvent:
     telemetry: ExtendedTelemetry = field(default_factory=ExtendedTelemetry)
     app_context: ApplicationContext = field(default_factory=ApplicationContext)
     ml_features: Optional[Dict[str, float]] = None
+    missing_features: List[str] = field(default_factory=list)
+    invalid_features: Dict[str, str] = field(default_factory=dict)
     trace_metadata: Dict[str, Any] = field(default_factory=dict)
     eligibility: InferenceEligibility = InferenceEligibility.FEATURE_INCOMPATIBLE
     validation_status: ValidationStatus = ValidationStatus.PARSEABLE
@@ -158,6 +163,8 @@ class CanonicalNetworkEvent:
                 "service_name": self.app_context.service_name,
             },
             "ml_features_available": self.ml_features is not None,
+            "missing_features": self.missing_features,
+            "invalid_features": self.invalid_features,
             "trace_metadata": self.trace_metadata,
             "eligibility": self.eligibility.value,
             "validation_status": self.validation_status.value,

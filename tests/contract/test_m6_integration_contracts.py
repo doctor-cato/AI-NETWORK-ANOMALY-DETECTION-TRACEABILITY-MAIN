@@ -2,6 +2,7 @@
 
 import pytest
 
+from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import (
     NetFlowV3Adapter,
     SuricataEveAdapter,
@@ -24,7 +25,9 @@ from network_anomaly.ingestion.schemas import InferenceEligibility, ValidationSt
 def test_api_ingest_response_contract_approved():
     gate = InferenceEligibilityGate()
     v3_adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
-    raw = {col: 1.0 for col in v3_adapter.adapt_record({}).ml_features.keys()}
+    raw = {col: 1.0 for col in ML_FEATURE_COLUMNS}
+    raw["MIN_TTL"] = 31.0
+    raw["MAX_TTL"] = 64.0
     event = v3_adapter.adapt_record(raw)
 
     decision = gate.evaluate([event])
@@ -59,7 +62,10 @@ def test_api_ingest_response_contract_abstained():
 def test_dashboard_view_model_contract():
     gate = InferenceEligibilityGate()
     adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
-    event = adapter.adapt_record({col: 1.0 for col in adapter.adapt_record({}).ml_features.keys()})
+    raw = {col: 1.0 for col in ML_FEATURE_COLUMNS}
+    raw["MIN_TTL"] = 31.0
+    raw["MAX_TTL"] = 64.0
+    event = adapter.adapt_record(raw)
 
     decision = gate.evaluate([event])
     vm = create_dashboard_view_model(decision, "NF-UNSW-NB15-v3 Canonical")

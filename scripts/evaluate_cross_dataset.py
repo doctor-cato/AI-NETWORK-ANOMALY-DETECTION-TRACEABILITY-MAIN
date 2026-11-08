@@ -38,6 +38,7 @@ from network_anomaly.ingestion.adapters.base import BaseSourceAdapter
 from network_anomaly.ingestion.compatibility import FeatureCompatibilityEvaluator
 from network_anomaly.ingestion.ood import OODValidator
 from network_anomaly.ingestion.parser import StreamingChunkParser
+from network_anomaly.ingestion.schemas import InferenceEligibility, ValidationStatus
 from network_anomaly.preprocessing import TrainOnlyPreprocessor
 
 DEFAULT_DATASET_CSV = (
@@ -143,9 +144,10 @@ def evaluate_cross_dataset(
         model_artifact, manifest_path=model_manifest
     )
 
-    # 2. Ingestion & Compatibility
+    # 2. Ingestion & Compatibility (Raw Data Completeness Validator)
     parser = StreamingChunkParser(chunk_size=batch_size)
-    evaluator = FeatureCompatibilityEvaluator()
+    # Empty benchmark registry during benchmark execution to evaluate raw feature viability
+    evaluator = FeatureCompatibilityEvaluator(benchmark_registry={})
     ood_validator = OODValidator(check_shortcut_drift=True)
 
     y_true_all: List[int] = []
@@ -153,41 +155,71 @@ def evaluate_cross_dataset(
     attack_names_all: List[str] = []
     total_rows = 0
     total_ood_warnings = 0
+    records_skipped_missing_label = 0
+    records_skipped_invalid_label = 0
+    records_skipped_incomplete_features = 0
     t0 = time.time()
 
     print(f"Beginning cross-dataset evaluation of {dataset_csv.name}...")
     for chunk_events in parser.parse_file_chunks(dataset_csv, explicit_source_id="source:nf-v3-external"):
-        # Evaluate compatibility
+        # Evaluate feature completeness
         comp_report = evaluator.evaluate_events(chunk_events)
-        if not comp_report.is_eligible_for_inference:
-            raise ValueError(f"Chunk failed compatibility gate: {comp_report.rejection_reasons}")
+        if comp_report.inference_eligibility in (
+            InferenceEligibility.FEATURE_INCOMPATIBLE,
+            InferenceEligibility.SCHEMA_INVALID,
+        ):
+            raise ValueError(f"Chunk failed feature compatibility: {comp_report.rejection_reasons}")
 
-        # Extract 47 features
+        # Extract 47 features with strict anti-imputation
         X_chunk, eligible_idx = BaseSourceAdapter.extract_ml_matrix(chunk_events)
-        if len(eligible_idx) != len(chunk_events):
-            raise ValueError("Some records in chunk were missing required ML features!")
+        diff_count = len(chunk_events) - len(eligible_idx)
+        if diff_count > 0:
+            records_skipped_incomplete_features += diff_count
+
+        if len(eligible_idx) == 0:
+            continue
 
         # OOD Audit
         ood_chunk = ood_validator.audit_dataframe(X_chunk)
         if ood_chunk.has_ood_warning:
             total_ood_warnings += ood_chunk.shortcut_shift_count
 
-        # Ground truth labels
-        for idx in eligible_idx:
-            ev = chunk_events[idx]
-            raw_label = ev.trace_metadata.get("Label", 0)
-            raw_attack = ev.trace_metadata.get("Attack", "Benign")
-            y_true_all.append(int(raw_label))
+        # Ground truth labels - STRICT: Never default missing/null Label to 0 (Benign)
+        valid_row_positions = []
+        for pos_in_chunk, orig_idx in enumerate(eligible_idx):
+            ev = chunk_events[orig_idx]
+            raw_label = ev.trace_metadata.get("Label")
+            if raw_label is None or raw_label == "":
+                records_skipped_missing_label += 1
+                continue
+            try:
+                lbl = int(raw_label)
+                if lbl not in (0, 1):
+                    records_skipped_invalid_label += 1
+                    continue
+            except (ValueError, TypeError):
+                records_skipped_invalid_label += 1
+                continue
+
+            valid_row_positions.append(pos_in_chunk)
+            raw_attack = ev.trace_metadata.get("Attack", "Unknown")
+            y_true_all.append(lbl)
             attack_names_all.append(str(raw_attack))
 
+        if not valid_row_positions:
+            continue
+
+        # Filter feature matrix to only rows with valid ground truth
+        X_valid = X_chunk.iloc[valid_row_positions]
+
         # Frozen Preprocessing Transformation
-        X_trans = preprocessor.transform(X_chunk)
+        X_trans = preprocessor.transform(X_valid)
 
         # Frozen Model Prediction
         preds = model.predict(X_trans)
         y_pred_all.extend([int(p) for p in preds])
-        total_rows += len(chunk_events)
-        print(f"  Processed {total_rows:,} rows...")
+        total_rows += len(valid_row_positions)
+        print(f"  Processed {total_rows:,} verified rows...")
 
     dt = time.time() - t0
     y_true_arr = np.array(y_true_all)
@@ -256,9 +288,14 @@ def evaluate_cross_dataset(
             },
         },
         "per_category_breakdown": cat_breakdown,
+        "data_hygiene": {
+            "records_skipped_missing_label": records_skipped_missing_label,
+            "records_skipped_invalid_label": records_skipped_invalid_label,
+            "records_skipped_incomplete_features": records_skipped_incomplete_features,
+        },
         "ood_summary": {
             "total_shortcut_drift_rows": total_ood_warnings,
-            "shortcut_drift_pct": round(total_ood_warnings / total_rows * 100, 2),
+            "shortcut_drift_pct": round(total_ood_warnings / total_rows * 100, 2) if total_rows > 0 else 0.0,
         },
     }
 

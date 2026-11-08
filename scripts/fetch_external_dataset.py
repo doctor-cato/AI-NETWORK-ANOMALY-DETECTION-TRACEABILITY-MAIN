@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch and verify external NetFlow datasets for cross-dataset generalization.
+"""Fetch, sample, and verify external NetFlow datasets for cross-dataset generalization.
 
 Supported datasets:
 - NF-CSE-CIC-IDS2018-v3 (UQ RDM DOI: 10.48610/ece9b83, UUID: 4ac221b1-6bd6-42b1-bdf7-03f4fc7efb22)
@@ -14,11 +14,13 @@ import hashlib
 import io
 import json
 import os
+import random
 import sys
 import time
 import urllib.request
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -31,6 +33,7 @@ DATASET_CONFIGS = {
         "archive_prefix": "f78acbaa2afe1595_NFV3DATA-A11964_A11964/",
         "csv_name": "data/NF-CICIDS2018-v3.csv",
         "sample_name": "NF-CSE-CIC-IDS2018-v3-sample100k.csv",
+        "stratified_sample_name": "NF-CSE-CIC-IDS2018-v3-stratified100k.csv",
         "doi": "10.48610/ece9b83",
         "archive_size": 780113687,
         "default_sample_skip": 350000,
@@ -41,6 +44,7 @@ DATASET_CONFIGS = {
         "archive_prefix": "02934b58528a226b_NFV3DATA-A11964_A11964/",
         "csv_name": "data/NF-ToN-IoT-v3.csv",
         "sample_name": "NF-ToN-IoT-v3-sample100k.csv",
+        "stratified_sample_name": "NF-ToN-IoT-v3-stratified100k.csv",
         "doi": "10.48610/44d7c5e",
         "default_sample_skip": 0,
         "default_sample_take": 100000,
@@ -50,6 +54,7 @@ DATASET_CONFIGS = {
         "archive_prefix": "db0187cc_NFV3DATA/",
         "csv_name": "data/NF-BoT-IoT-v3.csv",
         "sample_name": "NF-BoT-IoT-v3-sample100k.csv",
+        "stratified_sample_name": "NF-BoT-IoT-v3-stratified100k.csv",
         "doi": "10.48610/73c4ebc",
         "default_sample_skip": 0,
         "default_sample_take": 100000,
@@ -132,14 +137,34 @@ def fetch_dataset_sample(
     output_dir: Path,
     sample_rows: int = 100000,
     skip_rows: Optional[int] = None,
+    sample_mode: str = "slice",
+    random_seed: int = 42,
 ) -> Path:
-    """Stream-extract a verified chronological sample slice from UQ NetFlow v3 archive."""
+    """Stream-extract a verified chronological slice or stratified sample from UQ archive.
+
+    Parameters
+    ----------
+    dataset_name : str
+        Name of registered dataset config.
+    output_dir : Path
+        Directory to write CSV and companion manifest.
+    sample_rows : int
+        Number of rows to sample.
+    skip_rows : Optional[int]
+        Initial rows to skip (slice mode only).
+    sample_mode : str
+        'slice' (sequential historical slice) or 'stratified' (multi-class quota sampling).
+    random_seed : int
+        Seed for deterministic sampling in stratified mode.
+    """
     if dataset_name not in DATASET_CONFIGS:
         raise ValueError(f"Unknown dataset: {dataset_name}. Supported: {list(DATASET_CONFIGS)}")
 
     cfg = DATASET_CONFIGS[dataset_name]
     output_dir.mkdir(parents=True, exist_ok=True)
-    target_csv = output_dir / cfg["sample_name"]
+    filename = cfg["sample_name"] if sample_mode == "slice" else cfg["stratified_sample_name"]
+    target_csv = output_dir / filename
+    manifest_path = output_dir / f"{filename}.manifest.json"
 
     if target_csv.exists() and target_csv.stat().st_size > 0:
         print(f"Sample dataset already exists: {target_csv} ({target_csv.stat().st_size:,} bytes)")
@@ -150,14 +175,11 @@ def fetch_dataset_sample(
     print(f"Remote archive size: {total_size:,} bytes")
 
     reader = BufferedHTTPRangeReader(s3_url, total_size)
-    # Read end of file to populate zip central directory
     reader.seek(total_size - 256 * 1024)
     reader.read(256 * 1024)
     reader.seek(0)
 
     zf = zipfile.ZipFile(reader)
-    file_path = cfg["archive_prefix"] + cfg["csv_name"]
-    # Check if exact member exists or search
     matched_member = None
     for member in zf.namelist():
         if member.endswith(".csv") and ("CICIDS" in member or "NF-" in member):
@@ -166,34 +188,67 @@ def fetch_dataset_sample(
     if not matched_member:
         raise FileNotFoundError(f"Could not locate CSV in archive: {zf.namelist()}")
 
-    skip = skip_rows if skip_rows is not None else cfg["default_sample_skip"]
-    take = sample_rows
-
-    print(f"Streaming {take:,} rows from {matched_member} (skipping {skip:,} initial rows)...")
-    temp_csv = output_dir / f".{cfg['sample_name']}.staging"
+    print(f"Extracting sample ({sample_mode} mode, target={sample_rows:,} rows) from {matched_member}...")
+    temp_csv = output_dir / f".{filename}.staging"
     t0 = time.time()
+    attacks: Dict[str, int] = {}
+    lines: List[str] = []
+
+    rng = random.Random(random_seed)
 
     with zf.open(matched_member) as f:
         text_io = io.TextIOWrapper(f, encoding="utf-8")
         header = text_io.readline()
+        lines.append(header)
 
-        for _ in range(skip):
-            text_io.readline()
+        if sample_mode == "slice":
+            skip = skip_rows if skip_rows is not None else cfg["default_sample_skip"]
+            for _ in range(skip):
+                text_io.readline()
 
-        lines = [header]
-        attacks: Dict[str, int] = {}
-        for _ in range(take):
-            line = text_io.readline()
-            if not line:
-                break
-            lines.append(line)
-            attack = line.strip().split(",")[-1]
-            attacks[attack] = attacks.get(attack, 0) + 1
+            for _ in range(sample_rows):
+                line = text_io.readline()
+                if not line:
+                    break
+                lines.append(line)
+                attack = line.strip().split(",")[-1]
+                attacks[attack] = attacks.get(attack, 0) + 1
+        else:
+            # Stratified / Reservoir Multi-class sampling with fixed seed
+            # Enforce quota per class to capture diverse attacks
+            quota_per_class = max(1000, sample_rows // 15)
+            class_lines: Dict[str, List[str]] = {}
+            seen_lines = 0
+
+            # Scan up to 1,000,000 lines or until sample filled
+            while seen_lines < 1000000 and sum(len(v) for v in class_lines.values()) < sample_rows * 2:
+                line = text_io.readline()
+                if not line:
+                    break
+                seen_lines += 1
+                attack = line.strip().split(",")[-1]
+                if attack not in class_lines:
+                    class_lines[attack] = []
+
+                if len(class_lines[attack]) < quota_per_class:
+                    class_lines[attack].append(line)
+                elif rng.random() < 0.05 and len(class_lines[attack]) < quota_per_class * 2:
+                    # Reservoir insertion
+                    idx = rng.randint(0, len(class_lines[attack]) - 1)
+                    class_lines[attack][idx] = line
+
+            # Assemble balanced/stratified sample
+            collected_sample = []
+            for atk, rows in class_lines.items():
+                collected_sample.extend(rows)
+                attacks[atk] = len(rows)
+
+            rng.shuffle(collected_sample)
+            lines.extend(collected_sample[:sample_rows])
 
     with open(temp_csv, "w", encoding="utf-8") as out_f:
         out_f.writelines(lines)
 
-    # Atomic rename
     temp_csv.replace(target_csv)
     dt = time.time() - t0
 
@@ -204,8 +259,24 @@ def fetch_dataset_sample(
             h.update(chunk)
     sha256 = h.hexdigest()
 
+    # Generate companion sample manifest
+    manifest_data = {
+        "dataset_name": dataset_name,
+        "sample_mode": sample_mode,
+        "sample_rows_extracted": len(lines) - 1,
+        "sample_sha256": sha256,
+        "random_seed": random_seed if sample_mode == "stratified" else None,
+        "source_doi": cfg["doi"],
+        "source_archive_member": matched_member,
+        "class_distribution": attacks,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    with open(manifest_path, "w", encoding="utf-8") as mf:
+        json.dump(manifest_data, mf, indent=2)
+
     print(f"Successfully extracted {len(lines)-1:,} rows to {target_csv} in {dt:.2f}s")
     print(f"SHA-256: {sha256}")
+    print(f"Manifest saved: {manifest_path}")
     print("Class distribution:")
     for k, v in sorted(attacks.items(), key=lambda x: -x[1]):
         print(f"  {k}: {v:,} ({v/(len(lines)-1)*100:.2f}%)")
@@ -214,7 +285,7 @@ def fetch_dataset_sample(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Fetch and verify external NetFlow datasets.")
+    parser = argparse.ArgumentParser(description="Fetch, sample, and verify external NetFlow datasets.")
     parser.add_argument(
         "--dataset",
         choices=list(DATASET_CONFIGS),
@@ -231,7 +302,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--skip-rows",
         type=int,
         default=None,
-        help="Number of initial rows to skip",
+        help="Number of initial rows to skip (slice mode)",
+    )
+    parser.add_argument(
+        "--sample-mode",
+        choices=["slice", "stratified"],
+        default="slice",
+        help="Sampling mode: 'slice' (sequential) or 'stratified' (multi-class)",
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=42,
+        help="Random seed for stratified sampling",
     )
     parser.add_argument(
         "--output-dir",
@@ -262,6 +345,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             output_dir=args.output_dir,
             sample_rows=args.sample_rows,
             skip_rows=args.skip_rows,
+            sample_mode=args.sample_mode,
+            random_seed=args.random_seed,
         )
         return 0
     except Exception as e:

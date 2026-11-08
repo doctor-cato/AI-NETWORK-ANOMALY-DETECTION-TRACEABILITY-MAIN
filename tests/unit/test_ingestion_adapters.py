@@ -37,12 +37,19 @@ def test_netflow_v3_adapter_full_features():
     assert event.metadata.source_id == "source:nf-v3-external"
     assert event.network_5tuple.ipv4_src_addr == "192.168.1.100"
     assert event.network_5tuple.protocol == 6
-    assert event.eligibility == InferenceEligibility.PREDICTION_AVAILABLE
-    assert event.validation_status == ValidationStatus.MODEL_VALIDATED
+    # External unvalidated source reaches SEMANTICALLY_COMPATIBLE with VALIDATION_NOT_VERIFIED
+    assert event.eligibility == InferenceEligibility.VALIDATION_NOT_VERIFIED
+    assert event.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE
     assert event.ml_features is not None
     assert len(event.ml_features) == len(ML_FEATURE_COLUMNS)
     assert event.trace_metadata["Label"] == 1
     assert event.trace_metadata["Attack"] == "Exploits"
+
+    # Canonical source reaches MODEL_VALIDATED
+    canonical_adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
+    can_event = canonical_adapter.adapt_record(sample_record, record_idx=0)
+    assert can_event.eligibility == InferenceEligibility.PREDICTION_AVAILABLE
+    assert can_event.validation_status == ValidationStatus.MODEL_VALIDATED
 
 
 def test_zeek_conn_adapter_abstains_ml_and_preserves_trace():

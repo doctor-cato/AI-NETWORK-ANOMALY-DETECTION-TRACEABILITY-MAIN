@@ -23,6 +23,7 @@ def test_ood_validator_clean_data():
     report = validator.audit_dataframe(df)
     assert not report.has_ood_warning
     assert report.affected_rows_count == 0
+    assert report.hard_violation_count == 0
     assert report.shortcut_shift_count == 0
 
 
@@ -33,7 +34,7 @@ def test_ood_validator_detects_negative_duration():
     })
     report = validator.audit_dataframe(df)
     assert report.has_ood_warning
-    assert report.affected_rows_count == 1
+    assert report.hard_violation_count == 1
     assert "FLOW_DURATION_MILLISECONDS_negative" in report.out_of_range_details
 
 
@@ -45,11 +46,11 @@ def test_ood_validator_detects_inverted_ttl():
     })
     report = validator.audit_dataframe(df)
     assert report.has_ood_warning
-    assert report.affected_rows_count == 1
+    assert report.hard_violation_count == 1
     assert "MIN_TTL_greater_than_MAX_TTL" in report.out_of_range_details
 
 
-def test_ood_validator_detects_shortcut_drift():
+def test_ood_validator_detects_shortcut_drift_and_zero_ttl():
     validator = OODValidator(check_shortcut_drift=True)
     df = pd.DataFrame({
         "MIN_TTL": [0, 0, 128],  # None are in {31, 62, 254, 255}
@@ -58,10 +59,13 @@ def test_ood_validator_detects_shortcut_drift():
     report = validator.audit_dataframe(df)
     assert report.has_ood_warning
     assert report.shortcut_shift_count == 3
+    assert report.zero_ttl_count == 2
+    assert report.shortcut_drift_ratio == 1.0
     assert any("Shortcut shift" in f for f in report.ood_flags)
+    assert any("MIN_TTL=0" in f for f in report.ood_flags)
 
 
-def test_eligibility_gate_approves_valid_netflow_v3():
+def test_eligibility_gate_approves_valid_canonical_netflow_v3():
     gate = InferenceEligibilityGate()
     adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
     rec = {col: 10.0 for col in ML_FEATURE_COLUMNS}
@@ -75,6 +79,24 @@ def test_eligibility_gate_approves_valid_netflow_v3():
     assert decision.validation_status == ValidationStatus.MODEL_VALIDATED
     assert decision.route_to_trace_engine
     assert decision.route_to_risk_engine
+
+
+def test_eligibility_gate_blocks_benchmark_failed_source():
+    """External source with failed benchmark (Recall=0.0) is blocked by the Gate."""
+    gate = InferenceEligibilityGate()
+    adapter = NetFlowV3Adapter(source_id="source:nf-v3-external")
+    rec = {col: 10.0 for col in ML_FEATURE_COLUMNS}
+    rec["MIN_TTL"] = 31
+    rec["MAX_TTL"] = 64
+    event = adapter.adapt_record(rec)
+
+    decision = gate.evaluate([event])
+    assert not decision.can_proceed_to_ml
+    assert decision.eligibility_status == InferenceEligibility.BENCHMARK_UNSATISFACTORY
+    assert decision.validation_status == ValidationStatus.BENCHMARK_FAILED
+    assert any("failed" in r.lower() for r in decision.abstention_reasons)
+    assert decision.route_to_trace_engine is True
+    assert decision.route_to_risk_engine is True
 
 
 def test_eligibility_gate_rejects_zeek_for_ml_but_routes_to_trace_and_risk():
@@ -92,12 +114,29 @@ def test_eligibility_gate_rejects_zeek_for_ml_but_routes_to_trace_and_risk():
 
 def test_eligibility_gate_strict_ood_mode_abstains_on_boundary_violations():
     gate = InferenceEligibilityGate(strict_ood_abstain=True)
-    adapter = NetFlowV3Adapter()
+    adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
     rec = {col: 10.0 for col in ML_FEATURE_COLUMNS}
+    rec["MIN_TTL"] = 31
+    rec["MAX_TTL"] = 64
     rec["FLOW_DURATION_MILLISECONDS"] = -999.0  # Illegal negative duration
     event = adapter.adapt_record(rec)
 
     decision = gate.evaluate([event])
     assert not decision.can_proceed_to_ml
     assert decision.eligibility_status == InferenceEligibility.ABSTAINED
-    assert any("Strict OOD abstention" in r for r in decision.abstention_reasons)
+    assert any("Hard constraint violation" in r for r in decision.abstention_reasons)
+
+
+def test_eligibility_gate_abstains_on_critical_shortcut_drift():
+    """Gate triggers fail-closed abstention when shortcut drift ratio exceeds threshold."""
+    gate = InferenceEligibilityGate(strict_ood_abstain=True, max_allowed_shortcut_drift_ratio=0.50)
+    adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
+    rec = {col: 10.0 for col in ML_FEATURE_COLUMNS}
+    rec["MIN_TTL"] = 0  # Shortcut drift (not in 31, 62, 254, 255)
+    rec["MAX_TTL"] = 64
+    event = adapter.adapt_record(rec)
+
+    decision = gate.evaluate([event])
+    assert not decision.can_proceed_to_ml
+    assert decision.eligibility_status == InferenceEligibility.ABSTAINED
+    assert any("Strict OOD shortcut abstention" in r for r in decision.abstention_reasons)
