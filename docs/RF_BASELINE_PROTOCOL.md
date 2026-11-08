@@ -152,7 +152,7 @@ Tuân thủ nghiêm ngặt feature contract hiện hành được định nghĩa
 
 ## 6. Cấu hình Baseline Random Forest
 
-Mô hình: `RandomForestClassifier` (Scikit-Learn).  
+Mô hình: `RandomForestClassifier` (Scikit-Learn).
 Cấu hình baseline được khóa cố định nhằm đảm bảo tính tái lập tuyệt đối (reproducibility):
 
 | Tham số | Giá trị khóa | Ý nghĩa / Ghi chú |

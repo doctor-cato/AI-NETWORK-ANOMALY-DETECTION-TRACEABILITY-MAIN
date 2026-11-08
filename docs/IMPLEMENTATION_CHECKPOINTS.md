@@ -49,13 +49,14 @@ NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA
 2.365.424 dòng và tái lập khớp các finding đã xác minh. Real split và leakage audit hoàn thành
 qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.655.797 dòng train
 và kiểm chứng qua PR #42.
-C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, trong khi huấn luyện
-(#10) và đánh giá (#12) đang được triển khai. C4–C11 vẫn `PLANNED`.
+C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, huấn luyện trên dữ liệu
+thực (Issue #10) đạt `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`, trong khi đánh giá trên tập
+held-out Test (Issue #12) vẫn `PLANNED`. C4–C11 vẫn `PLANNED`.
 
 ```text
 Checkpoint: C3 — Random Forest Baseline Protocol & Training Architecture
 Branch: feat/issue-9-rf-baseline-protocol
-Completed: IMPLEMENTED / TESTED —
+Completed: Issue #9 IMPLEMENTED / TESTED; Issue #10 IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED —
   - Issue #9: RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1` đã được chuẩn hóa và khóa
     theo đúng 47 đặc trưng ML, target Label nhị phân, TEST lock policy, tuning policy cách ly,
     metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 và PR #43 đã được
@@ -67,7 +68,7 @@ Completed: IMPLEMENTED / TESTED —
         bổ sung test chống trôi tài liệu).
       * Phân loại phát hiện theo cặp (y_true, y_pred), Benign xử lý riêng biệt.
       * Compute metrics FPR bất biến theo thứ tự nhãn [0, 1] vs [1, 0].
-  - Issue #10: Cấu trúc mô hình Random Forest hoàn thiện:
+  - Issue #10: Cấu trúc mô hình Random Forest và huấn luyện trên dữ liệu thực hoàn thiện:
       * Model serialization (`save`, `load`, `load_verified` với schema thống nhất và kiểm tra mã hex 64 ký tự).
       * Script `scripts/train_random_forest.py` hỗ trợ `--verify-only` kiểm tra toàn diện điều kiện tiên quyết:
         hash dataset, split manifest, companion preprocessor manifest, số dòng phân vùng (1.655.797 train,
@@ -83,19 +84,16 @@ Completed: IMPLEMENTED / TESTED —
         từ chối `git_commit == "UNKNOWN"` hoặc `provenance_complete == False`.
       * Tích hợp `--step baseline` vào `scripts/run_experiments.py` ủy quyền gọi và chuyển tiếp mã thoát,
         đồng bộ docstring và CLI help.
+      * Đã thực thi huấn luyện thực nghiệm trên 1.655.797 dòng Train và kiểm toán chẩn đoán độc lập trên
+        345.371 dòng Validation (chi tiết bằng chứng tại Checkpoint 12 bên dưới).
 Tests: PASS — 36 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
   `tests/unit/test_rf_model_structure.py`, 33 tests trong `tests/unit/test_rf_training.py`
-  (32 PASS, 1 SKIPPED / NOT VERIFIED do thiếu file CSV thô cục bộ), 15 tests trong
-  `tests/unit/test_run_experiments.py`; toàn bộ test suite 387 PASS, 5 SKIPPED, 0 FAILED;
-  git diff --check PASS; check_environment PASS.
-Issues: #9 (Protocol & Criteria — TESTED); #10 (RF Training Architecture & Verification — TESTED;
-  Real-data training — BLOCKED / OPEN); #12 (Evaluation — PLANNED).
-Blocker: Huấn luyện thực tế trên 1.655.797 dòng của tập train bị BLOCKED fail-closed vì tệp CSV thô
-  `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` và preprocessor artifact
-  `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` chưa hiện diện trong workspace
-  cục bộ hiện tại. Issue #10 giữ trạng thái OPEN cho đến khi hoàn thành huấn luyện thực tế.
-  Tuyệt đối không dùng dữ liệu synthetic/mock để xác nhận hoàn thành Issue #10.
-Remaining: Đưa tệp CSV và preprocessor artifact vào đúng đường dẫn để thực hiện real training run.
+  (bao gồm `test_execute_training_real_data` PASS trên dữ liệu thực NF-UNSW-NB15-v3), 15 tests trong
+  `tests/unit/test_run_experiments.py`, 7 tests trong `tests/unit/test_audit_rf_validation_diagnostics.py`;
+  toàn bộ test suite 397 PASS, 2 SKIPPED, 0 FAILED; git diff --check PASS; check_environment PASS.
+Issues: #9 (Protocol & Criteria — IMPLEMENTED / TESTED); #10 (RF Training & Validation —
+  IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED); #12 (Held-out Test Evaluation — PLANNED).
+Remaining: Đánh giá cuối cùng một lần (one-shot evaluation) trên tập held-out Test thuộc phạm vi Issue #12.
 ```
 
 ## Migration NF-UNSW-NB15-v3 — A–H
