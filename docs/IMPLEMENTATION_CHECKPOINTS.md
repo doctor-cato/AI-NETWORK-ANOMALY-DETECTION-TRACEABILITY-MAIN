@@ -51,5 +51,10 @@ qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.6
 và kiểm chứng qua PR #42.
 C3: Protocol baseline Random Forest (Issue #9) đạt IMPLEMENTED / TESTED, huấn luyện trên dữ liệu
 thực (Issue #10) đạt IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED, trong khi đánh giá trên tập
-held-out Test (Issue #12) vẫn PLANNED. XGBoost (Issue #31) đạt IMPLEMENTED / TESTED (cấu trúc mô hình và giao thức dùng chung), huấn luyện thực tế BLOCKED (chờ dataset raw tại môi trường cục bộ). C4–C11 vẫn PLANNED.
+held-out Test (Issue #12) vẫn PLANNED. XGBoost (Issue #31) đạt IMPLEMENTED / TESTED /
+EXPERIMENTALLY VALIDATED: training pipeline thực tế chạy trên NF-UNSW-NB15-v3 (run
+`xgb-baseline-1794149746`, 2026-11-08) với Train 1.655.797 rows × 47 features, Validation
+Precision 0.999967 / Recall 1.000000 / F1 0.999984 (FP=1, FN=0), test-partition lock PASSED
+(test_rows_loaded=0), artifact verified qua load_verified. Chi tiết tại
+docs/XGB_BASELINE_PROTOCOL.md §6. C4–C11 vẫn PLANNED.
 ```
