@@ -41,4 +41,14 @@ phải persistent. Health/readiness phải phân biệt process sống với mod
 
 Response mạnh chỉ là dry-run trong lab. Trace/Behavioral Vector không xác định danh tính thật.
 
-Cập nhật: 2026-10-20 (migration NF-UNSW-NB15-v3)
+## 3. Kiến trúc Tiếp nhận Đa nguồn & Cổng OOD (Issue #46)
+
+Module `src/network_anomaly/ingestion/` bổ sung tầng tiếp nhận chuẩn hóa độc lập:
+- `SourceRegistry`: Danh mục nguồn dữ liệu đa dạng (NetFlow v3, NetFlow v5, IPFIX, Zeek, Suricata, AWS VPC Flow, sFlow).
+- `CanonicalNetworkEvent`: Lược đồ sự kiện mạng chuẩn hóa (5-tuple, metrics, micro-telemetry, application context, trace metadata).
+- `FeatureCompatibilityEvaluator`: Phân định 4 tầng trạng thái dữ liệu (`PARSEABLE` → `SCHEMA_COMPATIBLE` → `SEMANTICALLY_COMPATIBLE` → `MODEL_VALIDATED`).
+- `OODValidator`: Kiểm tra giá trị biên và phát hiện sụp đổ đường tắt phòng lab (`MIN_TTL`).
+- `InferenceEligibilityGate`: Kiểm soát fail-closed, từ chối suy luận khi thiếu đặc trưng hoặc sai lệch ngữ nghĩa (chính sách nghiêm cấm điền giá trị giả mạo), định tuyến metadata sang Trace Engine (#24) và Risk Engine (#32).
+- Chi tiết xem tại [MULTI_SOURCE_INGESTION.md](MULTI_SOURCE_INGESTION.md) và [FEATURE_COMPATIBILITY_MATRIX.md](FEATURE_COMPATIBILITY_MATRIX.md).
+
+Cập nhật: 2026-11-08 (Issue #46 — Ingestion đa nguồn, Adapter tương thích & Đánh giá Cross-Dataset)
