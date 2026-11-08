@@ -111,8 +111,18 @@ class XGBoostModel:
             self.feature_names = tuple(ML_FEATURE_COLUMNS)
 
         self.estimator: XGBClassifier = self.build_model()
-        self.is_fitted: bool = False
+        self._is_fitted: bool = False
         self._classes: Optional[np.ndarray] = None
+
+    @property
+    def is_fitted(self) -> bool:
+        """Indicate whether the model has been fitted."""
+        return self._is_fitted
+
+    @property
+    def classes_(self) -> Any:
+        """Class labels known to the classifier."""
+        return getattr(self.estimator, "classes_", None)
 
     def build_model(self) -> XGBClassifier:
         """Instantiate untracked XGBClassifier with configured parameters."""
@@ -126,7 +136,7 @@ class XGBoostModel:
             missing_feats = set(self.feature_names) - set(X.columns)
             if missing_feats:
                 raise ValueError(f"Feature contract violation: missing required features {missing_feats}")
-            X_mat = X[self.feature_names].values
+            X_mat = X[list(self.feature_names)].values
         else:
             X_mat = np.asarray(X)
             if X_mat.ndim != 2 or X_mat.shape[1] != len(self.feature_names):
@@ -140,26 +150,26 @@ class XGBoostModel:
             raise ValueError(f"Target Label contract violation: expected binary {0, 1}, got {unique_labels}")
 
         self.estimator.fit(X_mat, y_arr, **fit_params)
-        self.is_fitted = True
+        self._is_fitted = True
         self._classes = getattr(self.estimator, "classes_", np.array([0, 1]))
         return self
 
     def predict(self, X: Any) -> np.ndarray:
         """Predict binary anomaly labels (0 or 1)."""
-        if not self.is_fitted:
+        if not self._is_fitted:
             raise NotFittedError("XGBoostModel is not fitted yet. Call fit() before predict().")
         if isinstance(X, pd.DataFrame):
-            X_mat = X[self.feature_names].values
+            X_mat = X[list(self.feature_names)].values
         else:
             X_mat = np.asarray(X)
         return self.estimator.predict(X_mat)
 
     def predict_proba(self, X: Any) -> np.ndarray:
         """Predict class probabilities."""
-        if not self.is_fitted:
+        if not self._is_fitted:
             raise NotFittedError("XGBoostModel is not fitted yet. Call fit() before predict_proba().")
         if isinstance(X, pd.DataFrame):
-            X_mat = X[self.feature_names].values
+            X_mat = X[list(self.feature_names)].values
         else:
             X_mat = np.asarray(X)
         return self.estimator.predict_proba(X_mat)
@@ -171,7 +181,7 @@ class XGBoostModel:
         extra_manifest_fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Save fitted model artifact and generate companion provenance manifest."""
-        if not self.is_fitted:
+        if not self._is_fitted:
             raise NotFittedError("Cannot save an unfitted XGBoostModel.")
 
         model_path = Path(model_path)
@@ -186,7 +196,7 @@ class XGBoostModel:
             "task": self.task,
             "target": self.target,
             "feature_contract_version": FEATURE_CONTRACT_VERSION,
-            "feature_names": self.feature_names,
+            "feature_names": list(self.feature_names),
             "num_features": len(self.feature_names),
             "configuration": self.config.to_dict(),
             "model_artifact_path": str(model_path.as_posix()),
@@ -212,7 +222,7 @@ class XGBoostModel:
         estimator = joblib.load(model_path)
         instance = cls()
         instance.estimator = estimator
-        instance.is_fitted = True
+        instance._is_fitted = True
         instance._classes = getattr(estimator, "classes_", np.array([0, 1]))
         return instance
 
@@ -251,12 +261,14 @@ class XGBoostModel:
         return cls.load(model_path)
 
 
-def build_model(config: Optional[Dict[str, Any]] = None) -> XGBClassifier:
+def build_model(
+    config: Optional[Union[Dict[str, Any], XGBoostBaselineConfig, XGBoostBaselineProtocol]] = None
+) -> XGBClassifier:
     """Return an XGBClassifier instance configured with project defaults or *config*.
 
     Parameters
     ----------
-    config : dict or None
+    config : dict or XGBoostBaselineConfig or XGBoostBaselineProtocol or None
         Hyperparameter overrides. If None, CANONICAL_BASELINE_PARAMS is used.
 
     Returns
@@ -264,12 +276,21 @@ def build_model(config: Optional[Dict[str, Any]] = None) -> XGBClassifier:
     xgboost.XGBClassifier
         Untrained estimator.
     """
-    if config is not None:
+    if isinstance(config, XGBoostBaselineProtocol):
+        params = config.model_config.get_xgb_params()
+    elif isinstance(config, XGBoostBaselineConfig):
+        params = config.get_xgb_params()
+    elif isinstance(config, dict):
         cfg = copy.deepcopy(config)
+        cfg.pop("is_canonical_baseline", None)
+        cfg.pop("configuration_id", None)
+        cfg.pop("model_type", None)
+        cfg.pop("task", None)
+        cfg.pop("target", None)
+        cfg.pop("positive_class", None)
+        params = cfg
     else:
-        cfg = copy.deepcopy(XGBOOST_DEFAULTS)
+        params = XGBoostBaselineConfig().get_xgb_params()
 
-    cfg.setdefault("verbosity", 0)
-    cfg.pop("is_canonical_baseline", None)
-    cfg.pop("configuration_id", None)
-    return XGBClassifier(**cfg)
+    params.setdefault("verbosity", 0)
+    return XGBClassifier(**params)

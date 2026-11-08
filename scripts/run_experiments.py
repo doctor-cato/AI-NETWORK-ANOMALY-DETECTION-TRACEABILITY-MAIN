@@ -41,13 +41,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description=(
             "Run experiment steps ('check-data' delegates to scripts/validate_data.py; "
-            "'baseline' delegates to scripts/train_random_forest.py and propagates its exit code; "
+            "'baseline' delegates to scripts/train_random_forest.py; "
+            "'xgboost' delegates to scripts/train_xgboost.py; "
             "'evaluate' and 'inference' remain NOT IMPLEMENTED and exit 3)."
         )
     )
     parser.add_argument(
         "--step",
-        choices=["check-data", "baseline", *NOT_IMPLEMENTED_STEPS],
+        choices=["check-data", "baseline", "xgboost", *NOT_IMPLEMENTED_STEPS],
         default="check-data",
         help="Experiment step to run",
     )
@@ -66,6 +67,12 @@ def main(argv=None):
 
         print("[run_experiments] Step baseline: delegating to scripts/train_random_forest.py")
         return train_random_forest.main([])
+
+    if args.step == "xgboost":
+        import train_xgboost
+
+        print("[run_experiments] Step xgboost: delegating to scripts/train_xgboost.py")
+        return train_xgboost.main([])
 
     planned, reason = NOT_IMPLEMENTED_STEPS[args.step]
     print(f"[run_experiments] Planned: {planned}")
