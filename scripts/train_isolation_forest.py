@@ -283,8 +283,8 @@ def check_split_manifest(
         base_indices = Path(indices_dir)
         missing_indices = []
         for p_name in ("train", "validation", "test"):
-            idx_file = partitions.get(p_name, {}).get("index_file")
-            if idx_file and not (base_indices / idx_file).exists():
+            idx_file = partitions.get(p_name, {}).get("index_file", f"{p_name}_indices.csv.gz")
+            if not (base_indices / idx_file).exists():
                 missing_indices.append(f"{p_name}: {base_indices / idx_file}")
         if missing_indices:
             return {
@@ -1100,28 +1100,24 @@ def run_pipeline(args) -> int:
         print("  Partitioning dataset via official partition indices …", flush=True)
         import pandas as pd
 
+        from network_anomaly.data.split import load_partition_indices
+
         partitions = split_manifest.get("partitions", {})
         if not all(p in partitions for p in ("train", "validation", "test")):
             print("[BLOCKED] Split manifest missing partitions definition.", flush=True)
             return 1
 
         indices_dir = INDICES_DIR
-        train_idx_path = indices_dir / partitions["train"]["index_file"]
-        val_idx_path = indices_dir / partitions["validation"]["index_file"]
-        test_idx_path = indices_dir / partitions["test"]["index_file"]
-
-        for p_name, idx_p in [
-            ("train", train_idx_path),
-            ("validation", val_idx_path),
-            ("test", test_idx_path),
-        ]:
-            if not idx_p.exists():
-                print(f"[BLOCKED] Partition index file not found: {idx_p}", flush=True)
-                return 1
-
-        train_indices = pd.read_csv(train_idx_path, header=None).iloc[:, 0].values
-        val_indices = pd.read_csv(val_idx_path, header=None).iloc[:, 0].values
-        test_indices = pd.read_csv(test_idx_path, header=None).iloc[:, 0].values
+        try:
+            train_indices = load_partition_indices(split_manifest, indices_dir, "train")
+            val_indices = load_partition_indices(split_manifest, indices_dir, "validation")
+            test_indices = load_partition_indices(split_manifest, indices_dir, "test")
+        except FileNotFoundError as fnf:
+            print(f"[BLOCKED] Partition index file not found: {fnf}", flush=True)
+            return 1
+        except ValueError as val_err:
+            print(f"[BLOCKED] Partition index verification failed: {val_err}", flush=True)
+            return 1
 
         cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
         df_raw = pd.read_csv(

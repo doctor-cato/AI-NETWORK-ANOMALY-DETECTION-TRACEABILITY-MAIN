@@ -730,18 +730,9 @@ class TestOfficialManifestSchemaAndPrerequisites:
         manifest_data = {
             "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
             "partitions": {
-                "train": {
-                    "row_count": EXPECTED_TRAIN_ROWS,
-                    "index_file": "train_indices.csv.gz",
-                },
-                "validation": {
-                    "row_count": EXPECTED_VAL_ROWS,
-                    "index_file": "validation_indices.csv.gz",
-                },
-                "test": {
-                    "row_count": EXPECTED_TEST_ROWS,
-                    "index_file": "test_indices.csv.gz",
-                },
+                "train": {"row_count": EXPECTED_TRAIN_ROWS},
+                "validation": {"row_count": EXPECTED_VAL_ROWS},
+                "test": {"row_count": EXPECTED_TEST_ROWS},
             },
         }
         manifest_path = tmp_path / "split_manifest.json"
@@ -759,15 +750,9 @@ class TestOfficialManifestSchemaAndPrerequisites:
         manifest_data = {
             "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
             "partitions": {
-                "train": {"row_count": 999, "index_file": "train_indices.csv.gz"},
-                "validation": {
-                    "row_count": EXPECTED_VAL_ROWS,
-                    "index_file": "validation_indices.csv.gz",
-                },
-                "test": {
-                    "row_count": EXPECTED_TEST_ROWS,
-                    "index_file": "test_indices.csv.gz",
-                },
+                "train": {"row_count": 999},
+                "validation": {"row_count": EXPECTED_VAL_ROWS},
+                "test": {"row_count": EXPECTED_TEST_ROWS},
             },
         }
         manifest_path = tmp_path / "bad_split_manifest.json"
@@ -818,18 +803,9 @@ class TestOfficialManifestSchemaAndPrerequisites:
         manifest_data = {
             "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
             "partitions": {
-                "train": {
-                    "row_count": EXPECTED_TRAIN_ROWS,
-                    "index_file": "train_indices.csv.gz",
-                },
-                "validation": {
-                    "row_count": EXPECTED_VAL_ROWS,
-                    "index_file": "validation_indices.csv.gz",
-                },
-                "test": {
-                    "row_count": EXPECTED_TEST_ROWS,
-                    "index_file": "test_indices.csv.gz",
-                },
+                "train": {"row_count": EXPECTED_TRAIN_ROWS},
+                "validation": {"row_count": EXPECTED_VAL_ROWS},
+                "test": {"row_count": EXPECTED_TEST_ROWS},
             },
         }
         manifest_path = tmp_path / "split_manifest.json"
@@ -970,15 +946,25 @@ class TestReviewerFindingsAndE2EIntegration:
         ]:
             idx_p = indices_dir / f"{name}_indices.csv.gz"
             with gzip.open(idx_p, "wt") as fh:
+                fh.write("source_row_index\n")
                 for i in range(s, e):
                     fh.write(f"{i}\n")
 
         split_man = {
             "dataset_sha256": ds_sha,
             "partitions": {
-                "train": {"row_count": n_train, "index_file": "train_indices.csv.gz"},
-                "validation": {"row_count": n_val, "index_file": "validation_indices.csv.gz"},
-                "test": {"row_count": n_test, "index_file": "test_indices.csv.gz"},
+                "train": {
+                    "row_count": n_train,
+                    "index_sha256": tif.sha256_file(indices_dir / "train_indices.csv.gz"),
+                },
+                "validation": {
+                    "row_count": n_val,
+                    "index_sha256": tif.sha256_file(indices_dir / "validation_indices.csv.gz"),
+                },
+                "test": {
+                    "row_count": n_test,
+                    "index_sha256": tif.sha256_file(indices_dir / "test_indices.csv.gz"),
+                },
             },
         }
         split_man_p = tmp_path / "split_manifest.json"
