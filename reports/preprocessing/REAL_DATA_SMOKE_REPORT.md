@@ -1,7 +1,7 @@
 # NF-UNSW-NB15-v3 Real-Data Preprocessing Smoke Evidence Report
 
 **Status:** `PASS`
-**Date:** 2026-10-29
+**Date:** 2026-11-08
 **Scope:** Issue #8 — Train-Only Preprocessing Pipeline
 **Dataset Readiness:** `ML_READY: BLOCKED` (model training unauthorized until Issue #9+)
 
@@ -16,7 +16,7 @@
 | Raw Dataset SHA-256 | `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5` |
 | Split Protocol Version | `nf-unsw-nb15-v3-chronological-group-purged-v1` |
 | Split Manifest Path | `data/processed/nf_unsw_nb15_v3_split_manifest.json` |
-| Split Manifest SHA-256 | `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88` |
+| Split Manifest SHA-256 | `845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f` |
 | Partition Indices Dir | `data/processed/splits` |
 | Preprocessing Policy Version | `nf-unsw-nb15-v3-preprocessing-v1` |
 | Feature Contract Version | `nf-unsw-nb15-v3-baseline-47` |
@@ -27,7 +27,7 @@
 
 | Artifact | Path | SHA-256 |
 |---|---|---|
-| Fitted Preprocessor Joblib | `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19` |
+| Fitted Preprocessor Joblib | `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | `e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6` |
 | Companion Manifest JSON | `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json` | Verified schema and hashes |
 
 ---
@@ -61,16 +61,16 @@ python scripts/preprocess_nf_unsw_nb15_v3.py
 **Output:**
 ```
 [preprocess] Loading and fitting train-only preprocessor on NF-UNSW-NB15-v3...
-[preprocess] Success in 22.86s:
+[preprocess] Success in 49.06s:
   Train shape:      (1655797, 47) (finite: True)
   Validation shape: (345371, 47) (finite: True)
   Test shape:       (345953, 47) (finite: True)
   Features count:   47 in exact contract order
   Scaler type:      none
-  Artifact saved:   artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib (SHA-256: 12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19)
+  Artifact saved:   artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib (SHA-256: e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6)
   Manifest saved:   reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json
 ```
-**Result:** `PASS` (22.86s execution time).
+**Result:** `PASS` (49.06s execution time).
 
 ### 4.2. Fail-Closed Artifact and Raw Dataset Byte Verification
 

@@ -1,0 +1,474 @@
+{
+  "run_id": "xgb-baseline-1794151507",
+  "model_type": "XGBoost",
+  "task": "binary_classification",
+  "target": "Label",
+  "positive_class": "Attack",
+  "class_mapping": {
+    "0": "Benign",
+    "1": "Attack"
+  },
+  "label_policy": {
+    "positive_label": 1,
+    "positive_class_name": "Attack",
+    "negative_label": 0,
+    "negative_class_name": "Benign",
+    "confusion_matrix_label_order": [
+      0,
+      1
+    ],
+    "task": "binary_classification",
+    "note": "Attack-category multiclass labels (Attack column) are NOT used as the target."
+  },
+  "metric_policy": {
+    "averaging": "binary for precision/recall/F1 (positive label = 1); macro for macro_f1",
+    "zero_division_policy": 0,
+    "confusion_matrix_label_order": [
+      0,
+      1
+    ],
+    "shared_module": "network_anomaly.evaluation.metrics",
+    "shared_with_random_forest": true,
+    "roc_auc": "not computed (validation probabilities retained in artifact workflow); if added later, requires both classes present in the metric call"
+  },
+  "protocol_version": "xgb-baseline-nf-unsw-nb15-v3-v1",
+  "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+  "selected_features": [
+    "PROTOCOL",
+    "L7_PROTO",
+    "IN_BYTES",
+    "IN_PKTS",
+    "OUT_BYTES",
+    "OUT_PKTS",
+    "TCP_FLAGS",
+    "CLIENT_TCP_FLAGS",
+    "SERVER_TCP_FLAGS",
+    "FLOW_DURATION_MILLISECONDS",
+    "DURATION_IN",
+    "DURATION_OUT",
+    "MIN_TTL",
+    "MAX_TTL",
+    "LONGEST_FLOW_PKT",
+    "SHORTEST_FLOW_PKT",
+    "MIN_IP_PKT_LEN",
+    "MAX_IP_PKT_LEN",
+    "SRC_TO_DST_SECOND_BYTES",
+    "DST_TO_SRC_SECOND_BYTES",
+    "RETRANSMITTED_IN_BYTES",
+    "RETRANSMITTED_IN_PKTS",
+    "RETRANSMITTED_OUT_BYTES",
+    "RETRANSMITTED_OUT_PKTS",
+    "SRC_TO_DST_AVG_THROUGHPUT",
+    "DST_TO_SRC_AVG_THROUGHPUT",
+    "NUM_PKTS_UP_TO_128_BYTES",
+    "NUM_PKTS_128_TO_256_BYTES",
+    "NUM_PKTS_256_TO_512_BYTES",
+    "NUM_PKTS_512_TO_1024_BYTES",
+    "NUM_PKTS_1024_TO_1514_BYTES",
+    "TCP_WIN_MAX_IN",
+    "TCP_WIN_MAX_OUT",
+    "ICMP_TYPE",
+    "ICMP_IPV4_TYPE",
+    "DNS_QUERY_ID",
+    "DNS_QUERY_TYPE",
+    "DNS_TTL_ANSWER",
+    "FTP_COMMAND_RET_CODE",
+    "SRC_TO_DST_IAT_MIN",
+    "SRC_TO_DST_IAT_MAX",
+    "SRC_TO_DST_IAT_AVG",
+    "SRC_TO_DST_IAT_STDDEV",
+    "DST_TO_SRC_IAT_MIN",
+    "DST_TO_SRC_IAT_MAX",
+    "DST_TO_SRC_IAT_AVG",
+    "DST_TO_SRC_IAT_STDDEV"
+  ],
+  "num_features": 47,
+  "excluded_metadata_features": [
+    "FLOW_START_MILLISECONDS",
+    "FLOW_END_MILLISECONDS",
+    "IPV4_SRC_ADDR",
+    "IPV4_DST_ADDR",
+    "L4_SRC_PORT",
+    "L4_DST_PORT"
+  ],
+  "excluded_target_columns": [
+    "Label",
+    "Attack"
+  ],
+  "hyperparameters": {
+    "model_type": "XGBoost",
+    "task": "binary_classification",
+    "target": "Label",
+    "positive_class": "Attack",
+    "n_estimators": 200,
+    "max_depth": 6,
+    "learning_rate": 0.1,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "objective": "binary:logistic",
+    "eval_metric": "logloss",
+    "tree_method": "hist",
+    "random_state": 42,
+    "n_jobs": -1,
+    "configuration_id": "xgb-baseline-canonical-v1",
+    "is_canonical_baseline": true
+  },
+  "configuration_id": "xgb-baseline-canonical-v1",
+  "is_canonical_baseline": true,
+  "random_state": 42,
+  "model_artifact_path": "artifacts/models/xgboost/xgboost_baseline.joblib",
+  "model_artifact_sha256": "c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e",
+  "model_artifact_size_bytes": 70680,
+  "dataset_name": "NF-UNSW-NB15-v3",
+  "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+  "split_protocol_id": "nf-unsw-nb15-v3-chronological-group-purged-v1",
+  "split_manifest_sha256": "845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f",
+  "train_indices_sha256": "30ed493e2b8ecadfcb53fb0ee7f8f25729af1121d74c4bedfbb2c5e924db7e4b",
+  "val_indices_sha256": "a3e4470c2731870deaf57ce9a865e2491107d8e7f72383cdd0f99de0dd485cd4",
+  "preprocessor_artifact_sha256": "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6",
+  "preprocessor_manifest_sha256": "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba",
+  "canonical_reference_hashes": {
+    "note": "Artifact hashes recorded at split/preprocessing acceptance (PR #41 split, PR #42 preprocessing). Runtime artifact set may be a verified regeneration; the runtime hash chain is authoritative for run xgb-baseline-1794151507.",
+    "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+    "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+    "preprocessor_manifest_sha256": "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441"
+  },
+  "provenance_complete": true,
+  "provenance_status": "VERIFIED",
+  "split_provenance": {
+    "split_protocol_id": "nf-unsw-nb15-v3-chronological-group-purged-v1",
+    "split_manifest_path": "reports/splits/nf_unsw_nb15_v3_split_manifest.json",
+    "split_manifest_sha256": "845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f",
+    "train_rows_count": 1655797,
+    "val_rows_count": 345371,
+    "test_rows_count": 345953,
+    "indices_dir": "data/processed/splits",
+    "train_indices_sha256": "30ed493e2b8ecadfcb53fb0ee7f8f25729af1121d74c4bedfbb2c5e924db7e4b",
+    "val_indices_sha256": "a3e4470c2731870deaf57ce9a865e2491107d8e7f72383cdd0f99de0dd485cd4",
+    "verification_status": "PASS"
+  },
+  "preprocessing_provenance": {
+    "preprocessor_artifact_path": "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+    "preprocessor_artifact_sha256": "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6",
+    "preprocessor_manifest_path": "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+    "preprocessor_manifest_sha256": "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba",
+    "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+    "features_count": 47,
+    "fit_partition": "train_only",
+    "refit_during_training": false,
+    "verification_status": "PASS"
+  },
+  "test_lock_audit": {
+    "test_partition_accessed": false,
+    "test_rows_loaded": 0,
+    "test_indices_loaded": false,
+    "training_partitions": [
+      "train",
+      "validation"
+    ],
+    "train_rows_loaded": 1655797,
+    "val_rows_loaded": 345371,
+    "contract_a_guarantee": "PASSED: No Test data is used in fitting, hyperparameter tuning, threshold selection, validation, or model selection.",
+    "contract_b_guarantee": "PASSED: Zero Test partition rows are materialized or converted into DataFrames."
+  },
+  "training_duration_seconds": 19.66,
+  "peak_memory_mb": 4422.59,
+  "trained_at_utc": "2026-11-08T15:24:43.195015+00:00",
+  "environment": {
+    "python_version": "3.13.9",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu_count": 12,
+    "git_commit": "7d760e0ca3b43e1ed48108978922bf8638168dde",
+    "git_dirty": false,
+    "provenance_complete": true,
+    "packages": {
+      "xgboost": "3.4.1",
+      "scikit-learn": "1.9.1",
+      "pandas": "3.0.6",
+      "numpy": "2.5.3",
+      "joblib": "1.6.0"
+    }
+  },
+  "validation_summary": {
+    "rows_evaluated": 345371,
+    "class_support": {
+      "benign_rows_total": 314871,
+      "attack_rows_total": 30500
+    },
+    "prediction_distribution": {
+      "0": 314870,
+      "1": 30501
+    },
+    "precision": 0.9999672141896987,
+    "recall": 1.0,
+    "f1": 0.9999836068261176,
+    "macro_f1": 0.9999910094358524,
+    "false_positive_rate": 3.1759037828189956e-06,
+    "confusion_matrix": [
+      [
+        314870,
+        1
+      ],
+      [
+        0,
+        30500
+      ]
+    ],
+    "confusion_matrix_labeled": {
+      "tn": 314870,
+      "fp": 1,
+      "fn": 0,
+      "tp": 30500
+    },
+    "per_category_breakdown": {
+      "Analysis": {
+        "total": 285,
+        "detected": 285,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Backdoor": {
+        "total": 144,
+        "detected": 144,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Benign": {
+        "total": 314871,
+        "false_positive": 1,
+        "true_negative": 314870,
+        "false_positive_rate": 3.1759037828189956e-06
+      },
+      "DoS": {
+        "total": 1445,
+        "detected": 1445,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Exploits": {
+        "total": 10294,
+        "detected": 10294,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Fuzzers": {
+        "total": 8495,
+        "detected": 8495,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Generic": {
+        "total": 5137,
+        "detected": 5137,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Reconnaissance": {
+        "total": 4107,
+        "detected": 4107,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Shellcode": {
+        "total": 556,
+        "detected": 556,
+        "missed": 0,
+        "detection_rate": 1.0
+      },
+      "Worms": {
+        "total": 37,
+        "detected": 37,
+        "missed": 0,
+        "detection_rate": 1.0
+      }
+    }
+  },
+  "random_forest_reference": {
+    "status": "AVAILABLE",
+    "target": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+    "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+    "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+    "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+    "model_artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+    "validation_summary": {
+      "rows_evaluated": 345371,
+      "precision": 0.9998360763228641,
+      "recall": 0.9999016393442623,
+      "f1": 0.9998688567587948,
+      "macro_f1": 0.9999280765516589,
+      "false_positive_rate": 1.5879518914094977e-05,
+      "confusion_matrix": [
+        [
+          314866,
+          5
+        ],
+        [
+          3,
+          30497
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 314866,
+        "fp": 5,
+        "fn": 3,
+        "tp": 30497
+      },
+      "per_category_breakdown": {
+        "Analysis": {
+          "total": 285,
+          "detected": 285,
+          "missed": 0,
+          "detection_rate": 1.0
+        },
+        "Backdoor": {
+          "total": 144,
+          "detected": 144,
+          "missed": 0,
+          "detection_rate": 1.0
+        },
+        "Benign": {
+          "total": 314871,
+          "false_positive": 5,
+          "true_negative": 314866,
+          "false_positive_rate": 1.5879518914094977e-05
+        },
+        "DoS": {
+          "total": 1445,
+          "detected": 1444,
+          "missed": 1,
+          "detection_rate": 0.9993079584775086
+        },
+        "Exploits": {
+          "total": 10294,
+          "detected": 10293,
+          "missed": 1,
+          "detection_rate": 0.9999028560326404
+        },
+        "Fuzzers": {
+          "total": 8495,
+          "detected": 8495,
+          "missed": 0,
+          "detection_rate": 1.0
+        },
+        "Generic": {
+          "total": 5137,
+          "detected": 5136,
+          "missed": 1,
+          "detection_rate": 0.9998053338524431
+        },
+        "Reconnaissance": {
+          "total": 4107,
+          "detected": 4107,
+          "missed": 0,
+          "detection_rate": 1.0
+        },
+        "Shellcode": {
+          "total": 556,
+          "detected": 556,
+          "missed": 0,
+          "detection_rate": 1.0
+        },
+        "Worms": {
+          "total": 37,
+          "detected": 37,
+          "missed": 0,
+          "detection_rate": 1.0
+        }
+      }
+    },
+    "model_artifact_path": "artifacts/models/random_forest/random_forest_baseline.joblib",
+    "canonical": true,
+    "model_type": "RandomForest",
+    "hyperparameters": {
+      "model_type": "RandomForest",
+      "task": "binary_classification",
+      "target": "Label",
+      "positive_class": "Attack",
+      "n_estimators": 200,
+      "max_depth": 16,
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "criterion": "gini",
+      "max_features": "sqrt",
+      "class_weight": null,
+      "random_state": 42,
+      "n_jobs": -1,
+      "bootstrap": true,
+      "configuration_id": "rf-baseline-canonical-v1",
+      "is_canonical_baseline": true
+    }
+  },
+  "generalization_limitations": {
+    "flow_fingerprint_overlap_pct": 49.98,
+    "synthetic_shortcut_risks": [
+      "Deterministic TTL values from IXIA PerfectStorm testbed",
+      "Static port and protocol distributions",
+      "Repetitive flow sizing artifacts"
+    ],
+    "ood_warning": "Recall and FPR may degrade on out-of-distribution network traffic or zero-day attacks."
+  },
+  "reload_verification": {
+    "status": "PASSED",
+    "loader": "XGBoostModel.load_verified",
+    "samples_verified": 345371,
+    "predictions_identical": true,
+    "probabilities_allclose": true,
+    "atol": 1e-07,
+    "rtol": 0.0,
+    "max_abs_probability_diff": 0.0,
+    "feature_names_restored": [
+      "PROTOCOL",
+      "L7_PROTO",
+      "IN_BYTES",
+      "IN_PKTS",
+      "OUT_BYTES",
+      "OUT_PKTS",
+      "TCP_FLAGS",
+      "CLIENT_TCP_FLAGS",
+      "SERVER_TCP_FLAGS",
+      "FLOW_DURATION_MILLISECONDS",
+      "DURATION_IN",
+      "DURATION_OUT",
+      "MIN_TTL",
+      "MAX_TTL",
+      "LONGEST_FLOW_PKT",
+      "SHORTEST_FLOW_PKT",
+      "MIN_IP_PKT_LEN",
+      "MAX_IP_PKT_LEN",
+      "SRC_TO_DST_SECOND_BYTES",
+      "DST_TO_SRC_SECOND_BYTES",
+      "RETRANSMITTED_IN_BYTES",
+      "RETRANSMITTED_IN_PKTS",
+      "RETRANSMITTED_OUT_BYTES",
+      "RETRANSMITTED_OUT_PKTS",
+      "SRC_TO_DST_AVG_THROUGHPUT",
+      "DST_TO_SRC_AVG_THROUGHPUT",
+      "NUM_PKTS_UP_TO_128_BYTES",
+      "NUM_PKTS_128_TO_256_BYTES",
+      "NUM_PKTS_256_TO_512_BYTES",
+      "NUM_PKTS_512_TO_1024_BYTES",
+      "NUM_PKTS_1024_TO_1514_BYTES",
+      "TCP_WIN_MAX_IN",
+      "TCP_WIN_MAX_OUT",
+      "ICMP_TYPE",
+      "ICMP_IPV4_TYPE",
+      "DNS_QUERY_ID",
+      "DNS_QUERY_TYPE",
+      "DNS_TTL_ANSWER",
+      "FTP_COMMAND_RET_CODE",
+      "SRC_TO_DST_IAT_MIN",
+      "SRC_TO_DST_IAT_MAX",
+      "SRC_TO_DST_IAT_AVG",
+      "SRC_TO_DST_IAT_STDDEV",
+      "DST_TO_SRC_IAT_MIN",
+      "DST_TO_SRC_IAT_MAX",
+      "DST_TO_SRC_IAT_AVG",
+      "DST_TO_SRC_IAT_STDDEV"
+    ],
+    "classes_restored": [
+      "0",
+      "1"
+    ],
+    "is_fitted": true
+  }
+}
