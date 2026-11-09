@@ -5,11 +5,15 @@ from network_anomaly.models.random_forest import (
     RandomForestBaselineConfig,
     RandomForestBaselineProtocol,
     RandomForestModel,
-    build_model as build_rf_model,
     create_rf_baseline_protocol,
+)
+from network_anomaly.models.random_forest import (
+    build_model as build_rf_model,
 )
 from network_anomaly.models.xgboost_model import (
     XGBoostModel,
+)
+from network_anomaly.models.xgboost_model import (
     build_model as build_xgb_model,
 )
 from network_anomaly.models.xgboost_protocol import (
