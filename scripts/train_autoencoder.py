@@ -9,17 +9,20 @@ enforces the held-out Test Lock, and saves verified model artifacts and audit re
 Pipeline stages:
 1. Fail-closed prerequisite audit: dataset SHA-256, split manifest + index checksums,
    preprocessor artifact + companion manifest, 47-feature schema contract.
-2. Data loading: partition indices loaded; features transformed via fitted Issue #8 preprocessor.
-3. Training population filtering: benign-only (Label == 0) from Train partition.
-4. Model training: unsupervised MLP Autoencoder (reconstruction error objective).
-5. Validation-only threshold calibration: target FPR quantile or FPR-constrained
+2. Verified preprocessor loading: loaded strictly via TrainOnlyPreprocessor.load_verified().
+3. Partition loading: reads canonical partition indices with 'source_row_index' header;
+   streams CSV using usecols to minimize memory footprint.
+4. Leakage & schema audit: asserts zero target/metadata leakage across Train, Val, and Test.
+5. Training population filtering: benign-only (Label == 0) from Train partition.
+6. Model training: unsupervised MLP Autoencoder (reconstruction error objective).
+7. Validation-only threshold calibration: target FPR quantile or FPR-constrained
    threshold; pre-registered unknown categories (Worms, Backdoor) strictly excluded.
-6. Held-out Test Lock: Test data is not loaded by default; evaluated only with --evaluate-test
+8. Held-out Test Lock: Test data is not loaded by default; evaluated only with --evaluate-test
    after model and threshold are frozen.
-7. Verification & serialization: model artifact SHA-256, companion manifest,
+9. Verification & serialization: model artifact SHA-256, companion manifest,
    round-trip reload check.
-8. Reports: metrics.json, threshold_calibration.json, training_metadata.json, run_metadata.json,
-   evaluation_report.md.
+10. Reports: metrics.json, threshold_calibration.json, training_metadata.json, run_metadata.json,
+    evaluation_report.md.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import numbers
 import platform
 import subprocess
 import sys
@@ -48,15 +52,21 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
+from network_anomaly.data.split import (
+    load_partition_indices as load_canonical_partition_indices,
+)
 from network_anomaly.models.autoencoder import (
     build_model,
     fit_model,
     reconstruction_errors,
 )
+from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor
 
 # ---------------------------------------------------------------------------
-# Default Paths
+# Default Paths and Constants
 # ---------------------------------------------------------------------------
+
+DATASET_SHA256 = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
 
 DATA_MANIFEST_PATH = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_MANIFEST.json"
 RAW_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
@@ -196,7 +206,7 @@ def check_split_manifest(
     indices_dir: Path | None = None,
     skip_checksum: bool = False,
 ) -> dict[str, Any]:
-    """Verify split manifest and required partition index files."""
+    """Verify split manifest and required partition index files fail-closed."""
     man_path = manifest_path or SPLIT_MANIFEST_PATH
     idx_dir = indices_dir or INDICES_DIR_PATH
 
@@ -223,16 +233,31 @@ def check_split_manifest(
         if part not in partitions:
             return {
                 "status": "BLOCKED",
-                "message": f"Split manifest missing partition: {part}",
+                "message": f"Split manifest missing required partition: '{part}'",
+                "path": str(man_path),
+            }
+        part_meta = partitions[part]
+        if not isinstance(part_meta, dict):
+            return {
+                "status": "BLOCKED",
+                "message": f"Split manifest partition metadata for '{part}' must be a dict.",
+                "path": str(man_path),
+            }
+        expected_sha = part_meta.get("index_sha256")
+        if not expected_sha or not isinstance(expected_sha, str) or not expected_sha.strip():
+            return {
+                "status": "BLOCKED",
+                "message": (
+                    f"Partition metadata for '{part}' missing required non-empty 'index_sha256'."
+                ),
                 "path": str(man_path),
             }
 
-    # Verify index files
+    # Verify index files and checksums
     verified_indices: dict[str, dict[str, Any]] = {}
     for part in required_parts:
         index_file = idx_dir / f"{part}_indices.csv.gz"
         if not index_file.exists():
-            # Also check fallback without .gz
             index_file_raw = idx_dir / f"{part}_indices.csv"
             if index_file_raw.exists():
                 index_file = index_file_raw
@@ -244,11 +269,11 @@ def check_split_manifest(
                 }
 
         part_meta = partitions[part]
-        expected_sha = part_meta.get("index_sha256")
+        expected_sha = part_meta["index_sha256"].strip()
         expected_rows = part_meta.get("row_count")
 
         actual_sha = None
-        if not skip_checksum and expected_sha:
+        if not skip_checksum:
             actual_sha = sha256_file(index_file)
             if actual_sha != expected_sha:
                 return {
@@ -273,6 +298,7 @@ def check_split_manifest(
         "status": "PASS",
         "message": "Split manifest and partition index files verified.",
         "path": str(man_path),
+        "manifest": manifest,
         "manifest_sha256": manifest_sha,
         "partitions": partitions,
         "verified_indices": verified_indices,
@@ -345,7 +371,7 @@ def check_preprocessor_artifact(
 
 
 def check_feature_schema(columns: Sequence[str]) -> dict[str, Any]:
-    """Verify that feature columns exactly match the canonical 47 features."""
+    """Verify that feature columns exactly match the canonical 47 features in order."""
     cols_tuple = tuple(columns)
     if cols_tuple != ML_FEATURE_COLUMNS:
         missing = [c for c in ML_FEATURE_COLUMNS if c not in cols_tuple]
@@ -400,11 +426,38 @@ def check_finite_values(X_array: np.ndarray, partition_name: str) -> dict[str, A
 # ---------------------------------------------------------------------------
 
 
-def load_partition_indices(indices_path: Path, max_rows: int | None = None) -> np.ndarray:
-    """Read partition indices (line numbers) from a CSV or CSV.GZ file."""
-    compression = "gzip" if str(indices_path).endswith(".gz") else None
-    df = pd.read_csv(indices_path, header=None, compression=compression)
-    indices = df.iloc[:, 0].to_numpy(dtype=np.int64)
+def read_partition_indices_file(
+    idx_path: Path,
+    max_rows: int | None = None,
+) -> np.ndarray:
+    """Read partition indices directly from a CSV or CSV.GZ file enforcing canonical header."""
+    path = Path(idx_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing partition index file: {path}")
+    compression = "gzip" if str(path).endswith(".gz") else None
+    df_idx = pd.read_csv(path, compression=compression)
+    if "source_row_index" not in df_idx.columns:
+        raise ValueError(
+            f"Partition index file {path.name} missing canonical header 'source_row_index'"
+        )
+    col = df_idx["source_row_index"]
+    try:
+        indices = col.to_numpy(dtype=np.int64)
+    except Exception as exc:
+        raise ValueError(f"Invalid non-integer data in partition index {path.name}: {exc}") from exc
+    if max_rows is not None and len(indices) > max_rows:
+        indices = indices[:max_rows]
+    return indices
+
+
+def load_partition_indices(
+    manifest_or_path: Any,
+    indices_dir: Path,
+    partition_name: str,
+    max_rows: int | None = None,
+) -> np.ndarray:
+    """Load canonical partition indices using split.load_partition_indices with optional limit."""
+    indices = load_canonical_partition_indices(manifest_or_path, Path(indices_dir), partition_name)
     if max_rows is not None and len(indices) > max_rows:
         indices = indices[:max_rows]
     return indices
@@ -413,46 +466,54 @@ def load_partition_indices(indices_path: Path, max_rows: int | None = None) -> n
 def load_and_transform_partitions(
     raw_data_path: Path,
     indices_dir: Path,
+    split_manifest: Any,
     preprocessor: Any,
     include_test: bool = False,
     sample_size: int | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Stream raw CSV and extract transformed features, labels, and attacks.
+    """Stream raw CSV using usecols and extract transformed features, labels, and attacks.
 
     Guarantees:
     - Held-out Test is never loaded unless include_test=True.
     - Preprocessor transform-only (no fitting).
-    - Excludes targets and trace metadata from X.
+    - Uses usecols=list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS) to minimize RAM footprint.
+    - Ensures exact 47 canonical ML features are in canonical order.
     """
-    train_idx_path = indices_dir / "train_indices.csv.gz"
-    val_idx_path = indices_dir / "validation_indices.csv.gz"
-    test_idx_path = indices_dir / "test_indices.csv.gz"
-
-    if not train_idx_path.exists():
-        train_idx_path = indices_dir / "train_indices.csv"
-    if not val_idx_path.exists():
-        val_idx_path = indices_dir / "validation_indices.csv"
-    if not test_idx_path.exists():
-        test_idx_path = indices_dir / "test_indices.csv"
-
-    train_indices = load_partition_indices(train_idx_path, max_rows=sample_size)
-    val_indices = load_partition_indices(val_idx_path, max_rows=sample_size)
+    train_indices = load_partition_indices(
+        split_manifest, indices_dir, "train", max_rows=sample_size
+    )
+    val_indices = load_partition_indices(
+        split_manifest, indices_dir, "validation", max_rows=sample_size
+    )
     test_indices = (
-        load_partition_indices(test_idx_path, max_rows=sample_size)
+        load_partition_indices(split_manifest, indices_dir, "test", max_rows=sample_size)
         if include_test
         else np.array([], dtype=np.int64)
     )
 
     needed_indices = np.unique(np.concatenate([train_indices, val_indices, test_indices]))
 
+    cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
+
+    # Verify that required columns exist in raw CSV header
+    header_df = pd.read_csv(raw_data_path, nrows=0)
+    missing_cols = [c for c in cols_to_read if c not in header_df.columns]
+    if missing_cols:
+        raise ValueError(f"Raw dataset CSV missing required columns: {missing_cols}")
+
     train_rows: list[pd.DataFrame] = []
     val_rows: list[pd.DataFrame] = []
     test_rows: list[pd.DataFrame] = []
 
-    # Stream CSV in chunks
+    # Stream CSV in chunks using usecols
     chunk_size = 100_000
     current_idx = 0
-    for chunk in pd.read_csv(raw_data_path, chunksize=chunk_size, low_memory=False):
+    for chunk in pd.read_csv(
+        raw_data_path,
+        usecols=cols_to_read,
+        chunksize=chunk_size,
+        low_memory=False,
+    ):
         chunk_indices = np.arange(current_idx, current_idx + len(chunk))
         current_idx += len(chunk)
 
@@ -481,21 +542,31 @@ def load_and_transform_partitions(
         if not row_chunks:
             return {
                 "X": np.empty((0, len(ML_FEATURE_COLUMNS))),
-                "y": np.array([]),
-                "attack": np.array([]),
+                "y": np.array([], dtype=np.int64),
+                "attack": np.array([], dtype=object),
+                "X_raw_df": pd.DataFrame(columns=list(ML_FEATURE_COLUMNS)),
+                "X_raw_cols": list(ML_FEATURE_COLUMNS),
             }
         df = pd.concat(row_chunks, ignore_index=True)
         y = df["Label"].to_numpy(dtype=np.int64)
         attack = df["Attack"].to_numpy(dtype=object)
 
-        # ML features raw
+        # Reorder columns explicitly to 47 canonical ML features
         X_raw = df[list(ML_FEATURE_COLUMNS)].copy()
+
         # Transform via preprocessor
         if hasattr(preprocessor, "transform"):
             X_trans = preprocessor.transform(X_raw)
         else:
             X_trans = np.asarray(X_raw, dtype=np.float64)
-        return {"X": X_trans, "y": y, "attack": attack, "X_raw_cols": list(X_raw.columns)}
+
+        return {
+            "X": X_trans,
+            "y": y,
+            "attack": attack,
+            "X_raw_df": X_raw,
+            "X_raw_cols": list(X_raw.columns),
+        }
 
     results = {
         "train": assemble_partition(train_rows),
@@ -532,6 +603,14 @@ def calibrate_threshold(
     if len(val_scores) != len(val_y):
         raise ValueError("val_scores and val_y length mismatch.")
 
+    # Validate target_fpr
+    if not isinstance(target_fpr, (numbers.Real, float, int)) or isinstance(target_fpr, bool):
+        raise TypeError(f"target_fpr must be a real number, got {type(target_fpr).__name__}")
+    if not np.isfinite(target_fpr):
+        raise ValueError(f"target_fpr must be finite, got {target_fpr!r}")
+    if not (0.0 <= target_fpr <= 1.0):
+        raise ValueError(f"target_fpr must be in [0.0, 1.0], got {target_fpr!r}")
+
     # Exclude unknown categories from calibration
     is_unknown = np.array([cat in unknown_categories for cat in val_attack])
     is_benign = val_y == 0
@@ -550,17 +629,14 @@ def calibrate_threshold(
     n_unknown_excluded = int(is_unknown.sum())
 
     if method == "benign_quantile":
-        # Percentile corresponding to 1 - target_fpr
         quantile = max(0.0, min(1.0, 1.0 - target_fpr))
         threshold = float(np.percentile(benign_scores, quantile * 100))
     elif method == "fpr_constrained":
-        # Sort benign scores descending; find score where FPR <= target_fpr
         sorted_benign = np.sort(benign_scores)
         idx = int(np.floor((1.0 - target_fpr) * len(sorted_benign)))
-        idx = min(idx, len(sorted_benign) - 1)
+        idx = max(0, min(idx, len(sorted_benign) - 1))
         threshold = float(sorted_benign[idx])
     elif method == "supervised_best_f1":
-        # Search over candidate thresholds to maximize F1 on calibration set
         candidate_thresholds = np.percentile(calib_scores, np.linspace(50, 99.9, 100))
         best_f1 = -1.0
         best_th = float(candidate_thresholds[0])
@@ -579,7 +655,6 @@ def calibrate_threshold(
     else:
         raise ValueError(f"Unsupported calibration method: {method!r}")
 
-    # Calculate empirical FPR on benign samples with selected threshold
     val_preds_benign = (benign_scores >= threshold).astype(int)
     empirical_fpr = float(val_preds_benign.sum() / len(benign_scores))
 
@@ -622,7 +697,6 @@ def compute_metrics(
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
     tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
-    # Normal class F1
     prec_normal = tn / (tn + fn) if (tn + fn) > 0 else 0.0
     rec_normal = tn / (tn + fp) if (tn + fp) > 0 else 0.0
     f1_normal = (
@@ -648,7 +722,6 @@ def compute_metrics(
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
     }
 
-    # Per-category metrics if attack column is provided
     if attack_col is not None and len(attack_col) == total:
         category_metrics: dict[str, dict[str, Any]] = {}
         unique_cats = sorted(set(attack_col))
@@ -729,18 +802,15 @@ def save_artifacts(
     threshold_file = output_dir / "threshold.json"
     manifest_file = output_dir / "autoencoder_manifest.json"
 
-    # 1. Save model binary
     joblib.dump(model, model_file)
     model_sha256 = sha256_file(model_file)
 
-    # 2. Save config & threshold
     with config_file.open("w", encoding="utf-8") as fh:
         json.dump(config, fh, indent=2)
 
     with threshold_file.open("w", encoding="utf-8") as fh:
         json.dump(threshold_meta, fh, indent=2)
 
-    # 3. Create companion manifest
     manifest_data = {
         "artifact_type": "autoencoder-anomaly-detector",
         "schema_version": "1.0",
@@ -765,6 +835,7 @@ def save_artifacts(
         "dataset_sha256": training_meta.get("dataset_sha256"),
         "split_manifest_sha256": training_meta.get("split_manifest_sha256"),
         "preprocessor_sha256": training_meta.get("preprocessor_sha256"),
+        "preprocessor_source": training_meta.get("preprocessor_source"),
         "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "git_commit": training_meta.get("git_commit"),
@@ -895,7 +966,6 @@ def generate_markdown_report(
         "",
     ]
 
-    # Category breakdown for Validation
     if "per_category" in metrics_val:
         lines.extend(
             [
@@ -998,7 +1068,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     print("=" * 70)
 
     # 1. Prerequisite Verification (Fail-Closed)
-    print("[1/7] Auditing prerequisites...")
+    print("[1/8] Auditing prerequisites fail-closed...")
     dataset_res = check_dataset(
         manifest_path=args.data_manifest,
         raw_path=args.raw_data,
@@ -1029,20 +1099,39 @@ def run_pipeline(args: argparse.Namespace) -> int:
         return 1
     print(f"  OK Preprocessor artifact verified: {prep_res['path']}")
 
-    # 2. Load Preprocessor
-    print("[2/7] Loading fitted preprocessor artifact...")
-    preprocessor = joblib.load(prep_res["path"])
-    print("  OK Preprocessor loaded.")
+    # 2. Load Preprocessor via TrainOnlyPreprocessor.load_verified
+    print("[2/8] Loading and verifying preprocessor via TrainOnlyPreprocessor.load_verified...")
+    try:
+        preprocessor = TrainOnlyPreprocessor.load_verified(
+            artifact_path=Path(prep_res["path"]),
+            manifest_path=Path(prep_res.get("manifest_path", PREPROCESSOR_MANIFEST_PATH)),
+            split_manifest_path=Path(split_res["path"]),
+            dataset_path=Path(dataset_res["path"]) if Path(dataset_res["path"]).exists() else None,
+            expected_dataset_sha256=dataset_res.get("expected_sha256") or DATASET_SHA256,
+        )
+    except Exception as exc:
+        print(f"[BLOCKED] Preprocessor artifact verification failed: {exc}")
+        return 1
+    print("  OK Preprocessor verified and loaded via TrainOnlyPreprocessor.load_verified.")
 
-    # 3. Stream & Extract Partitions
-    print(f"[3/7] Loading and transforming partitions (Held-out Test: {args.evaluate_test})...")
-    partitions = load_and_transform_partitions(
-        raw_data_path=Path(dataset_res["path"]),
-        indices_dir=args.indices_dir or INDICES_DIR_PATH,
-        preprocessor=preprocessor,
-        include_test=args.evaluate_test,
-        sample_size=args.sample_size,
+    # 3. Stream & Extract Partitions using usecols
+    print(f"[3/8] Loading and transforming partitions (Held-out Test: {args.evaluate_test})...")
+    split_manifest_obj = split_res.get("manifest") or json.loads(
+        Path(split_res["path"]).read_text(encoding="utf-8")
     )
+    try:
+        partitions = load_and_transform_partitions(
+            raw_data_path=Path(dataset_res["path"]),
+            indices_dir=args.indices_dir or INDICES_DIR_PATH,
+            split_manifest=split_manifest_obj,
+            preprocessor=preprocessor,
+            include_test=args.evaluate_test,
+            sample_size=args.sample_size,
+        )
+    except Exception as exc:
+        print(f"[BLOCKED] Failed to load partitions: {exc}")
+        return 1
+
     train_data = partitions["train"]
     val_data = partitions["validation"]
     test_data = partitions.get("test")
@@ -1052,23 +1141,44 @@ def run_pipeline(args: argparse.Namespace) -> int:
     if test_data:
         print(f"  Test raw samples loaded: {len(test_data['y']):,}")
 
-    # Validate feature contract
-    schema_res = check_feature_schema(train_data["X_raw_cols"])
-    if schema_res["status"] != "PASS":
-        print(f"FAILED: {schema_res['message']}")
-        return 1
-    print("  OK 47 canonical baseline features verified.")
-
-    # Check finite values
+    # 4. Leakage checks across all partitions
+    print("[4/8] Auditing feature matrices for target and metadata leakage...")
     for part_name, p_data in [("Train", train_data), ("Validation", val_data)]:
+        leak_res = check_no_leakage_in_matrix(p_data["X_raw_df"])
+        if leak_res["status"] != "PASS":
+            print(f"FAILED: Data leakage in {part_name}: {leak_res['message']}")
+            return 1
+    if test_data is not None:
+        leak_res = check_no_leakage_in_matrix(test_data["X_raw_df"])
+        if leak_res["status"] != "PASS":
+            print(f"FAILED: Data leakage in Test: {leak_res['message']}")
+            return 1
+    print("  OK No leakage detected across all loaded partitions.")
+
+    # 5. Schema and Finite checks
+    print("[5/8] Verifying feature schema and finite numeric values...")
+    for part_name, p_data in [("Train", train_data), ("Validation", val_data)]:
+        schema_res = check_feature_schema(p_data["X_raw_cols"])
+        if schema_res["status"] != "PASS":
+            print(f"FAILED: Feature schema mismatch in {part_name}: {schema_res['message']}")
+            return 1
         fin_res = check_finite_values(p_data["X"], part_name)
         if fin_res["status"] != "PASS":
-            print(f"FAILED: {fin_res['message']}")
+            print(f"FAILED: Non-finite values in {part_name}: {fin_res['message']}")
             return 1
-    print("  OK Transformed features are strictly finite.")
+    if test_data is not None:
+        schema_res = check_feature_schema(test_data["X_raw_cols"])
+        if schema_res["status"] != "PASS":
+            print(f"FAILED: Feature schema mismatch in Test: {schema_res['message']}")
+            return 1
+        fin_res = check_finite_values(test_data["X"], "Test")
+        if fin_res["status"] != "PASS":
+            print(f"FAILED: Non-finite values in Test: {fin_res['message']}")
+            return 1
+    print("  OK 47 canonical baseline features and finite values verified.")
 
-    # 4. Filter Training Population (Benign Only)
-    print("[4/7] Filtering training population (benign-only, Label == 0)...")
+    # 6. Filter Training Population (Benign Only) and Fit Autoencoder
+    print("[6/8] Fitting Autoencoder on benign-only training population...")
     train_y = train_data["y"]
     benign_mask = train_y == 0
     X_train_benign = train_data["X"][benign_mask]
@@ -1079,8 +1189,6 @@ def run_pipeline(args: argparse.Namespace) -> int:
         print("FAILED: No benign samples available for training.")
         return 1
 
-    # 5. Fit Autoencoder
-    print("[5/7] Fitting Autoencoder model...")
     hidden_layers = tuple(int(x.strip()) for x in args.hidden_layers.split(","))
     batch_size = args.batch_size
     if isinstance(batch_size, str) and batch_size != "auto":
@@ -1103,11 +1211,10 @@ def run_pipeline(args: argparse.Namespace) -> int:
     fit_model(model, X_train_benign)
     print("  OK Autoencoder fitted successfully.")
 
-    # 6. Validation Reconstruction & Threshold Calibration
-    print("[6/7] Computing validation reconstruction errors and calibrating threshold...")
+    # 7. Validation Reconstruction & Threshold Calibration
+    print("[7/8] Computing validation reconstruction errors and calibrating threshold...")
     val_scores = reconstruction_errors(model, val_data["X"])
 
-    # Parse unknown categories
     unknown_cats = frozenset([c.strip() for c in args.unknown_categories.split(",") if c.strip()])
     threshold_meta = calibrate_threshold(
         val_scores=val_scores,
@@ -1125,7 +1232,6 @@ def run_pipeline(args: argparse.Namespace) -> int:
     )
     print(f"  Unknown categories held out: {sorted(unknown_cats)}")
 
-    # Evaluate validation
     val_preds = (val_scores >= th_val).astype(np.int64)
     metrics_val = compute_metrics(
         y_true=val_data["y"],
@@ -1148,12 +1254,11 @@ def run_pipeline(args: argparse.Namespace) -> int:
             unknown_categories=unknown_cats,
         )
 
-    # 7. Artifacts & Reporting
-    print("[7/7] Serializing artifacts and generating reports...")
+    # 8. Artifacts & Reporting
+    print("[8/8] Serializing artifacts and generating reports...")
     output_dir = args.output_dir or DEFAULT_OUTPUT_DIR
     report_dir = args.report_dir or DEFAULT_REPORT_DIR
 
-    # Get git commit
     try:
         git_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except Exception:
@@ -1169,11 +1274,11 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "dataset_sha256": dataset_res.get("sha256"),
         "split_manifest_sha256": split_res.get("manifest_sha256"),
         "preprocessor_sha256": prep_res.get("sha256"),
+        "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
         "git_commit": git_commit,
         "elapsed_seconds": round(time.time() - start_time, 2),
     }
 
-    # Save artifacts
     art_res = save_artifacts(
         model=model,
         config=model_cfg,
@@ -1183,7 +1288,6 @@ def run_pipeline(args: argparse.Namespace) -> int:
     )
     print(f"  OK Artifacts saved to: {output_dir}")
 
-    # Verify saved model
     sample_eval = val_data["X"][: min(100, len(val_data["X"]))]
     verify_res = verify_saved_model(
         model_path=Path(art_res["files"]["model"]),
@@ -1195,7 +1299,6 @@ def run_pipeline(args: argparse.Namespace) -> int:
         return 1
     print("  OK Saved artifact verified via reload check.")
 
-    # Save JSON reports
     report_dir.mkdir(parents=True, exist_ok=True)
     with (report_dir / "metrics.json").open("w", encoding="utf-8") as fh:
         json.dump(
@@ -1222,13 +1325,13 @@ def run_pipeline(args: argparse.Namespace) -> int:
                 "python_version": sys.version,
                 "execution_time_seconds": training_meta["elapsed_seconds"],
                 "git_commit": git_commit,
+                "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
             },
             fh,
             indent=2,
             default=str,
         )
 
-    # Markdown evaluation report
     report_md_path = report_dir / "evaluation_report.md"
     generate_markdown_report(
         metrics_val=metrics_val,
@@ -1287,7 +1390,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    # Convert batch_size to int if numeric
     if args.batch_size != "auto":
         try:
             args.batch_size = int(args.batch_size)

@@ -14,11 +14,22 @@ Covered:
 - Artifact serialization, manifest generation, and verified loading.
 - Tamper detection (hash mismatch fails closed).
 - End-to-end synthetic integration pipeline execution.
+- Regression tests for PR #51 reviewer findings:
+  * P0: Partition indices header and loading.
+  * P1: TrainOnlyPreprocessor.load_verified fail-closed gating.
+  * P1: Actual leakage audit invocation across Train, Val, and Test.
+  * P2: Non-empty index_sha256 requirement in split manifest.
+  * P2: Strict target_fpr boundary validation [0.0, 1.0].
+  * P2: Streamlined usecols loading and canonical feature reordering.
 """
 
+from __future__ import annotations
+
+import argparse
 import gzip
 import json
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 import pandas as pd
@@ -27,6 +38,7 @@ import pytest
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
     ML_FEATURE_COLUMNS,
+    TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
 from network_anomaly.models.autoencoder import (
@@ -42,7 +54,10 @@ from scripts.train_autoencoder import (
     check_preprocessor_artifact,
     check_split_manifest,
     compute_metrics,
+    load_and_transform_partitions,
+    load_partition_indices,
     load_verified_autoencoder,
+    read_partition_indices_file,
     run_pipeline,
     save_artifacts,
     sha256_file,
@@ -166,11 +181,25 @@ def test_check_split_manifest_missing(tmp_path):
 
 
 def test_check_split_manifest_missing_partition(tmp_path):
+    train_idx_p = tmp_path / "train_indices.csv.gz"
+    with gzip.open(train_idx_p, "wt") as fh:
+        fh.write("source_row_index\n0\n")
     man = tmp_path / "split.json"
-    man.write_text(json.dumps({"partitions": {"train": {}}}))
+    man.write_text(
+        json.dumps(
+            {
+                "partitions": {
+                    "train": {
+                        "index_sha256": sha256_file(train_idx_p),
+                        "row_count": 1,
+                    }
+                }
+            }
+        )
+    )
     res = check_split_manifest(manifest_path=man, indices_dir=tmp_path)
     assert res["status"] == "BLOCKED"
-    assert "missing partition" in res["message"]
+    assert "missing required partition" in res["message"]
 
 
 def test_check_preprocessor_missing(tmp_path):
@@ -219,7 +248,6 @@ def test_calibrate_threshold_fpr_constrained():
 
 
 def test_calibrate_threshold_supervised_best_f1():
-    # Benign low scores, attacks high scores
     scores = np.array([0.1, 0.2, 0.3, 0.4, 0.8, 0.85, 0.9, 0.95])
     y = np.array([0, 0, 0, 0, 1, 1, 1, 1])
     attack = np.array(
@@ -240,7 +268,6 @@ def test_calibrate_threshold_excludes_unknown_attacks():
     """Unknown categories (Worms, Backdoor) must NOT participate in calibration."""
     scores = np.array([0.1, 0.2, 0.3, 0.4, 0.8, 0.9, 0.95, 0.99])
     y = np.array([0, 0, 0, 0, 1, 1, 1, 1])
-    # 2 unknown attacks with extreme scores
     attack = np.array(
         ["Benign", "Benign", "Benign", "Benign", "DoS", "Exploits", "Worms", "Backdoor"]
     )
@@ -367,6 +394,395 @@ def test_load_verified_autoencoder_fails_closed_tampered(tmp_path, fitted_autoen
         load_verified_autoencoder(model_path, manifest_path)
 
 
+# --- Regression Tests for Reviewer Findings (PR #51) ---------------------------
+
+
+# P0: Partition indices loading with canonical header
+def test_read_partition_indices_file_with_canonical_header(tmp_path):
+    idx_p = tmp_path / "train_indices.csv"
+    idx_p.write_text("source_row_index\n10\n20\n30\n", encoding="utf-8")
+    indices = read_partition_indices_file(idx_p)
+    np.testing.assert_array_equal(indices, np.array([10, 20, 30], dtype=np.int64))
+
+
+def test_read_partition_indices_file_gzipped(tmp_path):
+    idx_p = tmp_path / "val_indices.csv.gz"
+    with gzip.open(idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n1\n2\n5\n")
+    indices = read_partition_indices_file(idx_p)
+    np.testing.assert_array_equal(indices, np.array([1, 2, 5], dtype=np.int64))
+
+
+def test_read_partition_indices_file_excludes_header_from_data(tmp_path):
+    idx_p = tmp_path / "indices.csv"
+    idx_p.write_text("source_row_index\n100\n", encoding="utf-8")
+    indices = read_partition_indices_file(idx_p)
+    assert len(indices) == 1
+    assert indices[0] == 100
+    assert indices.dtype == np.int64
+
+
+def test_read_partition_indices_file_rejects_missing_header(tmp_path):
+    idx_p = tmp_path / "raw_indices.csv"
+    idx_p.write_text("10\n20\n30\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="missing canonical header 'source_row_index'"):
+        read_partition_indices_file(idx_p)
+
+
+def test_read_partition_indices_file_rejects_non_integer_data(tmp_path):
+    idx_p = tmp_path / "bad_indices.csv"
+    idx_p.write_text("source_row_index\n10\nnot_an_int\n30\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid non-integer data"):
+        read_partition_indices_file(idx_p)
+
+
+def test_read_partition_indices_file_preserves_order(tmp_path):
+    idx_p = tmp_path / "ordered_indices.csv"
+    idx_p.write_text("source_row_index\n50\n10\n30\n", encoding="utf-8")
+    indices = read_partition_indices_file(idx_p)
+    np.testing.assert_array_equal(indices, np.array([50, 10, 30], dtype=np.int64))
+
+
+def test_load_partition_indices_delegates_to_canonical_split(tmp_path):
+    idx_p = tmp_path / "train_indices.csv.gz"
+    with gzip.open(idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n0\n1\n2\n3\n")
+    split_man = {"partitions": {"train": {"index_file": "train_indices.csv.gz"}}}
+    indices = load_partition_indices(split_man, tmp_path, "train", max_rows=2)
+    np.testing.assert_array_equal(indices, np.array([0, 1], dtype=np.int64))
+
+
+# P1: TrainOnlyPreprocessor.load_verified fail-closed gating
+def test_load_verified_preprocessor_fails_closed_when_load_verified_raises(tmp_path):
+    with mock.patch(
+        "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+        side_effect=ValueError("Tampered preprocessor artifact"),
+    ):
+        mock_args = argparse.Namespace(
+            raw_data=tmp_path / "raw.csv",
+            data_manifest=tmp_path / "data_man.json",
+            split_manifest=tmp_path / "split_man.json",
+            indices_dir=tmp_path / "splits",
+            preprocessor_artifact=tmp_path / "preprocessor.joblib",
+            preprocessor_manifest=tmp_path / "preprocessor_manifest.json",
+            output_dir=tmp_path / "output",
+            report_dir=tmp_path / "reports",
+            skip_checksums=False,
+        )
+        with (
+            mock.patch(
+                "scripts.train_autoencoder.check_dataset",
+                return_value={"status": "PASS", "path": str(mock_args.raw_data)},
+            ),
+            mock.patch(
+                "scripts.train_autoencoder.check_split_manifest",
+                return_value={
+                    "status": "PASS",
+                    "path": str(mock_args.split_manifest),
+                    "manifest": {},
+                },
+            ),
+            mock.patch(
+                "scripts.train_autoencoder.check_preprocessor_artifact",
+                return_value={
+                    "status": "PASS",
+                    "path": str(mock_args.preprocessor_artifact),
+                },
+            ),
+        ):
+            exit_code = run_pipeline(mock_args)
+            assert exit_code == 1
+
+
+# P1: Actual leakage audit invocation across Train, Val, and Test
+def test_pipeline_leakage_check_detects_target_in_train():
+    df_leak = pd.DataFrame(
+        np.zeros((3, len(ML_FEATURE_COLUMNS) + 1)),
+        columns=list(ML_FEATURE_COLUMNS) + ["Label"],
+    )
+    res = check_no_leakage_in_matrix(df_leak)
+    assert res["status"] == "FAIL"
+    assert "targets=['Label']" in res["message"]
+
+
+def test_pipeline_leakage_check_detects_trace_metadata_in_train():
+    df_leak = pd.DataFrame(
+        np.zeros((3, len(ML_FEATURE_COLUMNS) + 1)),
+        columns=list(ML_FEATURE_COLUMNS) + ["IPV4_SRC_ADDR"],
+    )
+    res = check_no_leakage_in_matrix(df_leak)
+    assert res["status"] == "FAIL"
+    assert "IPV4_SRC_ADDR" in res["message"]
+
+
+def test_pipeline_leakage_check_detects_leakage_in_validation():
+    df_leak = pd.DataFrame(
+        np.zeros((3, len(ML_FEATURE_COLUMNS) + 1)),
+        columns=list(ML_FEATURE_COLUMNS) + ["Attack"],
+    )
+    res = check_no_leakage_in_matrix(df_leak)
+    assert res["status"] == "FAIL"
+    assert "targets=['Attack']" in res["message"]
+
+
+def test_pipeline_leakage_check_passes_clean_partitions():
+    clean_df = pd.DataFrame(
+        np.zeros((5, len(ML_FEATURE_COLUMNS))),
+        columns=list(ML_FEATURE_COLUMNS),
+    )
+    res = check_no_leakage_in_matrix(clean_df)
+    assert res["status"] == "PASS"
+
+
+# P2: check_split_manifest verifies non-empty index_sha256
+def test_check_split_manifest_blocked_when_index_sha256_missing(tmp_path):
+    idx_p = tmp_path / "train_indices.csv.gz"
+    with gzip.open(idx_p, "wt") as fh:
+        fh.write("source_row_index\n1\n")
+    man = tmp_path / "split.json"
+    man.write_text(json.dumps({"partitions": {"train": {"row_count": 1}}}))
+    res = check_split_manifest(manifest_path=man, indices_dir=tmp_path)
+    assert res["status"] == "BLOCKED"
+    assert "missing required non-empty 'index_sha256'" in res["message"]
+
+
+def test_check_split_manifest_blocked_when_index_sha256_empty(tmp_path):
+    idx_p = tmp_path / "train_indices.csv.gz"
+    with gzip.open(idx_p, "wt") as fh:
+        fh.write("source_row_index\n1\n")
+    man = tmp_path / "split.json"
+    man.write_text(json.dumps({"partitions": {"train": {"row_count": 1, "index_sha256": ""}}}))
+    res = check_split_manifest(manifest_path=man, indices_dir=tmp_path)
+    assert res["status"] == "BLOCKED"
+    assert "missing required non-empty 'index_sha256'" in res["message"]
+
+
+def test_check_split_manifest_blocked_when_index_sha256_mismatch(tmp_path):
+    idx_p = tmp_path / "train_indices.csv.gz"
+    with gzip.open(idx_p, "wt") as fh:
+        fh.write("source_row_index\n1\n")
+    val_idx_p = tmp_path / "validation_indices.csv.gz"
+    with gzip.open(val_idx_p, "wt") as fh:
+        fh.write("source_row_index\n2\n")
+    test_idx_p = tmp_path / "test_indices.csv.gz"
+    with gzip.open(test_idx_p, "wt") as fh:
+        fh.write("source_row_index\n3\n")
+
+    man = tmp_path / "split.json"
+    man.write_text(
+        json.dumps(
+            {
+                "partitions": {
+                    "train": {"row_count": 1, "index_sha256": "wrong_hash"},
+                    "validation": {
+                        "row_count": 1,
+                        "index_sha256": sha256_file(val_idx_p),
+                    },
+                    "test": {
+                        "row_count": 1,
+                        "index_sha256": sha256_file(test_idx_p),
+                    },
+                }
+            }
+        )
+    )
+    res = check_split_manifest(manifest_path=man, indices_dir=tmp_path)
+    assert res["status"] == "BLOCKED"
+    assert "Partition index SHA-256 mismatch for train" in res["message"]
+
+
+def test_check_split_manifest_pass_when_checksum_matches(tmp_path):
+    partitions_meta = {}
+    for part in ("train", "validation", "test"):
+        idx_p = tmp_path / f"{part}_indices.csv.gz"
+        with gzip.open(idx_p, "wt") as fh:
+            fh.write("source_row_index\n10\n")
+        partitions_meta[part] = {
+            "row_count": 1,
+            "index_sha256": sha256_file(idx_p),
+        }
+    man = tmp_path / "split.json"
+    man.write_text(json.dumps({"partitions": partitions_meta}))
+    res = check_split_manifest(manifest_path=man, indices_dir=tmp_path)
+    assert res["status"] == "PASS"
+
+
+def test_check_split_manifest_blocked_when_partition_metadata_not_dict(tmp_path):
+    man = tmp_path / "split.json"
+    man.write_text(json.dumps({"partitions": {"train": "not_a_dict"}}))
+    res = check_split_manifest(manifest_path=man, indices_dir=tmp_path)
+    assert res["status"] == "BLOCKED"
+    assert "must be a dict" in res["message"]
+
+
+# P2: Strict target_fpr boundary validation [0.0, 1.0]
+def test_calibrate_threshold_rejects_target_fpr_negative():
+    scores = np.array([0.1, 0.2, 0.3])
+    y = np.zeros(3, dtype=int)
+    attack = np.array(["Benign"] * 3)
+    with pytest.raises(ValueError, match=r"target_fpr must be in \[0\.0, 1\.0\]"):
+        calibrate_threshold(scores, y, attack, target_fpr=-0.05)
+
+
+def test_calibrate_threshold_rejects_target_fpr_greater_than_one():
+    scores = np.array([0.1, 0.2, 0.3])
+    y = np.zeros(3, dtype=int)
+    attack = np.array(["Benign"] * 3)
+    with pytest.raises(ValueError, match=r"target_fpr must be in \[0\.0, 1\.0\]"):
+        calibrate_threshold(scores, y, attack, target_fpr=1.05)
+
+
+def test_calibrate_threshold_rejects_target_fpr_nan():
+    scores = np.array([0.1, 0.2, 0.3])
+    y = np.zeros(3, dtype=int)
+    attack = np.array(["Benign"] * 3)
+    with pytest.raises(ValueError, match="target_fpr must be finite"):
+        calibrate_threshold(scores, y, attack, target_fpr=float("nan"))
+
+
+def test_calibrate_threshold_rejects_target_fpr_inf():
+    scores = np.array([0.1, 0.2, 0.3])
+    y = np.zeros(3, dtype=int)
+    attack = np.array(["Benign"] * 3)
+    with pytest.raises(ValueError, match="target_fpr must be finite"):
+        calibrate_threshold(scores, y, attack, target_fpr=float("inf"))
+
+
+def test_calibrate_threshold_rejects_target_fpr_non_numeric():
+    scores = np.array([0.1, 0.2, 0.3])
+    y = np.zeros(3, dtype=int)
+    attack = np.array(["Benign"] * 3)
+    with pytest.raises(TypeError, match="target_fpr must be a real number"):
+        calibrate_threshold(scores, y, attack, target_fpr="zero_point_one")  # type: ignore
+
+
+def test_calibrate_threshold_boundary_zero():
+    scores = np.array([0.1, 0.2, 0.3, 0.4])
+    y = np.zeros(4, dtype=int)
+    attack = np.array(["Benign"] * 4)
+    res = calibrate_threshold(scores, y, attack, target_fpr=0.0)
+    assert res["threshold_frozen"] is True
+    assert res["target_fpr"] == 0.0
+
+
+def test_calibrate_threshold_boundary_one():
+    scores = np.array([0.1, 0.2, 0.3, 0.4])
+    y = np.zeros(4, dtype=int)
+    attack = np.array(["Benign"] * 4)
+    res = calibrate_threshold(scores, y, attack, target_fpr=1.0)
+    assert res["threshold_frozen"] is True
+    assert res["target_fpr"] == 1.0
+
+
+# P2: usecols reading and canonical column reordering
+def test_load_and_transform_partitions_reads_only_ml_features_and_targets(tmp_path, rng):
+    n_rows = 20
+    df_data = {}
+    for col in ALL_COLUMNS:
+        if col in ML_FEATURE_COLUMNS:
+            df_data[col] = rng.normal(0, 1, n_rows)
+        elif col in TRACE_METADATA_COLUMNS:
+            df_data[col] = 99999
+        elif col in TARGET_COLUMNS:
+            df_data[col] = 0 if col == "Label" else "Benign"
+        else:
+            df_data[col] = 0
+    df = pd.DataFrame(df_data)
+    csv_path = tmp_path / "data.csv"
+    df.to_csv(csv_path, index=False)
+
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    for part in ("train", "validation", "test"):
+        idx_p = indices_dir / f"{part}_indices.csv.gz"
+        with gzip.open(idx_p, "wt") as fh:
+            fh.write("source_row_index\n0\n1\n2\n3\n")
+
+    split_man = {
+        "partitions": {
+            part: {"index_file": f"{part}_indices.csv.gz"}
+            for part in ("train", "validation", "test")
+        }
+    }
+    parts = load_and_transform_partitions(
+        raw_data_path=csv_path,
+        indices_dir=indices_dir,
+        split_manifest=split_man,
+        preprocessor=IdentityPreprocessor(),
+        include_test=True,
+    )
+    assert "train" in parts
+    assert "validation" in parts
+    assert "test" in parts
+    assert parts["train"]["X_raw_df"].shape[1] == len(ML_FEATURE_COLUMNS)
+    assert tuple(parts["train"]["X_raw_df"].columns) == ML_FEATURE_COLUMNS
+
+
+def test_load_and_transform_partitions_reorders_columns_to_canonical(tmp_path, rng):
+    n_rows = 10
+    # Reverse ML features order in file
+    reversed_features = list(reversed(ML_FEATURE_COLUMNS))
+    df_data = {col: rng.normal(0, 1, n_rows) for col in reversed_features}
+    df_data["Label"] = [0] * n_rows
+    df_data["Attack"] = ["Benign"] * n_rows
+
+    csv_path = tmp_path / "data_reversed.csv"
+    pd.DataFrame(df_data).to_csv(csv_path, index=False)
+
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    for part in ("train", "validation"):
+        idx_p = indices_dir / f"{part}_indices.csv.gz"
+        with gzip.open(idx_p, "wt") as fh:
+            fh.write("source_row_index\n0\n1\n")
+
+    split_man = {
+        "partitions": {
+            part: {"index_file": f"{part}_indices.csv.gz"} for part in ("train", "validation")
+        }
+    }
+    parts = load_and_transform_partitions(
+        raw_data_path=csv_path,
+        indices_dir=indices_dir,
+        split_manifest=split_man,
+        preprocessor=IdentityPreprocessor(),
+        include_test=False,
+    )
+    assert tuple(parts["train"]["X_raw_df"].columns) == ML_FEATURE_COLUMNS
+
+
+def test_load_and_transform_partitions_fails_closed_missing_feature(tmp_path, rng):
+    n_rows = 5
+    # Missing one ML feature
+    features = list(ML_FEATURE_COLUMNS)[:-1]
+    df_data = {col: rng.normal(0, 1, n_rows) for col in features}
+    df_data["Label"] = [0] * n_rows
+    df_data["Attack"] = ["Benign"] * n_rows
+
+    csv_path = tmp_path / "data_missing_col.csv"
+    pd.DataFrame(df_data).to_csv(csv_path, index=False)
+
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    for part in ("train", "validation"):
+        idx_p = indices_dir / f"{part}_indices.csv.gz"
+        with gzip.open(idx_p, "wt") as fh:
+            fh.write("source_row_index\n0\n")
+
+    split_man = {
+        "partitions": {
+            part: {"index_file": f"{part}_indices.csv.gz"} for part in ("train", "validation")
+        }
+    }
+    with pytest.raises(ValueError, match="Raw dataset CSV missing required columns"):
+        load_and_transform_partitions(
+            raw_data_path=csv_path,
+            indices_dir=indices_dir,
+            split_manifest=split_man,
+            preprocessor=IdentityPreprocessor(),
+        )
+
+
 # --- End-to-End Synthetic Pipeline Integration Test ----------------------------
 
 
@@ -406,8 +822,7 @@ def test_e2e_synthetic_pipeline_execution(tmp_path, rng):
         )
     )
 
-    # 3. Create partition indices
-    # Train: 0-79 (80 rows), Validation: 80-119 (40 rows), Test: 120-149 (30 rows)
+    # 3. Create partition indices with canonical header
     indices_dir = tmp_path / "splits"
     indices_dir.mkdir()
 
@@ -419,15 +834,15 @@ def test_e2e_synthetic_pipeline_execution(tmp_path, rng):
     val_idx_path = indices_dir / "validation_indices.csv.gz"
     test_idx_path = indices_dir / "test_indices.csv.gz"
 
-    with gzip.open(train_idx_path, "wt") as fh:
-        for idx in train_idx:
-            fh.write(f"{idx}\n")
-    with gzip.open(val_idx_path, "wt") as fh:
-        for idx in val_idx:
-            fh.write(f"{idx}\n")
-    with gzip.open(test_idx_path, "wt") as fh:
-        for idx in test_idx:
-            fh.write(f"{idx}\n")
+    for path, idxs in (
+        (train_idx_path, train_idx),
+        (val_idx_path, val_idx),
+        (test_idx_path, test_idx),
+    ):
+        with gzip.open(path, "wt", encoding="utf-8") as fh:
+            fh.write("source_row_index\n")
+            for idx in idxs:
+                fh.write(f"{idx}\n")
 
     # 4. Split manifest
     split_man_path = tmp_path / "split_manifest.json"
@@ -466,8 +881,6 @@ def test_e2e_synthetic_pipeline_execution(tmp_path, rng):
     rep_dir = tmp_path / "reports" / "autoencoder"
 
     # 6. Execute pipeline with Held-out Test evaluation
-    import argparse
-
     args = argparse.Namespace(
         raw_data=csv_path,
         data_manifest=data_man_path,
@@ -492,8 +905,12 @@ def test_e2e_synthetic_pipeline_execution(tmp_path, rng):
         skip_checksums=False,
     )
 
-    exit_code = run_pipeline(args)
-    assert exit_code == 0
+    with mock.patch(
+        "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+        return_value=IdentityPreprocessor(),
+    ):
+        exit_code = run_pipeline(args)
+        assert exit_code == 0
 
     # 7. Verify outputs exist and are non-empty
     assert (out_dir / "autoencoder_model.joblib").exists()
