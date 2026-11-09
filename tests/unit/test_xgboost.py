@@ -233,7 +233,7 @@ def test_xgboost_train_and_evaluate_on_real_data():
       3. C1 leakage audit complete (group/near-duplicate overlap reviewed).
       4. C2 preprocessing pipeline implemented and fit boundary confirmed.
       5. Split performed BEFORE any preprocessing fit.
-      6. Target column confirmed: 'label' (binary) or 'attack_cat' (multiclass).
+      6. Target column confirmed: 'Label' (binary) or 'Attack' (multiclass category).
 
     When unblocked, this test must record:
       - run_id, issue, commit/worktree, dataset sha256, split seed, feature schema,

@@ -918,12 +918,22 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
 
     lines.extend(
         [
-            "## Feature Contract Clarification (47 ML Features vs 49 Dataset Columns)",
-            "- **Raw CSV schema (49 columns):** The raw NF-UNSW-NB15-v3 dataset contains 49 "
-            "columns: 47 NetFlow flow attributes and 2 ground-truth target columns (`Label` "
-            "binary target and `attack_cat` multiclass category).",
-            "- **Target leakage prevention:** The fitted train-only preprocessor and data "
-            "ingestion stream strictly exclude `Label` and `attack_cat` from model input features.",
+            "## Dataset Contract Clarification (55 Raw Columns, 47 ML Features)",
+            "- **Raw CSV canonical schema (55 columns):** Defined in "
+            "`src/network_anomaly/data/nf_unsw_nb15_v3.py` (`ALL_COLUMNS`):",
+            "  - **47 ML feature columns (`ML_FEATURE_COLUMNS`):** NetFlow statistical and "
+            "engineered flow attributes.",
+            "  - **6 trace metadata columns (`TRACE_METADATA_COLUMNS`):** Timestamps "
+            "(`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`), IP addresses "
+            "(`IPV4_SRC_ADDR`, `IPV4_DST_ADDR`), and Layer-4 ports (`L4_SRC_PORT`, `L4_DST_PORT`). "
+            "Excluded from training features to prevent identity/shortcut leakage.",
+            "  - **2 ground-truth target columns (`TARGET_COLUMNS`):** `Label` (binary "
+            "classification target: 0=Benign, 1=Attack) and `Attack` (multiclass attack category "
+            "string: Benign, Fuzzers, Analysis, Backdoor, DoS, Exploits, Generic, Reconnaissance, "
+            "Shellcode, Worms).",
+            "- **Target & metadata leakage prevention:** The fitted train-only preprocessor and "
+            "data ingestion stream strictly exclude all 6 trace metadata columns and both 2 target "
+            "columns (`Label`, `Attack`) from model input features.",
             "- **Model input contract:** The model is fitted strictly on the canonical 47 features "
             "(`n_features_in_ = 47`), matching `ML_FEATURE_COLUMNS` and "
             '`feature_contract_version = "nf-unsw-nb15-v3-baseline-47"`.',

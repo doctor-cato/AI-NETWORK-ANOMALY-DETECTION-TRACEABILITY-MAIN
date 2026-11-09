@@ -25,14 +25,15 @@ Mô hình này đóng vai trò là ứng viên cạnh tranh trực tiếp (candi
 ## 2. Dataset Contract & Feature Policy (Quy chuẩn 47 đặc trưng)
 
 XGBoost tuân thủ cùng hợp đồng dữ liệu chuẩn xác như Random Forest:
-- **Tập dữ liệu:** `NF-UNSW-NB15-v3` (2.365.424 flows).
+- **Tập dữ liệu:** `NF-UNSW-NB15-v3` (2.365.424 flows, 55 cột thô canonical theo `ALL_COLUMNS` tại `src/network_anomaly/data/nf_unsw_nb15_v3.py`).
 - **Target chính:** `Label` (nhị phân: `0 = Benign`, `1 = Attack`).
 - **Lớp dương tính (Positive Class):** `Attack` (Label = 1).
 - **Lớp âm tính (Negative Class):** `Benign` (Label = 0).
+- **Target phân loại đa lớp:** `Attack` (10 attack categories: Benign, Fuzzers, Analysis, Backdoor, DoS, Exploits, Generic, Reconnaissance, Shellcode, Worms).
 - **Ma trận đầu vào X:** Đúng **47 đặc trưng NetFlow v3** (`ML_FEATURE_COLUMNS`).
-- **Cột loại trừ:**
-  - 6 cột `TRACE_METADATA_COLUMNS`: `FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT` (dành riêng cho Trace Engine).
-  - 2 cột nhãn: `Label`, `Attack`.
+- **Cột loại trừ khỏi huấn luyện:**
+  - 6 cột `TRACE_METADATA_COLUMNS`: `FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT` (dành riêng cho Trace Engine, loại bỏ để tránh rò rỉ định danh/shortcut).
+  - 2 cột nhãn ground-truth: `Label` (target nhị phân) và `Attack` (nhãn danh mục đa lớp).
 
 ---
 
