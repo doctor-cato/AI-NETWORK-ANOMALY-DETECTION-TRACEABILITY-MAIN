@@ -33,10 +33,8 @@ from network_anomaly.evaluation.metrics import compute_metrics
 from network_anomaly.models.xgboost_model import XGBoostModel
 from network_anomaly.models.xgboost_protocol import (
     XGBoostBaselineConfig,
-    XGBoostBaselineProtocol,
 )
 from network_anomaly.preprocessing.pipeline import (
-    EXPECTED_DATASET_SHA256,
     PreprocessingConfig,
     TrainOnlyPreprocessor,
 )
@@ -45,12 +43,12 @@ from scripts.train_xgboost import (
     DEFAULT_PREPROCESSOR_ARTIFACT,
     DEFAULT_PREPROCESSOR_MANIFEST,
     DEFAULT_SPLIT_MANIFEST,
+    PartitionAccessTracker,
     check_prerequisites,
     execute_training,
     load_partition,
     main,
     stream_partition_data,
-    PartitionAccessTracker,
 )
 
 
@@ -109,7 +107,10 @@ def _build_mock_split_environment(tmp_path):
                 "partitions": {
                     "train": {"row_count": len(train_idx), "index_sha256": train_sha},
                     "validation": {"row_count": len(val_idx), "index_sha256": val_sha},
-                    "test": {"row_count": len(test_idx), "index_sha256": _sha256_file(indices_dir / "test_indices.csv.gz")},
+                    "test": {
+                        "row_count": len(test_idx),
+                        "index_sha256": _sha256_file(indices_dir / "test_indices.csv.gz"),
+                    },
                 },
             }
         ),
@@ -158,9 +159,6 @@ def fitted_preprocessor_fixture(mock_split_environment, patch_dataset_sha):
     prep.dataset_sha256 = env["dataset_sha"]
     prep.split_manifest_sha256 = env["split_manifest_sha"]
     prep.fit(df_train_only)
-
-    artifact_path = mock_split_environment.__wrapped_tmp_path = None  # placeholder no-op
-    artifact_path = None
     return env, prep
 
 
@@ -266,9 +264,21 @@ def test_model_load_verified_and_tamper_detection(tmp_path, minimal_47_feature_d
     loaded = XGBoostModel.load_verified(model_path=model_path, manifest_path=manifest_path)
     assert loaded.is_fitted is True
 
-    # Expected-sha path
-    loaded2 = XGBoostModel.load_verified(model_path=model_path, expected_sha256=artifact_sha)
+    # Expected-sha path with manifest
+    loaded2 = XGBoostModel.load_verified(
+        model_path=model_path,
+        manifest_path=manifest_path,
+        expected_sha256=artifact_sha,
+    )
     assert loaded2.is_fitted is True
+
+    # Mismatched expected_sha256 must fail closed
+    with pytest.raises(ValueError, match="Model artifact SHA-256 mismatch"):
+        XGBoostModel.load_verified(
+            model_path=model_path,
+            manifest_path=manifest_path,
+            expected_sha256="0" * 64,
+        )
 
     # Tampered artifact must fail closed
     model_path.write_bytes(model_path.read_bytes()[:-4] + b"AAAA")
@@ -278,13 +288,17 @@ def test_model_load_verified_and_tamper_detection(tmp_path, minimal_47_feature_d
 
 def test_load_verified_rejects_missing_artifact_and_manifest(tmp_path, minimal_47_feature_data):
     with pytest.raises(FileNotFoundError):
-        XGBoostModel.load_verified(model_path=tmp_path / "absent.joblib")
+        XGBoostModel.load_verified(
+            model_path=tmp_path / "absent.joblib",
+            manifest_path=tmp_path / "absent_manifest.json",
+        )
 
     X, y = minimal_47_feature_data
     model = XGBoostModel().fit(X, y)
     model_path = tmp_path / "xgb_model.joblib"
     model.save(model_path)
-    with pytest.raises(ValueError, match="no expected SHA-256"):
+    # Missing manifest_path must fail closed
+    with pytest.raises(ValueError, match="Companion manifest path is required"):
         XGBoostModel.load_verified(model_path=model_path)
 
 
@@ -333,9 +347,7 @@ def test_check_prerequisites_detects_missing_files(tmp_path):
     assert len(audit["missing_prerequisites"]) >= 5
 
 
-def test_check_prerequisites_detects_index_hash_mismatch(
-    mock_split_environment, patch_dataset_sha
-):
+def test_check_prerequisites_detects_index_hash_mismatch(mock_split_environment, patch_dataset_sha):
     env = mock_split_environment
     patch_dataset_sha(env["dataset_sha"])
     # Corrupt train index file: rewrite bytes with different content
@@ -411,7 +423,9 @@ def test_stream_partition_data_detects_overlap_leakage(mock_split_environment):
         )
 
 
-def test_execute_training_full_pipeline_mock_integration(tmp_path, mock_split_environment, patch_dataset_sha):
+def test_execute_training_full_pipeline_mock_integration(
+    tmp_path, mock_split_environment, patch_dataset_sha
+):
     """End-to-end integration test of execute_training on a tiny synthetic fixture."""
     env = mock_split_environment
     patch_dataset_sha(env["dataset_sha"])

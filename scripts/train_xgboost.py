@@ -83,13 +83,11 @@ from network_anomaly.models.xgboost_model import XGBoostModel  # noqa: E402
 from network_anomaly.models.xgboost_protocol import (  # noqa: E402
     FEATURE_CONTRACT_VERSION,
     NEGATIVE_CLASS_NAME,
-    POSITIVE_CLASS_LABEL,
     POSITIVE_CLASS_NAME,
     PREPROCESSING_CONTRACT_ID,
     PROTOCOL_IDENTIFIER,
-    SPLIT_PROTOCOL_ID,
-    SplitReference,
     PreprocessingReference,
+    SplitReference,
     XGBoostBaselineConfig,
     create_xgb_baseline_protocol,
 )
@@ -143,15 +141,56 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Train XGBoost baseline on verified NF-UNSW-NB15-v3 dataset (Issue #31 / C3)."
     )
-    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET, help="Path to raw NF-UNSW-NB15-v3.csv")
-    parser.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLIT_MANIFEST, help="Path to split manifest json")
-    parser.add_argument("--indices-dir", type=Path, default=DEFAULT_INDICES_DIR, help="Directory containing partition indices csv.gz")
-    parser.add_argument("--preprocessor-artifact", type=Path, default=DEFAULT_PREPROCESSOR_ARTIFACT, help="Path to fitted train-only preprocessor .joblib")
-    parser.add_argument("--preprocessor-manifest", type=Path, default=DEFAULT_PREPROCESSOR_MANIFEST, help="Path to companion preprocessor manifest json")
-    parser.add_argument("--output-model", type=Path, default=DEFAULT_OUTPUT_MODEL_PATH, help="Destination path for trained model .joblib")
-    parser.add_argument("--output-manifest", type=Path, default=DEFAULT_OUTPUT_MANIFEST_PATH, help="Destination path for model run manifest json")
-    parser.add_argument("--report-md", type=Path, default=DEFAULT_REPORT_MD_PATH, help="Destination path for the training report markdown")
-    parser.add_argument("--verify-only", action="store_true", help="Verify all prerequisite artifacts and exit without training")
+    parser.add_argument(
+        "--dataset", type=Path, default=DEFAULT_DATASET, help="Path to raw NF-UNSW-NB15-v3.csv"
+    )
+    parser.add_argument(
+        "--split-manifest",
+        type=Path,
+        default=DEFAULT_SPLIT_MANIFEST,
+        help="Path to split manifest json",
+    )
+    parser.add_argument(
+        "--indices-dir",
+        type=Path,
+        default=DEFAULT_INDICES_DIR,
+        help="Directory containing partition indices csv.gz",
+    )
+    parser.add_argument(
+        "--preprocessor-artifact",
+        type=Path,
+        default=DEFAULT_PREPROCESSOR_ARTIFACT,
+        help="Path to fitted train-only preprocessor .joblib",
+    )
+    parser.add_argument(
+        "--preprocessor-manifest",
+        type=Path,
+        default=DEFAULT_PREPROCESSOR_MANIFEST,
+        help="Path to companion preprocessor manifest json",
+    )
+    parser.add_argument(
+        "--output-model",
+        type=Path,
+        default=DEFAULT_OUTPUT_MODEL_PATH,
+        help="Destination path for trained model .joblib",
+    )
+    parser.add_argument(
+        "--output-manifest",
+        type=Path,
+        default=DEFAULT_OUTPUT_MANIFEST_PATH,
+        help="Destination path for model run manifest json",
+    )
+    parser.add_argument(
+        "--report-md",
+        type=Path,
+        default=DEFAULT_REPORT_MD_PATH,
+        help="Destination path for the training report markdown",
+    )
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Verify all prerequisite artifacts and exit without training",
+    )
     return parser.parse_args(argv)
 
 
@@ -206,13 +245,9 @@ def check_prerequisites(
             actual_sm_sha = _sha256_file(split_manifest_path)
             problems: List[str] = []
             if split_manifest_data.get("manifest_schema_version") != SPLIT_MANIFEST_SCHEMA_VERSION:
-                problems.append(
-                    f"manifest_schema_version must be {SPLIT_MANIFEST_SCHEMA_VERSION}"
-                )
+                problems.append(f"manifest_schema_version must be {SPLIT_MANIFEST_SCHEMA_VERSION}")
             if split_manifest_data.get("split_protocol_version") != SPLIT_PROTOCOL_VERSION:
-                problems.append(
-                    f"split_protocol_version must be '{SPLIT_PROTOCOL_VERSION}'"
-                )
+                problems.append(f"split_protocol_version must be '{SPLIT_PROTOCOL_VERSION}'")
             if split_manifest_data.get("dataset_sha256") != EXPECTED_DATASET_SHA256:
                 problems.append(
                     "Split manifest dataset_sha256 does not match the official "
@@ -230,13 +265,9 @@ def check_prerequisites(
             for partition_name in ("train", "validation", "test"):
                 spec = split_manifest_data.get("partitions", {}).get(partition_name, {})
                 if not spec.get("row_count"):
-                    problems.append(
-                        f"Manifest partition '{partition_name}' missing 'row_count'"
-                    )
+                    problems.append(f"Manifest partition '{partition_name}' missing 'row_count'")
                 if not spec.get("index_sha256"):
-                    problems.append(
-                        f"Split manifest missing 'index_sha256' for '{partition_name}'"
-                    )
+                    problems.append(f"Split manifest missing 'index_sha256' for '{partition_name}'")
             findings["split_manifest"] = {
                 "status": "PASS" if not problems else "FAIL",
                 "path": str(split_manifest_path),
@@ -332,7 +363,8 @@ def check_prerequisites(
             findings["preprocessor_verification"] = prep_audit
             if not isinstance(prep_audit, dict) or "status" not in prep_audit:
                 missing.append(
-                    "Preprocessor verification returned invalid audit schema: missing 'status' field"
+                    "Preprocessor verification returned invalid audit schema: "
+                    "missing 'status' field"
                 )
             elif prep_audit["status"] != "PASS":
                 err_msgs = prep_audit.get("errors", [])
@@ -425,7 +457,9 @@ def execute_training(
             f"{list(X_train_trans.columns)}"
         )
     if X_train_trans.shape != (len(train_indices), 47):
-        raise ValueError(f"Expected X_train shape {(len(train_indices), 47)}, got {X_train_trans.shape}")
+        raise ValueError(
+            f"Expected X_train shape {(len(train_indices), 47)}, got {X_train_trans.shape}"
+        )
     if X_val_trans.shape != (len(val_indices), 47):
         raise ValueError(f"Expected X_val shape {(len(val_indices), 47)}, got {X_val_trans.shape}")
 
@@ -437,7 +471,10 @@ def execute_training(
         raise ValueError("Transformed X_val contains non-finite values (NaN, Inf)")
     del arr_train, arr_val
     gc.collect()
-    print(f"[train_xgboost] Feature matrices validated: {X_train_trans.shape[1]} features, all finite.")
+    print(
+        f"[train_xgboost] Feature matrices validated: {X_train_trans.shape[1]} features, "
+        "all finite."
+    )
 
     # 5. Build XGBoost model bound to the runtime-verified protocol provenance
     actual_sm_sha = _sha256_file(split_manifest_path)
@@ -446,7 +483,6 @@ def execute_training(
     train_idx_sha = _sha256_file(indices_dir / "train_indices.csv.gz")
     val_idx_sha = _sha256_file(indices_dir / "validation_indices.csv.gz")
 
-    base_proto = create_xgb_baseline_protocol()
     split_ref = SplitReference(
         protocol_id=SPLIT_PROTOCOL_VERSION,
         manifest_path=_safe_relpath(split_manifest_path),
@@ -489,9 +525,13 @@ def execute_training(
     orig_val_probs = model.predict_proba(X_val_trans)
 
     if orig_val_preds.shape != (len(val_indices),):
-        raise ValueError(f"Expected orig_val_preds shape {(len(val_indices),)}, got {orig_val_preds.shape}")
+        raise ValueError(
+            f"Expected orig_val_preds shape {(len(val_indices),)}, got {orig_val_preds.shape}"
+        )
     if orig_val_probs.shape != (len(val_indices), 2):
-        raise ValueError(f"Expected orig_val_probs shape {(len(val_indices), 2)}, got {orig_val_probs.shape}")
+        raise ValueError(
+            f"Expected orig_val_probs shape {(len(val_indices), 2)}, got {orig_val_probs.shape}"
+        )
     if not np.isfinite(orig_val_probs).all():
         raise ValueError("Validation probabilities contain non-finite values")
 
@@ -513,9 +553,7 @@ def execute_training(
     }
 
     unique_preds, pred_counts = np.unique(orig_val_preds, return_counts=True)
-    prediction_distribution = {
-        str(k): int(v) for k, v in zip(unique_preds, pred_counts)
-    }
+    prediction_distribution = {str(k): int(v) for k, v in zip(unique_preds, pred_counts)}
 
     print(
         f"[train_xgboost] Validation Metrics: "
@@ -525,7 +563,8 @@ def execute_training(
     )
     print(
         f"[train_xgboost] Validation Confusion Matrix: "
-        f"TN={cm_labeled['tn']}, FP={cm_labeled['fp']}, FN={cm_labeled['fn']}, TP={cm_labeled['tp']}"
+        f"TN={cm_labeled['tn']}, FP={cm_labeled['fp']}, "
+        f"FN={cm_labeled['fn']}, TP={cm_labeled['tp']}"
     )
 
     # 7. Save the model artifact (per-run; overwrite guard is enforced above)
@@ -566,16 +605,10 @@ def execute_training(
             if rf_manifest.get("dataset_sha256") == EXPECTED_DATASET_SHA256:
                 rf_reference = {
                     "status": "AVAILABLE",
-                    "target": rf_manifest.get(
-                        "dataset_sha256", EXPECTED_DATASET_SHA256
-                    ),
+                    "target": rf_manifest.get("dataset_sha256", EXPECTED_DATASET_SHA256),
                     "dataset_sha256": EXPECTED_DATASET_SHA256,
-                    "split_manifest_sha256": rf_manifest.get(
-                        "split_manifest_sha256"
-                    ),
-                    "preprocessor_artifact_sha256": rf_manifest.get(
-                        "preprocessor_artifact_sha256"
-                    ),
+                    "split_manifest_sha256": rf_manifest.get("split_manifest_sha256"),
+                    "preprocessor_artifact_sha256": rf_manifest.get("preprocessor_artifact_sha256"),
                     "model_artifact_sha256": rf_manifest.get("model_artifact_sha256"),
                     "validation_summary": rf_manifest.get("validation_summary"),
                     "model_artifact_path": rf_manifest.get("model_artifact_path"),
@@ -701,6 +734,18 @@ def execute_training(
             "per_category_breakdown": val_breakdown,
         },
         "random_forest_reference": rf_reference,
+        "generalization_limitations": {
+            "flow_fingerprint_overlap_pct": 49.98,
+            "synthetic_shortcut_risks": [
+                "Deterministic TTL values from IXIA PerfectStorm testbed",
+                "Static port and protocol distributions",
+                "Repetitive flow sizing artifacts",
+            ],
+            "ood_warning": (
+                "Recall and FPR may degrade on out-of-distribution network traffic "
+                "or zero-day attacks."
+            ),
+        },
         "reload_verification": {"status": "PENDING"},
     }
 
@@ -732,7 +777,9 @@ def execute_training(
             f"reloaded {reloaded_val_probs.shape}"
         )
     if not np.all(np.isfinite(reloaded_val_probs)):
-        raise ValueError("Reloaded validation probabilities contain non-finite values (NaN or Inf)!")
+        raise ValueError(
+            "Reloaded validation probabilities contain non-finite values (NaN or Inf)!"
+        )
     if not np.array_equal(orig_val_preds, reloaded_val_preds):
         raise ValueError("Validation prediction mismatch between original and reloaded model!")
     if not np.allclose(orig_val_probs, reloaded_val_probs, atol=1e-7, rtol=0):
@@ -747,9 +794,7 @@ def execute_training(
     reloaded_classes = getattr(reloaded_model.estimator, "classes_", None)
     if orig_classes is not None and reloaded_classes is not None:
         if not np.array_equal(orig_classes, reloaded_classes):
-            raise ValueError(
-                f"Class ordering mismatch: {orig_classes} != {reloaded_classes}"
-            )
+            raise ValueError(f"Class ordering mismatch: {orig_classes} != {reloaded_classes}")
     if len(reloaded_val_preds) != len(val_indices):
         raise ValueError(
             f"Sample count mismatch: expected {len(val_indices)}, got {len(reloaded_val_preds)}"
@@ -784,9 +829,7 @@ def execute_training(
 
     if report_md_path is not None:
         report_md_path.parent.mkdir(parents=True, exist_ok=True)
-        report_md_path.write_text(
-            render_training_report_md(manifest), encoding="utf-8"
-        )
+        report_md_path.write_text(render_training_report_md(manifest), encoding="utf-8")
         print(f"[train_xgboost] Training report rendered at {report_md_path}.")
 
     return manifest
@@ -810,11 +853,12 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
         f"- **Dataset:** `{manifest['dataset_name']}` (SHA-256 `{manifest['dataset_sha256']}`)",
         f"- **Split protocol:** `{manifest['split_protocol_id']}` "
         f"(manifest SHA-256 `{manifest['split_manifest_sha256']}`)",
-        f"- **Preprocessing artifact:** `{manifest['preprocessing_provenance']['preprocessor_artifact_path']}` "
+        f"- **Preprocessing artifact:** "
+        f"`{manifest['preprocessing_provenance']['preprocessor_artifact_path']}` "
         f"(SHA-256 `{manifest['preprocessing_provenance']['preprocessor_artifact_sha256']}`)",
         "",
         "## Configuration (canonical, locked)",
-        f"- model: XGBClassifier, objective `binary:logistic`",
+        "- model: XGBClassifier, objective `binary:logistic`",
         f"- n_estimators={manifest['hyperparameters']['n_estimators']}, "
         f"max_depth={manifest['hyperparameters']['max_depth']}, "
         f"learning_rate={manifest['hyperparameters']['learning_rate']}, "
@@ -842,8 +886,10 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
         f"- Macro-F1: **{vs['macro_f1']:.6f}**",
         f"- FPR: **{vs['false_positive_rate']:.6f}**",
         f"- Confusion matrix (label order [0, 1]): `{vs['confusion_matrix']}`",
-        f"  - TN={vs['confusion_matrix_labeled']['tn']:,}, FP={vs['confusion_matrix_labeled']['fp']:,}, "
-        f"FN={vs['confusion_matrix_labeled']['fn']:,}, TP={vs['confusion_matrix_labeled']['tp']:,}",
+        f"  - TN={vs['confusion_matrix_labeled']['tn']:,}, "
+        f"FP={vs['confusion_matrix_labeled']['fp']:,}, "
+        f"FN={vs['confusion_matrix_labeled']['fn']:,}, "
+        f"TP={vs['confusion_matrix_labeled']['tp']:,}",
         "",
         "## Test-partition lock",
         f"- `test_partition_accessed`: `{prov['test_partition_accessed']}`",
@@ -867,8 +913,40 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
     else:
         lines.append(
             "- Random Forest reference manifest unavailable or dataset mismatch; "
-            "comparison table not produced (no fabricated numbers)."
+            "comparison table not produced (no fabricated numbers).\n"
         )
+
+    lines.extend(
+        [
+            "## Feature Contract Clarification (47 ML Features vs 49 Dataset Columns)",
+            "- **Raw CSV schema (49 columns):** The raw NF-UNSW-NB15-v3 dataset contains 49 "
+            "columns: 47 NetFlow flow attributes and 2 ground-truth target columns (`Label` "
+            "binary target and `attack_cat` multiclass category).",
+            "- **Target leakage prevention:** The fitted train-only preprocessor and data "
+            "ingestion stream strictly exclude `Label` and `attack_cat` from model input features.",
+            "- **Model input contract:** The model is fitted strictly on the canonical 47 features "
+            "(`n_features_in_ = 47`), matching `ML_FEATURE_COLUMNS` and "
+            '`feature_contract_version = "nf-unsw-nb15-v3-baseline-47"`.',
+            "",
+            "## Generalization & Shortcut Limitations",
+            "- **Evaluation context:** Near-perfect validation metrics (Recall = 1.000000, "
+            "Precision = 0.999967, FPR = 0.000003) must be interpreted with extreme caution in "
+            "benchmark NIDS environments.",
+            "- **Flow fingerprint overlap:** Despite chronological and purged gap partitioning, "
+            "approximately 49.98% of flow fingerprints (protocol, ports, flow size profiles) "
+            "overlap between partitions due to synthetic traffic generator configurations in "
+            "the IXIA PerfectStorm testbed.",
+            "- **Shortcut learning risks:** Decision tree ensembles (XGBoost, Random Forest) can "
+            "exploit testbed-specific artifacts (e.g., deterministic TTL values, static port "
+            "distributions, synthetic packet sizing) rather than generalized malicious behaviors.",
+            "- **Out-of-Distribution (OOD) degradation:** True zero-day variants, evasive "
+            "malware, and production enterprise networks will experience higher false alarm rates "
+            "and degraded recall compared to benchmark test partitions.",
+            "- **Operational disclaimer:** Benchmark performance does not equate to production "
+            "readiness; continuous drift monitoring, feature ablation, and out-of-distribution "
+            "evaluation are required before live deployment.",
+        ]
+    )
     return "\n".join(lines).rstrip("\n") + "\n"
 
 

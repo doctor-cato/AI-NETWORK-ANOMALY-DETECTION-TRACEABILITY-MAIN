@@ -5,21 +5,19 @@ error guards strictly without generating synthetic datasets, mock flows, or exec
 """
 
 import pytest
-from xgboost import XGBClassifier
 from sklearn.exceptions import NotFittedError
+from xgboost import XGBClassifier
 
 from network_anomaly.config import RANDOM_SEED
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.models.random_forest import RandomForestModel
 from network_anomaly.models.xgboost_model import (
     XGBoostModel,
-    build_model,
 )
 from network_anomaly.models.xgboost_protocol import (
     XGBoostBaselineConfig,
-    XGBoostBaselineProtocol,
     create_xgb_baseline_protocol,
 )
-from network_anomaly.models.random_forest import RandomForestModel
 
 
 def test_xgb_model_default_initialization():

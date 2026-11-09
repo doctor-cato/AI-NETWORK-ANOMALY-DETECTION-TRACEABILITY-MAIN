@@ -765,9 +765,8 @@ def test_execute_training_real_data(tmp_path):
     # Runtime-verified hash chain: the recorded preprocessor hash must match
     # the artifact file actually materialized on disk (canonical acceptance-time
     # pins may legitimately differ after an official artifact regeneration).
-    assert (
-        manifest["preprocessing_provenance"]["preprocessor_artifact_sha256"]
-        == _sha256_file(DEFAULT_PREPROCESSOR_ARTIFACT)
+    assert manifest["preprocessing_provenance"]["preprocessor_artifact_sha256"] == _sha256_file(
+        DEFAULT_PREPROCESSOR_ARTIFACT
     )
     runtime_split_manifest_sha = manifest["split_manifest_sha256"]
     runtime_preprocessor_sha = manifest["preprocessing_provenance"]["preprocessor_artifact_sha256"]
