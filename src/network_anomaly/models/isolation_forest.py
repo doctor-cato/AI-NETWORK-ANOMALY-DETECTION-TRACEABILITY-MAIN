@@ -16,6 +16,7 @@ a split, never fits a transformer and never picks a threshold. The caller must
 pass a feature matrix that is already numeric, finite and ordered by the
 feature contract.
 """
+
 import numbers
 from collections.abc import Mapping
 
@@ -86,9 +87,7 @@ def _check_max_samples(value):
 def _check_contamination(value):
     if isinstance(value, str):
         if value != "auto":
-            raise ValueError(
-                f"contamination must be 'auto' or a float in (0, 0.5], got {value!r}"
-            )
+            raise ValueError(f"contamination must be 'auto' or a float in (0, 0.5], got {value!r}")
         return
     if not _is_float(value) or not 0.0 < value <= 0.5:
         raise ValueError(f"contamination must be 'auto' or a float in (0, 0.5], got {value!r}")
@@ -116,9 +115,7 @@ def _check_max_features(value):
         if not 0.0 < value <= 1.0:
             raise ValueError(f"max_features must be a float in (0, 1], got {value!r}")
         return
-    raise ValueError(
-        f"max_features must be an integer >= 1 or a float in (0, 1], got {value!r}"
-    )
+    raise ValueError(f"max_features must be an integer >= 1 or a float in (0, 1], got {value!r}")
 
 
 def _check_bootstrap(value):
@@ -223,9 +220,7 @@ def validate_features(X):
     if hasattr(X, "columns") and hasattr(X, "dtypes"):
         # --- pandas DataFrame path ---
         if X.ndim != 2:  # pragma: no cover — DataFrames are always 2-D
-            raise ValueError(
-                f"Feature matrix must be 2-D, got {X.ndim}-D DataFrame"
-            )
+            raise ValueError(f"Feature matrix must be 2-D, got {X.ndim}-D DataFrame")
         if X.shape[0] == 0:
             raise ValueError(
                 "Feature matrix must have at least one sample, got 0 rows. "
@@ -281,9 +276,7 @@ def validate_features(X):
                 "Convert to a real representation before passing to the model."
             )
         if not _is_numeric_dtype(array.dtype):
-            raise TypeError(
-                f"Feature matrix must be numeric, got dtype {array.dtype}"
-            )
+            raise TypeError(f"Feature matrix must be numeric, got dtype {array.dtype}")
     values = _to_float_array(X)
     if not np.isfinite(values).all():
         raise ValueError(

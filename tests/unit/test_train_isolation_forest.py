@@ -290,6 +290,14 @@ class TestThresholdCalibration:
         assert stats["tp"] + stats["fn"] == P
         assert stats["fp"] + stats["tn"] == N
 
+    def test_calibration_fallback_uses_fpr_target_percentile(self):
+        """When no known attacks exist, fallback threshold uses (1 - fpr_target) percentile."""
+        benign = np.linspace(0.0, 1.0, 101)
+        result = calibrate_threshold(benign, scores_attack_val=[], fpr_target=0.01)
+        assert result["threshold"] == pytest.approx(0.99, abs=1e-4)
+        assert "99th-percentile" in result["policy"]
+        assert result["validation_stats"]["fallback"] == "99th-percentile-benign"
+
 
 # ---------------------------------------------------------------------------
 # 5. Score direction
@@ -634,6 +642,23 @@ class TestFailureHandling:
         result = check_finite_values(X, "Test")
         assert result["status"] == "PASS"
 
+    def test_check_finite_values_passes_on_clean_dataframe(self):
+        df = pd.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
+        result = check_finite_values(df, "Train")
+        assert result["status"] == "PASS"
+
+    def test_check_finite_values_fails_on_nan_dataframe(self):
+        df = pd.DataFrame({"a": [1.0, np.nan], "b": [3.0, 4.0]})
+        result = check_finite_values(df, "Train")
+        assert result["status"] == "FAIL"
+        assert "1 non-finite" in result["message"]
+
+    def test_check_finite_values_fails_on_inf_dataframe(self):
+        df = pd.DataFrame({"a": [1.0, np.inf], "b": [3.0, 4.0]})
+        result = check_finite_values(df, "Validation")
+        assert result["status"] == "FAIL"
+        assert "1 non-finite" in result["message"]
+
     def test_check_feature_schema_fails_for_target_in_features(self):
         bad = list(ML_FEATURE_COLUMNS[:46]) + ["Attack"]
         result = check_feature_schema(bad)
@@ -669,6 +694,7 @@ class TestFailureHandling:
         args = parse_args([])
         assert args.n_estimators == 100
         assert args.max_samples == "auto"
+        assert args.evaluate_test is False
         assert args.contamination == pytest.approx(0.1)
         assert args.max_features == pytest.approx(1.0)
         assert args.bootstrap is False
@@ -677,6 +703,72 @@ class TestFailureHandling:
         assert args.chunksize == 100_000
         assert args.check_prereqs_only is False
         assert args.skip_checksum is False
+
+    def test_parse_args_evaluate_test(self):
+        assert parse_args([]).evaluate_test is False
+        assert parse_args(["--evaluate-test"]).evaluate_test is True
+
+    def test_parse_args_max_samples_valid(self):
+        assert parse_args(["--max-samples", "auto"]).max_samples == "auto"
+        assert parse_args(["--max-samples", "1000"]).max_samples == 1000
+        assert isinstance(parse_args(["--max-samples", "1000"]).max_samples, int)
+        assert parse_args(["--max-samples", "1"]).max_samples == 1
+        assert isinstance(parse_args(["--max-samples", "1"]).max_samples, int)
+        assert parse_args(["--max-samples", "1.0"]).max_samples == 1.0
+        assert isinstance(parse_args(["--max-samples", "1.0"]).max_samples, float)
+        assert parse_args(["--max-samples", "0.5"]).max_samples == 0.5
+        assert isinstance(parse_args(["--max-samples", "0.5"]).max_samples, float)
+
+    def test_parse_args_max_samples_invalid(self):
+        for bad_val in ["-1", "0", "0.0", "1.5", "invalid"]:
+            with pytest.raises(SystemExit):
+                parse_args(["--max-samples", bad_val])
+
+    def test_check_split_manifest_checksum_verification(self, tmp_path):
+        """Split manifest check must verify partition index SHA-256."""
+        indices_dir = tmp_path / "splits"
+        indices_dir.mkdir()
+        for p in ("train", "validation", "test"):
+            (indices_dir / f"{p}_indices.csv.gz").write_bytes(f"dummy_{p}".encode())
+
+        man_path = tmp_path / "split_manifest.json"
+        manifest_data = {
+            "dataset_sha256": "dummy_dataset_sha",
+            "partitions": {
+                "train": {
+                    "row_count": EXPECTED_TRAIN_ROWS,
+                    "index_file": "train_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "train_indices.csv.gz"),
+                },
+                "validation": {
+                    "row_count": EXPECTED_VAL_ROWS,
+                    "index_file": "validation_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "validation_indices.csv.gz"),
+                },
+                "test": {
+                    "row_count": EXPECTED_TEST_ROWS,
+                    "index_file": "test_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "test_indices.csv.gz"),
+                },
+            },
+        }
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+
+        # PASS case
+        res_pass = check_split_manifest(man_path, indices_dir)
+        assert res_pass["status"] == "PASS"
+        assert "manifest_sha256" in res_pass
+        assert "partition_indices_sha256" in res_pass
+        assert res_pass["partition_indices_sha256"]["train"] == sha256_file(
+            indices_dir / "train_indices.csv.gz"
+        )
+
+        # Mismatch case
+        manifest_data["partitions"]["train"]["index_sha256"] = "wrong_sha"
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        res_fail = check_split_manifest(man_path, indices_dir)
+        assert res_fail["status"] == "BLOCKED"
+        assert "checksum mismatch" in res_fail["message"].lower()
 
     def test_parse_args_chunksize(self):
         args = parse_args(["--chunksize", "50000"])
@@ -904,13 +996,15 @@ class TestReviewerFindingsAndE2EIntegration:
 
         import scripts.train_isolation_forest as tif
 
-        with mock.patch.object(tif, "check_dataset", return_value=mock_dataset_check), \
-             mock.patch.object(tif, "check_split_manifest", return_value=mock_split_check), \
-             mock.patch.object(tif, "check_preprocessor_artifact", return_value=mock_pp_check), \
-             mock.patch(
-                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
-                 side_effect=ValueError("Corrupted SHA-256 or invalid preprocessor manifest"),
-             ):
+        with (
+            mock.patch.object(tif, "check_dataset", return_value=mock_dataset_check),
+            mock.patch.object(tif, "check_split_manifest", return_value=mock_split_check),
+            mock.patch.object(tif, "check_preprocessor_artifact", return_value=mock_pp_check),
+            mock.patch(
+                "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                side_effect=ValueError("Corrupted SHA-256 or invalid preprocessor manifest"),
+            ),
+        ):
             run_args = parse_args([])
             exit_code = tif.run_pipeline(run_args)
             assert exit_code == 1, "Pipeline must exit 1 (fail-closed) when load_verified fails"
@@ -973,12 +1067,14 @@ class TestReviewerFindingsAndE2EIntegration:
     def test_load_partitions_by_indices_chunked(self, tmp_path):
         """Verify load_partitions_by_indices correctly chunks and extracts partitions."""
         n_rows = 50
-        df = pd.DataFrame({
-            "col_a": np.arange(n_rows, dtype=np.int64),
-            "col_b": [f"val_{i}" for i in range(n_rows)],
-            "Label": np.random.choice([0, 1], size=n_rows),
-            "Attack": ["Benign"] * n_rows,
-        })
+        df = pd.DataFrame(
+            {
+                "col_a": np.arange(n_rows, dtype=np.int64),
+                "col_b": [f"val_{i}" for i in range(n_rows)],
+                "Label": np.random.choice([0, 1], size=n_rows),
+                "Attack": ["Benign"] * n_rows,
+            }
+        )
         csv_path = tmp_path / "test_data.csv"
         df.to_csv(csv_path, index=False)
 
@@ -1074,7 +1170,9 @@ class TestReviewerFindingsAndE2EIntegration:
         split_man_p.write_text(json.dumps(split_man), encoding="utf-8")
 
         mock_pp = mock.MagicMock()
-        mock_pp.transform.side_effect = lambda X, **kwargs: np.asarray(X, dtype=np.float64)
+        mock_pp.transform.side_effect = lambda X, **kwargs: pd.DataFrame(
+            np.asarray(X, dtype=np.float64), columns=X.columns
+        )
 
         art_p = tmp_path / "preprocessor.joblib"
         art_p.write_bytes(b"dummy_artifact_bytes")
@@ -1090,24 +1188,26 @@ class TestReviewerFindingsAndE2EIntegration:
         rep_dir = tmp_path / "reports"
         args = tif.parse_args(["--n-estimators", "5"])
 
-        with mock.patch.object(tif, "DATASET_CSV", ds_csv), \
-             mock.patch.object(tif, "DATASET_SHA256", ds_sha), \
-             mock.patch.object(tif, "EXPECTED_TRAIN_ROWS", n_train), \
-             mock.patch.object(tif, "EXPECTED_VAL_ROWS", n_val), \
-             mock.patch.object(tif, "EXPECTED_TEST_ROWS", n_test), \
-             mock.patch.object(tif, "SPLIT_MANIFEST_PATH", split_man_p), \
-             mock.patch.object(tif, "OFFICIAL_SPLIT_MANIFEST", split_man_p), \
-             mock.patch.object(tif, "INDICES_DIR", indices_dir), \
-             mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p), \
-             mock.patch.object(tif, "OFFICIAL_PREPROCESSOR_ARTIFACT", art_p), \
-             mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p), \
-             mock.patch.object(tif, "OFFICIAL_PREPROCESSOR_MANIFEST", pp_man_p), \
-             mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir), \
-             mock.patch.object(tif, "REPORT_DIR", rep_dir), \
-             mock.patch(
-                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
-                 return_value=mock_pp,
-             ):
+        with (
+            mock.patch.object(tif, "DATASET_CSV", ds_csv),
+            mock.patch.object(tif, "DATASET_SHA256", ds_sha),
+            mock.patch.object(tif, "EXPECTED_TRAIN_ROWS", n_train),
+            mock.patch.object(tif, "EXPECTED_VAL_ROWS", n_val),
+            mock.patch.object(tif, "EXPECTED_TEST_ROWS", n_test),
+            mock.patch.object(tif, "SPLIT_MANIFEST_PATH", split_man_p),
+            mock.patch.object(tif, "OFFICIAL_SPLIT_MANIFEST", split_man_p),
+            mock.patch.object(tif, "INDICES_DIR", indices_dir),
+            mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
+            mock.patch.object(tif, "OFFICIAL_PREPROCESSOR_ARTIFACT", art_p),
+            mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
+            mock.patch.object(tif, "OFFICIAL_PREPROCESSOR_MANIFEST", pp_man_p),
+            mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(tif, "REPORT_DIR", rep_dir),
+            mock.patch(
+                "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                return_value=mock_pp,
+            ),
+        ):
             exit_code = tif.run_pipeline(args)
             assert exit_code == 0, f"Expected 0, got {exit_code}"
             assert (model_art_dir / "isolation_forest.joblib").exists()
@@ -1117,3 +1217,17 @@ class TestReviewerFindingsAndE2EIntegration:
             run_meta = json.loads((rep_dir / "run_metadata.json").read_text(encoding="utf-8"))
             assert run_meta["feature_columns"] == list(ML_FEATURE_COLUMNS)
             assert run_meta["preprocessor_source"] == "TrainOnlyPreprocessor.load_verified"
+            assert run_meta["test_partition_accessed"] is False
+            assert run_meta["test_rows_loaded"] == 0
+            assert "split_manifest_sha256" in run_meta
+            assert "partition_indices_sha256" in run_meta
+
+            # Now test with --evaluate-test flag
+            args_eval = tif.parse_args(["--n-estimators", "5", "--evaluate-test"])
+            exit_code_eval = tif.run_pipeline(args_eval)
+            assert exit_code_eval == 0
+            run_meta_eval = json.loads((rep_dir / "run_metadata.json").read_text(encoding="utf-8"))
+            assert run_meta_eval["test_partition_accessed"] is True
+            assert run_meta_eval["test_rows_loaded"] == n_test
+            metrics_eval = json.loads((rep_dir / "metrics.json").read_text(encoding="utf-8"))
+            assert "tp" in metrics_eval

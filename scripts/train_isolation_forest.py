@@ -280,13 +280,24 @@ def check_split_manifest(
         }
 
     # Verify partition index files if indices_dir is supplied
+    partition_indices_sha256 = {}
     if indices_dir is not None and isinstance(partitions, dict):
         base_indices = Path(indices_dir)
         missing_indices = []
+        checksum_mismatches = []
         for p_name in ("train", "validation", "test"):
             idx_file = partitions.get(p_name, {}).get("index_file", f"{p_name}_indices.csv.gz")
-            if not (base_indices / idx_file).exists():
-                missing_indices.append(f"{p_name}: {base_indices / idx_file}")
+            idx_path = base_indices / idx_file
+            if not idx_path.exists():
+                missing_indices.append(f"{p_name}: {idx_path}")
+            else:
+                actual_idx_sha = sha256_file(idx_path)
+                partition_indices_sha256[p_name] = actual_idx_sha
+                expected_idx_sha = partitions.get(p_name, {}).get("index_sha256")
+                if expected_idx_sha and actual_idx_sha.lower() != expected_idx_sha.lower():
+                    checksum_mismatches.append(
+                        f"{p_name} ({idx_file}): expected {expected_idx_sha}, got {actual_idx_sha}"
+                    )
         if missing_indices:
             return {
                 "status": "BLOCKED",
@@ -295,12 +306,24 @@ def check_split_manifest(
                 ),
                 "path": str(path),
             }
+        if checksum_mismatches:
+            return {
+                "status": "BLOCKED",
+                "message": (
+                    "Split manifest partition index checksum mismatch: "
+                    + "; ".join(checksum_mismatches)
+                ),
+                "path": str(path),
+            }
 
+    manifest_sha256 = sha256_file(path)
     return {
         "status": "PASS",
         "message": "Split manifest verified.",
         "path": str(path),
         "manifest": manifest,
+        "manifest_sha256": manifest_sha256,
+        "partition_indices_sha256": partition_indices_sha256,
     }
 
 
@@ -433,8 +456,10 @@ def check_finite_values(X_array, partition_name: str) -> dict:
     """Confirm no NaN or Inf in the feature matrix."""
     import numpy as np
 
-    if not np.isfinite(X_array).all():
-        n_bad = (~np.isfinite(X_array)).sum()
+    arr = np.asarray(X_array, dtype=np.float64)
+    finite_mask = np.isfinite(arr)
+    if not finite_mask.all():
+        n_bad = int((~finite_mask).sum())
         return {
             "status": "FAIL",
             "message": (
@@ -460,7 +485,7 @@ def load_partitions_by_indices(
     cols_to_read: list[str],
     train_indices: Any,
     val_indices: Any,
-    test_indices: Any,
+    test_indices: Any = None,
     chunksize: int = 100_000,
 ) -> tuple[Any, Any, Any]:
     """Load train, validation, and test partitions in chunks to manage memory footprint.
@@ -468,11 +493,19 @@ def load_partitions_by_indices(
     Instead of reading the entire multi-gigabyte CSV into memory simultaneously
     with partition slices, this streams chunksize rows at a time, maps each row
     to its destination partition, and accumulates partition chunks incrementally.
+    When test_indices is None or empty, the Test partition is not accumulated.
     """
+    import gc
+
     import numpy as np
     import pandas as pd
 
-    valid_indices = [idx for idx in (train_indices, val_indices, test_indices) if len(idx) > 0]
+    load_test = test_indices is not None and len(test_indices) > 0
+    valid_indices = [
+        idx
+        for idx in (train_indices, val_indices, test_indices if load_test else None)
+        if idx is not None and len(idx) > 0
+    ]
     if not valid_indices:
         empty = pd.DataFrame(columns=cols_to_read)
         return empty, empty, empty
@@ -483,7 +516,7 @@ def load_partitions_by_indices(
         partition_map[train_indices] = 0
     if len(val_indices) > 0:
         partition_map[val_indices] = 1
-    if len(test_indices) > 0:
+    if load_test:
         partition_map[test_indices] = 2
 
     train_chunks: list[pd.DataFrame] = []
@@ -522,11 +555,12 @@ def load_partitions_by_indices(
             sub1["_src_row_idx"] = current_row + m1
             val_chunks.append(sub1)
 
-        m2 = np.where(chunk_mask == 2)[0]
-        if len(m2) > 0:
-            sub2 = chunk.iloc[m2].copy()
-            sub2["_src_row_idx"] = current_row + m2
-            test_chunks.append(sub2)
+        if load_test:
+            m2 = np.where(chunk_mask == 2)[0]
+            if len(m2) > 0:
+                sub2 = chunk.iloc[m2].copy()
+                sub2["_src_row_idx"] = current_row + m2
+                test_chunks.append(sub2)
 
         current_row = end_row
 
@@ -534,6 +568,7 @@ def load_partitions_by_indices(
         if not chunks:
             return pd.DataFrame(columns=cols_to_read)
         df_p = pd.concat(chunks, ignore_index=True)
+        chunks.clear()
         if len(indices) > 1 and not np.all(indices[:-1] <= indices[1:]):
             df_p.set_index("_src_row_idx", inplace=True)
             df_p = df_p.loc[indices].reset_index(drop=True)
@@ -543,7 +578,14 @@ def load_partitions_by_indices(
 
     df_train = _finalize_partition(train_chunks, train_indices)
     df_val = _finalize_partition(val_chunks, val_indices)
-    df_test = _finalize_partition(test_chunks, test_indices)
+    df_test = (
+        _finalize_partition(test_chunks, test_indices)
+        if load_test
+        else pd.DataFrame(columns=cols_to_read)
+    )
+
+    del train_chunks, val_chunks, test_chunks
+    gc.collect()
 
     return df_train, df_val, df_test
 
@@ -587,10 +629,12 @@ def calibrate_threshold(
 
     if len(scores_benign_val) > 0 and len(scores_attack_val) > 0:
         all_scores = np.concatenate([scores_benign_val, scores_attack_val])
-        all_labels = np.concatenate([
-            np.zeros(len(scores_benign_val), dtype=np.int64),
-            np.ones(len(scores_attack_val), dtype=np.int64),
-        ])
+        all_labels = np.concatenate(
+            [
+                np.zeros(len(scores_benign_val), dtype=np.int64),
+                np.ones(len(scores_attack_val), dtype=np.int64),
+            ]
+        )
 
         P = int(len(scores_attack_val))
         N = int(len(scores_benign_val))
@@ -685,10 +729,14 @@ def calibrate_threshold(
             policy = "max-F1-on-known-attacks"
 
     if best_thresh is None:
-        # Fallback: use 95th percentile of benign scores
-        best_thresh = (
-            float(np.percentile(scores_benign_val, 95)) if len(scores_benign_val) > 0 else 0.0
-        )
+        if len(scores_benign_val) > 0:
+            pct = (1.0 - fpr_target) * 100.0 if fpr_target is not None else 95.0
+            best_thresh = float(np.percentile(scores_benign_val, pct))
+            fallback_label = f"{pct:g}th-percentile-benign"
+        else:
+            best_thresh = 0.0
+            fallback_label = "default-zero"
+
         preds_benign = (scores_benign_val >= best_thresh).astype(int)
         preds_attack = (scores_attack_val >= best_thresh).astype(int)
         actual_tp = int(preds_attack.sum())
@@ -704,7 +752,7 @@ def calibrate_threshold(
         )
         actual_fpr = actual_fp / (actual_fp + actual_tn) if (actual_fp + actual_tn) > 0 else 0.0
         best_stats = {
-            "fallback": "95th-percentile-benign",
+            "fallback": fallback_label,
             "tp": actual_tp,
             "tn": actual_tn,
             "fp": actual_fp,
@@ -715,9 +763,9 @@ def calibrate_threshold(
             "fpr": float(actual_fpr),
         }
         if fpr_target is not None:
-            policy = f"FALLBACK-95th-percentile (FPR constraint <= {fpr_target} NOT satisfied)"
+            policy = f"FALLBACK-{fallback_label} (FPR constraint <= {fpr_target} NOT satisfied)"
         else:
-            policy = "FALLBACK-95th-percentile"
+            policy = f"FALLBACK-{fallback_label}"
 
     result = {
         "threshold": float(best_thresh),
@@ -731,9 +779,9 @@ def calibrate_threshold(
         result["unknown_validation_detection"] = {
             "n_samples": len(scores_unknown_val),
             "n_detected": detected_unknown,
-            "detection_rate": detected_unknown / len(scores_unknown_val)
-            if len(scores_unknown_val) > 0
-            else 0.0,
+            "detection_rate": (
+                detected_unknown / len(scores_unknown_val) if len(scores_unknown_val) > 0 else 0.0
+            ),
             "note": "Unknown attack scores observed but NOT used to select threshold.",
         }
 
@@ -941,9 +989,11 @@ def _write_evaluation_report(
         "",
         "- Model: IsolationForest (scikit-learn)",
         "- Training population: benign-only (Label == 0) from Train partition",
-        f"- n_train_benign: {training_meta.get('n_train_benign', 'N/A'):,}"
-        if isinstance(training_meta.get("n_train_benign"), int)
-        else f"- n_train_benign: {training_meta.get('n_train_benign', 'N/A')}",
+        (
+            f"- n_train_benign: {training_meta.get('n_train_benign', 'N/A'):,}"
+            if isinstance(training_meta.get("n_train_benign"), int)
+            else f"- n_train_benign: {training_meta.get('n_train_benign', 'N/A')}"
+        ),
         f"- Training duration: {training_meta.get('training_duration_seconds', 'N/A')} s",
         f"- Random seed: {training_meta.get('random_state', 'N/A')}",
         "",
@@ -977,13 +1027,15 @@ def _write_evaluation_report(
             "",
             f"- n_samples: {unknown_val.get('n_samples', 'N/A')}",
             f"- n_detected: {unknown_val.get('n_detected', 'N/A')}",
-            f"- detection_rate: {unknown_val.get('detection_rate', 'N/A'):.4f}"
-            if isinstance(unknown_val.get("detection_rate"), float)
-            else f"- detection_rate: {unknown_val.get('detection_rate', 'N/A')}",
+            (
+                f"- detection_rate: {unknown_val.get('detection_rate', 'N/A'):.4f}"
+                if isinstance(unknown_val.get("detection_rate"), float)
+                else f"- detection_rate: {unknown_val.get('detection_rate', 'N/A')}"
+            ),
             f"- Note: {unknown_val.get('note', '')}",
         ]
 
-    if metrics:
+    if metrics and "tp" in metrics:
         lines += [
             "",
             "## Test Evaluation",
@@ -992,21 +1044,31 @@ def _write_evaluation_report(
             f"- TN: {metrics.get('tn', 'N/A')}",
             f"- FP: {metrics.get('fp', 'N/A')}",
             f"- FN: {metrics.get('fn', 'N/A')}",
-            f"- Accuracy: {metrics.get('accuracy', 0):.6f}"
-            if isinstance(metrics.get("accuracy"), float)
-            else f"- Accuracy: {metrics.get('accuracy', 'N/A')}",
-            f"- Precision: {metrics.get('precision', 0):.6f}"
-            if isinstance(metrics.get("precision"), float)
-            else f"- Precision: {metrics.get('precision', 'N/A')}",
-            f"- Recall / Detection Rate: {metrics.get('recall', 0):.6f}"
-            if isinstance(metrics.get("recall"), float)
-            else f"- Recall: {metrics.get('recall', 'N/A')}",
-            f"- F1: {metrics.get('f1', 0):.6f}"
-            if isinstance(metrics.get("f1"), float)
-            else f"- F1: {metrics.get('f1', 'N/A')}",
-            f"- FPR: {metrics.get('fpr', 0):.6f}"
-            if isinstance(metrics.get("fpr"), float)
-            else f"- FPR: {metrics.get('fpr', 'N/A')}",
+            (
+                f"- Accuracy: {metrics.get('accuracy', 0):.6f}"
+                if isinstance(metrics.get("accuracy"), float)
+                else f"- Accuracy: {metrics.get('accuracy', 'N/A')}"
+            ),
+            (
+                f"- Precision: {metrics.get('precision', 0):.6f}"
+                if isinstance(metrics.get("precision"), float)
+                else f"- Precision: {metrics.get('precision', 'N/A')}"
+            ),
+            (
+                f"- Recall / Detection Rate: {metrics.get('recall', 0):.6f}"
+                if isinstance(metrics.get("recall"), float)
+                else f"- Recall: {metrics.get('recall', 'N/A')}"
+            ),
+            (
+                f"- F1: {metrics.get('f1', 0):.6f}"
+                if isinstance(metrics.get("f1"), float)
+                else f"- F1: {metrics.get('f1', 'N/A')}"
+            ),
+            (
+                f"- FPR: {metrics.get('fpr', 0):.6f}"
+                if isinstance(metrics.get("fpr"), float)
+                else f"- FPR: {metrics.get('fpr', 'N/A')}"
+            ),
             f"- ROC-AUC: {metrics.get('roc_auc', 'N/A')}",
             f"- PR-AUC: {metrics.get('pr_auc', 'N/A')}",
             "",
@@ -1015,6 +1077,14 @@ def _write_evaluation_report(
             "```",
             str(metrics.get("confusion_matrix", [])),
             "```",
+        ]
+    elif metrics:
+        lines += [
+            "",
+            "## Test Evaluation",
+            "",
+            f"- Status: {metrics.get('status', 'LOCKED / PLANNED (Issue #12)')}",
+            f"- Message: {metrics.get('message', 'Test partition held out and locked.')}",
         ]
 
     if per_attack_metrics:
@@ -1203,10 +1273,15 @@ def run_pipeline(args) -> int:
         return 1
 
     indices_dir = INDICES_DIR
+    evaluate_test = getattr(args, "evaluate_test", False)
     try:
         train_indices = load_partition_indices(split_manifest, indices_dir, "train")
         val_indices = load_partition_indices(split_manifest, indices_dir, "validation")
-        test_indices = load_partition_indices(split_manifest, indices_dir, "test")
+        test_indices = (
+            load_partition_indices(split_manifest, indices_dir, "test")
+            if evaluate_test
+            else np.array([], dtype=np.int64)
+        )
     except FileNotFoundError as fnf:
         print(f"[BLOCKED] Partition index file not found: {fnf}", flush=True)
         return 1
@@ -1221,16 +1296,21 @@ def run_pipeline(args) -> int:
         cols_to_read=cols_to_read,
         train_indices=train_indices,
         val_indices=val_indices,
-        test_indices=test_indices,
+        test_indices=test_indices if evaluate_test else None,
         chunksize=chunksize,
     )
 
     # Verify row counts
-    for name, df, expected in [
+    check_partitions = [
         ("Train", df_train, EXPECTED_TRAIN_ROWS),
         ("Validation", df_val, EXPECTED_VAL_ROWS),
-        ("Test", df_test, EXPECTED_TEST_ROWS),
-    ]:
+    ]
+    if evaluate_test:
+        check_partitions.append(("Test", df_test, EXPECTED_TEST_ROWS))
+    else:
+        print("  Test partition: LOCKED / UNTOUCHED (pass --evaluate-test to unlock)", flush=True)
+
+    for name, df, expected in check_partitions:
         if len(df) != expected:
             print(
                 f"[BLOCKED] {name} row count {len(df):,} != expected {expected:,}",
@@ -1241,13 +1321,19 @@ def run_pipeline(args) -> int:
     # Extract labels before feature matrix construction
     y_train = df_train["Label"].values
     y_val = df_val["Label"].values
-    y_test = df_test["Label"].values
     attack_val = df_val["Attack"].tolist()
-    attack_test = df_test["Attack"].tolist()
 
     X_train_raw = df_train[feature_cols]
     X_val_raw = df_val[feature_cols]
-    X_test_raw = df_test[feature_cols]
+
+    if evaluate_test:
+        y_test = df_test["Label"].values
+        attack_test = df_test["Attack"].tolist()
+        X_test_raw = df_test[feature_cols]
+    else:
+        y_test = np.array([])
+        attack_test = []
+        X_test_raw = None
 
     # Validate feature schema
     schema_check = check_feature_schema(feature_cols)
@@ -1256,7 +1342,11 @@ def run_pipeline(args) -> int:
         return 1
 
     # Validate no leakage in matrices (Finding D)
-    for name, raw_df in [("Train", X_train_raw), ("Validation", X_val_raw), ("Test", X_test_raw)]:
+    matrices_to_check = [("Train", X_train_raw), ("Validation", X_val_raw)]
+    if evaluate_test and X_test_raw is not None:
+        matrices_to_check.append(("Test", X_test_raw))
+
+    for name, raw_df in matrices_to_check:
         leakage_check = check_no_leakage_in_matrix(raw_df)
         print(f"  Leakage check {name}: {leakage_check['status']}", flush=True)
         if leakage_check["status"] != "PASS":
@@ -1268,11 +1358,18 @@ def run_pipeline(args) -> int:
     X_train = apply_preprocessor(preprocessor, X_train_raw)
     print("  Applying fitted preprocessor to Validation …", flush=True)
     X_val = apply_preprocessor(preprocessor, X_val_raw)
-    print("  Applying fitted preprocessor to Test …", flush=True)
-    X_test = apply_preprocessor(preprocessor, X_test_raw)
+    if evaluate_test and X_test_raw is not None:
+        print("  Applying fitted preprocessor to Test …", flush=True)
+        X_test = apply_preprocessor(preprocessor, X_test_raw)
+    else:
+        X_test = None
 
     # Check for NaN/Inf post-preprocessing
-    for name, X in [("Train", X_train), ("Validation", X_val), ("Test", X_test)]:
+    matrices_finite_check = [("Train", X_train), ("Validation", X_val)]
+    if evaluate_test and X_test is not None:
+        matrices_finite_check.append(("Test", X_test))
+
+    for name, X in matrices_finite_check:
         finite_check = check_finite_values(X, name)
         print(f"  Finite check {name}: {finite_check['status']}", flush=True)
         if finite_check["status"] != "PASS":
@@ -1336,12 +1433,18 @@ def run_pipeline(args) -> int:
         "hyperparameters": model_config,
         "dataset_sha256": dataset_check.get("sha256", "NOT_VERIFIED"),
         "split_manifest": str(split_check["path"]),
+        "split_manifest_sha256": split_check.get("manifest_sha256", "NOT_VERIFIED"),
+        "partition_indices_sha256": split_check.get("partition_indices_sha256", {}),
         "preprocessor_artifact": str(pp_check["path"]),
         "preprocessor_artifact_sha256": pp_check.get("sha256", "NOT_VERIFIED"),
         "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
         "feature_columns": feature_cols,
         "n_features": len(feature_cols),
-        "experiment_status": "IMPLEMENTED",
+        "test_partition_accessed": evaluate_test,
+        "test_rows_loaded": len(df_test) if evaluate_test else 0,
+        "experiment_status": (
+            "EXPERIMENTALLY VALIDATED" if evaluate_test else "IMPLEMENTED — TEST LOCKED"
+        ),
     }
 
     # ------------------------------------------------------------------
@@ -1392,73 +1495,95 @@ def run_pipeline(args) -> int:
         flush=True,
     )
 
-    # THRESHOLD IS NOW FROZEN — test evaluation may begin
-    print("  Threshold frozen. Test evaluation will proceed.", flush=True)
+    # THRESHOLD IS NOW FROZEN — test evaluation may begin if requested
+    print("  Threshold frozen.", flush=True)
 
     # ------------------------------------------------------------------
     # Step 5 — final evaluation on Test (threshold frozen)
     # ------------------------------------------------------------------
-    print("\n[Step 5] Final evaluation on Test (frozen threshold)", flush=True)
+    if evaluate_test and X_test is not None:
+        print("\n[Step 5] Final evaluation on Test (frozen threshold)", flush=True)
 
-    print("  Scoring test partition …", flush=True)
-    scores_test = anomaly_scores(model, X_test)
-    y_pred_test = (scores_test >= threshold).astype(int)
+        print("  Scoring test partition …", flush=True)
+        scores_test = anomaly_scores(model, X_test)
+        y_pred_test = (scores_test >= threshold).astype(int)
 
-    test_metrics = compute_full_metrics(y_test, y_pred_test, scores_test)
-    print(
-        f"  Test TP={test_metrics['tp']:,} TN={test_metrics['tn']:,} "
-        f"FP={test_metrics['fp']:,} FN={test_metrics['fn']:,}",
-        flush=True,
-    )
-    print(
-        f"  Test Accuracy={test_metrics['accuracy']:.4f} "
-        f"Precision={test_metrics['precision']:.4f} "
-        f"Recall={test_metrics['recall']:.4f} "
-        f"F1={test_metrics['f1']:.4f}",
-        flush=True,
-    )
-    print(
-        f"  Test FPR={test_metrics['fpr']:.4f} "
-        f"ROC-AUC={test_metrics['roc_auc']} "
-        f"PR-AUC={test_metrics['pr_auc']}",
-        flush=True,
-    )
-
-    per_attack = compute_per_category_metrics(y_test, y_pred_test, scores_test, attack_test)
-    print("\n  Per-attack detection rates on Test:", flush=True)
-    for cat, stats in per_attack.items():
-        if cat == "Benign":
-            continue
-        kind = "UNKNOWN" if stats["is_unknown"] else "known "
+        test_metrics = compute_full_metrics(y_test, y_pred_test, scores_test)
         print(
-            f"    [{kind}] {cat}: {stats['n_detected']}/{stats['n_samples']} "
-            f"({stats['detection_rate']:.4f})",
+            f"  Test TP={test_metrics['tp']:,} TN={test_metrics['tn']:,} "
+            f"FP={test_metrics['fp']:,} FN={test_metrics['fn']:,}",
+            flush=True,
+        )
+        print(
+            f"  Test Accuracy={test_metrics['accuracy']:.4f} "
+            f"Precision={test_metrics['precision']:.4f} "
+            f"Recall={test_metrics['recall']:.4f} "
+            f"F1={test_metrics['f1']:.4f}",
+            flush=True,
+        )
+        print(
+            f"  Test FPR={test_metrics['fpr']:.4f} "
+            f"ROC-AUC={test_metrics['roc_auc']} "
+            f"PR-AUC={test_metrics['pr_auc']}",
             flush=True,
         )
 
-    # Known vs unknown summary
-    known_cats = [c for c, s in per_attack.items() if s.get("is_known")]
-    unknown_cats = [c for c, s in per_attack.items() if s.get("is_unknown")]
-    if known_cats:
-        known_n = sum(per_attack[c]["n_samples"] for c in known_cats)
-        known_det = sum(per_attack[c]["n_detected"] for c in known_cats)
-        print(
-            f"  Known attack detection rate: {known_det}/{known_n} = {known_det / known_n:.4f}"
-            if known_n
-            else "  No known attack samples in test.",
-            flush=True,
-        )
-    if unknown_cats:
-        unk_n = sum(per_attack[c]["n_samples"] for c in unknown_cats)
-        unk_det = sum(per_attack[c]["n_detected"] for c in unknown_cats)
-        print(
-            f"  Unknown attack detection rate: {unk_det}/{unk_n} = {unk_det / unk_n:.4f}"
-            if unk_n
-            else "  No unknown attack samples in test.",
-            flush=True,
-        )
+        per_attack = compute_per_category_metrics(y_test, y_pred_test, scores_test, attack_test)
+        print("\n  Per-attack detection rates on Test:", flush=True)
+        for cat, stats in per_attack.items():
+            if cat == "Benign":
+                continue
+            kind = "UNKNOWN" if stats["is_unknown"] else "known "
+            print(
+                f"    [{kind}] {cat}: {stats['n_detected']}/{stats['n_samples']} "
+                f"({stats['detection_rate']:.4f})",
+                flush=True,
+            )
 
-    training_meta["experiment_status"] = "EXPERIMENTALLY VALIDATED"
+        # Known vs unknown summary
+        known_cats = [c for c, s in per_attack.items() if s.get("is_known")]
+        unknown_cats = [c for c, s in per_attack.items() if s.get("is_unknown")]
+        if known_cats:
+            known_n = sum(per_attack[c]["n_samples"] for c in known_cats)
+            known_det = sum(per_attack[c]["n_detected"] for c in known_cats)
+            rate_str = f"{known_det / known_n:.4f}" if known_n else "N/A"
+            print(
+                (
+                    f"  Known attack detection rate: {known_det}/{known_n} = {rate_str}"
+                    if known_n
+                    else "  No known attack samples in test."
+                ),
+                flush=True,
+            )
+        if unknown_cats:
+            unk_n = sum(per_attack[c]["n_samples"] for c in unknown_cats)
+            unk_det = sum(per_attack[c]["n_detected"] for c in unknown_cats)
+            unk_rate_str = f"{unk_det / unk_n:.4f}" if unk_n else "N/A"
+            print(
+                (
+                    f"  Unknown attack detection rate: {unk_det}/{unk_n} = {unk_rate_str}"
+                    if unk_n
+                    else "  No unknown attack samples in test."
+                ),
+                flush=True,
+            )
+
+        training_meta["experiment_status"] = "EXPERIMENTALLY VALIDATED"
+    else:
+        print("\n[Step 5] Test partition evaluation SKIPPED (Held-out Test Locked)", flush=True)
+        print(
+            "  Test partition is locked by default to prevent evaluation leakage before Issue #12.",
+            flush=True,
+        )
+        print("  Pass --evaluate-test to unlock and evaluate on held-out test data.", flush=True)
+        test_metrics = {
+            "status": "LOCKED / PLANNED (Issue #12)",
+            "message": (
+                "Held-out test partition locked. Pass --evaluate-test to unlock and evaluate."
+            ),
+        }
+        per_attack = {}
+        training_meta["experiment_status"] = "IMPLEMENTED — TEST LOCKED"
 
     # ------------------------------------------------------------------
     # Step 6 — save artifacts
@@ -1485,7 +1610,7 @@ def run_pipeline(args) -> int:
     # Step 7 — verify saved model
     # ------------------------------------------------------------------
     print("\n[Step 7] Verify saved model", flush=True)
-    X_verify = X_test[: min(1000, len(X_test))]
+    X_verify = X_val[: min(1000, len(X_val))]
     verify_result = verify_saved_model(
         Path(artifacts_info["files"]["model"]),
         model,
@@ -1503,6 +1628,8 @@ def run_pipeline(args) -> int:
 
     run_meta["artifacts"] = artifacts_info
     run_meta["dataset_sha256"] = dataset_check.get("sha256", "NOT_VERIFIED")
+    run_meta["split_manifest_sha256"] = split_check.get("manifest_sha256", "NOT_VERIFIED")
+    run_meta["partition_indices_sha256"] = split_check.get("partition_indices_sha256", {})
     run_meta["preprocessor_sha256"] = pp_artifact_sha256
     run_meta["preprocessor_source"] = "TrainOnlyPreprocessor.load_verified"
     run_meta["threshold"] = threshold
@@ -1512,6 +1639,8 @@ def run_pipeline(args) -> int:
     run_meta["n_train_benign"] = n_train_benign
     run_meta["feature_contract_version"] = "nf-unsw-nb15-v3-baseline-47"
     run_meta["feature_columns"] = feature_cols
+    run_meta["test_partition_accessed"] = evaluate_test
+    run_meta["test_rows_loaded"] = len(df_test) if evaluate_test else 0
 
     save_reports(
         metrics=test_metrics,
@@ -1523,7 +1652,13 @@ def run_pipeline(args) -> int:
     )
     print(f"  Reports saved to: {REPORT_DIR}", flush=True)
 
-    print("\n[COMPLETE] Isolation Forest experiment EXPERIMENTALLY VALIDATED.", flush=True)
+    if evaluate_test:
+        print("\n[COMPLETE] Isolation Forest experiment EXPERIMENTALLY VALIDATED.", flush=True)
+    else:
+        print(
+            "\n[COMPLETE] Isolation Forest training & validation COMPLETE (Held-out Test Locked).",
+            flush=True,
+        )
     print(
         f"  Artifacts: {MODEL_ARTIFACT_DIR}\n  Reports  : {REPORT_DIR}",
         flush=True,
@@ -1556,6 +1691,36 @@ def _save_blocked_report(run_meta: dict, dataset_check: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+def parse_max_samples(ms: str) -> str | int | float:
+    """Parse and validate --max-samples argument.
+
+    Supports:
+    - 'auto': handled natively by scikit-learn
+    - float in (0.0, 1.0]: fraction of training samples (e.g. '1.0', '0.5')
+    - int >= 1: absolute number of samples (e.g. '256', '1000')
+    """
+    if ms == "auto":
+        return "auto"
+    try:
+        if "." in ms or "e" in ms.lower():
+            f_val = float(ms)
+            if not (0.0 < f_val <= 1.0):
+                raise ValueError(
+                    f"--max-samples float fraction must be in range (0.0, 1.0], got {ms!r}"
+                )
+            return f_val
+        i_val = int(ms)
+        if i_val < 1:
+            raise ValueError(f"--max-samples integer must be >= 1, got {ms!r}")
+        return i_val
+    except ValueError as exc:
+        if "--max-samples" in str(exc):
+            raise
+        raise ValueError(
+            f"--max-samples must be 'auto', a float in (0.0, 1.0], or an integer >= 1, got: {ms!r}"
+        ) from exc
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Train and evaluate Isolation Forest on NF-UNSW-NB15-v3."
@@ -1582,7 +1747,17 @@ def parse_args(argv=None):
     parser.add_argument(
         "--max-samples",
         default="auto",
-        help="Max samples per tree: 'auto', int or float (default: auto).",
+        help="Max samples per tree: 'auto', int (>= 1) or float in (0.0, 1.0] (default: auto).",
+    )
+    parser.add_argument(
+        "--evaluate-test",
+        action="store_true",
+        default=False,
+        help=(
+            "Evaluate on the held-out Test partition (default: False). "
+            "When False, Test partition is locked and untouched to prevent evaluation leakage "
+            "prior to Issue #12 full benchmark."
+        ),
     )
     parser.add_argument(
         "--contamination",
@@ -1632,20 +1807,15 @@ def parse_args(argv=None):
         parser.error(f"--chunksize must be a positive integer, got: {args.chunksize}")
     if args.fpr_target is not None and not (0.0 <= args.fpr_target <= 1.0):
         parser.error(f"--fpr-target must be between 0.0 and 1.0, got: {args.fpr_target}")
+    try:
+        args.max_samples = parse_max_samples(str(args.max_samples))
+    except ValueError as exc:
+        parser.error(str(exc))
     return args
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
-    # Validate --max-samples early
-    ms = args.max_samples
-    if ms != "auto":
-        try:
-            v = float(ms)
-            args.max_samples = int(v) if v == int(v) else v
-        except ValueError:
-            print(f"[ERROR] --max-samples must be 'auto', an integer or a float, got: {ms!r}")
-            return 2
 
     try:
         return run_pipeline(args)

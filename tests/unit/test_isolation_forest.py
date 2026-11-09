@@ -4,6 +4,7 @@
 Synthetic fixtures only. These tests cover configuration, validation and the
 model contract; they do not fit on UNSW-NB15 and are not experimental results.
 """
+
 import numpy as np
 import pandas as pd
 import pytest
