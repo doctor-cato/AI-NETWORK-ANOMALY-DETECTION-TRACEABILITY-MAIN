@@ -51,7 +51,7 @@ qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.6
 và kiểm chứng qua PR #42.
 C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, huấn luyện trên dữ liệu
 thực (Issue #10) đạt `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`, trong khi đánh giá trên tập
-held-out Test (Issue #12) vẫn `PLANNED`. C4–C11 vẫn `PLANNED`.
+held-out Test (Issue #12) vẫn `PLANNED`. C4 đạt `IMPLEMENTED / TESTED` (Isolation Forest Issue #11 và Autoencoder Issue #29). C5–C11 vẫn `PLANNED`.
 
 ```text
 Checkpoint: C3 — Random Forest Baseline Protocol & Training Architecture
@@ -94,6 +94,24 @@ Tests: PASS — 36 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 test
 Issues: #9 (Protocol & Criteria — IMPLEMENTED / TESTED); #10 (RF Training & Validation —
   IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED); #12 (Held-out Test Evaluation — PLANNED).
 Remaining: Đánh giá cuối cùng một lần (one-shot evaluation) trên tập held-out Test thuộc phạm vi Issue #12.
+```
+
+```text
+Checkpoint: C4 — Unsupervised Anomaly Detection & Unknown-Attack Protocol (Issue #11 & Issue #29)
+Branch: feat/issue-29-autoencoder-unknown-attack
+Completed:
+  - Issue #11 (Isolation Forest — IMPLEMENTED / TESTED):
+      * Model factory `src/network_anomaly/models/isolation_forest.py` với kiểm tra tham số, kiểu dữ liệu thực và chiều điểm.
+      * Pipeline `scripts/train_isolation_forest.py` với fail-closed prerequisite check, streaming CSV 100k dòng,
+        quần thể train benign-only (Label == 0), cách ly unknown categories (`Worms`, `Backdoor`),
+        hiệu chuẩn ngưỡng chỉ trên Validation, khóa Held-out Test, lưu và xác minh artifact.
+      * PR #38 merged vào main.
+  - Issue #29 (Autoencoder Reconstruction-Error & Unknown-Attack Evaluation — IMPLEMENTED / TESTED):
+      * Model factory `src/network_anomaly/models/autoencoder.py` (MLP Autoencoder Input 47 -> Dense 32 -> Dense 16 -> Dense 32 -> Output 47, hàm mất mát MSE, chiều điểm lỗi tái tạo cao = bất thường).
+      * Pipeline `scripts/train_autoencoder.py` với fail-closed prerequisite audit (dataset SHA-256, split manifest + index checksums, preprocessor artifact), nạp transform-only, fit thuần lành tính (benign-only), cách ly unknown categories (`Worms`, `Backdoor`), hiệu chuẩn ngưỡng chỉ trên Validation (FPR-constrained / benign quantile), Held-out Test lock, companion manifest với SHA-256, verified loader `load_verified_autoencoder()`, và xuất báo cáo markdown + json.
+Tests: PASS — 29 unit tests trong `tests/unit/test_autoencoder.py`, 23 unit/integration tests trong `tests/unit/test_train_autoencoder.py` (bao gồm E2E integration test trên synthetic fixtures), Scoped Ruff PASS, Scoped Black PASS, git diff --check PASS.
+Issues: #11 (Isolation Forest — IMPLEMENTED / TESTED); #29 (Autoencoder — IMPLEMENTED / TESTED).
+Remaining: Thí nghiệm so sánh benchmark C4 trên dữ liệu thực thuộc phạm vi Issue #25.
 ```
 
 ## Migration NF-UNSW-NB15-v3 — A–H

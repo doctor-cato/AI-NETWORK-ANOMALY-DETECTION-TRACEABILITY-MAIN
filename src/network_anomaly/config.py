@@ -28,3 +28,20 @@ ISOLATION_FOREST_DEFAULTS = {
     "random_state": RANDOM_SEED,
     "n_jobs": -1,
 }
+
+# Autoencoder is unsupervised representation learning (C4 / Issue #29);
+# the explicit parameter set below is recorded with every run for reproducibility.
+AUTOENCODER_DEFAULTS = {
+    "hidden_layer_sizes": (32, 16, 32),
+    "activation": "relu",
+    "solver": "adam",
+    "alpha": 0.0001,
+    "batch_size": 256,
+    "learning_rate_init": 0.001,
+    "max_iter": 50,
+    "early_stopping": True,
+    "validation_fraction": 0.1,
+    "n_iter_no_change": 5,
+    "tol": 1e-4,
+    "random_state": RANDOM_SEED,
+}
