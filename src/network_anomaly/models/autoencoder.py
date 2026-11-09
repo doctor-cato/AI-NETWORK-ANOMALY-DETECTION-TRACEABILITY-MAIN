@@ -350,6 +350,10 @@ def predict(model: MLPRegressor, X: Any, threshold: float) -> np.ndarray:
         raise TypeError(f"threshold must be a real number, got {type(threshold).__name__}")
     if not np.isfinite(threshold):
         raise ValueError(f"threshold must be finite, got {threshold!r}")
+    if threshold < 0.0:
+        raise ValueError(
+            f"threshold must be non-negative for reconstruction error, got {threshold!r}"
+        )
 
     scores = reconstruction_errors(model, X)
     return (scores >= threshold).astype(np.int64)

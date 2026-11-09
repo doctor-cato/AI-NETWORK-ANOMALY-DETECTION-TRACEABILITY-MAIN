@@ -313,7 +313,12 @@ def test_compute_metrics_basic():
     assert res["precision"] == 3 / 4
     assert res["recall_detection_rate"] == 3 / 4
     assert res["fpr"] == 1 / 4
+    assert res["fnr"] == 1 / 4
     assert res["tnr"] == 3 / 4
+    assert res["roc_auc"] is not None
+    assert 0.0 <= res["roc_auc"] <= 1.0
+    assert res["pr_auc"] is not None
+    assert 0.0 <= res["pr_auc"] <= 1.0
 
     # Check category breakdown
     assert "per_category" in res
@@ -693,10 +698,10 @@ def test_load_and_transform_partitions_reads_only_ml_features_and_targets(tmp_pa
 
     indices_dir = tmp_path / "splits"
     indices_dir.mkdir()
-    for part in ("train", "validation", "test"):
+    for part, idxs in (("train", [0, 1]), ("validation", [2, 3]), ("test", [4, 5])):
         idx_p = indices_dir / f"{part}_indices.csv.gz"
         with gzip.open(idx_p, "wt") as fh:
-            fh.write("source_row_index\n0\n1\n2\n3\n")
+            fh.write("source_row_index\n" + "\n".join(str(i) for i in idxs) + "\n")
 
     split_man = {
         "partitions": {
@@ -731,10 +736,10 @@ def test_load_and_transform_partitions_reorders_columns_to_canonical(tmp_path, r
 
     indices_dir = tmp_path / "splits"
     indices_dir.mkdir()
-    for part in ("train", "validation"):
+    for part, idxs in (("train", [0, 1]), ("validation", [2, 3])):
         idx_p = indices_dir / f"{part}_indices.csv.gz"
         with gzip.open(idx_p, "wt") as fh:
-            fh.write("source_row_index\n0\n1\n")
+            fh.write("source_row_index\n" + "\n".join(str(i) for i in idxs) + "\n")
 
     split_man = {
         "partitions": {
@@ -764,10 +769,10 @@ def test_load_and_transform_partitions_fails_closed_missing_feature(tmp_path, rn
 
     indices_dir = tmp_path / "splits"
     indices_dir.mkdir()
-    for part in ("train", "validation"):
+    for part, idxs in (("train", [0]), ("validation", [1])):
         idx_p = indices_dir / f"{part}_indices.csv.gz"
         with gzip.open(idx_p, "wt") as fh:
-            fh.write("source_row_index\n0\n")
+            fh.write("source_row_index\n" + "\n".join(str(i) for i in idxs) + "\n")
 
     split_man = {
         "partitions": {
@@ -927,3 +932,182 @@ def test_e2e_synthetic_pipeline_execution(tmp_path, rng):
         assert "validation" in metrics
         assert "test" in metrics
         assert metrics["test"]["total_samples"] == len(test_idx)
+        assert "roc_auc" in metrics["validation"]
+        assert "pr_auc" in metrics["validation"]
+        assert "fnr" in metrics["validation"]
+
+
+def test_load_partition_indices_supports_uncompressed_csv(tmp_path):
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    csv_p = indices_dir / "train_indices.csv"
+    with csv_p.open("w", encoding="utf-8") as fh:
+        fh.write("source_row_index\n5\n15\n25\n")
+
+    split_man = {
+        "partitions": {
+            "train": {
+                "index_file": "train_indices.csv",
+                "index_sha256": sha256_file(csv_p),
+            }
+        }
+    }
+    indices = load_partition_indices(split_man, indices_dir, "train")
+    assert list(indices) == [5, 15, 25]
+
+
+def test_load_partition_indices_rejects_negative_index(tmp_path):
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    gz_p = indices_dir / "train_indices.csv.gz"
+    with gzip.open(gz_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n0\n-5\n10\n")
+
+    split_man = {
+        "partitions": {
+            "train": {
+                "index_file": "train_indices.csv.gz",
+                "index_sha256": sha256_file(gz_p),
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="negative index"):
+        load_partition_indices(split_man, indices_dir, "train")
+
+
+def test_load_partition_indices_rejects_duplicate_indices(tmp_path):
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    gz_p = indices_dir / "train_indices.csv.gz"
+    with gzip.open(gz_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n10\n20\n10\n")
+
+    split_man = {
+        "partitions": {
+            "train": {
+                "index_file": "train_indices.csv.gz",
+                "index_sha256": sha256_file(gz_p),
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="duplicate index"):
+        load_partition_indices(split_man, indices_dir, "train")
+
+
+def test_load_and_transform_partitions_rejects_overlapping_partitions(tmp_path, rng):
+    n_rows = 10
+    df_data = {col: rng.normal(0, 1, n_rows) for col in ML_FEATURE_COLUMNS}
+    df_data["Label"] = [0] * n_rows
+    df_data["Attack"] = ["Benign"] * n_rows
+    csv_path = tmp_path / "data.csv"
+    pd.DataFrame(df_data).to_csv(csv_path, index=False)
+
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    # Contaminated overlap: row 2 is in both train and validation
+    train_idx_p = indices_dir / "train_indices.csv.gz"
+    val_idx_p = indices_dir / "validation_indices.csv.gz"
+    with gzip.open(train_idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n0\n1\n2\n")
+    with gzip.open(val_idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n2\n3\n4\n")
+
+    split_man = {
+        "partitions": {
+            "train": {
+                "index_file": "train_indices.csv.gz",
+                "index_sha256": sha256_file(train_idx_p),
+            },
+            "validation": {
+                "index_file": "validation_indices.csv.gz",
+                "index_sha256": sha256_file(val_idx_p),
+            },
+        }
+    }
+    with pytest.raises(ValueError, match="Split contamination"):
+        load_and_transform_partitions(
+            raw_data_path=csv_path,
+            indices_dir=indices_dir,
+            split_manifest=split_man,
+            preprocessor=IdentityPreprocessor(),
+        )
+
+
+def test_load_and_transform_partitions_fails_closed_row_count_mismatch(tmp_path, rng):
+    n_rows = 5
+    df_data = {col: rng.normal(0, 1, n_rows) for col in ML_FEATURE_COLUMNS}
+    df_data["Label"] = [0] * n_rows
+    df_data["Attack"] = ["Benign"] * n_rows
+    csv_path = tmp_path / "data_truncated.csv"
+    pd.DataFrame(df_data).to_csv(csv_path, index=False)
+
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    # Indices require row 10, which does not exist in the 5-row CSV
+    train_idx_p = indices_dir / "train_indices.csv.gz"
+    val_idx_p = indices_dir / "validation_indices.csv.gz"
+    with gzip.open(train_idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n0\n10\n")
+    with gzip.open(val_idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n2\n")
+
+    split_man = {
+        "partitions": {
+            "train": {
+                "index_file": "train_indices.csv.gz",
+                "index_sha256": sha256_file(train_idx_p),
+            },
+            "validation": {
+                "index_file": "validation_indices.csv.gz",
+                "index_sha256": sha256_file(val_idx_p),
+            },
+        }
+    }
+    with pytest.raises(ValueError, match="Row count mismatch in Train"):
+        load_and_transform_partitions(
+            raw_data_path=csv_path,
+            indices_dir=indices_dir,
+            split_manifest=split_man,
+            preprocessor=IdentityPreprocessor(),
+        )
+
+
+def test_load_and_transform_partitions_aligns_non_monotonic_indices(tmp_path, rng):
+    n_rows = 10
+    df_data = {col: np.arange(n_rows, dtype=np.float64) for col in ML_FEATURE_COLUMNS}
+    df_data["Label"] = [0] * n_rows
+    df_data["Attack"] = ["Benign"] * n_rows
+    csv_path = tmp_path / "data_ordered.csv"
+    pd.DataFrame(df_data).to_csv(csv_path, index=False)
+
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    # Non-monotonic order: row 4, then row 1, then row 3
+    train_idx_p = indices_dir / "train_indices.csv.gz"
+    val_idx_p = indices_dir / "validation_indices.csv.gz"
+    with gzip.open(train_idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n4\n1\n3\n")
+    with gzip.open(val_idx_p, "wt", encoding="utf-8") as fh:
+        fh.write("source_row_index\n0\n2\n")
+
+    split_man = {
+        "partitions": {
+            "train": {
+                "index_file": "train_indices.csv.gz",
+                "index_sha256": sha256_file(train_idx_p),
+            },
+            "validation": {
+                "index_file": "validation_indices.csv.gz",
+                "index_sha256": sha256_file(val_idx_p),
+            },
+        }
+    }
+    parts = load_and_transform_partitions(
+        raw_data_path=csv_path,
+        indices_dir=indices_dir,
+        split_manifest=split_man,
+        preprocessor=IdentityPreprocessor(),
+    )
+    # The first feature values must match the exact row values in indices order: [4.0, 1.0, 3.0]
+    col0 = ML_FEATURE_COLUMNS[0]
+    np.testing.assert_array_equal(parts["train"]["X_raw_df"][col0].to_numpy(), [4.0, 1.0, 3.0])

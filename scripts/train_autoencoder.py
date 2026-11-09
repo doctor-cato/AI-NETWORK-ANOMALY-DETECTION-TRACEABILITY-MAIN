@@ -42,6 +42,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.metrics import average_precision_score, roc_auc_score
 
 from network_anomaly.config import (
     PROJECT_ROOT,
@@ -51,9 +52,6 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
-)
-from network_anomaly.data.split import (
-    load_partition_indices as load_canonical_partition_indices,
 )
 from network_anomaly.models.autoencoder import (
     build_model,
@@ -456,8 +454,51 @@ def load_partition_indices(
     partition_name: str,
     max_rows: int | None = None,
 ) -> np.ndarray:
-    """Load canonical partition indices using split.load_partition_indices with optional limit."""
-    indices = load_canonical_partition_indices(manifest_or_path, Path(indices_dir), partition_name)
+    """Load canonical partition indices using split manifest verification and canonical header."""
+    if isinstance(manifest_or_path, (str, Path)):
+        with Path(manifest_or_path).open("r", encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    elif isinstance(manifest_or_path, dict):
+        manifest = manifest_or_path
+    else:
+        raise TypeError(
+            f"manifest_or_path must be a path or dict, got {type(manifest_or_path).__name__}"
+        )
+
+    partitions = manifest.get("partitions", {})
+    if partition_name not in partitions:
+        raise ValueError(f"Partition '{partition_name}' not found in split manifest")
+
+    idx_dir = Path(indices_dir)
+    idx_path = idx_dir / f"{partition_name}_indices.csv.gz"
+    if not idx_path.is_file():
+        idx_path_raw = idx_dir / f"{partition_name}_indices.csv"
+        if idx_path_raw.is_file():
+            idx_path = idx_path_raw
+        else:
+            raise FileNotFoundError(
+                f"Missing partition index file for '{partition_name}' in {idx_dir}"
+            )
+
+    part_meta = partitions[partition_name]
+    if isinstance(part_meta, dict):
+        expected_sha = part_meta.get("index_sha256")
+        if expected_sha and isinstance(expected_sha, str) and expected_sha.strip():
+            actual_sha = sha256_file(idx_path)
+            if actual_sha != expected_sha.strip():
+                raise ValueError(
+                    f"SHA-256 mismatch for {idx_path.name}: "
+                    f"expected {expected_sha.strip()}, got {actual_sha}"
+                )
+
+    indices = read_partition_indices_file(idx_path)
+
+    # Fail-closed checks on indices integrity
+    if np.any(indices < 0):
+        raise ValueError(f"Partition '{partition_name}' contains negative index values")
+    if len(indices) != len(np.unique(indices)):
+        raise ValueError(f"Partition '{partition_name}' contains duplicate index values")
+
     if max_rows is not None and len(indices) > max_rows:
         indices = indices[:max_rows]
     return indices
@@ -478,6 +519,9 @@ def load_and_transform_partitions(
     - Preprocessor transform-only (no fitting).
     - Uses usecols=list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS) to minimize RAM footprint.
     - Ensures exact 47 canonical ML features are in canonical order.
+    - Fast partition mapping with partition_map integer lookup.
+    - Strict verification that partition indices are mutually disjoint.
+    - Strict row count verification against expected index sizes.
     """
     train_indices = load_partition_indices(
         split_manifest, indices_dir, "train", max_rows=sample_size
@@ -491,7 +535,27 @@ def load_and_transform_partitions(
         else np.array([], dtype=np.int64)
     )
 
-    needed_indices = np.unique(np.concatenate([train_indices, val_indices, test_indices]))
+    # Strict assertion: partition index sets must be mutually disjoint
+    train_set = set(train_indices)
+    val_set = set(val_indices)
+    tv_overlap = train_set.intersection(val_set)
+    if tv_overlap:
+        raise ValueError(
+            f"Split contamination: train and validation partitions overlap ({len(tv_overlap)} rows)"
+        )
+    if include_test and len(test_indices) > 0:
+        test_set = set(test_indices)
+        tt_overlap = train_set.intersection(test_set)
+        if tt_overlap:
+            raise ValueError(
+                f"Split contamination: train and test partitions overlap ({len(tt_overlap)} rows)"
+            )
+        vt_overlap = val_set.intersection(test_set)
+        if vt_overlap:
+            raise ValueError(
+                "Split contamination: validation and test partitions overlap "
+                f"({len(vt_overlap)} rows)"
+            )
 
     cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
 
@@ -501,55 +565,102 @@ def load_and_transform_partitions(
     if missing_cols:
         raise ValueError(f"Raw dataset CSV missing required columns: {missing_cols}")
 
-    train_rows: list[pd.DataFrame] = []
-    val_rows: list[pd.DataFrame] = []
-    test_rows: list[pd.DataFrame] = []
+    valid_indices = [
+        idx
+        for idx in (train_indices, val_indices, test_indices if include_test else None)
+        if idx is not None and len(idx) > 0
+    ]
+    if not valid_indices:
 
-    # Stream CSV in chunks using usecols
+        def _empty_part() -> dict[str, Any]:
+            return {
+                "X": np.empty((0, len(ML_FEATURE_COLUMNS)), dtype=np.float64),
+                "y": np.array([], dtype=np.int64),
+                "attack": np.array([], dtype=object),
+                "X_raw_df": pd.DataFrame(columns=list(ML_FEATURE_COLUMNS)),
+                "X_raw_cols": list(ML_FEATURE_COLUMNS),
+            }
+
+        empty_res = {"train": _empty_part(), "validation": _empty_part()}
+        if include_test:
+            empty_res["test"] = _empty_part()
+        return empty_res
+
+    max_idx = max(int(np.max(idx)) for idx in valid_indices)
+    partition_map = np.full(max_idx + 1, -1, dtype=np.int8)
+    if len(train_indices) > 0:
+        partition_map[train_indices] = 0
+    if len(val_indices) > 0:
+        partition_map[val_indices] = 1
+    if include_test and len(test_indices) > 0:
+        partition_map[test_indices] = 2
+
+    train_chunks: list[pd.DataFrame] = []
+    val_chunks: list[pd.DataFrame] = []
+    test_chunks: list[pd.DataFrame] = []
+
+    # Stream CSV in chunks using usecols and partition_map
     chunk_size = 100_000
-    current_idx = 0
+    current_row = 0
     for chunk in pd.read_csv(
         raw_data_path,
         usecols=cols_to_read,
         chunksize=chunk_size,
         low_memory=False,
     ):
-        chunk_indices = np.arange(current_idx, current_idx + len(chunk))
-        current_idx += len(chunk)
+        n_rows = len(chunk)
+        end_row = current_row + n_rows
+        if current_row <= max_idx:
+            valid_len = min(n_rows, max_idx + 1 - current_row)
+            chunk_mask = partition_map[current_row : current_row + valid_len]
+            if valid_len < n_rows:
+                chunk_mask = np.pad(chunk_mask, (0, n_rows - valid_len), constant_values=-1)
+        else:
+            chunk_mask = np.full(n_rows, -1, dtype=np.int8)
 
-        # Check intersection
-        mask_needed = np.isin(chunk_indices, needed_indices)
-        if not np.any(mask_needed):
-            continue
+        m0 = np.where(chunk_mask == 0)[0]
+        if len(m0) > 0:
+            sub0 = chunk.iloc[m0].copy()
+            sub0["_src_row_idx"] = current_row + m0
+            train_chunks.append(sub0)
 
-        sub_chunk = chunk[mask_needed].copy()
-        sub_indices = chunk_indices[mask_needed]
-
-        mask_train = np.isin(sub_indices, train_indices)
-        if np.any(mask_train):
-            train_rows.append(sub_chunk[mask_train])
-
-        mask_val = np.isin(sub_indices, val_indices)
-        if np.any(mask_val):
-            val_rows.append(sub_chunk[mask_val])
+        m1 = np.where(chunk_mask == 1)[0]
+        if len(m1) > 0:
+            sub1 = chunk.iloc[m1].copy()
+            sub1["_src_row_idx"] = current_row + m1
+            val_chunks.append(sub1)
 
         if include_test:
-            mask_test = np.isin(sub_indices, test_indices)
-            if np.any(mask_test):
-                test_rows.append(sub_chunk[mask_test])
+            m2 = np.where(chunk_mask == 2)[0]
+            if len(m2) > 0:
+                sub2 = chunk.iloc[m2].copy()
+                sub2["_src_row_idx"] = current_row + m2
+                test_chunks.append(sub2)
 
-    def assemble_partition(row_chunks: list[pd.DataFrame]) -> dict[str, Any]:
+        current_row = end_row
+
+    def assemble_partition(
+        row_chunks: list[pd.DataFrame], expected_indices: np.ndarray, part_name: str
+    ) -> dict[str, Any]:
         if not row_chunks:
-            return {
-                "X": np.empty((0, len(ML_FEATURE_COLUMNS))),
-                "y": np.array([], dtype=np.int64),
-                "attack": np.array([], dtype=object),
-                "X_raw_df": pd.DataFrame(columns=list(ML_FEATURE_COLUMNS)),
-                "X_raw_cols": list(ML_FEATURE_COLUMNS),
-            }
-        df = pd.concat(row_chunks, ignore_index=True)
-        y = df["Label"].to_numpy(dtype=np.int64)
-        attack = df["Attack"].to_numpy(dtype=object)
+            df = pd.DataFrame(columns=cols_to_read)
+        else:
+            df = pd.concat(row_chunks, ignore_index=True)
+
+        if len(df) != len(expected_indices):
+            raise ValueError(
+                f"Row count mismatch in {part_name}: loaded {len(df)} rows, "
+                f"expected {len(expected_indices)} from partition indices."
+            )
+
+        if len(expected_indices) > 1 and not np.all(expected_indices[:-1] <= expected_indices[1:]):
+            df = df.set_index("_src_row_idx")
+            df = df.loc[expected_indices].reset_index(drop=True)
+        elif "_src_row_idx" in df.columns:
+            df = df.drop(columns=["_src_row_idx"])
+
+        y = df["Label"].to_numpy(dtype=np.int64) if len(df) > 0 else np.array([], dtype=np.int64)
+        attack = df["Attack"].to_numpy(dtype=object) if len(df) > 0 else np.array([], dtype=object)
 
         # Reorder columns explicitly to 47 canonical ML features
         X_raw = df[list(ML_FEATURE_COLUMNS)].copy()
@@ -569,11 +680,11 @@ def load_and_transform_partitions(
         }
 
     results = {
-        "train": assemble_partition(train_rows),
-        "validation": assemble_partition(val_rows),
+        "train": assemble_partition(train_chunks, train_indices, "Train"),
+        "validation": assemble_partition(val_chunks, val_indices, "Validation"),
     }
     if include_test:
-        results["test"] = assemble_partition(test_rows)
+        results["test"] = assemble_partition(test_chunks, test_indices, "Test")
     return results
 
 
@@ -695,6 +806,7 @@ def compute_metrics(
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+    fnr = fn / (fn + tp) if (fn + tp) > 0 else 0.0
     tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
     prec_normal = tn / (tn + fn) if (tn + fn) > 0 else 0.0
@@ -705,6 +817,15 @@ def compute_metrics(
         else 0.0
     )
     macro_f1 = (f1 + f1_normal) / 2.0
+
+    roc_auc: float | None = None
+    pr_auc: float | None = None
+    if total > 0 and len(np.unique(y_true)) > 1 and len(scores) == total:
+        try:
+            roc_auc = float(roc_auc_score(y_true, scores))
+            pr_auc = float(average_precision_score(y_true, scores))
+        except Exception:
+            pass
 
     metrics: dict[str, Any] = {
         "total_samples": total,
@@ -718,7 +839,10 @@ def compute_metrics(
         "f1_score": f1,
         "macro_f1": macro_f1,
         "fpr": fpr,
+        "fnr": fnr,
         "tnr": tnr,
+        "roc_auc": roc_auc,
+        "pr_auc": pr_auc,
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
     }
 
@@ -924,6 +1048,9 @@ def generate_markdown_report(
     """Generate comprehensive evaluation report in Markdown format."""
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
+    val_roc = f"{metrics_val['roc_auc']:.4f}" if metrics_val.get("roc_auc") is not None else "N/A"
+    val_pr = f"{metrics_val['pr_auc']:.4f}" if metrics_val.get("pr_auc") is not None else "N/A"
+
     lines = [
         "# Autoencoder Anomaly Detection Evaluation Report (Issue #29 / C4)",
         "",
@@ -955,7 +1082,10 @@ def generate_markdown_report(
         f"| F1-Score | {metrics_val.get('f1_score', 0.0):.4f} |",
         f"| Macro-F1 | {metrics_val.get('macro_f1', 0.0):.4f} |",
         f"| False Positive Rate (FPR) | {metrics_val.get('fpr', 0.0):.4f} |",
+        f"| False Negative Rate (FNR) | {metrics_val.get('fnr', 0.0):.4f} |",
         f"| True Negative Rate (TNR) | {metrics_val.get('tnr', 0.0):.4f} |",
+        f"| ROC-AUC | {val_roc} |",
+        f"| PR-AUC | {val_pr} |",
         "",
         "### Validation Confusion Matrix",
         "",
@@ -1007,6 +1137,12 @@ def generate_markdown_report(
 
     if metrics_test is not None:
         rec_test = metrics_test.get("recall_detection_rate", 0.0)
+        test_roc = (
+            f"{metrics_test['roc_auc']:.4f}" if metrics_test.get("roc_auc") is not None else "N/A"
+        )
+        test_pr = (
+            f"{metrics_test['pr_auc']:.4f}" if metrics_test.get("pr_auc") is not None else "N/A"
+        )
         lines.extend(
             [
                 "## 2. Test Performance (Held-out Test Lock Evaluated)",
@@ -1019,7 +1155,10 @@ def generate_markdown_report(
                 f"| F1-Score | {metrics_test.get('f1_score', 0.0):.4f} |",
                 f"| Macro-F1 | {metrics_test.get('macro_f1', 0.0):.4f} |",
                 f"| False Positive Rate (FPR) | {metrics_test.get('fpr', 0.0):.4f} |",
+                f"| False Negative Rate (FNR) | {metrics_test.get('fnr', 0.0):.4f} |",
                 f"| True Negative Rate (TNR) | {metrics_test.get('tnr', 0.0):.4f} |",
+                f"| ROC-AUC | {test_roc} |",
+                f"| PR-AUC | {test_pr} |",
                 "",
             ]
         )

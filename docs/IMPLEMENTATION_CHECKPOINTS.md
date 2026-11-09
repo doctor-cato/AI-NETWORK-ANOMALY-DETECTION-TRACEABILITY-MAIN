@@ -50,8 +50,9 @@ NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA
 qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.655.797 dòng train
 và kiểm chứng qua PR #42.
 C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, huấn luyện trên dữ liệu
-thực (Issue #10) đạt `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`, trong khi đánh giá trên tập
-held-out Test (Issue #12) vẫn `PLANNED`. C4 đạt `IMPLEMENTED / TESTED` (Isolation Forest Issue #11 và Autoencoder Issue #29). C5–C11 vẫn `PLANNED`.
+thực (Issue #10) đạt `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`. XGBoost (Issue #31) đạt
+`IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` (Validation split). Đánh giá trên tập
+held-out Test (Issue #12, one-shot) vẫn `PLANNED`. C4 đạt `IMPLEMENTED / TESTED` (Isolation Forest Issue #11 và Autoencoder Issue #29). C5–C11 vẫn `PLANNED`.
 
 ```text
 Checkpoint: C3 — Random Forest Baseline Protocol & Training Architecture
@@ -116,7 +117,39 @@ Remaining: Thí nghiệm so sánh benchmark C4 trên dữ liệu thực thuộc 
 
 ## Migration NF-UNSW-NB15-v3 — A–H
 
+```
 ```text
+Checkpoint: C3 — XGBoost Supervised Baseline Model (Issue #31)
+Branch: feat/c3-xgboost-issue-31
+Completed: Issue #31 IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED (Validation split) —
+  - Supervised training pipeline `scripts/train_xgboost.py` implemented following the identical protocol
+    and streaming machinery as Random Forest baseline (`scripts/train_random_forest.py`).
+  - Preprocessor artifact fit train-only (`verify_preprocessing_artifact`, no refit during training).
+  - Model architecture `src/network_anomaly/models/xgboost_model.py` and protocol specification
+    `src/network_anomaly/models/xgboost_protocol.py`:
+      * Strict fail-closed verified loader `XGBoostModel.load_verified()` enforcing companion manifest,
+        hex SHA-256 validation for all provenance hashes, nested conflict detection, environment git_commit,
+        fitted estimator type `XGBClassifier`, exact 47 ML features in canonical order, label ordering [0, 1],
+        and hyperparameter consistency against manifest.
+      * Protocol serialization round-trip: full restoration of split_reference, preprocessing_reference,
+        tuning_policy, test_lock_policy, and evaluation_protocol (`protocol_before.to_dict() == protocol_after.to_dict()`).
+  - Real-data training executed (run `xgb-baseline-1794151507`) on 1,655,797 Train rows x 47 features (fit 19.66s, peak memory 4,422.59 MB)
+    and evaluated on 345,371 Validation rows:
+      * Validation metrics: Precision=0.999967, Recall=1.000000, F1=0.999984, Macro-F1=0.999991, FPR=0.000003.
+      * Confusion Matrix (order [0, 1]): TN=314,870, FP=1, FN=0, TP=30,500.
+      * Model artifact saved to `artifacts/models/xgboost/xgboost_baseline.joblib` (SHA-256 `c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e`).
+      * Reload verification via `XGBoostModel.load_verified()`: PASSED (predictions identical, max abs prob diff 0.0).
+  - Strict Test Lock (Contract A & Contract B): `test_partition_accessed=False`, `test_rows_loaded=0`, `test_indices_loaded=False`.
+  - Provenance & split parity: Protocol equivalence with canonical split is VERIFIED; membership equivalence is NOT_VERIFIED
+    due to canonical Oct compressed index files being untracked in Git. Model comparison with RF reference is a same-protocol comparison.
+  - Generalization limitations documented: ~49.98% validation fingerprint overlap with Train and IXIA testbed TTL shortcut risks noted.
+Tests: PASS — 23 passed, 1 skipped in `tests/unit/test_xgb_training.py`, 11 passed in `tests/unit/test_xgb_baseline_protocol.py`,
+  8 passed in `tests/unit/test_xgb_model_structure.py`, 43 passed in `tests/unit/test_xgb_copilot_remediation.py`,
+  3 passed in `tests/unit/test_split_membership_parity.py`; full pytest suite passed; git diff --check PASS; check_environment PASS.
+Issues: #31 Acceptance Criteria complete; dependencies #7, #8, #9, #10 verified; #12 (one-shot Test evaluation) remains PLANNED.
+Remaining: One-shot held-out Test partition evaluation belongs to Issue #12. C4–C11 remain PLANNED.
+```
+text
 Checkpoint: A — research/source verification
 Branch: feat/migrate-nf-unsw-nb15-v3
 HEAD: 017f32b

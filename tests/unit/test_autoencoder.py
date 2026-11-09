@@ -264,6 +264,9 @@ def test_predict_rejects_invalid_threshold(synthetic_matrix):
     with pytest.raises(ValueError, match="threshold must be finite"):
         predict(model, X, threshold=np.nan)
 
+    with pytest.raises(ValueError, match="threshold must be non-negative"):
+        predict(model, X, threshold=-0.01)
+
 
 def test_deterministic_execution_with_seed(synthetic_matrix):
     X, _ = synthetic_matrix

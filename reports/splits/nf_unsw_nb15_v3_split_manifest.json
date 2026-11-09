@@ -4,7 +4,7 @@
   "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
   "split_protocol_version": "nf-unsw-nb15-v3-chronological-group-purged-v1",
   "fingerprint_schema_version": "nf-unsw-nb15-v3-fingerprint-v1",
-  "generated_at_utc": "2026-10-27T10:46:58.474159+00:00",
+  "generated_at_utc": "2026-11-08T14:45:31.416798+00:00",
   "total_source_rows": 2365424,
   "random_seed": 42,
   "features": {
@@ -173,7 +173,7 @@
         "Shellcode": 1407,
         "Worms": 83
       },
-      "index_sha256": "a09ba1757484c65596a88fe22d5bd989a3cca60a01088364020e2f952b36c725"
+      "index_sha256": "30ed493e2b8ecadfcb53fb0ee7f8f25729af1121d74c4bedfbb2c5e924db7e4b"
     },
     "purged_train_val_gap": {
       "row_count": 9443,
@@ -201,7 +201,7 @@
         "Shellcode": 12,
         "Worms": 1
       },
-      "index_sha256": "3bdf9ef3ee6f62960a61205bf1c98c06786971c913c8dea837764a95742b15a9",
+      "index_sha256": "94d4eb9de7eeed871ed4604524af43762800d06595da57efc06569cc6bc90621",
       "exclusion_reason": "Purge gap of 300000 ms between Train and Validation to guarantee canonical flow-group isolation and eliminate temporal boundary leakage."
     },
     "validation": {
@@ -230,7 +230,7 @@
         "Shellcode": 556,
         "Worms": 37
       },
-      "index_sha256": "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf"
+      "index_sha256": "a3e4470c2731870deaf57ce9a865e2491107d8e7f72383cdd0f99de0dd485cd4"
     },
     "purged_val_test_gap": {
       "row_count": 8860,
@@ -256,7 +256,7 @@
         "Shellcode": 10,
         "Worms": 1
       },
-      "index_sha256": "ac7f1de36b7bf1e26fce85869be0c5d0adef5c367eac8dd95f0ce50199e4a7c3",
+      "index_sha256": "244f4831907dda7e515ecf272868edd7024057163397863690ac3f0b17e414ac",
       "exclusion_reason": "Purge gap of 300000 ms between Validation and Test to guarantee canonical flow-group isolation and eliminate temporal boundary leakage."
     },
     "test": {
@@ -285,7 +285,7 @@
         "Shellcode": 396,
         "Worms": 36
       },
-      "index_sha256": "63e2e081300955fe06835b0cf7405e07e53985ca3d84164e768be09116269d03"
+      "index_sha256": "90219f75a680705f2e9982f93405f29b4df2ba00a847d9ba04832db6a26b5eae"
     }
   },
   "audit_summary": {
