@@ -101,7 +101,7 @@ Script thực hiện 8 bước bắt buộc: (1) prereq audit fail-closed (datas
 - **Provenance chain (runtime, VERIFIED):** dataset SHA `4ebb97bd…`; split manifest SHA `845d8863…` (content khớp canonical Oct, chỉ khác record timestamp); train indices `30ed493e…`, val indices `a3e4470c…`; preprocessor artifact `e1e89bde…` (fit train-only, 1.655.797 dòng).
 - **Hash chain canonical vs runtime:** artifact canonical từ thời điểm accept PR #41/#42 (`bb84c1e0…` split manifest, `12d4360a…` preprocessor artifact) không thể tái sinh byte-identical vì manifest record timestamp và preprocessor joblib ngoài Git bị ghi đè ngày 2026-11-03. Run này REGENERATE artifact set bằng scripts chính thức và verify bằng runtime hash chain; canonical hashes được giữ làm `canonical_reference_hashes` trong run manifest (`reports/models/xgboost_manifest.json`).
 - **Khối lượng:** Train 1.655.797 rows × 47 features; Validation 345.371 rows; fit 19.66 s; peak memory 4.422,59 MB (Python 3.13.9, xgboost 3.4.1, scikit-learn 1.9.1, pandas 3.0.6, numpy 2.5.3 — local Windows; CI matrix ubuntu/windows × Python 3.11/3.12 chỉ chạy unit/integration tests, không fit trên dataset thật).
-- **Tái lập:** run thứ hai không phụ thuộc (không seed nội bộ thay đổi) cho ra metrics identical (Precision/Recall/F1/Macro-F1/FPR trùng đến 6 chữ số, CM trùng khớp); model artifact SHA khác giữa các run do joblib serialization không cố định byte (70.680 bytes cố định) — run manifest luôn ghi SHA của chính run đó.
+- **Tái lập & Run Tracking:** Một lần chạy chính thức duy nhất được ghi nhận và lưu trữ đầy đủ bằng chứng là run `xgb-baseline-1794151507` (manifest tại `reports/models/xgboost_manifest.json` và report tại `reports/models/xgboost_training_report.md`). Tuyên bố về lần chạy thứ hai độc lập có metrics identical chưa có run manifest đối chiếu trong Git và do đó được thu hồi để đảm bảo tính minh bạch khoa học. Khác biệt mã băm joblib serialization giữa các lần chạy phản ánh tính không cố định byte của thư viện serialization, trong khi tính nhất quán dự đoán (prediction parity) được xác nhận qua `load_verified` (max abs probability diff = 0.0).
 
 ### 6.3 Validation metrics
 
@@ -143,3 +143,19 @@ Script thực hiện 8 bước bắt buộc: (1) prereq audit fail-closed (datas
 
 - Kết quả Validation không thay thế đánh giá held-out Test (Issue #12, one-shot) — vẫn `PLANNED`.
 - Không có hyperparameter tuning nào được thực hiện; cấu hình canonical `xgb-baseline-canonical-v1` được dùng nguyên trạng.
+
+### 6.8 Giới hạn tổng quát hóa và nguy cơ shortcut (Generalization & Shortcut Limitations)
+
+Kết quả Validation của XGBoost đạt mức rất cao (Precision 0.999967, Recall 1.000000, F1 0.999984, FP=1, FN=0), tuy nhiên cần lưu ý các giới hạn cốt lõi:
+1. **In-distribution Validation vs Held-out Test vs Thực tế:**
+   - Kết quả này chỉ đánh giá trên tập Validation nội bộ của NF-UNSW-NB15-v3. Nó không thay thế đánh giá one-shot trên tập held-out Test (Issue #12, vẫn `PLANNED`).
+   - Không được suy diễn hiệu quả Validation gần tuyệt đối thành khả năng phát hiện xâm nhập hoàn hảo trên lưu lượng mạng thực tế ngoài đời sống (out-of-distribution network traffic) mà không có cross-dataset evaluation.
+2. **Trùng lặp vector đặc trưng (Feature-vector fingerprint overlap):**
+   - Theo kết quả kiểm toán tại `docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md` (§4) và `reports/models/rf_baseline_validation_audit.json`, có khoảng **49,98% dòng Validation (172.621 flows)** mang vector 47 đặc trưng ML trùng khớp hoàn toàn với các dòng trong tập Train (0 xung đột nhãn).
+   - Sự lặp lại mẫu đặc trưng này phản ánh các hồ sơ giao thức chuẩn định kỳ (TCP handshakes, DNS queries lặp lại) trong môi trường phòng lab, không phải target leakage, nhưng giúp mô hình ghi nhớ (memorisation) và làm giảm tính độc lập thực sự giữa các mẫu đánh giá.
+3. **Nguy cơ Shortcut đặc thù môi trường lab (IXIA PerfectStorm):**
+   - Các đặc trưng như `MIN_TTL` và `MAX_TTL` phân tách rất mạnh giữa Benign và Attack do đặc thù hạ tầng sinh tải trong lab IXIA PerfectStorm (Benign sinh từ máy trạm/máy chủ thật, Attack sinh từ bộ phát lưu lượng).
+   - Điều này tạo ra nguy cơ shortcut học máy (lab testbed artifact), nơi mô hình dựa vào TTL để phân loại thay vì học các hành vi bất thường mạng thực chất.
+4. **Chẩn đoán đặc thù cho XGBoost (XGBoost Diagnostic Ablations):**
+   - Các thử nghiệm chẩn đoán bóc tách (C0–C9) đã được thực hiện đầy đủ trên Random Forest (ghi nhận tại `reports/models/rf_baseline_validation_audit.json`).
+   - Việc lặp lại bộ chẩn đoán tương đương cho XGBoost trên Train/Validation (không đụng Test) được phân loại là một workstream tiếp nối, không chặn việc nghiệm thu baseline supervised của Checkpoint C3.

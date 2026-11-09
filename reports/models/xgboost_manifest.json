@@ -398,6 +398,15 @@
       "is_canonical_baseline": true
     }
   },
+  "generalization_limitations": {
+    "flow_fingerprint_overlap_pct": 49.98,
+    "synthetic_shortcut_risks": [
+      "Deterministic TTL values from IXIA PerfectStorm testbed",
+      "Static port and protocol distributions",
+      "Repetitive flow sizing artifacts"
+    ],
+    "ood_warning": "Recall and FPR may degrade on out-of-distribution network traffic or zero-day attacks."
+  },
   "reload_verification": {
     "status": "PASSED",
     "loader": "XGBoostModel.load_verified",

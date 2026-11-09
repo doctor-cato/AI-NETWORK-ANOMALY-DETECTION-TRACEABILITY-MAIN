@@ -45,16 +45,340 @@ Next Action: Maintainer review/merge #33; sau đó tạo PR C0 và chỉ tiếp 
 ## C1–C11
 
 C1 đã có provenance/schema, real-data quality/duplicate audit và EDA tái lập được cho
-NF-UNSW-NB15-v3: SOURCE_INTEGRITY: PASS, RAW_QUALITY: FINDINGS_RECORDED; EDA chạy trên
+NF-UNSW-NB15-v3: `SOURCE_INTEGRITY: PASS`, `RAW_QUALITY: FINDINGS_RECORDED`; EDA chạy trên
 2.365.424 dòng và tái lập khớp các finding đã xác minh. Real split và leakage audit hoàn thành
 qua PR #41. C2 đã có train-only preprocessing artifact được fit trên 1.655.797 dòng train
 và kiểm chứng qua PR #42.
-C3: Protocol baseline Random Forest (Issue #9) đạt IMPLEMENTED / TESTED, huấn luyện trên dữ liệu
-thực (Issue #10) đạt IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED, trong khi đánh giá trên tập
-held-out Test (Issue #12) vẫn PLANNED. XGBoost (Issue #31) đạt IMPLEMENTED / TESTED /
-EXPERIMENTALLY VALIDATED: training pipeline thực tế chạy trên NF-UNSW-NB15-v3 (run
-`xgb-baseline-1794151507`, 2026-11-08) với Train 1.655.797 rows × 47 features, Validation
-Precision 0.999967 / Recall 1.000000 / F1 0.999984 (FP=1, FN=0), test-partition lock PASSED
-(test_rows_loaded=0), artifact verified qua load_verified. Chi tiết tại
-docs/XGB_BASELINE_PROTOCOL.md §6. C4–C11 vẫn PLANNED.
+C3: Protocol baseline Random Forest (Issue #9) đạt `IMPLEMENTED / TESTED`, huấn luyện trên dữ liệu
+thực (Issue #10) đạt `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`. XGBoost (Issue #31) đạt
+`IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` (Validation split). Đánh giá trên tập
+held-out Test (Issue #12, one-shot) vẫn `PLANNED`. C4–C11 vẫn `PLANNED`.
+
+```text
+Checkpoint: C3 — Random Forest Baseline Protocol & Training Architecture
+Branch: feat/issue-9-rf-baseline-protocol
+Completed: Issue #9 IMPLEMENTED / TESTED; Issue #10 IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED —
+  - Issue #9: RF baseline protocol `rf-baseline-nf-unsw-nb15-v3-v1` đã được chuẩn hóa và khóa
+    theo đúng 47 đặc trưng ML, target Label nhị phân, TEST lock policy, tuning policy cách ly,
+    metric protocol và error analysis theo 9 loại Attack. Reviewer feedback trên PR #39 và PR #43 đã được
+    khắc phục hoàn toàn:
+      * Canonical baseline locking (`RandomForestBaselineConfig.is_canonical_baseline`, `configuration_id`,
+        khóa toàn bộ `CANONICAL_BASELINE_PARAMS` bao gồm cả `n_jobs=-1`), ngăn chặn unauthorized overrides
+        nhận danh baseline chính thức.
+      * Đồng bộ tài liệu split protocol với split manifest chính thức (`REVIEWED_AND_JUSTIFIED` cho `ml_feature_overlap`,
+        bổ sung test chống trôi tài liệu).
+      * Phân loại phát hiện theo cặp (y_true, y_pred), Benign xử lý riêng biệt.
+      * Compute metrics FPR bất biến theo thứ tự nhãn [0, 1] vs [1, 0].
+  - Issue #10: Cấu trúc mô hình Random Forest và huấn luyện trên dữ liệu thực hoàn thiện:
+      * Model serialization (`save`, `load`, `load_verified` với schema thống nhất và kiểm tra mã hex 64 ký tự).
+      * Script `scripts/train_random_forest.py` hỗ trợ `--verify-only` kiểm tra toàn diện điều kiện tiên quyết:
+        hash dataset, split manifest, companion preprocessor manifest, số dòng phân vùng (1.655.797 train,
+        345.371 val), tính duy nhất và không chồng lấn giữa các index.
+      * Strict Test Lock Contract A & Contract B: lọc trực tiếp ở luồng chuỗi dòng văn bản thô (line stream),
+        tuyệt đối không khởi tạo hay nạp bất kỳ bản ghi DataFrame nào thuộc tập Test.
+      * Memory Architecture (Option B): `chunksize` (100.000 dòng) kiểm soát bộ đệm phân tích cú pháp CSV;
+        toàn bộ tập train (1.655.797 dòng) và val (345.371 dòng) được hiện thực hóa trong RAM để fit Random Forest.
+      * Kiểm chứng tính nhất quán khi reload (`orig_preds == reloaded_preds`, sai số xác suất atol=1e-7, rtol=0,
+        kiểm tra tính hữu hạn finite, thứ tự đặc trưng và thứ tự lớp).
+      * Bắt buộc trạng thái verification `prep_audit["status"] == "PASS"` và schema `artifact_sha256` của preprocessor manifest.
+      * Loại bỏ hoàn toàn nhánh fail-open trong `load_verified()`, đối chiếu chéo top-level và nested provenance,
+        từ chối `git_commit == "UNKNOWN"` hoặc `provenance_complete == False`.
+      * Tích hợp `--step baseline` vào `scripts/run_experiments.py` ủy quyền gọi và chuyển tiếp mã thoát,
+        đồng bộ docstring và CLI help.
+      * Đã thực thi huấn luyện thực nghiệm trên 1.655.797 dòng Train và kiểm toán chẩn đoán độc lập trên
+        345.371 dòng Validation (chi tiết bằng chứng tại Checkpoint 12 bên dưới).
+Tests: PASS — 36 tests trong `tests/unit/test_rf_baseline_protocol.py`, 7 tests trong
+  `tests/unit/test_rf_model_structure.py`, 33 tests trong `tests/unit/test_rf_training.py`
+  (bao gồm `test_execute_training_real_data` PASS trên dữ liệu thực NF-UNSW-NB15-v3), 15 tests trong
+  `tests/unit/test_run_experiments.py`, 7 tests trong `tests/unit/test_audit_rf_validation_diagnostics.py`;
+  toàn bộ test suite 397 PASS, 2 SKIPPED, 0 FAILED; git diff --check PASS; check_environment PASS.
+Issues: #9 (Protocol & Criteria — IMPLEMENTED / TESTED); #10 (RF Training & Validation —
+  IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED); #12 (Held-out Test Evaluation — PLANNED).
+Remaining: Đánh giá cuối cùng một lần (one-shot evaluation) trên tập held-out Test thuộc phạm vi Issue #12.
+```
+
+## Migration NF-UNSW-NB15-v3 — A–H
+
+```
+```text
+Checkpoint: C3 — XGBoost Supervised Baseline Model (Issue #31)
+Branch: feat/c3-xgboost-issue-31
+Completed: Issue #31 IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED (Validation split) —
+  - Supervised training pipeline `scripts/train_xgboost.py` implemented following the identical protocol
+    and streaming machinery as Random Forest baseline (`scripts/train_random_forest.py`).
+  - Preprocessor artifact fit train-only (`verify_preprocessing_artifact`, no refit during training).
+  - Model architecture `src/network_anomaly/models/xgboost_model.py` and protocol specification
+    `src/network_anomaly/models/xgboost_protocol.py`:
+      * Strict fail-closed verified loader `XGBoostModel.load_verified()` enforcing companion manifest,
+        hex SHA-256 validation for all provenance hashes, nested conflict detection, environment git_commit,
+        fitted estimator type `XGBClassifier`, exact 47 ML features in canonical order, label ordering [0, 1],
+        and hyperparameter consistency against manifest.
+      * Protocol serialization round-trip: full restoration of split_reference, preprocessing_reference,
+        tuning_policy, test_lock_policy, and evaluation_protocol (`protocol_before.to_dict() == protocol_after.to_dict()`).
+  - Real-data training executed (run `xgb-baseline-1794151507`) on 1,655,797 Train rows x 47 features (fit 19.66s, peak memory 4,422.59 MB)
+    and evaluated on 345,371 Validation rows:
+      * Validation metrics: Precision=0.999967, Recall=1.000000, F1=0.999984, Macro-F1=0.999991, FPR=0.000003.
+      * Confusion Matrix (order [0, 1]): TN=314,870, FP=1, FN=0, TP=30,500.
+      * Model artifact saved to `artifacts/models/xgboost/xgboost_baseline.joblib` (SHA-256 `c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e`).
+      * Reload verification via `XGBoostModel.load_verified()`: PASSED (predictions identical, max abs prob diff 0.0).
+  - Strict Test Lock (Contract A & Contract B): `test_partition_accessed=False`, `test_rows_loaded=0`, `test_indices_loaded=False`.
+  - Provenance & split parity: Protocol equivalence with canonical split is VERIFIED; membership equivalence is NOT_VERIFIED
+    due to canonical Oct compressed index files being untracked in Git. Model comparison with RF reference is a same-protocol comparison.
+  - Generalization limitations documented: ~49.98% validation fingerprint overlap with Train and IXIA testbed TTL shortcut risks noted.
+Tests: PASS — 23 passed, 1 skipped in `tests/unit/test_xgb_training.py`, 11 passed in `tests/unit/test_xgb_baseline_protocol.py`,
+  8 passed in `tests/unit/test_xgb_model_structure.py`, 43 passed in `tests/unit/test_xgb_copilot_remediation.py`,
+  3 passed in `tests/unit/test_split_membership_parity.py`; full pytest suite passed; git diff --check PASS; check_environment PASS.
+Issues: #31 Acceptance Criteria complete; dependencies #7, #8, #9, #10 verified; #12 (one-shot Test evaluation) remains PLANNED.
+Remaining: One-shot held-out Test partition evaluation belongs to Issue #12. C4–C11 remain PLANNED.
+```
+text
+Checkpoint: A — research/source verification
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: 017f32b
+Completed: VERIFIED — decision, provenance, 55-column schema, source discrepancy, impact.
+Tests: PASS — source/package/CSV inspection; git diff --check.
+Remaining: none trong phạm vi A.
+```
+
+```text
+Checkpoint: B — migration architecture
+HEAD: 74b6d4e
+Completed: IMPLEMENTED — component classification, canonical paths, historical boundary.
+Tests: PASS — git diff --check.
+Remaining: implementation C–H.
+```
+
+```text
+Checkpoint: C — acquisition and manifest
+HEAD: 3259d3b
+Completed: IMPLEMENTED / TESTED — official fetch, bounded streaming, safe ZIP, checksums,
+  cache, lock, transaction marker, rollback/recovery; legacy artifacts preserved.
+Tests: PASS — 138 synthetic tests; official 110825147-byte archive verified and installed;
+  manifest verify PASS; second fetch CACHE_HIT.
+Remaining: raw package stays ignored and subject to UQRDM license.
+```
+
+```text
+Checkpoint: D — validation and quality
+HEAD: 9015e58
+Completed: IMPLEMENTED / TESTED — streaming validation and disk-backed duplicate audit.
+Tests: SOURCE_INTEGRITY PASS; RAW_QUALITY FINDINGS_RECORDED on real data; synthetic validator
+  tests PASS. Report includes numeric aggregates, versioned fingerprints and label conflicts.
+Blockers: ML_READY BLOCKED; no fitted train-only preprocessing artifact or real split audit.
+```
+
+```text
+Checkpoint: E — split/leakage contract
+HEAD: c6004d7
+Completed: feature/metadata/target contract and bounded overlap guards IMPLEMENTED / TESTED.
+Tests: PASS — 10 synthetic split tests.
+Remaining: real split PLANNED / NOT VERIFIED; no model training authorized.
+```
+
+```text
+Checkpoint: F — architecture/documentation
+HEAD: 4874b7e
+Completed: NF-UNSW-NB15-v3 is the documented default; 2015 dataset is historical only.
+Tests: PASS — documentation/link/status checks và full-suite gate trong G.
+Remaining: H Issues/PR.
+```
+
+```text
+Checkpoint: G — tests and CI
+HEAD: 4e2409f
+Completed: migration regression tests and current-checkout pytest import boundary IMPLEMENTED.
+Tests: PASS — environment, compileall, workflow validator, migration Ruff/Black scope, 196 pytest,
+  YAML parse, secret/raw tracking scan, branch-wide git diff --check.
+Tests: FAIL — repository-wide Ruff has 5 pre-existing findings; repository-wide Black has 11
+  pre-existing files requiring formatting. These files are outside the migration implementation
+  except historical test wiring, and are not reformatted in this scoped PR.
+Remote CI: PASS — PR #36 run 39423059243, Ubuntu/Windows × Python 3.11/3.12.
+CI scope note: workflow hiện không chạy Ruff hoặc Black; CI PASS không thay thế hai lint gates.
+Remaining: all-gates merge remains blocked while required lint gates fail.
+```
+
+```text
+Checkpoint: H — GitHub Issues, milestones and PR
+HEAD: recorded by commit/PR readback at handoff.
+Completed: backlog VERIFIED — #6–#15, #17, #18, #20, #25, #29, #31 có
+  NF-UNSW-NB15-v3 contract; #6/#8 đổi title; #4/#5 vẫn CLOSED và nhận migration
+  history note; M1–M5/M7 có source/schema/gate/dependency/test requirements mới.
+Tests: PASS — GitHub readback xác nhận 16 issue contracts, 2 historical notes và 6
+  milestone contracts; không Issue nào bị tự động đóng hoặc mở lại.
+PR: #36 OPEN vào `main`; remote CI run 39423059243 PASS 4/4; không tự merge.
+Remaining: maintainer review và xử lý/ra quyết định cho các blocker đã ghi.
+Blockers: ML readiness vẫn BLOCKED, real split/model NOT VERIFIED và repository-wide Ruff/Black
+  failures đã phân loại ở G.
+```
+
+## PR #36 hardening checkpoints
+
+```text
+Checkpoint 1 — feature contract
+HEAD: 2b96a1c
+Completed: 47 ML features + 6 trace/grouping metadata + 2 targets, raw schema remains 55 columns.
+Tests: PASS — feature ordering/exclusion and target/metadata rejection.
+```
+
+```text
+Checkpoint 2 — numeric quality and preprocessing policy
+HEAD: 2cc031a
+Completed: real aggregate missing/non-finite analysis and train-only handling contract.
+Tests: PASS synthetic behavior; real-data findings recorded; fitted artifact NOT VERIFIED.
+```
+
+```text
+Checkpoint 3 — duplicate and leakage semantics
+HEAD: 71030cc
+Completed: versioned fingerprints, label/category conflicts, exact-dedup impact and bounded guards.
+Tests: PASS synthetic guards; real duplicate audit recorded; real split NOT VERIFIED.
+```
+
+```text
+Checkpoint 4 — quality-gate semantics
+HEAD: 01eb9c8
+Completed: SOURCE_INTEGRITY / RAW_QUALITY / ML_READY output and distinct CLI exits.
+Tests: PASS synthetic semantics and real-data report regeneration.
+```
+
+```text
+Checkpoint 5 — documentation and checkpoint status
+HEAD: 6412ccf
+Completed: current documentation uses one 47-feature baseline and distinguishes migration completion
+  from ML readiness; 2015 evidence remains historical.
+Tests: PASS — manifest, workflow/status and diff checks.
+```
+
+```text
+Checkpoint 6 — Ruff, Black and CI audit
+HEAD: e509282
+Completed: migration-scoped formatting and lint audit; CI workflow scope inspected.
+Tests: PASS — migration Ruff and per-file Black checks, compileall and 196 pytest.
+Tests: FAIL — repository-wide Ruff has 5 findings and repository-wide per-file Black has 11
+  files requiring formatting; all are outside the migration diff and remain unchanged.
+Remote CI: PASS — PR #36 run 39467658090, Ubuntu/Windows × Python 3.11/3.12; workflow vẫn
+  không chạy Ruff hoặc Black.
+```
+
+```text
+Checkpoint 7 — regression coverage
+HEAD: 5d21f43
+Completed: behavioral tests cover the 47-feature order/exclusion contract, invalid/non-finite
+  values and zero-duration context, versioned duplicate fingerprints and label/category conflicts,
+  exact/ML/group/temporal split guards, status/manifest semantics and source-file immutability.
+Tests: PASS — 196 tests on the current checkout; synthetic split guards remain distinct from a
+  real split audit, which is NOT VERIFIED.
+```
+
+```text
+Checkpoint 8 — PR and affected Issues
+HEAD: recorded by final PR readback.
+Completed: branch pushed to the existing PR #36; Issues #6, #7, #8, #17 and #20 updated and
+  read back OPEN with the 47-feature contract, structured quality gates and remaining blockers.
+Remote verification: PR remains OPEN and unmerged; CI matrix PASS; no reviews/comments pending at
+  the recorded readback. Repository-wide Ruff/Black and ML readiness blockers remain explicit.
+```
+
+```text
+Checkpoint 9 — reproducible EDA (Issue #6)
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: recorded by final PR readback.
+Completed: streaming EDA for NF-UNSW-NB15-v3 in src/network_anomaly/eda plus the CLI
+  scripts/eda_nf_unsw_nb15_v3.py; generated report docs/dataset/NF_UNSW_NB15_V3_EDA.md and
+  machine-readable summary reports/eda/nf_unsw_nb15_v3_eda_summary.json. The run re-verifies the
+  source SHA-256, reuses the validator contract, profiles the whole population in bounded memory
+  and reproduces the inherited quality findings exactly.
+Tests: PASS — 15 EDA unit tests on synthetic fixtures; full pytest suite; Ruff and Black on every
+  changed Python file; real-data EDA run on 2,365,424 rows with MATCH on rows, labels, exact
+  duplicate rows and repeated rows.
+Issues: #6 implemented; #7 (real split, leakage audit) and #8 (train-only fitted preprocessing)
+  remain OPEN; #37 keeps the repository-wide lint debt.
+PR: #36 updated in place, still OPEN, not merged; reviewer re-review requested.
+Remaining: ML_READY stays BLOCKED. No feature selection, no fitted transformer, no model, no
+  evaluation. Repository-wide Ruff/Black debt is unchanged and tracked by #37.
+```
+
+```text
+Checkpoint 10 — EDA reproducibility evidence
+Branch: feat/migrate-nf-unsw-nb15-v3
+HEAD: recorded by final PR readback.
+Completed: scripts/verify_eda_reproducibility.py runs the EDA twice on the verified raw CSV
+  and writes one retrievable bundle per run under reports/eda/evidence/ (run_metadata.json,
+  stdout.log, stderr.log, eda_summary.json, eda_report.md) plus a PASS/FAIL comparison per
+  metric in reproducibility_comparison.md and .json. The EDA report now states explicitly
+  what ran on real data, what is skipped in CI and what only proves code behaviour.
+Tests: PASS — 8 new reproducibility tests on synthetic fixtures; full pytest suite 219 PASS;
+  Ruff and Black PASS on every changed Python file; the two real runs agree on every
+  deterministic metric (rows, labels, categories, quality tokens, duplicates, quantiles,
+  correlations, time coverage, contract, readiness, leakage boundary) and on the run
+  evidence (command, exit code, git HEAD, dataset SHA-256, manifest and row verification).
+Issues: #6 implemented; #7, #8 and #37 remain OPEN and unchanged.
+PR: #36 updated in place, still OPEN, not merged; re-review requested on the new HEAD.
+Remaining: ML_READY stays BLOCKED. Repository-wide Ruff (5 findings) and Black (11 files)
+  remain FAIL and tracked by #37; they are never reported as PASS.
+```
+
+```text
+Checkpoint 11 — Data leakage audit, data splitting and feature contract (Issue #7)
+Branch: feat/issue-7-data-splitting-leakage-audit
+HEAD: recorded by commit/PR readback at handoff.
+Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED.
+  - Deterministic chronological train/val/test split with 5-minute canonical group purge gaps
+    implemented in src/network_anomaly/data/split.py and CLI scripts/split_and_audit_nf_unsw_nb15_v3.py.
+  - Full-dataset cross-partition leakage audit executed on verified NF-UNSW-NB15-v3 bytes (2,365,424 rows).
+  - Split manifest generated at data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json,
+    reports/splits/nf_unsw_nb15_v3_split_manifest.json, and data/processed/nf_unsw_nb15_v3_split_manifest.json.
+  - Leakage audit report rendered at docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md and
+    reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md with comprehensive analysis of ML duplicates
+    (53.21% Test affected), evaluation limitations (non-i.i.d. feature representation), and methodology boundaries.
+  - Partition row indices generated under data/processed/splits/*.csv.gz using deterministic gzip (mtime=0.0)
+    with 100% byte-for-byte SHA-256 match across independent runs.
+  - Baseline 47 feature contract strictly preserved; 6 trace metadata and 2 target columns excluded.
+Tests: PASS — 12 dedicated unit tests (test_split_protocol.py); full test suite passed;
+  artifact reproducibility verified byte-for-byte on disk via independent dual-pass runs; audit status PASS.
+  Exact full-row overlap: 0; source-feature overlap: 0; flow-group overlap: 0;
+  temporal boundary violations: 0; binary label conflicts: 0.
+Issues: #7 review feedback fully addressed; #8 ready to consume verified split contract.
+Remaining: ML_READY remains BLOCKED pending train-only fitted preprocessing in Issue #8.
+```
+
+```text
+Checkpoint 12 — Random Forest Baseline Protocol & Real-Data Training (Issues #9 & #10)
+Branch: feat/issue-9-rf-baseline-protocol
+HEAD: recorded by commit/PR readback at handoff.
+Completed: IMPLEMENTED, TESTED, and EXPERIMENTALLY VALIDATED on real NF-UNSW-NB15-v3 bytes.
+  - Issue #9 protocol (`rf-baseline-nf-unsw-nb15-v3-v1`) and canonical baseline locking (`n_jobs=-1`,
+    `configuration_id="rf-baseline-canonical-v1"`, `is_canonical_baseline=True`) implemented in
+    `src/network_anomaly/models/random_forest_protocol.py` and `src/network_anomaly/models/random_forest.py`.
+  - Official prerequisites verified byte-for-byte via `python scripts/train_random_forest.py --verify-only`:
+    raw CSV (`4ebb97bd...`), split manifest (`bb84c1e0...`), train/val/gap/test `.csv.gz` indices,
+    and fitted train-only preprocessor `.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`).
+  - Real-data Random Forest training executed via `python scripts/run_experiments.py --step baseline`
+    on 1,655,797 Train rows (`83.73s`, `peak_memory_mb=3863.41 MB`, run manifest `rf-baseline-1794068628`) and evaluated on 345,371 Validation rows.
+  - Model artifact saved to `artifacts/models/random_forest/random_forest_baseline.joblib`
+    (`917,227` bytes, SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`),
+    reproduced 100% byte-for-byte across two independent real-data training runs.
+  - Run manifest recorded at `reports/models/random_forest_manifest.json` and detailed evidence report
+    at `reports/models/rf_baseline_training_report.md`.
+  - Validation metrics on 345,371 rows: `Precision=0.999836`, `Recall=0.999902`, `F1=0.999869`,
+    `Macro-F1=0.999928`, `FPR=0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]`.
+  - Verified reload consistency (`RandomForestModel.load_verified`): `PASSED` on all 345,371 Validation rows
+    (`predictions_identical=true`, `max_abs_probability_diff=2.220446049250313e-16`, `atol=1e-7`, `rtol=0`;
+     giá trị khác 0 do cộng gộp xác suất đa luồng `n_jobs=-1`, nằm trong dung sai).
+  - Strict Test Lock (Contract A & Contract B): `test_partition_accessed=false`, `test_rows_loaded=0`,
+    `test_indices_loaded=false`.
+  - Independent validation audit & diagnostic ablation (`scripts/audit_rf_validation_diagnostics.py` ->
+    `reports/models/rf_baseline_validation_audit.json`, Train/Validation only): stratified canonical RF
+    (200 trees) evaluation on fingerprint-overlapping (`172,621` rows, `Accuracy=1.000000`) vs
+    non-overlapping (`172,750` rows, `Accuracy=0.999954`, `F1=0.999823`, `FP=5`, `FN=3`) validation flows,
+    plus 10 non-canonical diagnostic experiments (`C0`–`C9`: 60-tree RF ablations/deduplication/label-shuffle
+    and depth-3/8 single Decision Trees) separating code/pipeline leakage, fingerprint memorisation, and
+    testbed-specific shortcuts (`MIN_TTL`/`MAX_TTL`).
+Tests: PASS — 33/33 unit and real-data integration tests in `tests/unit/test_rf_training.py`
+  (including `test_execute_training_real_data` PASS on real NF-UNSW-NB15-v3 bytes), 36/36 in
+  `tests/unit/test_rf_baseline_protocol.py`, 7/7 in `tests/unit/test_rf_model_structure.py`,
+  15/15 in `tests/unit/test_run_experiments.py`, and 7/7 in
+  `tests/unit/test_audit_rf_validation_diagnostics.py` (full test suite: `397 passed, 2 skipped`).
+Issues: #9 and #10 all Acceptance Criteria verified on real data; #12 (held-out Test evaluation) remains PLANNED.
+Remaining: One-shot held-out Test partition evaluation belongs to Issue #12.
 ```

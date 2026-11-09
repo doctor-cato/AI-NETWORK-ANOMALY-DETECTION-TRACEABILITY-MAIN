@@ -43,3 +43,15 @@
 | F1 | 0.999869 | 0.999984 |
 | Macro-F1 | 0.999928 | 0.999991 |
 | FPR | 0.000016 | 0.000003 |
+
+## Feature Contract Clarification (47 ML Features vs 49 Dataset Columns)
+- **Raw CSV schema (49 columns):** The raw NF-UNSW-NB15-v3 dataset contains 49 columns: 47 NetFlow flow attributes and 2 ground-truth target columns (`Label` binary target and `attack_cat` multiclass category).
+- **Target leakage prevention:** The fitted train-only preprocessor and data ingestion stream strictly exclude `Label` and `attack_cat` from model input features.
+- **Model input contract:** The model is fitted strictly on the canonical 47 features (`n_features_in_ = 47`), matching `ML_FEATURE_COLUMNS` and `feature_contract_version = "nf-unsw-nb15-v3-baseline-47"`.
+
+## Generalization & Shortcut Limitations
+- **Evaluation context:** Near-perfect validation metrics (Recall = 1.000000, Precision = 0.999967, FPR = 0.000003) must be interpreted with extreme caution in benchmark NIDS environments.
+- **Flow fingerprint overlap:** Despite chronological and purged gap partitioning, approximately 49.98% of flow fingerprints (protocol, ports, flow size profiles) overlap between partitions due to synthetic traffic generator configurations in the IXIA PerfectStorm testbed.
+- **Shortcut learning risks:** Decision tree ensembles (XGBoost, Random Forest) can exploit testbed-specific artifacts (e.g., deterministic TTL values, static port distributions, synthetic packet sizing) rather than generalized malicious behaviors.
+- **Out-of-Distribution (OOD) degradation:** True zero-day variants, evasive malware, and production enterprise networks will experience higher false alarm rates and degraded recall compared to benchmark test partitions.
+- **Operational disclaimer:** Benchmark performance does not equate to production readiness; continuous drift monitoring, feature ablation, and out-of-distribution evaluation are required before live deployment.
