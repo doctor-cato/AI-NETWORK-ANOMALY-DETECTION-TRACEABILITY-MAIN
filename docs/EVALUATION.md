@@ -22,16 +22,31 @@
   họ `Attack` cụ thể trong 9 loại tấn công (`Exploits`, `Fuzzers`, `Generic`, `Reconnaissance`,
   `DoS`, `Backdoor`, `Shellcode`, `Analysis`, `Worms`).
 
-### Isolation Forest (không giám sát — nếu triển khai)
+### Isolation Forest (không giám sát — C4 / Issue #11)
 
-- Chọn rõ normal-only novelty setup hoặc mixed/unlabeled outlier setup trước khi fit. Nếu label chỉ được dùng để lọc
-  normal-only, ghi rõ bước này; không truyền target vào mô hình.
-- Tạo điểm bất thường trên tập validation.
-- Chọn ngưỡng (ghi rõ phương pháp: contamination/quantile đã định trước, hoặc tối ưu bằng validation labels và ghi
-  rõ đây là supervised calibration).
-- Dự đoán trên test với ngưỡng đã chọn.
-- Tính các metric giống trên; ghi rõ quá trình chọn ngưỡng.
-- Lưu ý: các metric chỉ so sánh được khi cả hai protocol đã được ghi rõ.
+- Hướng score đã được ghim trong code: `network_anomaly.models.isolation_forest.anomaly_scores` trả
+  về điểm mà **lớn hơn = bất thường hơn** (đảo dấu `decision_function` của scikit-learn, vốn dùng chiều
+  ngược). Dùng helper này để tránh đảo chiều âm thầm; helper không áp ngưỡng.
+- **Huấn luyện benign-only**: Chỉ huấn luyện mô hình trên các mẫu lưu lượng bình thường (`Label == 0`) từ
+  phân vùng Train. Không truyền `Label` hoặc `Attack` vào hàm huấn luyện của mô hình.
+- **Hiệu chuẩn ngưỡng trên Validation (Threshold Calibration)**:
+  - Điểm bất thường được sinh trên tập Validation.
+  - Các nhóm tấn công chưa biết được đăng ký trước (pre-registered: `UNKNOWN_ATTACK_CATEGORIES` gồm `Worms` và `Backdoor`)
+    và **hoàn toàn loại trừ** khỏi việc lựa chọn ngưỡng hoặc tinh chỉnh siêu tham số trên Validation.
+  - Ngưỡng được lựa chọn dựa trên sự đánh đổi giữa FPR và detection rate (chính sách tối đa hóa F1 trên các nhóm
+    tấn công đã biết hoặc thỏa mãn mục tiêu FPR định trước).
+- **Đóng băng ngưỡng trước khi đánh giá Test**:
+  - Ngưỡng đã chọn được đóng băng cố định (`frozen threshold`).
+  - Không sử dụng nhãn hay điểm của tập Test để chọn hoặc điều chỉnh ngưỡng.
+- **Đánh giá trên tập Test**:
+  - Bắt buộc tính toán đầy đủ: TP, TN, FP, FN, Accuracy, Precision, Recall / Detection Rate, F1, FPR, ROC-AUC, PR-AUC.
+  - Đánh giá phân rã: tỷ lệ phát hiện tấn công đã biết (known attack detection rate), tỷ lệ phát hiện tấn công
+    chưa biết (unknown attack detection rate), và ma trận nhầm lẫn có nhãn rõ ràng.
+  - Phân tích tỷ lệ phát hiện trên từng loại tấn công cụ thể (`per-attack category detection rate`).
+  - Phân biệt rõ khả năng phát hiện bất thường nhị phân với khả năng tổng quát hóa trên các nhóm tấn công chưa thấy;
+    không tuyên bố phát hiện zero-day chỉ vì mô hình phát hiện được các nhóm bị loại khỏi validation.
+- Entrypoint thực thi: `scripts/train_isolation_forest.py`. Pipeline tuân thủ nguyên tắc fail-closed (dừng ngay và báo
+  `BLOCKED` nếu thiếu dữ liệu thật, sai lệch SHA-256, thiếu split manifest, lỗi schema đặc trưng hoặc phát hiện rò rỉ).
 
 ## Định nghĩa metric (lặp lại từ METHODOLOGY cho rõ ràng)
 
@@ -72,4 +87,4 @@
   - Kiểm toán khóa tập Test: `test_partition_accessed = false`, `test_rows_loaded = 0`, `test_indices_loaded = false`.
 - Đánh giá một lần cuối cùng (one-shot final evaluation) trên phân vùng **Test** (`345.953` dòng) thuộc phạm vi Issue #12 và vẫn giữ trạng thái `PLANNED`.
 
-Cập nhật: 2026-11-07 (cập nhật kết quả huấn luyện và đánh giá Validation thực nghiệm của Random Forest baseline Issue #10; giữ khóa tập Test cho Issue #12)
+Cập nhật: 2026-11-08 (cập nhật kết quả huấn luyện RF baseline Issue #10 và bổ sung Isolation Forest C4 protocol & pipeline evaluation Issue #11; giữ khóa tập Test cho Issue #12)
