@@ -30,6 +30,8 @@ from network_anomaly.models.xgboost_model import (
 from network_anomaly.models.xgboost_protocol import (
     FEATURE_CONTRACT_VERSION,
     PROTOCOL_IDENTIFIER,
+    PreprocessingReference,
+    SplitReference,
     create_xgb_baseline_protocol,
 )
 
@@ -53,8 +55,9 @@ def saved_verified_xgb_model(tmp_path: Path, dummy_47_df: pd.DataFrame):
     actual_sha = model.save(model_path)
 
     ds_sha = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
-    sm_sha = "845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f"
-    prep_sha = "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6"
+    # Keep the companion manifest consistent with the protocol serialized into the model.
+    sm_sha = model.protocol.split_reference.manifest_sha256
+    prep_sha = model.protocol.preprocessing_reference.artifact_sha256
 
     base_manifest: Dict[str, Any] = {
         "model_type": "XGBoost",
@@ -300,6 +303,81 @@ def test_f01_load_verified_rejects_missing_or_invalid_git_commit(
         XGBoostModel.load_verified(model_path, manifest_path)
 
 
+@pytest.mark.parametrize(
+    "field",
+    ["dataset_sha256", "split_manifest_sha256", "preprocessor_artifact_sha256"],
+)
+def test_f01_load_verified_rejects_all_zero_provenance_hashes(saved_verified_xgb_model, field):
+    """All-zero strings are placeholders, not valid provenance evidence."""
+    model_path, manifest_path, base_manifest = saved_verified_xgb_model
+    tampered = dict(base_manifest)
+    tampered[field] = "0" * 64
+    manifest_path.write_text(json.dumps(tampered), encoding="utf-8")
+    with pytest.raises(ValueError, match="placeholder"):
+        XGBoostModel.load_verified(model_path, manifest_path)
+
+
+def test_f01_load_verified_rejects_placeholder_git_commit(saved_verified_xgb_model):
+    """An all-zero commit is syntactically hex but is not a Git provenance record."""
+    model_path, manifest_path, base_manifest = saved_verified_xgb_model
+    tampered = dict(base_manifest)
+    tampered["environment"] = {"git_commit": "0" * 40}
+    manifest_path.write_text(json.dumps(tampered), encoding="utf-8")
+    with pytest.raises(ValueError, match="placeholder"):
+        XGBoostModel.load_verified(model_path, manifest_path)
+
+
+def test_save_marks_manifest_incomplete_without_runtime_provenance(tmp_path, dummy_47_df):
+    """save() must not fabricate verified provenance for synthetic/API-only models."""
+    model = XGBoostModel().fit(dummy_47_df, np.array([0] * 10 + [1] * 10))
+    model_path = tmp_path / "model.joblib"
+    manifest_path = tmp_path / "manifest.json"
+    model.save(model_path, manifest_path=manifest_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["provenance_complete"] is False
+    assert manifest["provenance_status"] == "INCOMPLETE"
+    assert manifest["environment"]["git_commit"] is None
+    with pytest.raises(ValueError, match="incomplete provenance"):
+        XGBoostModel.load_verified(model_path, manifest_path)
+
+
+def test_save_load_verified_roundtrip_with_verified_sources(tmp_path, dummy_47_df):
+    """Verified API manifests require caller-supplied, hash-checked source evidence."""
+    dataset = tmp_path / "dataset.csv"
+    split_manifest = tmp_path / "split.json"
+    preprocessor = tmp_path / "preprocessor.joblib"
+    dataset.write_bytes(b"dataset evidence")
+    split_manifest.write_bytes(b"split evidence")
+    preprocessor.write_bytes(b"preprocessor evidence")
+    protocol = create_xgb_baseline_protocol()
+    protocol.dataset_csv_sha256 = _sha256_file(dataset)
+    protocol.split_reference = SplitReference(manifest_sha256=_sha256_file(split_manifest))
+    protocol.preprocessing_reference = PreprocessingReference(
+        artifact_sha256=_sha256_file(preprocessor)
+    )
+    model = XGBoostModel(protocol=protocol).fit(dummy_47_df, np.array([0] * 10 + [1] * 10))
+    model_path = tmp_path / "model.joblib"
+    manifest_path = tmp_path / "manifest.json"
+    model.save(
+        model_path,
+        manifest_path=manifest_path,
+        extra_manifest_fields={
+            "dataset_path": str(dataset),
+            "split_provenance": {"split_manifest_path": str(split_manifest)},
+            "preprocessing_provenance": {"preprocessor_artifact_path": str(preprocessor)},
+            "environment": {"git_commit": "7d760e0ca3b43e1ed48108978922bf8638168dde"},
+            "provenance_complete": True,
+            "provenance_status": "VERIFIED",
+        },
+    )
+    loaded = XGBoostModel.load_verified(model_path, manifest_path)
+    assert loaded.is_fitted
+    assert np.array_equal(loaded.predict(dummy_47_df), model.predict(dummy_47_df))
+    split_manifest.write_bytes(b"tampered split evidence")
+    with pytest.raises(ValueError, match="Declared provenance source hash mismatch"):
+        XGBoostModel.load_verified(model_path, manifest_path)
+
+
 def test_f01_load_verified_rejects_wrong_estimator_type(tmp_path, saved_verified_xgb_model):
     """F01: load_verified() rejects artifact whose estimator is not XGBClassifier."""
     from sklearn.ensemble import RandomForestClassifier
@@ -380,6 +458,7 @@ def test_f01_load_verified_rejects_mismatched_feature_ordering(saved_verified_xg
 def test_f01_load_verified_rejects_target_columns_in_features(tmp_path, dummy_47_df):
     """F01: load_verified() rejects model payload containing target column 'Label' or 'Attack'."""
     cols_with_target = list(ML_FEATURE_COLUMNS[:-1]) + ["Label"]
+    canonical_protocol = create_xgb_baseline_protocol()
     payload = {
         "model_type": "XGBoost",
         "task": "binary_classification",
@@ -387,7 +466,7 @@ def test_f01_load_verified_rejects_target_columns_in_features(tmp_path, dummy_47
         "positive_class": "Attack",
         "is_fitted": True,
         "config": XGBoostBaselineConfig().to_dict(),
-        "protocol": create_xgb_baseline_protocol().to_dict(),
+        "protocol": canonical_protocol.to_dict(),
         "classes": [0, 1],
         "configuration_id": "xgb-baseline-canonical-v1",
         "is_canonical_baseline": True,
@@ -410,12 +489,8 @@ def test_f01_load_verified_rejects_target_columns_in_features(tmp_path, dummy_47
         "positive_class": "Attack",
         "model_artifact_sha256": sha,
         "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-        "split_manifest_sha256": (
-            "845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f"
-        ),
-        "preprocessor_artifact_sha256": (
-            "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6"
-        ),
+        "split_manifest_sha256": canonical_protocol.split_reference.manifest_sha256,
+        "preprocessor_artifact_sha256": canonical_protocol.preprocessing_reference.artifact_sha256,
         "provenance_complete": True,
         "provenance_status": "VERIFIED",
         "environment": {"git_commit": "7d760e0ca3b43e1ed48108978922bf8638168dde"},

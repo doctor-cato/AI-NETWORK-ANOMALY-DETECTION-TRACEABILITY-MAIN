@@ -498,6 +498,7 @@ def execute_training(
         status="PASS (runtime-verified hash chain)",
     )
     protocol = create_xgb_baseline_protocol()
+    protocol.dataset_csv_sha256 = EXPECTED_DATASET_SHA256
     protocol.split_reference = split_ref
     protocol.preprocessing_reference = preproc_ref
     protocol.validate()

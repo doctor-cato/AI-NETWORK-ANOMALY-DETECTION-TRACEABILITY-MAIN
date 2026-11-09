@@ -18,6 +18,8 @@ Addresses Finding F03 (PR #40 / Issue #31):
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -367,6 +369,7 @@ def audit_split_membership_parity(
 
     # 5. Membership Equivalence (requires actual canonical raw index files on disk)
     canonical_indices_present = False
+    membership_partitions: Dict[str, Any] = {}
     if indices_dir is not None:
         canonical_dir = indices_dir / "canonical_oct"
         if canonical_dir.is_dir():
@@ -375,10 +378,39 @@ def audit_split_membership_parity(
             )
 
     if canonical_indices_present:
-        membership_status = "NOT_EVALUATED_AUTOMATICALLY"
+        all_membership_match = True
+        for partition_name in ref["partitions"]:
+            canonical_index = canonical_dir / f"{partition_name}_indices.csv.gz"
+            runtime_index = indices_dir / f"{partition_name}_indices.csv.gz"
+            if not runtime_index.is_file():
+                all_membership_match = False
+                membership_partitions[partition_name] = {
+                    "status": "RUNTIME_INDEX_MISSING",
+                    "canonical_path": str(canonical_index),
+                    "runtime_path": str(runtime_index),
+                }
+                continue
+            with gzip.open(canonical_index, "rb") as canonical_file:
+                canonical_content = canonical_file.read()
+            with gzip.open(runtime_index, "rb") as runtime_file:
+                runtime_content = runtime_file.read()
+            exact_order_match = canonical_content == runtime_content
+            all_membership_match = all_membership_match and exact_order_match
+            membership_partitions[partition_name] = {
+                "status": "VERIFIED" if exact_order_match else "DIFFERENT",
+                "canonical_decompressed_sha256": hashlib.sha256(canonical_content).hexdigest(),
+                "runtime_decompressed_sha256": hashlib.sha256(runtime_content).hexdigest(),
+                "canonical_decompressed_size_bytes": len(canonical_content),
+                "runtime_decompressed_size_bytes": len(runtime_content),
+                "row_membership_and_order_match": exact_order_match,
+            }
+        membership_status = "VERIFIED" if all_membership_match else "DIFFERENT"
         membership_reason = (
-            "Canonical index directory exists but automated sequence decompression "
-            "has not been executed."
+            "Canonical and runtime index archives were decompressed and compared byte-for-byte; "
+            "this establishes both source-row membership and ordering for every partition."
+            if all_membership_match
+            else "Canonical index artifacts were available, but at least one decompressed runtime "
+            "index differs; see membership_partitions for partition-level evidence."
         )
     else:
         membership_status = "NOT_VERIFIED"
@@ -484,6 +516,7 @@ def audit_split_membership_parity(
         },
         "protocol_discrepancies": protocol_discrepancies,
         "partitions": partition_audit,
+        "membership_partitions": membership_partitions,
         "membership_rationale": membership_reason,
         "test_isolation": {
             "declared_policy_contract": declared_policy_contract,
@@ -497,6 +530,7 @@ def audit_split_membership_parity(
 
 def render_split_membership_report_md(evidence: Dict[str, Any]) -> str:
     """Render structured Markdown evidence report."""
+    declared_lock = evidence["test_isolation"]["declared_policy_contract"]
     lines = [
         "# Split Membership Parity & Provenance Audit Report (NF-UNSW-NB15-v3)",
         "",
@@ -542,6 +576,27 @@ def render_split_membership_report_md(evidence: Dict[str, Any]) -> str:
             f"{rt_sha_str} | `{data['byte_hashes_match']}` |"
         )
 
+    membership_partitions = evidence.get("membership_partitions", {})
+    if membership_partitions:
+        lines.extend(
+            [
+                "",
+                "### 3.1 Decompressed Membership and Ordering Evidence",
+                "",
+                "| Partition | Status | Decompressed SHA Match | Membership and Order Match |",
+                "|---|---|---|---|",
+            ]
+        )
+        for partition_name, partition in membership_partitions.items():
+            decompressed_hashes_match = partition.get(
+                "canonical_decompressed_sha256"
+            ) == partition.get("runtime_decompressed_sha256")
+            lines.append(
+                f"| `{partition_name}` | `{partition['status']}` | "
+                f"`{decompressed_hashes_match}` | "
+                f"`{partition.get('row_membership_and_order_match', False)}` |"
+            )
+
     lines.extend(
         [
             "",
@@ -560,13 +615,10 @@ def render_split_membership_report_md(evidence: Dict[str, Any]) -> str:
             "## 4. Test Partition Isolation",
             "",
             "### 4.1 Declared Policy Contract",
-            f"- `test_partition_accessed`: "
-            f"`{evidence['test_isolation']['declared_policy_contract']['test_partition_accessed']}`",
-            f"- `test_rows_loaded`: "
-            f"`{evidence['test_isolation']['declared_policy_contract']['test_rows_loaded']}`",
-            f"- `test_indices_loaded`: "
-            f"`{evidence['test_isolation']['declared_policy_contract']['test_indices_loaded']}`",
-            f"- Policy: {evidence['test_isolation']['declared_policy_contract']['contract']}",
+            "- `test_partition_accessed`: " f"`{declared_lock['test_partition_accessed']}`",
+            f"- `test_rows_loaded`: " f"`{declared_lock['test_rows_loaded']}`",
+            f"- `test_indices_loaded`: " f"`{declared_lock['test_indices_loaded']}`",
+            f"- Policy: {declared_lock['contract']}",
             "",
             "### 4.2 Measured Runtime Evidence",
         ]
@@ -616,6 +668,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Path to model training manifest to inspect runtime test-lock evidence",
     )
     parser.add_argument(
+        "--indices-dir",
+        type=Path,
+        default=DEFAULT_INDICES_DIR,
+        help=(
+            "Runtime indices directory; if it contains canonical_oct/, decompressed canonical "
+            "and runtime membership/order are compared."
+        ),
+    )
+    parser.add_argument(
         "--output-report",
         type=Path,
         default=PROJECT_ROOT / "reports" / "splits" / "split_membership_audit_report.md",
@@ -632,6 +693,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         evidence = audit_split_membership_parity(
             runtime_manifest_path=args.runtime_manifest,
             training_manifest_path=args.training_manifest,
+            indices_dir=args.indices_dir,
         )
         report_md = render_split_membership_report_md(evidence)
         args.output_report.parent.mkdir(parents=True, exist_ok=True)

@@ -259,21 +259,15 @@ def test_model_load_verified_and_tamper_detection(tmp_path, minimal_47_feature_d
     model = XGBoostModel().fit(X, y)
     model_path = tmp_path / "xgb_model.joblib"
     manifest_path = tmp_path / "xgb_manifest.json"
-    artifact_sha = model.save(model_path, manifest_path=manifest_path)
+    model.save(model_path, manifest_path=manifest_path)
 
-    loaded = XGBoostModel.load_verified(model_path=model_path, manifest_path=manifest_path)
-    assert loaded.is_fitted is True
-
-    # Expected-sha path with manifest
-    loaded2 = XGBoostModel.load_verified(
-        model_path=model_path,
-        manifest_path=manifest_path,
-        expected_sha256=artifact_sha,
-    )
-    assert loaded2.is_fitted is True
+    # API-only save has no runtime provenance evidence and must not manufacture a
+    # VERIFIED manifest.  Plain load remains available for synthetic round-trips.
+    with pytest.raises(ValueError, match="incomplete provenance"):
+        XGBoostModel.load_verified(model_path=model_path, manifest_path=manifest_path)
 
     # Mismatched expected_sha256 must fail closed
-    with pytest.raises(ValueError, match="Model artifact SHA-256 mismatch"):
+    with pytest.raises(ValueError, match="Invalid or malformed"):
         XGBoostModel.load_verified(
             model_path=model_path,
             manifest_path=manifest_path,

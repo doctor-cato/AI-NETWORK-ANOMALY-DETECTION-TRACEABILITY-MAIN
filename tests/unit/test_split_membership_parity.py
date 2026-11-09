@@ -7,6 +7,7 @@ and runtime test-lock isolation verification.
 from __future__ import annotations
 
 import copy
+import gzip
 import json
 from pathlib import Path
 
@@ -222,6 +223,32 @@ def test_audit_missing_canonical_index_files_remains_not_verified(tmp_path: Path
     assert (
         "Matching row counts and distributions do NOT constitute proof"
         in evidence["membership_rationale"]
+    )
+
+
+def test_audit_verifies_decompressed_membership_and_order_when_canonical_indices_exist(
+    tmp_path: Path,
+):
+    """Canonical archives enable a real, ordered membership comparison for all partitions."""
+    m_path = tmp_path / "valid.json"
+    m_path.write_text(json.dumps(_build_valid_runtime_manifest()), encoding="utf-8")
+    runtime_dir = tmp_path / "splits"
+    canonical_dir = runtime_dir / "canonical_oct"
+    canonical_dir.mkdir(parents=True)
+    for offset, partition_name in enumerate(CANONICAL_OCT_SPLIT_REFERENCE["partitions"]):
+        content = f"source_row_index\n{offset}\n{offset + 10}\n".encode("utf-8")
+        for directory in (runtime_dir, canonical_dir):
+            with gzip.open(directory / f"{partition_name}_indices.csv.gz", "wb") as index_file:
+                index_file.write(content)
+
+    evidence = audit_split_membership_parity(m_path, indices_dir=runtime_dir)
+    assert evidence["status"]["membership_equivalence"] == "VERIFIED"
+    assert set(evidence["membership_partitions"]) == set(
+        CANONICAL_OCT_SPLIT_REFERENCE["partitions"]
+    )
+    assert all(
+        partition["row_membership_and_order_match"]
+        for partition in evidence["membership_partitions"].values()
     )
 
 

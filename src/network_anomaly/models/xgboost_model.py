@@ -30,7 +30,6 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
 )
 from network_anomaly.data.split import _sha256_file
 from network_anomaly.models.xgboost_protocol import (
-    DATASET_CSV_SHA256,
     FEATURE_CONTRACT_VERSION,
     POSITIVE_CLASS_NAME,
     PROTOCOL_IDENTIFIER,
@@ -39,6 +38,62 @@ from network_anomaly.models.xgboost_protocol import (
     XGBoostBaselineProtocol,
     create_xgb_baseline_protocol,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_SHA256_RE = re.compile(r"[0-9a-fA-F]{64}")
+_GIT_COMMIT_RE = re.compile(r"[0-9a-fA-F]{7,40}")
+
+
+def _is_placeholder_hash(value: Any) -> bool:
+    """Return True for all-zero values that are syntactically hashes but not evidence."""
+    return isinstance(value, str) and value == "0" * 64
+
+
+def _is_placeholder_commit(value: Any) -> bool:
+    """Return True for an all-zero commit that must never be treated as provenance."""
+    return isinstance(value, str) and value == "0" * 40
+
+
+def _valid_sha256(value: Any) -> bool:
+    """Validate a non-placeholder SHA-256 evidence value."""
+    return (
+        isinstance(value, str)
+        and bool(_SHA256_RE.fullmatch(value))
+        and not _is_placeholder_hash(value)
+    )
+
+
+def _valid_git_commit(value: Any) -> bool:
+    """Validate a non-placeholder Git commit identifier."""
+    return (
+        isinstance(value, str)
+        and bool(_GIT_COMMIT_RE.fullmatch(value))
+        and not _is_placeholder_commit(value)
+    )
+
+
+def _source_path(value: Any) -> Optional[Path]:
+    """Resolve a declared provenance file path relative to the repository when necessary."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _verify_declared_source(manifest: Dict[str, Any], hash_field: str, path_value: Any) -> None:
+    """Verify a supplied provenance source file without requiring absent inference inputs."""
+    source = _source_path(path_value)
+    if source is None:
+        return
+    if not source.is_file():
+        raise ValueError(f"Declared provenance source for '{hash_field}' is unavailable: {source}")
+    actual = _sha256_file(source)
+    expected = manifest[hash_field].lower()
+    if actual != expected:
+        raise ValueError(
+            f"Declared provenance source hash mismatch for '{hash_field}': "
+            f"expected {expected}, got {actual} ({source})"
+        )
 
 
 def _estimator_is_fitted(estimator: XGBClassifier) -> bool:
@@ -303,25 +358,75 @@ class XGBoostModel:
                 "hyperparameters": self.config.to_dict(),
                 "model_artifact_path": str(model_path.as_posix()),
                 "model_artifact_sha256": artifact_sha256,
-                "dataset_sha256": (
-                    self.protocol.dataset_csv_sha256 if self.protocol else DATASET_CSV_SHA256
-                ),
+                # The protocol declares intended references, but save() cannot infer that the
+                # current process actually used or verified them.  Never manufacture VERIFIED
+                # provenance from defaults or placeholder values.
+                "dataset_sha256": self.protocol.dataset_csv_sha256 if self.protocol else None,
                 "split_manifest_sha256": (
-                    self.protocol.split_reference.manifest_sha256 if self.protocol else "0" * 64
+                    self.protocol.split_reference.manifest_sha256 if self.protocol else None
                 ),
                 "preprocessor_artifact_sha256": (
-                    self.protocol.preprocessing_reference.artifact_sha256
-                    if self.protocol
-                    else "0" * 64
+                    self.protocol.preprocessing_reference.artifact_sha256 if self.protocol else None
                 ),
-                "provenance_complete": True,
-                "provenance_status": "VERIFIED",
-                "environment": {
-                    "git_commit": "0" * 40,
-                },
+                "provenance_complete": False,
+                "provenance_status": "INCOMPLETE",
+                "environment": {"git_commit": None},
+                "provenance_note": (
+                    "Companion manifest emitted by model API without runtime provenance evidence. "
+                    "It is intentionally not eligible for load_verified()."
+                ),
             }
             if extra_manifest_fields:
                 manifest_data.update(extra_manifest_fields)
+            # The just-written artifact is the only value save() can always attest itself.
+            manifest_data["model_artifact_sha256"] = artifact_sha256
+            env = manifest_data.get("environment")
+            provenance_values_complete = (
+                _valid_sha256(manifest_data.get("dataset_sha256"))
+                and _valid_sha256(manifest_data.get("split_manifest_sha256"))
+                and _valid_sha256(manifest_data.get("preprocessor_artifact_sha256"))
+                and isinstance(env, dict)
+                and _valid_git_commit(env.get("git_commit"))
+            )
+            if not provenance_values_complete:
+                manifest_data["provenance_complete"] = False
+                manifest_data["provenance_status"] = "INCOMPLETE"
+            elif (
+                manifest_data.get("provenance_status") == "VERIFIED"
+                and manifest_data.get("provenance_complete") is True
+            ):
+                # VERIFIED is caller-provided evidence, not a save() default.  Source paths, when
+                # supplied, are checked before the claim is persisted.
+                _verify_declared_source(
+                    manifest_data, "dataset_sha256", manifest_data.get("dataset_path")
+                )
+                split_provenance = manifest_data.get("split_provenance", {})
+                _verify_declared_source(
+                    manifest_data,
+                    "split_manifest_sha256",
+                    (
+                        split_provenance.get("split_manifest_path")
+                        if isinstance(split_provenance, dict)
+                        else manifest_data.get("split_manifest_path")
+                    ),
+                )
+                prep_provenance = manifest_data.get("preprocessing_provenance", {})
+                _verify_declared_source(
+                    manifest_data,
+                    "preprocessor_artifact_sha256",
+                    (
+                        prep_provenance.get("preprocessor_artifact_path")
+                        if isinstance(prep_provenance, dict)
+                        else manifest_data.get("preprocessor_artifact_path")
+                    ),
+                )
+            else:
+                manifest_data["provenance_complete"] = True
+                manifest_data["provenance_status"] = "UNVERIFIED"
+                manifest_data["provenance_note"] = (
+                    "Provenance identifiers were supplied but VERIFIED was not asserted with "
+                    "runtime verification evidence."
+                )
             manifest_path = Path(manifest_path)
             manifest_path.parent.mkdir(parents=True, exist_ok=True)
             with open(manifest_path, "w", encoding="utf-8") as f:
@@ -402,14 +507,10 @@ class XGBoostModel:
             )
 
         def _validate_hex_sha256(val: Any, field_name: str) -> str:
-            if (
-                not val
-                or not isinstance(val, str)
-                or len(val) != 64
-                or not all(c in "0123456789abcdefABCDEF" for c in val)
-            ):
+            if not _valid_sha256(val):
                 raise ValueError(
-                    f"Invalid or malformed 64-character hexadecimal SHA-256 "
+                    "Invalid or malformed 64-character hexadecimal SHA-256 "
+                    "(including placeholder) "
                     f"for '{field_name}': {val!r}"
                 )
             return val.lower()
@@ -577,9 +678,10 @@ class XGBoostModel:
             raise ValueError(
                 f"Invalid or unknown environment.git_commit in manifest: {git_commit!r}"
             )
-        if not re.fullmatch(r"[0-9a-fA-F]{7,40}", git_commit.strip()):
+        if not _valid_git_commit(git_commit.strip()):
             raise ValueError(
-                f"Invalid format for environment.git_commit (expected 7-40 hex characters): "
+                f"Invalid format for environment.git_commit (including placeholder; expected "
+                f"non-zero 7-40 hex): "
                 f"{git_commit!r}"
             )
 
@@ -590,6 +692,38 @@ class XGBoostModel:
                 f"Model artifact at {model_path} lacks required protocol provenance "
                 f"for verified loading."
             )
+        if instance.protocol.dataset_csv_sha256.lower() != manifest_dataset_sha:
+            raise ValueError("Dataset SHA-256 mismatch between model protocol and manifest.")
+        if instance.protocol.split_reference.manifest_sha256.lower() != manifest_sm_sha:
+            raise ValueError("Split manifest SHA-256 mismatch between model protocol and manifest.")
+        if instance.protocol.preprocessing_reference.artifact_sha256.lower() != manifest_prep_sha:
+            raise ValueError(
+                "Preprocessor artifact SHA-256 mismatch between model protocol and manifest."
+            )
+        # Inference does not require source data locally.  If the manifest names a local
+        # source, however, its declared hash is evidence that must be checked rather than
+        # merely parsed as hexadecimal.
+        _verify_declared_source(manifest_data, "dataset_sha256", manifest_data.get("dataset_path"))
+        split_provenance = manifest_data.get("split_provenance", {})
+        _verify_declared_source(
+            manifest_data,
+            "split_manifest_sha256",
+            (
+                split_provenance.get("split_manifest_path")
+                if isinstance(split_provenance, dict)
+                else manifest_data.get("split_manifest_path")
+            ),
+        )
+        prep_provenance = manifest_data.get("preprocessing_provenance", {})
+        _verify_declared_source(
+            manifest_data,
+            "preprocessor_artifact_sha256",
+            (
+                prep_provenance.get("preprocessor_artifact_path")
+                if isinstance(prep_provenance, dict)
+                else manifest_data.get("preprocessor_artifact_path")
+            ),
+        )
         if not isinstance(instance.estimator, XGBClassifier):
             raise ValueError(
                 f"Underlying estimator in {model_path} must be XGBClassifier, "

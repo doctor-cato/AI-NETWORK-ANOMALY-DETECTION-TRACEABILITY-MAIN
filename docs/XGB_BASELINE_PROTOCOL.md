@@ -81,6 +81,13 @@ Class `XGBoostModel` tại `src/network_anomaly/models/xgboost_model.py` cung c�
 - `load_verified(model_path, manifest_path=None)`: kiểm tra toàn vẹn SHA-256 byte-for-byte fail-closed trước khi nạp model vào bộ nhớ.
 - `classes_`: class labels known to classifier.
 
+`save(..., manifest_path=...)` không tự tạo provenance đã xác minh: manifest do API-only/synthetic
+tạo mặc định mang `provenance_status=INCOMPLETE` và chỉ dùng được với `load()`. Muốn dùng
+`load_verified()`, caller phải cung cấp dataset/split/preprocessor hashes không-placeholder, Git
+commit hợp lệ và trạng thái `VERIFIED`; khi manifest khai báo đường dẫn nguồn cục bộ, loader đối
+chiếu SHA-256 thực tế. Trạng thái `UNVERIFIED` biểu thị identifiers đầy đủ nhưng thiếu bằng chứng
+runtime để khẳng định `VERIFIED`, và cũng bị `load_verified()` từ chối.
+
 ---
 
 ## 6. Huấn luyện Thực tế (Real Training Evidence)
