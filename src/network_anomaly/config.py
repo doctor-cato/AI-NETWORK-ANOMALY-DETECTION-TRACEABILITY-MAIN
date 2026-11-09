@@ -1,4 +1,5 @@
 """Configuration for network anomaly detection project."""
+
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -16,9 +17,14 @@ RANDOM_FOREST_DEFAULTS = {
     "n_jobs": -1,
 }
 
+# Isolation Forest is unsupervised; the explicit parameter set below is the
+# effective config recorded with every run so the estimator is reproducible.
 ISOLATION_FOREST_DEFAULTS = {
     "n_estimators": 100,
+    "max_samples": "auto",
     "contamination": 0.1,
+    "max_features": 1.0,
+    "bootstrap": False,
     "random_state": RANDOM_SEED,
     "n_jobs": -1,
 }
