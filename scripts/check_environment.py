@@ -14,6 +14,8 @@ PACKAGES = (
     "joblib",
     "matplotlib",
     "seaborn",
+    "fastapi",
+    "pydantic",
     "network_anomaly",
 )
 

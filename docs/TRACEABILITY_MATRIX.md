@@ -14,7 +14,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | C6 | Risk và Trace | #32, #24 | explanation, calibration, evidence/timeline tests | PLANNED |
 | C7 | AES-GCM và key lifecycle | #26 | integrity/recovery/rotation tests | PLANNED |
 | C8 | Adaptive response | #27 | cooldown/rate/idempotency/concurrency audit | PLANNED |
-| C9 | API, persistence, dashboard | #30, #16, #17 | OpenAPI, DB recovery, E2E | PLANNED |
+| C9 | API, persistence, dashboard | #30, #16, #17 | OpenAPI schema, SQLite DB recovery, integration contracts, 23 unit tests | #30 IMPLEMENTED / TESTED; #16, #17 PLANNED |
 | C10 | 7 experiments | #25 | protocol, artifacts, results, limitations | PLANNED |
 | C11 | Delivery | #18–#20 | PDF, slides, demo, guides, 5-role handoff | PLANNED |
 
@@ -85,3 +85,32 @@ Cập nhật: 2026-10-22 (model component Isolation Forest cho Issue #11)
 
 Cập nhật: 2026-11-07 (PR #43 hoàn thành huấn luyện thực nghiệm Random Forest baseline Issue #10 trên dữ liệu thật NF-UNSW-NB15-v3, xác minh toàn bộ AC1–AC7 và giữ khóa tập Test cho Issue #12)
 Cập nhật: 2026-11-08 (Pipeline huấn luyện & đánh giá Isolation Forest cho Issue #11)
+
+## FastAPI Service và SQLite Persistence (Issue #30 — C9)
+
+- Issue: #30 (C9 — M6).
+- Implementation:
+  - `src/network_anomaly/api/db.py`: `DatabaseManager` quản lý kết nối SQLite, cấu hình WAL/foreign keys/busy timeout, atomic transactions (`with db.transaction()`), khởi tạo schema cho 7 bảng (`events`, `sessions`, `incidents`, `evidences`, `key_metadata`, `rotation_audit`, `idempotency_records`).
+  - `src/network_anomaly/api/repositories.py`: 7 repositories (`EventRepository`, `SessionRepository`, `IncidentRepository`, `EvidenceRepository`, `KeyMetadataRepository`, `RotationAuditRepository`, `IdempotencyRepository`) tham số hóa SQL chống SQLi, hỗ trợ phân trang deterministic (`limit`, `offset`) và audit trail.
+  - `src/network_anomaly/api/schemas.py`: Pydantic models validate dữ liệu biên, loại trừ hoàn toàn secret material, kiểm soát kiểu và dải giá trị.
+  - `src/network_anomaly/api/errors.py`: Exception handlers khử khuẩn, chặn rò rỉ secret, token, password hoặc Python traceback/internal stack trong response.
+  - `src/network_anomaly/api/service.py`: Tái sử dụng inference pipeline đã test; fail-safe health check (không claim model ready khi artifact thiếu); logic phân tích kèm fallback heuristic; quản lý vòng đời xoay khóa (cooldown 1.0s, idempotency, audit).
+  - `src/network_anomaly/api/main.py`: FastAPI application factory `create_app()`, endpoints `/health`, `/api/v1/health`, `/api/v1/ingest`, `/api/v1/analyze`, `/api/v1/incidents`, `/api/v1/timeline`, `/api/v1/rotation`, `/api/v1/rotation/audit`, `/api/v1/keys`.
+  - `src/network_anomaly/api/client.py`: `NetworkAnomalyApiClient` đóng gói toàn bộ giao tiếp REST cho thin client Streamlit (Issue #16) và integration tests.
+  - `scripts/export_openapi_spec.py`: Xuất schema OpenAPI máy đọc được sang `reports/api/openapi.json` và `reports/api/API_CONTRACT.md`.
+  - `scripts/run_api.py`: CLI chạy server uvicorn local/reproduction.
+- Tests:
+  - `tests/unit/test_api_persistence.py`: Kiểm thử giao dịch atomic, rollback khi lỗi, tính bền vững sau khởi động lại (restart durability), kho idempotency và nhật ký xoay khóa.
+  - `tests/unit/test_api_service.py`: Kiểm thử fail-safe health check (khi thiếu artifact và khi có artifact), ingest đa sự kiện, phân tích flow và tạo incident, cooldown xoay khóa và sắp xếp timeline.
+  - `tests/unit/test_api_endpoints.py`: Kiểm thử 10 REST endpoints bằng TestClient và kiểm thử client SDK `NetworkAnomalyApiClient`.
+  - `tests/unit/test_api_security.py`: Kiểm thử schema validation (cổng ngoài dải, điểm rủi ro vượt ngưỡng, mức độ nghiêm trọng không hợp lệ), đảm bảo lỗi 500 không rò rỉ traceback/secrets, và xác nhận metadata khóa không chứa raw key material.
+- Evidence:
+  - `python -m pytest tests/unit/test_api_persistence.py tests/unit/test_api_service.py tests/unit/test_api_endpoints.py tests/unit/test_api_security.py -v`: 23/23 tests PASS.
+  - Toàn bộ test suite repository: 639 passed, 8 skipped.
+  - `python scripts/export_openapi_spec.py`: Sinh `reports/api/openapi.json` và `reports/api/API_CONTRACT.md`.
+  - `python -m ruff check src/network_anomaly/api scripts/export_openapi_spec.py scripts/run_api.py tests/unit/test_api_*.py`: All checks passed.
+  - `git diff --check`: PASS.
+- Trạng thái vòng đời & kiểm chứng:
+  - `IMPLEMENTED` / `TESTED` (PASS 100% 23 API tests; zero regressions trên toàn bộ 639 tests).
+
+Cập nhật: 2026-11-09 (Triển khai và kiểm chứng Issue #30 FastAPI & SQLite Persistence)

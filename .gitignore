@@ -46,6 +46,11 @@ Thumbs.db
 # Jupyter / notebooks outputs (optional; can allow if needed)
 **/.ipynb_checkpoints/
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
 # Logs
 *.log
 logs/
