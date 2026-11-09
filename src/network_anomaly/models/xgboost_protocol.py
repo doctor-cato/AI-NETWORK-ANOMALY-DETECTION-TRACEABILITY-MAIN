@@ -7,10 +7,10 @@ It does NOT execute model training, evaluation, or benchmark generation.
 
 from __future__ import annotations
 
+import copy
 import json
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from dataclasses import asdict, dataclass, field, fields
+from typing import Any, Dict, List, Tuple
 
 from network_anomaly.config import RANDOM_SEED
 from network_anomaly.data.nf_unsw_nb15_v3 import (
@@ -113,7 +113,11 @@ class XGBoostBaselineConfig:
             object.__setattr__(
                 self,
                 "configuration_id",
-                "xgb-baseline-canonical-v1" if self.is_canonical_baseline else "xgb-experimental-custom",
+                (
+                    "xgb-baseline-canonical-v1"
+                    if self.is_canonical_baseline
+                    else "xgb-experimental-custom"
+                ),
             )
 
     def validate(self) -> None:
@@ -149,21 +153,44 @@ class XGBoostBaselineConfig:
                     raise ValueError(
                         f"Canonical baseline configuration mismatch for '{k}': "
                         f"expected {canonical_v}, got {actual_v}. If this is an intentional "
-                        f"override, set is_canonical_baseline=False and provide a distinct configuration_id."
+                        "override, set is_canonical_baseline=False and provide a distinct "
+                        "configuration_id."
                     )
             if self.configuration_id != "xgb-baseline-canonical-v1":
                 raise ValueError(
-                    f"Canonical baseline must have configuration_id 'xgb-baseline-canonical-v1', got '{self.configuration_id}'"
+                    "Canonical baseline must have configuration_id "
+                    f"'xgb-baseline-canonical-v1', got '{self.configuration_id}'"
                 )
         else:
             if self.configuration_id == "xgb-baseline-canonical-v1":
-                raise ValueError("Non-canonical configuration cannot use canonical ID 'xgb-baseline-canonical-v1'")
+                raise ValueError(
+                    "Non-canonical configuration cannot use canonical ID "
+                    "'xgb-baseline-canonical-v1'"
+                )
             if not self.configuration_id or not self.configuration_id.strip():
-                raise ValueError("Experimental configuration must have a non-empty configuration_id")
+                raise ValueError(
+                    "Experimental configuration must have a non-empty configuration_id"
+                )
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "XGBoostBaselineConfig":
+        """Construct and validate XGBoostBaselineConfig from a dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict for configuration payload, got {type(data).__name__}")
+        d = copy.deepcopy(data)
+        known = {f.name for f in fields(cls)}
+        extra = set(d) - known
+        if extra:
+            raise ValueError(
+                f"Unknown configuration fields in model artifact payload: {sorted(extra)}"
+            )
+        cfg = cls(**d)
+        cfg.validate()
+        return cfg
 
     def get_xgb_params(self) -> Dict[str, Any]:
         """Return parameters dictionary formatted for xgboost.XGBClassifier."""
@@ -206,10 +233,12 @@ class TuningConfig:
     def validate(self) -> None:
         """Enforce strict tuning isolation: TEST must never be used."""
         if "test" in self.allowed_partitions:
-            raise ValueError("Violation of tuning isolation: 'test' partition is strictly forbidden in tuning")
+            raise ValueError(
+                "Violation of tuning isolation: 'test' partition is strictly forbidden in tuning"
+            )
         valid_partitions = {"train", "validation"}
         if not set(self.allowed_partitions).issubset(valid_partitions):
-            raise ValueError(f"allowed_partitions must only contain 'train' and/or 'validation'")
+            raise ValueError("allowed_partitions must only contain 'train' and/or 'validation'")
         if not self.allowed_partitions:
             raise ValueError("allowed_partitions cannot be empty")
         valid_metrics = {"macro_f1", "f1", "precision", "recall"}
@@ -228,6 +257,18 @@ class TuningConfig:
             "scoring_metric": self.scoring_metric,
             "random_state": self.random_state,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TuningConfig":
+        """Construct and validate TuningConfig from a dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict for tuning_policy payload, got {type(data).__name__}")
+        d = copy.deepcopy(data)
+        if "allowed_partitions" in d and isinstance(d["allowed_partitions"], (list, tuple)):
+            d["allowed_partitions"] = tuple(d["allowed_partitions"])
+        cfg = cls(**d)
+        cfg.validate()
+        return cfg
 
 
 @dataclass(frozen=True)
@@ -272,6 +313,20 @@ class TestLockPolicy:
             "forbidden_uses": list(self.forbidden_uses),
             "max_evaluation_count": self.max_evaluation_count,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "TestLockPolicy":
+        """Construct and validate TestLockPolicy from a dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Expected dict for test_lock_policy payload, got {type(data).__name__}"
+            )
+        d = copy.deepcopy(data)
+        if "forbidden_uses" in d and isinstance(d["forbidden_uses"], (list, tuple)):
+            d["forbidden_uses"] = tuple(d["forbidden_uses"])
+        policy = cls(**d)
+        policy.validate()
+        return policy
 
 
 @dataclass(frozen=True)
@@ -337,6 +392,28 @@ class EvaluationMetricProtocol:
             "expected_attack_categories": list(self.expected_attack_categories),
         }
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EvaluationMetricProtocol":
+        """Construct and validate EvaluationMetricProtocol from a dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Expected dict for evaluation_protocol payload, got {type(data).__name__}"
+            )
+        d = copy.deepcopy(data)
+        if "primary_metrics" in d and isinstance(d["primary_metrics"], (list, tuple)):
+            d["primary_metrics"] = tuple(d["primary_metrics"])
+        if "confusion_matrix_labels" in d and isinstance(
+            d["confusion_matrix_labels"], (list, tuple)
+        ):
+            d["confusion_matrix_labels"] = tuple(d["confusion_matrix_labels"])
+        if "expected_attack_categories" in d and isinstance(
+            d["expected_attack_categories"], (list, tuple)
+        ):
+            d["expected_attack_categories"] = tuple(d["expected_attack_categories"])
+        proto = cls(**d)
+        proto.validate()
+        return proto
+
 
 @dataclass(frozen=True)
 class SplitReference:
@@ -354,6 +431,18 @@ class SplitReference:
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SplitReference":
+        """Construct and validate SplitReference from a dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Expected dict for split_reference payload, got {type(data).__name__}"
+            )
+        d = copy.deepcopy(data)
+        ref = cls(**d)
+        ref.validate()
+        return ref
+
 
 @dataclass(frozen=True)
 class PreprocessingReference:
@@ -368,10 +457,24 @@ class PreprocessingReference:
 
     def validate(self) -> None:
         if self.contract_id != PREPROCESSING_CONTRACT_ID:
-            raise ValueError(f"Preprocessing contract mismatch: expected {PREPROCESSING_CONTRACT_ID}")
+            raise ValueError(
+                f"Preprocessing contract mismatch: expected {PREPROCESSING_CONTRACT_ID}"
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PreprocessingReference":
+        """Construct and validate PreprocessingReference from a dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Expected dict for preprocessing_reference payload, got {type(data).__name__}"
+            )
+        d = copy.deepcopy(data)
+        ref = cls(**d)
+        ref.validate()
+        return ref
 
 
 @dataclass
@@ -386,7 +489,9 @@ class XGBoostBaselineProtocol:
     preprocessing_reference: PreprocessingReference = field(default_factory=PreprocessingReference)
     model_config: XGBoostBaselineConfig = field(default_factory=XGBoostBaselineConfig)
     selected_features: Tuple[str, ...] = field(default_factory=lambda: tuple(ML_FEATURE_COLUMNS))
-    excluded_metadata_features: Tuple[str, ...] = field(default_factory=lambda: tuple(TRACE_METADATA_COLUMNS))
+    excluded_metadata_features: Tuple[str, ...] = field(
+        default_factory=lambda: tuple(TRACE_METADATA_COLUMNS)
+    )
     excluded_target_columns: Tuple[str, ...] = field(default_factory=lambda: tuple(TARGET_COLUMNS))
     tuning_policy: TuningConfig = field(default_factory=TuningConfig)
     test_lock_policy: TestLockPolicy = field(default_factory=TestLockPolicy)
@@ -428,6 +533,95 @@ class XGBoostBaselineProtocol:
 
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "XGBoostBaselineProtocol":
+        """Construct and validate XGBoostBaselineProtocol from a dictionary."""
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict for protocol payload, got {type(data).__name__}")
+        d = copy.deepcopy(data)
+
+        if "model_config" in d and isinstance(d["model_config"], dict):
+            model_config = XGBoostBaselineConfig.from_dict(d["model_config"])
+        elif "model_config" in d and d["model_config"] is not None:
+            raise ValueError(
+                f"Invalid model_config in protocol payload: {type(d['model_config']).__name__}"
+            )
+        else:
+            model_config = XGBoostBaselineConfig()
+
+        if "split_reference" in d and isinstance(d["split_reference"], dict):
+            split_ref = SplitReference.from_dict(d["split_reference"])
+        elif "split_reference" in d and d["split_reference"] is not None:
+            raise ValueError(
+                f"Invalid split_reference in protocol payload: "
+                f"{type(d['split_reference']).__name__}"
+            )
+        else:
+            split_ref = SplitReference()
+
+        if "preprocessing_reference" in d and isinstance(d["preprocessing_reference"], dict):
+            prep_ref = PreprocessingReference.from_dict(d["preprocessing_reference"])
+        elif "preprocessing_reference" in d and d["preprocessing_reference"] is not None:
+            raise ValueError(
+                f"Invalid preprocessing_reference in protocol payload: "
+                f"{type(d['preprocessing_reference']).__name__}"
+            )
+        else:
+            prep_ref = PreprocessingReference()
+
+        if "tuning_policy" in d and isinstance(d["tuning_policy"], dict):
+            tuning_policy = TuningConfig.from_dict(d["tuning_policy"])
+        elif "tuning_policy" in d and d["tuning_policy"] is not None:
+            raise ValueError(
+                f"Invalid tuning_policy in protocol payload: {type(d['tuning_policy']).__name__}"
+            )
+        else:
+            tuning_policy = TuningConfig()
+
+        if "test_lock_policy" in d and isinstance(d["test_lock_policy"], dict):
+            test_lock = TestLockPolicy.from_dict(d["test_lock_policy"])
+        elif "test_lock_policy" in d and d["test_lock_policy"] is not None:
+            raise ValueError(
+                f"Invalid test_lock_policy in protocol payload: "
+                f"{type(d['test_lock_policy']).__name__}"
+            )
+        else:
+            test_lock = TestLockPolicy()
+
+        if "evaluation_protocol" in d and isinstance(d["evaluation_protocol"], dict):
+            eval_proto = EvaluationMetricProtocol.from_dict(d["evaluation_protocol"])
+        elif "evaluation_protocol" in d and d["evaluation_protocol"] is not None:
+            raise ValueError(
+                f"Invalid evaluation_protocol in protocol payload: "
+                f"{type(d['evaluation_protocol']).__name__}"
+            )
+        else:
+            eval_proto = EvaluationMetricProtocol()
+
+        selected_features = tuple(d.get("selected_features") or tuple(ML_FEATURE_COLUMNS))
+        excluded_metadata = tuple(
+            d.get("excluded_metadata_features") or tuple(TRACE_METADATA_COLUMNS)
+        )
+        excluded_targets = tuple(d.get("excluded_target_columns") or tuple(TARGET_COLUMNS))
+
+        proto = cls(
+            protocol_version=d.get("protocol_version", PROTOCOL_IDENTIFIER),
+            feature_contract_version=d.get("feature_contract_version", FEATURE_CONTRACT_VERSION),
+            dataset_name=d.get("dataset_name", DATASET_NAME),
+            dataset_csv_sha256=d.get("dataset_csv_sha256", DATASET_CSV_SHA256),
+            split_reference=split_ref,
+            preprocessing_reference=prep_ref,
+            model_config=model_config,
+            selected_features=selected_features,
+            excluded_metadata_features=excluded_metadata,
+            excluded_target_columns=excluded_targets,
+            tuning_policy=tuning_policy,
+            test_lock_policy=test_lock,
+            evaluation_protocol=eval_proto,
+        )
+        proto.validate()
+        return proto
 
 
 def create_xgb_baseline_protocol(
