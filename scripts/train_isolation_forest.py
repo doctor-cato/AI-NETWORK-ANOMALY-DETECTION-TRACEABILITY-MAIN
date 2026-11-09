@@ -279,42 +279,75 @@ def check_split_manifest(
             "path": str(path),
         }
 
-    # Verify partition index files if indices_dir is supplied
-    partition_indices_sha256 = {}
-    if indices_dir is not None and isinstance(partitions, dict):
+    # Verify partition index checksums for all three partitions (fail-closed)
+    if not isinstance(partitions, dict):
+        return {
+            "status": "BLOCKED",
+            "message": "Split manifest missing required 'partitions' mapping",
+            "path": str(path),
+        }
+
+    hex_chars = set("0123456789abcdefABCDEF")
+    expected_checksums: dict[str, str] = {}
+    for p_name in ("train", "validation", "test"):
+        p_info = partitions.get(p_name)
+        if not isinstance(p_info, dict) or "index_sha256" not in p_info:
+            return {
+                "status": "BLOCKED",
+                "message": f"Split manifest missing required partition index checksum: {p_name}",
+                "path": str(path),
+            }
+        idx_sha_val = p_info["index_sha256"]
+        if idx_sha_val is None:
+            return {
+                "status": "BLOCKED",
+                "message": f"Split manifest missing required partition index checksum: {p_name}",
+                "path": str(path),
+            }
+        if not isinstance(idx_sha_val, str) or not idx_sha_val.strip():
+            return {
+                "status": "BLOCKED",
+                "message": f"Split manifest partition index checksum is empty: {p_name}",
+                "path": str(path),
+            }
+        clean_sha = idx_sha_val.strip()
+        if len(clean_sha) != 64 or not all(c in hex_chars for c in clean_sha):
+            return {
+                "status": "BLOCKED",
+                "message": (
+                    f"Split manifest partition index checksum has invalid format for {p_name}: "
+                    f"{idx_sha_val!r} (must be 64-char hexadecimal string)"
+                ),
+                "path": str(path),
+            }
+        expected_checksums[p_name] = clean_sha.lower()
+
+    # Verify partition index files on disk if indices_dir is supplied
+    partition_indices_sha256: dict[str, str] = {}
+    if indices_dir is not None:
         base_indices = Path(indices_dir)
-        missing_indices = []
-        checksum_mismatches = []
         for p_name in ("train", "validation", "test"):
-            idx_file = partitions.get(p_name, {}).get("index_file", f"{p_name}_indices.csv.gz")
+            idx_file = partitions[p_name].get("index_file", f"{p_name}_indices.csv.gz")
             idx_path = base_indices / idx_file
             if not idx_path.exists():
-                missing_indices.append(f"{p_name}: {idx_path}")
-            else:
-                actual_idx_sha = sha256_file(idx_path)
-                partition_indices_sha256[p_name] = actual_idx_sha
-                expected_idx_sha = partitions.get(p_name, {}).get("index_sha256")
-                if expected_idx_sha and actual_idx_sha.lower() != expected_idx_sha.lower():
-                    checksum_mismatches.append(
-                        f"{p_name} ({idx_file}): expected {expected_idx_sha}, got {actual_idx_sha}"
-                    )
-        if missing_indices:
-            return {
-                "status": "BLOCKED",
-                "message": (
-                    "Split manifest partition index files missing: " + "; ".join(missing_indices)
-                ),
-                "path": str(path),
-            }
-        if checksum_mismatches:
-            return {
-                "status": "BLOCKED",
-                "message": (
-                    "Split manifest partition index checksum mismatch: "
-                    + "; ".join(checksum_mismatches)
-                ),
-                "path": str(path),
-            }
+                return {
+                    "status": "BLOCKED",
+                    "message": (
+                        f"Split manifest partition index file missing: {p_name}: {idx_path}"
+                    ),
+                    "path": str(path),
+                }
+            actual_sha = sha256_file(idx_path)
+            if actual_sha.lower() != expected_checksums[p_name]:
+                return {
+                    "status": "BLOCKED",
+                    "message": (
+                        f"Split manifest partition index checksum mismatch for {p_name} "
+                        f"({idx_file}): expected {expected_checksums[p_name]}, got {actual_sha}"
+                    ),
+                    "path": str(path),
+                }
+            partition_indices_sha256[p_name] = actual_sha
 
     manifest_sha256 = sha256_file(path)
     return {
@@ -1221,10 +1254,16 @@ def run_pipeline(args) -> int:
         return 1
 
     print("  Checking split manifest …", flush=True)
-    split_check = check_split_manifest()
+    split_check = check_split_manifest(indices_dir=INDICES_DIR)
     print(f"    {split_check['status']}: {split_check['message']}", flush=True)
     if split_check["status"] == "BLOCKED":
         print(f"\n[BLOCKED] {split_check['message']}", flush=True)
+        return 1
+    if (
+        not split_check.get("partition_indices_sha256")
+        or len(split_check["partition_indices_sha256"]) < 3
+    ):
+        print("[BLOCKED] Split manifest partition indices checksums incomplete.", flush=True)
         return 1
 
     print("  Checking preprocessor artifact …", flush=True)

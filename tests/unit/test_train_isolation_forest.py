@@ -759,16 +759,152 @@ class TestFailureHandling:
         assert res_pass["status"] == "PASS"
         assert "manifest_sha256" in res_pass
         assert "partition_indices_sha256" in res_pass
+        assert len(res_pass["partition_indices_sha256"]) == 3
         assert res_pass["partition_indices_sha256"]["train"] == sha256_file(
             indices_dir / "train_indices.csv.gz"
         )
 
         # Mismatch case
-        manifest_data["partitions"]["train"]["index_sha256"] = "wrong_sha"
+        manifest_data["partitions"]["train"]["index_sha256"] = "0" * 64
         man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
         res_fail = check_split_manifest(man_path, indices_dir)
         assert res_fail["status"] == "BLOCKED"
         assert "checksum mismatch" in res_fail["message"].lower()
+
+    def test_check_split_manifest_rejects_missing_checksum(self, tmp_path):
+        """Test 1: Split manifest missing required index_sha256 must be BLOCKED."""
+        man_path = tmp_path / "split_manifest.json"
+        manifest_data = {
+            "dataset_sha256": "dummy_dataset_sha",
+            "partitions": {
+                "train": {"row_count": EXPECTED_TRAIN_ROWS},  # missing index_sha256
+                "validation": {"row_count": EXPECTED_VAL_ROWS, "index_sha256": "a" * 64},
+                "test": {"row_count": EXPECTED_TEST_ROWS, "index_sha256": "b" * 64},
+            },
+        }
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        res = check_split_manifest(man_path)
+        assert res["status"] == "BLOCKED"
+        assert "missing required partition index checksum: train" in res["message"]
+
+    def test_check_split_manifest_rejects_empty_checksum(self, tmp_path):
+        """Test 2: Split manifest with empty string index_sha256 must be BLOCKED."""
+        man_path = tmp_path / "split_manifest.json"
+        manifest_data = {
+            "dataset_sha256": "dummy_dataset_sha",
+            "partitions": {
+                "train": {"row_count": EXPECTED_TRAIN_ROWS, "index_sha256": "a" * 64},
+                "validation": {"row_count": EXPECTED_VAL_ROWS, "index_sha256": ""},
+                "test": {"row_count": EXPECTED_TEST_ROWS, "index_sha256": "b" * 64},
+            },
+        }
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        res = check_split_manifest(man_path)
+        assert res["status"] == "BLOCKED"
+        assert "partition index checksum is empty: validation" in res["message"]
+
+    def test_check_split_manifest_rejects_whitespace_checksum(self, tmp_path):
+        """Test 3: Split manifest with whitespace index_sha256 must be BLOCKED."""
+        man_path = tmp_path / "split_manifest.json"
+        manifest_data = {
+            "dataset_sha256": "dummy_dataset_sha",
+            "partitions": {
+                "train": {"row_count": EXPECTED_TRAIN_ROWS, "index_sha256": "a" * 64},
+                "validation": {"row_count": EXPECTED_VAL_ROWS, "index_sha256": "b" * 64},
+                "test": {"row_count": EXPECTED_TEST_ROWS, "index_sha256": "   "},
+            },
+        }
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        res = check_split_manifest(man_path)
+        assert res["status"] == "BLOCKED"
+        assert "partition index checksum is empty: test" in res["message"]
+
+    def test_check_split_manifest_rejects_invalid_checksum_format(self, tmp_path):
+        """Test 4: Non-hex or invalid length checksums must be BLOCKED."""
+        man_path = tmp_path / "split_manifest.json"
+        for bad_sha in ["short", "a" * 63, "z" * 64, "xyz" + "0" * 61]:
+            manifest_data = {
+                "dataset_sha256": "dummy_dataset_sha",
+                "partitions": {
+                    "train": {"row_count": EXPECTED_TRAIN_ROWS, "index_sha256": bad_sha},
+                    "validation": {"row_count": EXPECTED_VAL_ROWS, "index_sha256": "b" * 64},
+                    "test": {"row_count": EXPECTED_TEST_ROWS, "index_sha256": "c" * 64},
+                },
+            }
+            man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+            res = check_split_manifest(man_path)
+            assert res["status"] == "BLOCKED"
+            assert "invalid format for train" in res["message"]
+
+    def test_check_split_manifest_rejects_checksum_mismatch(self, tmp_path):
+        """Test 5: Index file content not matching manifest SHA-256 must be BLOCKED."""
+        indices_dir = tmp_path / "splits"
+        indices_dir.mkdir()
+        for p in ("train", "validation", "test"):
+            (indices_dir / f"{p}_indices.csv.gz").write_bytes(f"real_{p}".encode())
+
+        man_path = tmp_path / "split_manifest.json"
+        manifest_data = {
+            "dataset_sha256": "dummy_dataset_sha",
+            "partitions": {
+                "train": {
+                    "row_count": EXPECTED_TRAIN_ROWS,
+                    "index_file": "train_indices.csv.gz",
+                    "index_sha256": "f" * 64,  # wrong hash
+                },
+                "validation": {
+                    "row_count": EXPECTED_VAL_ROWS,
+                    "index_file": "validation_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "validation_indices.csv.gz"),
+                },
+                "test": {
+                    "row_count": EXPECTED_TEST_ROWS,
+                    "index_file": "test_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "test_indices.csv.gz"),
+                },
+            },
+        }
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        res = check_split_manifest(man_path, indices_dir=indices_dir)
+        assert res["status"] == "BLOCKED"
+        assert "checksum mismatch for train" in res["message"]
+
+    def test_check_split_manifest_passes_valid_checksum(self, tmp_path):
+        """Test 6: Valid checksums for all three partitions must PASS and return hashes."""
+        indices_dir = tmp_path / "splits"
+        indices_dir.mkdir()
+        for p in ("train", "validation", "test"):
+            (indices_dir / f"{p}_indices.csv.gz").write_bytes(f"data_{p}".encode())
+
+        man_path = tmp_path / "split_manifest.json"
+        manifest_data = {
+            "dataset_sha256": "dummy_dataset_sha",
+            "partitions": {
+                "train": {
+                    "row_count": EXPECTED_TRAIN_ROWS,
+                    "index_file": "train_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "train_indices.csv.gz"),
+                },
+                "validation": {
+                    "row_count": EXPECTED_VAL_ROWS,
+                    "index_file": "validation_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "validation_indices.csv.gz"),
+                },
+                "test": {
+                    "row_count": EXPECTED_TEST_ROWS,
+                    "index_file": "test_indices.csv.gz",
+                    "index_sha256": sha256_file(indices_dir / "test_indices.csv.gz"),
+                },
+            },
+        }
+        man_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+        res = check_split_manifest(man_path, indices_dir=indices_dir)
+        assert res["status"] == "PASS"
+        assert len(res["partition_indices_sha256"]) == 3
+        for p in ("train", "validation", "test"):
+            assert res["partition_indices_sha256"][p] == sha256_file(
+                indices_dir / f"{p}_indices.csv.gz"
+            )
 
     def test_parse_args_chunksize(self):
         args = parse_args(["--chunksize", "50000"])
@@ -848,9 +984,9 @@ class TestOfficialManifestSchemaAndPrerequisites:
         manifest_data = {
             "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
             "partitions": {
-                "train": {"row_count": EXPECTED_TRAIN_ROWS},
-                "validation": {"row_count": EXPECTED_VAL_ROWS},
-                "test": {"row_count": EXPECTED_TEST_ROWS},
+                "train": {"row_count": EXPECTED_TRAIN_ROWS, "index_sha256": "a" * 64},
+                "validation": {"row_count": EXPECTED_VAL_ROWS, "index_sha256": "b" * 64},
+                "test": {"row_count": EXPECTED_TEST_ROWS, "index_sha256": "c" * 64},
             },
         }
         manifest_path = tmp_path / "split_manifest.json"
@@ -868,9 +1004,9 @@ class TestOfficialManifestSchemaAndPrerequisites:
         manifest_data = {
             "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
             "partitions": {
-                "train": {"row_count": 999},
-                "validation": {"row_count": EXPECTED_VAL_ROWS},
-                "test": {"row_count": EXPECTED_TEST_ROWS},
+                "train": {"row_count": 999, "index_sha256": "a" * 64},
+                "validation": {"row_count": EXPECTED_VAL_ROWS, "index_sha256": "b" * 64},
+                "test": {"row_count": EXPECTED_TEST_ROWS, "index_sha256": "c" * 64},
             },
         }
         manifest_path = tmp_path / "bad_split_manifest.json"
@@ -944,27 +1080,36 @@ class TestOfficialManifestSchemaAndPrerequisites:
         assert "artifact_sha256" in result["message"]
 
     def test_check_split_manifest_verifies_indices_files_if_indices_dir_provided(self, tmp_path):
+        indices_dir = tmp_path / "splits"
+        indices_dir.mkdir()
+        hashes = {}
+        for name in ("train", "validation", "test"):
+            f = indices_dir / f"{name}_indices.csv.gz"
+            f.write_bytes(f"content_{name}".encode())
+            hashes[name] = sha256_file(f)
+
         manifest_data = {
             "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
             "partitions": {
-                "train": {"row_count": EXPECTED_TRAIN_ROWS},
-                "validation": {"row_count": EXPECTED_VAL_ROWS},
-                "test": {"row_count": EXPECTED_TEST_ROWS},
+                "train": {"row_count": EXPECTED_TRAIN_ROWS, "index_sha256": hashes["train"]},
+                "validation": {
+                    "row_count": EXPECTED_VAL_ROWS,
+                    "index_sha256": hashes["validation"],
+                },
+                "test": {"row_count": EXPECTED_TEST_ROWS, "index_sha256": hashes["test"]},
             },
         }
         manifest_path = tmp_path / "split_manifest.json"
         manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
-        indices_dir = tmp_path / "splits"
-        indices_dir.mkdir()
 
-        # Missing index files -> BLOCKED
+        # Missing index files -> delete one file -> BLOCKED
+        (indices_dir / "train_indices.csv.gz").unlink()
         result_missing = check_split_manifest(manifest_path, indices_dir=indices_dir)
         assert result_missing["status"] == "BLOCKED"
         assert "missing" in result_missing["message"].lower()
 
-        # Create the index files -> PASS
-        for name in ("train", "validation", "test"):
-            (indices_dir / f"{name}_indices.csv.gz").write_bytes(b"")
+        # Re-create the index file -> PASS
+        (indices_dir / "train_indices.csv.gz").write_bytes(b"content_train")
         result_ok = check_split_manifest(manifest_path, indices_dir=indices_dir)
         assert result_ok["status"] == "PASS"
 
@@ -1221,6 +1366,21 @@ class TestReviewerFindingsAndE2EIntegration:
             assert run_meta["test_rows_loaded"] == 0
             assert "split_manifest_sha256" in run_meta
             assert "partition_indices_sha256" in run_meta
+            assert len(run_meta["partition_indices_sha256"]) == 3
+            assert run_meta["partition_indices_sha256"]["train"] == tif.sha256_file(
+                indices_dir / "train_indices.csv.gz"
+            )
+            assert run_meta["partition_indices_sha256"]["validation"] == tif.sha256_file(
+                indices_dir / "validation_indices.csv.gz"
+            )
+            assert run_meta["partition_indices_sha256"]["test"] == tif.sha256_file(
+                indices_dir / "test_indices.csv.gz"
+            )
+
+            train_meta = json.loads(
+                (model_art_dir / "training_metadata.json").read_text(encoding="utf-8")
+            )
+            assert train_meta["partition_indices_sha256"] == run_meta["partition_indices_sha256"]
 
             # Now test with --evaluate-test flag
             args_eval = tif.parse_args(["--n-estimators", "5", "--evaluate-test"])
@@ -1231,3 +1391,210 @@ class TestReviewerFindingsAndE2EIntegration:
             assert run_meta_eval["test_rows_loaded"] == n_test
             metrics_eval = json.loads((rep_dir / "metrics.json").read_text(encoding="utf-8"))
             assert "tp" in metrics_eval
+
+    def test_run_pipeline_e2e_production_call_path_checksum_gate(self, tmp_path):
+        """Test 7: run_pipeline production call path verifies checksums and blocks invalid ones."""
+        import scripts.train_isolation_forest as tif
+
+        n_train, n_val, n_test = 40, 20, 20
+        n_total = n_train + n_val + n_test
+
+        np.random.seed(42)
+        df_data = {col: np.random.randn(n_total).astype(np.float32) for col in ML_FEATURE_COLUMNS}
+        df_data["Label"] = np.random.choice([0, 1], size=n_total, p=[0.7, 0.3])
+        df_data["Label"][0] = 0
+        df_data["Label"][n_train] = 0
+        df_data["Label"][n_train + 1] = 1
+        attacks = ["Benign" if lbl == 0 else "Exploits" for lbl in df_data["Label"]]
+        df_data["Attack"] = attacks
+        df = pd.DataFrame(df_data)
+
+        ds_csv = tmp_path / "dataset.csv"
+        df.to_csv(ds_csv, index=False)
+        ds_sha = tif.sha256_file(ds_csv)
+
+        indices_dir = tmp_path / "indices"
+        indices_dir.mkdir()
+        for name, s, e in [
+            ("train", 0, n_train),
+            ("validation", n_train, n_train + n_val),
+            ("test", n_train + n_val, n_total),
+        ]:
+            idx_p = indices_dir / f"{name}_indices.csv.gz"
+            with gzip.open(idx_p, "wt") as fh:
+                fh.write("source_row_index\n")
+                for i in range(s, e):
+                    fh.write(f"{i}\n")
+
+        real_hashes = {
+            "train": tif.sha256_file(indices_dir / "train_indices.csv.gz"),
+            "validation": tif.sha256_file(indices_dir / "validation_indices.csv.gz"),
+            "test": tif.sha256_file(indices_dir / "test_indices.csv.gz"),
+        }
+
+        mock_pp = mock.MagicMock()
+        mock_pp.transform.side_effect = lambda X, **kwargs: pd.DataFrame(
+            np.asarray(X, dtype=np.float64), columns=X.columns
+        )
+
+        art_p = tmp_path / "preprocessor.joblib"
+        art_p.write_bytes(b"dummy_bytes")
+        art_sha = tif.sha256_file(art_p)
+        pp_man = {"artifact_sha256": art_sha, "artifact_type": "preprocessor"}
+        pp_man_p = tmp_path / "preprocessor_manifest.json"
+        pp_man_p.write_text(json.dumps(pp_man), encoding="utf-8")
+
+        model_art_dir = tmp_path / "model_artifacts"
+        rep_dir = tmp_path / "reports"
+        args = tif.parse_args(["--n-estimators", "5"])
+
+        split_man_p = tmp_path / "split_manifest.json"
+
+        # Case 1: Missing checksum in manifest -> run_pipeline must return 1 (BLOCKED)
+        bad_split_man_missing = {
+            "dataset_sha256": ds_sha,
+            "partitions": {
+                "train": {"row_count": n_train},  # missing index_sha256
+                "validation": {"row_count": n_val, "index_sha256": real_hashes["validation"]},
+                "test": {"row_count": n_test, "index_sha256": real_hashes["test"]},
+            },
+        }
+        split_man_p.write_text(json.dumps(bad_split_man_missing), encoding="utf-8")
+
+        with (
+            mock.patch.object(tif, "DATASET_CSV", ds_csv),
+            mock.patch.object(tif, "DATASET_SHA256", ds_sha),
+            mock.patch.object(tif, "EXPECTED_TRAIN_ROWS", n_train),
+            mock.patch.object(tif, "EXPECTED_VAL_ROWS", n_val),
+            mock.patch.object(tif, "EXPECTED_TEST_ROWS", n_test),
+            mock.patch.object(tif, "SPLIT_MANIFEST_PATH", split_man_p),
+            mock.patch.object(tif, "OFFICIAL_SPLIT_MANIFEST", split_man_p),
+            mock.patch.object(tif, "INDICES_DIR", indices_dir),
+            mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
+            mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
+            mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(tif, "REPORT_DIR", rep_dir),
+            mock.patch(
+                "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                return_value=mock_pp,
+            ),
+        ):
+            code_missing = tif.run_pipeline(args)
+            assert code_missing == 1, "Pipeline must return 1 when manifest is missing checksum"
+
+        # Case 2: Empty checksum -> run_pipeline must return 1 (BLOCKED)
+        bad_split_man_empty = {
+            "dataset_sha256": ds_sha,
+            "partitions": {
+                "train": {"row_count": n_train, "index_sha256": ""},
+                "validation": {"row_count": n_val, "index_sha256": real_hashes["validation"]},
+                "test": {"row_count": n_test, "index_sha256": real_hashes["test"]},
+            },
+        }
+        split_man_p.write_text(json.dumps(bad_split_man_empty), encoding="utf-8")
+
+        with (
+            mock.patch.object(tif, "DATASET_CSV", ds_csv),
+            mock.patch.object(tif, "DATASET_SHA256", ds_sha),
+            mock.patch.object(tif, "EXPECTED_TRAIN_ROWS", n_train),
+            mock.patch.object(tif, "EXPECTED_VAL_ROWS", n_val),
+            mock.patch.object(tif, "EXPECTED_TEST_ROWS", n_test),
+            mock.patch.object(tif, "SPLIT_MANIFEST_PATH", split_man_p),
+            mock.patch.object(tif, "OFFICIAL_SPLIT_MANIFEST", split_man_p),
+            mock.patch.object(tif, "INDICES_DIR", indices_dir),
+            mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
+            mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
+            mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(tif, "REPORT_DIR", rep_dir),
+            mock.patch(
+                "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                return_value=mock_pp,
+            ),
+        ):
+            code_empty = tif.run_pipeline(args)
+            assert code_empty == 1, "Pipeline must return 1 when checksum is empty string"
+
+        # Case 3: Checksum mismatch -> run_pipeline must return 1 (BLOCKED)
+        bad_split_man_mismatch = {
+            "dataset_sha256": ds_sha,
+            "partitions": {
+                "train": {"row_count": n_train, "index_sha256": "0" * 64},
+                "validation": {"row_count": n_val, "index_sha256": real_hashes["validation"]},
+                "test": {"row_count": n_test, "index_sha256": real_hashes["test"]},
+            },
+        }
+        split_man_p.write_text(json.dumps(bad_split_man_mismatch), encoding="utf-8")
+
+        with (
+            mock.patch.object(tif, "DATASET_CSV", ds_csv),
+            mock.patch.object(tif, "DATASET_SHA256", ds_sha),
+            mock.patch.object(tif, "EXPECTED_TRAIN_ROWS", n_train),
+            mock.patch.object(tif, "EXPECTED_VAL_ROWS", n_val),
+            mock.patch.object(tif, "EXPECTED_TEST_ROWS", n_test),
+            mock.patch.object(tif, "SPLIT_MANIFEST_PATH", split_man_p),
+            mock.patch.object(tif, "OFFICIAL_SPLIT_MANIFEST", split_man_p),
+            mock.patch.object(tif, "INDICES_DIR", indices_dir),
+            mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
+            mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
+            mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(tif, "REPORT_DIR", rep_dir),
+            mock.patch(
+                "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                return_value=mock_pp,
+            ),
+        ):
+            code_mismatch = tif.run_pipeline(args)
+            assert code_mismatch == 1, "Pipeline must return 1 when index checksum mismatches"
+
+        # Case 4: Valid manifest and files -> run_pipeline PASS (0), metadata contains hashes
+        valid_split_man = {
+            "dataset_sha256": ds_sha,
+            "partitions": {
+                "train": {
+                    "row_count": n_train,
+                    "index_file": "train_indices.csv.gz",
+                    "index_sha256": real_hashes["train"],
+                },
+                "validation": {
+                    "row_count": n_val,
+                    "index_file": "validation_indices.csv.gz",
+                    "index_sha256": real_hashes["validation"],
+                },
+                "test": {
+                    "row_count": n_test,
+                    "index_file": "test_indices.csv.gz",
+                    "index_sha256": real_hashes["test"],
+                },
+            },
+        }
+        split_man_p.write_text(json.dumps(valid_split_man), encoding="utf-8")
+
+        with (
+            mock.patch.object(tif, "DATASET_CSV", ds_csv),
+            mock.patch.object(tif, "DATASET_SHA256", ds_sha),
+            mock.patch.object(tif, "EXPECTED_TRAIN_ROWS", n_train),
+            mock.patch.object(tif, "EXPECTED_VAL_ROWS", n_val),
+            mock.patch.object(tif, "EXPECTED_TEST_ROWS", n_test),
+            mock.patch.object(tif, "SPLIT_MANIFEST_PATH", split_man_p),
+            mock.patch.object(tif, "OFFICIAL_SPLIT_MANIFEST", split_man_p),
+            mock.patch.object(tif, "INDICES_DIR", indices_dir),
+            mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
+            mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
+            mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(tif, "REPORT_DIR", rep_dir),
+            mock.patch(
+                "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
+                return_value=mock_pp,
+            ),
+        ):
+            code_valid = tif.run_pipeline(args)
+            assert code_valid == 0, f"Expected 0 on valid manifest, got {code_valid}"
+
+            run_meta = json.loads((rep_dir / "run_metadata.json").read_text(encoding="utf-8"))
+            train_meta = json.loads(
+                (model_art_dir / "training_metadata.json").read_text(encoding="utf-8")
+            )
+
+            assert len(run_meta["partition_indices_sha256"]) == 3
+            assert run_meta["partition_indices_sha256"] == real_hashes
+            assert train_meta["partition_indices_sha256"] == real_hashes
