@@ -1,0 +1,28 @@
+{
+  "status": "BLOCKED",
+  "reason": "NF-UNSW-NB15-v3 CSV not found at data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv. Run: python scripts/fetch_nf_unsw_nb15_v3.py",
+  "run_metadata": {
+    "run_id": "20261108T120554Z",
+    "timestamp": "2026-11-08T12:05:55.633535+00:00",
+    "git_commit": "5f4e899c8282b9e3d3c6c1ee1dbd38bce7ec229d",
+    "python_version": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+    "platform": "win32",
+    "script": "scripts/train_isolation_forest.py",
+    "args": {
+      "check_prereqs_only": true,
+      "skip_checksum": false,
+      "n_estimators": 100,
+      "max_samples": "auto",
+      "contamination": 0.1,
+      "max_features": 1.0,
+      "bootstrap": false,
+      "n_jobs": -1,
+      "fpr_target": null,
+      "chunksize": 100000
+    },
+    "issue": "#11",
+    "checkpoint": "C4"
+  },
+  "experiment_status": "IMPLEMENTED \u2014 NOT EXPERIMENTALLY VALIDATED",
+  "instructions": "Run `python scripts/fetch_nf_unsw_nb15_v3.py` to acquire the dataset, then run the chronological split (PR #41) and the preprocessing pipeline (PR #42) before re-running this script."
+}

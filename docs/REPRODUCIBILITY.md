@@ -151,6 +151,23 @@ locked in Issue #9:
 - Experiment runner integration: `python scripts/run_experiments.py --step baseline` delegates directly to `scripts/train_random_forest.py` and forwards exit codes.
 - Fail-closed prerequisite audit: If the raw dataset or preprocessor artifact is missing or altered, training stops immediately with exit code 1. Mock/synthetic data is strictly prohibited for benchmark results.
 
+## Reproduce the Isolation Forest pipeline (scripts/train_isolation_forest.py) (Issue #11)
+
+```text
+# Prerequisite check (fails closed if dataset or preprocessor artifact is absent; safe for CI):
+python scripts/train_isolation_forest.py --check-prereqs-only
+
+# Full training and evaluation (requires local NF-UNSW-NB15-v3.csv and preprocessor artifact):
+python scripts/train_isolation_forest.py
+```
+
+Fail-closed properties:
+- Halts execution (exit code 1) if dataset file, split manifest, or preprocessor artifact hashes mismatch.
+- Excludes unknown attack categories (`Worms`, `Backdoor`) from validation threshold calibration.
+- Enforces strict test-partition protection; frozen threshold is applied to test evaluation without retraining.
+- Streams partition loading by chunks (default 100,000 via `--chunksize`) to minimize memory usage.
+- Saves model artifacts under `artifacts/models/isolation_forest/` and metrics under `reports/experiments/isolation_forest/`.
+
 ## Reproduce CSV inference on new network flows (Issue #15)
 
 ```text
