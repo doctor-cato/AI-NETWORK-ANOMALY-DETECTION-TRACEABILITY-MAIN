@@ -164,3 +164,144 @@ def test_gradient_boosting_model_family() -> None:
     metrics = exp.evaluate(df, y, evaluation_level="IN_DOMAIN_TEST")
     assert metrics.evaluation_level == "IN_DOMAIN_TEST"
     assert 0.0 <= metrics.accuracy <= 1.0
+
+
+def test_xgboost_model_family() -> None:
+    """Verify XGBClassifier lifecycle under RobustModelExperiment."""
+    rng = np.random.RandomState(42)
+    n = 60
+    df = pd.DataFrame({col: rng.randn(n) for col in FEATURES_E1})
+    y = rng.choice([0, 1], size=n)
+
+    exp = RobustModelExperiment(
+        experiment_id="E_xgb_test",
+        feature_set=FEATURES_E1,
+        n_estimators=10,
+        max_depth=3,
+        random_state=42,
+        model_family="XGBClassifier",
+    )
+    assert exp.model_family == "XGBClassifier"
+    exp.fit(df, y)
+    assert exp.is_fitted
+
+    preds = exp.predict(df)
+    assert len(preds) == n
+    metrics = exp.evaluate(df, y)
+    assert 0.0 <= metrics.accuracy <= 1.0
+
+
+def test_isolation_forest_unsupervised_experiment() -> None:
+    """Verify Isolation Forest unsupervised lifecycle, calibration, and higher=anomaly direction."""
+    from network_anomaly.models.robust_experiment import (
+        UnsupervisedAnomalyExperiment,
+        UnsupervisedExperimentMetrics,
+    )
+
+    rng = np.random.RandomState(42)
+    n_train = 100
+    n_test = 50
+
+    # Benign normal distribution
+    df_train_benign = pd.DataFrame({col: rng.randn(n_train) for col in FEATURES_E1})
+    df_test = pd.DataFrame({col: rng.randn(n_test) for col in FEATURES_E1})
+    # Inject synthetic extreme anomalies for test attack samples
+    df_test.iloc[25:, :] += 20.0
+    y_test = np.array([0] * 25 + [1] * 25)
+    attack_names = ["Benign"] * 25 + ["Exploits"] * 25
+
+    exp = UnsupervisedAnomalyExperiment(
+        experiment_id="U_if_test",
+        feature_set=FEATURES_E1,
+        model_family="IsolationForest",
+        n_estimators=20,
+        random_state=42,
+    )
+    assert not exp.is_fitted
+    exp.fit(df_train_benign)
+    assert exp.is_fitted
+
+    # Calibrate on validation benign
+    tau = exp.calibrate_threshold(df_train_benign, nominal_fpr=0.05)
+    assert isinstance(tau, float)
+    assert exp.threshold == tau
+
+    # Anomaly scores on extreme outliers should be strictly higher than on benign
+    benign_scores = exp.anomaly_scores(df_test.iloc[:25, :])
+    attack_scores = exp.anomaly_scores(df_test.iloc[25:, :])
+    assert np.mean(attack_scores) > np.mean(benign_scores)
+
+    metrics = exp.evaluate(df_test, y_test, attack_names=attack_names)
+    assert isinstance(metrics, UnsupervisedExperimentMetrics)
+    assert metrics.threshold == tau
+    assert metrics.recall > 0.8  # Strong detection on clear outliers
+    assert metrics.benign_score_stats["mean"] < metrics.attack_score_stats["mean"]
+    assert "Exploits" in metrics.per_attack_recall
+
+    manifest = exp.generate_manifest(metrics)
+    assert manifest["experiment_id"] == "U_if_test"
+    assert manifest["calibration"]["threshold"] == tau
+
+
+def test_autoencoder_unsupervised_experiment() -> None:
+    """Verify Autoencoder MSE reconstruction error lifecycle and calibration."""
+    from network_anomaly.models.robust_experiment import (
+        UnsupervisedAnomalyExperiment,
+        UnsupervisedExperimentMetrics,
+    )
+
+    rng = np.random.RandomState(42)
+    n_train = 100
+    n_test = 50
+
+    df_train_benign = pd.DataFrame({col: rng.randn(n_train) * 0.1 for col in FEATURES_E1})
+    df_test = pd.DataFrame({col: rng.randn(n_test) * 0.1 for col in FEATURES_E1})
+    # Inject large deviation for attack class
+    df_test.iloc[25:, :] += 15.0
+    y_test = np.array([0] * 25 + [1] * 25)
+    attack_names = ["Benign"] * 25 + ["Backdoor"] * 25
+
+    exp = UnsupervisedAnomalyExperiment(
+        experiment_id="U_ae_test",
+        feature_set=FEATURES_E1,
+        model_family="Autoencoder",
+        hidden_layer_sizes=(16, 8, 16),
+        max_iter=15,
+        random_state=42,
+    )
+    exp.fit(df_train_benign)
+    assert exp.is_fitted
+
+    tau = exp.calibrate_threshold(df_train_benign, nominal_fpr=0.05)
+    assert tau >= 0.0  # MSE is non-negative
+
+    scores = exp.anomaly_scores(df_test)
+    assert np.all(scores >= 0.0)  # Reconstruction error is always >= 0
+    assert np.mean(scores[25:]) > np.mean(scores[:25])
+
+    metrics = exp.evaluate(df_test, y_test, attack_names=attack_names)
+    assert isinstance(metrics, UnsupervisedExperimentMetrics)
+    assert metrics.recall > 0.8
+    assert "Backdoor" in metrics.per_attack_recall
+
+
+def test_unsupervised_negative_cases() -> None:
+    """Verify proper error handling for unfitted detectors and missing threshold."""
+    from network_anomaly.models.robust_experiment import UnsupervisedAnomalyExperiment
+
+    exp = UnsupervisedAnomalyExperiment("U_fail", FEATURES_E1)
+    df = pd.DataFrame(np.zeros((5, 45)), columns=FEATURES_E1)
+
+    with pytest.raises(RuntimeError, match="is not fitted"):
+        exp.anomaly_scores(df)
+
+    with pytest.raises(RuntimeError, match="is not fitted"):
+        exp.calibrate_threshold(df)
+
+    with pytest.raises(RuntimeError, match="is not fitted"):
+        exp.predict(df)
+
+    # After fit without threshold calibration, predict without arg raises ValueError
+    exp.fit(df)
+    with pytest.raises(ValueError, match="No decision threshold"):
+        exp.predict(df)
