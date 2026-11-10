@@ -150,7 +150,8 @@ def compute_metrics(
                     f"outside explicit labels {target_labels}."
                 )
         else:
-            # Single-label subset (e.g., labels=[1] or labels=[0]): validate against canonical domain
+            # Single-label subset (e.g., labels=[1] or labels=[0]):
+            # validate against canonical domain
             single_lbl = target_labels[0]
             if single_lbl in (0, 1):
                 allowed_domain = {0, 1}
@@ -194,10 +195,18 @@ def compute_metrics(
         tp = int(cm[1, 1])
     else:
         # Single-label target_labels case: compute directly from y_t and y_p
-        tn = sum(1 for yt, yp in zip(y_t, y_p) if _is_negative_benign(yt) and _is_negative_benign(yp))
-        fp = sum(1 for yt, yp in zip(y_t, y_p) if _is_negative_benign(yt) and _is_positive_attack(yp))
-        fn = sum(1 for yt, yp in zip(y_t, y_p) if _is_positive_attack(yt) and _is_negative_benign(yp))
-        tp = sum(1 for yt, yp in zip(y_t, y_p) if _is_positive_attack(yt) and _is_positive_attack(yp))
+        tn = sum(
+            1 for yt, yp in zip(y_t, y_p) if _is_negative_benign(yt) and _is_negative_benign(yp)
+        )
+        fp = sum(
+            1 for yt, yp in zip(y_t, y_p) if _is_negative_benign(yt) and _is_positive_attack(yp)
+        )
+        fn = sum(
+            1 for yt, yp in zip(y_t, y_p) if _is_positive_attack(yt) and _is_negative_benign(yp)
+        )
+        tp = sum(
+            1 for yt, yp in zip(y_t, y_p) if _is_positive_attack(yt) and _is_positive_attack(yp)
+        )
 
     fpr = float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0
     tnr = float(tn / (fp + tn)) if (fp + tn) > 0 else 0.0
@@ -221,9 +230,7 @@ def compute_metrics(
         "recall": float(
             recall_score(y_t, y_p, pos_label=pos_label, average="binary", zero_division=0)
         ),
-        "f1": float(
-            f1_score(y_t, y_p, pos_label=pos_label, average="binary", zero_division=0)
-        ),
+        "f1": float(f1_score(y_t, y_p, pos_label=pos_label, average="binary", zero_division=0)),
         "macro_f1": float(
             f1_score(y_t, y_p, labels=target_labels, average="macro", zero_division=0)
         ),

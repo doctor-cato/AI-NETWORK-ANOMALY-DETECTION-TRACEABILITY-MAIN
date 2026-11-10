@@ -24,7 +24,6 @@ from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.evaluation.metrics import (
     compute_attack_category_breakdown,
 )
-from network_anomaly.models.random_forest_protocol import ALL_ATTACK_CATEGORIES
 from network_anomaly.evaluation.test_evaluation import (
     CANONICAL_DECISION_THRESHOLD,
     DEFAULT_MODEL_MANIFEST_PATH,
@@ -32,6 +31,7 @@ from network_anomaly.evaluation.test_evaluation import (
     DEFAULT_SPLIT_MANIFEST_PATH,
     check_test_evaluation_prerequisites,
 )
+from network_anomaly.models.random_forest_protocol import ALL_ATTACK_CATEGORIES
 
 DEFAULT_ERROR_ANALYSIS_REPORT_PATH = Path("reports/evaluation/error_analysis_report.md")
 DEFAULT_VALIDATION_AUDIT_JSON_PATH = Path("reports/models/rf_baseline_validation_audit.json")
@@ -345,7 +345,8 @@ def analyze_feature_error_patterns(
             "category": "Both FP and FN",
             "statement": (
                 "Identical 47-feature flow vectors occur across both Benign and Attack labels, "
-                "creating an irreducible Bayes error floor where tree leaves cannot separate classes."
+                "creating an irreducible Bayes error floor where tree leaves cannot "
+                "separate classes."
             ),
             "evidence_type": "Empirical Dataset Property + Tree Leaf Ambiguity",
         },

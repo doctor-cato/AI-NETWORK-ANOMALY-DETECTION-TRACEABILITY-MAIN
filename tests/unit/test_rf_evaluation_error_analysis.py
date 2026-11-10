@@ -213,7 +213,8 @@ def test_compute_metrics_complete_fields_and_input_validation() -> None:
 
 
 def test_attack_category_breakdown_contradiction_and_expected_categories() -> None:
-    """Verify per-attack-category breakdown validates y_true vs Attack and handles 0-count classes."""
+    """Verify per-attack-category breakdown validates y_true vs Attack
+    and handles 0-count classes."""
     y_true = [0, 0, 1, 1, 1]
     y_pred = [0, 1, 1, 0, 1]
     categories = ["Benign", "Benign", "Exploits", "Exploits", "DoS"]
@@ -384,7 +385,8 @@ def _build_synthetic_evaluation_fixture(tmp_path: Path) -> Dict[str, Any]:
 
 
 def test_stream_test_partition_data_and_isolation_checks(tmp_path: Path) -> None:
-    """Verify streaming Test partition loads exact indices, excludes forbidden cols, and rejects leakage."""
+    """Verify streaming Test partition loads exact indices, excludes forbidden cols,
+    and rejects leakage."""
     fx = _build_synthetic_evaluation_fixture(tmp_path)
 
     test_data = stream_test_partition_data(
@@ -413,7 +415,8 @@ def test_stream_test_partition_data_and_isolation_checks(tmp_path: Path) -> None
 
 
 def test_end_to_end_test_evaluation_and_artifact_generation(tmp_path: Path) -> None:
-    """Verify evaluate_random_forest_on_test generates all 5 required artifacts and blocks overwrite."""
+    """Verify evaluate_random_forest_on_test generates all 5 required artifacts
+    and blocks overwrite."""
     fx = _build_synthetic_evaluation_fixture(tmp_path)
     out_dir = tmp_path / "eval_out"
 
@@ -590,7 +593,8 @@ def test_error_analysis_fp_fn_ranking_and_boundary_functions() -> None:
 
 
 def test_fail_closed_prerequisites_when_binaries_missing(tmp_path: Path) -> None:
-    """Verify check_test_evaluation_prerequisites blocks fail-closed when binary files are absent."""
+    """Verify check_test_evaluation_prerequisites blocks fail-closed when
+    binary files are absent."""
     missing_csv = tmp_path / "nonexistent.csv"
     status = check_test_evaluation_prerequisites(
         dataset_csv_path=missing_csv,
