@@ -142,8 +142,8 @@ def compute_fingerprint_disjoint_split(
         test_pairs = zip(
             pd.util.hash_pandas_object(df_test[cols_to_check], index=False), df_test["Label"]
         )
-        for h, l in test_pairs:
-            if h in train_map and train_map[h] != l:
+        for h, lbl in test_pairs:
+            if h in train_map and train_map[h] != lbl:
                 label_conflict_count += 1
 
     audit_findings = {

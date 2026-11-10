@@ -6,6 +6,9 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("fastapi")
+pytest.importorskip("pydantic")
+
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.repositories import (
     EventRepository,

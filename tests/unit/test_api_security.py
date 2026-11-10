@@ -6,6 +6,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
 from fastapi.testclient import TestClient
 
 from network_anomaly.api.main import create_app

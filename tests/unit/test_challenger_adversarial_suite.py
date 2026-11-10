@@ -22,13 +22,25 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
-from fastapi.testclient import TestClient
 from sklearn.ensemble import RandomForestClassifier
 
-from network_anomaly.api.db import DatabaseManager
-from network_anomaly.api.errors import ModelNotReadyError
-from network_anomaly.api.main import app
-from network_anomaly.api.service import ApiService
+try:
+    from fastapi.testclient import TestClient
+
+    from network_anomaly.api.db import DatabaseManager
+    from network_anomaly.api.errors import ModelNotReadyError
+    from network_anomaly.api.main import app
+    from network_anomaly.api.service import ApiService
+
+    _HAS_FASTAPI = True
+except ImportError:
+    _HAS_FASTAPI = False
+    TestClient = None
+    DatabaseManager = None
+    ModelNotReadyError = None
+    app = None
+    ApiService = None
+
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.evaluation.test_evaluation import verify_index_disjointness
 from network_anomaly.inference.pipeline import (
@@ -508,6 +520,7 @@ class TestScenario4OODAndAntiImputationGate:
 # ==============================================================================
 # SCENARIO 5: API Heuristic Fallback Guard (Issue #59)
 # ==============================================================================
+@pytest.mark.skipif(not _HAS_FASTAPI, reason="FastAPI dependencies not installed")
 class TestScenario5ApiHeuristicFallbackGuard:
     """Stress-test API service and FastAPI endpoint fail-closed behavior when model is absent."""
 

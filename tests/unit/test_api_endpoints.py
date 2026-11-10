@@ -7,6 +7,10 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
 from fastapi.testclient import TestClient
 
 from network_anomaly.api.client import NetworkAnomalyApiClient

@@ -8,6 +8,9 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+pytest.importorskip("fastapi")
+pytest.importorskip("pydantic")
+
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.errors import ModelNotReadyError
 from network_anomaly.api.schemas import HealthResponse
