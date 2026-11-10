@@ -11,7 +11,7 @@
 
 ## 1. Executive Summary
 
-Tài liệu này báo cáo quy trình đánh giá độc lập mô hình **Random Forest Baseline** trên tập **Held-out Test** (Issue #12) và phân tích chuyên sâu **False Positives (FP), False Negatives (FN), phân rã theo họ tấn công (`Attack` category), đặc trưng ranh giới quyết định và giới hạn dữ liệu** (Issue #13) trên bộ dữ liệu chuẩn **NF-UNSW-NB15-v3**.
+Tài liệu này báo cáo quy trình đánh giá độc lập mô hình **Random Forest Baseline** trên tập **Held-out Test** (Issue #12) và phân tích chuyên sâu **False Positives (FP), False Negatives (FN), phân rã theo họ tấn công (`Attack` category), phân nhóm luồng mạng, phân tích cửa sổ thời gian, độ bất định thống kê và giới hạn dữ liệu** (Issue #13) trên bộ dữ liệu chuẩn **NF-UNSW-NB15-v3**.
 
 - **Tính toàn vẹn quy trình (Test-Lock Integrity)**: Toàn bộ pipeline đánh giá Test (`src/network_anomaly/evaluation/test_evaluation.py`) và phân tích lỗi (`src/network_anomaly/evaluation/error_analysis.py`) thực thi cơ chế **fail-closed**: xác minh mã băm SHA-256 của dữ liệu gốc, split manifest, `test_indices.csv.gz` (khóa `index_sha256`), bộ tiền xử lý `TrainOnlyPreprocessor` (fit độc quyền trên Train) và mô hình `RandomForestModel` (`rf-baseline-canonical-v1`).
 - **Không rò rỉ dữ liệu (Zero Leakage)**: Tập Test (`345,953` bản ghi) hoàn toàn tách biệt với Train (`1,655,797` bản ghi) và Validation (`345,371` bản ghi). Bộ tiền xử lý chỉ gọi `.transform(X_test_raw)` và mô hình chỉ gọi `.predict(X_test)` / `.predict_proba(X_test)` với ngưỡng cố định `0.5` — tuyệt đối không huấn luyện lại, không tinh chỉnh siêu tham số và không tối ưu ngưỡng.
@@ -39,6 +39,8 @@ Tài liệu này báo cáo quy trình đánh giá độc lập mô hình **Rando
 - `test_indices: data/processed/splits/test_indices.csv.gz`
 - `preprocessor_artifact: artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`
 - `model_artifact: artifacts/models/random_forest/random_forest_baseline.joblib`
+- `train_indices: data/processed/splits/train_indices.csv.gz`
+- `validation_indices: data/processed/splits/validation_indices.csv.gz`
 
 ---
 
@@ -48,22 +50,23 @@ Tài liệu này báo cáo quy trình đánh giá độc lập mô hình **Rando
 
 | Tham số | Giá trị khóa (Locked Value) | Ý nghĩa khoa học |
 | :--- | :---: | :--- |
-| `model_type` | `random_forest` | Mô hình học có giám sát chuẩn (Supervised Baseline) |
+| `model_type` | `RandomForest` | Mô hình học có giám sát chuẩn (Supervised Baseline) |
 | `n_estimators` | `200` | Số lượng cây quyết định đảm bảo phương sai dự đoán ổn định |
 | `max_depth` | `16` | Giới hạn độ sâu cây để chống overfitting trên 1,655,797 dòng Train |
-| `min_samples_split` | `10` | Số mẫu tối thiểu để tách nút nội |
-| `min_samples_leaf` | `4` | Làm mịn ước lượng xác suất tại nút lá (`predict_proba`) |
+| `min_samples_split` | `2` | Số mẫu tối thiểu để tách nút nội |
+| `min_samples_leaf` | `1` | Số mẫu tối thiểu tại nút lá |
 | `criterion` | `gini` | Tiêu chuẩn độ tinh khiết Gini |
 | `max_features` | `sqrt` | Lấy mẫu $\lfloor\sqrt{47}\rfloor = 6$ đặc trưng |
-| `class_weight` | `balanced_subsample` | Cân bằng trọng số theo bootstrap sample |
+| `class_weight` | `None` | Giữ nguyên phân phối tự nhiên (không bóp méo xác suất hậu nghiệm) |
 | `bootstrap` | `True` | Lấy mẫu có hoàn lại cho từng cây |
 | `random_state` | `42` | Hạt giống ngẫu nhiên cố định đảm bảo tái lập kết quả |
-| `decision_threshold` | `0.5` | Ngưỡng phân loại nhị phân mặc định |
+| `n_jobs` | `-1` | Thực thi song song đa luồng (không ảnh hưởng tính tất định) |
+| `decision_threshold` | `0.5` | Ngưỡng phân loại nhị phân cố định (`prob_attack >= 0.5`) |
 
 ### 3.2. Hợp đồng tiền xử lý (`TrainOnlyPreprocessor`)
 
-- **Chế độ**: `fit_partition = "train"` (chỉ học thống kê median trên tập Train, áp dụng `.transform()` trên Test).
-- **Xử lý giá trị bất thường**: Thay thế `±Inf` bằng `NaN`, sau đó điền khuyết bằng `median` của tập Train trên đúng 47 cột đặc trưng `ML_FEATURE_COLUMNS`.
+- **Chế độ**: `fit_partition = "train_only"` (chỉ học thống kê median/mode trên tập Train, áp dụng `.transform()` trên Test).
+- **Xử lý giá trị bất thường**: Thay thế `±Inf` bằng `NaN`, sau đó điền khuyết bằng `median` của tập Train trên các cột định lượng và `mode` trên các cột phân loại trong 47 đặc trưng `ML_FEATURE_COLUMNS`.
 - **Loại trừ cột cấm (Anti-Leakage)**: Cấm tuyệt đối `Label`, `Attack` và 6 cột `TRACE_METADATA_COLUMNS`.
 
 ---
@@ -84,6 +87,8 @@ Theo `reports/splits/nf_unsw_nb15_v3_split_manifest.json` (chiến lược chia 
 
 ## 5. Overall Test Performance
 
+### 5.1. Bảng chỉ số đánh giá trên tập Held-out Test
+
 | Metric | Held-out Test Value | Verification Status |
 | :--- | :---: | :---: |
 | **Accuracy** | `NOT VERIFIED (Blocked: missing local .joblib / .csv binaries)` | `BLOCKED` |
@@ -97,6 +102,20 @@ Theo `reports/splits/nf_unsw_nb15_v3_split_manifest.json` (chiến lược chia 
 
 
 > **Lưu ý đối chiếu khoa học (Validation Reference — KHÔNG phải kết quả Test)**: Trên tập Validation (`345,371` dòng) đã được kiểm toán độc lập trong Issue #10 (`reports/models/rf_baseline_validation_audit.json`), mô hình đạt Accuracy `0.999977` (~ `99.9977%`), Precision `0.999836`, Recall `0.999902`, Binary F1 `0.999869`, FPR `1.587952e-05` (`5` FP / `314,871` Benign) và FN `3` / `30,500` Attack. Các con số Validation này chỉ được trích dẫn làm mốc tham chiếu trước Test và **tuyệt đối không được dùng thay thế cho kết quả Test**.
+
+### 5.2. Đối chiếu trạng thái giữa Random Forest và Isolation Forest (Model Comparison)
+
+| Tiêu chí | Random Forest Baseline (`rf-baseline-canonical-v1`) | Isolation Forest (`isolation-forest-optional-baseline`) |
+| :--- | :--- | :--- |
+| **Vai trò trong dự án** | `Mandatory Supervised Baseline (Core Scope)` | `Optional Unsupervised Baseline (Non-blocking per project scope)` |
+| **Mô hình học (Paradigm)** | Supervised binary classification (Label: 0=Benign, 1=Attack) | Unsupervised anomaly scoring (no attack labels used in fitting) |
+| **Giao thức dữ liệu huấn luyện** | Full Train partition (1,655,797 flows: Benign + Attack) | Train partition (unsupervised contamination=0.1 or Benign-only subset; requires validation score-to-label threshold calibration) |
+| **Quy tắc quyết định (Decision Rule)** | `predict_proba(Attack) >= 0.5` | Anomaly score threshold calibrated on Validation (separate protocol) |
+| **Trạng thái trên Validation** | `VERIFIED` (`F1=0.999869`, `FPR=1.587952e-05`) | `BLOCKED` (`IMPLEMENTED — NOT EXPERIMENTALLY VALIDATED`) |
+| **Trạng thái trên Held-out Test** | `BLOCKED (Awaiting local .csv / .joblib binary artifacts)` | `NOT EVALUATED / BLOCKED` |
+| **Ảnh hưởng tới nghiệm thu Core** | Bắt buộc (Mandatory Core Baseline) | Không chặn (`blocks_random_forest_acceptance = False`) |
+
+- **Ghi chú phương pháp luận**: Random Forest is a supervised classifier evaluated at a locked probability threshold of 0.50, whereas Isolation Forest is an optional unsupervised anomaly detector requiring validation score-to-label calibration. Per project scope, Isolation Forest is optional and does not block Random Forest core acceptance.
 
 ---
 
@@ -119,55 +138,72 @@ Theo `reports/splits/nf_unsw_nb15_v3_split_manifest.json` (chiến lược chia 
 
 ## 7. Benign Traffic & False Positive Analysis
 
+### 7.1. Thống kê tổng hợp trên lưu lượng Benign
+
 - **Tổng số mẫu Benign trên Test**: `315,357` dòng (`Label = 0`, `Attack = 'Benign').
 - **Trạng thái số liệu `FP` và `FPR` thực tế trên Test**: `BLOCKED / NOT VERIFIED` (chờ chạy CLI đánh giá trên máy có artifact nhị phân).
 - **Cơ chế trích xuất mẫu `FP` đã triển khai**: Hàm `extract_fp_fn_samples()` và `compute_benign_false_positive_breakdown()` lọc bản ghi `(y_true == 0) & (y_pred == 1)`, xếp hạng mẫu `FP` có xác suất `prob_attack` cao nhất và đo độ lệch chuẩn hóa (`standardized_abs_shift`) giữa `FP` và `TN` trên 47 đặc trưng.
 
-### Cơ chế gây báo động giả (False Positive Mechanisms)
-1. **Va chạm vector đặc trưng (`ml_feature_overlap`)**: Có tới `184,067 / 345,953` dòng Test (`53.21%`) có vector 47 đặc trưng trùng khớp với các dòng thuộc phân vùng/nhãn khác. Khi một luồng Benign ngắn có cùng bộ 47 đặc trưng với các luồng dò quét và rơi vào nút lá có trọng số `balanced_subsample` nghiêng về lớp `Attack`, mô hình dự đoán `1`.
+### 7.2. Phân rã False Positive theo nhóm luồng mạng (Flow Group & Regime Analysis)
+
+- Hàm `analyze_fp_by_flow_groups()` phân rã chi tiết các mẫu báo động giả (`FP`) trên lưu lượng Benign theo 4 chiều:
+  1. **Theo giao thức vận chuyển (`PROTOCOL`)**: Phân tách tỷ lệ `FPR` và tỷ trọng `share_of_all_fp` giữa TCP (`6`), UDP (`17`), ICMP (`1`) và các giao thức khác.
+  2. **Theo giao thức tầng ứng dụng (`L7_PROTO`)**: Xác định top mã giao thức L7 sinh nhiều cảnh báo giả nhất.
+  3. **Theo chế độ thời lượng luồng (`FLOW_DURATION_MILLISECONDS`)**: Tách biệt nhóm luồng tức thời (`0 ms`), luồng ngắn (`1..100 ms`), trung bình (`101..10,000 ms`) và luồng dài (`>10,000 ms`).
+  4. **Theo nhóm luồng ẩn danh (`by_anonymized_flow_group`)**: Khi có `trace_metadata`, nhóm các luồng theo mã băm ẩn danh `fg_<sha256[:12]>` của cặp điểm cuối và giao thức (ẩn hoàn toàn địa chỉ IP thô để bảo mật thông tin mạng).
+
+### 7.3. Cơ chế gây báo động giả (False Positive Mechanisms)
+1. **Va chạm vector đặc trưng (`ml_feature_overlap`)**: Có tới `184,067 / 345,953` dòng Test (`53.21%`) có vector 47 đặc trưng trùng khớp với các dòng thuộc phân vùng/nhãn khác. Khi một luồng Benign ngắn có cùng bộ 47 đặc trưng với các luồng dò quét, cây quyết định có thể gán xác suất dự đoán vượt ngưỡng `0.5`.
 2. **Đột biến băng thông và truyền lại gói hợp pháp**: Các kết nối Benign có tốc độ truyền burst hoặc tỷ lệ truyền lại cao đột biến dễ bị nhầm với lưu lượng bất thường.
 
 ---
 
 ## 8. Attack Traffic & False Negative Analysis
 
+### 8.1. Thống kê tổng hợp trên lưu lượng Attack
+
 - **Tổng số mẫu Attack trên Test**: `30,596` dòng (`Label = 1`, trải trên 9 họ tấn công).
 - **Trạng thái số liệu `FN` và `FNR` thực tế trên Test**: `BLOCKED / NOT VERIFIED` (chờ chạy CLI đánh giá trên máy có artifact nhị phân).
 - **Cơ chế trích xuất mẫu `FN` đã triển khai**: Hàm `extract_fp_fn_samples()` thu thập mẫu `(y_true == 1) & (y_pred == 0)`, phân nhóm theo từng `Attack` category và trích xuất mẫu tấn công bỏ lọt với xác suất `prob_attack` thấp nhất.
 
-### Cơ chế bỏ lọt tấn công (False Negative Mechanisms)
-1. **Tấn công thăm dò và khai thác tần suất thấp (Low-and-Slow / Single-Flow Stealth)**: Các luồng thuộc nhóm `Reconnaissance`, `Analysis`, `Backdoor` hoặc `Worms` chỉ gửi một vài gói tin kích thước nhỏ có hành vi thống kê rất giống Benign.
+### 8.2. Phân tích lỗi theo cửa sổ thời gian (Temporal Window Error Analysis)
+
+- Hàm `analyze_temporal_window_errors()` chia tập Test theo thứ tự thời gian `FLOW_START_MILLISECONDS` (thuộc `trace_metadata`, tách biệt hoàn toàn khỏi 47 đặc trưng đầu vào của mô hình) thành các cửa sổ thời gian liên tiếp để kiểm tra hiện tượng tập trung lỗi (`FP`/`FN` burst) hoặc suy giảm hiệu năng theo thời gian (temporal drift).
+
+### 8.3. Cơ chế bỏ lọt tấn công (False Negative Mechanisms)
+1. **Tấn công thăm dò và khai thác tần suất thấp (Low-and-Slow / Single-Flow Stealth)**: Các luồng thuộc nhóm `Reconnaissance`, `Analysis`, `Backdoor` hoặc `Worms` chỉ gửi một vài gói tin kích thước nhỏ có hành vi thống kê cấp luồng rất giống Benign.
 2. **Sự phụ thuộc vào đặc trưng TTL (`MAX_TTL`, `MIN_TTL`)**: Khi luồng tấn công có giá trị TTL nằm trong dải TTL điển hình của máy trạm Benign, các nhánh cây dựa trên TTL sẽ đẩy mẫu về phía lớp `Benign (0)`.
 
 ---
 
 ## 9. Per-Attack-Category Breakdown
 
-Bảng phân rã 9 họ tấn công (`Attack` category) trên tập Test:
+### 9.1. Bảng phân rã 9 họ tấn công và khoảng tin cậy Wilson 95%
 
-| Rank | Attack Category | Total in Test | Detected (`TP`) | Missed (`FN`) | Detection Rate (`Recall`) | False Negative Rate (`FNR`) |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: |
-| 1 | `Exploits` | `10,520` (`34.38%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 2 | `Fuzzers` | `7,322` (`23.93%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 3 | `Generic` | `5,111` (`16.70%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 4 | `Reconnaissance` | `4,464` (`14.59%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 5 | `Backdoor` | `1,260` (`4.12%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 6 | `DoS` | `1,193` (`3.90%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 7 | `Shellcode` | `396` (`1.29%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 8 | `Analysis` | `294` (`0.96%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
-| 9 | `Worms` | `36` (`0.12%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |
+| Rank | Attack Category | Total in Test | Detected (`TP`) | Missed (`FN`) | Detection Rate (`Recall`) | False Negative Rate (`FNR`) | 95% Wilson CI (`Recall`) |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| 1 | `Exploits` | `10,520` (`34.38%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9996, 1.0000]` (at 0 FN) |
+| 2 | `Fuzzers` | `7,322` (`23.93%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9995, 1.0000]` (at 0 FN) |
+| 3 | `Generic` | `5,111` (`16.70%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9992, 1.0000]` (at 0 FN) |
+| 4 | `Reconnaissance` | `4,464` (`14.59%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9991, 1.0000]` (at 0 FN) |
+| 5 | `Backdoor` | `1,260` (`4.12%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9970, 1.0000]` (at 0 FN) |
+| 6 | `DoS` | `1,193` (`3.90%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9968, 1.0000]` (at 0 FN) |
+| 7 | `Shellcode` | `396` (`1.29%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9904, 1.0000]` (at 0 FN) |
+| 8 | `Analysis` | `294` (`0.96%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9871, 1.0000]` (at 0 FN) |
+| 9 | `Worms` | `36` (`0.12%` of Test Attacks) | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | `[0.9036, 1.0000]` (at 0 FN) |
 
-### Nhận xét về phân bố họ tấn công trên tập Test
+### 9.2. Phân tích độ bất định thống kê (Uncertainty Analysis) & Các họ tấn công hiếm
 - Ba họ tấn công lớn nhất (`Exploits`: `10,520`, `Fuzzers`: `7,322`, `Generic`: `5,111`) chiếm tới **`75.02%`** (`22,953 / 30,596`) tổng số mẫu tấn công trong tập Test.
-- Ngược lại, 4 họ tấn công hiếm (`Worms`: `36`, `Analysis`: `294`, `Shellcode`: `396`, `Backdoor`: `1,260`) chỉ chiếm một tỷ lệ nhỏ tổng số mẫu tấn công. Do đó, việc đánh giá riêng từng họ tấn công là bắt buộc để không che khuất điểm yếu trên các lớp hiếm.
+- Ngược lại, họ `Worms` chỉ có **`36` mẫu** trên tập Test. Theo công thức khoảng tin cậy **Wilson 95%** (`compute_wilson_confidence_interval`), ngay cả khi phát hiện đúng tuyệt đối `36/36` mẫu (`100.00%`), khoảng tin cậy 95% của Recall cho `Worms` vẫn trải rộng từ **`[90.36%, 100.00%]`** (độ rộng `9.64%`); nếu bỏ lọt 1 mẫu (`35/36 = 97.22%`), khoảng tin cậy 95% mở rộng thành **`[85.83%, 99.51%]`**.
+- **Lưu ý về giả định độc lập thống kê (Flow Independence Caveat)**: Standard binomial confidence intervals assume independent and identically distributed (i.i.d.) flows. In NetFlow v3 traffic, multiple flows belonging to the same 5-tuple session or attack burst are positively correlated, so effective sample sizes are smaller and true uncertainty bands are wider than nominal i.i.d. intervals.
 
 ---
 
 ## 10. Feature Importance & Error Pattern Analysis
 
-Phân tích đặc trưng được tách bạch nghiêm ngặt thành 3 tầng:
+Phân tích đặc trưng được tách bạch nghiêm ngặt thành 4 tầng nhận thức khoa học (Epistemic Separation):
 
-### 10.1. Tầng 1 — Độ quan trọng đặc trưng toàn cục (Global Impurity Feature Importance)
+### 10.1. Tầng 1 — Quan sát thực nghiệm đã xác minh (Verified Observations)
 
 | Rank | Feature Name | Gini Importance | Cumulative Importance |
 | :---: | :--- | :---: | :---: |
@@ -187,25 +223,31 @@ Phân tích đặc trưng được tách bạch nghiêm ngặt thành 3 tầng:
 | 14 | `OUT_PKTS` | `0.012746` | `0.910458` |
 | 15 | `TCP_WIN_MAX_IN` | `0.011020` | `0.921478` |
 
-- **Nhận xét trọng tâm**: Hai đặc trưng `MAX_TTL` và `MIN_TTL` chiếm tổng cộng gần **`45-50%`** độ quan trọng toàn cục của mô hình. Top 10 đặc trưng đầu tiên chiếm hơn **`80%`** tổng độ quan trọng.
+- **Quan sát đã xác minh**: Hai đặc trưng `MAX_TTL` và `MIN_TTL` chiếm tổng cộng gần **`49.94%`** độ quan trọng toàn cục của mô hình. Top 10 đặc trưng đầu tiên chiếm hơn **`80%`** tổng độ quan trọng, và không gian đặc trưng chỉ chứa 47 thuộc tính cấp luồng NetFlow v3.
 
-### 10.2. Tầng 2 — Mẫu thống kê trên các bản ghi phân loại sai
+### 10.2. Tầng 2 — Liên kết thống kê trên mẫu lỗi (Statistical Associations)
 
-- Hàm `analyze_feature_error_patterns()` tính toán độ lệch chuẩn hóa giữa `FP` so với `TN` và giữa `FN` so với `TP` trên toàn bộ 47 đặc trưng.
+- Hàm `analyze_feature_error_patterns()` tính toán độ lệch chuẩn hóa (`standardized_abs_shift`) giữa `FP` so với `TN` và giữa `FN` so với `TP` trên toàn bộ 47 đặc trưng, đo lường sự dịch chuyển trung bình và trung vị của các bản ghi phân loại sai so với phân phối chuẩn của lớp tương ứng.
 
-### 10.3. Tầng 3 — Giả thuyết nguyên nhân lỗi theo ngữ nghĩa NIDS
+### 10.3. Tầng 3 — Giả thuyết miền NIDS (Domain Hypotheses)
 
 1. **`H1_EXACT_FEATURE_COLLISION`**: Sự trùng lặp hoàn toàn bộ 47 đặc trưng giữa các luồng Benign và Attack ngắn tạo ra giới hạn lỗi Bayes không thể triệt tiêu nếu chỉ dựa vào thống kê cấp luồng đơn lẻ.
 2. **`H2_TTL_SHORTCUT_MISMATCH`**: Việc mô hình tập trung trọng số lớn vào `MIN_TTL`/`MAX_TTL` khiến các luồng có TTL không tuân theo quy luật định tuyến phòng lab dễ bị phân loại sai.
 3. **`H3_STEALTHY_LOW_RATE_PROBING`**: Các luồng `Reconnaissance`, `Analysis`, `Backdoor` và `Worms` có kích thước gói nhỏ và thời lượng ngắn thiếu dấu hiệu bất thường về lưu lượng khi không có thông tin payload sâu.
 4. **`H4_BENIGN_BURST_ANOMALIES`**: Các kết nối Benign hợp pháp nhưng có hiện tượng nghẽn mạng, truyền lại gói hoặc truyền dữ liệu khối lượng lớn trong thời gian ngắn dễ chạm ngưỡng nhánh cây của lớp `Attack`.
 
+### 10.4. Tầng 4 — Đề xuất thí nghiệm kiểm chứng tiếp theo (Future Experiment Proposals)
+
+- **EXP-1 (TTL Ablation & Regularization)**: Đánh giá biến thể loại bỏ hoặc làm nhiễu `MIN_TTL`/`MAX_TTL` trên tập Test để đo độ suy giảm Recall theo từng họ tấn công.
+- **EXP-2 (Windowed Flow-Group Aggregation)**: Bổ sung đặc trưng thống kê cửa sổ thời gian trượt (không dùng IP tĩnh làm đặc trưng) nhằm phân tách các luồng trùng lặp bộ 47 đặc trưng.
+- **EXP-3 (Multi-Model Hybrid Triage)**: Kết hợp điểm dị thường từ Isolation Forest đã hiệu chuẩn ngưỡng trên Validation cho các mẫu rơi vào vùng bất định `[0.35, 0.65]`.
+
 ---
 
 ## 11. Decision Boundary & Confidence Analysis
 
-- **Ngưỡng quyết định cố định (Fixed Canonical Threshold)**: `0.50` trên xác suất dự đoán lớp `Attack`. Tuân thủ quy tắc chống rò rỉ dữ liệu, ngưỡng này **không được tinh chỉnh trên tập Test**.
-- **Vùng bất định (Uncertainty Band `[0.35, 0.65]`)**: Hàm `analyze_classification_boundary()` đo lường tỷ lệ mẫu rơi vào vùng xác suất sát ngưỡng `0.50` (`[0.35, 0.65]`) cũng như tỷ lệ lỗi có độ tự tin cao.
+- **Ngưỡng quyết định cố định (Fixed Canonical Threshold)**: `0.50` trên xác suất dự đoán lớp `Attack` (`prob_attack >= 0.50` phân loại là `1`). Tuân thủ quy tắc chống rò rỉ dữ liệu, ngưỡng này **không được tinh chỉnh trên tập Test**.
+- **Vùng bất định (Uncertainty Band `[0.35, 0.65]`)**: Hàm `analyze_classification_boundary()` đo lường tỷ lệ mẫu rơi vào vùng xác suất sát ngưỡng `0.50` (`[0.35, 0.65]`) cũng như tỷ lệ lỗi có độ tự tin cao (`prob_attack >= 0.80` đối với `FP` và `prob_attack <= 0.20` đối với `FN`).
 
 ---
 

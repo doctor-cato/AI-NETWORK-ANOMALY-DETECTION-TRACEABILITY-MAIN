@@ -271,4 +271,207 @@ def test_evaluate_random_forest_cli_verify_only(capsys: pytest.CaptureFixture) -
     assert payload["ready"] is False
     assert payload["status"] == "BLOCKED"
     assert payload["train_validation_disjoint_verified"] is False
+    assert payload["partition_verification_status"] == "BLOCKED"
     assert payload["expected_test_rows"] == 345953
+
+
+# ==============================================================================
+# 4. PREPROCESSOR MANIFEST VALIDATION (P2-01) & PARTITION COUNT TESTS (P1-02)
+# ==============================================================================
+
+
+def test_prerequisites_rejects_preprocessor_manifest_wrong_type_or_fit_partition(
+    tmp_path: Path,
+) -> None:
+    """Verify P2-01 fix: wrong artifact_type or non-train fit_partition is rejected fail-closed."""
+    from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
+    valid_sha = "a" * 64
+    pm_path = tmp_path / "preprocessing_manifest.json"
+
+    # Case 1: Wrong artifact_type even when fit_partition == "train"
+    bad_type_manifest = {
+        "artifact_type": "wrong-preprocessor-type",
+        "fit_partition": "train",
+        "dataset_sha256": valid_sha,
+        "split_manifest_sha256": valid_sha,
+        "artifact_sha256": valid_sha,
+        "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+        "baseline_ml_features_in_order": list(ML_FEATURE_COLUMNS),
+        "output_features_in_order": list(ML_FEATURE_COLUMNS),
+        "train_row_count": 100,
+    }
+    pm_path.write_text(json.dumps(bad_type_manifest), encoding="utf-8")
+    status_1 = check_test_evaluation_prerequisites(
+        preprocessing_manifest_path=pm_path,
+        fail_closed=False,
+    )
+    assert not status_1.ready
+    assert any("artifact_type" in e for e in status_1.verification_errors)
+
+    # Case 2: Valid artifact_type but fit_partition == "test" (data leakage!)
+    bad_part_manifest = dict(bad_type_manifest)
+    bad_part_manifest["artifact_type"] = "nf-unsw-nb15-v3-train-only-preprocessor"
+    bad_part_manifest["fit_partition"] = "test"
+    pm_path.write_text(json.dumps(bad_part_manifest), encoding="utf-8")
+    status_2 = check_test_evaluation_prerequisites(
+        preprocessing_manifest_path=pm_path,
+        fail_closed=False,
+    )
+    assert not status_2.ready
+    assert any("fit_partition" in e for e in status_2.verification_errors)
+
+    # Case 3: Missing / non-positive train_row_count or wrong feature order
+    bad_feat_manifest = dict(bad_type_manifest)
+    bad_feat_manifest["artifact_type"] = "nf-unsw-nb15-v3-train-only-preprocessor"
+    bad_feat_manifest["fit_partition"] = "train"
+    bad_feat_manifest["output_features_in_order"] = list(reversed(ML_FEATURE_COLUMNS))
+    bad_feat_manifest["train_row_count"] = 0
+    pm_path.write_text(json.dumps(bad_feat_manifest), encoding="utf-8")
+    status_3 = check_test_evaluation_prerequisites(
+        preprocessing_manifest_path=pm_path,
+        fail_closed=False,
+    )
+    assert not status_3.ready
+    assert any("output_features_in_order" in e for e in status_3.verification_errors)
+    assert any("train_row_count" in e for e in status_3.verification_errors)
+
+
+def test_verify_index_disjointness_detects_row_count_mismatch_and_legacy_sha_key(
+    tmp_path: Path,
+) -> None:
+    """Verify P1-01/P1-02: legacy 'sha256' key without 'index_sha256' and row_count mismatch fail."""
+    train_path = tmp_path / "train.csv.gz"
+    val_path = tmp_path / "val.csv.gz"
+    test_path = tmp_path / "test.csv.gz"
+
+    train_sha = _write_gz_indices(train_path, [0, 1, 2, 3])
+    val_sha = _write_gz_indices(val_path, [4, 5, 6])
+    test_sha = _write_gz_indices(test_path, [7, 8, 9])
+
+    # Manifest uses legacy 'sha256' instead of 'index_sha256' and wrong row_count for test
+    bad_manifest = {
+        "total_source_rows": 10,
+        "partitions": {
+            "train": {"row_count": 4, "index_sha256": train_sha},
+            "validation": {"row_count": 3, "index_sha256": val_sha},
+            "test": {"row_count": 99, "sha256": test_sha},
+        },
+    }
+    is_disjoint, errors = verify_index_disjointness(
+        train_indices_path=train_path,
+        val_indices_path=val_path,
+        test_indices_path=test_path,
+        split_manifest=bad_manifest,
+        total_source_rows=10,
+    )
+    assert not is_disjoint
+    assert any("missing required 'index_sha256' key" in e for e in errors)
+    assert any("test index row count (3) != split manifest expected row_count (99)" in e for e in errors)
+
+
+# ==============================================================================
+# 5. CONFUSION MATRIX PNG (P2-02) & PREDICTION / LABEL INVARIANTS (P2-06)
+# ==============================================================================
+
+
+def test_save_confusion_matrix_artifacts_renders_valid_non_blank_png(tmp_path: Path) -> None:
+    """Verify P2-02: confusion matrix PNG is non-empty, valid PNG, non-uniform, and rejects bad shapes."""
+    import numpy as np
+    from PIL import Image
+
+    from network_anomaly.evaluation.test_evaluation import save_confusion_matrix_artifacts
+
+    csv_p = tmp_path / "cm.csv"
+    png_p = tmp_path / "cm.png"
+    csv_sha, png_sha = save_confusion_matrix_artifacts(
+        cm=[[315350, 7], [4, 30592]],
+        output_csv_path=csv_p,
+        output_png_path=png_p,
+    )
+    assert len(csv_sha) == 64
+    assert len(png_sha) == 64
+    assert png_p.exists() and png_p.stat().st_size > 5000
+
+    img = Image.open(png_p)
+    arr = np.asarray(img)
+    assert arr.ndim >= 2
+    assert arr.shape[0] > 200 and arr.shape[1] > 200
+    # Non-uniform pixel content (not a blank canvas)
+    assert float(np.std(arr)) > 5.0
+
+    # Reject non-2x2 or negative confusion matrices
+    with pytest.raises(ValueError, match="shape \\(2, 2\\)"):
+        save_confusion_matrix_artifacts([[1, 2, 3]], csv_p, png_p)
+    with pytest.raises(ValueError, match="non-negative"):
+        save_confusion_matrix_artifacts([[10, -1], [0, 5]], csv_p, png_p)
+
+
+def test_prediction_and_label_invariants_reject_fractional_labels_and_bad_classes(
+    tmp_path: Path,
+) -> None:
+    """Verify P2-06: fractional labels, duplicate row_indices, and misordered classes_ fail closed."""
+    import numpy as np
+    import pandas as pd
+
+    from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+    from network_anomaly.evaluation.metrics import compute_metrics
+    from network_anomaly.evaluation.test_evaluation import (
+        TestPartitionData,
+        evaluate_loaded_random_forest_on_test,
+        save_predictions_csv,
+    )
+
+    # 1. Fractional float labels rejected by compute_metrics
+    with pytest.raises(ValueError, match="fractional float label"):
+        compute_metrics([0, 1, 0.5], [0, 1, 1])
+
+    # 2. Duplicate or negative row_indices rejected by TestPartitionData and save_predictions_csv
+    X_df = pd.DataFrame(
+        np.zeros((3, len(ML_FEATURE_COLUMNS))),
+        columns=list(ML_FEATURE_COLUMNS),
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        TestPartitionData(
+            X_test_raw=X_df,
+            y_test=np.array([0, 1, 0], dtype=np.int64),
+            attack_categories=np.array(["Benign", "Exploits", "Benign"], dtype=object),
+            row_indices=np.array([10, 10, 12], dtype=np.int64),
+        )
+
+    with pytest.raises(ValueError, match="sum to 1.0"):
+        save_predictions_csv(
+            path=tmp_path / "bad_preds.csv",
+            row_indices=[1, 2],
+            y_true=[0, 1],
+            y_pred=[0, 1],
+            prob_benign=[0.8, 0.2],
+            prob_attack=[0.5, 0.8],  # row 0 sums to 1.3
+            attack_categories=["Benign", "Exploits"],
+        )
+
+    # 3. Misordered model.classes_ ([1, 0] instead of [0, 1]) rejected fail-closed
+    valid_td = TestPartitionData(
+        X_test_raw=X_df,
+        y_test=np.array([0, 1, 0], dtype=np.int64),
+        attack_categories=np.array(["Benign", "Exploits", "Benign"], dtype=object),
+        row_indices=np.array([10, 11, 12], dtype=np.int64),
+    )
+
+    class _DummyPrep:
+        def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+            return df
+
+    class _MisorderedModel:
+        classes_ = np.array([1, 0])
+
+        def predict_proba(self, df: pd.DataFrame) -> np.ndarray:
+            return np.array([[0.9, 0.1], [0.2, 0.8], [0.5, 0.5]])
+
+    with pytest.raises(ValueError, match="canonical binary ordering \\[0, 1\\]"):
+        evaluate_loaded_random_forest_on_test(
+            model=_MisorderedModel(),  # type: ignore[arg-type]
+            preprocessor=_DummyPrep(),  # type: ignore[arg-type]
+            test_data=valid_td,
+            output_dir=tmp_path / "out_misordered",
+        )

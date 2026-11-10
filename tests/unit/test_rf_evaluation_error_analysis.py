@@ -295,7 +295,7 @@ def _build_synthetic_evaluation_fixture(tmp_path: Path) -> Dict[str, Any]:
 
     def _write_idx_gz(p: Path, idxs: list[int]) -> str:
         with gzip.open(p, "wt", encoding="utf-8", newline="") as f:
-            f.write("row_index\n")
+            f.write("source_row_index\n")
             for idx_v in idxs:
                 f.write(f"{idx_v}\n")
         return _sha256_file(p)
@@ -311,13 +311,14 @@ def _build_synthetic_evaluation_fixture(tmp_path: Path) -> Dict[str, Any]:
     split_manifest_path = tmp_path / "split_manifest.json"
     split_manifest = {
         "dataset_sha256": ds_sha,
+        "total_source_rows": n_total,
         "dataset_row_count": n_total,
         "partitions": {
-            "train": {"row_count": len(train_idx), "sha256": train_sha},
-            "validation": {"row_count": len(val_idx), "sha256": val_sha},
+            "train": {"row_count": len(train_idx), "index_sha256": train_sha},
+            "validation": {"row_count": len(val_idx), "index_sha256": val_sha},
             "test": {
                 "row_count": len(test_idx),
-                "sha256": test_sha,
+                "index_sha256": test_sha,
                 "label_distribution": {"0": 14, "1": 6},
                 "attack_distribution": {
                     "Benign": 14,

@@ -72,8 +72,12 @@ def _validate_1d_sequence(seq: Any, name: str) -> List[Any]:
         if isinstance(val, (float, np.floating)):
             if not np.isfinite(val):
                 raise ValueError(f"Invalid non-finite float in '{name}' at index {idx}: {val!r}")
-            if float(val).is_integer():
-                val = int(val)
+            if not float(val).is_integer():
+                raise ValueError(
+                    f"Invalid fractional float label in '{name}' at index {idx}: {val!r} "
+                    f"(strict binary integer labels required)"
+                )
+            val = int(val)
         elif isinstance(val, np.integer):
             val = int(val)
         elif isinstance(val, np.str_):
@@ -425,9 +429,96 @@ def compute_attack_category_breakdown(
     return breakdown
 
 
+def compute_wilson_confidence_interval(
+    successes: int,
+    total: int,
+    confidence: float = 0.95,
+) -> Dict[str, Union[int, float]]:
+    """Compute Wilson score confidence interval for a binomial proportion.
+
+    Used to quantify statistical uncertainty of Recall, Precision, FPR, and
+    per-attack-category detection rates (especially rare classes such as Worms).
+
+    Parameters
+    ----------
+    successes : int
+        Number of successes (0 <= successes <= total).
+    total : int
+        Total number of trials (total >= 0).
+    confidence : float, default 0.95
+        Confidence level in (0.0, 1.0).
+
+    Returns
+    -------
+    Dict[str, Union[int, float]]
+        Dictionary with successes, total, proportion, ci_lower, ci_upper,
+        ci_width, and confidence_level.
+    """
+    if isinstance(successes, bool) or not isinstance(successes, (int, np.integer)):
+        raise ValueError(f"'successes' must be an integer, got {successes!r}")
+    if isinstance(total, bool) or not isinstance(total, (int, np.integer)):
+        raise ValueError(f"'total' must be an integer, got {total!r}")
+    k = int(successes)
+    n = int(total)
+    if n < 0:
+        raise ValueError(f"'total' must be non-negative, got {n}")
+    if k < 0 or k > n:
+        raise ValueError(f"'successes' ({k}) must satisfy 0 <= successes <= total ({n})")
+    if not (0.0 < confidence < 1.0):
+        raise ValueError(f"'confidence' must be in (0.0, 1.0), got {confidence}")
+
+    if n == 0:
+        return {
+            "successes": 0,
+            "total": 0,
+            "proportion": 0.0,
+            "ci_lower": 0.0,
+            "ci_upper": 1.0,
+            "ci_width": 1.0,
+            "confidence_level": float(confidence),
+        }
+
+    # Standard normal critical value z for common confidence levels (with Acklam rational approx fallback)
+    if abs(confidence - 0.95) < 1e-9:
+        z = 1.959963984540054
+    elif abs(confidence - 0.99) < 1e-9:
+        z = 2.5758293035489004
+    elif abs(confidence - 0.90) < 1e-9:
+        z = 1.6448536269514722
+    else:
+        from statistics import NormalDist
+
+        z = float(NormalDist().inv_cdf(0.5 + 0.5 * confidence))
+
+    p_hat = float(k) / float(n)
+    z2 = z * z
+    denom = 1.0 + z2 / float(n)
+    center = (p_hat + z2 / (2.0 * float(n))) / denom
+    radicand = max(0.0, (p_hat * (1.0 - p_hat) / float(n)) + (z2 / (4.0 * float(n) * float(n))))
+    half_width = (z * float(np.sqrt(radicand))) / denom
+
+    ci_lower = max(0.0, min(1.0, center - half_width))
+    ci_upper = max(0.0, min(1.0, center + half_width))
+    if k == 0:
+        ci_lower = 0.0
+    if k == n:
+        ci_upper = 1.0
+
+    return {
+        "successes": k,
+        "total": n,
+        "proportion": p_hat,
+        "ci_lower": float(ci_lower),
+        "ci_upper": float(ci_upper),
+        "ci_width": float(ci_upper - ci_lower),
+        "confidence_level": float(confidence),
+    }
+
+
 __all__ = [
     "compute_metrics",
     "compute_confusion_matrix_breakdown",
     "compute_benign_false_positive_breakdown",
     "compute_attack_category_breakdown",
+    "compute_wilson_confidence_interval",
 ]
