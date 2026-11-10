@@ -340,7 +340,7 @@ def test_prerequisites_rejects_preprocessor_manifest_wrong_type_or_fit_partition
 def test_verify_index_disjointness_detects_row_count_mismatch_and_legacy_sha_key(
     tmp_path: Path,
 ) -> None:
-    """Verify P1-01/P1-02: legacy 'sha256' key without 'index_sha256' and row_count mismatch fail."""
+    """Verify P1-01/P1-02: legacy 'sha256' key without 'index_sha256' and row_count mismatch fail."""  # noqa: E501
     train_path = tmp_path / "train.csv.gz"
     val_path = tmp_path / "val.csv.gz"
     test_path = tmp_path / "test.csv.gz"
@@ -367,7 +367,9 @@ def test_verify_index_disjointness_detects_row_count_mismatch_and_legacy_sha_key
     )
     assert not is_disjoint
     assert any("missing required 'index_sha256' key" in e for e in errors)
-    assert any("test index row count (3) != split manifest expected row_count (99)" in e for e in errors)
+    assert any(
+        "test index row count (3) != split manifest expected row_count (99)" in e for e in errors
+    )
 
 
 # ==============================================================================
@@ -376,7 +378,7 @@ def test_verify_index_disjointness_detects_row_count_mismatch_and_legacy_sha_key
 
 
 def test_save_confusion_matrix_artifacts_renders_valid_non_blank_png(tmp_path: Path) -> None:
-    """Verify P2-02: confusion matrix PNG is non-empty, valid PNG, non-uniform, and rejects bad shapes."""
+    """Verify P2-02: confusion matrix PNG is non-empty, valid PNG, non-uniform, and rejects bad shapes."""  # noqa: E501
     import numpy as np
     from PIL import Image
 
@@ -410,7 +412,7 @@ def test_save_confusion_matrix_artifacts_renders_valid_non_blank_png(tmp_path: P
 def test_prediction_and_label_invariants_reject_fractional_labels_and_bad_classes(
     tmp_path: Path,
 ) -> None:
-    """Verify P2-06: fractional labels, duplicate row_indices, and misordered classes_ fail closed."""
+    """Verify P2-06: fractional labels, duplicate row_indices, and misordered classes_ fail closed."""  # noqa: E501
     import numpy as np
     import pandas as pd
 

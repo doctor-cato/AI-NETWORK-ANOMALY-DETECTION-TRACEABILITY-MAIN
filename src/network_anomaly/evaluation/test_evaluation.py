@@ -262,10 +262,16 @@ def verify_index_disjointness(
                     continue
                 part_meta = partitions_meta.get(name)
                 if not isinstance(part_meta, dict):
-                    errors.append(f"Split manifest missing required partition metadata for '{name}'")
+                    errors.append(
+                        f"Split manifest missing required partition metadata for '{name}'"
+                    )
                     continue
                 expected_sha = part_meta.get("index_sha256")
-                if not expected_sha or not isinstance(expected_sha, str) or not expected_sha.strip():
+                if (
+                    not expected_sha
+                    or not isinstance(expected_sha, str)
+                    or not expected_sha.strip()
+                ):
                     errors.append(
                         f"Split manifest partitions.{name} missing required 'index_sha256' key"
                     )
@@ -319,7 +325,9 @@ def verify_index_disjointness(
     if max_rows is None and split_manifest is not None:
         max_rows = split_manifest.get("total_source_rows")
 
-    if max_rows is not None and (isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows <= 0):
+    if max_rows is not None and (
+        isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows <= 0
+    ):
         errors.append(f"Invalid total_source_rows in split manifest: {max_rows!r}")
         max_rows = None
 
@@ -549,13 +557,13 @@ def check_test_evaluation_prerequisites(
                     fit_part = prep_manifest.get("fit_partition")
                     if fit_part not in ("train", "train_only"):
                         errors.append(
-                            f"Preprocessing manifest fit_partition must be 'train' or 'train_only', "
+                            f"Preprocessing manifest fit_partition must be 'train' or 'train_only', "  # noqa: E501
                             f"got {fit_part!r}"
                         )
                 pm_ds_sha = prep_manifest.get("dataset_sha256")
                 if not _is_valid_sha256_hex(pm_ds_sha):
                     errors.append(
-                        f"Preprocessing manifest missing or malformed 'dataset_sha256': {pm_ds_sha!r}"
+                        f"Preprocessing manifest missing or malformed 'dataset_sha256': {pm_ds_sha!r}"  # noqa: E501
                     )
                 pm_sm_sha = prep_manifest.get("split_manifest_sha256")
                 if not _is_valid_sha256_hex(pm_sm_sha):
@@ -692,7 +700,11 @@ def check_test_evaluation_prerequisites(
             expected_ti_sha = (
                 test_part_meta.get("index_sha256") if isinstance(test_part_meta, dict) else None
             )
-            if not expected_ti_sha or not isinstance(expected_ti_sha, str) or not expected_ti_sha.strip():
+            if (
+                not expected_ti_sha
+                or not isinstance(expected_ti_sha, str)
+                or not expected_ti_sha.strip()
+            ):
                 errors.append("Split manifest partitions.test missing required 'index_sha256' key")
             else:
                 if not _is_valid_sha256_hex(expected_ti_sha):
@@ -743,20 +755,18 @@ def check_test_evaluation_prerequisites(
         try:
             actual_pa_sha = _sha256_file(pa_path)
             hashes["preprocessor_artifact_sha256"] = actual_pa_sha
-            expected_pa_sha = (
-                (prep_manifest or {}).get("artifact_sha256")
-                or (model_manifest or {}).get("preprocessor_artifact_sha256")
-            )
+            expected_pa_sha = (prep_manifest or {}).get("artifact_sha256") or (
+                model_manifest or {}
+            ).get("preprocessor_artifact_sha256")
             if expected_pa_sha and actual_pa_sha.lower() != str(expected_pa_sha).lower():
                 errors.append(
                     f"Preprocessor artifact SHA-256 mismatch: "
                     f"expected {expected_pa_sha}, got {actual_pa_sha}"
                 )
             if pm_path.exists():
-                expected_ds_for_prep = (
-                    (prep_manifest or {}).get("dataset_sha256")
-                    or (split_manifest or {}).get("dataset_sha256")
-                )
+                expected_ds_for_prep = (prep_manifest or {}).get("dataset_sha256") or (
+                    split_manifest or {}
+                ).get("dataset_sha256")
                 load_kwargs: Dict[str, Any] = {
                     "artifact_path": pa_path,
                     "manifest_path": pm_path,
@@ -957,9 +967,7 @@ def stream_test_partition_data(
     attack_cats = all_targets["Attack"].to_numpy(dtype=object)
     for idx_pos, (int_lbl, cat_val) in enumerate(zip(validated_labels, attack_cats)):
         if cat_val is None or not isinstance(cat_val, str) or not cat_val.strip():
-            raise ValueError(
-                f"Invalid Attack category at test position {idx_pos}: {cat_val!r}"
-            )
+            raise ValueError(f"Invalid Attack category at test position {idx_pos}: {cat_val!r}")
         cat_clean = cat_val.strip()
         if int_lbl == 0 and cat_clean != "Benign":
             raise ValueError(
@@ -1000,9 +1008,7 @@ def save_confusion_matrix_artifacts(
         raise ValueError(f"Confusion matrix must be convertible to 2D int64 array: {exc}") from exc
 
     if cm_arr.ndim != 2 or cm_arr.shape != (2, 2):
-        raise ValueError(
-            f"Binary confusion matrix must have shape (2, 2), got {cm_arr.shape}"
-        )
+        raise ValueError(f"Binary confusion matrix must have shape (2, 2), got {cm_arr.shape}")
     if np.any(cm_arr < 0):
         raise ValueError(f"Confusion matrix counts must be non-negative, got {cm_arr.tolist()}")
     if len(classes) != 2:
@@ -1065,7 +1071,9 @@ def save_confusion_matrix_artifacts(
         raise RuntimeError(f"Confusion matrix PNG was not written or is empty: {png_p}")
     png_bytes = png_p.read_bytes()
     if not png_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise RuntimeError(f"Generated confusion matrix file does not have a valid PNG header: {png_p}")
+        raise RuntimeError(
+            f"Generated confusion matrix file does not have a valid PNG header: {png_p}"
+        )
 
     png_sha = _sha256_file(png_p)
     return csv_sha, png_sha
@@ -1106,7 +1114,11 @@ def save_predictions_csv(
 
     for seq_name, seq_vals in [("y_true", y_true), ("y_pred", y_pred)]:
         for pos, v in enumerate(seq_vals):
-            if isinstance(v, (bool, np.bool_)) or not isinstance(v, (int, np.integer)) or int(v) not in (0, 1):
+            if (
+                isinstance(v, (bool, np.bool_))
+                or not isinstance(v, (int, np.integer))
+                or int(v) not in (0, 1)
+            ):
                 raise ValueError(
                     f"Invalid binary integer label in {seq_name} at index {pos}: {v!r}"
                 )
@@ -1118,7 +1130,12 @@ def save_predictions_csv(
 
     if not (np.all(np.isfinite(p_ben)) and np.all(np.isfinite(p_att))):
         raise ValueError("Predicted probabilities must be finite floats")
-    if np.any(p_ben < -1e-6) or np.any(p_ben > 1.0 + 1e-6) or np.any(p_att < -1e-6) or np.any(p_att > 1.0 + 1e-6):
+    if (
+        np.any(p_ben < -1e-6)
+        or np.any(p_ben > 1.0 + 1e-6)
+        or np.any(p_att < -1e-6)
+        or np.any(p_att > 1.0 + 1e-6)
+    ):
         raise ValueError("Predicted probabilities must lie within [0.0, 1.0]")
     if not np.allclose(p_ben + p_att, 1.0, atol=1e-5):
         raise ValueError("prob_benign + prob_attack must sum to 1.0 for every sample")

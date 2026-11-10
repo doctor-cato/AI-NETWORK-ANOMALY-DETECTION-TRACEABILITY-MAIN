@@ -243,8 +243,7 @@ def test_fp_by_flow_groups_and_ip_redaction() -> None:
     assert "192.168.10.25" not in serialized
     assert "10.0.0.99" not in serialized
     assert all(
-        g["anonymized_flow_group_id"].startswith("fg_")
-        for g in anon["top_anonymized_fp_groups"]
+        g["anonymized_flow_group_id"].startswith("fg_") for g in anon["top_anonymized_fp_groups"]
     )
 
 
@@ -346,3 +345,20 @@ def test_error_analysis_cli_verify_only(capsys: pytest.CaptureFixture) -> None:
     assert payload["partitions"]["test_rows"] == 345_953
     assert payload["validation_reference"]["fp"] == 5
     assert payload["validation_reference"]["fn"] == 3
+
+
+def test_cli_runs_evaluation_and_analysis(monkeypatch, tmp_path):
+    import network_anomaly.evaluation.error_analysis as module
+
+    result = {"run_id": "test"}
+    calls = []
+    monkeypatch.setattr(module, "evaluate_random_forest_on_test", lambda **kw: result)
+    monkeypatch.setattr(
+        module,
+        "run_full_error_analysis_from_evaluation",
+        lambda value, **kw: calls.append((value, kw)),
+    )
+    report = tmp_path / "report.md"
+    assert main(["--run-test-evaluation", "--report-path", str(report)]) == 0
+    assert calls[0][0] is result
+    assert calls[0][1]["report_path"] == report

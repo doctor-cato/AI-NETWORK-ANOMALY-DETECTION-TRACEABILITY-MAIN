@@ -478,7 +478,7 @@ def compute_wilson_confidence_interval(
             "confidence_level": float(confidence),
         }
 
-    # Standard normal critical value z for common confidence levels (with Acklam rational approx fallback)
+    # Standard normal critical value z for common confidence levels (with Acklam rational approx fallback)  # noqa: E501
     if abs(confidence - 0.95) < 1e-9:
         z = 1.959963984540054
     elif abs(confidence - 0.99) < 1e-9:

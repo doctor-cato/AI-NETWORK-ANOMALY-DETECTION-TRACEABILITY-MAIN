@@ -32,6 +32,7 @@ from network_anomaly.evaluation.test_evaluation import (
     DEFAULT_PREPROCESSING_MANIFEST_PATH,
     DEFAULT_SPLIT_MANIFEST_PATH,
     check_test_evaluation_prerequisites,
+    evaluate_random_forest_on_test,
 )
 from network_anomaly.models.random_forest_protocol import ALL_ATTACK_CATEGORIES
 
@@ -274,7 +275,8 @@ def analyze_fp_by_flow_groups(
     Groups Benign traffic by:
       1. Transport protocol (PROTOCOL feature).
       2. Application-layer protocol code (L7_PROTO feature, top groups).
-      3. Flow duration regime (FLOW_DURATION_MILLISECONDS: 0 ms, 1..100 ms, 101..10000 ms, >10000 ms).
+      3. Flow duration regime (FLOW_DURATION_MILLISECONDS: 0 ms, 1..100 ms,
+         101..10000 ms, >10000 ms).
       4. Anonymized endpoint flow group (SHA-256 hash of src/dst/proto from trace_metadata,
          redacting raw IP addresses to prevent sensitive network disclosure).
     """
@@ -406,7 +408,9 @@ def analyze_fp_by_flow_groups(
                 "benign_total": st["benign_total"],
                 "fp_count": st["fp_count"],
                 "tn_count": st["benign_total"] - st["fp_count"],
-                "fpr": float(st["fp_count"] / st["benign_total"]) if st["benign_total"] > 0 else 0.0,
+                "fpr": (
+                    float(st["fp_count"] / st["benign_total"]) if st["benign_total"] > 0 else 0.0
+                ),
             }
             for gid, st in group_stats.items()
         ]
@@ -464,9 +468,9 @@ def analyze_temporal_window_errors(
             "windows": [],
         }
 
-    start_ms = pd.to_numeric(
-        trace_metadata["FLOW_START_MILLISECONDS"], errors="coerce"
-    ).to_numpy(dtype=np.float64)
+    start_ms = pd.to_numeric(trace_metadata["FLOW_START_MILLISECONDS"], errors="coerce").to_numpy(
+        dtype=np.float64
+    )
     if not np.all(np.isfinite(start_ms)) or n_samples == 0:
         return {
             "status": "NOT_AVAILABLE",
@@ -630,7 +634,7 @@ def compile_model_comparison_status(
     validation_audit_path: Union[str, Path] = DEFAULT_VALIDATION_AUDIT_JSON_PATH,
     isolation_forest_status_path: Union[str, Path] = DEFAULT_ISOLATION_FOREST_BLOCKED_JSON_PATH,
 ) -> Dict[str, Any]:
-    """Compile comparison table and status between Random Forest (mandatory) and Isolation Forest (optional)."""
+    """Compile comparison table and status between Random Forest (mandatory) and Isolation Forest (optional)."""  # noqa: E501
     rf_manifest: Dict[str, Any] = {}
     mm_p = Path(model_manifest_path)
     if mm_p.exists():
@@ -747,7 +751,7 @@ def validate_evaluation_and_error_consistency(
             b_tn = int(c_stats["true_negative"])
             if b_fp + b_tn != b_tot or b_tot != benign_total or b_fp != fp or b_tn != tn:
                 raise ValueError(
-                    f"Benign breakdown mismatch: {c_stats} vs (tn={tn}, fp={fp}, total={benign_total})"
+                    f"Benign breakdown mismatch: {c_stats} vs (tn={tn}, fp={fp}, total={benign_total})"  # noqa: E501
                 )
         else:
             c_tot = int(c_stats["total"])
@@ -755,7 +759,7 @@ def validate_evaluation_and_error_consistency(
             c_mis = int(c_stats["missed"])
             if c_det + c_mis != c_tot:
                 raise ValueError(
-                    f"Category {cat_name!r} detected ({c_det}) + missed ({c_mis}) != total ({c_tot})"
+                    f"Category {cat_name!r} detected ({c_det}) + missed ({c_mis}) != total ({c_tot})"  # noqa: E501
                 )
             cat_attack_total += c_tot
             cat_detected_total += c_det
@@ -1315,10 +1319,35 @@ def generate_error_analysis_report(
             split_manifest = json.load(f)
 
     has_test_runtime = evaluation_result is not None and "metrics" in evaluation_result
+    result_metadata = evaluation_result.get("metadata", {}) if evaluation_result else {}
+    result_hashes = result_metadata.get("provenance_hashes", {})
+    canonical_split = json.loads(DEFAULT_SPLIT_MANIFEST_PATH.read_text(encoding="utf-8"))
+    verified_real_run = (
+        has_test_runtime
+        and prereq.ready
+        and result_metadata.get("partition_verification_status") == "VERIFIED"
+        and result_hashes.get("dataset_sha256") == canonical_split.get("dataset_sha256")
+        and all(
+            result_hashes.get(key) == prereq.verified_hashes.get(key)
+            for key in (
+                "dataset_sha256",
+                "split_manifest_sha256",
+                "preprocessor_artifact_sha256",
+                "model_artifact_sha256",
+            )
+        )
+    )
     exec_status_badge = (
         "EXPERIMENTALLY VALIDATED ON HELD-OUT TEST SET"
-        if has_test_runtime
-        else "IMPLEMENTED & UNIT-TESTED | REAL-DATA TEST EXECUTION BLOCKED (MISSING LOCAL BINARIES)"
+        if verified_real_run
+        else (
+            "RESULTS AVAILABLE | REAL-DATA PROVENANCE NOT VERIFIED"
+            if has_test_runtime
+            else "IMPLEMENTED & UNIT-TESTED | REAL-DATA TEST EXECUTION BLOCKED (MISSING LOCAL BINARIES)"  # noqa: E501
+        )
+    )
+    metric_status = (
+        "VERIFIED" if verified_real_run else "NOT VERIFIED (synthetic or unverified provenance)"
     )
 
     parts_meta = limitations["partitions"]
@@ -1373,14 +1402,14 @@ def generate_error_analysis_report(
         overall_table = (
             "| Metric | Held-out Test Value | Status |\n"
             "| :--- | :---: | :---: |\n"
-            f"| **Accuracy** | `{m_all['accuracy']:.6f}` | VERIFIED |\n"
-            f"| **Precision (Attack=1)** | `{m_all['precision']:.6f}` | VERIFIED |\n"
-            f"| **Recall / TPR (Attack=1)** | `{m_all['recall']:.6f}` | VERIFIED |\n"
-            f"| **F1-Score (Binary Attack=1)** | `{m_all['f1']:.6f}` | VERIFIED |\n"
-            f"| **Macro F1** | `{m_all['macro_f1']:.6f}` | VERIFIED |\n"
-            f"| **Weighted F1** | `{m_all['weighted_f1']:.6f}` | VERIFIED |\n"
-            f"| **False Positive Rate (FPR)** | `{m_all['false_positive_rate']:.6f}` | VERIFIED |\n"
-            f"| **True Negative Rate (TNR)** | `{m_all['true_negative_rate']:.6f}` | VERIFIED |\n"
+            f"| **Accuracy** | `{m_all['accuracy']:.6f}` | {metric_status} |\n"
+            f"| **Precision (Attack=1)** | `{m_all['precision']:.6f}` | {metric_status} |\n"
+            f"| **Recall / TPR (Attack=1)** | `{m_all['recall']:.6f}` | {metric_status} |\n"
+            f"| **F1-Score (Binary Attack=1)** | `{m_all['f1']:.6f}` | {metric_status} |\n"
+            f"| **Macro F1** | `{m_all['macro_f1']:.6f}` | {metric_status} |\n"
+            f"| **Weighted F1** | `{m_all['weighted_f1']:.6f}` | {metric_status} |\n"
+            f"| **False Positive Rate (FPR)** | `{m_all['false_positive_rate']:.6f}` | {metric_status} |\n"  # noqa: E501
+            f"| **True Negative Rate (TNR)** | `{m_all['true_negative_rate']:.6f}` | {metric_status} |\n"  # noqa: E501
         )
         cm_table = (
             "| Ground Truth \\ Predicted | Predicted Benign (`0`) | "
@@ -1674,7 +1703,7 @@ def generate_error_analysis_report(
         "| Tham số | Giá trị khóa (Locked Value) | Ý nghĩa khoa học |",
         "| :--- | :---: | :--- |",
         "| `model_type` | `RandomForest` | Mô hình học có giám sát chuẩn (Supervised Baseline) |",
-        f"| `n_estimators` | `{hp_n_estimators}` | Số lượng cây quyết định đảm bảo phương sai dự đoán ổn định |",
+        f"| `n_estimators` | `{hp_n_estimators}` | Số lượng cây quyết định đảm bảo phương sai dự đoán ổn định |",  # noqa: E501
         (
             f"| `max_depth` | `{hp_max_depth}` | Giới hạn độ sâu cây để chống overfitting "
             f"trên {train_rows:,} dòng Train |"
@@ -1682,22 +1711,22 @@ def generate_error_analysis_report(
         f"| `min_samples_split` | `{hp_min_samples_split}` | Số mẫu tối thiểu để tách nút nội |",
         f"| `min_samples_leaf` | `{hp_min_samples_leaf}` | Số mẫu tối thiểu tại nút lá |",
         f"| `criterion` | `{hp_criterion}` | Tiêu chuẩn độ tinh khiết Gini |",
-        f"| `max_features` | `{hp_max_features}` | Lấy mẫu $\\lfloor\\sqrt{{47}}\\rfloor = 6$ đặc trưng |",
-        f"| `class_weight` | `{hp_class_weight}` | Giữ nguyên phân phối tự nhiên (không bóp méo xác suất hậu nghiệm) |",
+        f"| `max_features` | `{hp_max_features}` | Lấy mẫu $\\lfloor\\sqrt{{47}}\\rfloor = 6$ đặc trưng |",  # noqa: E501
+        f"| `class_weight` | `{hp_class_weight}` | Giữ nguyên phân phối tự nhiên (không bóp méo xác suất hậu nghiệm) |",  # noqa: E501
         f"| `bootstrap` | `{hp_bootstrap}` | Lấy mẫu có hoàn lại cho từng cây |",
-        f"| `random_state` | `{hp_random_state}` | Hạt giống ngẫu nhiên cố định đảm bảo tái lập kết quả |",
-        f"| `n_jobs` | `{hp_n_jobs}` | Thực thi song song đa luồng (không ảnh hưởng tính tất định) |",
-        f"| `decision_threshold` | `{CANONICAL_DECISION_THRESHOLD}` | Ngưỡng phân loại nhị phân cố định (`prob_attack >= 0.5`) |",
+        f"| `random_state` | `{hp_random_state}` | Hạt giống ngẫu nhiên cố định đảm bảo tái lập kết quả |",  # noqa: E501
+        f"| `n_jobs` | `{hp_n_jobs}` | Thực thi song song đa luồng (không ảnh hưởng tính tất định) |",  # noqa: E501
+        f"| `decision_threshold` | `{CANONICAL_DECISION_THRESHOLD}` | Ngưỡng phân loại nhị phân cố định (`prob_attack >= 0.5`) |",  # noqa: E501
         "",
         "### 3.2. Hợp đồng tiền xử lý (`TrainOnlyPreprocessor`)",
         "",
         (
-            '- **Chế độ**: `fit_partition = "train_only"` (chỉ học thống kê median/mode trên tập Train, '
+            '- **Chế độ**: `fit_partition = "train_only"` (chỉ học thống kê median/mode trên tập Train, '  # noqa: E501
             "áp dụng `.transform()` trên Test)."
         ),
         (
             "- **Xử lý giá trị bất thường**: Thay thế `±Inf` bằng `NaN`, sau đó điền khuyết bằng "
-            "`median` của tập Train trên các cột định lượng và `mode` trên các cột phân loại trong 47 đặc trưng `ML_FEATURE_COLUMNS`."
+            "`median` của tập Train trên các cột định lượng và `mode` trên các cột phân loại trong 47 đặc trưng `ML_FEATURE_COLUMNS`."  # noqa: E501
         ),
         (
             "- **Loại trừ cột cấm (Anti-Leakage)**: Cấm tuyệt đối `Label`, `Attack` và 6 cột "
@@ -1755,19 +1784,17 @@ def generate_error_analysis_report(
         "",
         "### 5.2. Đối chiếu trạng thái giữa Random Forest và Isolation Forest (Model Comparison)",
         "",
-        "| Tiêu chí | Random Forest Baseline (`rf-baseline-canonical-v1`) | Isolation Forest (`isolation-forest-optional-baseline`) |",
+        "| Tiêu chí | Random Forest Baseline (`rf-baseline-canonical-v1`) | Isolation Forest (`isolation-forest-optional-baseline`) |",  # noqa: E501
         "| :--- | :--- | :--- |",
         f"| **Vai trò trong dự án** | `{rf_comp['project_role']}` | `{if_comp['project_role']}` |",
-        f"| **Mô hình học (Paradigm)** | {rf_comp['learning_paradigm']} | {if_comp['learning_paradigm']} |",
-        f"| **Giao thức dữ liệu huấn luyện** | {rf_comp['training_partition_protocol']} | {if_comp['training_partition_protocol']} |",
-        f"| **Quy tắc quyết định (Decision Rule)** | `{rf_comp['decision_rule']}` | {if_comp['decision_rule']} |",
-        f"| **Trạng thái trên Validation** | `{rf_comp['validation_status']}` (`F1={val_f1:.6f}`, `FPR={val_fpr:.6e}`) | `{if_comp['validation_status']}` (`{if_comp['experiment_status']}`) |",
-        f"| **Trạng thái trên Held-out Test** | `{rf_comp['held_out_test_status']}` | `{if_comp['held_out_test_status']}` |",
-        f"| **Ảnh hưởng tới nghiệm thu Core** | Bắt buộc (Mandatory Core Baseline) | Không chặn (`blocks_random_forest_acceptance = False`) |",
+        f"| **Mô hình học (Paradigm)** | {rf_comp['learning_paradigm']} | {if_comp['learning_paradigm']} |",  # noqa: E501
+        f"| **Giao thức dữ liệu huấn luyện** | {rf_comp['training_partition_protocol']} | {if_comp['training_partition_protocol']} |",  # noqa: E501
+        f"| **Quy tắc quyết định (Decision Rule)** | `{rf_comp['decision_rule']}` | {if_comp['decision_rule']} |",  # noqa: E501
+        f"| **Trạng thái trên Validation** | `{rf_comp['validation_status']}` (`F1={val_f1:.6f}`, `FPR={val_fpr:.6e}`) | `{if_comp['validation_status']}` (`{if_comp['experiment_status']}`) |",  # noqa: E501
+        f"| **Trạng thái trên Held-out Test** | `{rf_comp['held_out_test_status']}` | `{if_comp['held_out_test_status']}` |",  # noqa: E501
+        "| **Ảnh hưởng tới nghiệm thu Core** | Bắt buộc (Mandatory Core Baseline) | Không chặn (`blocks_random_forest_acceptance = False`) |",  # noqa: E501
         "",
-        (
-            f"- **Ghi chú phương pháp luận**: {model_comparison['protocol_comparability_note']}"
-        ),
+        (f"- **Ghi chú phương pháp luận**: {model_comparison['protocol_comparability_note']}"),
         "",
         "---",
         "",
@@ -1820,7 +1847,7 @@ def generate_error_analysis_report(
             "  3. **Theo chế độ thời lượng luồng (`FLOW_DURATION_MILLISECONDS`)**: Tách biệt "
             "nhóm luồng tức thời (`0 ms`), luồng ngắn (`1..100 ms`), trung bình (`101..10,000 ms`) "
             "và luồng dài (`>10,000 ms`).\n"
-            "  4. **Theo nhóm luồng ẩn danh (`by_anonymized_flow_group`)**: Khi có `trace_metadata`, "
+            "  4. **Theo nhóm luồng ẩn danh (`by_anonymized_flow_group`)**: Khi có `trace_metadata`, "  # noqa: E501
             "nhóm các luồng theo mã băm ẩn danh `fg_<sha256[:12]>` của cặp điểm cuối và giao thức "
             "(ẩn hoàn toàn địa chỉ IP thô để bảo mật thông tin mạng)."
         ),
@@ -1868,8 +1895,8 @@ def generate_error_analysis_report(
         (
             "- Hàm `analyze_temporal_window_errors()` chia tập Test theo thứ tự thời gian "
             "`FLOW_START_MILLISECONDS` (thuộc `trace_metadata`, tách biệt hoàn toàn khỏi 47 đặc "
-            "trưng đầu vào của mô hình) thành các cửa sổ thời gian liên tiếp để kiểm tra hiện tượng "
-            "tập trung lỗi (`FP`/`FN` burst) hoặc suy giảm hiệu năng theo thời gian (temporal drift)."
+            "trưng đầu vào của mô hình) thành các cửa sổ thời gian liên tiếp để kiểm tra hiện tượng "  # noqa: E501
+            "tập trung lỗi (`FP`/`FN` burst) hoặc suy giảm hiệu năng theo thời gian (temporal drift)."  # noqa: E501
         ),
         "",
         "### 8.3. Cơ chế bỏ lọt tấn công (False Negative Mechanisms)",
@@ -1907,7 +1934,7 @@ def generate_error_analysis_report(
             f"khoảng tin cậy **Wilson 95%** (`compute_wilson_confidence_interval`), ngay cả khi "
             f"phát hiện đúng tuyệt đối `{worms_cnt}/{worms_cnt}` mẫu (`100.00%`), khoảng tin cậy "
             f"95% của Recall cho `Worms` vẫn trải rộng từ **`[{worms_ci_0[0] * 100:.2f}%, "
-            f"{worms_ci_0[1] * 100:.2f}%]`** (độ rộng `{100.0 * (worms_ci_0[1] - worms_ci_0[0]):.2f}%`); "
+            f"{worms_ci_0[1] * 100:.2f}%]`** (độ rộng `{100.0 * (worms_ci_0[1] - worms_ci_0[0]):.2f}%`); "  # noqa: E501
             f"nếu bỏ lọt 1 mẫu (`{worms_cnt - 1}/{worms_cnt} = 97.22%`), khoảng tin cậy 95% mở "
             f"rộng thành **`[{worms_ci_1[0] * 100:.2f}%, {worms_ci_1[1] * 100:.2f}%]`**."
         ),
@@ -1932,7 +1959,7 @@ def generate_error_analysis_report(
         (
             "- **Quan sát đã xác minh**: Hai đặc trưng `MAX_TTL` và `MIN_TTL` chiếm tổng cộng gần "
             "**`49.94%`** độ quan trọng toàn cục của mô hình. Top 10 đặc trưng đầu tiên chiếm hơn "
-            "**`80%`** tổng độ quan trọng, và không gian đặc trưng chỉ chứa 47 thuộc tính cấp luồng "
+            "**`80%`** tổng độ quan trọng, và không gian đặc trưng chỉ chứa 47 thuộc tính cấp luồng "  # noqa: E501
             "NetFlow v3."
         ),
         "",
@@ -1992,7 +2019,7 @@ def generate_error_analysis_report(
         (
             "- **Vùng bất định (Uncertainty Band `[0.35, 0.65]`)**: Hàm "
             "`analyze_classification_boundary()` đo lường tỷ lệ mẫu rơi vào vùng xác suất sát "
-            "ngưỡng `0.50` (`[0.35, 0.65]`) cũng như tỷ lệ lỗi có độ tự tin cao (`prob_attack >= 0.80` "
+            "ngưỡng `0.50` (`[0.35, 0.65]`) cũng như tỷ lệ lỗi có độ tự tin cao (`prob_attack >= 0.80` "  # noqa: E501
             "đối với `FP` và `prob_attack <= 0.20` đối với `FN`)."
         ),
         "",
@@ -2297,6 +2324,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         action="store_true",
         help="Verify input artifacts without generating report",
     )
+    parser.add_argument(
+        "--run-test-evaluation",
+        action="store_true",
+        help="Run the verified held-out evaluation and generate error analysis",
+    )
     args = parser.parse_args(argv)
 
     if args.verify_only:
@@ -2305,6 +2337,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             validation_audit_path=args.validation_audit,
         )
         print(json.dumps(limitations, indent=2))
+        return 0
+
+    if args.run_test_evaluation:
+        result = evaluate_random_forest_on_test(
+            split_manifest_path=args.split_manifest, model_manifest_path=args.model_manifest
+        )
+        run_full_error_analysis_from_evaluation(
+            result,
+            report_path=args.report_path,
+            split_manifest_path=args.split_manifest,
+            validation_audit_path=args.validation_audit,
+        )
+        print(f"Error analysis report generated successfully at: {args.report_path}")
         return 0
 
     out_p = generate_error_analysis_report(

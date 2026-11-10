@@ -518,6 +518,8 @@ def test_end_to_end_test_evaluation_and_artifact_generation(tmp_path: Path) -> N
     )
     assert report_md_path.exists()
     md_text = report_md_path.read_text(encoding="utf-8")
+    assert "EXPERIMENTALLY VALIDATED ON HELD-OUT TEST SET" not in md_text
+    assert "REAL-DATA PROVENANCE NOT VERIFIED" in md_text
     assert "## 1. Executive Summary" in md_text
     assert "## 14. Recommendations for Future Work" in md_text
     assert "fp_fn_summary" in analysis_out
