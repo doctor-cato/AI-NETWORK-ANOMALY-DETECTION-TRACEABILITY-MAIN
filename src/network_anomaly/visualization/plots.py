@@ -1,4 +1,5 @@
 """Visualization helpers."""
+
 import matplotlib.pyplot as plt
 
 

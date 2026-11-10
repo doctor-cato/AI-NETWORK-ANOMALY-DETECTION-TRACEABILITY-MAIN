@@ -22,6 +22,9 @@ secrets/
 *.key
 *.pem
 credentials*.json
+*.db
+*.sqlite
+*.sqlite3
 .venv/
 env/
 venv/
@@ -59,3 +62,7 @@ logs/
 /AUDIT_REPORT.md
 /AUDIT_LEDGER.md
 /docs/audits/
+
+# Agent session artifacts
+.agents/checkpoints/
+.agents/teamwork/

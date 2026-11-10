@@ -57,6 +57,7 @@ pythonpath = ["src"]
 [tool.black]
 line-length = 100
 target-version = ['py311', 'py312']
+extend-exclude = '''(/(\.agents|\.pytest_cache|\.ruff_cache|artifacts|data|reports)/)'''
 
 [tool.ruff]
 line-length = 100
