@@ -1,6 +1,8 @@
-"""Comprehensive unit tests verifying all PR #47 audit remediation fixes (P0-01, P0-02, P1-01, P1-02, P1-03)."""
+"""Comprehensive unit tests verifying all PR #47 audit remediation fixes.
 
-import math
+Covers P0-01, P0-02, P1-01, P1-02, P1-03.
+"""
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -8,14 +10,13 @@ import pytest
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import BaseSourceAdapter, NetFlowV3Adapter
 from network_anomaly.ingestion.compatibility import (
-    BenchmarkEvidence,
     DEFAULT_BENCHMARK_REGISTRY,
+    BenchmarkEvidence,
     FeatureCompatibilityEvaluator,
 )
 from network_anomaly.ingestion.gate import InferenceEligibilityGate
 from network_anomaly.ingestion.ood import OODValidator
 from network_anomaly.ingestion.schemas import (
-    CanonicalNetworkEvent,
     InferenceEligibility,
     ValidationStatus,
 )
@@ -39,6 +40,7 @@ def _make_clean_record(source_id: str = "source:nf-v3-canonical") -> dict:
 # ---------------------------------------------------------------------------
 # P0-01: Benchmark Evidence Binding & Verification Tests
 # ---------------------------------------------------------------------------
+
 
 def test_benchmark_evidence_binding_verification():
     """Verify BenchmarkEvidence binding against artifact SHA-256 hashes and contract."""
@@ -104,7 +106,7 @@ def test_evaluator_rejects_mismatched_model_hash():
 
 
 def test_unverified_benchmark_fails_closed_in_gate():
-    """Unbenchmarked source reaches SEMANTICALLY_COMPATIBLE but is blocked fail-closed from certified inference."""
+    """Unbenchmarked source reaches SEMANTICALLY_COMPATIBLE but is blocked fail-closed."""
     from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS
     from network_anomaly.ingestion.registry import SourceDefinition, SourceRegistry
 
@@ -131,7 +133,10 @@ def test_unverified_benchmark_fails_closed_in_gate():
     decision = gate.evaluate([event])
     assert decision.can_proceed_to_ml is False
     assert decision.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE
-    assert decision.eligibility_status == InferenceEligibility.VALIDATION_NOT_VERIFIED    assert any("uncertified" in r.lower() or "unverified" in r.lower() for r in decision.abstention_reasons)
+    assert decision.eligibility_status == InferenceEligibility.VALIDATION_NOT_VERIFIED
+    assert any(
+        "uncertified" in r.lower() or "unverified" in r.lower() for r in decision.abstention_reasons
+    )
 
     # Explicit opt-in for experimental exploration allows uncertified inference
     decision_optin = gate.evaluate([event], allow_unverified=True)
@@ -142,6 +147,7 @@ def test_unverified_benchmark_fails_closed_in_gate():
 # ---------------------------------------------------------------------------
 # P0-02: Network Metadata Validation & Out-of-Range Port Tests
 # ---------------------------------------------------------------------------
+
 
 def test_gate_actually_validates_metadata_ports_out_of_range():
     """Verify that OODValidator and Gate inspect metadata and reject ports outside [0, 65535]."""
@@ -188,6 +194,7 @@ def test_gate_validates_protocol_out_of_range():
 # P1-01: Anti-Imputation and DataFrame Inf Handling
 # ---------------------------------------------------------------------------
 
+
 def test_evaluate_dataframe_anti_imputation_handles_inf_and_nan():
     """Verify evaluate_dataframe strictly catches positive/negative infinity and NaN."""
     evaluator = FeatureCompatibilityEvaluator()
@@ -222,8 +229,9 @@ def test_evaluate_dataframe_anti_imputation_handles_inf_and_nan():
 # P1-02: Row-Level / Batch-Level Eligibility & Row Identity Preservation
 # ---------------------------------------------------------------------------
 
+
 def test_mixed_batch_row_level_preservation_and_no_benign_leak():
-    """Verify mixed valid/invalid batch keeps row identities and never marks rejected rows as Benign."""
+    """Verify mixed batch keeps row identities and never marks rejected rows as Benign."""
     adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
 
     # Row 0: Valid
@@ -271,6 +279,7 @@ def test_mixed_batch_row_level_preservation_and_no_benign_leak():
 # P1-03: OOD Threshold Edge Cases & Audit
 # ---------------------------------------------------------------------------
 
+
 def test_ood_threshold_edge_cases():
     """Verify OOD threshold validation for edge cases (0.0, 1.0, out of range)."""
     # Valid boundaries
@@ -291,11 +300,13 @@ def test_ood_threshold_edge_cases():
 def test_ood_report_abstention_rate_and_coverage():
     """Verify OODReport calculates abstention_rate and prediction_coverage accurately."""
     validator = OODValidator(check_shortcut_drift=True)
-    df = pd.DataFrame({
-        "FLOW_DURATION_MILLISECONDS": [-1.0, 50.0, 100.0, 20.0],  # 1 hard violation out of 4
-        "MIN_TTL": [31, 62, 31, 31],
-        "MAX_TTL": [64, 64, 64, 64],
-    })
+    df = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [-1.0, 50.0, 100.0, 20.0],  # 1 hard violation out of 4
+            "MIN_TTL": [31, 62, 31, 31],
+            "MAX_TTL": [64, 64, 64, 64],
+        }
+    )
     report = validator.audit_dataframe(df)
     assert report.total_rows == 4
     assert report.hard_violation_count == 1
@@ -306,6 +317,7 @@ def test_ood_report_abstention_rate_and_coverage():
 # ---------------------------------------------------------------------------
 # Multi-Model OOD Gate & Research-Only Isolation Tests
 # ---------------------------------------------------------------------------
+
 
 def test_multi_model_benchmark_registry_and_binding():
     """Verify registry has distinct records for RF, XGBoost, IF, and Autoencoder."""
@@ -349,7 +361,7 @@ def test_multi_model_benchmark_registry_and_binding():
     assert if_report.validation_status == ValidationStatus.UNVALIDATED
     assert if_report.inference_eligibility == InferenceEligibility.VALIDATION_NOT_VERIFIED
 
-    # 4. Isolation Forest with allow_research_only=True -> RESEARCH_ONLY and risk_route_eligible is False
+    # 4. Isolation Forest with allow_research_only=True -> RESEARCH_ONLY, no risk route
     if_research_report = evaluator.evaluate_events(
         [clean_event],
         model_identifier="if-baseline-canonical-v1",
@@ -411,7 +423,7 @@ def test_gate_research_only_routing_isolation():
 
 
 def test_gate_prevents_cross_model_benchmark_inheritance():
-    """Requesting an unbenchmarked model on a source with RF evidence does NOT inherit RF validation."""
+    """Requesting an unbenchmarked model does NOT inherit benchmark evidence."""
     gate = InferenceEligibilityGate()
     adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
     clean_event = adapter.adapt_record(_make_clean_record())
