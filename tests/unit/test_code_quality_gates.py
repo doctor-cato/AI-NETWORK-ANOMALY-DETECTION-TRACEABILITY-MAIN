@@ -12,6 +12,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
+import pytest
+
 from network_anomaly.config import PROJECT_ROOT
 
 SCOPED_FILES = [
@@ -35,6 +37,7 @@ SCOPED_FILES = [
 
 def test_scoped_ruff_zero_violations():
     """Verify zero Ruff lint violations across all scoped Track E files."""
+    pytest.importorskip("ruff")
     existing_files = [f for f in SCOPED_FILES if (PROJECT_ROOT / f).is_file()]
     cmd = [sys.executable, "-m", "ruff", "check"] + existing_files
     res = subprocess.run(
@@ -48,6 +51,7 @@ def test_scoped_ruff_zero_violations():
 
 def test_scoped_black_zero_diff():
     """Verify zero Black formatting diffs across scoped directories and files."""
+    pytest.importorskip("black")
     existing_files = [f for f in SCOPED_FILES if (PROJECT_ROOT / f).is_file()]
     cmd = [sys.executable, "-m", "black", "--check"] + existing_files
     res = subprocess.run(
