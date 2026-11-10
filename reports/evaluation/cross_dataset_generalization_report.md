@@ -1,11 +1,6 @@
 # Báo cáo Đánh giá Tổng quát hóa Cross-Dataset (Issue #46)
 
-**Tập dữ liệu Kiểm định Ngoại vi:** `NF-CSE-CIC-IDS2018-v3`  
-**Mô hình Đánh giá:** Canonical Random Forest (`rf-baseline-canonical-v1`)  
-**Thời gian Đánh giá:** `2026-11-08T14:40:22.328420+00:00`  
-**Số dòng Đánh giá:** `100,000` dòng  
-**Thời gian Thực thi:** `7.52` giây  
-**Trạng thái Tương thích:** `MODEL_VALIDATED`  
+**Tập dữ liệu Kiểm định Ngoại vi:** `NF-CSE-CIC-IDS2018-v3`**Mô hình Đánh giá:** Canonical Random Forest (`rf-baseline-canonical-v1`)**Thời gian Đánh giá:** `2026-11-08T17:25:59.421685+00:00`**Số dòng Đánh giá:** `100,000` dòng**Thời gian Thực thi:** `10.28` giây**Trạng thái Kiểm định Benchmark:** `BENCHMARK_FAILED (Chặn suy luận: Recall < 0.85 hoặc FPR > 0.05)`
 
 ---
 

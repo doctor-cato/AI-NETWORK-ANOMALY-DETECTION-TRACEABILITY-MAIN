@@ -297,6 +297,7 @@ def evaluate_cross_dataset(
             "total_shortcut_drift_rows": total_ood_warnings,
             "shortcut_drift_pct": round(total_ood_warnings / total_rows * 100, 2) if total_rows > 0 else 0.0,
         },
+        "verification_status": "MODEL_VALIDATED" if (rec >= 0.85 and fpr <= 0.05) else "BENCHMARK_FAILED",
     }
 
     return results
@@ -307,16 +308,17 @@ def generate_markdown_report(results: Dict[str, Any], output_path: Path) -> str:
     m = results["metrics"]
     cm = m["confusion_matrix"]
     internal = results["canonical_model_provenance"].get("validation_summary_internal", {})
+    status_label = "MODEL_VALIDATED" if (m["recall"] >= 0.85 and m["false_positive_rate"] <= 0.05) else "BENCHMARK_FAILED (Chặn suy luận: Recall < 0.85 hoặc FPR > 0.05)"
 
     delta_str = r"$\Delta$"
     report = f"""# Báo cáo Đánh giá Tổng quát hóa Cross-Dataset (Issue #46)
 
-**Tập dữ liệu Kiểm định Ngoại vi:** `{results['dataset_name']}`  
-**Mô hình Đánh giá:** Canonical Random Forest (`{results['canonical_model_provenance']['configuration_id']}`)  
-**Thời gian Đánh giá:** `{results['evaluation_timestamp_utc']}`  
-**Số dòng Đánh giá:** `{results['rows_evaluated']:,}` dòng  
-**Thời gian Thực thi:** `{results['evaluation_duration_seconds']}` giây  
-**Trạng thái Tương thích:** `MODEL_VALIDATED`  
+**Tập dữ liệu Kiểm định Ngoại vi:** `{results['dataset_name']}`\
+**Mô hình Đánh giá:** Canonical Random Forest (`{results['canonical_model_provenance']['configuration_id']}`)\
+**Thời gian Đánh giá:** `{results['evaluation_timestamp_utc']}`\
+**Số dòng Đánh giá:** `{results['rows_evaluated']:,}` dòng\
+**Thời gian Thực thi:** `{results['evaluation_duration_seconds']}` giây\
+**Trạng thái Kiểm định Benchmark:** `{status_label}`
 
 ---
 
