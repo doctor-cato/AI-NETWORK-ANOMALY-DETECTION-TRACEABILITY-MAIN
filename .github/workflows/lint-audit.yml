@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -40,51 +41,72 @@ jobs:
           black --version
           git rev-parse HEAD
 
+      - name: Resolve scoped Python files for lint gate
+        run: |
+          # Core repository files maintained under active quality gates
+          declare -a SCOPED_LIST=(
+            "scripts/dataset_manifest.py"
+            "scripts/eda_nf_unsw_nb15_v3.py"
+            "scripts/fetch_nf_unsw_nb15_v3.py"
+            "scripts/historical/dataset_manifest_unsw_nb15_2015.py"
+            "scripts/historical/fetch_unsw_nb15_2015.py"
+            "scripts/historical/validate_unsw_nb15_2015.py"
+            "scripts/run_experiments.py"
+            "scripts/split_and_audit_nf_unsw_nb15_v3.py"
+            "scripts/train_xgboost.py"
+            "scripts/audit_split_membership_parity.py"
+            "scripts/validate_data.py"
+            "src/network_anomaly/config.py"
+            "src/network_anomaly/data/nf_unsw_nb15_v3.py"
+            "src/network_anomaly/data/split.py"
+            "src/network_anomaly/eda"
+            "src/network_anomaly/models/xgboost_model.py"
+            "src/network_anomaly/models/xgboost_protocol.py"
+            "tests/unit/test_nf_unsw_nb15_v3_acquisition.py"
+            "tests/unit/test_nf_unsw_nb15_v3_eda.py"
+            "tests/unit/test_nf_unsw_nb15_v3_split.py"
+            "tests/unit/test_nf_unsw_nb15_v3_validation.py"
+            "tests/unit/test_rf_training.py"
+            "tests/unit/test_run_experiments.py"
+            "tests/unit/test_split_membership_parity.py"
+            "tests/unit/test_split_protocol.py"
+            "tests/unit/test_validate_data.py"
+            "tests/unit/test_xgb_baseline_protocol.py"
+            "tests/unit/test_xgb_copilot_remediation.py"
+            "tests/unit/test_xgb_model_structure.py"
+            "tests/unit/test_xgb_training.py"
+            "tests/unit/test_xgboost.py"
+          )
+
+          BASE_REF="${{ github.base_ref }}"
+          if [ -z "$BASE_REF" ]; then
+            BASE_REF="main"
+          fi
+
+          CHANGED_PY=""
+          if git rev-parse --verify "origin/$BASE_REF" >/dev/null 2>&1; then
+            MERGE_BASE=$(git merge-base HEAD "origin/$BASE_REF" 2>/dev/null || true)
+            if [ -n "$MERGE_BASE" ]; then
+              CHANGED_PY=$(git diff --name-only --diff-filter=d "$MERGE_BASE"...HEAD -- '*.py' 2>/dev/null || true)
+            fi
+          fi
+
+          for f in "${SCOPED_LIST[@]}" $CHANGED_PY; do
+            if [ -e "$f" ]; then
+              echo "$f"
+            fi
+          done | sort -u > scoped_files.txt
+
+          echo "Auditing the following scoped files:"
+          cat scoped_files.txt
+
       - name: Scoped Ruff (files owned by this change set)
         run: |
-          ruff check \
-            scripts/dataset_manifest.py \
-            scripts/eda_nf_unsw_nb15_v3.py \
-            scripts/fetch_nf_unsw_nb15_v3.py \
-            scripts/historical/dataset_manifest_unsw_nb15_2015.py \
-            scripts/historical/fetch_unsw_nb15_2015.py \
-            scripts/historical/validate_unsw_nb15_2015.py \
-            scripts/run_experiments.py \
-            scripts/split_and_audit_nf_unsw_nb15_v3.py \
-            scripts/validate_data.py \
-            src/network_anomaly/data/nf_unsw_nb15_v3.py \
-            src/network_anomaly/data/split.py \
-            src/network_anomaly/eda \
-            tests/unit/test_nf_unsw_nb15_v3_acquisition.py \
-            tests/unit/test_nf_unsw_nb15_v3_eda.py \
-            tests/unit/test_nf_unsw_nb15_v3_split.py \
-            tests/unit/test_nf_unsw_nb15_v3_validation.py \
-            tests/unit/test_run_experiments.py \
-            tests/unit/test_split_protocol.py \
-            tests/unit/test_validate_data.py
+          xargs -a scoped_files.txt ruff check
 
       - name: Scoped Black (files owned by this change set)
         run: |
-          black --check \
-            scripts/dataset_manifest.py \
-            scripts/eda_nf_unsw_nb15_v3.py \
-            scripts/fetch_nf_unsw_nb15_v3.py \
-            scripts/historical/dataset_manifest_unsw_nb15_2015.py \
-            scripts/historical/fetch_unsw_nb15_2015.py \
-            scripts/historical/validate_unsw_nb15_2015.py \
-            scripts/run_experiments.py \
-            scripts/split_and_audit_nf_unsw_nb15_v3.py \
-            scripts/validate_data.py \
-            src/network_anomaly/data/nf_unsw_nb15_v3.py \
-            src/network_anomaly/data/split.py \
-            src/network_anomaly/eda \
-            tests/unit/test_nf_unsw_nb15_v3_acquisition.py \
-            tests/unit/test_nf_unsw_nb15_v3_eda.py \
-            tests/unit/test_nf_unsw_nb15_v3_split.py \
-            tests/unit/test_nf_unsw_nb15_v3_validation.py \
-            tests/unit/test_run_experiments.py \
-            tests/unit/test_split_protocol.py \
-            tests/unit/test_validate_data.py
+          xargs -a scoped_files.txt black --check
 
       - name: Repository-wide Ruff (legacy debt, non-gating)
         continue-on-error: true

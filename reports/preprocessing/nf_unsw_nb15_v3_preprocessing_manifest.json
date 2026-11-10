@@ -4,7 +4,7 @@
   "dataset_name": "NF-UNSW-NB15-v3",
   "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
   "split_protocol_version": "nf-unsw-nb15-v3-chronological-group-purged-v1",
-  "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+  "split_manifest_sha256": "845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f",
   "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
   "baseline_ml_features_count": 47,
   "baseline_ml_features_in_order": [
@@ -166,18 +166,18 @@
     "handle_unknown_categories": "passthrough"
   },
   "train_row_count": 1655797,
-  "fitted_at_utc": "2026-10-29T09:16:39.768889+00:00",
+  "fitted_at_utc": "2026-11-08T14:46:21.644958+00:00",
   "constant_features": [],
   "all_missing_columns": [],
   "indicator_features": [],
   "environment": {
-    "python": "3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]",
-    "numpy": "2.5.0",
+    "python": "3.13.9 (tags/v3.13.9:8183fa5, Oct 14 2025, 14:09:13) [MSC v.1944 64 bit (AMD64)]",
+    "numpy": "2.5.3",
     "pandas": "3.0.6",
     "joblib": "1.6.0"
   },
   "artifact_path": "nf_unsw_nb15_v3_preprocessor.joblib",
-  "artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+  "artifact_sha256": "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6",
   "fitted_parameters_summary": {
     "imputed_values_count": 47,
     "scaler_params_count": 0,

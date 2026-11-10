@@ -1,18 +1,18 @@
 {
   "schema_version": "v1",
   "environment": {
-    "python_version": "3.14.6",
+    "python_version": "3.13.9",
     "platform": "win32"
   },
-  "git_commit": "19778eb097189fb405694637f0dd0eb8a6ed3604",
-  "dataset_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv",
+  "git_commit": "89c32fa8a5d19c1e00016d033724cf034ae4dc4e",
+  "dataset_path": "D:/AI/wt-c3-xgb/data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv",
   "dataset_bytes": 577360958,
   "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-  "split_manifest_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/data/processed/nf_unsw_nb15_v3_split_manifest.json",
-  "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-  "artifact_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
-  "artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-  "companion_manifest_path": "D:/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+  "split_manifest_path": "D:/AI/wt-c3-xgb/data/processed/nf_unsw_nb15_v3_split_manifest.json",
+  "split_manifest_sha256": "845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f",
+  "artifact_path": "D:/AI/wt-c3-xgb/artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+  "artifact_sha256": "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6",
+  "companion_manifest_path": "D:/AI/wt-c3-xgb/reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
   "check_reproducibility": {
     "status": "PASS",
     "command": "python scripts/preprocess_nf_unsw_nb15_v3.py --check-reproducibility",
@@ -23,13 +23,13 @@
     "parameters_identical": true,
     "outputs_identical": true
   },
-  "last_updated_at_utc": "2026-10-29T09:17:06.584229+00:00",
+  "last_updated_at_utc": "2026-11-08T14:46:35.513066+00:00",
   "fit_and_transform": {
     "status": "PASS",
     "command": "python scripts/preprocess_nf_unsw_nb15_v3.py",
     "exit_code": 0,
-    "executed_at_utc": "2026-10-29T09:16:45.210063+00:00",
-    "execution_time_seconds": 22.86,
+    "executed_at_utc": "2026-11-08T14:46:34.064331+00:00",
+    "execution_time_seconds": 49.06,
     "scaler_type": "none",
     "features_count": 47,
     "partitions": {
