@@ -3,6 +3,15 @@
 Research prototype for network-flow anomaly detection, behavioral correlation, risk scoring and
 traceability with secure behavioral-vector storage and adaptive key-rotation research.
 
+## Public research portal
+
+The static research website is maintained on the separate
+[`site-source` branch](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/tree/site-source).
+Its expected GitHub Pages URL is
+`https://doctor-cato.github.io/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/` after the repository
+owner enables Pages with GitHub Actions. The portal documents evidence and limitations; it does not
+run live inference or monitor traffic.
+
 ## Research boundary and current status
 
 The official network-flow dataset is **NF-UNSW-NB15-v3**, released by the University of
