@@ -131,8 +131,7 @@ def test_unverified_benchmark_fails_closed_in_gate():
     decision = gate.evaluate([event])
     assert decision.can_proceed_to_ml is False
     assert decision.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE
-    assert decision.eligibility_status == InferenceEligibility.VALIDATION_NOT_VERIFIED
-    assert any("uncertified" in r.lower() or "unverified" in r.lower() for r in decision.abstention_reasons)
+    assert decision.eligibility_status == InferenceEligibility.VALIDATION_NOT_VERIFIED    assert any("uncertified" in r.lower() or "unverified" in r.lower() for r in decision.abstention_reasons)
 
     # Explicit opt-in for experimental exploration allows uncertified inference
     decision_optin = gate.evaluate([event], allow_unverified=True)
@@ -302,3 +301,128 @@ def test_ood_report_abstention_rate_and_coverage():
     assert report.hard_violation_count == 1
     assert report.abstention_rate == 0.25
     assert report.prediction_coverage == 0.75
+
+
+# ---------------------------------------------------------------------------
+# Multi-Model OOD Gate & Research-Only Isolation Tests
+# ---------------------------------------------------------------------------
+
+def test_multi_model_benchmark_registry_and_binding():
+    """Verify registry has distinct records for RF, XGBoost, IF, and Autoencoder."""
+    evaluator = FeatureCompatibilityEvaluator()
+    adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
+    clean_event = adapter.adapt_record(_make_clean_record())
+
+    # 1. Random Forest verification passes
+    rf_report = evaluator.evaluate_events(
+        [clean_event],
+        model_identifier="rf-baseline-1794068628",
+        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+    )
+    assert rf_report.validation_status == ValidationStatus.MODEL_VALIDATED
+    assert rf_report.is_eligible_for_inference is True
+    assert rf_report.risk_route_eligible is True
+
+    # 2. XGBoost verification passes
+    xgb_report = evaluator.evaluate_events(
+        [clean_event],
+        model_identifier="xgb-baseline-canonical-v1",
+        model_artifact_sha256="c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e",
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+    )
+    assert xgb_report.validation_status == ValidationStatus.MODEL_VALIDATED
+    assert xgb_report.is_eligible_for_inference is True
+    assert xgb_report.risk_route_eligible is True
+
+    # 3. Isolation Forest is research-only by default -> UNVALIDATED without allow_research_only
+    if_report = evaluator.evaluate_events(
+        [clean_event],
+        model_identifier="if-baseline-canonical-v1",
+        model_artifact_sha256="0" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        allow_research_only=False,
+    )
+    assert if_report.validation_status == ValidationStatus.UNVALIDATED
+    assert if_report.inference_eligibility == InferenceEligibility.VALIDATION_NOT_VERIFIED
+
+    # 4. Isolation Forest with allow_research_only=True -> RESEARCH_ONLY and risk_route_eligible is False
+    if_research_report = evaluator.evaluate_events(
+        [clean_event],
+        model_identifier="if-baseline-canonical-v1",
+        model_artifact_sha256="0" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        allow_research_only=True,
+    )
+    assert if_research_report.validation_status == ValidationStatus.RESEARCH_ONLY
+    assert if_research_report.inference_eligibility == InferenceEligibility.RESEARCH_ONLY
+    assert if_research_report.is_eligible_for_inference is True
+    assert if_research_report.risk_route_eligible is False
+
+    # 5. Autoencoder with allow_research_only=True -> RESEARCH_ONLY and risk_route_eligible is False
+    ae_research_report = evaluator.evaluate_events(
+        [clean_event],
+        model_identifier="ae-baseline-canonical-v1",
+        model_artifact_sha256="0" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        allow_research_only=True,
+    )
+    assert ae_research_report.validation_status == ValidationStatus.RESEARCH_ONLY
+    assert ae_research_report.risk_route_eligible is False
+
+
+def test_gate_research_only_routing_isolation():
+    """Verify Gate allows research inference but strictly disables Risk Engine routing."""
+    gate = InferenceEligibilityGate()
+    adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
+    clean_event = adapter.adapt_record(_make_clean_record())
+
+    # Fail-closed without allow_research_only
+    decision_closed = gate.evaluate(
+        [clean_event],
+        model_identifier="if-baseline-canonical-v1",
+        model_artifact_sha256="0" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        allow_research_only=False,
+    )
+    assert decision_closed.can_proceed_to_ml is False
+    assert decision_closed.validation_status == ValidationStatus.UNVALIDATED
+    assert decision_closed.route_to_risk_engine is False
+
+    # Allowed with allow_research_only=True, but route_to_risk_engine is False
+    decision_research = gate.evaluate(
+        [clean_event],
+        model_identifier="if-baseline-canonical-v1",
+        model_artifact_sha256="0" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        allow_research_only=True,
+    )
+    assert decision_research.can_proceed_to_ml is True
+    assert decision_research.validation_status == ValidationStatus.RESEARCH_ONLY
+    assert decision_research.route_to_trace_engine is True
+    assert decision_research.route_to_risk_engine is False
+
+
+def test_gate_prevents_cross_model_benchmark_inheritance():
+    """Requesting an unbenchmarked model on a source with RF evidence does NOT inherit RF validation."""
+    gate = InferenceEligibilityGate()
+    adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
+    clean_event = adapter.adapt_record(_make_clean_record())
+
+    decision = gate.evaluate(
+        [clean_event],
+        model_identifier="some-unknown-neural-net",
+        model_artifact_sha256="1" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+    )
+    assert decision.can_proceed_to_ml is False
+    assert decision.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE
+    assert decision.eligibility_status == InferenceEligibility.VALIDATION_NOT_VERIFIED

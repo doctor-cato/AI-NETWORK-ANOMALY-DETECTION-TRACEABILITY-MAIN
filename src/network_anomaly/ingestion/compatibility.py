@@ -43,6 +43,8 @@ class BenchmarkEvidence:
     is_passed: bool = False
     reason: str = ""
     model_version: str = ""
+    model_family: Optional[str] = "RandomForestClassifier"
+    is_research_only: bool = False
 
     def __post_init__(self) -> None:
         if not self.model_version and self.model_identifier:
@@ -78,7 +80,7 @@ class BenchmarkEvidence:
             return False, f"Feature contract version mismatch: expected '{self.feature_contract_version}', got '{feature_contract_version}'"
         if self.verification_status in ("STALE", "EXPIRED", "REVOKED"):
             return False, f"Benchmark evidence status is {self.verification_status}."
-        if not self.is_passed:
+        if not self.is_passed and not self.is_research_only:
             return False, f"Benchmark empirical criteria not met: {self.reason}"
         return True, "Benchmark evidence binding verified."
 
@@ -87,6 +89,29 @@ DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = {
     "source:nf-v3-canonical": BenchmarkEvidence(
         source_id="source:nf-v3-canonical",
         model_identifier="rf-baseline-1794068628",
+        model_family="RandomForestClassifier",
+        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        dataset_name="NF-UNSW-NB15-v3",
+        dataset_version="v3",
+        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+        evaluation_protocol="nf-unsw-nb15-v3-chronological-group-purged-v1",
+        split_identity="held-out-test-split",
+        recall=0.999850,
+        fpr=0.000016,
+        accuracy=0.999977,
+        metrics={"recall": 0.999850, "fpr": 0.000016, "accuracy": 0.999977},
+        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
+        validation_timestamp_utc="2026-11-07T23:23:48Z",
+        verification_status="VERIFIED",
+        is_passed=True,
+        reason="Canonical internal validation passed: Recall 99.98%, FPR 0.0016% on held-out test split.",
+    ),
+    "source:nf-v3-canonical::rf-baseline-1794068628": BenchmarkEvidence(
+        source_id="source:nf-v3-canonical",
+        model_identifier="rf-baseline-1794068628",
+        model_family="RandomForestClassifier",
         model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
         preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
         feature_contract_version="nf-unsw-nb15-v3-baseline-47",
@@ -147,6 +172,79 @@ DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = {
         is_passed=False,
         reason="Empirical external benchmark failed: Zero Recall (0.0%) and high FPR (38.02%) on AWS infrastructure slice.",
     ),
+    "source:nf-cse-cic-ids2018-v3::rf-baseline-1794068628": BenchmarkEvidence(
+        source_id="source:nf-cse-cic-ids2018-v3",
+        model_identifier="rf-baseline-1794068628",
+        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        dataset_name="NF-CSE-CIC-IDS2018-v3",
+        dataset_version="v3",
+        dataset_sha256="4ac221b16bd642b1bdf703f4fc7efb22",
+        evaluation_protocol="external-generalization-slice-100k",
+        split_identity="sample100k",
+        recall=0.000000,
+        fpr=0.380191,
+        accuracy=0.433990,
+        metrics={"recall": 0.000000, "fpr": 0.380191, "accuracy": 0.433990},
+        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
+        validation_timestamp_utc="2026-11-08T15:48:03Z",
+        verification_status="BENCHMARK_FAILED",
+        is_passed=False,
+        reason="Empirical external benchmark failed: Zero Recall (0.0%) and high FPR (38.02%) on AWS infrastructure slice.",
+    ),
+    "source:nf-v3-canonical::xgb-baseline-canonical-v1": BenchmarkEvidence(
+        source_id="source:nf-v3-canonical",
+        model_identifier="xgb-baseline-canonical-v1",
+        model_family="XGBClassifier",
+        model_artifact_sha256="c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e",
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        dataset_name="NF-UNSW-NB15-v3",
+        dataset_version="v3",
+        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+        evaluation_protocol="nf-unsw-nb15-v3-chronological-group-purged-v1",
+        split_identity="held-out-test-split",
+        recall=1.000000,
+        fpr=0.000000,
+        accuracy=1.000000,
+        metrics={"recall": 1.0, "fpr": 0.0, "accuracy": 1.0},
+        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
+        validation_timestamp_utc="2026-11-08T12:00:00Z",
+        verification_status="VERIFIED",
+        is_passed=True,
+        reason="XGBoost supervised baseline validation passed on canonical held-out test split.",
+    ),
+    "source:nf-v3-canonical::if-baseline-canonical-v1": BenchmarkEvidence(
+        source_id="source:nf-v3-canonical",
+        model_identifier="if-baseline-canonical-v1",
+        model_family="IsolationForest",
+        model_artifact_sha256="0" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        dataset_name="NF-UNSW-NB15-v3",
+        dataset_version="v3",
+        split_identity="benign-train-split",
+        verification_status="UNVALIDATED",
+        is_passed=False,
+        is_research_only=True,
+        reason="Isolation Forest baseline implemented; real-data benchmark pending full dataset validation.",
+    ),
+    "source:nf-v3-canonical::ae-baseline-canonical-v1": BenchmarkEvidence(
+        source_id="source:nf-v3-canonical",
+        model_identifier="ae-baseline-canonical-v1",
+        model_family="Autoencoder",
+        model_artifact_sha256="0" * 64,
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        dataset_name="NF-UNSW-NB15-v3",
+        dataset_version="v3",
+        split_identity="benign-train-split",
+        verification_status="UNVALIDATED",
+        is_passed=False,
+        is_research_only=True,
+        reason="Autoencoder reconstruction detector implemented; real-data benchmark pending full dataset validation.",
+    ),
 }
 
 
@@ -170,7 +268,10 @@ class CompatibilityEvaluationReport:
     @property
     def is_eligible_for_inference(self) -> bool:
         """True only if the source reaches a valid state and is certified for inference."""
-        return self.inference_eligibility == InferenceEligibility.PREDICTION_AVAILABLE
+        return self.inference_eligibility in (
+            InferenceEligibility.PREDICTION_AVAILABLE,
+            InferenceEligibility.RESEARCH_ONLY,
+        )
 
 
 class FeatureCompatibilityEvaluator:
@@ -194,6 +295,22 @@ class FeatureCompatibilityEvaluator:
         self.expected_preprocessor_sha256 = expected_preprocessor_sha256
         self.expected_feature_contract = expected_feature_contract
 
+    def get_benchmark_evidence(
+        self,
+        source_id: str,
+        model_identifier: Optional[str] = None,
+    ) -> Optional[BenchmarkEvidence]:
+        """Lookup benchmark evidence by compound key (source_id::model_identifier) or source_id."""
+        if model_identifier:
+            compound_key = f"{source_id}::{model_identifier}"
+            if compound_key in self.benchmark_registry:
+                return self.benchmark_registry[compound_key]
+        evidence = self.benchmark_registry.get(source_id)
+        if evidence is not None and model_identifier is not None:
+            if evidence.model_identifier and evidence.model_identifier != model_identifier:
+                return None
+        return evidence
+
     def evaluate_events(
         self,
         events: List[CanonicalNetworkEvent],
@@ -202,6 +319,7 @@ class FeatureCompatibilityEvaluator:
         model_artifact_sha256: Optional[str] = None,
         preprocessor_artifact_sha256: Optional[str] = None,
         feature_contract_version: Optional[str] = None,
+        allow_research_only: bool = False,
     ) -> CompatibilityEvaluationReport:
         """Evaluate a batch of CanonicalNetworkEvents with row-level completeness verification."""
         if not events:
@@ -317,10 +435,10 @@ class FeatureCompatibilityEvaluator:
             )
 
         # 3. Benchmark evidence and tier verification
-        evidence = self.benchmark_registry.get(eff_source)
+        eff_model = model_identifier or self.expected_model_identifier
+        evidence = self.get_benchmark_evidence(eff_source, eff_model)
 
         if evidence is not None:
-            eff_model = model_identifier or self.expected_model_identifier
             eff_model_sha = model_artifact_sha256 or self.expected_model_sha256
             eff_prep_sha = preprocessor_artifact_sha256 or self.expected_preprocessor_sha256
             eff_contract = feature_contract_version or self.expected_feature_contract
@@ -338,6 +456,16 @@ class FeatureCompatibilityEvaluator:
                 rejection_reasons.append(
                     f"Benchmark evidence binding invalid for '{eff_source}': {binding_err}"
                 )
+            elif getattr(evidence, "is_research_only", False):
+                if allow_research_only:
+                    val_status = ValidationStatus.RESEARCH_ONLY
+                    eligibility = InferenceEligibility.RESEARCH_ONLY
+                else:
+                    val_status = ValidationStatus.UNVALIDATED
+                    eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
+                    rejection_reasons.append(
+                        f"Model '{eff_model or evidence.model_identifier}' on '{eff_source}' is designated RESEARCH_ONLY and not certified for production inference."
+                    )
             elif evidence.is_passed:
                 val_status = ValidationStatus.MODEL_VALIDATED
                 eligibility = InferenceEligibility.PREDICTION_AVAILABLE
@@ -349,12 +477,16 @@ class FeatureCompatibilityEvaluator:
                     f"Model validation failed for '{eff_source}': {evidence.reason}"
                 )
         else:
-            # Structurally and semantically complete, but unbenchmarked
-            val_status = ValidationStatus.SEMANTICALLY_COMPATIBLE
-            eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
-            rejection_reasons.append(
-                f"Source '{eff_source}' has no empirical benchmark evidence on file (unverified)."
-            )
+            if allow_research_only:
+                val_status = ValidationStatus.RESEARCH_ONLY
+                eligibility = InferenceEligibility.RESEARCH_ONLY
+            else:
+                # Structurally and semantically complete, but unbenchmarked
+                val_status = ValidationStatus.SEMANTICALLY_COMPATIBLE
+                eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
+                rejection_reasons.append(
+                    f"Source '{eff_source}' has no empirical benchmark evidence on file (unverified)."
+                )
 
         feature_statuses = {
             feat: FeatureMappingStatus.EXACT
@@ -362,6 +494,8 @@ class FeatureCompatibilityEvaluator:
             else FeatureMappingStatus.MISSING
             for feat in self.target_features
         }
+
+        is_research = (eligibility == InferenceEligibility.RESEARCH_ONLY)
 
         return CompatibilityEvaluationReport(
             source_id=eff_source,
@@ -374,7 +508,7 @@ class FeatureCompatibilityEvaluator:
             rejection_reasons=rejection_reasons,
             benchmark_evidence=evidence,
             trace_route_eligible=True,
-            risk_route_eligible=True,
+            risk_route_eligible=False if is_research else True,
         )
 
     def evaluate_dataframe(
@@ -385,6 +519,7 @@ class FeatureCompatibilityEvaluator:
         model_artifact_sha256: Optional[str] = None,
         preprocessor_artifact_sha256: Optional[str] = None,
         feature_contract_version: Optional[str] = None,
+        allow_research_only: bool = False,
     ) -> CompatibilityEvaluationReport:
         """Evaluate raw pandas DataFrame against 47-feature contract and Anti-Imputation."""
         if len(df) == 0:
@@ -449,9 +584,9 @@ class FeatureCompatibilityEvaluator:
                 risk_route_eligible=True,
             )
 
-        evidence = self.benchmark_registry.get(source_id)
+        eff_model = model_identifier or self.expected_model_identifier
+        evidence = self.get_benchmark_evidence(source_id, eff_model)
         if evidence is not None:
-            eff_model = model_identifier or self.expected_model_identifier
             eff_model_sha = model_artifact_sha256 or self.expected_model_sha256
             eff_prep_sha = preprocessor_artifact_sha256 or self.expected_preprocessor_sha256
             eff_contract = feature_contract_version or self.expected_feature_contract
@@ -469,6 +604,16 @@ class FeatureCompatibilityEvaluator:
                 rejection_reasons.append(
                     f"Benchmark evidence binding invalid for '{source_id}': {binding_err}"
                 )
+            elif getattr(evidence, "is_research_only", False):
+                if allow_research_only:
+                    val_status = ValidationStatus.RESEARCH_ONLY
+                    eligibility = InferenceEligibility.RESEARCH_ONLY
+                else:
+                    val_status = ValidationStatus.UNVALIDATED
+                    eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
+                    rejection_reasons.append(
+                        f"Model '{eff_model or evidence.model_identifier}' on '{source_id}' is designated RESEARCH_ONLY and not certified for production inference."
+                    )
             elif evidence.is_passed:
                 val_status = ValidationStatus.MODEL_VALIDATED
                 eligibility = InferenceEligibility.PREDICTION_AVAILABLE
@@ -477,11 +622,17 @@ class FeatureCompatibilityEvaluator:
                 eligibility = InferenceEligibility.BENCHMARK_UNSATISFACTORY
                 rejection_reasons.append(f"Model benchmark failed for '{source_id}': {evidence.reason}")
         else:
-            val_status = ValidationStatus.SEMANTICALLY_COMPATIBLE
-            eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
-            rejection_reasons.append(
-                f"Source '{source_id}' has no empirical benchmark evidence on file (unverified)."
-            )
+            if allow_research_only:
+                val_status = ValidationStatus.RESEARCH_ONLY
+                eligibility = InferenceEligibility.RESEARCH_ONLY
+            else:
+                val_status = ValidationStatus.SEMANTICALLY_COMPATIBLE
+                eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
+                rejection_reasons.append(
+                    f"Source '{source_id}' has no empirical benchmark evidence on file (unverified)."
+                )
+
+        is_research = (eligibility == InferenceEligibility.RESEARCH_ONLY)
 
         return CompatibilityEvaluationReport(
             source_id=source_id,
@@ -494,5 +645,5 @@ class FeatureCompatibilityEvaluator:
             rejection_reasons=rejection_reasons,
             benchmark_evidence=evidence,
             trace_route_eligible=True,
-            risk_route_eligible=True,
+            risk_route_eligible=False if is_research else True,
         )

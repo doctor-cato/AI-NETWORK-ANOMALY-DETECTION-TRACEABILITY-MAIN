@@ -102,6 +102,7 @@ class InferenceEligibilityGate:
         preprocessor_artifact_sha256: Optional[str] = None,
         feature_contract_version: Optional[str] = None,
         allow_unverified: bool = False,
+        allow_research_only: bool = False,
     ) -> GateDecision:
         """Evaluate events against schema compatibility, network metadata, OOD metrics, and abstention policies."""
         if not events and df is None:
@@ -152,6 +153,7 @@ class InferenceEligibilityGate:
                 model_artifact_sha256=model_artifact_sha256,
                 preprocessor_artifact_sha256=preprocessor_artifact_sha256,
                 feature_contract_version=feature_contract_version,
+                allow_research_only=allow_research_only,
             )
         else:
             comp_report = self.evaluator.evaluate_events(
@@ -161,9 +163,27 @@ class InferenceEligibilityGate:
                 model_artifact_sha256=model_artifact_sha256,
                 preprocessor_artifact_sha256=preprocessor_artifact_sha256,
                 feature_contract_version=feature_contract_version,
+                allow_research_only=allow_research_only,
             )
 
         total_n = len(events) if events else (len(df) if df is not None else 0)
+        is_research = (
+            comp_report.validation_status == ValidationStatus.RESEARCH_ONLY
+            or comp_report.inference_eligibility == InferenceEligibility.RESEARCH_ONLY
+        )
+
+        # Check for unvalidated research-only model (when allow_research_only is False)
+        if comp_report.validation_status == ValidationStatus.UNVALIDATED:
+            return GateDecision(
+                can_proceed_to_ml=False,
+                eligibility_status=InferenceEligibility.VALIDATION_NOT_VERIFIED,
+                validation_status=ValidationStatus.UNVALIDATED,
+                compatibility_report=comp_report,
+                abstention_reasons=comp_report.rejection_reasons,
+                route_to_trace_engine=True,
+                route_to_risk_engine=False,
+                rejected_indices=list(range(total_n)),
+            )
 
         # Check for benchmark failure (e.g. external source with Recall=0 and high FPR or mismatched hashes)
         if comp_report.validation_status == ValidationStatus.BENCHMARK_FAILED:
@@ -174,7 +194,7 @@ class InferenceEligibilityGate:
                 compatibility_report=comp_report,
                 abstention_reasons=comp_report.rejection_reasons,
                 route_to_trace_engine=True,
-                route_to_risk_engine=True,
+                route_to_risk_engine=False if is_research else True,
                 rejected_indices=list(range(total_n)),
             )
 
@@ -187,12 +207,12 @@ class InferenceEligibilityGate:
                 compatibility_report=comp_report,
                 abstention_reasons=comp_report.rejection_reasons,
                 route_to_trace_engine=comp_report.trace_route_eligible,
-                route_to_risk_engine=comp_report.risk_route_eligible,
+                route_to_risk_engine=False if is_research else comp_report.risk_route_eligible,
                 rejected_indices=list(range(total_n)),
             )
 
-        # Unverified benchmark sources: refuse certified inference unless allow_unverified is explicitly granted
-        if comp_report.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE and not allow_unverified:
+        # Unverified benchmark sources: refuse certified inference unless allow_unverified or allow_research_only is explicitly granted
+        if comp_report.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE and not (allow_unverified or allow_research_only):
             return GateDecision(
                 can_proceed_to_ml=False,
                 eligibility_status=InferenceEligibility.VALIDATION_NOT_VERIFIED,
@@ -200,14 +220,14 @@ class InferenceEligibilityGate:
                 compatibility_report=comp_report,
                 abstention_reasons=[
                     f"Source '{eff_source}' is semantically compatible but has no verified empirical benchmark evidence.",
-                    "Inference refused fail-closed: Pass allow_unverified=True for uncertified evaluation.",
+                    "Inference refused fail-closed: Pass allow_unverified=True or allow_research_only=True for exploratory evaluation.",
                 ],
                 route_to_trace_engine=comp_report.trace_route_eligible,
-                route_to_risk_engine=comp_report.risk_route_eligible,
+                route_to_risk_engine=False if is_research else comp_report.risk_route_eligible,
                 rejected_indices=list(range(total_n)),
             )
 
-        if not comp_report.is_eligible_for_inference and not allow_unverified:
+        if not comp_report.is_eligible_for_inference and not (allow_unverified or allow_research_only):
             return GateDecision(
                 can_proceed_to_ml=False,
                 eligibility_status=comp_report.inference_eligibility,
@@ -215,7 +235,7 @@ class InferenceEligibilityGate:
                 compatibility_report=comp_report,
                 abstention_reasons=comp_report.rejection_reasons,
                 route_to_trace_engine=comp_report.trace_route_eligible,
-                route_to_risk_engine=comp_report.risk_route_eligible,
+                route_to_risk_engine=False if is_research else comp_report.risk_route_eligible,
                 rejected_indices=list(range(total_n)),
             )
 
@@ -273,7 +293,7 @@ class InferenceEligibilityGate:
                 abstention_reasons=combined_reasons,
                 warning_flags=warning_flags,
                 route_to_trace_engine=True,
-                route_to_risk_engine=True,
+                route_to_risk_engine=False if is_research else True,
                 abstained_indices=list(range(total_n)),
                 rejected_indices=rejected_indices,
                 row_rejection_reasons=row_rejection_reasons,
@@ -297,7 +317,7 @@ class InferenceEligibilityGate:
                 ],
                 warning_flags=warning_flags,
                 route_to_trace_engine=True,
-                route_to_risk_engine=True,
+                route_to_risk_engine=False if is_research else True,
                 abstained_indices=list(range(total_n)),
                 rejected_indices=rejected_indices,
                 row_rejection_reasons=row_rejection_reasons,
@@ -316,7 +336,7 @@ class InferenceEligibilityGate:
             compatibility_report=comp_report,
             warning_flags=warning_flags,
             route_to_trace_engine=True,
-            route_to_risk_engine=True,
+            route_to_risk_engine=False if is_research else True,
             accepted_indices=sorted(accepted_set),
             rejected_indices=sorted(rejected_set),
             row_rejection_reasons=row_rejection_reasons,
