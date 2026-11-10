@@ -1,0 +1,63 @@
+name: Research portal
+
+on:
+  push:
+    branches: [site-source]
+  pull_request:
+    branches: [site-source]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: b14dfeed9e7cbb07201cfb0ac8ce69c951434be1
+          path: repository-evidence
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check source evidence and dataset claims
+        run: python scripts/check-evidence.py
+      - name: Type check
+        run: npm run check
+      - name: Formatting
+        run: npm run lint
+      - name: Build static site
+        run: npm run build
+      - name: Check internal links and assets
+        run: npm run verify:links
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/site-source'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/site-source'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

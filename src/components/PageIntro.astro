@@ -1,0 +1,56 @@
+---
+import { href } from "../lib/links";
+interface Props {
+  eyebrow: string;
+  title: string;
+  description: string;
+  current: string;
+}
+const { eyebrow, title, description, current } = Astro.props;
+---
+
+<section class="page-intro grid-lines">
+  <div class="container">
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a href={href()}>Home</a><span aria-hidden="true">/</span><span
+        aria-current="page">{current}</span
+      >
+    </nav>
+    <span class="eyebrow">{eyebrow}</span>
+    <h1>{title}</h1>
+    <p class="lede">{description}</p>
+  </div>
+</section>
+<style>
+  .page-intro {
+    padding: 2.3rem 0 4rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .breadcrumbs {
+    display: flex;
+    gap: 0.65rem;
+    align-items: center;
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-bottom: 3.5rem;
+  }
+  .breadcrumbs a {
+    text-decoration: none;
+  }
+  .page-intro h1 {
+    max-width: 15ch;
+    margin: 0.9rem 0 1rem;
+  }
+  .page-intro .lede {
+    max-width: 68ch;
+    margin: 0;
+  }
+  @media (max-width: 700px) {
+    .page-intro {
+      padding-bottom: 2.7rem;
+    }
+    .breadcrumbs {
+      margin-bottom: 2rem;
+    }
+  }
+</style>

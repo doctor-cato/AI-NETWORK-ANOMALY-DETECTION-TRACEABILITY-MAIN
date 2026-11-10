@@ -1,0 +1,383 @@
+---
+import "../styles/global.css";
+import { evidenceCommit, href, repository } from "../lib/links";
+
+interface Props {
+  title: string;
+  description: string;
+  section?: string;
+}
+const { title, description, section } = Astro.props;
+const nav = [
+  ["Research", "research/"],
+  ["Dataset", "dataset/"],
+  ["Models", "models/"],
+  ["Results", "results/"],
+  ["Architecture", "architecture/"],
+  ["Docs", "docs/"],
+  ["Roadmap", "roadmap/"],
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#080f1d" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={href("favicon.svg")} />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <title>
+      {
+        title === "Home"
+          ? "Network Anomaly Detection & Traceability"
+          : `${title} | Network Anomaly Detection`
+      }
+    </title>
+    <script is:inline>
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem("research-theme") === "light" ? "light" : "dark";
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href={href()}>
+          <span class="brand-mark" aria-hidden="true">N<span>∕</span>A</span>
+          <span class="brand-name"
+            >NETWORK ANOMALY<br /><b>RESEARCH PORTAL</b></span
+          >
+        </a>
+        <nav class="desktop-nav" aria-label="Primary navigation">
+          {
+            nav.map(([label, path]) => (
+              <a
+                href={href(path)}
+                aria-current={section === label ? "page" : undefined}
+              >
+                {label}
+              </a>
+            ))
+          }
+        </nav>
+        <div class="header-actions">
+          <button
+            class="theme-toggle"
+            type="button"
+            aria-label="Switch to light theme"
+            title="Toggle color theme"><span aria-hidden="true">◐</span></button
+          >
+          <a
+            class="github-link"
+            href={repository}
+            target="_blank"
+            rel="noopener noreferrer"
+            >GitHub <span aria-hidden="true">↗</span></a
+          >
+          <details class="mobile-menu">
+            <summary aria-label="Open navigation menu"
+              >Menu <span aria-hidden="true">☰</span></summary
+            ><nav aria-label="Mobile navigation">
+              {
+                nav.map(([label, path]) => (
+                  <a
+                    href={href(path)}
+                    aria-current={section === label ? "page" : undefined}
+                  >
+                    {label}
+                  </a>
+                ))
+              }<a href={repository}>GitHub ↗</a>
+            </nav>
+          </details>
+        </div>
+      </div>
+    </header>
+    <main id="main"><slot /></main>
+    <footer class="site-footer rule">
+      <div class="container footer-grid">
+        <div>
+          <span class="eyebrow">Research prototype</span><h2>
+            Evidence before claims.
+          </h2><p>
+            This portal documents a research system in progress. Validation
+            scores are benchmark observations, not operational guarantees.
+          </p>
+        </div>
+        <div>
+          <strong>Explore</strong><a href={href("results/")}
+            >Experiments & results</a
+          ><a href={href("docs/")}>Technical documentation</a><a
+            href={href("roadmap/")}>Project roadmap</a
+          >
+        </div>
+        <div>
+          <strong>Source</strong><a href={repository}>Repository ↗</a><a
+            href={`${repository}/issues`}>Issues ↗</a
+          ><a href={`${repository}/blob/main/LICENSE`}
+            >Apache-2.0 source license ↗</a
+          >
+        </div>
+      </div>
+      <div class="container footer-bottom">
+        <span
+          >Evidence snapshot: main @ <a
+            href={`${repository}/tree/${evidenceCommit}`}
+            >{evidenceCommit.slice(0, 7)}</a
+          > · 10 Nov 2026</span
+        ><span>Dataset use follows the publisher's separate terms.</span>
+      </div>
+    </footer>
+    <script>
+      const button = document.querySelector<HTMLButtonElement>(".theme-toggle");
+      const updateLabel = () =>
+        button?.setAttribute(
+          "aria-label",
+          `Switch to ${document.documentElement.dataset.theme === "dark" ? "light" : "dark"} theme`,
+        );
+      updateLabel();
+      button?.addEventListener("click", () => {
+        const next =
+          document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem("research-theme", next);
+        } catch {}
+        updateLabel();
+      });
+      document.querySelectorAll<HTMLElement>("pre").forEach((pre) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "copy-code";
+        button.textContent = "Copy";
+        button.setAttribute("aria-label", "Copy code block");
+        button.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(
+              pre.querySelector("code")?.textContent ?? pre.textContent ?? "",
+            );
+            button.textContent = "Copied";
+            setTimeout(() => (button.textContent = "Copy"), 1800);
+          } catch {
+            button.textContent = "Unavailable";
+          }
+        });
+        pre.append(button);
+      });
+    </script>
+  </body>
+</html>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(18px);
+    border-bottom: 1px solid var(--line);
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    min-height: 74px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .brand-mark {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    border: 1px solid var(--cyan);
+    height: 38px;
+    width: 38px;
+    color: var(--cyan);
+    font-weight: 900;
+    font-size: 0.8rem;
+    letter-spacing: -0.07em;
+  }
+  .brand-mark span {
+    color: var(--violet);
+  }
+  .brand-name {
+    font-size: 0.63rem;
+    letter-spacing: 0.11em;
+    line-height: 1.2;
+    color: var(--muted);
+    font-weight: 700;
+  }
+  .brand-name b {
+    color: var(--text);
+  }
+  .desktop-nav {
+    display: flex;
+    align-items: center;
+    gap: 1.22rem;
+    margin-left: auto;
+  }
+  .desktop-nav a {
+    font-size: 0.81rem;
+    text-decoration: none;
+    color: var(--muted);
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .desktop-nav a:hover,
+  .desktop-nav a[aria-current="page"] {
+    color: var(--cyan);
+  }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+  }
+  .theme-toggle {
+    height: 34px;
+    width: 34px;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 0.3rem;
+    color: var(--text);
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+  .github-link {
+    border: 1px solid var(--line);
+    border-radius: 0.3rem;
+    padding: 0.35rem 0.65rem;
+    text-decoration: none;
+    font-size: 0.8rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .mobile-menu {
+    display: none;
+  }
+  .site-footer {
+    padding-top: 3rem;
+    background: var(--surface);
+  }
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 3rem;
+    padding-bottom: 3rem;
+  }
+  .footer-grid h2 {
+    font-size: 1.6rem;
+    margin: 0.7rem 0;
+  }
+  .footer-grid p {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .footer-grid > div:not(:first-child) {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+  .footer-grid a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88rem;
+  }
+  .footer-grid a:hover {
+    color: var(--cyan);
+  }
+  .footer-bottom {
+    border-top: 1px solid var(--line);
+    padding: 1rem 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    color: var(--muted);
+    font-size: 0.74rem;
+  }
+  @media (max-width: 1100px) {
+    .desktop-nav {
+      gap: 0.7rem;
+    }
+    .desktop-nav a {
+      font-size: 0.76rem;
+    }
+    .brand-name {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .desktop-nav,
+    .github-link {
+      display: none;
+    }
+    .header-inner {
+      min-height: 64px;
+      gap: 0.6rem;
+    }
+    .header-actions {
+      margin-left: auto;
+    }
+    .brand-name {
+      display: block;
+    }
+    .mobile-menu {
+      display: block;
+      position: relative;
+    }
+    .mobile-menu summary {
+      list-style: none;
+      white-space: nowrap;
+      border: 1px solid var(--line);
+      border-radius: 0.3rem;
+      padding: 0.35rem 0.6rem;
+      font-size: 0.84rem;
+      cursor: pointer;
+    }
+    .mobile-menu summary::-webkit-details-marker {
+      display: none;
+    }
+    .mobile-menu nav {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 0.7rem);
+      width: min(80vw, 280px);
+      display: grid;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      padding: 0.6rem;
+      border-radius: 0.4rem;
+    }
+    .mobile-menu nav a {
+      padding: 0.65rem 0.75rem;
+      text-decoration: none;
+      color: var(--muted);
+      border-radius: 0.2rem;
+    }
+    .mobile-menu nav a:hover,
+    .mobile-menu nav a[aria-current="page"] {
+      background: var(--surface-2);
+      color: var(--cyan);
+    }
+    .footer-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+    .footer-grid > div:first-child {
+      grid-column: 1/-1;
+    }
+    .footer-bottom {
+      flex-direction: column;
+    }
+  }
+</style>

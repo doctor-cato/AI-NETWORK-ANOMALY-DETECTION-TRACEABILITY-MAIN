@@ -1,0 +1,386 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PageIntro from "../components/PageIntro.astro";
+import { source } from "../lib/links";
+const categories = [
+  ["Exploits", "42,748"],
+  ["Fuzzers", "33,816"],
+  ["Generic", "19,651"],
+  ["Reconnaissance", "17,074"],
+  ["DoS", "5,980"],
+  ["Backdoor", "4,659"],
+  ["Shellcode", "2,381"],
+  ["Analysis", "1,226"],
+  ["Worms", "158"],
+];
+---
+
+<Layout
+  title="Dataset"
+  description="NF-UNSW-NB15-v3 provenance, schema, distribution, quality and preprocessing."
+  section="Dataset"
+>
+  <PageIntro
+    eyebrow="02 / Data provenance"
+    current="Dataset"
+    title="NF-UNSW-NB15-v3, examined at the source."
+    description="The dataset is an evidence source, not an operational traffic feed. The repository records the publisher, checksums, raw schema, observed quality issues and the conditions for model use."
+  />
+  <section class="section">
+    <div class="container">
+      <div class="facts">
+        <div>
+          <small>Publisher</small><strong>University of Queensland</strong>
+        </div><div>
+          <small>Stable record</small><strong
+            ><a href="https://doi.org/10.48610/6E0EDA1"
+              >DOI 10.48610/6E0EDA1 ↗</a
+            ></strong
+          >
+        </div><div>
+          <small>Verified CSV</small><strong>2,365,424 rows · 55 columns</strong
+          >
+        </div><div>
+          <small>License</small><strong>Commercial use restricted</strong>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section rule">
+    <div class="container two-column">
+      <div>
+        <span class="eyebrow">Population</span><h2>
+          A heavily imbalanced flow record.
+        </h2><p class="lede">
+          The verified CSV contains 2,237,731 benign flows and 127,693 attack
+          flows. These are counts in this package, not estimates of real-world
+          traffic prevalence.
+        </p><div
+          class="distribution"
+          role="img"
+          aria-label="Dataset distribution: 94.6 percent benign and 5.4 percent attack"
+        >
+          <span style="width:94.6%"></span><span style="width:5.4%"></span>
+        </div><div class="legend">
+          <span>● Benign · 2,237,731</span><span>● Attack · 127,693</span>
+        </div><p class="note">
+          The publisher landing-page attack total differs by 54 rows from the
+          verified CSV. This portal follows the checked file bytes. <a
+            href={source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md")}
+            >Read discrepancy record ↗</a
+          >
+        </p>
+      </div><div class="surface category-panel">
+        <h3>Attack categories</h3><div class="table-wrap">
+          <table class="data-table">
+            <caption class="sr-only"
+              >Attack category counts in verified CSV</caption
+            ><thead
+              ><tr><th scope="col">Category</th><th scope="col">Rows</th></tr
+              ></thead
+            ><tbody
+              >{
+                categories.map(([name, count]) => (
+                  <tr>
+                    <>
+                      <th scope="row">{name}</th>
+                      <td>{count}</td>
+                    </>
+                  </tr>
+                ))
+              }</tbody
+            >
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="container">
+      <span class="eyebrow">Data contract</span><h2>
+        55 raw columns, three distinct roles.
+      </h2><div class="schema-grid">
+        <div class="surface">
+          <span class="schema-num">47</span><h3>Model features</h3><p>
+            Ordered NetFlow attributes such as protocol, byte and packet counts,
+            timing, TTL and flow statistics. Numeric-coded categories remain
+            distinct from quantitative fields.
+          </p>
+        </div><div class="surface">
+          <span class="schema-num">06</span><h3>Trace metadata</h3><p>
+            Start/end timestamps, source/destination IPv4 addresses and both L4
+            ports are retained for grouping and trace context, but excluded from
+            baseline <code>X</code>.
+          </p>
+        </div><div class="surface">
+          <span class="schema-num">02</span><h3>Targets</h3><p>
+            <code>Label</code> is binary (0 benign, 1 attack); <code
+              >Attack</code
+            > contains Benign or one of nine attack categories. Both are excluded
+            from input features.
+          </p>
+        </div>
+      </div><p class="source-line">
+        The baseline retains the publisher's NetFlow v3 flow statistics in a
+        fixed order. No additional selected-feature set or 49-feature port
+        variant is presented as an evaluated model.
+      </p><p class="source-line">
+        Source: <a href={source("docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md")}
+          >verified schema ↗</a
+        > · <a href={source("src/network_anomaly/data/nf_unsw_nb15_v3.py")}
+          >executable feature contract ↗</a
+        >
+      </p>
+    </div>
+  </section>
+  <section class="section rule tinted">
+    <div class="container two-column">
+      <div>
+        <span class="eyebrow">Acquisition and quality</span><h2>
+          Checked before transformation.
+        </h2><p>
+          The fetch script obtains a short-lived URL from UQRDM, verifies
+          archive and payload checksums, and keeps the large CSV outside Git.
+          The streaming validator checks row width, schema, labels, missing and
+          non-finite tokens, and duplicate fingerprints.
+        </p><div class="callout">
+          The raw quality record reports blank and positive-infinity rate
+          values, exact duplicates and equivalent flow vectors. A successful
+          source-integrity check is not a statement that raw data is directly
+          ML-ready.
+        </div><p class="source-line">
+          <a href={source("scripts/fetch_nf_unsw_nb15_v3.py")}
+            >Acquisition code ↗</a
+          > · <a
+            href={source(
+              "reports/data_quality/nf_unsw_nb15_v3_validation.json",
+            )}>Quality report ↗</a
+          >
+        </p>
+      </div><div>
+        <span class="eyebrow">Split and preprocessing</span><h2>
+          Fit only on Train.
+        </h2><ol class="steps">
+          <li>
+            <strong>Partition</strong><span
+              >Chronological, group-aware Train / Validation / Test with purge
+              gaps.</span
+            >
+          </li><li>
+            <strong>Audit</strong><span
+              >Record exact and feature-equivalent vectors; targets and trace
+              metadata stay outside <code>X</code>.</span
+            >
+          </li><li>
+            <strong>Transform</strong><span
+              >Map missing/non-finite values to missing sentinels, then use
+              train-derived medians or modes. Validation and Test receive frozen
+              transforms.</span
+            >
+          </li><li>
+            <strong>Evaluate</strong><span
+              >Use Validation for development and preserve Test for a separately
+              reported final check.</span
+            >
+          </li>
+        </ol><p class="source-line">
+          <a href={source("reports/splits/nf_unsw_nb15_v3_split_manifest.json")}
+            >Split manifest ↗</a
+          > · <a href={source("docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md")}
+            >Preprocessing policy ↗</a
+          >
+        </p>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="container two-column">
+      <div>
+        <span class="eyebrow">Reproducibility</span><h2>
+          Use the official record.
+        </h2><p>
+          Follow repository instructions to fetch and validate the package. The
+          SHA-256 pins in the manifest were computed by the project from
+          official bytes; they are not publisher-authored SHA-256 values.
+        </p><a class="button" href={source("docs/DATASET.md")}
+          >Dataset guide ↗</a
+        >
+      </div><div class="surface license-note">
+        <h3>Attribution and licensing</h3><p>
+          The dataset is under UQ's “Permitted Re-Use with Commercial Use
+          Restriction” terms, requiring full citation and non-commercial use.
+          The repository's Apache-2.0 source license does not relicense the
+          data.
+        </p><a href="https://doi.org/10.48610/6E0EDA1">Publisher record ↗</a>
+      </div>
+    </div>
+  </section>
+</Layout>
+<style>
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .facts > div {
+    padding: 1rem;
+    border-right: 1px solid var(--line);
+  }
+  .facts > div:first-child {
+    padding-left: 0;
+  }
+  .facts > div:last-child {
+    border: 0;
+  }
+  .facts small,
+  .facts strong {
+    display: block;
+  }
+  .facts small {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.5rem;
+  }
+  .facts strong {
+    font-size: 0.92rem;
+  }
+  .two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+  }
+  .two-column h2 {
+    margin: 0.7rem 0 1rem;
+  }
+  .two-column p {
+    color: var(--muted);
+  }
+  .distribution {
+    display: flex;
+    height: 20px;
+    overflow: hidden;
+    border-radius: 2px;
+    margin: 2rem 0 0.6rem;
+  }
+  .distribution span:first-child {
+    background: var(--cyan);
+  }
+  .distribution span:last-child {
+    background: var(--violet);
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    font-size: 0.76rem;
+  }
+  .legend span:first-child {
+    color: var(--cyan);
+  }
+  .legend span:last-child {
+    color: var(--violet);
+  }
+  .note {
+    font-size: 0.84rem;
+    margin-top: 2rem;
+  }
+  .note a,
+  .source-line a,
+  .license-note a {
+    color: var(--cyan);
+  }
+  .category-panel {
+    padding: 1.5rem;
+  }
+  .category-panel h3 {
+    margin: 0 0 1rem;
+  }
+  .category-panel .data-table {
+    min-width: 0;
+  }
+  .category-panel td {
+    text-align: right;
+  }
+  .schema-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 2rem 0;
+  }
+  .schema-grid > div {
+    padding: 1.5rem;
+  }
+  .schema-num {
+    font-size: 2.1rem;
+    font-weight: 800;
+    color: var(--cyan);
+    letter-spacing: -0.05em;
+  }
+  .schema-grid h3 {
+    margin: 0.8rem 0;
+  }
+  .schema-grid p {
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+  .source-line {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .tinted {
+    background: var(--surface);
+  }
+  .steps {
+    list-style: none;
+    margin: 1.5rem 0;
+    padding: 0;
+  }
+  .steps li {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 1rem;
+    border-top: 1px solid var(--line);
+    padding: 1rem 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .steps strong {
+    color: var(--cyan);
+  }
+  .license-note {
+    padding: 1.5rem;
+    align-self: start;
+  }
+  .license-note h3 {
+    margin-top: 0;
+  }
+  .license-note p {
+    color: var(--muted);
+  }
+  @media (max-width: 800px) {
+    .facts,
+    .schema-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .two-column {
+      grid-template-columns: 1fr;
+      gap: 3rem;
+    }
+  }
+  @media (max-width: 550px) {
+    .facts,
+    .schema-grid {
+      grid-template-columns: 1fr;
+    }
+    .facts > div {
+      padding: 1rem 0;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .facts > div:last-child {
+      border: 0;
+    }
+  }
+</style>

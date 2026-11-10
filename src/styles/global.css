@@ -1,0 +1,344 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --bg: #080f1d;
+  --surface: #101c2b;
+  --surface-2: #142438;
+  --line: #294056;
+  --text: #edf5f8;
+  --muted: #9fb3c4;
+  --cyan: #66e1e8;
+  --blue: #7daeff;
+  --violet: #afa5ec;
+  --good: #6fe0bc;
+  --warn: #ebbf6f;
+  --bad: #ef9898;
+  --shadow: 0 20px 60px #0003;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f8fa;
+  --surface: #fff;
+  --surface-2: #eaf2f6;
+  --line: #cbdce4;
+  --text: #142b3b;
+  --muted: #4d6877;
+  --cyan: #006a73;
+  --blue: #245fb3;
+  --violet: #6451a3;
+  --good: #08704e;
+  --warn: #835000;
+  --bad: #a33636;
+  --shadow: 0 20px 60px #17344a14;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  line-height: 1.65;
+}
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+a:hover {
+  color: var(--cyan);
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+::selection {
+  background: var(--cyan);
+  color: var(--bg);
+}
+:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 4px;
+}
+h1,
+h2,
+h3 {
+  line-height: 1.14;
+  letter-spacing: -0.035em;
+  font-weight: 700;
+}
+h1 {
+  font-size: clamp(2.55rem, 6vw, 5.1rem);
+}
+h2 {
+  font-size: clamp(1.8rem, 3vw, 2.65rem);
+}
+h3 {
+  font-size: 1.25rem;
+}
+p {
+  max-width: 72ch;
+}
+small,
+.muted {
+  color: var(--muted);
+}
+.container {
+  width: min(100% - 2.5rem, 1200px);
+  margin-inline: auto;
+}
+.section {
+  padding-block: clamp(3.5rem, 7vw, 7rem);
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--cyan);
+  font-size: 0.73rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.eyebrow:before {
+  content: "";
+  display: block;
+  width: 1.4rem;
+  height: 1px;
+  background: currentColor;
+}
+.lede {
+  font-size: clamp(1.08rem, 1.6vw, 1.3rem);
+  color: var(--muted);
+  line-height: 1.65;
+}
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background 0.2s,
+    border-color 0.2s,
+    transform 0.2s;
+}
+.button:hover {
+  transform: translateY(-2px);
+  border-color: var(--cyan);
+  color: var(--text);
+}
+.button-primary {
+  background: var(--cyan);
+  color: #071a25;
+  border-color: var(--cyan);
+}
+.button-primary:hover {
+  background: #9af3f3;
+  color: #071a25;
+}
+:root[data-theme="light"] .button-primary,
+:root[data-theme="light"] .button-primary:hover {
+  color: #fff;
+  background: var(--cyan);
+}
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+}
+.rule {
+  border-top: 1px solid var(--line);
+}
+.grid-lines {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--line) 23%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--line) 23%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 64px 64px;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.status:before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 100%;
+  background: currentColor;
+}
+.status-validated {
+  color: var(--good);
+}
+.status-tested {
+  color: var(--blue);
+}
+.status-implemented {
+  color: var(--cyan);
+}
+.status-progress {
+  color: var(--warn);
+}
+.status-planned {
+  color: var(--muted);
+}
+.status-blocked {
+  color: var(--bad);
+}
+.source-link {
+  font-size: 0.82rem;
+  color: var(--blue);
+  text-decoration: underline;
+}
+.prose {
+  font-size: 1rem;
+  color: var(--muted);
+}
+.prose h2,
+.prose h3 {
+  color: var(--text);
+  margin-top: 2.5rem;
+  margin-bottom: 0.7rem;
+}
+.prose h2 {
+  border-top: 1px solid var(--line);
+  padding-top: 2rem;
+}
+.prose p,
+.prose ul,
+.prose ol {
+  margin-block: 1rem;
+}
+.prose li {
+  margin: 0.35rem 0;
+}
+.prose a {
+  color: var(--cyan);
+}
+.prose strong {
+  color: var(--text);
+}
+.prose code:not(pre code) {
+  color: var(--cyan);
+  background: var(--surface-2);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.2rem;
+  font-size: 0.9em;
+}
+.prose pre {
+  position: relative;
+  overflow: auto;
+  background: #081423 !important;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  padding: 1.25rem;
+  margin-block: 1.3rem;
+  color: #e5f3f6;
+}
+.prose table,
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.prose th,
+.prose td,
+.data-table th,
+.data-table td {
+  padding: 0.85rem 0.8rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.prose th,
+.data-table th {
+  color: var(--text);
+  font-weight: 700;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.callout {
+  border-left: 3px solid var(--cyan);
+  background: var(--surface-2);
+  padding: 1rem 1.25rem;
+  border-radius: 0 0.4rem 0.4rem 0;
+}
+.copy-code {
+  position: absolute;
+  right: 0.55rem;
+  top: 0.55rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid #43627a;
+  background: #11273a;
+  color: #d9f5f7;
+  border-radius: 0.2rem;
+  font-size: 0.75rem;
+}
+.copy-code:hover {
+  background: #24445a;
+}
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -4rem;
+  background: var(--cyan);
+  color: #071a25;
+  padding: 0.5rem 1rem;
+  z-index: 100;
+}
+.skip-link:focus {
+  top: 1rem;
+}
+@media (max-width: 700px) {
+  .container {
+    width: min(100% - 2rem, 1200px);
+  }
+  .section {
+    padding-block: 3.4rem;
+  }
+  .data-table {
+    min-width: 650px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,20 @@
+---
+title: Testing
+description: Automated checks, their scope and how to read skipped real-data steps.
+order: 7
+---
+
+## Automated behavior checks
+
+```powershell
+python scripts/check_environment.py
+python -m pytest tests -q
+```
+
+The Python CI workflow runs on Windows and Ubuntu and checks imports, syntax, unit and integration behavior. It does not download the restricted raw dataset in CI. Synthetic tests verify code behavior, not model performance on NF-UNSW-NB15-v3.
+
+## Research verification
+
+A result needs dataset and split identifiers, feature and preprocessing contracts, model configuration, label order, metrics and artifact references. A `SKIPPED` dataset step, even with exit code 0, must stay `SKIPPED` in any report.
+
+See the [testing guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/TESTING.md) and [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/.github/workflows/ci.yml).

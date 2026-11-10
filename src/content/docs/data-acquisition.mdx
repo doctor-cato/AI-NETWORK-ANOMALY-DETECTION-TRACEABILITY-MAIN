@@ -1,0 +1,18 @@
+---
+title: Dataset acquisition
+description: Official UQ source, local checksum verification and license boundary.
+order: 4
+---
+
+## Source
+
+NF-UNSW-NB15-v3 is published by the University of Queensland at [DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1). The repository records the UQRDM package and project-computed checksums in the [provenance report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md).
+
+## Acquisition command
+
+```powershell
+python scripts/fetch_nf_unsw_nb15_v3.py
+python scripts/dataset_manifest.py verify
+```
+
+The fetcher resolves a short-lived official download URL, verifies archive and payload integrity, and keeps raw data outside Git. Do not commit the downloaded CSV. The dataset's non-commercial reuse and attribution terms are separate from the repository's Apache-2.0 license.

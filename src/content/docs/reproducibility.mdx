@@ -1,0 +1,15 @@
+---
+title: Reproducibility
+description: Dataset, split, configuration and artifact evidence needed to repeat a result.
+order: 8
+---
+
+## Provenance chain
+
+Each experiment should identify the source CSV hash, split manifest, ordered features, train-only preprocessing configuration, model parameters, dependency versions and commands. A metric without that chain is a report to examine, not a fully reproduced benchmark.
+
+## Current record
+
+The [split manifest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/reports/splits/nf_unsw_nb15_v3_split_manifest.json) records Train, Validation, Test and purge-gap row counts. The [RF report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/reports/models/rf_baseline_training_report.md) and [XGBoost report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/reports/models/xgboost_training_report.md) publish Validation outcomes. Final Test outcomes remain unverified here.
+
+Follow the canonical [reproducibility document](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/REPRODUCIBILITY.md) before running any resource-intensive step.

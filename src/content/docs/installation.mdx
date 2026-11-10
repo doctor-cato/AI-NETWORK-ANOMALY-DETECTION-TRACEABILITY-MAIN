@@ -1,0 +1,28 @@
+---
+title: Installation
+description: Python environment and local setup for repository research work.
+order: 2
+---
+
+## Prerequisites
+
+Use a supported Python environment as described in the repository. The source package and website have separate dependencies; the website needs Node.js and does not load model artifacts.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+python scripts/check_environment.py
+```
+
+The repository's [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/README.md) and [reproducibility guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/REPRODUCIBILITY.md) are the canonical references for Python setup and experiment prerequisites.
+
+## Website preview
+
+```powershell
+cd website
+npm ci
+npm run dev
+```
+
+The website is static. Its local preview is documentation only; it does not need Python, a dataset or a backend service.

@@ -1,0 +1,19 @@
+---
+title: Research methodology
+description: Split, fit, metric and interpretation rules.
+order: 10
+---
+
+## Split before fit
+
+The v3 dataset is a single CSV. The repository's chronological, group-aware split has purge gaps between Train, Validation and Test. Imputation and other learned statistics must be fitted only on Train; model selection and score thresholds belong to Validation. Test is reserved for final reporting.
+
+## Evaluation
+
+Binary classification uses `Label=1` for Attack. Report Precision, Recall, F1, Macro-F1, FPR and the confusion matrix with label order `[0, 1]`. Unsupervised scores need their own threshold protocol and cannot inherit a supervised classification result.
+
+## Interpretation
+
+The [RF diagnostic audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/reports/models/rf_baseline_validation_audit.json) identifies TTL shortcuts. The [split leakage audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md) records repeated feature vectors. These are reasons to test external validity, not proof that a particular unseen network will fail.
+
+See [methodology](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/METHODOLOGY.md) and [evaluation rules](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/EVALUATION.md).

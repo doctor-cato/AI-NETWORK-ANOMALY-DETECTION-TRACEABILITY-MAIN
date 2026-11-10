@@ -1,0 +1,19 @@
+---
+title: Development environment
+description: Repository layout, local checks and the separation of website and research code.
+order: 3
+---
+
+## Repository boundaries
+
+`src/network_anomaly/` holds research code, `scripts/` holds command-line entry points, `data/` holds manifests and ignored dataset locations, and `reports/` holds versioned evidence. This portal lives in `website/` and builds to static HTML.
+
+## Basic checks
+
+```powershell
+python scripts/check_environment.py
+python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
+git diff --check
+```
+
+These checks do not stand in for real-data evaluation. CI runs tests with synthetic fixtures; dataset-dependent steps can report `SKIPPED` when raw bytes are absent. See [testing guidance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/TESTING.md).

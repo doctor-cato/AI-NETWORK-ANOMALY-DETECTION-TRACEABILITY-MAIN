@@ -1,0 +1,237 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PageIntro from "../components/PageIntro.astro";
+import { source, pull } from "../lib/links";
+const models = [
+  {
+    id: "random-forest",
+    index: "01",
+    name: "Random Forest",
+    type: "Supervised · primary baseline",
+    status: "Validation reported",
+    statusClass: "validated",
+    principle:
+      "An ensemble of decision trees votes on the binary flow label. It provides a strong, interpretable reference for later comparisons.",
+    role: "Classify known benign versus attack flows under the 47-feature baseline contract.",
+    input:
+      "Inputs: 47 ordered NetFlow features; targets and six trace metadata fields are excluded.",
+    method:
+      "Canonical run: 200 trees, max depth 16, seed 42; chronological Train partition, frozen train-only preprocessing and Validation reporting.",
+    evaluation:
+      "Precision, Recall, F1, Macro-F1, FPR and confusion matrix on Validation. Held-out Test result: Not yet verified.",
+    limit:
+      "Feature importance and a shallow TTL-only diagnostic expose a strong dataset-specific shortcut. Historical model artifact is outside Git.",
+    link: source("reports/models/rf_baseline_training_report.md"),
+  },
+  {
+    id: "xgboost",
+    index: "02",
+    name: "XGBoost",
+    type: "Supervised · comparison baseline",
+    status: "Evidence incomplete",
+    statusClass: "progress",
+    principle:
+      "Gradient-boosted trees add models sequentially to reduce classification error on labelled flow data.",
+    role: "Compare a second supervised learner with Random Forest under the same 47-feature contract and split.",
+    input: "Inputs: the same 47 ordered NetFlow features as Random Forest.",
+    method:
+      "A repository report describes 200 estimators, depth 6, learning rate 0.1 and seed 42 on the Train partition.",
+    evaluation:
+      "The report contains Validation metrics and a confusion matrix. Held-out Test result: Not yet verified.",
+    limit:
+      "The referenced model artifact is not versioned in Git; provenance and independent reproduction need review. Similar testbed shortcuts can affect both tree models.",
+    link: source("reports/models/xgboost_training_report.md"),
+  },
+  {
+    id: "isolation-forest",
+    index: "03",
+    name: "Isolation Forest",
+    type: "Unsupervised · anomaly score",
+    status: "Implemented code",
+    statusClass: "implemented",
+    principle:
+      "Random partitions isolate unusual observations quickly; shorter paths indicate more anomalous flows.",
+    role: "Provide an anomaly-score comparison that does not use attack labels for model fitting.",
+    input:
+      "Inputs: finite, numeric, train-only transformed flow features under the baseline contract.",
+    method:
+      "A validated model component and training script exist. Its threshold must be selected on Validation under a separate protocol.",
+    evaluation:
+      "Real-data detection rate, FPR and held-out Test result: Not yet verified.",
+    limit:
+      "The recorded prerequisite check was blocked by absent raw data in that run; no published real-data artifact or calibrated result is established.",
+    link: source("reports/experiments/isolation_forest/blocked_status.json"),
+  },
+  {
+    id: "autoencoder",
+    index: "04",
+    name: "Autoencoder",
+    type: "Unsupervised · reconstruction error",
+    status: "Open PR only",
+    statusClass: "planned",
+    principle:
+      "A neural encoder and decoder reconstruct typical inputs; larger reconstruction error can indicate unusual flows.",
+    role: "Planned comparison with Isolation Forest and unknown-attack holdout protocol.",
+    input:
+      "Intended inputs: train-only transformed flow features; no merged training contract is verified.",
+    method:
+      "No Autoencoder implementation is merged into main. Proposed code is under review in PR #51.",
+    evaluation:
+      "Training configuration, threshold, real-data metrics and Test result on main: Not yet verified.",
+    limit:
+      "An open PR and roadmap text do not establish an experimentally validated model.",
+    link: pull(51),
+  },
+];
+---
+
+<Layout
+  title="AI Models"
+  description="Four model families and their implementation and evaluation status."
+  section="Models"
+>
+  <PageIntro
+    eyebrow="03 / Model methods"
+    current="AI Models"
+    title="Four approaches. One evidence standard."
+    description="Each model has a different learning mechanism and evaluation protocol. The status below refers to what the current main branch and its versioned reports support."
+  />
+  <div class="container model-nav">
+    <span>JUMP TO MODEL</span>{
+      models.map((m) => (
+        <a href={`#${m.id}`}>
+          {m.index} {m.name}
+        </a>
+      ))
+    }
+  </div>
+  {
+    models.map((m) => (
+      <section id={m.id} class="section model-section rule">
+        <div class="container model-layout">
+          <>
+            <div>
+              <>
+                <span class="eyebrow">
+                  {m.index} / {m.type}
+                </span>
+                <h2>{m.name}</h2>
+                <span class={`status status-${m.statusClass}`}>{m.status}</span>
+                <p class="lede principle">{m.principle}</p>
+                <a class="source-link" href={m.link}>
+                  Inspect source evidence ↗
+                </a>
+              </>
+            </div>
+            <div class="detail-grid">
+              <>
+                <div>
+                  <>
+                    <h3>Expected role</h3>
+                    <p>{m.role}</p>
+                  </>
+                </div>
+                <div>
+                  <>
+                    <h3>Inputs & training</h3>
+                    <p>
+                      {m.input} {m.method}
+                    </p>
+                  </>
+                </div>
+                <div>
+                  <>
+                    <h3>Evaluation</h3>
+                    <p>{m.evaluation}</p>
+                  </>
+                </div>
+                <div>
+                  <>
+                    <h3>Limitation</h3>
+                    <p>{m.limit}</p>
+                  </>
+                </div>
+              </>
+            </div>
+          </>
+        </div>
+      </section>
+    ))
+  }
+  <div class="container section">
+    <div class="callout">
+      <strong>Shared boundary:</strong> The raw CSV has 55 columns. The baseline uses
+      47 model features, with six trace metadata fields and both targets excluded.
+      Anomaly-score thresholds and supervised probabilities cannot be compared as
+      if they were the same output.
+    </div>
+  </div>
+</Layout>
+<style>
+  .model-nav {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding-top: 1.4rem;
+    padding-bottom: 1.4rem;
+  }
+  .model-nav span {
+    font:
+      700 0.68rem ui-monospace,
+      monospace;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    margin-right: 1rem;
+  }
+  .model-nav a {
+    font-size: 0.8rem;
+    color: var(--cyan);
+  }
+  .model-section {
+    scroll-margin-top: 80px;
+  }
+  .model-section:nth-of-type(even) {
+    background: var(--surface);
+  }
+  .model-layout {
+    display: grid;
+    grid-template-columns: 0.75fr 1.25fr;
+    gap: 5rem;
+  }
+  .model-layout h2 {
+    margin: 0.8rem 0;
+  }
+  .principle {
+    margin: 2rem 0 1rem;
+  }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem 2rem;
+  }
+  .detail-grid > div {
+    border-top: 1px solid var(--line);
+    padding-top: 0.8rem;
+  }
+  .detail-grid h3 {
+    font-size: 0.95rem;
+    margin: 0.2rem 0;
+  }
+  .detail-grid p {
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin: 0.4rem 0;
+  }
+  @media (max-width: 800px) {
+    .model-layout {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+  }
+  @media (max-width: 550px) {
+    .detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
