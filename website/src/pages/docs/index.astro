@@ -1,0 +1,141 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import { getCollection } from "astro:content";
+import { href } from "../../lib/links";
+const docs = (await getCollection("docs")).sort(
+    (a, b) => a.data.order - b.data.order,
+);
+---
+
+<Layout
+    title="Documentation"
+    description="Technical guides, methods and evidence links for the research prototype."
+    section="Docs"
+>
+    <PageIntro
+        eyebrow="06 / Documentation"
+        current="Documentation"
+        title="Read the method. Follow the source."
+        description="Short guides connect the public research narrative to the canonical repository documents and executable code. Search this static index by topic or keyword."
+    />
+    <section class="section">
+        <div class="container">
+            <label class="search-label" for="docs-search"
+                >Search documentation</label
+            ><input
+                id="docs-search"
+                class="search"
+                type="search"
+                placeholder="Try ‘split’, ‘training’, or ‘license’"
+                autocomplete="off"
+            /><p id="search-empty" class="empty" hidden>
+                No matching guide. Try another term or inspect the repository
+                documentation.
+            </p><div class="docs-grid">
+                {
+                    docs.map((doc) => (
+                        <a
+                            class="doc-card surface"
+                            href={href(`docs/${doc.id}/`)}
+                            data-search={`${doc.data.title} ${doc.data.description} ${doc.body ?? ""}`.toLowerCase()}
+                        >
+                            <>
+                                <span class="eyebrow">
+                                    GUIDE /{" "}
+                                    {String(doc.data.order).padStart(2, "0")}
+                                </span>
+                                <h2>{doc.data.title}</h2>
+                                <p>{doc.data.description}</p>
+                                <span class="read-more">Read guide ↗</span>
+                            </>
+                        </a>
+                    ))
+                }
+            </div>
+        </div>
+    </section>
+    <script>
+        const search = document.querySelector<HTMLInputElement>("#docs-search");
+        const cards = [...document.querySelectorAll<HTMLElement>(".doc-card")];
+        const empty = document.querySelector<HTMLElement>("#search-empty");
+        search?.addEventListener("input", () => {
+            const query = search.value.trim().toLowerCase();
+            let count = 0;
+            cards.forEach((card) => {
+                const match = (card.dataset.search ?? "").includes(query);
+                card.hidden = !match;
+                if (match) count++;
+            });
+            if (empty) empty.hidden = count > 0;
+        });
+    </script>
+</Layout>
+<style>
+    .search-label {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    .search {
+        width: min(100%, 500px);
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--text);
+        border-radius: 0.3rem;
+        padding: 0.8rem 1rem;
+    }
+    .search::placeholder {
+        color: var(--muted);
+    }
+    .docs-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-top: 2rem;
+    }
+    .doc-card {
+        padding: 1.4rem;
+        text-decoration: none;
+        display: flex;
+        flex-direction: column;
+        min-height: 240px;
+    }
+    .doc-card:hover {
+        border-color: var(--cyan);
+    }
+    .doc-card h2 {
+        font-size: 1.25rem;
+        margin: 1.2rem 0 0.4rem;
+    }
+    .doc-card p {
+        color: var(--muted);
+        font-size: 0.88rem;
+        margin: 0;
+        flex: 1;
+    }
+    .read-more {
+        color: var(--cyan);
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin-top: 1rem;
+    }
+    .empty {
+        color: var(--muted);
+        margin-top: 2rem;
+    }
+    .doc-card[hidden] {
+        display: none;
+    }
+    @media (max-width: 900px) {
+        .docs-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+    @media (max-width: 600px) {
+        .docs-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>

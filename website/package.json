@@ -1,0 +1,29 @@
+{
+    "name": "network-anomaly-research-portal",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "astro dev",
+        "check": "astro check",
+        "build": "astro build",
+        "verify:links": "node scripts/check-links.mjs",
+        "smoke": "node scripts/smoke.mjs",
+        "preview": "astro preview",
+        "lint": "prettier --check .",
+        "format": "prettier --write ."
+    },
+    "dependencies": {
+        "@astrojs/mdx": "^8.1.3",
+        "@tailwindcss/vite": "^4.3.5",
+        "astro": "^7.4.8",
+        "tailwindcss": "^4.3.5"
+    },
+    "devDependencies": {
+        "@astrojs/check": "^0.9.6",
+        "@axe-core/playwright": "^4.14.0",
+        "playwright": "^1.65.0",
+        "prettier": "^3.6.2",
+        "prettier-plugin-astro": "^0.14.1",
+        "typescript": "^5.9.3"
+    }
+}

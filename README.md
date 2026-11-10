@@ -1,5 +1,7 @@
 # AI-Based Network Anomaly Detection and Traceability System
 
+Public research website source: [`website/`](website/README.md). Its evidence snapshot and publication steps are documented there; the website is a static information portal.
+
 Research prototype for network-flow anomaly detection, behavioral correlation, risk scoring and
 traceability with secure behavioral-vector storage and adaptive key-rotation research.
 

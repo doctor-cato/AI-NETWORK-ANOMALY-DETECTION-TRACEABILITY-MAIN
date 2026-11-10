@@ -1,0 +1,117 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PageIntro from "../components/PageIntro.astro";
+import { href, source } from "../lib/links";
+---
+
+<Layout
+    title="Research"
+    description="Research question, methods and boundaries for network anomaly detection and traceability."
+    section="Research"
+>
+    <PageIntro
+        eyebrow="01 / Research"
+        current="Research"
+        title="Research with a clear boundary."
+        description="The project investigates network-flow detection and the evidence needed to explain a security finding. Its target architecture extends beyond the capabilities currently present on main."
+    />
+    <div class="container section research-grid">
+        <article class="prose">
+            <h2 id="problem">The problem</h2><p>
+                Labelled intrusion benchmarks make model comparison possible,
+                but a high score on one dataset can reflect repeated flows or
+                laboratory-specific patterns. A useful detection system also
+                needs a traceable path from an observation to the evidence,
+                without treating an IP address as proof of a person's identity.
+            </p>
+            <h2 id="objectives">Research objectives</h2><ol>
+                <li>
+                    Establish a reproducible baseline on verified
+                    NF-UNSW-NB15-v3 bytes.
+                </li><li>
+                    Compare supervised classification with unsupervised anomaly
+                    scores under explicit split and threshold rules.
+                </li><li>
+                    Audit shortcuts, equivalent feature vectors, false positives
+                    and false negatives.
+                </li><li>
+                    Design behavioral correlation, explainable risk scoring and
+                    evidence-linked incident timelines for a later system layer.
+                </li>
+            </ol>
+            <h2 id="method">Method</h2><p>
+                The published v3 CSV is verified by manifest and quality checks.
+                A chronological, group-aware split with purge gaps assigns
+                Train, Validation and Test before learned preprocessing. The
+                baseline model contract keeps 47 ordered flow features and
+                separates six trace metadata fields and the two targets.
+                Train-only statistics are frozen for later partitions.
+                Validation is used for model and threshold work; held-out Test
+                claims require a separate, auditable evaluation.
+            </p>
+            <h2 id="contributions">Expected contributions</h2><p>
+                The intended contribution is a transparent research pipeline:
+                provenance and schema, reproducible preprocessing, comparable
+                model protocols, diagnostic evaluation and a future traceable
+                decision path. Only the first parts have repository evidence
+                today. Risk scoring, incident correlation, secure storage and a
+                user interface remain roadmap work.
+            </p>
+            <h2 id="limitations">Limits and next work</h2><p>
+                The v3 package was published in 2025, while its observed flows
+                are from early 2015. Near-perfect Validation scores cannot
+                establish performance on current or external networks. The
+                current record identifies TTL shortcuts and extensive
+                feature-vector equivalence. Cross-dataset testing,
+                Test-partition evaluation and operational security review are
+                still needed.
+            </p>
+            <div class="callout">
+                <strong>Interpretation rule</strong><br />Unknown-attack
+                holdouts would test a defined experimental protocol; they would
+                not prove zero-day detection in the real world.
+            </div>
+        </article>
+        <aside class="source-rail" aria-label="Research sources">
+            <span class="eyebrow">Source trail</span><a
+                href={source("docs/PROBLEM_STATEMENT.md")}
+                >Problem statement ↗</a
+            ><a href={source("docs/METHODOLOGY.md")}>Methodology ↗</a><a
+                href={source("docs/ROADMAP_FULL_SYSTEM.md")}
+                >Full-system roadmap ↗</a
+            ><a href={source("docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md")}
+                >Split protocol ↗</a
+            ><a href={href("docs/limitations/")}>Read limitations →</a>
+        </aside>
+    </div>
+</Layout>
+<style>
+    .research-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 250px;
+        gap: 5rem;
+    }
+    .source-rail {
+        align-self: start;
+        position: sticky;
+        top: 110px;
+        border-left: 1px solid var(--line);
+        padding-left: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    .source-rail a {
+        font-size: 0.85rem;
+        color: var(--muted);
+    }
+    @media (max-width: 800px) {
+        .research-grid {
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+        .source-rail {
+            position: static;
+        }
+    }
+</style>

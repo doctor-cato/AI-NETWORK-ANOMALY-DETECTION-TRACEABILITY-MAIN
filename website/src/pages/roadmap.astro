@@ -1,0 +1,195 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PageIntro from "../components/PageIntro.astro";
+import { issue, pull, source } from "../lib/links";
+const milestones = [
+    [
+        "C1",
+        "Data quality & EDA",
+        "Experimentally validated",
+        "validated",
+        "Verified package, schema, quality record and descriptive EDA on real bytes.",
+        source("reports/eda/nf_unsw_nb15_v3_eda_summary.json"),
+    ],
+    [
+        "C2",
+        "Split & preprocessing",
+        "Implemented / tested",
+        "tested",
+        "Chronological split and train-only preprocessor exist; reproducibility and hash-chain concerns remain.",
+        source("reports/splits/nf_unsw_nb15_v3_split_manifest.json"),
+    ],
+    [
+        "C3",
+        "Supervised models",
+        "In progress",
+        "progress",
+        "RF and XGBoost Validation reported. Final Test evaluation and artifact reconciliation remain.",
+        issue(12),
+    ],
+    [
+        "C4",
+        "Unsupervised models",
+        "In progress",
+        "progress",
+        "Isolation Forest code is on main; real run blocked. Autoencoder is proposed in open PR #51.",
+        pull(51),
+    ],
+    [
+        "C5",
+        "Behavioral vector",
+        "Planned",
+        "planned",
+        "Versioned network/API/session correlation protocol is specified, with no implementation on main.",
+        issue(28),
+    ],
+    [
+        "C6",
+        "Risk & Trace",
+        "Planned",
+        "planned",
+        "Calibrated risk score and evidence-linked incidents are target capabilities.",
+        issue(32),
+    ],
+    [
+        "C7–C8",
+        "Secure storage & response",
+        "Planned",
+        "planned",
+        "AES-GCM key lifecycle and dry-run response remain roadmap work.",
+        issue(26),
+    ],
+    [
+        "C9",
+        "API & interface",
+        "In progress",
+        "progress",
+        "FastAPI/SQLite is in open PR #52; the user interface remains planned.",
+        pull(52),
+    ],
+    [
+        "C10–C11",
+        "Experiments & delivery",
+        "Planned",
+        "planned",
+        "Seven-experiment matrix and research delivery package are not complete.",
+        issue(25),
+    ],
+];
+---
+
+<Layout
+    title="Roadmap"
+    description="Evidence-driven checkpoint status and linked issues and pull requests."
+    section="Roadmap"
+>
+    <PageIntro
+        eyebrow="07 / Roadmap"
+        current="Roadmap"
+        title="Milestones, without the gloss."
+        description="A checkpoint name is a research target, not proof of completion. These statuses reflect the current main branch and versioned reports; open PRs are called out separately."
+    />
+    <section class="section">
+        <div class="container">
+            <div class="roadmap-note callout">
+                <strong>Status key:</strong> Planned = design only; In progress =
+                partial implementation or open PR; Implemented = code on main; Tested
+                = automated behavior checks; Experimentally validated = a recorded
+                real-data run. A checkpoint can contain work at several levels.
+            </div><ol class="timeline">
+                {
+                    milestones.map(
+                        ([id, name, status, statusClass, detail, link]) => (
+                            <li>
+                                <>
+                                    <span class="checkpoint">{id}</span>
+                                    <div>
+                                        <>
+                                            <div class="timeline-head">
+                                                <>
+                                                    <h2>{name}</h2>
+                                                    <span
+                                                        class={`status status-${statusClass}`}
+                                                    >
+                                                        {status}
+                                                    </span>
+                                                </>
+                                            </div>
+                                            <p>{detail}</p>
+                                            <a class="source-link" href={link}>
+                                                Review evidence ↗
+                                            </a>
+                                        </>
+                                    </div>
+                                </>
+                            </li>
+                        ),
+                    )
+                }
+            </ol><p class="source-line">
+                Canonical scope: <a href={source("docs/ROADMAP_FULL_SYSTEM.md")}
+                    >full-system roadmap ↗</a
+                > · <a href={source("docs/IMPLEMENTATION_CHECKPOINTS.md")}
+                    >implementation checkpoints ↗</a
+                >. Issue closure alone does not establish an experiment result.
+            </p>
+        </div>
+    </section>
+</Layout>
+<style>
+    .roadmap-note {
+        max-width: 900px;
+    }
+    .timeline {
+        list-style: none;
+        margin: 3rem 0;
+        padding: 0;
+    }
+    .timeline li {
+        display: grid;
+        grid-template-columns: 100px 1fr;
+        gap: 2rem;
+        border-top: 1px solid var(--line);
+        padding: 1.7rem 0;
+    }
+    .checkpoint {
+        font:
+            700 0.86rem ui-monospace,
+            monospace;
+        color: var(--cyan);
+        padding-top: 0.4rem;
+    }
+    .timeline-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+    .timeline h2 {
+        font-size: 1.25rem;
+        margin: 0;
+    }
+    .timeline p {
+        color: var(--muted);
+        margin: 0.6rem 0;
+    }
+    .source-line {
+        font-size: 0.82rem;
+        color: var(--muted);
+    }
+    .source-line a {
+        color: var(--cyan);
+    }
+    @media (max-width: 700px) {
+        .timeline li {
+            grid-template-columns: 1fr;
+            gap: 0.2rem;
+        }
+        .timeline-head {
+            display: block;
+        }
+        .timeline-head .status {
+            margin-top: 0.6rem;
+        }
+    }
+</style>

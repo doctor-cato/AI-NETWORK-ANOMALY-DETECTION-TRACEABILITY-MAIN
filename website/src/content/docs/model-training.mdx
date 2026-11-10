@@ -1,0 +1,19 @@
+---
+title: Model training
+description: Baseline input contract, supervised runs and unsupervised status.
+order: 6
+---
+
+## Input boundary
+
+The canonical baseline uses 47 ordered NetFlow features. `Label`, `Attack`, timestamps, IP addresses and L4 ports are excluded from model input. Split membership is assigned before imputation or other learned transformations. Training data and required artifacts are not shipped with this website.
+
+## Existing protocols
+
+- [Random Forest baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/RF_BASELINE_PROTOCOL.md)
+- [XGBoost baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/XGB_BASELINE_PROTOCOL.md)
+- [Train-only preprocessing policy](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md)
+
+## Reproduction boundary
+
+The repository contains model training entry points and versioned reports, but large `.joblib` artifacts are excluded from Git. An open PR or a report is not proof that a fresh checkout can reproduce the complete artifact chain. Isolation Forest's recorded prerequisite check was blocked; Autoencoder remains an open PR on the audited `main` snapshot.

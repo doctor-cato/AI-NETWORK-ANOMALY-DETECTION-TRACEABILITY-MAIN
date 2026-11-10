@@ -1,0 +1,70 @@
+name: Research portal
+
+on:
+    push:
+        branches: [main]
+        paths:
+            - "website/**"
+            - ".github/workflows/pages.yml"
+    pull_request:
+        branches: [main]
+        paths:
+            - "website/**"
+            - ".github/workflows/pages.yml"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: pages-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: "24"
+                  cache: npm
+                  cache-dependency-path: website/package-lock.json
+            - name: Install locked dependencies
+              run: npm ci
+              working-directory: website
+            - name: Check evidence links and dataset claims
+              run: python website/scripts/check-evidence.py
+            - name: Type check
+              run: npm run check
+              working-directory: website
+            - name: Formatting
+              run: npm run lint
+              working-directory: website
+            - name: Build static site
+              run: npm run build
+              working-directory: website
+            - name: Check internal links and assets
+              run: npm run verify:links
+              working-directory: website
+            - name: Upload Pages artifact
+              if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: website/dist
+
+    deploy:
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        needs: build
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pages: write
+            id-token: write
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v4

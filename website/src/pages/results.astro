@@ -1,0 +1,399 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PageIntro from "../components/PageIntro.astro";
+import { source, issue } from "../lib/links";
+---
+
+<Layout
+    title="Experiments & Results"
+    description="Reported Validation metrics, absent Test results and methodological limitations."
+    section="Results"
+>
+    <PageIntro
+        eyebrow="04 / Experiment record"
+        current="Results"
+        title="Validation is a waypoint, not a verdict."
+        description="The repository reports very high scores on a Validation partition. This page shows their provenance and the methodological limits that keep them from being claims of field performance."
+    />
+    <section class="section">
+        <div class="container">
+            <div class="result-banner">
+                <div>
+                    <span class="eyebrow">Evidence boundary</span><h2>
+                        Held-out Test: Not yet verified
+                    </h2><p>
+                        No published final Test metric is established on main
+                        for the four model families. Open evaluation work is
+                        tracked separately.
+                    </p>
+                </div><a class="button" href={issue(12)}
+                    >Follow Test evaluation ↗</a
+                >
+            </div>
+            <div class="split-summary" aria-label="Recorded split sizes">
+                <div><small>TRAIN</small><strong>1,655,797</strong></div>
+                <div><small>VALIDATION</small><strong>345,371</strong></div>
+                <div><small>HELD-OUT TEST</small><strong>345,953</strong></div>
+            </div>
+            <p class="source-line">
+                The chronological, group-aware split also excludes 9,443 and
+                8,860 rows in purge gaps. <a
+                    href={source(
+                        "reports/splits/nf_unsw_nb15_v3_split_manifest.json",
+                    )}>Split manifest ↗</a
+                >
+            </p>
+        </div>
+    </section>
+    <section class="section rule">
+        <div class="container">
+            <span class="eyebrow"
+                >Reported binary Validation · 345,371 rows</span
+            ><h2>Supervised baseline comparison</h2><p class="lede">
+                Both reports use the chronological split and 47-feature
+                baseline. Random Forest has a versioned diagnostic audit;
+                XGBoost values are from its training report, while its model
+                artifact is outside Git.
+            </p><div class="table-wrap surface">
+                <table class="data-table">
+                    <caption
+                        >Repository-reported Validation results. Positive class:
+                        Attack (1). FPR = FP / (FP + TN).</caption
+                    ><thead
+                        ><tr
+                            ><th scope="col">Metric</th><th scope="col"
+                                >Random Forest</th
+                            ><th scope="col">XGBoost</th><th scope="col"
+                                >Held-out Test</th
+                            ></tr
+                        ></thead
+                    ><tbody
+                        ><tr
+                            ><th scope="row">Accuracy</th><td>0.999977</td><td
+                                >Not yet verified</td
+                            ><td>Not yet verified</td></tr
+                        ><tr
+                            ><th scope="row">Precision</th><td>0.999836</td><td
+                                >0.999967</td
+                            ><td>Not yet verified</td></tr
+                        ><tr
+                            ><th scope="row">Recall</th><td>0.999902</td><td
+                                >1.000000</td
+                            ><td>Not yet verified</td></tr
+                        ><tr
+                            ><th scope="row">F1-score</th><td>0.999869</td><td
+                                >0.999984</td
+                            ><td>Not yet verified</td></tr
+                        ><tr
+                            ><th scope="row">Macro-F1</th><td>0.999928</td><td
+                                >0.999991</td
+                            ><td>Not yet verified</td></tr
+                        ><tr
+                            ><th scope="row">False positive rate</th><td
+                                >0.000016</td
+                            ><td>0.000003</td><td>Not yet verified</td></tr
+                        ></tbody
+                    >
+                </table>
+            </div><p class="source-line">
+                Sources: <a
+                    href={source(
+                        "reports/models/rf_baseline_training_report.md",
+                    )}>RF training report ↗</a
+                > · <a
+                    href={source(
+                        "reports/models/rf_baseline_validation_audit.json",
+                    )}>RF diagnostic audit ↗</a
+                > · <a
+                    href={source("reports/models/xgboost_training_report.md")}
+                    >XGBoost training report ↗</a
+                >
+            </p>
+        </div>
+    </section>
+    <section class="section tinted rule">
+        <div class="container">
+            <span class="eyebrow">Label order [0, 1]</span><h2>
+                Validation confusion matrices
+            </h2><div class="matrix-grid">
+                <div class="surface matrix">
+                    <h3>Random Forest</h3><p>
+                        Actual rows × predicted columns
+                    </p><div class="table-wrap">
+                        <table class="data-table">
+                            <caption class="sr-only"
+                                >Random Forest Validation confusion matrix</caption
+                            ><thead
+                                ><tr
+                                    ><th scope="col">Actual \ Predicted</th><th
+                                        scope="col">Benign (0)</th
+                                    ><th scope="col">Attack (1)</th></tr
+                                ></thead
+                            ><tbody
+                                ><tr
+                                    ><th scope="row">Benign (0)</th><td
+                                        >314,866 TN</td
+                                    ><td>5 FP</td></tr
+                                ><tr
+                                    ><th scope="row">Attack (1)</th><td>3 FN</td
+                                    ><td>30,497 TP</td></tr
+                                ></tbody
+                            >
+                        </table>
+                    </div>
+                </div><div class="surface matrix">
+                    <h3>XGBoost</h3><p>
+                        Values from repository training report
+                    </p><div class="table-wrap">
+                        <table class="data-table">
+                            <caption class="sr-only"
+                                >XGBoost reported Validation confusion matrix</caption
+                            ><thead
+                                ><tr
+                                    ><th scope="col">Actual \ Predicted</th><th
+                                        scope="col">Benign (0)</th
+                                    ><th scope="col">Attack (1)</th></tr
+                                ></thead
+                            ><tbody
+                                ><tr
+                                    ><th scope="row">Benign (0)</th><td
+                                        >314,870 TN</td
+                                    ><td>1 FP</td></tr
+                                ><tr
+                                    ><th scope="row">Attack (1)</th><td>0 FN</td
+                                    ><td>30,500 TP</td></tr
+                                ></tbody
+                            >
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <section class="section">
+        <div class="container">
+            <span class="eyebrow">Interpretation</span><h2>
+                Why these scores need further tests.
+            </h2><div class="risk-grid">
+                <article>
+                    <span>01</span><h3>TTL shortcut</h3><p>
+                        The RF diagnostic audit reports that <code>MIN_TTL</code
+                        > and <code>MAX_TTL</code> account for 45.48% of feature importance;
+                        a shallow single-feature tree using <code>MIN_TTL</code> reached
+                        about 0.99985 Validation accuracy. This suggests a testbed-specific
+                        separation.
+                    </p>
+                </article><article>
+                    <span>02</span><h3>Equivalent vectors</h3><p>
+                        The split audit records substantial overlap of
+                        equivalent 47-feature vectors across partitions. Group
+                        and time separation alone cannot remove every repeated
+                        traffic pattern.
+                    </p>
+                </article><article>
+                    <span>03</span><h3>Distribution shift</h3><p>
+                        The traffic was generated in a controlled testbed and
+                        captured in 2015. Performance on a different network,
+                        time period or attack mix remains unverified.
+                    </p>
+                </article>
+            </div><div class="callout">
+                <strong>No production inference:</strong> A high Validation score
+                is evidence about this benchmark and protocol only. Cross-dataset
+                generalization and unknown-attack behavior require separate results.
+            </div><p class="source-line">
+                <a
+                    href={source(
+                        "reports/models/rf_baseline_validation_audit.json",
+                    )}>TTL diagnostics ↗</a
+                > · <a
+                    href={source(
+                        "reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md",
+                    )}>Split and equivalence audit ↗</a
+                > · <a href={source("docs/EVALUATION.md")}
+                    >Evaluation methodology ↗</a
+                >
+            </p>
+        </div>
+    </section>
+    <section class="section rule">
+        <div class="container two-column">
+            <div>
+                <span class="eyebrow">Other model families</span><h2>
+                    Empty results are explicit.
+                </h2><p>
+                    Isolation Forest has a blocked prerequisite run; Autoencoder
+                    remains in an open PR. Neither has a published real-data
+                    comparison against the supervised baselines on main.
+                </p>
+            </div><div class="surface empty-state">
+                <strong>Not yet verified</strong><span
+                    >Isolation Forest · Autoencoder · external dataset
+                    comparison · final Test metrics</span
+                ><a
+                    href={source(
+                        "reports/experiments/isolation_forest/blocked_status.json",
+                    )}>Inspect blocked run ↗</a
+                >
+            </div>
+        </div>
+    </section>
+</Layout>
+<style>
+    .result-banner {
+        background: var(--surface-2);
+        border: 1px solid var(--line);
+        border-left: 4px solid var(--cyan);
+        padding: 1.8rem 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 2rem;
+    }
+    .result-banner h2 {
+        font-size: 1.55rem;
+        margin: 0.5rem 0;
+    }
+    .result-banner p,
+    .lede {
+        color: var(--muted);
+    }
+    .result-banner p {
+        margin: 0;
+    }
+    .result-banner .button {
+        flex-shrink: 0;
+    }
+    .split-summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-top: 2rem;
+    }
+    .split-summary div {
+        border-top: 1px solid var(--line);
+        padding-top: 0.8rem;
+    }
+    .split-summary small,
+    .split-summary strong {
+        display: block;
+    }
+    .split-summary small {
+        font-size: 0.7rem;
+        letter-spacing: 0.1em;
+    }
+    .split-summary strong {
+        font-size: 1.3rem;
+    }
+    .table-wrap {
+        margin: 1.5rem 0;
+    }
+    .data-table caption {
+        text-align: left;
+        padding: 1rem;
+        color: var(--muted);
+        font-size: 0.8rem;
+    }
+    .data-table th:first-child,
+    .data-table td:first-child {
+        padding-left: 1.2rem;
+    }
+    .source-line {
+        color: var(--muted);
+        font-size: 0.82rem;
+    }
+    .source-line a {
+        color: var(--cyan);
+    }
+    .tinted {
+        background: var(--surface);
+    }
+    .matrix-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 2rem;
+    }
+    .matrix {
+        min-width: 0;
+        padding: 1rem;
+    }
+    .matrix h3 {
+        margin: 0.2rem 0.3rem;
+    }
+    .matrix p {
+        color: var(--muted);
+        font-size: 0.8rem;
+        margin: 0.2rem 0.3rem;
+    }
+    .matrix .data-table {
+        font-size: 0.8rem;
+    }
+    .risk-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+    .risk-grid article {
+        border-top: 1px solid var(--line);
+        padding-top: 1rem;
+    }
+    .risk-grid article > span {
+        color: var(--cyan);
+        font:
+            700 0.75rem ui-monospace,
+            monospace;
+    }
+    .risk-grid h3 {
+        margin: 0.8rem 0;
+    }
+    .risk-grid p {
+        color: var(--muted);
+        font-size: 0.9rem;
+    }
+    .two-column {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4rem;
+    }
+    .two-column p {
+        color: var(--muted);
+    }
+    .empty-state {
+        padding: 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+        align-self: start;
+    }
+    .empty-state strong {
+        font-size: 1.4rem;
+    }
+    .empty-state span {
+        color: var(--muted);
+    }
+    .empty-state a {
+        color: var(--cyan);
+    }
+    @media (max-width: 800px) {
+        .matrix-grid,
+        .two-column {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        .risk-grid {
+            grid-template-columns: 1fr;
+        }
+        .result-banner {
+            display: block;
+        }
+        .result-banner .button {
+            margin-top: 1.2rem;
+        }
+    }
+    @media (max-width: 550px) {
+        .split-summary {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>

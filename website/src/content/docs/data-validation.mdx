@@ -1,0 +1,18 @@
+---
+title: Data validation
+description: Schema, labels, quality findings and audit status.
+order: 5
+---
+
+## Contract
+
+The verified file has 55 columns: 47 baseline ML features, six trace metadata fields, `Label` and `Attack`. The [schema document](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) lists the exact ordered fields and observed class counts.
+
+## Run the checks
+
+```powershell
+python scripts/validate_data.py
+python scripts/eda_nf_unsw_nb15_v3.py
+```
+
+The [quality report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/reports/data_quality/nf_unsw_nb15_v3_validation.json) records missing and infinite values and duplicate fingerprints. Source integrity, raw quality and ML readiness are separate states. If the raw package is absent, the validator can exit successfully while reporting `SKIPPED`; that is not a real-data PASS.

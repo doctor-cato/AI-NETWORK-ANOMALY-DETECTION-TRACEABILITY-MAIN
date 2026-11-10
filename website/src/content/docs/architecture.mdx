@@ -1,0 +1,13 @@
+---
+title: Architecture
+description: The intended flow from data quality to traceable incidents.
+order: 9
+---
+
+## Data and model layer
+
+The target pipeline takes verified NetFlow data through split and train-only preprocessing to supervised and unsupervised model components. Current code and reports cover data work and some model methods. The [migration architecture](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/NF_UNSW_NB15_V3_MIGRATION_ARCHITECTURE.md) defines the 47-feature model boundary.
+
+## Future system layer
+
+The [full-system architecture](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/ARCHITECTURE.md) proposes behavioral correlation, risk scoring, incident trace, encrypted storage, FastAPI and a Streamlit interface. API/session events would be separate sources; NF-UNSW-NB15-v3 does not contain them. Planned correlation confidence must never be presented as verified real identity attribution.
