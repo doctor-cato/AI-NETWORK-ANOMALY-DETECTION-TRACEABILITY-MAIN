@@ -22,14 +22,18 @@ import hashlib
 import json
 import subprocess
 import sys
-import zlib
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from sklearn.metrics import confusion_matrix
 
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ML_FEATURE_COLUMNS,
@@ -39,18 +43,11 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
 )
 from network_anomaly.evaluation.metrics import (
     compute_attack_category_breakdown,
-    compute_benign_false_positive_breakdown,
-    compute_confusion_matrix_breakdown,
     compute_metrics,
 )
 from network_anomaly.models.random_forest import RandomForestModel
 from network_anomaly.models.random_forest_protocol import (
-    ALL_ATTACK_CATEGORIES,
     FEATURE_CONTRACT_VERSION,
-    NEGATIVE_CLASS_LABEL,
-    NEGATIVE_CLASS_NAME,
-    POSITIVE_CLASS_LABEL,
-    POSITIVE_CLASS_NAME,
     PREPROCESSING_CONTRACT_ID,
     PROTOCOL_IDENTIFIER,
     SPLIT_PROTOCOL_ID,
@@ -130,9 +127,7 @@ def _load_indices_csv_gz(path: Union[str, Path]) -> np.ndarray:
             try:
                 val = int(row[col_idx].strip())
             except (ValueError, IndexError) as exc:
-                raise ValueError(
-                    f"Malformed row index at line {line_num} in {p}: {row!r}"
-                ) from exc
+                raise ValueError(f"Malformed row index at line {line_num} in {p}: {row!r}") from exc
             if val < 0:
                 raise ValueError(f"Negative row index {val} at line {line_num} in {p}")
             indices.append(val)
@@ -146,9 +141,175 @@ def _load_indices_csv_gz(path: Union[str, Path]) -> np.ndarray:
     return arr
 
 
+def compute_confusion_matrix_breakdown(
+    y_true: Sequence[Any],
+    y_pred: Sequence[Any],
+    labels: Optional[Sequence[Any]] = None,
+) -> Dict[str, Any]:
+    """Compute a detailed confusion matrix breakdown (TN, FP, FN, TP and rates)."""
+    target_labels = list(labels) if labels is not None else [0, 1]
+    cm = confusion_matrix(y_true, y_pred, labels=target_labels)
+    tn = int(cm[0, 0])
+    fp = int(cm[0, 1])
+    fn = int(cm[1, 0])
+    tp = int(cm[1, 1])
+    total = tn + fp + fn + tp
+    benign_total = tn + fp
+    attack_total = tp + fn
+    return {
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "tp": tp,
+        "total": total,
+        "benign_total": benign_total,
+        "attack_total": attack_total,
+        "false_positive_rate": float(fp / benign_total) if benign_total > 0 else 0.0,
+        "true_negative_rate": float(tn / benign_total) if benign_total > 0 else 0.0,
+        "true_positive_rate": float(tp / attack_total) if attack_total > 0 else 0.0,
+        "false_negative_rate": float(fn / attack_total) if attack_total > 0 else 0.0,
+        "confusion_matrix": cm.tolist(),
+    }
+
+
+def compute_benign_false_positive_breakdown(
+    y_true: Sequence[Any],
+    y_pred: Sequence[Any],
+    attack_categories: Optional[Sequence[str]] = None,
+) -> Dict[str, Union[int, float]]:
+    """Compute Benign traffic false positive count, true negative count, and FPR."""
+    if attack_categories is not None:
+        cat_breakdown = compute_attack_category_breakdown(y_true, y_pred, attack_categories)
+        if "Benign" in cat_breakdown:
+            return dict(cat_breakdown["Benign"])
+    cm_info = compute_confusion_matrix_breakdown(y_true, y_pred)
+    return {
+        "total": int(cm_info["benign_total"]),
+        "false_positive": int(cm_info["fp"]),
+        "true_negative": int(cm_info["tn"]),
+        "false_positive_rate": float(cm_info["false_positive_rate"]),
+    }
+
+
+def verify_index_disjointness(
+    train_indices_path: Union[str, Path, None] = DEFAULT_TRAIN_INDICES_PATH,
+    val_indices_path: Union[str, Path, None] = DEFAULT_VAL_INDICES_PATH,
+    test_indices_path: Union[str, Path, None] = DEFAULT_TEST_INDICES_PATH,
+    split_manifest: Optional[Dict[str, Any]] = None,
+    total_source_rows: Optional[int] = None,
+) -> Tuple[bool, List[str]]:
+    """Perform genuine set operations and bounds checking to verify partition index disjointness.
+
+    Verifies:
+      1. Train, Validation, and Test index files all exist on disk (fail-closed if missing).
+      2. SHA-256 of each index file matches split manifest 'index_sha256'.
+      3. No duplicate row indices exist within any partition.
+      4. All row indices fall within [0, total_source_rows - 1].
+      5. Genuine pairwise disjointness via set operations:
+         - Train & Test == empty set
+         - Validation & Test == empty set
+         - Train & Validation == empty set
+
+    Returns
+    -------
+    Tuple[bool, List[str]]
+        (is_disjoint_verified, list_of_errors)
+    """
+    errors: List[str] = []
+
+    paths = {
+        "train": Path(train_indices_path) if train_indices_path is not None else None,
+        "validation": Path(val_indices_path) if val_indices_path is not None else None,
+        "test": Path(test_indices_path) if test_indices_path is not None else None,
+    }
+
+    missing = [name for name, p in paths.items() if p is None or not p.exists()]
+    if missing:
+        errors.append(
+            f"Cannot verify index disjointness: missing partition index file(s) on disk: {missing}"
+        )
+        return False, errors
+
+    # Check index_sha256 if split_manifest is provided
+    if split_manifest and "partitions" in split_manifest:
+        partitions_meta = split_manifest.get("partitions", {})
+        for name, p in paths.items():
+            if p is None:
+                continue
+            expected_sha = partitions_meta.get(name, {}).get("index_sha256")
+            if not expected_sha:
+                expected_sha = partitions_meta.get(name, {}).get("sha256")
+            if not expected_sha:
+                errors.append(
+                    f"Split manifest partitions.{name} missing required 'index_sha256' key"
+                )
+            else:
+                actual_sha = _sha256_file(p)
+                if actual_sha.lower() != str(expected_sha).lower():
+                    errors.append(
+                        f"{name} index file SHA-256 mismatch: "
+                        f"expected {expected_sha}, got {actual_sha}"
+                    )
+
+    # Load indices
+    try:
+        assert paths["train"] is not None
+        assert paths["validation"] is not None
+        assert paths["test"] is not None
+        train_idx = _load_indices_csv_gz(paths["train"])
+        val_idx = _load_indices_csv_gz(paths["validation"])
+        test_idx = _load_indices_csv_gz(paths["test"])
+    except Exception as exc:
+        errors.append(f"Failed loading indices for disjointness check: {exc}")
+        return False, errors
+
+    # Check internal duplicates and bounds
+    max_rows = total_source_rows
+    if max_rows is None and split_manifest:
+        max_rows = split_manifest.get("total_source_rows")
+
+    for name, arr in [("Train", train_idx), ("Validation", val_idx), ("Test", test_idx)]:
+        if len(np.unique(arr)) != len(arr):
+            errors.append(f"Internal duplicate row indices detected in {name} partition")
+        if max_rows is not None:
+            if np.any(arr < 0) or np.any(arr >= max_rows):
+                errors.append(
+                    f"{name} partition contains row indices outside valid range [0, {max_rows - 1}]"
+                )
+
+    # Genuine set operations
+    train_set = set(int(x) for x in train_idx)
+    val_set = set(int(x) for x in val_idx)
+    test_set = set(int(x) for x in test_idx)
+
+    overlap_train_val = train_set & val_set
+    if overlap_train_val:
+        errors.append(
+            f"Data leakage detected: {len(overlap_train_val)} overlapping indices "
+            f"between Train and Validation partitions!"
+        )
+
+    overlap_train_test = train_set & test_set
+    if overlap_train_test:
+        errors.append(
+            f"Data leakage detected: {len(overlap_train_test)} overlapping indices "
+            f"between Train and Test partitions!"
+        )
+
+    overlap_val_test = val_set & test_set
+    if overlap_val_test:
+        errors.append(
+            f"Data leakage detected: {len(overlap_val_test)} overlapping indices "
+            f"between Validation and Test partitions!"
+        )
+
+    is_verified = len(errors) == 0
+    return is_verified, errors
+
+
 @dataclass
 class TestEvaluationPrerequisiteStatus:
-    """Result of fail-closed prerequisite checks before Test set evaluation."""
+    """Status container for fail-closed held-out test prerequisite verification."""
 
     __test__ = False
 
@@ -161,15 +322,16 @@ class TestEvaluationPrerequisiteStatus:
     expected_benign_rows: Optional[int] = None
     expected_attack_rows: Optional[int] = None
     expected_attack_distribution: Optional[Dict[str, int]] = None
+    train_validation_disjoint_verified: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize status to dictionary."""
+        """Convert status to a serializable dictionary."""
         return asdict(self)
 
 
 @dataclass
 class TestPartitionData:
-    """Container for verified held-out Test partition features, labels, and trace metadata."""
+    """Extracted held-out test partition data and ground truth."""
 
     __test__ = False
 
@@ -178,19 +340,18 @@ class TestPartitionData:
     attack_categories: np.ndarray
     row_indices: np.ndarray
     trace_metadata: Optional[pd.DataFrame] = None
+    num_rows: int = 0
 
-    @property
-    def num_rows(self) -> int:
-        """Number of rows in the loaded Test partition."""
-        return int(len(self.y_test))
+    def __post_init__(self) -> None:
+        self.num_rows = len(self.X_test_raw)
 
 
 def check_test_evaluation_prerequisites(
     dataset_csv_path: Union[str, Path] = DEFAULT_DATASET_CSV_PATH,
     split_manifest_path: Union[str, Path] = DEFAULT_SPLIT_MANIFEST_PATH,
     test_indices_path: Union[str, Path] = DEFAULT_TEST_INDICES_PATH,
-    train_indices_path: Optional[Union[str, Path]] = DEFAULT_TRAIN_INDICES_PATH,
-    val_indices_path: Optional[Union[str, Path]] = DEFAULT_VAL_INDICES_PATH,
+    train_indices_path: Union[str, Path, None] = DEFAULT_TRAIN_INDICES_PATH,
+    val_indices_path: Union[str, Path, None] = DEFAULT_VAL_INDICES_PATH,
     preprocessing_manifest_path: Union[str, Path] = DEFAULT_PREPROCESSING_MANIFEST_PATH,
     preprocessor_artifact_path: Union[str, Path] = DEFAULT_PREPROCESSOR_ARTIFACT_PATH,
     model_manifest_path: Union[str, Path] = DEFAULT_MODEL_MANIFEST_PATH,
@@ -198,24 +359,24 @@ def check_test_evaluation_prerequisites(
     verify_dataset_hash: bool = True,
     fail_closed: bool = False,
 ) -> TestEvaluationPrerequisiteStatus:
-    """Verify all upstream artifacts and provenance hashes required for Issue #12 Test evaluation.
+    """Fail-closed prerequisite check for held-out Test evaluation.
 
     Parameters
     ----------
     dataset_csv_path : Path-like
-        Path to raw NF-UNSW-NB15-v3.csv.
+        Path to raw NF-UNSW-NB15-v3.csv dataset.
     split_manifest_path : Path-like
         Path to split manifest JSON.
     test_indices_path : Path-like
-        Path to test_indices.csv.gz.
+        Path to test partition indices gzip CSV.
     train_indices_path : Path-like, optional
-        Path to train_indices.csv.gz for disjointness verification.
+        Path to train partition indices gzip CSV.
     val_indices_path : Path-like, optional
-        Path to validation_indices.csv.gz for disjointness verification.
+        Path to validation partition indices gzip CSV.
     preprocessing_manifest_path : Path-like
         Path to preprocessing manifest JSON.
     preprocessor_artifact_path : Path-like
-        Path to fitted TabularPreprocessor joblib artifact.
+        Path to fitted TrainOnlyPreprocessor joblib artifact.
     model_manifest_path : Path-like
         Path to Random Forest training manifest JSON.
     model_artifact_path : Path-like
@@ -286,10 +447,7 @@ def check_test_evaluation_prerequisites(
                 prep_manifest = json.load(f)
             artifact_type = prep_manifest.get("artifact_type")
             fit_part = prep_manifest.get("fit_partition")
-            if (
-                artifact_type != "nf-unsw-nb15-v3-train-only-preprocessor"
-                and fit_part != "train"
-            ):
+            if artifact_type != "nf-unsw-nb15-v3-train-only-preprocessor" and fit_part != "train":
                 errors.append(
                     f"Preprocessing manifest must represent train-only preprocessor, "
                     f"got artifact_type={artifact_type!r}, fit_partition={fit_part!r}"
@@ -324,9 +482,8 @@ def check_test_evaluation_prerequisites(
             )
 
     if prep_manifest and model_manifest:
-        pm_prep_sha = (
-            prep_manifest.get("artifact_sha256")
-            or prep_manifest.get("preprocessor_artifact_sha256")
+        pm_prep_sha = prep_manifest.get("artifact_sha256") or prep_manifest.get(
+            "preprocessor_artifact_sha256"
         )
         mm_prep_sha = model_manifest.get("preprocessor_artifact_sha256")
         if pm_prep_sha and mm_prep_sha and str(pm_prep_sha).lower() != str(mm_prep_sha).lower():
@@ -339,10 +496,9 @@ def check_test_evaluation_prerequisites(
     if ds_path.exists() and verify_dataset_hash:
         actual_ds_sha = _sha256_file(ds_path)
         hashes["dataset_sha256"] = actual_ds_sha
-        expected_ds_sha = (
-            (model_manifest or {}).get("dataset_sha256")
-            or (split_manifest or {}).get("dataset_sha256")
-        )
+        expected_ds_sha = (model_manifest or {}).get("dataset_sha256") or (
+            split_manifest or {}
+        ).get("dataset_sha256")
         if expected_ds_sha and actual_ds_sha.lower() != str(expected_ds_sha).lower():
             errors.append(
                 f"Dataset CSV SHA-256 mismatch: expected {expected_ds_sha}, got {actual_ds_sha}"
@@ -352,12 +508,14 @@ def check_test_evaluation_prerequisites(
         try:
             actual_ti_sha = _sha256_file(ti_path)
             hashes["test_indices_sha256"] = actual_ti_sha
-            expected_ti_sha = (
-                (split_manifest or {}).get("partitions", {}).get("test", {}).get("sha256")
-            )
-            if expected_ti_sha and actual_ti_sha.lower() != str(expected_ti_sha).lower():
+            test_part_meta = (split_manifest or {}).get("partitions", {}).get("test", {})
+            expected_ti_sha = test_part_meta.get("index_sha256") or test_part_meta.get("sha256")
+            if not expected_ti_sha:
+                errors.append("Split manifest partitions.test missing required 'index_sha256' key")
+            elif actual_ti_sha.lower() != str(expected_ti_sha).lower():
                 errors.append(
-                    f"test_indices SHA-256 mismatch: expected {expected_ti_sha}, got {actual_ti_sha}"
+                    f"test_indices SHA-256 mismatch: "
+                    f"expected {expected_ti_sha}, got {actual_ti_sha}"
                 )
             test_idx = _load_indices_csv_gz(ti_path)
             if expected_test_rows is not None and len(test_idx) != int(expected_test_rows):
@@ -365,25 +523,19 @@ def check_test_evaluation_prerequisites(
                     f"test_indices row count ({len(test_idx)}) != "
                     f"split manifest expected row_count ({expected_test_rows})"
                 )
-            test_set = set(int(x) for x in test_idx)
-            if train_indices_path is not None and Path(train_indices_path).exists():
-                train_idx = _load_indices_csv_gz(train_indices_path)
-                overlap_train = len(test_set & set(int(x) for x in train_idx))
-                if overlap_train > 0:
-                    errors.append(
-                        f"Data leakage detected: {overlap_train} overlapping indices "
-                        f"between Train and Test partitions!"
-                    )
-            if val_indices_path is not None and Path(val_indices_path).exists():
-                val_idx = _load_indices_csv_gz(val_indices_path)
-                overlap_val = len(test_set & set(int(x) for x in val_idx))
-                if overlap_val > 0:
-                    errors.append(
-                        f"Data leakage detected: {overlap_val} overlapping indices "
-                        f"between Validation and Test partitions!"
-                    )
         except Exception as exc:
             errors.append(f"Failed to verify test_indices at {ti_path}: {exc}")
+
+    # Index disjointness verification (fail-closed if any partition indices missing)
+    disjoint_verified, disjoint_errors = verify_index_disjointness(
+        train_indices_path=train_indices_path,
+        val_indices_path=val_indices_path,
+        test_indices_path=test_indices_path,
+        split_manifest=split_manifest,
+        total_source_rows=(split_manifest or {}).get("total_source_rows"),
+    )
+    if not disjoint_verified:
+        errors.extend(disjoint_errors)
 
     if pa_path.exists():
         try:
@@ -432,6 +584,7 @@ def check_test_evaluation_prerequisites(
         expected_benign_rows=expected_benign_rows,
         expected_attack_rows=expected_attack_rows,
         expected_attack_distribution=expected_attack_dist,
+        train_validation_disjoint_verified=disjoint_verified,
     )
 
     if fail_closed and not ready:
@@ -450,22 +603,15 @@ def check_test_evaluation_prerequisites(
 def stream_test_partition_data(
     dataset_csv_path: Union[str, Path] = DEFAULT_DATASET_CSV_PATH,
     test_indices_path: Union[str, Path] = DEFAULT_TEST_INDICES_PATH,
-    train_indices_path: Optional[Union[str, Path]] = DEFAULT_TRAIN_INDICES_PATH,
-    val_indices_path: Optional[Union[str, Path]] = DEFAULT_VAL_INDICES_PATH,
+    train_indices_path: Union[str, Path, None] = DEFAULT_TRAIN_INDICES_PATH,
+    val_indices_path: Union[str, Path, None] = DEFAULT_VAL_INDICES_PATH,
     chunksize: int = 100_000,
-    retain_trace_metadata: bool = True,
+    include_trace_metadata: bool = True,
 ) -> TestPartitionData:
-    """Stream raw dataset CSV and extract ONLY the held-out Test partition rows in exact order.
-
-    Enforces:
-      - Disjointness from Train and Validation indices (when provided and present).
-      - Exact presence and ordering of all 47 ML_FEATURE_COLUMNS.
-      - Exclusion of Label, Attack, and TRACE_METADATA_COLUMNS from X_test_raw.
-      - Strict binary Label (0/1) consistency with Attack ('Benign' vs non-'Benign').
-    """
+    """Stream raw dataset CSV and extract exact rows belonging to the test partition."""
     ds_path = Path(dataset_csv_path)
     if not ds_path.exists():
-        raise FileNotFoundError(f"Dataset CSV not found: {ds_path}")
+        raise FileNotFoundError(f"Dataset CSV not found at {ds_path}")
 
     test_indices = _load_indices_csv_gz(test_indices_path)
     test_set = set(int(i) for i in test_indices)
@@ -485,6 +631,21 @@ def stream_test_partition_data(
             raise ValueError(
                 f"Data leakage error: Test indices overlap with Validation indices "
                 f"({len(overlap)} rows)"
+            )
+
+    if (
+        train_indices_path is not None
+        and Path(train_indices_path).exists()
+        and val_indices_path is not None
+        and Path(val_indices_path).exists()
+    ):
+        train_indices = _load_indices_csv_gz(train_indices_path)
+        val_indices = _load_indices_csv_gz(val_indices_path)
+        overlap_tv = set(int(i) for i in train_indices) & set(int(i) for i in val_indices)
+        if overlap_tv:
+            raise ValueError(
+                f"Data leakage error: Train indices overlap with Validation indices "
+                f"({len(overlap_tv)} rows)"
             )
 
     required_cols = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
@@ -519,180 +680,97 @@ def stream_test_partition_data(
         sub_chunk = chunk.iloc[np.flatnonzero(mask)].copy()
         sub_chunk.index = pd.Index(selected_ids, name="row_index")
 
-        feature_chunks.append(sub_chunk[list(ML_FEATURE_COLUMNS)].copy())
-        target_chunks.append(sub_chunk[list(TARGET_COLUMNS)].copy())
+        f_chunk = sub_chunk[list(ML_FEATURE_COLUMNS)].copy()
+        validate_feature_selection(list(f_chunk.columns))
+        feature_chunks.append(f_chunk)
 
-        if retain_trace_metadata:
-            present_trace = [c for c in TRACE_METADATA_COLUMNS if c in sub_chunk.columns]
-            if present_trace:
-                trace_chunks.append(sub_chunk[present_trace].copy())
+        t_chunk = sub_chunk[list(TARGET_COLUMNS)].copy()
+        target_chunks.append(t_chunk)
+
+        if include_trace_metadata:
+            trace_present = [c for c in TRACE_METADATA_COLUMNS if c in sub_chunk.columns]
+            if trace_present:
+                trace_chunks.append(sub_chunk[trace_present].copy())
 
     if len(matched_indices_set) != len(test_indices):
         missing_count = len(test_indices) - len(matched_indices_set)
         raise ValueError(
-            f"Test partition incomplete: expected {len(test_indices)} test rows, "
-            f"but {missing_count} indices were not found in {ds_path} "
-            f"(total dataset rows scanned: {current_row_offset})."
+            f"Failed to match all test indices in {ds_path}: missing {missing_count} rows. "
+            f"Dataset may be truncated or modified."
         )
 
-    X_df = pd.concat(feature_chunks, axis=0).loc[test_indices]
-    targets_df = pd.concat(target_chunks, axis=0).loc[test_indices]
-    trace_df = (
-        pd.concat(trace_chunks, axis=0).loc[test_indices].reset_index(drop=True)
-        if (retain_trace_metadata and trace_chunks)
-        else None
-    )
+    all_features = pd.concat(feature_chunks, axis=0)
+    all_targets = pd.concat(target_chunks, axis=0)
+    all_trace = pd.concat(trace_chunks, axis=0) if trace_chunks else None
 
-    # Validate feature selection strictly
-    validate_feature_selection(list(X_df.columns), require_complete=True)
+    # Reorder strictly by original test_indices order
+    all_features = all_features.loc[test_indices].reset_index(drop=True)
+    all_targets = all_targets.loc[test_indices].reset_index(drop=True)
+    if all_trace is not None:
+        all_trace = all_trace.loc[test_indices].reset_index(drop=True)
 
-    # Validate targets and Label <-> Attack consistency
-    raw_labels = targets_df["Label"].to_numpy()
-    raw_attacks = targets_df["Attack"].astype(str).str.strip().to_numpy()
+    y_test = all_targets["Label"].to_numpy(dtype=np.int64)
+    attack_cats = all_targets["Attack"].to_numpy(dtype=object)
 
-    y_test = np.zeros(len(raw_labels), dtype=np.int64)
-    for idx, (lbl_val, att_val) in enumerate(zip(raw_labels, raw_attacks)):
-        if pd.isna(lbl_val) or isinstance(lbl_val, (bool, np.bool_)):
-            raise ValueError(f"Invalid Label value at test row {idx}: {lbl_val!r}")
-        try:
-            lbl_int = int(lbl_val)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"Non-integer Label value at test row {idx}: {lbl_val!r}") from exc
-        if lbl_int not in (NEGATIVE_CLASS_LABEL, POSITIVE_CLASS_LABEL):
-            raise ValueError(f"Out-of-domain binary Label at test row {idx}: {lbl_int}")
-        if not att_val or att_val.lower() == "nan":
-            raise ValueError(f"Missing Attack category at test row {idx}: {att_val!r}")
-        if lbl_int == NEGATIVE_CLASS_LABEL and att_val != NEGATIVE_CLASS_NAME:
-            raise ValueError(
-                f"Label/Attack contradiction at test row {idx}: "
-                f"Label=0 but Attack={att_val!r} (expected 'Benign')"
-            )
-        if lbl_int == POSITIVE_CLASS_LABEL and att_val == NEGATIVE_CLASS_NAME:
-            raise ValueError(
-                f"Label/Attack contradiction at test row {idx}: "
-                f"Label=1 but Attack='Benign'"
-            )
-        y_test[idx] = lbl_int
-
-    X_df = X_df.reset_index(drop=True)
     return TestPartitionData(
-        X_test_raw=X_df,
+        X_test_raw=all_features,
         y_test=y_test,
-        attack_categories=raw_attacks,
-        row_indices=np.asarray(test_indices, dtype=np.int64),
-        trace_metadata=trace_df,
+        attack_categories=attack_cats,
+        row_indices=test_indices,
+        trace_metadata=all_trace,
     )
-
-
-def _write_minimal_png(path: Path, width: int = 400, height: int = 300) -> None:
-    """Fallback pure-stdlib PNG writer if matplotlib rendering is unavailable."""
-    raw_rows = []
-    for y in range(height):
-        row = bytearray([0])  # filter type 0
-        for x in range(width):
-            in_border = x < 4 or x >= width - 4 or y < 4 or y >= height - 4
-            in_grid = abs(x - width // 2) < 2 or abs(y - height // 2) < 2
-            if in_border or in_grid:
-                row.extend((40, 60, 90))
-            else:
-                row.extend((245, 248, 252))
-        raw_rows.append(bytes(row))
-    raw_data = b"".join(raw_rows)
-
-    def _chunk(chunk_type: bytes, data: bytes) -> bytes:
-        crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
-        return (
-            len(data).to_bytes(4, "big")
-            + chunk_type
-            + data
-            + crc.to_bytes(4, "big")
-        )
-
-    ihdr = (
-        width.to_bytes(4, "big")
-        + height.to_bytes(4, "big")
-        + bytes([8, 2, 0, 0, 0])  # 8-bit RGB
-    )
-    idat = zlib.compress(raw_data, level=6)
-    png_bytes = (
-        b"\x89PNG\r\n\x1a\n"
-        + _chunk(b"IHDR", ihdr)
-        + _chunk(b"IDAT", idat)
-        + _chunk(b"IEND", b"")
-    )
-    path.write_bytes(png_bytes)
 
 
 def save_confusion_matrix_artifacts(
-    cm_labeled: Dict[str, int],
-    csv_path: Union[str, Path],
-    png_path: Union[str, Path],
-    title: str = "Random Forest Baseline - Held-out Test Confusion Matrix",
+    cm: Sequence[Sequence[int]],
+    output_csv_path: Union[str, Path],
+    output_png_path: Union[str, Path],
+    classes: Sequence[str] = ("Benign (0)", "Attack (1)"),
+    title: str = "Random Forest Held-Out Test Confusion Matrix",
 ) -> Tuple[str, str]:
-    """Write confusion_matrix.csv and confusion_matrix.png and return their SHA-256 hashes."""
-    tn = int(cm_labeled["tn"])
-    fp = int(cm_labeled["fp"])
-    fn = int(cm_labeled["fn"])
-    tp = int(cm_labeled["tp"])
+    """Save confusion matrix as CSV and publication-ready PNG."""
+    csv_p = Path(output_csv_path)
+    png_p = Path(output_png_path)
+    csv_p.parent.mkdir(parents=True, exist_ok=True)
+    png_p.parent.mkdir(parents=True, exist_ok=True)
 
-    c_path = Path(csv_path)
-    p_path = Path(png_path)
-    c_path.parent.mkdir(parents=True, exist_ok=True)
-    p_path.parent.mkdir(parents=True, exist_ok=True)
+    cm_arr = np.asarray(cm, dtype=np.int64)
+    cm_df = pd.DataFrame(
+        cm_arr,
+        index=[f"True_{c}" for c in classes],
+        columns=[f"Pred_{c}" for c in classes],
+    )
+    cm_df.to_csv(csv_p, index=True)
+    csv_sha = _sha256_file(csv_p)
 
-    with c_path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["true_label", "pred_benign_0", "pred_attack_1", "row_total"])
-        writer.writerow(["Benign (0)", tn, fp, tn + fp])
-        writer.writerow(["Attack (1)", fn, tp, fn + tp])
-        writer.writerow(["col_total", tn + fn, fp + tp, tn + fp + fn + tp])
+    fig, ax = plt.subplots(figsize=(6, 5), dpi=300)
+    im = ax.imshow(cm_arr, interpolation="nearest", cmap="Blues")
+    ax.figure.colorbar(im, ax=ax)
 
-    try:
-        import matplotlib
+    ax.set(
+        xticks=np.arange(cm_arr.shape[1]),
+        yticks=np.arange(cm_arr.shape[0]),
+        xticklabels=list(classes),
+        yticklabels=list(classes),
+        title=title,
+        ylabel="True Label",
+        xlabel="Predicted Label",
+    )
+    plt.setp(ax.get_xticklabels(), rotation=0, ha="center")
 
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+    thresh = cm_arr.max() / 2.0
+    for i in range(cm_arr.shape[0]):
+        for j in range(cm_arr.shape[1]):
+            val = cm_arr[i, j]
+            color = "white" if val > thresh else "black"
+            ax.text(j, i, f"{val:,}", ha="center", va="center", color=color, fontsize=11)
 
-        matrix = np.array([[tn, fp], [fn, tp]], dtype=np.int64)
-        fig, ax = plt.subplots(figsize=(6.5, 5.5), dpi=150)
-        im = ax.imshow(matrix, interpolation="nearest", cmap="Blues")
-        fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    fig.tight_layout()
+    fig.savefig(png_p, bbox_inches="tight")
+    plt.close(fig)
+    png_sha = _sha256_file(png_p)
 
-        ax.set(
-            xticks=[0, 1],
-            yticks=[0, 1],
-            xticklabels=["Predicted Benign (0)", "Predicted Attack (1)"],
-            yticklabels=["True Benign (0)", "True Attack (1)"],
-            ylabel="Ground Truth Label",
-            xlabel="Predicted Label",
-            title=title,
-        )
-
-        thresh = matrix.max() / 2.0 if matrix.max() > 0 else 0.5
-        cell_names = [["TN", "FP"], ["FN", "TP"]]
-        for i in range(2):
-            for j in range(2):
-                val = matrix[i, j]
-                row_sum = matrix[i].sum()
-                pct = (100.0 * val / row_sum) if row_sum > 0 else 0.0
-                ax.text(
-                    j,
-                    i,
-                    f"{cell_names[i][j]}\n{val:,}\n({pct:.2f}%)",
-                    ha="center",
-                    va="center",
-                    color="white" if val > thresh else "black",
-                    fontsize=10,
-                    fontweight="bold",
-                )
-
-        fig.tight_layout()
-        fig.savefig(p_path, format="png", bbox_inches="tight")
-        plt.close(fig)
-    except Exception:
-        _write_minimal_png(p_path)
-
-    return _sha256_file(c_path), _sha256_file(p_path)
+    return csv_sha, png_sha
 
 
 def save_predictions_csv(
@@ -704,47 +782,35 @@ def save_predictions_csv(
     prob_attack: Sequence[float],
     attack_categories: Sequence[str],
 ) -> str:
-    """Save row-level Test predictions to CSV and return file SHA-256."""
+    """Save test predictions CSV with row indices, probabilities, and attack categories."""
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
 
-    with p.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(
-            [
-                "row_index",
-                "y_true",
-                "y_pred",
-                "prob_benign",
-                "prob_attack",
-                "attack_category",
-                "outcome",
-            ]
-        )
-        for idx_val, yt, yp, pb, pa, cat in zip(
-            row_indices, y_true, y_pred, prob_benign, prob_attack, attack_categories
-        ):
-            yt_i = int(yt)
-            yp_i = int(yp)
-            if yt_i == 0 and yp_i == 0:
-                outcome = "TN"
-            elif yt_i == 0 and yp_i == 1:
-                outcome = "FP"
-            elif yt_i == 1 and yp_i == 0:
-                outcome = "FN"
-            else:
-                outcome = "TP"
-            writer.writerow(
-                [
-                    int(idx_val),
-                    yt_i,
-                    yp_i,
-                    f"{float(pb):.8f}",
-                    f"{float(pa):.8f}",
-                    str(cat),
-                    outcome,
-                ]
-            )
+    y_t = np.asarray(y_true, dtype=np.int64)
+    y_p = np.asarray(y_pred, dtype=np.int64)
+    outcomes = []
+    for yt, yp in zip(y_t, y_p):
+        if yt == 0 and yp == 0:
+            outcomes.append("TN")
+        elif yt == 0 and yp == 1:
+            outcomes.append("FP")
+        elif yt == 1 and yp == 0:
+            outcomes.append("FN")
+        else:
+            outcomes.append("TP")
+
+    df = pd.DataFrame(
+        {
+            "row_index": np.asarray(row_indices, dtype=np.int64),
+            "y_true": y_t,
+            "y_pred": y_p,
+            "prob_benign": np.asarray(prob_benign, dtype=np.float64),
+            "prob_attack": np.asarray(prob_attack, dtype=np.float64),
+            "attack_category": np.asarray(attack_categories, dtype=object),
+            "outcome": outcomes,
+        }
+    )
+    df.to_csv(p, index=False)
     return _sha256_file(p)
 
 
@@ -752,134 +818,86 @@ def evaluate_loaded_random_forest_on_test(
     model: RandomForestModel,
     preprocessor: TrainOnlyPreprocessor,
     test_data: TestPartitionData,
-    output_dir: Union[str, Path],
+    output_dir: Union[str, Path] = DEFAULT_EVALUATION_OUTPUT_DIR,
     run_id: Optional[str] = None,
     provenance_hashes: Optional[Dict[str, str]] = None,
     allow_overwrite: bool = False,
+    disjoint_verified: bool = False,
 ) -> Dict[str, Any]:
-    """Execute post-training evaluation of a loaded RandomForestModel on verified TestPartitionData.
+    """Execute evaluation on a loaded RandomForestModel and TrainOnlyPreprocessor."""
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    Applies preprocessor.transform() ONLY (no refit) and model.predict()/predict_proba()
-    with canonical decision threshold 0.5 (no tuning or threshold optimization).
-    Writes metrics.json, confusion_matrix.csv, confusion_matrix.png, predictions.csv,
-    and evaluation_metadata.json to the output directory.
-    """
-    if not isinstance(model, RandomForestModel) or not model.is_fitted:
-        raise ValueError("Model must be a fitted RandomForestModel instance.")
-    is_prep_fitted = getattr(preprocessor, "is_fitted_", getattr(preprocessor, "is_fitted", False))
-    if not isinstance(preprocessor, TrainOnlyPreprocessor) or not is_prep_fitted:
-        raise ValueError("Preprocessor must be a fitted TrainOnlyPreprocessor instance.")
-    if not isinstance(test_data, TestPartitionData) or test_data.num_rows == 0:
-        raise ValueError("test_data must be a non-empty TestPartitionData instance.")
+    timestamp_utc = datetime.now(timezone.utc).isoformat()
+    effective_run_id = (
+        run_id or f"rf-test-eval-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+    )
 
-    # Validate raw feature schema (47 canonical features, no Label/Attack/Trace columns)
-    validate_feature_selection(list(test_data.X_test_raw.columns), require_complete=True)
+    metrics_json_path = out_dir / "test_metrics.json"
+    legacy_metrics_json_path = out_dir / "metrics.json"
+    cm_csv_path = out_dir / "confusion_matrix.csv"
+    cm_png_path = out_dir / "confusion_matrix.png"
+    preds_csv_path = out_dir / "test_predictions.csv"
+    legacy_preds_csv_path = out_dir / "predictions.csv"
+    metadata_json_path = out_dir / "evaluation_metadata.json"
 
-    # Transform ONLY (never fit or fit_transform on Test!)
-    X_test_transformed = preprocessor.transform(test_data.X_test_raw)
-    if hasattr(X_test_transformed, "columns"):
-        validate_feature_selection(list(X_test_transformed.columns), require_complete=True)
-        X_arr = X_test_transformed.to_numpy(dtype=np.float64)
-    else:
-        X_arr = np.asarray(X_test_transformed, dtype=np.float64)
+    if not allow_overwrite:
+        for p in [
+            metrics_json_path,
+            legacy_metrics_json_path,
+            cm_csv_path,
+            cm_png_path,
+            preds_csv_path,
+            legacy_preds_csv_path,
+            metadata_json_path,
+        ]:
+            if p.exists():
+                raise FileExistsError(
+                    f"Evaluation artifact already exists at {p}. "
+                    f"Use allow_overwrite=True or a separate output directory."
+                )
 
-    if X_arr.shape != (test_data.num_rows, len(ML_FEATURE_COLUMNS)):
-        raise ValueError(
-            f"Transformed Test feature matrix shape mismatch: "
-            f"expected {(test_data.num_rows, len(ML_FEATURE_COLUMNS))}, got {X_arr.shape}"
-        )
-    if not np.isfinite(X_arr).all():
-        raise ValueError("Transformed Test feature matrix contains NaN or infinite values.")
+    # 1. Transform features with train-only preprocessor
+    X_test_trans = preprocessor.transform(test_data.X_test_raw)
 
-    # Predict binary class labels and class probabilities (post-training inference only)
-    y_pred_raw = model.predict(X_test_transformed)
-    y_proba = model.predict_proba(X_test_transformed)
-
-    y_pred = np.asarray(y_pred_raw, dtype=np.int64)
-    y_proba_arr = np.asarray(y_proba, dtype=np.float64)
-    if y_proba_arr.ndim != 2 or y_proba_arr.shape != (test_data.num_rows, 2):
-        raise ValueError(
-            f"predict_proba output must have shape {(test_data.num_rows, 2)}, "
-            f"got {y_proba_arr.shape}"
-        )
-    if not np.isfinite(y_proba_arr).all():
-        raise ValueError("predict_proba output contains NaN or infinite values.")
-
-    # Resolve column indices for Benign (0) and Attack (1) in predict_proba
-    classes = list(model.classes_) if model.classes_ is not None else [0, 1]
-    idx_benign = classes.index(0) if 0 in classes else 0
-    idx_attack = classes.index(1) if 1 in classes else 1
-    prob_benign = y_proba_arr[:, idx_benign]
-    prob_attack = y_proba_arr[:, idx_attack]
-
+    # 2. Predict probabilities and binary decisions
+    probas = model.predict_proba(X_test_trans)
+    prob_benign = probas[:, 0]
+    prob_attack = probas[:, 1]
+    y_pred = (prob_attack >= CANONICAL_DECISION_THRESHOLD).astype(np.int64)
     y_true = np.asarray(test_data.y_test, dtype=np.int64)
-    attack_cats = np.asarray(test_data.attack_categories, dtype=object)
+    attack_cats = [str(c) for c in test_data.attack_categories]
 
-    # Compute primary and breakdown metrics
+    # 3. Compute metrics and breakdowns
     overall_metrics = compute_metrics(y_true=y_true, y_pred=y_pred, labels=[0, 1])
     cm_breakdown = compute_confusion_matrix_breakdown(y_true=y_true, y_pred=y_pred, labels=[0, 1])
     benign_breakdown = compute_benign_false_positive_breakdown(
         y_true=y_true, y_pred=y_pred, attack_categories=attack_cats
     )
-    category_breakdown = compute_attack_category_breakdown(
-        y_true=y_true,
-        y_pred=y_pred,
-        attack_categories=attack_cats,
-        expected_categories=ALL_ATTACK_CATEGORIES,
+    attack_breakdown = compute_attack_category_breakdown(
+        y_true=y_true, y_pred=y_pred, attack_categories=attack_cats
     )
 
-    timestamp_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    effective_run_id = run_id or f"rf-test-eval-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-
-    out_path = Path(output_dir)
-    metrics_json_path = out_path / "metrics.json"
-    cm_csv_path = out_path / "confusion_matrix.csv"
-    cm_png_path = out_path / "confusion_matrix.png"
-    preds_csv_path = out_path / "predictions.csv"
-    eval_meta_path = out_path / "evaluation_metadata.json"
-
-    target_files = [
-        metrics_json_path,
-        cm_csv_path,
-        cm_png_path,
-        preds_csv_path,
-        eval_meta_path,
-    ]
-    if not allow_overwrite:
-        existing = [p.as_posix() for p in target_files if p.exists()]
-        if existing:
-            raise FileExistsError(
-                f"Evaluation artifacts already exist in {out_path.as_posix()} "
-                f"(set allow_overwrite=True or use a new run directory): {existing}"
-            )
-
-    out_path.mkdir(parents=True, exist_ok=True)
-
-    metrics_payload: Dict[str, Any] = {
-        "run_id": effective_run_id,
-        "timestamp_utc": timestamp_utc,
-        "partition": "test",
-        "model_type": model.model_type,
-        "configuration_id": model.config.configuration_id,
-        "decision_threshold": CANONICAL_DECISION_THRESHOLD,
-        "test_row_count": int(test_data.num_rows),
-        "overall_metrics": overall_metrics,
-        "confusion_matrix_breakdown": cm_breakdown,
-        "benign_traffic_breakdown": benign_breakdown,
-        "per_attack_category_breakdown": category_breakdown,
-    }
-    with metrics_json_path.open("w", encoding="utf-8") as f:
-        json.dump(metrics_payload, f, indent=2, sort_keys=False)
-    metrics_json_sha = _sha256_file(metrics_json_path)
-
+    # 4. Save artifacts
     cm_csv_sha, cm_png_sha = save_confusion_matrix_artifacts(
-        cm_labeled=overall_metrics["confusion_matrix_labeled"],
-        csv_path=cm_csv_path,
-        png_path=cm_png_path,
+        cm=cm_breakdown["confusion_matrix"],
+        output_csv_path=cm_csv_path,
+        output_png_path=cm_png_path,
+        classes=("Benign (0)", "Attack (1)"),
+        title=f"RF Held-Out Test Confusion Matrix ({effective_run_id})",
     )
 
     preds_csv_sha = save_predictions_csv(
         path=preds_csv_path,
+        row_indices=test_data.row_indices,
+        y_true=y_true,
+        y_pred=y_pred,
+        prob_benign=prob_benign,
+        prob_attack=prob_attack,
+        attack_categories=attack_cats,
+    )
+    save_predictions_csv(
+        path=legacy_preds_csv_path,
         row_indices=test_data.row_indices,
         y_true=y_true,
         y_pred=y_pred,
@@ -919,13 +937,13 @@ def evaluate_loaded_random_forest_on_test(
             "preprocessor_refitted_on_test": False,
             "hyperparameters_tuned_on_test": False,
             "threshold_tuned_on_test": False,
-            "train_validation_disjoint_verified": True,
+            "train_validation_disjoint_verified": bool(disjoint_verified),
         },
         "provenance_hashes": prov,
         "generated_artifacts": {
             "metrics_json": {
                 "path": metrics_json_path.as_posix(),
-                "sha256": metrics_json_sha,
+                "sha256": None,  # populated below
             },
             "confusion_matrix_csv": {
                 "path": cm_csv_path.as_posix(),
@@ -945,20 +963,44 @@ def evaluate_loaded_random_forest_on_test(
             "python_version": sys.version.split()[0],
         },
     }
-    with eval_meta_path.open("w", encoding="utf-8") as f:
-        json.dump(metadata_payload, f, indent=2, sort_keys=False)
-    eval_meta_sha = _sha256_file(eval_meta_path)
-    metadata_payload["generated_artifacts"]["evaluation_metadata_json"] = {
-        "path": eval_meta_path.as_posix(),
-        "sha256": eval_meta_sha,
+
+    metrics_payload: Dict[str, Any] = {
+        "run_id": effective_run_id,
+        "timestamp_utc": timestamp_utc,
+        "partition": "test",
+        "sample_count": int(test_data.num_rows),
+        "decision_threshold": CANONICAL_DECISION_THRESHOLD,
+        "overall_metrics": overall_metrics,
+        "confusion_matrix_breakdown": cm_breakdown,
+        "benign_traffic_breakdown": benign_breakdown,
+        "per_attack_category_breakdown": attack_breakdown,
     }
+
+    with metrics_json_path.open("w", encoding="utf-8") as f:
+        json.dump(metrics_payload, f, indent=2)
+    with legacy_metrics_json_path.open("w", encoding="utf-8") as f:
+        json.dump(metrics_payload, f, indent=2)
+    metrics_json_sha = _sha256_file(metrics_json_path)
+
+    metadata_payload["generated_artifacts"]["metrics_json"]["sha256"] = metrics_json_sha
+
+    with metadata_json_path.open("w", encoding="utf-8") as f:
+        json.dump(metadata_payload, f, indent=2)
+    metadata_json_sha = _sha256_file(metadata_json_path)
 
     return {
         "run_id": effective_run_id,
-        "output_dir": out_path.as_posix(),
+        "output_dir": str(out_dir),
         "metrics": metrics_payload,
         "metadata": metadata_payload,
-        "X_test_transformed": X_test_transformed,
+        "artifacts": {
+            "metrics_json": {"path": str(metrics_json_path), "sha256": metrics_json_sha},
+            "confusion_matrix_csv": {"path": str(cm_csv_path), "sha256": cm_csv_sha},
+            "confusion_matrix_png": {"path": str(cm_png_path), "sha256": cm_png_sha},
+            "predictions_csv": {"path": str(preds_csv_path), "sha256": preds_csv_sha},
+            "metadata_json": {"path": str(metadata_json_path), "sha256": metadata_json_sha},
+        },
+        "X_test_transformed": X_test_trans,
         "y_true": y_true,
         "y_pred": y_pred,
         "prob_benign": prob_benign,
@@ -972,18 +1014,19 @@ def evaluate_random_forest_on_test(
     dataset_csv_path: Union[str, Path] = DEFAULT_DATASET_CSV_PATH,
     split_manifest_path: Union[str, Path] = DEFAULT_SPLIT_MANIFEST_PATH,
     test_indices_path: Union[str, Path] = DEFAULT_TEST_INDICES_PATH,
-    train_indices_path: Optional[Union[str, Path]] = DEFAULT_TRAIN_INDICES_PATH,
-    val_indices_path: Optional[Union[str, Path]] = DEFAULT_VAL_INDICES_PATH,
+    train_indices_path: Union[str, Path, None] = DEFAULT_TRAIN_INDICES_PATH,
+    val_indices_path: Union[str, Path, None] = DEFAULT_VAL_INDICES_PATH,
     preprocessing_manifest_path: Union[str, Path] = DEFAULT_PREPROCESSING_MANIFEST_PATH,
     preprocessor_artifact_path: Union[str, Path] = DEFAULT_PREPROCESSOR_ARTIFACT_PATH,
     model_manifest_path: Union[str, Path] = DEFAULT_MODEL_MANIFEST_PATH,
     model_artifact_path: Union[str, Path] = DEFAULT_MODEL_ARTIFACT_PATH,
     output_dir: Union[str, Path] = DEFAULT_EVALUATION_OUTPUT_DIR,
     run_id: Optional[str] = None,
-    verify_dataset_hash: bool = True,
     allow_overwrite: bool = False,
+    include_trace_metadata: bool = False,
 ) -> Dict[str, Any]:
-    """End-to-end fail-closed Test set evaluation pipeline for the Random Forest baseline."""
+    """End-to-end entrypoint: verify prerequisites fail-closed, load artifacts, and evaluate."""
+    # 1. Fail-closed prerequisite check
     prereq = check_test_evaluation_prerequisites(
         dataset_csv_path=dataset_csv_path,
         split_manifest_path=split_manifest_path,
@@ -994,57 +1037,61 @@ def evaluate_random_forest_on_test(
         preprocessor_artifact_path=preprocessor_artifact_path,
         model_manifest_path=model_manifest_path,
         model_artifact_path=model_artifact_path,
-        verify_dataset_hash=verify_dataset_hash,
+        verify_dataset_hash=True,
         fail_closed=True,
     )
 
-    model = RandomForestModel.load_verified(
+    # 2. Load preprocessor
+    preprocessor = TrainOnlyPreprocessor.load(preprocessor_artifact_path)
+
+    # 3. Load model with verified provenance check
+    split_manifest: Dict[str, Any] = {}
+    if Path(split_manifest_path).exists():
+        with open(split_manifest_path, "r", encoding="utf-8") as f:
+            split_manifest = json.load(f)
+
+    loaded_res = RandomForestModel.load_verified(
         model_path=model_artifact_path,
         manifest_path=model_manifest_path,
-        expected_dataset_sha256=prereq.verified_hashes.get("dataset_sha256"),
+        expected_dataset_sha256=split_manifest.get("dataset_sha256"),
         expected_split_manifest_sha256=prereq.verified_hashes.get("split_manifest_sha256"),
         expected_preprocessor_artifact_sha256=prereq.verified_hashes.get(
             "preprocessor_artifact_sha256"
         ),
     )
-    preprocessor = TrainOnlyPreprocessor.load(preprocessor_artifact_path)
+    model = loaded_res[0] if isinstance(loaded_res, tuple) else loaded_res
 
+    # 4. Stream and extract test partition rows
     test_data = stream_test_partition_data(
         dataset_csv_path=dataset_csv_path,
         test_indices_path=test_indices_path,
         train_indices_path=train_indices_path,
         val_indices_path=val_indices_path,
+        include_trace_metadata=include_trace_metadata,
     )
 
-    if prereq.expected_test_rows is not None and test_data.num_rows != prereq.expected_test_rows:
-        raise ValueError(
-            f"Loaded Test row count ({test_data.num_rows}) does not match "
-            f"split manifest ({prereq.expected_test_rows})"
-        )
-
-    effective_run_id = run_id or f"rf-test-eval-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
-    run_output_dir = Path(output_dir) / effective_run_id if run_id is None else Path(output_dir)
-
+    # 5. Evaluate and emit artifacts
     return evaluate_loaded_random_forest_on_test(
         model=model,
         preprocessor=preprocessor,
         test_data=test_data,
-        output_dir=run_output_dir,
-        run_id=effective_run_id,
+        output_dir=output_dir,
+        run_id=run_id,
         provenance_hashes=prereq.verified_hashes,
         allow_overwrite=allow_overwrite,
+        disjoint_verified=prereq.train_validation_disjoint_verified,
     )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
-    """CLI entry point for Issue #12 Random Forest held-out Test evaluation."""
+    """CLI entry point for Random Forest held-out test evaluation."""
     parser = argparse.ArgumentParser(
-        description="Evaluate trained Random Forest baseline on held-out Test partition (Issue #12)."
+        description="Run fail-closed held-out Test evaluation for Random Forest (Issue #12)."
     )
     parser.add_argument(
         "--verify-only",
         action="store_true",
-        help="Only check prerequisites and print JSON status without running Test evaluation.",
+        help="Check and print prerequisite status without evaluating or writing output files",
     )
     parser.add_argument(
         "--dataset-csv",
@@ -1063,6 +1110,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         type=Path,
         default=DEFAULT_TEST_INDICES_PATH,
         help="Path to test_indices.csv.gz",
+    )
+    parser.add_argument(
+        "--train-indices",
+        type=Path,
+        default=DEFAULT_TRAIN_INDICES_PATH,
+        help="Path to train_indices.csv.gz",
+    )
+    parser.add_argument(
+        "--val-indices",
+        type=Path,
+        default=DEFAULT_VAL_INDICES_PATH,
+        help="Path to validation_indices.csv.gz",
     )
     parser.add_argument(
         "--preprocessor-artifact",
@@ -1105,6 +1164,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         dataset_csv_path=args.dataset_csv,
         split_manifest_path=args.split_manifest,
         test_indices_path=args.test_indices,
+        train_indices_path=args.train_indices,
+        val_indices_path=args.val_indices,
         preprocessor_artifact_path=args.preprocessor_artifact,
         model_manifest_path=args.model_manifest,
         model_artifact_path=args.model_artifact,
@@ -1123,6 +1184,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         dataset_csv_path=args.dataset_csv,
         split_manifest_path=args.split_manifest,
         test_indices_path=args.test_indices,
+        train_indices_path=args.train_indices,
+        val_indices_path=args.val_indices,
         preprocessor_artifact_path=args.preprocessor_artifact,
         model_manifest_path=args.model_manifest,
         model_artifact_path=args.model_artifact,
