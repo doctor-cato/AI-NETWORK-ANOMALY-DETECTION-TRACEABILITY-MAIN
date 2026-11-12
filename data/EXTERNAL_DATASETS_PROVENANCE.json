@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "last_audited_utc": "2026-11-08T14:30:00Z",
+  "surveyed_datasets": [
+    {
+      "name": "NF-CSE-CIC-IDS2018-v3",
+      "publisher": "The University of Queensland / Communications Security Establishment & CIC",
+      "doi": "10.48610/ece9b83",
+      "landing_page": "https://doi.org/10.48610/ece9b83",
+      "rdm_uuid": "4ac221b1-6bd6-42b1-bdf7-03f4fc7efb22",
+      "license": "Permitted Re-Use with Commercial Use Restriction (UQ 454104)",
+      "total_rows": 20115529,
+      "class_distribution": {
+        "benign_pct": 87.07,
+        "attack_pct": 12.93
+      },
+      "attack_categories": [
+        "Benign",
+        "FTP-BruteForce",
+        "SSH-Bruteforce",
+        "DoS-GoldenEye",
+        "DoS-Slowloris",
+        "DoS-SlowHTTPTest",
+        "DoS-Hulk",
+        "DDoS-LOIC-HTTP",
+        "DDOS-HOIC",
+        "Brute Force -Web",
+        "Brute Force -XSS",
+        "SQL Injection",
+        "Infiltration",
+        "Bot"
+      ],
+      "feature_count": 55,
+      "ml_feature_compatibility": "100% (47/47 EXACT nProbe v3)",
+      "role": "PRIMARY_EXTERNAL_BENCHMARK",
+      "domain": "Enterprise Network (AWS Infrastructure, Canada)",
+      "independence_from_train": "VERY_HIGH"
+    },
+    {
+      "name": "NF-ToN-IoT-v3",
+      "publisher": "The University of Queensland / UNSW Canberra Cyber",
+      "doi": "10.48610/44d7c5e",
+      "landing_page": "https://doi.org/10.48610/44d7c5e",
+      "rdm_uuid": "343e2e8c-6e6e-4a0c-813d-a46acea1b7f4",
+      "license": "Permitted Re-Use with Commercial Use Restriction (UQ 454104)",
+      "total_rows": 27520260,
+      "class_distribution": {
+        "benign_pct": 61.02,
+        "attack_pct": 38.98
+      },
+      "feature_count": 55,
+      "ml_feature_compatibility": "100% (47/47 EXACT nProbe v3)",
+      "role": "CROSS_DOMAIN_IOT_EVALUATION",
+      "domain": "IoT & Industrial IoT Testbed",
+      "independence_from_train": "MEDIUM_HIGH"
+    },
+    {
+      "name": "NF-BoT-IoT-v3",
+      "publisher": "The University of Queensland / UNSW Canberra Cyber",
+      "doi": "10.48610/73c4ebc",
+      "landing_page": "https://doi.org/10.48610/73c4ebc",
+      "rdm_uuid": "db0187cc-1f78-4215-8e34-303364498866",
+      "license": "Permitted Re-Use with Commercial Use Restriction (UQ 454104)",
+      "total_rows": 16933808,
+      "class_distribution": {
+        "benign_pct": 0.31,
+        "attack_pct": 99.69
+      },
+      "feature_count": 55,
+      "ml_feature_compatibility": "100% (47/47 EXACT nProbe v3)",
+      "role": "EXTREME_IMBALANCE_STRESS_TEST",
+      "domain": "IoT Botnet Traffic",
+      "independence_from_train": "LOW_MEDIUM"
+    },
+    {
+      "name": "CIDDS-001",
+      "publisher": "Hochschule Coburg (2017)",
+      "doi": "N/A (Coburg OpenStack)",
+      "landing_page": "https://www.hs-coburg.de/cidds",
+      "license": "Academic Research Use",
+      "total_rows": 33000000,
+      "feature_count": 14,
+      "ml_feature_compatibility": "INCOMPATIBLE (Missing 38/47 features, NetFlow v9 standard only)",
+      "role": "LEGACY_FLOW_PARSER_TEST",
+      "domain": "OpenStack Virtual Environment",
+      "independence_from_train": "VERY_HIGH"
+    },
+    {
+      "name": "UGR'16",
+      "publisher": "University of Granada (2016)",
+      "doi": "N/A (Spanish ISP Backbone)",
+      "landing_page": "https://nesg.ugr.es/nesg-ugr16/",
+      "license": "Academic Research Use",
+      "total_rows": 16900000000,
+      "feature_count": 134,
+      "ml_feature_compatibility": "INCOMPATIBLE (Time-series aggregate schema, requires nfdump)",
+      "role": "LONG_TERM_DRIFT_STUDY",
+      "domain": "Spanish ISP Tier-2/3 Backbone",
+      "independence_from_train": "VERY_HIGH"
+    },
+    {
+      "name": "CESNET-IPFIX",
+      "publisher": "CESNET (Czech Republic National Research & Education Network)",
+      "doi": "N/A (CESNET Open Access)",
+      "landing_page": "https://zenodo.org/communities/cesnet",
+      "license": "Open Access / Academic",
+      "feature_count": 40,
+      "ml_feature_compatibility": "POTENTIALLY_COMPATIBLE via open-source ipfixprobe/ipfixcol2",
+      "role": "OPEN_SOURCE_PROBE_ALTERNATIVE",
+      "domain": "100G National Academic Backbone",
+      "independence_from_train": "VERY_HIGH"
+    }
+  ]
+}
