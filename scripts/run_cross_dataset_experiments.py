@@ -49,6 +49,7 @@ from network_anomaly.models.robust_experiment import (  # noqa: E402
     compute_fingerprint_disjoint_split,
 )
 from network_anomaly.preprocessing import TrainOnlyPreprocessor  # noqa: E402
+from scripts.fetch_external_dataset import verify_unsw_sample_binding  # noqa: E402
 
 # Default dataset paths
 DEFAULT_UNSW_VAL_CSV = (
@@ -116,6 +117,7 @@ def run_all_cross_dataset_experiments(
     ton_csv: Optional[Path] = None,
     split_manifest_path: Optional[Path] = None,
     random_seed: int = 42,
+    indices_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Execute controlled ablation and domain shift experiments E0–E5 without train leakage."""
     split_manifest = split_manifest_path or DEFAULT_SPLIT_MANIFEST
@@ -130,9 +132,17 @@ def run_all_cross_dataset_experiments(
     if not benchmark_csv.exists():
         raise FileNotFoundError(f"Benchmark dataset not found: {benchmark_csv}")
 
+    expected_val_rows = verify_unsw_sample_binding(
+        unsw_val_csv,
+        split_manifest,
+        indices_dir or PROJECT_ROOT / "data" / "processed" / "splits",
+    )
+
     print(f"Loading official Validation partition: {unsw_val_csv.name}...")
     t0 = time.time()
     df_val = pd.read_csv(unsw_val_csv)
+    if len(df_val) != expected_val_rows:
+        raise ValueError("Validation sample row count differs from companion manifest")
     print(f"Loaded {len(df_val):,} validation records in {time.time() - t0:.2f}s.")
 
     print(f"Loading benchmark dataset (CIC-IDS): {benchmark_csv.name}...")

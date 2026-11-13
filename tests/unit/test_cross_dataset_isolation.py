@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -18,10 +20,13 @@ from scripts.fetch_external_dataset import (
     UNSW_TEST_LOCK_START,
     UNSW_VALIDATION_START,
     validate_slice_sampling_parameters,
+    verify_unsw_sample_binding,
+    verify_unsw_validation_membership,
 )
 from scripts.run_cross_dataset_experiments import (
     DEFAULT_SPLIT_MANIFEST,
     DEFAULT_TON_CSV,
+    run_all_cross_dataset_experiments,
     verify_split_manifest_and_test_lock,
 )
 
@@ -30,6 +35,67 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def test_ton_sample_name_matches_fetcher():
     assert DEFAULT_TON_CSV.name == DATASET_CONFIGS["NF-ToN-IoT-v3"]["sample_name"]
+
+
+def test_unsw_sample_requires_verified_validation_membership(tmp_path: Path):
+    indices_dir = tmp_path / "splits"
+    indices_dir.mkdir()
+    partitions = {}
+    for name, rows in (("train", [0, 1, 2]), ("validation", [5, 6, 7])):
+        path = indices_dir / f"{name}_indices.csv.gz"
+        pd.DataFrame({"source_row_index": rows}).to_csv(path, index=False, compression="gzip")
+        partitions[name] = {"index_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    split_manifest = tmp_path / "split.json"
+    partitions["validation"]["row_count"] = 3
+    partitions["test"] = {"row_count": 1}
+    split_manifest.write_text(json.dumps({"partitions": partitions}), encoding="utf-8")
+
+    verify_unsw_validation_membership(5, 2, split_manifest, indices_dir)
+    with pytest.raises(ValueError, match="overlaps verified Train"):
+        verify_unsw_validation_membership(1, 2, split_manifest, indices_dir)
+    with pytest.raises(ValueError, match="outside verified Validation"):
+        verify_unsw_validation_membership(6, 3, split_manifest, indices_dir)
+
+    sample = tmp_path / "validation.csv"
+    sample.write_text("Label\n0\n1\n", encoding="utf-8")
+    companion = sample.with_name(f"{sample.name}.manifest.json")
+    companion.write_text(
+        json.dumps(
+            {
+                "dataset_identity": {"dataset_name": "NF-UNSW-NB15-v3"},
+                "content_checksum": {
+                    "slice_type": "slice",
+                    "sample_sha256": hashlib.sha256(sample.read_bytes()).hexdigest(),
+                    "skip_rows_offset": 5,
+                    "sample_rows_extracted": 2,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert verify_unsw_sample_binding(sample, split_manifest, indices_dir) == 2
+    with pytest.raises(ValueError, match="row count differs"):
+        verify_unsw_sample_binding(sample, split_manifest, indices_dir, expected_count=3)
+    contaminated = json.loads(companion.read_text(encoding="utf-8"))
+    contaminated["content_checksum"]["skip_rows_offset"] = 1
+    companion.write_text(json.dumps(contaminated), encoding="utf-8")
+    benchmark = tmp_path / "benchmark.csv"
+    benchmark.write_text("Label\n0\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="overlaps verified Train"):
+        run_all_cross_dataset_experiments(
+            sample,
+            benchmark,
+            tmp_path / "report.md",
+            tmp_path / "summary.json",
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+        )
+    assert not (tmp_path / "summary.json").exists()
+    contaminated["content_checksum"]["skip_rows_offset"] = 5
+    companion.write_text(json.dumps(contaminated), encoding="utf-8")
+    sample.write_text("Label\n1\n1\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        verify_unsw_sample_binding(sample, split_manifest, indices_dir)
 
 
 def test_main_components_zero_regression():
@@ -90,6 +156,10 @@ def test_fetch_external_dataset_test_lock_guardrail():
         )
     assert "test lock enforced" in str(excinfo.value).lower()
     assert "blocked" in str(excinfo.value).lower()
+    with pytest.raises(ValueError, match="crosses the purge gap"):
+        validate_slice_sampling_parameters(
+            "NF-UNSW-NB15-v3", skip_rows=UNSW_TEST_LOCK_START - 2, sample_rows=10
+        )
 
 
 def test_split_manifest_verification_and_test_lock():

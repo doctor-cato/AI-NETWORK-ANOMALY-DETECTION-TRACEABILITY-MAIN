@@ -29,10 +29,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DESTINATION = PROJECT_ROOT / "data" / "raw"
+LOCAL_SOURCE = PROJECT_ROOT / "src"
+if str(LOCAL_SOURCE) not in sys.path:
+    sys.path.insert(0, str(LOCAL_SOURCE))
 
-# Official partition offsets for NF-UNSW-NB15-v3 per NF_UNSW_NB15_V3_SPLIT_MANIFEST.json
+from network_anomaly.data.split import load_partition_indices  # noqa: E402
+
+# Chronological bounds are an early guard; verified partition indices decide membership.
 UNSW_CANONICAL_TRAIN_END = 1655797  # rows 0..1,655,796
 UNSW_PURGED_GAP_1_END = 1665240  # rows 1,655,797..1,665,239
 UNSW_VALIDATION_START = 1665240  # rows 1,665,240..2,010,610
@@ -169,6 +176,8 @@ def validate_slice_sampling_parameters(
     """Validate that sampling parameters protect Test Lock and prevent train set leakage."""
     cfg = DATASET_CONFIGS[dataset_name]
     effective_skip = skip_rows if skip_rows is not None else cfg["default_sample_skip"]
+    if sample_rows < 1:
+        raise ValueError("sample_rows must be positive")
 
     if dataset_name == "NF-UNSW-NB15-v3":
         # Check train leakage: first-50k slice is strictly rejected
@@ -189,19 +198,63 @@ def validate_slice_sampling_parameters(
             )
 
         if effective_skip + sample_rows > UNSW_VALIDATION_END:
-            effective_sample_rows = max(1, UNSW_VALIDATION_END - effective_skip)
-            print(
-                f"[INFO] Adjusting sample rows from {sample_rows:,} to {effective_sample_rows:,} "
-                "to remain strictly within official validation boundaries (before purge gap 2)."
-            )
+            raise ValueError("Validation sample crosses the purge gap or Test Lock boundary")
 
     return effective_skip
+
+
+def verify_unsw_validation_membership(
+    start: int,
+    count: int,
+    split_manifest_path: Path,
+    indices_dir: Path,
+) -> None:
+    """Require every source row of a slice to be in verified Validation indices."""
+    if count < 1 or start < 0:
+        raise ValueError("Validation sample requires a positive row count and source offset")
+    train = load_partition_indices(split_manifest_path, indices_dir, "train")
+    validation = load_partition_indices(split_manifest_path, indices_dir, "validation")
+    source_rows = np.arange(start, start + count, dtype=np.int64)
+    if np.intersect1d(source_rows, train).size:
+        raise ValueError("Validation sample overlaps verified Train indices")
+    if not np.isin(source_rows, validation).all():
+        raise ValueError("Validation sample contains rows outside verified Validation indices")
+
+
+def verify_unsw_sample_binding(
+    sample_path: Path,
+    split_manifest_path: Path,
+    indices_dir: Path,
+    expected_start: Optional[int] = None,
+    expected_count: Optional[int] = None,
+) -> int:
+    """Verify sample content, recorded source offset, and split membership."""
+    manifest_path = sample_path.with_name(f"{sample_path.name}.manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    checksum = manifest.get("content_checksum", {})
+    if manifest.get("dataset_identity", {}).get("dataset_name") != "NF-UNSW-NB15-v3":
+        raise ValueError("Sample manifest dataset identity mismatch")
+    if checksum.get("slice_type") != "slice":
+        raise ValueError("Validation sample must be a source-indexed slice")
+    digest = hashlib.sha256(sample_path.read_bytes()).hexdigest()
+    if checksum.get("sample_sha256") != digest:
+        raise ValueError("Validation sample SHA-256 mismatch")
+    start = checksum.get("skip_rows_offset")
+    count = checksum.get("sample_rows_extracted")
+    if not isinstance(start, int) or not isinstance(count, int):
+        raise ValueError("Validation sample lacks source row indices")
+    if expected_start is not None and start != expected_start:
+        raise ValueError("Existing validation sample source offset differs from request")
+    if expected_count is not None and count != expected_count:
+        raise ValueError("Existing validation sample row count differs from request")
+    verify_unsw_validation_membership(start, count, split_manifest_path, indices_dir)
+    return count
 
 
 def fetch_dataset_sample(
     dataset_name: str,
     output_dir: Path,
-    sample_rows: int = 100000,
+    sample_rows: Optional[int] = None,
     skip_rows: Optional[int] = None,
     sample_mode: str = "slice",
     random_seed: int = 42,
@@ -212,6 +265,8 @@ def fetch_dataset_sample(
         raise ValueError(f"Unknown dataset: {dataset_name}. Supported: {list(DATASET_CONFIGS)}")
 
     cfg = DATASET_CONFIGS[dataset_name]
+    if sample_rows is None:
+        sample_rows = cfg["default_sample_take"]
     output_dir.mkdir(parents=True, exist_ok=True)
     filename = cfg["sample_name"] if sample_mode == "slice" else cfg["stratified_sample_name"]
     target_csv = output_dir / filename
@@ -219,8 +274,25 @@ def fetch_dataset_sample(
 
     # Validate anti-leakage and Test Lock before touching any file
     effective_skip = validate_slice_sampling_parameters(dataset_name, skip_rows, sample_rows)
+    if dataset_name == "NF-UNSW-NB15-v3" and sample_mode != "slice":
+        raise ValueError("UNSW stratified sampling lacks source row provenance; use slice mode")
+    if dataset_name == "NF-UNSW-NB15-v3":
+        verify_unsw_validation_membership(
+            effective_skip,
+            sample_rows,
+            PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+            PROJECT_ROOT / "data" / "processed" / "splits",
+        )
 
     if target_csv.exists() and target_csv.stat().st_size > 0:
+        if dataset_name == "NF-UNSW-NB15-v3":
+            verify_unsw_sample_binding(
+                target_csv,
+                PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+                PROJECT_ROOT / "data" / "processed" / "splits",
+                expected_start=effective_skip,
+                expected_count=sample_rows,
+            )
         print(f"Sample dataset already exists: {target_csv} ({target_csv.stat().st_size:,} bytes)")
         return target_csv
 
@@ -371,8 +443,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--sample-rows",
         type=int,
-        default=100000,
-        help="Number of rows to stream extract (default: 100,000)",
+        default=None,
+        help="Number of rows to stream extract (default: dataset-specific sample size)",
     )
     parser.add_argument(
         "--skip-rows",
@@ -422,6 +494,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             if not target.exists():
                 print(f"Target dataset file does not exist: {target} (BLOCKED / SKIPPED)")
                 return 0
+            if args.dataset == "NF-UNSW-NB15-v3":
+                verify_unsw_sample_binding(
+                    target,
+                    PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+                    PROJECT_ROOT / "data" / "processed" / "splits",
+                )
             print(f"Verified dataset file exists: {target} ({target.stat().st_size:,} bytes)")
             return 0
 
