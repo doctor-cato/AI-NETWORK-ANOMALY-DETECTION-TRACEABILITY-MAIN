@@ -452,7 +452,7 @@ class IsolationForestModel:
                 "Threshold is not set. A calibrated threshold is required for predict(). "
                 "Specify threshold in __init__, set model.threshold, or pass threshold argument."
             )
-        if not np.isfinite(t):
+        if np.isnan(t) or (threshold is None and not np.isfinite(t)):
             raise ValueError("Calibrated threshold must be finite")
         scores = self.anomaly_scores(X)
         return (scores >= t).astype(int)
