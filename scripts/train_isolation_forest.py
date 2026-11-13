@@ -40,7 +40,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -85,7 +85,9 @@ PREPROCESSOR_MANIFEST_PATH = (
     else FALLBACK_PREPROCESSOR_MANIFEST
 )
 MODEL_ARTIFACT_DIR = PROJECT_ROOT / "artifacts" / "models" / "isolation_forest"
+MODEL_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
 REPORT_DIR = PROJECT_ROOT / "reports" / "experiments" / "isolation_forest"
+FEATURE_CONTRACT_VERSION = "nf-unsw-nb15-v3-baseline-47"
 
 # Published NF-UNSW-NB15-v3 SHA-256 (BagIt member file checksum from PR #36).
 DATASET_SHA256 = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
@@ -912,6 +914,8 @@ def save_artifacts(
     threshold: float,
     training_meta: dict,
     output_dir: Path,
+    manifest_path: Optional[Path] = None,
+    evaluation_summary: Optional[dict] = None,
 ) -> dict:
     """Save model, config, threshold and metadata; return artifact checksums."""
     import joblib
@@ -923,7 +927,25 @@ def save_artifacts(
     threshold_path = output_dir / "threshold.json"
     meta_path = output_dir / "training_metadata.json"
 
-    joblib.dump(model, model_path)
+    # Save standardized joblib payload
+    raw_estimator = getattr(model, "_estimator", model)
+    payload = {
+        "model_type": "IsolationForest",
+        "task": "unsupervised_anomaly_detection",
+        "target": "Label",
+        "positive_class": "Attack",
+        "estimator": raw_estimator,
+        "config": dict(config),
+        "threshold": float(threshold),
+        "score_direction": "higher_is_more_anomalous",
+        "label_mapping": {"0": "Benign", "1": "Attack"},
+        "feature_contract_version": FEATURE_CONTRACT_VERSION,
+        "classes": [0, 1],
+        "is_fitted": True,
+        "metadata": training_meta,
+    }
+    joblib.dump(payload, model_path, compress=3)
+
     with config_path.open("w", encoding="utf-8") as fh:
         json.dump(config, fh, indent=2)
     with threshold_path.open("w", encoding="utf-8") as fh:
@@ -931,8 +953,38 @@ def save_artifacts(
     with meta_path.open("w", encoding="utf-8") as fh:
         json.dump(training_meta, fh, indent=2, default=str)
 
+    if manifest_path is not None:
+        target_manifest = Path(manifest_path)
+    elif output_dir == MODEL_ARTIFACT_DIR:
+        target_manifest = MODEL_MANIFEST_PATH
+    else:
+        target_manifest = output_dir / "isolation_forest_manifest.json"
+
+    target_manifest.parent.mkdir(parents=True, exist_ok=True)
+    model_sha = sha256_file(model_path)
+    manifest_data = {
+        "model_type": "IsolationForest",
+        "task": "unsupervised_anomaly_detection",
+        "target": "Label",
+        "positive_class": "Attack",
+        "model_artifact_path": str(model_path.as_posix()),
+        "model_artifact_sha256": model_sha,
+        "model_artifact_size_bytes": model_path.stat().st_size,
+        "preprocessor_artifact_sha256": training_meta.get("preprocessor_artifact_sha256"),
+        "split_manifest_sha256": training_meta.get("split_manifest_sha256"),
+        "threshold": float(threshold),
+        "score_direction": "higher_is_more_anomalous",
+        "label_mapping": {"0": "Benign", "1": "Attack"},
+        "feature_contract_version": FEATURE_CONTRACT_VERSION,
+        "hyperparameters": dict(config),
+        "evaluation_summary": evaluation_summary or {},
+        "training_metadata": training_meta,
+    }
+    with target_manifest.open("w", encoding="utf-8") as fh:
+        json.dump(manifest_data, fh, indent=2, ensure_ascii=False)
+
     checksums = {}
-    for artifact_path in [model_path, config_path, threshold_path, meta_path]:
+    for artifact_path in [model_path, config_path, threshold_path, meta_path, target_manifest]:
         checksums[artifact_path.name] = sha256_file(artifact_path)
 
     return {
@@ -942,6 +994,7 @@ def save_artifacts(
             "config": str(config_path),
             "threshold": str(threshold_path),
             "metadata": str(meta_path),
+            "manifest": str(target_manifest),
         },
         "checksums": checksums,
     }
@@ -949,14 +1002,13 @@ def save_artifacts(
 
 def verify_saved_model(model_path: Path, original_model, X_sample) -> dict:
     """Reload saved model and verify it produces equivalent scores."""
-    import joblib
     import numpy as np
 
-    from network_anomaly.models.isolation_forest import anomaly_scores
+    from network_anomaly.models.isolation_forest import IsolationForestModel, anomaly_scores
 
-    loaded_model = joblib.load(model_path)
+    loaded_model = IsolationForestModel.load(model_path)
     original_scores = anomaly_scores(original_model, X_sample)
-    loaded_scores = anomaly_scores(loaded_model, X_sample)
+    loaded_scores = loaded_model.anomaly_scores(X_sample)
 
     if not np.allclose(original_scores, loaded_scores, rtol=1e-6, atol=1e-10):
         max_diff = float(np.abs(original_scores - loaded_scores).max())
@@ -1632,6 +1684,7 @@ def run_pipeline(args) -> int:
 
     pp_artifact_sha256 = pp_check.get("sha256") or sha256_file(Path(pp_check["path"]))
     training_meta["preprocessor_artifact_sha256"] = pp_artifact_sha256
+    training_meta["split_manifest_sha256"] = split_check.get("manifest_sha256", "NOT_VERIFIED")
 
     artifacts_info = save_artifacts(
         model=model,
@@ -1639,6 +1692,8 @@ def run_pipeline(args) -> int:
         threshold=threshold,
         training_meta=training_meta,
         output_dir=MODEL_ARTIFACT_DIR,
+        manifest_path=MODEL_MANIFEST_PATH,
+        evaluation_summary=test_metrics,
     )
     print(f"  Artifacts saved to: {artifacts_info['directory']}", flush=True)
     for name, path in artifacts_info["files"].items():
@@ -1658,6 +1713,20 @@ def run_pipeline(args) -> int:
     print(f"  {verify_result['status']}: {verify_result['message']}", flush=True)
     if verify_result["status"] != "PASS":
         print("[BLOCKED] Model save/load verification failed.", flush=True)
+        return 1
+
+    from network_anomaly.models.isolation_forest import IsolationForestModel
+
+    try:
+        IsolationForestModel.load_verified(
+            model_path=Path(artifacts_info["files"]["model"]),
+            manifest_path=Path(artifacts_info["files"]["manifest"]),
+            expected_preprocessor_artifact_sha256=pp_artifact_sha256,
+            expected_threshold=threshold,
+        )
+        print("  PASS: IsolationForestModel.load_verified confirmed.", flush=True)
+    except Exception as exc:
+        print(f"[BLOCKED] IsolationForestModel.load_verified failed: {exc}", flush=True)
         return 1
 
     # ------------------------------------------------------------------
