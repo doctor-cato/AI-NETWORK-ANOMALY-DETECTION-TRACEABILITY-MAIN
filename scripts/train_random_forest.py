@@ -69,15 +69,6 @@ from network_anomaly.preprocessing.pipeline import (  # noqa: E402
     verify_preprocessing_artifact,
 )
 
-# Backward-compatibility aliases for legacy tests (e.g. test_rf_copilot_remediation.py)
-EXPECTED_SPLIT_MANIFEST_SHA256 = "1ba6b2ef2c5db74f0937ab9de0b67212e21b6819c59c839d4dab034ff4d120a8"
-EXPECTED_PREPROCESSOR_ARTIFACT_SHA256 = (
-    "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6"
-)
-EXPECTED_PREPROCESSOR_MANIFEST_SHA256 = (
-    "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba"
-)
-
 EXPECTED_TRAIN_ROWS = 1655797
 EXPECTED_VAL_ROWS = 345371
 EXPECTED_TEST_ROWS = 345953
@@ -384,17 +375,6 @@ def check_prerequisites(
     findings["indices_audit"] = findings["indices"]
     missing.extend(idx_errors)
 
-    exp_pm_sha = getattr(
-        sys.modules.get("scripts.train_random_forest", sys.modules[__name__]),
-        "EXPECTED_PREPROCESSOR_MANIFEST_SHA256",
-        "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba",
-    )
-    exp_art_sha = getattr(
-        sys.modules.get("scripts.train_random_forest", sys.modules[__name__]),
-        "EXPECTED_PREPROCESSOR_ARTIFACT_SHA256",
-        "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6",
-    )
-
     # 4. Preprocessor artifact + companion manifest — full fail-closed chain.
     if not preprocessor_artifact_path.exists():
         missing.append(f"Preprocessor artifact not found at {preprocessor_artifact_path}")
@@ -410,16 +390,6 @@ def check_prerequisites(
         }
     else:
         actual_pm_sha = _sha256_file(preprocessor_manifest_path)
-        if preprocessor_manifest_path == DEFAULT_PREPROCESSOR_MANIFEST:
-            if actual_pm_sha not in (
-                exp_pm_sha,
-                "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441",
-            ):
-                missing.append(
-                    f"Preprocessor companion manifest SHA-256 mismatch: "
-                    f"expected {exp_pm_sha}, got {actual_pm_sha}"
-                )
-
         try:
             pm_data = json.loads(preprocessor_manifest_path.read_text(encoding="utf-8"))
             if not isinstance(pm_data, dict):
@@ -431,13 +401,20 @@ def check_prerequisites(
                 )
             else:
                 pm_art_sha = pm_data.get("artifact_sha256")
-                if pm_art_sha not in (
-                    exp_art_sha,
-                    "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+                if (
+                    not isinstance(pm_art_sha, str)
+                    or len(pm_art_sha) != 64
+                    or any(c not in "0123456789abcdefABCDEF" for c in pm_art_sha)
+                    or pm_art_sha == "0" * 64
                 ):
                     missing.append(
-                        f"Preprocessor manifest artifact SHA-256 mismatch: "
-                        f"expected {exp_art_sha}, got {pm_art_sha}"
+                        "Preprocessor manifest artifact SHA-256 mismatch: invalid digest"
+                    )
+                elif preprocessor_artifact_path.exists() and pm_art_sha != _sha256_file(
+                    preprocessor_artifact_path
+                ):
+                    missing.append(
+                        "Preprocessor manifest artifact SHA-256 mismatch with runtime artifact"
                     )
             findings["preprocessor_manifest"] = {
                 "status": "EXISTS",

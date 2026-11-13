@@ -57,8 +57,14 @@ def export_openapi() -> None:
                 "fields (`key_id`, `version`, `algorithm`, `status`). Key secrets are never stored."
             ),
             (
-                "- **Fail-Closed Artifact Health**: `/health` strictly checks model/preprocessor "
-                "artifact existence on disk before declaring `model_ready: true`."
+                "- **Fail-Closed Artifact Health**: `/health` verifies model and preprocessor "
+                "artifacts against companion manifests before declaring `model_ready: true`; "
+                "missing or mismatched artifacts report `degraded`."
+            ),
+            (
+                "- **Key Metadata Scope**: Key and rotation endpoints record metadata and audit "
+                "events only. They do not encrypt flow payloads; `algorithm` describes a planned "
+                "key policy, not active AES-GCM encryption."
             ),
             (
                 "- **SQLite Durability**: Ingestion, incidents, timeline, and audit logs "

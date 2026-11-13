@@ -13,6 +13,7 @@ from network_anomaly.models.robust_experiment import (
     compute_fingerprint_disjoint_split,
 )
 from scripts.fetch_external_dataset import (
+    DATASET_CONFIGS,
     UNSW_CANONICAL_TRAIN_END,
     UNSW_TEST_LOCK_START,
     UNSW_VALIDATION_START,
@@ -20,10 +21,15 @@ from scripts.fetch_external_dataset import (
 )
 from scripts.run_cross_dataset_experiments import (
     DEFAULT_SPLIT_MANIFEST,
+    DEFAULT_TON_CSV,
     verify_split_manifest_and_test_lock,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_ton_sample_name_matches_fetcher():
+    assert DEFAULT_TON_CSV.name == DATASET_CONFIGS["NF-ToN-IoT-v3"]["sample_name"]
 
 
 def test_main_components_zero_regression():

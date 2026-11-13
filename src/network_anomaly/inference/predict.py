@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -328,7 +329,7 @@ def load_verified_model(
 
     # Verify model artifact sha256 (mandatory byte-by-byte check)
     expected_sha = manifest_data.get("model_artifact_sha256")
-    if not expected_sha or not isinstance(expected_sha, str):
+    if not isinstance(expected_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha):
         raise ValueError(
             f"Model manifest at '{man_p}' missing required field 'model_artifact_sha256'"
         )
@@ -349,13 +350,11 @@ def load_verified_model(
             f"expected '{FEATURE_CONTRACT_VERSION}'"
         )
 
-    # Verify preprocessor compatibility if recorded in manifest
+    # A caller-supplied digest cannot replace the model's companion binding.
     prep_sha = manifest_data.get("preprocessor_artifact_sha256")
-    if (
-        expected_preprocessor_sha256
-        and prep_sha
-        and prep_sha.lower() != expected_preprocessor_sha256.lower()
-    ):
+    if not isinstance(prep_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", prep_sha):
+        raise ValueError("Model manifest missing required field 'preprocessor_artifact_sha256'")
+    if expected_preprocessor_sha256 and prep_sha.lower() != expected_preprocessor_sha256.lower():
         raise ValueError(
             f"Model was trained with preprocessor SHA-256 '{prep_sha}', "
             f"but current preprocessor artifact has SHA-256 '{expected_preprocessor_sha256}'. "
@@ -375,6 +374,16 @@ def load_verified_model(
         "hyperparameters": manifest_data.get("hyperparameters", {}),
         "raw_manifest": manifest_data,
     }
+
+    if model_metadata["model_type"] == "IsolationForest":
+        from network_anomaly.models.isolation_forest import IsolationForestModel
+
+        model = IsolationForestModel.load_verified(
+            model_path,
+            man_p,
+            expected_preprocessor_artifact_sha256=expected_preprocessor_sha256,
+        )
+        return model, model_metadata
 
     # CRITICAL: Only deserialize AFTER all cryptographic hashes and contracts have passed!
     try:
@@ -421,11 +430,13 @@ class InferencePipeline:
         model: Any,
         preprocessor_metadata: Dict[str, Any],
         model_metadata: Dict[str, Any],
+        eligibility_gate: Any = None,
     ) -> None:
         self.preprocessor = preprocessor
         self.model = model
         self.preprocessor_metadata = preprocessor_metadata
         self.model_metadata = model_metadata
+        self.eligibility_gate = eligibility_gate
 
     @classmethod
     def from_artifacts(
@@ -435,6 +446,7 @@ class InferencePipeline:
         model_manifest_path: Optional[Union[str, Path]] = None,
         preprocessor_manifest_path: Optional[Union[str, Path]] = None,
         split_manifest_path: Optional[Union[str, Path]] = None,
+        eligibility_gate: Any = None,
     ) -> "InferencePipeline":
         """Instantiate InferencePipeline by loading verified preprocessor and model artifacts."""
         model_path = Path(model_artifact_path)
@@ -472,6 +484,7 @@ class InferencePipeline:
             model=model,
             preprocessor_metadata=prep_meta,
             model_metadata=model_meta,
+            eligibility_gate=eligibility_gate,
         )
 
     def predict(
@@ -489,6 +502,39 @@ class InferencePipeline:
         - Output probabilities included if model supports predict_proba.
         - Output anomaly scores included if model supports decision_function/score_samples.
         """
+        if self.eligibility_gate is not None and isinstance(df, pd.DataFrame) and len(df) > 0:
+            decision = self.eligibility_gate.evaluate(
+                df=df,
+                model_artifact_sha256=self.model_metadata.get("model_artifact_sha256"),
+                preprocessor_artifact_sha256=self.preprocessor_metadata.get("artifact_sha256"),
+                feature_contract_version=self.model_metadata.get("feature_contract_version"),
+            )
+            if not decision.can_proceed_to_ml:
+                abstain_run_id = run_id or f"inference-{uuid.uuid4().hex[:12]}"
+                if "row_id" in df.columns:
+                    row_ids = df["row_id"].to_numpy()
+                elif "id" in df.columns:
+                    row_ids = df["id"].to_numpy()
+                else:
+                    row_ids = np.arange(len(df), dtype=np.int64)
+                return pd.DataFrame(
+                    {
+                        "row_id": row_ids,
+                        "prediction": pd.Series([pd.NA] * len(df), dtype="Int64"),
+                        "model_type": self.model_metadata.get(
+                            "model_type", type(self.model).__name__
+                        ),
+                        "run_id": abstain_run_id,
+                        "model_artifact_sha256": self.model_metadata.get("model_artifact_sha256"),
+                        "preprocessor_artifact_sha256": self.preprocessor_metadata.get(
+                            "artifact_sha256"
+                        ),
+                        "inference_status": "ABSTAINED",
+                        "abstention_reason": "; ".join(decision.abstention_reasons)
+                        or "Eligibility gate rejected the batch",
+                    }
+                )
+
         X_ordered, summary = validate_inference_input(df)
 
         # 1. Transform features with train-only frozen preprocessor state
@@ -650,9 +696,11 @@ class InferencePipeline:
             "preprocessing_policy_version": PREPROCESSING_POLICY_VERSION,
             "environment": environment,
             "git_commit": _get_git_commit(),
-            "prediction_count": len(predictions_df),
+            "prediction_count": int(predictions_df["prediction"].notna().sum()),
             "error_count": 0,
-            "execution_status": "SUCCESS",
+            "execution_status": (
+                "ABSTAINED" if predictions_df["prediction"].isna().any() else "SUCCESS"
+            ),
         }
 
         metadata_p: Optional[Path] = None
@@ -681,6 +729,7 @@ def run_inference(
     preprocessor_manifest_path: Optional[Union[str, Path]] = None,
     metadata_path: Optional[Union[str, Path]] = None,
     run_id: Optional[str] = None,
+    eligibility_gate: Any = None,
 ) -> InferenceResult:
     """Convenience functional interface to execute verified CSV inference."""
     pipeline = InferencePipeline.from_artifacts(
@@ -688,6 +737,7 @@ def run_inference(
         preprocessor_artifact_path=preprocessor_artifact_path,
         model_manifest_path=model_manifest_path,
         preprocessor_manifest_path=preprocessor_manifest_path,
+        eligibility_gate=eligibility_gate,
     )
     return pipeline.run(
         input_path=input_path,

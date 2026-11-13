@@ -16,13 +16,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Dict, Tuple
 
 import joblib
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.ensemble import IsolationForest, RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
 from network_anomaly.data.nf_unsw_nb15_v3 import (
@@ -41,6 +42,8 @@ from network_anomaly.inference import (
     validate_inference_input,
 )
 from network_anomaly.inference.predict import _sha256_file
+from network_anomaly.ingestion.gate import InferenceEligibilityGate
+from network_anomaly.models.isolation_forest import IsolationForestModel
 from network_anomaly.preprocessing import (
     FEATURE_CONTRACT_VERSION,
     PreprocessingConfig,
@@ -253,11 +256,17 @@ def test_load_real_issue_8_preprocessor():
     man_path = (
         PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
     )
-    if art_path.is_file() and man_path.is_file():
-        prep, meta = load_verified_preprocessor(art_path, manifest_path=man_path)
-        assert prep.is_fitted_ is True
-        assert meta["feature_contract_version"] == FEATURE_CONTRACT_VERSION
-        assert meta["train_row_count"] == 1655797
+    if not art_path.is_file() or not man_path.is_file():
+        pytest.skip("Real preprocessor artifact is unavailable")
+    manifest = json.loads(man_path.read_text(encoding="utf-8"))
+    if manifest.get("artifact_sha256") != _sha256_file(art_path):
+        with pytest.raises(ValueError, match="SHA-256 mismatch"):
+            load_verified_preprocessor(art_path, manifest_path=man_path)
+        return
+    prep, meta = load_verified_preprocessor(art_path, manifest_path=man_path)
+    assert prep.is_fitted_ is True
+    assert meta["feature_contract_version"] == FEATURE_CONTRACT_VERSION
+    assert meta["train_row_count"] == 1655797
 
 
 def test_load_verified_preprocessor_missing_artifact(tmp_path: Path):
@@ -345,6 +354,82 @@ def test_load_verified_model_preprocessor_mismatch(
         )
 
 
+def test_load_verified_model_requires_manifest_preprocessor_hash(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path], tmp_path: Path
+):
+    prep_art_path, _, model_art_path, model_man_path = synthetic_preprocessor_and_model
+    manifest = json.loads(model_man_path.read_text(encoding="utf-8"))
+    del manifest["preprocessor_artifact_sha256"]
+    bad_manifest = tmp_path / "missing_preprocessor_hash.json"
+    bad_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="missing required field 'preprocessor_artifact_sha256'"):
+        load_verified_model(
+            model_art_path,
+            manifest_path=bad_manifest,
+            expected_preprocessor_sha256=_sha256_file(prep_art_path),
+        )
+
+
+def test_eligibility_gate_abstains_before_model_prediction(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+):
+    prep_art_path, prep_man_path, model_art_path, model_man_path = synthetic_preprocessor_and_model
+
+    class RejectingGate:
+        def evaluate(self, **kwargs):
+            return SimpleNamespace(can_proceed_to_ml=False, abstention_reasons=["OOD drift"])
+
+    pipeline = InferencePipeline.from_artifacts(
+        model_artifact_path=model_art_path,
+        preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=model_man_path,
+        preprocessor_manifest_path=prep_man_path,
+        eligibility_gate=RejectingGate(),
+    )
+    result = pipeline.predict(synthetic_features)
+    assert len(result) == len(synthetic_features)
+    assert result["prediction"].isna().all()
+    assert (result["inference_status"] == "ABSTAINED").all()
+
+
+def test_eligibility_gate_abstains_on_zero_ttl_batch(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+):
+    prep_art_path, prep_man_path, model_art_path, model_man_path = synthetic_preprocessor_and_model
+    pipeline = InferencePipeline.from_artifacts(
+        model_artifact_path=model_art_path,
+        preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=model_man_path,
+        preprocessor_manifest_path=prep_man_path,
+        eligibility_gate=InferenceEligibilityGate(),
+    )
+    flows = synthetic_features.copy()
+    flows["MIN_TTL"] = 0
+    result = pipeline.predict(flows)
+    assert len(result) == len(flows)
+    assert result["prediction"].isna().all()
+    assert (result["inference_status"] == "ABSTAINED").all()
+
+
+def test_eligibility_gate_abstains_on_missing_feature(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+):
+    prep_art_path, prep_man_path, model_art_path, model_man_path = synthetic_preprocessor_and_model
+    pipeline = InferencePipeline.from_artifacts(
+        model_artifact_path=model_art_path,
+        preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=model_man_path,
+        preprocessor_manifest_path=prep_man_path,
+        eligibility_gate=InferenceEligibilityGate(),
+    )
+    result = pipeline.predict(synthetic_features.drop(columns=[ML_FEATURE_COLUMNS[0]]))
+    assert result["prediction"].isna().all()
+    assert (result["inference_status"] == "ABSTAINED").all()
+
+
 # =========================================================================
 # 3. Prediction Pipeline & Zero-Refitting Tests
 # =========================================================================
@@ -427,23 +512,13 @@ def test_inference_pipeline_isolation_forest(
     prep = TrainOnlyPreprocessor.load_verified(prep_art_path, manifest_path=prep_man_path)
     X_trans = prep.transform(synthetic_features)
 
-    if_model = IsolationForest(n_estimators=10, random_state=42)
+    if_model = IsolationForestModel(config={"n_estimators": 10}, threshold=0.1)
     if_model.fit(X_trans)
 
     if_art_path = tmp_path / "if_model.joblib"
-    joblib.dump(if_model, if_art_path)
-    if_sha = _sha256_file(if_art_path)
     prep_sha = _sha256_file(prep_art_path)
     if_man_path = tmp_path / "if_model_manifest.json"
-    if_manifest_data = {
-        "run_id": "test-run-if-001",
-        "model_type": "IsolationForest",
-        "feature_contract_version": FEATURE_CONTRACT_VERSION,
-        "model_artifact_path": str(if_art_path.name),
-        "model_artifact_sha256": if_sha,
-        "preprocessor_artifact_sha256": prep_sha,
-    }
-    if_man_path.write_text(json.dumps(if_manifest_data, indent=2) + "\n", encoding="utf-8")
+    if_model.save(if_art_path, if_man_path, preprocessor_artifact_sha256=prep_sha)
 
     pipeline = InferencePipeline.from_artifacts(
         model_artifact_path=if_art_path,
@@ -457,8 +532,11 @@ def test_inference_pipeline_isolation_forest(
     assert "prediction" in preds_df.columns
     # Isolation Forest has decision_function -> decision_score column
     assert "decision_score" in preds_df.columns
-    # Predictions in {-1, 1}
-    assert set(preds_df["prediction"].unique()).issubset({-1, 1})
+    assert set(preds_df["prediction"].unique()).issubset({0, 1})
+    assert np.array_equal(
+        preds_df["prediction"].to_numpy(),
+        (preds_df["decision_score"].to_numpy() >= 0.1).astype(int),
+    )
 
 
 # =========================================================================
@@ -536,8 +614,13 @@ def test_predict_from_artifact_backward_compatibility(
     synthetic_features: pd.DataFrame,
 ):
     """Test that legacy predict_from_artifact remains callable and functional."""
-    _, _, model_art_path, _ = synthetic_preprocessor_and_model
-    preds = predict_from_artifact(synthetic_features, artifact_path=model_art_path)
+    prep_art_path, prep_man_path, model_art_path, _ = synthetic_preprocessor_and_model
+    preds = predict_from_artifact(
+        synthetic_features,
+        artifact_path=model_art_path,
+        preprocessor_artifact_path=prep_art_path,
+        preprocessor_manifest_path=prep_man_path,
+    )
     assert len(preds) == len(synthetic_features)
 
 
@@ -648,7 +731,7 @@ def test_predict_from_artifact_rejects_unverified_model(
         )
 
     # Also fails closed if called completely standalone without preprocessor or manifest
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises((FileNotFoundError, ValueError)):
         predict_from_artifact(synthetic_features, artifact_path=unverified_model_path)
 
 

@@ -37,10 +37,8 @@ def test_health_check_fails_safe_when_artifacts_absent(api_service: ApiService):
         assert health.status == "degraded"
 
 
-def test_health_check_reports_healthy_when_artifacts_present(
-    api_service: ApiService, tmp_path: Path
-):
-    """Verify health check reports healthy when artifacts exist."""
+def test_health_check_rejects_unverified_artifacts(api_service: ApiService, tmp_path: Path):
+    """Existing files without valid manifests do not make the service healthy."""
     fake_artifacts = tmp_path / "fake_artifacts"
     (fake_artifacts / "models" / "random_forest").mkdir(parents=True)
     (fake_artifacts / "preprocessing").mkdir(parents=True)
@@ -54,9 +52,18 @@ def test_health_check_reports_healthy_when_artifacts_present(
     with patch("network_anomaly.api.service.ARTIFACTS", fake_artifacts):
         health = api_service.check_health()
         assert health.process_alive is True
-        assert health.model_ready is True
-        assert health.preprocessor_ready is True
-        assert health.status == "healthy"
+        assert health.model_ready is False
+        assert health.preprocessor_ready is False
+        assert health.status == "degraded"
+
+
+def test_health_check_accepts_verified_pipeline(api_service: ApiService):
+    """A successfully loaded verified model and preprocessor mark health ready."""
+    with patch.object(api_service, "_load_inference_pipeline", return_value=object()):
+        health = api_service.check_health()
+    assert health.model_ready is True
+    assert health.preprocessor_ready is True
+    assert health.status == "healthy"
 
 
 def test_ingest_events_atomicity_and_idempotency(api_service: ApiService):
@@ -99,10 +106,8 @@ def test_ingest_events_atomicity_and_idempotency(api_service: ApiService):
         assert EventRepository.count(conn) == 2
 
 
-def test_health_check_reports_healthy_with_isolation_forest(
-    api_service: ApiService, tmp_path: Path
-):
-    """Verify health check reports model_ready=True when isolation_forest.joblib exists."""
+def test_health_check_rejects_unverified_isolation_forest(api_service: ApiService, tmp_path: Path):
+    """An unverified Isolation Forest file does not imply model readiness."""
     fake_artifacts = tmp_path / "fake_artifacts_if"
     (fake_artifacts / "models" / "isolation_forest").mkdir(parents=True)
     (fake_artifacts / "preprocessing").mkdir(parents=True)
@@ -116,9 +121,9 @@ def test_health_check_reports_healthy_with_isolation_forest(
     with patch("network_anomaly.api.service.ARTIFACTS", fake_artifacts):
         health = api_service.check_health()
         assert health.process_alive is True
-        assert health.model_ready is True
-        assert health.preprocessor_ready is True
-        assert health.status == "healthy"
+        assert health.model_ready is False
+        assert health.preprocessor_ready is False
+        assert health.status == "degraded"
 
 
 def test_isolation_forest_artifact_naming_parity(api_service: ApiService):

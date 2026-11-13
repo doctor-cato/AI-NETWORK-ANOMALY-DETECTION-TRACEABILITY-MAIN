@@ -78,16 +78,20 @@ class ApiService:
         """
         db_ready = self.db.is_healthy()
 
-        # Check preprocessor artifact
-        prep_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-        prep_legacy = ARTIFACTS / "preprocessor.joblib"
-        preprocessor_ready = prep_path.is_file() or prep_legacy.is_file()
-
-        # Check model artifact
-        rf_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
-        legacy_model = ARTIFACTS / "model.joblib"
-        if_path = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
-        model_ready = rf_path.is_file() or legacy_model.is_file() or if_path.is_file()
+        # Readiness requires successful verification of both artifacts.
+        preprocessor_ready = False
+        model_ready = False
+        verification_error = None
+        for model_name in ("random_forest", "isolation_forest"):
+            try:
+                self._load_inference_pipeline(model_name)
+                preprocessor_ready = True
+                model_ready = True
+                verification_error = None
+                break
+            except (FileNotFoundError, ValueError, RuntimeError) as exc:
+                logger.warning("Artifact readiness verification failed for %s: %s", model_name, exc)
+                verification_error = "artifact verification failed"
 
         # Overall status is degraded if either db or artifacts are missing
         status = "healthy" if (db_ready and model_ready and preprocessor_ready) else "degraded"
@@ -121,6 +125,7 @@ class ApiService:
                 "artifacts_dir_exists": ARTIFACTS.exists(),
                 "model_artifact_found": model_ready,
                 "preprocessor_artifact_found": preprocessor_ready,
+                "artifact_verification_error": verification_error,
             },
         )
 

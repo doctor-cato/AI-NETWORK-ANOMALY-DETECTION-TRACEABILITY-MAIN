@@ -271,7 +271,8 @@ def test_evaluate_random_forest_cli_verify_only(capsys: pytest.CaptureFixture) -
     assert payload["ready"] is False
     assert payload["status"] == "BLOCKED"
     assert payload["train_validation_disjoint_verified"] is False
-    assert payload["partition_verification_status"] == "BLOCKED"
+    # Missing partition assets are BLOCKED; present but invalid assets are FAILED.
+    assert payload["partition_verification_status"] in {"BLOCKED", "FAILED"}
     assert payload["expected_test_rows"] == 345953
 
 

@@ -60,7 +60,7 @@ DEFAULT_UNSW_TRAIN_CSV = (
 DEFAULT_BENCHMARK_CSV = (
     PROJECT_ROOT / "data" / "raw" / "NF-CSE-CIC-IDS2018-v3" / "NF-CSE-CIC-IDS2018-v3-sample100k.csv"
 )
-DEFAULT_TON_CSV = PROJECT_ROOT / "data" / "raw" / "NF-ToN-IoT-v3" / "NF-ToN-IoT-v3-sample100k.csv"
+DEFAULT_TON_CSV = PROJECT_ROOT / "data" / "raw" / "NF-ToN-IoT-v3" / "NF-ToN-IoT-v3-sample50k.csv"
 DEFAULT_SPLIT_MANIFEST = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
 DEFAULT_CANONICAL_MODEL = (
     PROJECT_ROOT / "artifacts" / "models" / "random_forest" / "random_forest_baseline.joblib"
