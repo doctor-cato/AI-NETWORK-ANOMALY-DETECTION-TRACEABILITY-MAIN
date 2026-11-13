@@ -13,6 +13,14 @@ Source commit: `ea330b9db98605ffc19a88c20bd1e9b61b92e6fb`. Feature contract: `nf
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0.999973985 | 0.999771249 | 0.999934632 | 0.999852934 | 0.999919332 | 0.999973986 | 0.000022197 |
 
+## Independent Validation reference
+
+These counts come from the validation audit of the locked model; they are separate from the held-out Test counts above.
+
+| Train rows | Validation rows | Validation TN | Validation FP | Validation FN | Validation TP |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1655797 | 345371 | 314866 | 5 | 3 | 30497 |
+
 ## Attack-family breakdown
 
 | Attack | Total | Detected | FN | Recall 95% Wilson CI |
@@ -120,3 +128,4 @@ Training commit: `6f50633544ccbf93fa4dd193355c1d8222360e37`; training packages: 
 - `preprocessor_artifact_sha256`: `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`
 - `split_manifest_sha256`: `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`
 - `test_indices_sha256`: `63e2e081300955fe06835b0cf7405e07e53985ca3d84164e768be09116269d03`
+- `validation_audit_sha256`: `b84971d2f1783676be7a9b55705bc2f6148e43ec3eaf85fb0cf68ce6937db649`

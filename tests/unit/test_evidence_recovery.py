@@ -31,19 +31,22 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict:
         "preprocessor_artifact": tmp_path / "prep.joblib",
         "model_artifact": tmp_path / "model.joblib",
         "dataset_manifest": tmp_path / "dataset.json",
+        "validation_audit": tmp_path / "validation_audit.json",
         "eda_summary": None,
     }
     _write_json(
         paths["split_manifest"],
         {
             "split_protocol_version": "protocol-v1",
-            "total_source_rows": 4,
+            "total_source_rows": 9,
             "partitions": {
+                "train": {"row_count": 3},
+                "validation": {"row_count": 2, "label_distribution": {"0": 1, "1": 1}},
                 "test": {
                     "row_count": 4,
                     "label_distribution": {"0": 2, "1": 2},
                     "attack_distribution": {"Benign": 2, "DoS": 2},
-                }
+                },
             },
         },
     )
@@ -52,7 +55,7 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict:
         {
             "dataset": "NF-UNSW-NB15-v3",
             "official_source": {"doi": "fixture-doi"},
-            "files": [{"role": "dataset", "sha256": "a" * 64, "expected_rows": 4}],
+            "files": [{"role": "dataset", "sha256": "a" * 64, "expected_rows": 9}],
         },
     )
     _write_json(
@@ -123,6 +126,14 @@ def _fixture(tmp_path: Path, monkeypatch) -> dict:
             "model_artifact_sha256",
         )
     }
+    _write_json(
+        paths["validation_audit"],
+        {
+            "model_artifact": {"sha256": hashes["model_artifact_sha256"]},
+            "split_integrity": {"train_rows": 3, "val_rows": 2},
+            "validation_recomputed": {"n": 2, "tn": 1, "fp": 0, "fn": 0, "tp": 1},
+        },
+    )
     metadata = {
         "run_id": "synthetic-fixture",
         "partition": "test",
@@ -210,6 +221,16 @@ def test_reconcile_rejects_wrong_model_manifest(tmp_path: Path, monkeypatch) -> 
     payload["configuration_id"] = "wrong-model"
     _write_json(model, payload)
     with pytest.raises(ValueError, match="model identity"):
+        recovery.reconcile_run(**paths)
+
+
+def test_reconcile_rejects_wrong_validation_audit(tmp_path: Path, monkeypatch) -> None:
+    paths = _fixture(tmp_path, monkeypatch)
+    audit = paths["validation_audit"]
+    payload = json.loads(audit.read_text(encoding="utf-8"))
+    payload["model_artifact"]["sha256"] = "b" * 64
+    _write_json(audit, payload)
+    with pytest.raises(ValueError, match="Validation model identity"):
         recovery.reconcile_run(**paths)
 
 

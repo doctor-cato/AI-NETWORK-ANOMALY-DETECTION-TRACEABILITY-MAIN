@@ -115,6 +115,7 @@ def reconcile_run(
     preprocessor_artifact: Path,
     model_artifact: Path,
     dataset_manifest: Path = Path("data/NF_UNSW_NB15_V3_MANIFEST.json"),
+    validation_audit: Path = Path("reports/models/rf_baseline_validation_audit.json"),
     eda_summary: Path | None = None,
 ) -> dict[str, Any]:
     """Fail closed unless the stored run, manifests, and source rows agree."""
@@ -148,7 +149,41 @@ def reconcile_run(
     split = _json(split_manifest)
     model = _json(model_manifest)
     dataset_record = _json(dataset_manifest)
+    audit = _json(validation_audit)
     hashes = prereq.verified_hashes
+
+    _require_equal(
+        audit["model_artifact"]["sha256"],
+        hashes["model_artifact_sha256"],
+        "Validation model identity",
+    )
+    _require_equal(
+        audit["split_integrity"]["train_rows"],
+        split["partitions"]["train"]["row_count"],
+        "Validation audit Train rows",
+    )
+    _require_equal(
+        audit["split_integrity"]["val_rows"],
+        split["partitions"]["validation"]["row_count"],
+        "Validation audit Validation rows",
+    )
+    val = audit["validation_recomputed"]
+    _require_equal(val["n"], audit["split_integrity"]["val_rows"], "Validation metric rows")
+    _require_equal(
+        sum(int(val[key]) for key in ("tn", "fp", "fn", "tp")),
+        val["n"],
+        "Validation confusion total",
+    )
+    _require_equal(
+        val["tn"] + val["fp"],
+        split["partitions"]["validation"]["label_distribution"]["0"],
+        "Validation benign support",
+    )
+    _require_equal(
+        val["fn"] + val["tp"],
+        split["partitions"]["validation"]["label_distribution"]["1"],
+        "Validation Attack support",
+    )
     if dataset_record.get("dataset") != "NF-UNSW-NB15-v3" or not dataset_record.get(
         "official_source", {}
     ).get("doi"):
@@ -468,6 +503,7 @@ def reconcile_run(
         "hashes": {
             **hashes,
             "dataset_manifest_sha256": _sha256(dataset_manifest),
+            "validation_audit_sha256": _sha256(validation_audit),
             "evaluation_metadata_sha256": _sha256(metadata_path),
             **{name + "_sha256": _sha256(path) for name, path in required.items()},
             **({"eda_summary_sha256": eda_hash} if eda_hash else {}),
@@ -478,6 +514,14 @@ def reconcile_run(
         "threshold": CANONICAL_DECISION_THRESHOLD,
         "feature_contract_version": FEATURE_CONTRACT_VERSION,
         "counts": counts,
+        "validation_reference": {
+            "train_rows": audit["split_integrity"]["train_rows"],
+            "validation_rows": val["n"],
+            "TN": val["tn"],
+            "FP": val["fp"],
+            "FN": val["fn"],
+            "TP": val["tp"],
+        },
         "metrics": calculated,
         "attack_families": attack_counts,
         "samples": samples,
@@ -532,6 +576,19 @@ def render_report(result: dict[str, Any]) -> str:
                 "weighted_f1",
                 "false_positive_rate",
             )
+        )
+        + " |",
+        "",
+        "## Independent Validation reference",
+        "",
+        "These counts come from the validation audit of the locked model; they are separate from the held-out Test counts above.",
+        "",
+        "| Train rows | Validation rows | Validation TN | Validation FP | Validation FN | Validation TP |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| "
+        + " | ".join(
+            str(result["validation_reference"][key])
+            for key in ("train_rows", "validation_rows", "TN", "FP", "FN", "TP")
         )
         + " |",
         "",
@@ -650,6 +707,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--dataset-manifest", type=Path, default=Path("data/NF_UNSW_NB15_V3_MANIFEST.json")
     )
+    parser.add_argument(
+        "--validation-audit",
+        type=Path,
+        default=Path("reports/models/rf_baseline_validation_audit.json"),
+    )
     parser.add_argument("--report-path", type=Path)
     args = parser.parse_args(argv)
     result = reconcile_run(
@@ -662,6 +724,7 @@ def main(argv: list[str] | None = None) -> int:
         preprocessor_artifact=args.preprocessor_artifact,
         model_artifact=args.model_artifact,
         dataset_manifest=args.dataset_manifest,
+        validation_audit=args.validation_audit,
         eda_summary=args.eda_summary,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)

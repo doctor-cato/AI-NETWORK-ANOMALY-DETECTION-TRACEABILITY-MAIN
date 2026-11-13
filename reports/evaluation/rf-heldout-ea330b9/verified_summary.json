@@ -14,6 +14,7 @@
     "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
     "model_artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
     "dataset_manifest_sha256": "5cff932354f78a223a24ae91d7268955a1758865a5affff46471c29241ae5d59",
+    "validation_audit_sha256": "b84971d2f1783676be7a9b55705bc2f6148e43ec3eaf85fb0cf68ce6937db649",
     "evaluation_metadata_sha256": "8c7e74f5333e749718cc58d37e3c5191cb31121112351f29c894eaa3a5153f41",
     "metrics_json_sha256": "0efc4ba25012707851c6b2c6f175f6004b3bdea3fe670d94f832a48eba13aa65",
     "confusion_matrix_csv_sha256": "ced60c3baca4130edcdd783690b3079aea5b16c9d870c884eb712afc0a24fe2f",
@@ -36,6 +37,14 @@
     "FP": 7,
     "FN": 2,
     "TP": 30594
+  },
+  "validation_reference": {
+    "train_rows": 1655797,
+    "validation_rows": 345371,
+    "TN": 314866,
+    "FP": 5,
+    "FN": 3,
+    "TP": 30497
   },
   "metrics": {
     "accuracy": 0.9999739849054641,
