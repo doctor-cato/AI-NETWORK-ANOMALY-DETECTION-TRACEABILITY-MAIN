@@ -233,7 +233,7 @@ def run_all_cross_dataset_experiments(
         probs=probs_e0_in,
         attack_names=atk_u_val,
         duration_seconds=dt_e0_in,
-        evaluation_level="IN_DOMAIN_VALIDATION",
+        evaluation_level="IN_DOMAIN_VALIDATION_HOLDOUT",
     )
 
     # Cross-domain evaluation on CIC-IDS 100k
