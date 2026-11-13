@@ -381,6 +381,8 @@ class IsolationForestModel:
 
         self.config: Dict[str, Any] = params
         self.threshold: Optional[float] = float(threshold) if threshold is not None else None
+        if self.threshold is not None and not np.isfinite(self.threshold):
+            raise ValueError("Calibrated threshold must be finite")
         self.score_direction: str = score_direction
         self.label_mapping: Dict[str, str] = (
             dict(label_mapping) if label_mapping is not None else {"0": "Benign", "1": "Attack"}
@@ -450,6 +452,8 @@ class IsolationForestModel:
                 "Threshold is not set. A calibrated threshold is required for predict(). "
                 "Specify threshold in __init__, set model.threshold, or pass threshold argument."
             )
+        if not np.isfinite(t):
+            raise ValueError("Calibrated threshold must be finite")
         scores = self.anomaly_scores(X)
         return (scores >= t).astype(int)
 
@@ -469,6 +473,8 @@ class IsolationForestModel:
             raise NotFittedError("Cannot save an unfitted IsolationForestModel.")
         if self.threshold is None:
             raise ValueError("Cannot save IsolationForestModel without a calibrated threshold.")
+        if not np.isfinite(self.threshold):
+            raise ValueError("Calibrated threshold must be finite")
 
         p = Path(model_path)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -482,6 +488,7 @@ class IsolationForestModel:
             "estimator": self._estimator,
             "config": dict(self.config),
             "threshold": float(self.threshold),
+            "calibrated_threshold": float(self.threshold),
             "score_direction": self.score_direction,
             "label_mapping": dict(self.label_mapping),
             "feature_contract_version": fc_version,
@@ -507,6 +514,7 @@ class IsolationForestModel:
                 "preprocessor_artifact_sha256": preprocessor_artifact_sha256,
                 "split_manifest_sha256": split_manifest_sha256,
                 "threshold": float(self.threshold),
+                "calibrated_threshold": float(self.threshold),
                 "score_direction": self.score_direction,
                 "label_mapping": dict(self.label_mapping),
                 "feature_contract_version": fc_version,
@@ -531,6 +539,8 @@ class IsolationForestModel:
         if isinstance(payload, dict) and "estimator" in payload:
             config = payload.get("config", {})
             threshold = payload.get("threshold")
+            if "calibrated_threshold" in payload and payload["calibrated_threshold"] != threshold:
+                raise ValueError("Artifact calibrated_threshold conflicts with threshold")
             score_dir = payload.get("score_direction", "higher_is_more_anomalous")
             label_map = payload.get("label_mapping", {"0": "Benign", "1": "Attack"})
             model = cls(
@@ -646,6 +656,16 @@ class IsolationForestModel:
             raise ValueError(
                 f"Invalid float 'threshold' in manifest: {manifest['threshold']!r}"
             ) from e
+        if not np.isfinite(manifest_threshold):
+            raise ValueError("Calibrated threshold in manifest must be finite")
+        calibrated_threshold = manifest.get("calibrated_threshold", manifest_threshold)
+        if (
+            isinstance(calibrated_threshold, bool)
+            or not isinstance(calibrated_threshold, (int, float))
+            or not np.isfinite(calibrated_threshold)
+            or abs(float(calibrated_threshold) - manifest_threshold) > 1e-9
+        ):
+            raise ValueError("calibrated_threshold conflicts with manifest threshold")
 
         if expected_threshold is not None:
             if abs(manifest_threshold - float(expected_threshold)) > 1e-9:

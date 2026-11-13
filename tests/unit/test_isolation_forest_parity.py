@@ -8,8 +8,10 @@ Covers:
 - Score direction monotonicity and semantic label mapping (0: Benign, 1: Attack).
 """
 
+import json
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pytest
 
@@ -113,6 +115,9 @@ class TestEvaluationInferenceParity:
             preprocessor_artifact_sha256=valid_prep_sha,
             split_manifest_sha256=valid_sm_sha,
         )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["calibrated_threshold"] == tau
+        assert joblib.load(model_path)["calibrated_threshold"] == tau
 
         loaded = IsolationForestModel.load_verified(
             model_path=model_path,
@@ -129,6 +134,25 @@ class TestEvaluationInferenceParity:
 
         assert np.array_equal(y_eval, y_loaded)
         assert np.array_equal(model.predict(X), y_loaded)
+
+
+def test_nonfinite_or_conflicting_calibrated_threshold_fails_closed(
+    synthetic_flow_data, tmp_path: Path
+):
+    X, _, _ = synthetic_flow_data
+    with pytest.raises(ValueError, match="finite"):
+        IsolationForestModel(threshold=float("nan"))
+
+    model = IsolationForestModel(threshold=0.05)
+    model.fit(X)
+    model_path = tmp_path / "if.joblib"
+    manifest_path = tmp_path / "if.json"
+    model.save(model_path, manifest_path, preprocessor_artifact_sha256="a" * 64)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["calibrated_threshold"] = 0.5
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="calibrated_threshold conflicts"):
+        IsolationForestModel.load_verified(model_path, manifest_path)
 
 
 class TestScoreDirectionAndSemantics:
