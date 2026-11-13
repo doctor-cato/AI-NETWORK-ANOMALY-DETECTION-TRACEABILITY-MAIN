@@ -42,6 +42,28 @@
   - Ghi rõ phương pháp chọn ngưỡng và tác động đến metric
 - Quan trọng: so sánh trực tiếp với Random Forest cần giải thích rõ vì RF dùng nhãn khi huấn luyện và đánh giá theo protocol giám sát, trong khi IF dùng chấm điểm và chọn ngưỡng rồi đánh giá. Các metric chỉ so sánh được khi cả hai protocol được mô tả rõ ràng.
 
+## Autoencoder (phát hiện bất thường dựa trên lỗi tái tạo — bắt buộc ở C4 / Issue #29)
+
+- Loại: mạng nơ-ron không giám sát (MLP Autoencoder); học biểu diễn và phân phối lưu lượng lành tính (benign); chấm điểm bất thường dựa trên sai số tái tạo (reconstruction error MSE).
+- Kiến trúc: `Input (47) → Encoder (Dense 32, ReLU) → Latent (Dense 16, ReLU) → Decoder (Dense 32, ReLU) → Output (Dense 47, Linear/Identity)`.
+- Hàm mất mát và điểm bất thường: Mean Squared Error $\text{MSE}(x, \hat{x}) = \frac{1}{d} \sum_{j=1}^d (x_j - \hat{x}_j)^2$. Chiều điểm chuẩn hóa: điểm lỗi tái tạo càng cao thì càng bất thường (higher reconstruction error = more anomalous).
+- Dữ liệu fit: thuần lành tính (benign-only, `Label == 0` từ partition Train). Nhãn chỉ dùng để lọc quần thể huấn luyện trước khi fit; tuyệt đối không đưa `Label`, `Attack` hay metadata vào ma trận $X$. Quá trình tối ưu gradient hoàn toàn không giám sát.
+- Protocol unknown attack (pre-registered holdout):
+  - Danh mục tấn công chưa biết được đăng ký trước: `Worms` và `Backdoor` (tương thích tuyệt đối với Issue #11).
+  - Danh mục unknown tuyệt đối không tham gia fit mô hình, không tham gia cập nhật gradient, không tham gia early stopping, không tham gia hyperparameter tuning và không tham gia hiệu chuẩn ngưỡng (threshold calibration).
+  - Unknown attack chỉ được đánh giá ở pha đánh giá cuối cùng để đo lường năng lực phát hiện dạng tấn công chưa từng gặp.
+- Hiệu chuẩn ngưỡng (Validation-only threshold calibration):
+  - Ngưỡng bất thường $\tau$ chỉ được xác định trên partition Validation, tuyệt đối không dùng Test hay unknown attacks.
+  - Các phương pháp hiệu chuẩn được hỗ trợ: ràng buộc FPR mục tiêu trên mẫu lành tính validation (ví dụ FPR $\le 0.05$ hoặc quantile $1 - \text{target\_fpr}$), hoặc tối ưu ngưỡng trên validation lành tính và known attacks (khai báo rõ ràng là supervised calibration).
+  - Quyết định phân loại: $\text{anomaly} = 1$ khi $\text{reconstruction\_error} \ge \tau$, ngược lại $0$.
+  - Sau khi chọn xong trên Validation, ngưỡng $\tau$ được đóng băng (frozen) vĩnh viễn trước khi đánh giá bất kỳ mẫu nào khác.
+- Bảo vệ khóa tập kiểm thử (Held-out Test Lock):
+  - Tập Test hoàn toàn không được nạp hay truy cập trong suốt quá trình fit, early stopping và hiệu chuẩn ngưỡng.
+  - Chỉ được đánh giá khi có cờ `--evaluate-test` sau khi mô hình và ngưỡng đã đóng băng.
+- Giới hạn khoa học bắt buộc:
+  - Unknown-attack holdout là protocol kiểm chuẩn trong môi trường kiểm soát (controlled benchmark), không phải bằng chứng phát hiện tấn công zero-day thực tế.
+  - Đặc trưng NetFlow v3 có giới hạn tóm lược theo flow, không có payload, có thể gặp hiện tượng lặp lại mẫu hành vi hoặc ghi nhớ phân phối.
+
 ## Quy tắc tiền xử lý (tránh rò rỉ)
 
 - Chia train / val / test trước mọi fitting tiền xử lý.

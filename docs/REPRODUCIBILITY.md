@@ -168,6 +168,28 @@ Fail-closed properties:
 - Streams partition loading by chunks (default 100,000 via `--chunksize`) to minimize memory usage.
 - Saves model artifacts under `artifacts/models/isolation_forest/` and metrics under `reports/experiments/isolation_forest/`.
 
+## Reproduce the Autoencoder anomaly detection pipeline (scripts/train_autoencoder.py) (Issue #29)
+
+```text
+# Prerequisite check and parameter options:
+python scripts/train_autoencoder.py --help
+
+# Unsupervised training and validation-only threshold calibration:
+python scripts/train_autoencoder.py --batch-size 256 --max-iter 50 --target-fpr 0.05
+
+# Optional held-out Test evaluation (only after model and threshold are frozen):
+python scripts/train_autoencoder.py --evaluate-test
+```
+
+Fail-closed properties & safeguards:
+- Fail-closed prerequisite audit: verifies raw dataset SHA-256 (`4ebb97...`), split manifest + partition index checksums, and preprocessor artifact (`12d436...`) before execution.
+- Training population: strictly benign-only (`Label == 0`) from Train partition; targets and trace metadata are completely excluded from $X$.
+- Unknown-attack holdout: pre-registered unknown categories (`Worms`, `Backdoor`) are strictly isolated from model fitting, gradient updates, early stopping, and threshold calibration.
+- Threshold calibration: Validation-only (`benign_quantile`, `fpr_constrained`, or `supervised_best_f1`); once selected, threshold is frozen.
+- Held-out Test Lock: Test partition is never loaded or accessed by default; evaluated only with `--evaluate-test`.
+- Artifacts & Reports: produces `autoencoder_model.joblib`, `autoencoder_manifest.json` with SHA-256 digest, `metrics.json`, `threshold_calibration.json`, and `evaluation_report.md`.
+
+
 ## Reproduce CSV inference on new network flows (Issue #15)
 
 ```text
