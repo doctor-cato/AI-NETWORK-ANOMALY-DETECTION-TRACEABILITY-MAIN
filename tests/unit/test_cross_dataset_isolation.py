@@ -81,6 +81,19 @@ def test_unsw_sample_requires_verified_validation_membership(tmp_path: Path):
     companion.write_text(json.dumps(contaminated), encoding="utf-8")
     benchmark = tmp_path / "benchmark.csv"
     benchmark.write_text("Label\n0\n", encoding="utf-8")
+    contaminated["content_checksum"]["skip_rows_offset"] = 5
+    companion.write_text(json.dumps(contaminated), encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="Dedicated UNSW Train sample"):
+        run_all_cross_dataset_experiments(
+            sample,
+            benchmark,
+            tmp_path / "report.md",
+            tmp_path / "summary.json",
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+        )
+    contaminated["content_checksum"]["skip_rows_offset"] = 1
+    companion.write_text(json.dumps(contaminated), encoding="utf-8")
     with pytest.raises(ValueError, match="overlaps verified Train"):
         run_all_cross_dataset_experiments(
             sample,

@@ -137,6 +137,8 @@ def run_all_cross_dataset_experiments(
         split_manifest,
         indices_dir or PROJECT_ROOT / "data" / "processed" / "splits",
     )
+    if unsw_train_csv is None or not unsw_train_csv.is_file():
+        raise FileNotFoundError("Dedicated UNSW Train sample required for E1-E5 fitting")
 
     print(f"Loading official Validation partition: {unsw_val_csv.name}...")
     t0 = time.time()
@@ -170,15 +172,9 @@ def run_all_cross_dataset_experiments(
     print(f"CIC-IDS Partition: Train={len(c_train_raw):,}, Held-out Test={len(c_test_raw):,}")
     print(f"  5-tuple Overlap: {cic_leakage_audit['overlap_5tuple_fingerprints']}")
 
-    # 3. Dedicated Training Partition (if provided, else disjoint slice of val for smoke)
-    if unsw_train_csv and unsw_train_csv.exists():
-        print(f"Loading dedicated UNSW training partition: {unsw_train_csv.name}...")
-        u_train_raw = pd.read_csv(unsw_train_csv)
-    else:
-        print("[INFO] Train CSV absent; using first 60% of validation for train ablation.")
-        split_idx = int(len(u_val_raw) * 0.60)
-        u_train_raw = u_val_raw.iloc[:split_idx].copy()
-        u_val_raw = u_val_raw.iloc[split_idx:].copy()
+    # 3. Ablation models must never fit on the canonical Validation partition.
+    print(f"Loading dedicated UNSW training partition: {unsw_train_csv.name}...")
+    u_train_raw = pd.read_csv(unsw_train_csv)
 
     prep_unsw = TrainOnlyPreprocessor()
     prep_unsw.fit(u_train_raw[feature_cols])
@@ -580,7 +576,7 @@ def generate_ablation_markdown_report(results: Dict[str, Any], output_path: Path
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Run Cross-Dataset Generalization Experiments.")
     parser.add_argument("--unsw-val-csv", type=Path, default=DEFAULT_UNSW_VAL_CSV)
-    parser.add_argument("--unsw-train-csv", type=Path, default=None)
+    parser.add_argument("--unsw-train-csv", type=Path, default=DEFAULT_UNSW_TRAIN_CSV)
     parser.add_argument("--benchmark-csv", type=Path, default=DEFAULT_BENCHMARK_CSV)
     parser.add_argument("--ton-csv", type=Path, default=DEFAULT_TON_CSV)
     parser.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLIT_MANIFEST)
@@ -600,7 +596,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             audit = verify_split_manifest_and_test_lock(args.split_manifest)
             print(f"Verified split manifest: Validation rows={audit['validation_rows']:,}")
             print(f"Test Lock status: {audit['test_lock_status']}")
-            print("Zero train-set leakage verified: first-50k slice is strictly eliminated.")
+            print("Split metadata present; sample provenance requires the full runner check.")
             return 0
 
         run_all_cross_dataset_experiments(
