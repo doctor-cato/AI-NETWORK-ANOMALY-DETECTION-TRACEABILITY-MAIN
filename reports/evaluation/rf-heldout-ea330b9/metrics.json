@@ -1,0 +1,116 @@
+{
+  "run_id": "rf-heldout-ea330b9",
+  "timestamp_utc": "2026-11-10T07:34:37.653352+00:00",
+  "partition": "test",
+  "sample_count": 345953,
+  "decision_threshold": 0.5,
+  "overall_metrics": {
+    "precision": 0.9997712493055783,
+    "recall": 0.9999346319780363,
+    "f1": 0.9998529339673513,
+    "macro_f1": 0.9999193321560451,
+    "false_positive_rate": 2.2197065547934564e-05,
+    "fpr": 2.2197065547934564e-05,
+    "confusion_matrix": [
+      [
+        315350,
+        7
+      ],
+      [
+        2,
+        30594
+      ]
+    ]
+  },
+  "confusion_matrix_breakdown": {
+    "tn": 315350,
+    "fp": 7,
+    "fn": 2,
+    "tp": 30594,
+    "total": 345953,
+    "benign_total": 315357,
+    "attack_total": 30596,
+    "false_positive_rate": 2.2197065547934564e-05,
+    "true_negative_rate": 0.999977802934452,
+    "true_positive_rate": 0.9999346319780363,
+    "false_negative_rate": 6.536802196365538e-05,
+    "confusion_matrix": [
+      [
+        315350,
+        7
+      ],
+      [
+        2,
+        30594
+      ]
+    ]
+  },
+  "benign_traffic_breakdown": {
+    "total": 315357,
+    "false_positive": 7,
+    "true_negative": 315350,
+    "false_positive_rate": 2.2197065547934564e-05
+  },
+  "per_attack_category_breakdown": {
+    "Analysis": {
+      "total": 294,
+      "detected": 294,
+      "missed": 0,
+      "detection_rate": 1.0
+    },
+    "Backdoor": {
+      "total": 1260,
+      "detected": 1260,
+      "missed": 0,
+      "detection_rate": 1.0
+    },
+    "Benign": {
+      "total": 315357,
+      "false_positive": 7,
+      "true_negative": 315350,
+      "false_positive_rate": 2.2197065547934564e-05
+    },
+    "DoS": {
+      "total": 1193,
+      "detected": 1191,
+      "missed": 2,
+      "detection_rate": 0.9983235540653814
+    },
+    "Exploits": {
+      "total": 10520,
+      "detected": 10520,
+      "missed": 0,
+      "detection_rate": 1.0
+    },
+    "Fuzzers": {
+      "total": 7322,
+      "detected": 7322,
+      "missed": 0,
+      "detection_rate": 1.0
+    },
+    "Generic": {
+      "total": 5111,
+      "detected": 5111,
+      "missed": 0,
+      "detection_rate": 1.0
+    },
+    "Reconnaissance": {
+      "total": 4464,
+      "detected": 4464,
+      "missed": 0,
+      "detection_rate": 1.0
+    },
+    "Shellcode": {
+      "total": 396,
+      "detected": 396,
+      "missed": 0,
+      "detection_rate": 1.0
+    },
+    "Worms": {
+      "total": 36,
+      "detected": 36,
+      "missed": 0,
+      "detection_rate": 1.0
+    }
+  }
+}

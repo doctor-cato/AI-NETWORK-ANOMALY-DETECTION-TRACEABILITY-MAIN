@@ -1347,6 +1347,9 @@ class TestReviewerFindingsAndE2EIntegration:
             mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
             mock.patch.object(tif, "OFFICIAL_PREPROCESSOR_MANIFEST", pp_man_p),
             mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(
+                tif, "MODEL_MANIFEST_PATH", rep_dir / "isolation_forest_manifest.json"
+            ),
             mock.patch.object(tif, "REPORT_DIR", rep_dir),
             mock.patch(
                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
@@ -1473,6 +1476,9 @@ class TestReviewerFindingsAndE2EIntegration:
             mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
             mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
             mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(
+                tif, "MODEL_MANIFEST_PATH", rep_dir / "isolation_forest_manifest.json"
+            ),
             mock.patch.object(tif, "REPORT_DIR", rep_dir),
             mock.patch(
                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
@@ -1505,6 +1511,9 @@ class TestReviewerFindingsAndE2EIntegration:
             mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
             mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
             mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(
+                tif, "MODEL_MANIFEST_PATH", rep_dir / "isolation_forest_manifest.json"
+            ),
             mock.patch.object(tif, "REPORT_DIR", rep_dir),
             mock.patch(
                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
@@ -1537,6 +1546,9 @@ class TestReviewerFindingsAndE2EIntegration:
             mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
             mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
             mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(
+                tif, "MODEL_MANIFEST_PATH", rep_dir / "isolation_forest_manifest.json"
+            ),
             mock.patch.object(tif, "REPORT_DIR", rep_dir),
             mock.patch(
                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",
@@ -1581,6 +1593,9 @@ class TestReviewerFindingsAndE2EIntegration:
             mock.patch.object(tif, "PREPROCESSOR_ARTIFACT_PATH", art_p),
             mock.patch.object(tif, "PREPROCESSOR_MANIFEST_PATH", pp_man_p),
             mock.patch.object(tif, "MODEL_ARTIFACT_DIR", model_art_dir),
+            mock.patch.object(
+                tif, "MODEL_MANIFEST_PATH", rep_dir / "isolation_forest_manifest.json"
+            ),
             mock.patch.object(tif, "REPORT_DIR", rep_dir),
             mock.patch(
                 "network_anomaly.preprocessing.pipeline.TrainOnlyPreprocessor.load_verified",

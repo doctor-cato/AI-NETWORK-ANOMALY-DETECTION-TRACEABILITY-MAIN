@@ -616,4 +616,5 @@ def test_fail_closed_prerequisites_when_binaries_missing(tmp_path: Path) -> None
     limitations = compile_data_limitations_summary()
     assert limitations["class_imbalance"]["test_total_rows"] == 345953
     assert limitations["rare_attack_classes"]["rare_categories_in_test"]["Worms"] == 36
-    assert limitations["feature_overlap_ambiguity"]["overlapping_unique_feature_keys"] == 2690
+    assert limitations["feature_overlap_ambiguity"]["overlapping_unique_feature_keys"] is None
+    assert limitations["evidence_status"] == "NOT VERIFIED"

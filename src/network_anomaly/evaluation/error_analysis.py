@@ -986,7 +986,7 @@ def analyze_feature_error_patterns(
             "proposal_id": "EXP_2_WINDOWED_FLOW_GROUP_AGGREGATION",
             "title": "Augment single-flow features with leak-free windowed flow-group statistics",
             "rationale": (
-                "Disambiguate the 53.21% overlapping 47-feature flow vectors using burst rate "
+                "Investigate overlapping flow feature vectors using burst rate "
                 "and destination fan-out within chronological windows."
             ),
         },
@@ -1130,23 +1130,40 @@ def compile_data_limitations_summary(
         (eda_data, Path(eda_summary_path)),
         (audit_data, Path(validation_audit_path)),
     ]:
-        if p.exists():
-            with p.open("r", encoding="utf-8") as f:
-                target_dict.update(json.load(f))
+        if not p.is_file():
+            raise FileNotFoundError(f"Required evidence file is missing: {p}")
+        with p.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            raise ValueError(f"Required evidence is not a JSON object: {p}")
+        target_dict.update(payload)
 
-    total_source_rows = int(split_data.get("total_source_rows", 2365424))
-    train_part = split_data.get("partitions", {}).get("train", {})
-    val_part = split_data.get("partitions", {}).get("validation", {})
-    test_part = split_data.get("partitions", {}).get("test", {})
+    total_source_rows = int(split_data["total_source_rows"])
+    train_part = split_data["partitions"]["train"]
+    val_part = split_data["partitions"]["validation"]
+    test_part = split_data["partitions"]["test"]
 
-    train_rows = int(train_part.get("row_count", 1655797))
-    val_rows = int(val_part.get("row_count", 345371))
-    test_rows = int(test_part.get("row_count", 345953))
+    train_rows = int(train_part["row_count"])
+    val_rows = int(val_part["row_count"])
+    test_rows = int(test_part["row_count"])
+    if min(total_source_rows, train_rows, val_rows, test_rows) <= 0:
+        raise ValueError("Split evidence contains nonpositive row counts")
+    if split_data.get("dataset_sha256") != prep_data.get("dataset_sha256"):
+        raise ValueError("Split and preprocessing evidence disagree on dataset identity")
+    lineage_errors: List[str] = []
+    split_sha = hashlib.sha256(Path(split_manifest_path).read_bytes()).hexdigest()
+    if prep_data.get("split_manifest_sha256") != split_sha:
+        lineage_errors.append("Preprocessing manifest does not match the selected split manifest")
 
-    test_labels = test_part.get("label_distribution", {"0": 315357, "1": 30596})
-    test_benign = int(test_labels.get("0", 315357))
-    test_attack = int(test_labels.get("1", 30596))
-    test_attack_dist = test_part.get("attack_distribution", {})
+    test_labels = test_part["label_distribution"]
+    test_benign = int(test_labels["0"])
+    test_attack = int(test_labels["1"])
+    test_attack_dist = test_part["attack_distribution"]
+    if (
+        test_benign + test_attack != test_rows
+        or sum(map(int, test_attack_dist.values())) != test_rows
+    ):
+        raise ValueError("Test label or attack distribution disagrees with Test row count")
 
     rare_classes_test = {
         k: int(v)
@@ -1154,19 +1171,55 @@ def compile_data_limitations_summary(
         if k != "Benign" and int(v) < 1500
     }
 
-    pair_audits = split_data.get("audit_summary", {}).get("pair_audits", {})
-    train_test_overlap = pair_audits.get("train_vs_test", {}).get("ml_feature_overlap", {})
-    test_overlap_rows = int(train_test_overlap.get("p2_affected_rows", 184067))
-    test_overlap_pct = float(train_test_overlap.get("p2_affected_percent", 53.21))
+    train_test_overlap = split_data["audit_summary"]["pair_audits"]["train_vs_test"][
+        "ml_feature_overlap"
+    ]
+    test_overlap_rows = int(train_test_overlap["p2_affected_rows"])
+    test_overlap_pct = float(train_test_overlap["p2_affected_percent"])
+    if test_overlap_rows < 0 or test_overlap_rows > test_rows:
+        raise ValueError("Invalid Test feature-overlap count")
+    if abs(100 * test_overlap_rows / test_rows - test_overlap_pct) > 0.01:
+        raise ValueError("Test feature-overlap count and percentage disagree")
 
-    val_recomputed = audit_data.get("validation_recomputed", {})
-    c1_probe = (
-        audit_data.get("diagnostic_rf_c0_to_c7", {})
-        .get("C1_drop_MIN_TTL_MAX_TTL", {})
-        .get("validation_all", {})
+    val_recomputed = audit_data["validation_recomputed"]
+    c1_probe = audit_data["diagnostic_retrains"]["C1_drop_MIN_TTL_MAX_TTL"]["validation_all"]
+    if int(val_recomputed["n"]) != val_rows:
+        raise ValueError("Validation audit row count disagrees with split manifest")
+    if (
+        int(audit_data["split_integrity"]["train_rows"]) != train_rows
+        or int(audit_data["split_integrity"]["val_rows"]) != val_rows
+    ):
+        raise ValueError("Validation audit partition counts disagree with split manifest")
+    if sum(int(val_recomputed[k]) for k in ("tn", "fp", "fn", "tp")) != val_rows:
+        raise ValueError("Validation confusion matrix disagrees with split manifest")
+    if int(c1_probe["n"]) != val_rows:
+        raise ValueError("Validation ablation audit row count disagrees with split manifest")
+    numeric_stats = eda_data["numeric_statistics"]
+    missing_cells = sum(
+        sum(
+            int(stats["token_counts"].get(key, 0))
+            for key in ("blank", "nan_literal", "null_literal")
+        )
+        for name, stats in numeric_stats.items()
+        if name in ML_FEATURE_COLUMNS
     )
+    infinite_cells = sum(
+        sum(
+            int(stats["token_counts"].get(key, 0))
+            for key in ("positive_infinity", "negative_infinity")
+        )
+        for name, stats in numeric_stats.items()
+        if name in ML_FEATURE_COLUMNS
+    )
+    affected_columns = [
+        name
+        for name, stats in numeric_stats.items()
+        if name in ML_FEATURE_COLUMNS and stats["unavailable_count"] > 0
+    ]
 
     return {
+        "evidence_status": "VERIFIED" if not lineage_errors else "NOT VERIFIED",
+        "evidence_errors": lineage_errors,
         "partitions": {
             "total_source_rows": total_source_rows,
             "train_rows": train_rows,
@@ -1184,24 +1237,22 @@ def compile_data_limitations_summary(
                 round(test_benign / test_attack, 2) if test_attack > 0 else 0.0
             ),
             "impact": (
-                "High Benign prevalence (91.16%) inflates overall Accuracy and Weighted F1; "
-                "even a small FPR produces hundreds of daily false alarms, while rare-class "
-                "FN misses are masked in aggregate metrics."
+                f"Benign prevalence ({100 * test_benign / test_rows:.2f}%) can inflate "
+                "overall Accuracy and Weighted F1; per-class error counts remain necessary."
             ),
         },
         "rare_attack_classes": {
             "test_attack_distribution": test_attack_dist,
             "rare_categories_in_test": rare_classes_test,
             "impact": (
-                "Worms has only 36 samples in Test (0.0104% of Test rows), Analysis has 294, "
-                "Shellcode has 396, and Backdoor has 1,260. Small sample sizes yield wide "
-                "confidence intervals on per-category recall."
+                "Rare Attack categories have small Test support and correspondingly wide "
+                "uncertainty intervals for per-category recall."
             ),
         },
         "feature_overlap_ambiguity": {
-            "distinct_fingerprints": int(train_test_overlap.get("distinct_fingerprints", 59966)),
-            "overlapping_unique_feature_keys": int(
-                train_test_overlap.get("overlapping_unique_feature_keys", 2690)
+            "distinct_fingerprints": int(train_test_overlap["distinct_fingerprints"]),
+            "overlapping_unique_feature_keys": train_test_overlap.get(
+                "overlapping_unique_feature_keys"
             ),
             "test_affected_rows": test_overlap_rows,
             "test_overlap_fraction": test_overlap_pct / 100.0,
@@ -1212,41 +1263,37 @@ def compile_data_limitations_summary(
             ),
         },
         "missing_and_infinite_values": {
-            "affected_columns": [
-                "SRC_TO_DST_SECOND_BYTES",
-                "DST_TO_SRC_SECOND_BYTES",
-            ],
-            "dataset_total_nan_cells": 97852,
-            "dataset_total_inf_cells": 97850,
+            "affected_columns": affected_columns,
+            "dataset_total_nan_cells": missing_cells,
+            "dataset_total_inf_cells": infinite_cells,
             "impact": (
-                "Sub-millisecond flows with FLOW_DURATION_MILLISECONDS == 0 produce "
-                "division-by-zero in bytes-per-second features, requiring train-median imputation "
-                "after replacing Inf with NaN."
+                "Zero-duration flows and nonfinite rate features are associated in the EDA "
+                "evidence. The train-fitted imputer handles nonfinite values before inference."
             ),
         },
         "synthetic_lab_and_ttl_shortcut": {
             "top_2_features": ["MAX_TTL", "MIN_TTL"],
-            "validation_canonical_fp": int(val_recomputed.get("fp", 5)),
-            "validation_canonical_fn": int(val_recomputed.get("fn", 3)),
-            "validation_c1_fn": int(c1_probe.get("fn", 11)),
-            "validation_c1_fp": int(c1_probe.get("fp", 14)),
-            "validation_c1_recall": float(c1_probe.get("recall", 0.999639)),
+            "validation_canonical_fp": int(val_recomputed["fp"]),
+            "validation_canonical_fn": int(val_recomputed["fn"]),
+            "validation_c1_fn": int(c1_probe["fn"]),
+            "validation_c1_fp": int(c1_probe["fp"]),
+            "validation_c1_recall": float(c1_probe["recall"]),
             "impact": (
                 "In the IXIA PerfectStorm lab topology, attack generators and benign hosts "
                 "sit at fixed hop distances, making TTL a strong dataset-specific shortcut."
             ),
         },
         "validation_reference": {
-            "n": int(val_recomputed.get("n", val_rows)),
-            "accuracy": float(val_recomputed.get("accuracy", 0.9999768365033543)),
-            "precision": float(val_recomputed.get("precision", 0.9998360763228641)),
-            "recall": float(val_recomputed.get("recall", 0.9999016393442623)),
-            "f1": float(val_recomputed.get("f1", 0.9998688567587948)),
-            "fpr": float(val_recomputed.get("fpr", 1.5879518914094977e-05)),
-            "fp": int(val_recomputed.get("fp", 5)),
-            "fn": int(val_recomputed.get("fn", 3)),
-            "tn": int(val_recomputed.get("tn", 314866)),
-            "tp": int(val_recomputed.get("tp", 30497)),
+            "n": int(val_recomputed["n"]),
+            "accuracy": float(val_recomputed["accuracy"]),
+            "precision": float(val_recomputed["precision"]),
+            "recall": float(val_recomputed["recall"]),
+            "f1": float(val_recomputed["f1"]),
+            "fpr": float(val_recomputed["fpr"]),
+            "fp": int(val_recomputed["fp"]),
+            "fn": int(val_recomputed["fn"]),
+            "tn": int(val_recomputed["tn"]),
+            "tp": int(val_recomputed["tp"]),
         },
     }
 
@@ -1317,6 +1364,19 @@ def generate_error_analysis_report(
     if sm_p.exists():
         with sm_p.open("r", encoding="utf-8") as f:
             split_manifest = json.load(f)
+    selected_split_sha = hashlib.sha256(sm_p.read_bytes()).hexdigest()
+    if model_manifest.get("split_manifest_sha256") != selected_split_sha:
+        limitations["evidence_errors"].append(
+            "Model manifest does not match the selected split manifest"
+        )
+    if val_audit.get("model_artifact", {}).get("sha256") != model_manifest.get(
+        "model_artifact_sha256"
+    ):
+        limitations["evidence_errors"].append(
+            "Validation audit and model manifest disagree on model identity"
+        )
+    if limitations["evidence_errors"]:
+        limitations["evidence_status"] = "NOT VERIFIED"
 
     has_test_runtime = evaluation_result is not None and "metrics" in evaluation_result
     result_metadata = evaluation_result.get("metadata", {}) if evaluation_result else {}
@@ -1325,6 +1385,7 @@ def generate_error_analysis_report(
     verified_real_run = (
         has_test_runtime
         and prereq.ready
+        and limitations["evidence_status"] == "VERIFIED"
         and result_metadata.get("partition_verification_status") == "VERIFIED"
         and result_hashes.get("dataset_sha256") == canonical_split.get("dataset_sha256")
         and all(
@@ -1382,11 +1443,11 @@ def generate_error_analysis_report(
         key=lambda kv: (-kv[1], kv[0]),
     )
     total_test_attacks = sum(v for _, v in sorted_test_attacks)
-    top1 = sorted_test_attacks[0] if len(sorted_test_attacks) > 0 else ("Exploits", 10520)
-    top2 = sorted_test_attacks[1] if len(sorted_test_attacks) > 1 else ("Fuzzers", 7322)
-    top3 = sorted_test_attacks[2] if len(sorted_test_attacks) > 2 else ("Generic", 5111)
+    if len(sorted_test_attacks) < 3:
+        raise ValueError("Split evidence must contain at least three Attack families")
+    top1, top2, top3 = sorted_test_attacks[:3]
     top3_sum = top1[1] + top2[1] + top3[1]
-    top3_pct = (100.0 * top3_sum / total_test_attacks) if total_test_attacks > 0 else 75.02
+    top3_pct = 100.0 * top3_sum / total_test_attacks
 
     if has_test_runtime:
         m_all = evaluation_result["metrics"]["overall_metrics"]
@@ -1530,57 +1591,41 @@ def generate_error_analysis_report(
         else "- None (all required binary and manifest artifacts are present on disk)."
     )
 
-    raw_ds_sha = split_manifest.get(
-        "dataset_sha256", "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
-    )
-    test_indices_sha = (
-        split_manifest.get("partitions", {})
-        .get("test", {})
-        .get("index_sha256", "90219f75a680705f2e9982f93405f29b4df2ba00a847d9ba04832db6a26b5eae")
-    )
-    split_manifest_sha = prereq.verified_hashes.get(
-        "split_manifest_sha256", "1ba6b2ef2c5db74f0937ab9de0b67212e21b6819c59c839d4dab034ff4d120a8"
-    )
-    prep_manifest_sha = prereq.verified_hashes.get(
-        "preprocessing_manifest_sha256",
-        "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba",
-    )
-    prep_artifact_sha = prep_manifest.get(
-        "artifact_sha256",
-        model_manifest.get("preprocessor_artifact_sha256", "UNKNOWN"),
-    )
-    model_manifest_sha = prereq.verified_hashes.get(
-        "model_manifest_sha256", "2ea97a57c6917c2f39e94aa5795cbd83f98b2f7bbf09d7f5454344f19d08dcf3"
-    )
-    model_artifact_sha = model_manifest.get(
-        "model_artifact_sha256", "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea"
-    )
+    raw_ds_sha = split_manifest["dataset_sha256"]
+    test_indices_sha = split_manifest["partitions"]["test"]["index_sha256"]
+    split_manifest_sha = prereq.verified_hashes["split_manifest_sha256"]
+    prep_manifest_sha = prereq.verified_hashes["preprocessing_manifest_sha256"]
+    prep_artifact_sha = prep_manifest["artifact_sha256"]
+    model_manifest_sha = prereq.verified_hashes["model_manifest_sha256"]
+    model_artifact_sha = model_manifest["model_artifact_sha256"]
 
-    hp = model_manifest.get("hyperparameters", {})
-    hp_n_estimators = hp.get("n_estimators", 200)
-    hp_max_depth = hp.get("max_depth", 16)
-    hp_min_samples_split = hp.get("min_samples_split", 2)
-    hp_min_samples_leaf = hp.get("min_samples_leaf", 1)
-    hp_criterion = hp.get("criterion", "gini")
-    hp_max_features = hp.get("max_features", "sqrt")
-    hp_class_weight = hp.get("class_weight", None)
-    hp_bootstrap = hp.get("bootstrap", True)
-    hp_random_state = hp.get("random_state", 42)
-    hp_n_jobs = hp.get("n_jobs", -1)
+    hp = model_manifest["hyperparameters"]
+    hp_n_estimators = hp["n_estimators"]
+    hp_max_depth = hp["max_depth"]
+    hp_min_samples_split = hp["min_samples_split"]
+    hp_min_samples_leaf = hp["min_samples_leaf"]
+    hp_criterion = hp["criterion"]
+    hp_max_features = hp["max_features"]
+    hp_class_weight = hp["class_weight"]
+    hp_bootstrap = hp["bootstrap"]
+    hp_random_state = hp["random_state"]
+    hp_n_jobs = hp["n_jobs"]
 
     rf_comp = model_comparison["models"]["random_forest"]
     if_comp = model_comparison["models"]["isolation_forest"]
 
-    worms_cnt = int(test_att_dist.get("Worms", 36))
-    worms_sens = sens_by_cat.get("Worms", {})
-    worms_ci_0 = worms_sens.get("ci_95_at_zero_misses", [0.9036, 1.0])
-    worms_ci_1 = worms_sens.get("ci_95_at_one_miss", [0.8583, 0.9951])
+    worms_cnt = int(test_att_dist["Worms"])
+    worms_sens = sens_by_cat["Worms"]
+    worms_ci_0 = worms_sens["ci_95_at_zero_misses"]
+    worms_ci_1 = worms_sens["ci_95_at_one_miss"]
 
     lines: List[str] = [
         "# Random Forest Baseline — Independent Test Evaluation & Error Analysis Report",
         "",
         "- **Issue Scope**: Issue #12 (Held-out Test Evaluation) & Issue #13 (Error Analysis)",
         f"- **Execution Status**: `{exec_status_badge}`",
+        f"- **Manifest evidence status**: `{limitations['evidence_status']}`",
+        f"- **Manifest evidence errors**: `{limitations['evidence_errors']}`",
         f"- **Evaluation Run ID**: `{run_id_str}`",
         (
             f"- **Model Configuration ID**: "
@@ -2174,6 +2219,7 @@ def run_full_error_analysis_from_evaluation(
     feature_importances: Optional[Sequence[float]] = None,
     report_path: Union[str, Path] = DEFAULT_ERROR_ANALYSIS_REPORT_PATH,
     split_manifest_path: Union[str, Path] = DEFAULT_SPLIT_MANIFEST_PATH,
+    preprocessing_manifest_path: Union[str, Path] = DEFAULT_PREPROCESSING_MANIFEST_JSON_PATH,
     validation_audit_path: Union[str, Path] = DEFAULT_VALIDATION_AUDIT_JSON_PATH,
     trace_metadata: Optional[pd.DataFrame] = None,
     allow_overwrite: bool = True,
@@ -2248,6 +2294,7 @@ def run_full_error_analysis_from_evaluation(
             )
         limitations = compile_data_limitations_summary(
             split_manifest_path=split_manifest_path,
+            preprocessing_manifest_path=preprocessing_manifest_path,
             validation_audit_path=validation_audit_path,
         )
 
@@ -2279,6 +2326,7 @@ def run_full_error_analysis_from_evaluation(
         evaluation_result=evaluation_result,
         error_analysis_data=analysis_payload,
         split_manifest_path=split_manifest_path,
+        preprocessing_manifest_path=preprocessing_manifest_path,
         validation_audit_path=validation_audit_path,
         allow_overwrite=allow_overwrite,
     )
@@ -2320,6 +2368,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Path to model manifest JSON",
     )
     parser.add_argument(
+        "--preprocessing-manifest",
+        type=Path,
+        default=DEFAULT_PREPROCESSING_MANIFEST_JSON_PATH,
+        help="Path to matching preprocessing manifest JSON",
+    )
+    parser.add_argument(
         "--verify-only",
         action="store_true",
         help="Verify input artifacts without generating report",
@@ -2334,6 +2388,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.verify_only:
         limitations = compile_data_limitations_summary(
             split_manifest_path=args.split_manifest,
+            preprocessing_manifest_path=args.preprocessing_manifest,
             validation_audit_path=args.validation_audit,
         )
         print(json.dumps(limitations, indent=2))
@@ -2341,12 +2396,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if args.run_test_evaluation:
         result = evaluate_random_forest_on_test(
-            split_manifest_path=args.split_manifest, model_manifest_path=args.model_manifest
+            split_manifest_path=args.split_manifest,
+            preprocessing_manifest_path=args.preprocessing_manifest,
+            model_manifest_path=args.model_manifest,
         )
         run_full_error_analysis_from_evaluation(
             result,
             report_path=args.report_path,
             split_manifest_path=args.split_manifest,
+            preprocessing_manifest_path=args.preprocessing_manifest,
             validation_audit_path=args.validation_audit,
         )
         print(f"Error analysis report generated successfully at: {args.report_path}")
@@ -2355,6 +2413,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     out_p = generate_error_analysis_report(
         output_path=args.report_path,
         split_manifest_path=args.split_manifest,
+        preprocessing_manifest_path=args.preprocessing_manifest,
         validation_audit_path=args.validation_audit,
         model_manifest_path=args.model_manifest,
     )

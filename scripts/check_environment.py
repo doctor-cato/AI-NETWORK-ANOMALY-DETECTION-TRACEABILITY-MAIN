@@ -4,6 +4,7 @@
 Exit code 0 only when every checked import succeeds. This is a setup check;
 it says nothing about training or evaluation results.
 """
+
 import sys
 
 MIN_PYTHON = (3, 11)
@@ -11,6 +12,7 @@ PACKAGES = (
     "pandas",
     "numpy",
     "sklearn",
+    "xgboost",
     "joblib",
     "matplotlib",
     "seaborn",

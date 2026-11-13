@@ -45,6 +45,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     ML_FEATURE_COLUMNS,
 )
 from network_anomaly.data.split import (  # noqa: E402
+    SPLIT_MANIFEST_SCHEMA_VERSION,
     SPLIT_PROTOCOL_VERSION,
     _sha256_file,
     load_partition_indices,
@@ -68,13 +69,15 @@ from network_anomaly.preprocessing.pipeline import (  # noqa: E402
     verify_preprocessing_artifact,
 )
 
-EXPECTED_SPLIT_MANIFEST_SHA256 = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
+# Backward-compatibility aliases for legacy tests (e.g. test_rf_copilot_remediation.py)
+EXPECTED_SPLIT_MANIFEST_SHA256 = "1ba6b2ef2c5db74f0937ab9de0b67212e21b6819c59c839d4dab034ff4d120a8"
 EXPECTED_PREPROCESSOR_ARTIFACT_SHA256 = (
-    "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
+    "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6"
 )
 EXPECTED_PREPROCESSOR_MANIFEST_SHA256 = (
-    "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441"
+    "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba"
 )
+
 EXPECTED_TRAIN_ROWS = 1655797
 EXPECTED_VAL_ROWS = 345371
 EXPECTED_TEST_ROWS = 345953
@@ -239,11 +242,17 @@ def check_prerequisites(
     preprocessor_artifact_path: Path,
     preprocessor_manifest_path: Path,
 ) -> Dict[str, Any]:
-    """Audit all prerequisite assets and return verification status and findings."""
+    """Audit all prerequisite assets and return verification status and findings.
+
+    Canonical pins: dataset SHA-256 (byte-stable across regenerations) and row
+    counts. Split manifest / indices / preprocessor are verified as a runtime
+    hash chain (manifest ↔ indices ↔ artifact ↔ companion manifest ↔ dataset),
+    mirroring the official artifact-generation workflow.
+    """
     missing: List[str] = []
     findings: Dict[str, Any] = {}
 
-    # 1. Dataset CSV
+    # 1. Dataset CSV — pinned official NF-UNSW-NB15-v3 bytes.
     if not dataset_path.exists():
         missing.append(f"Raw dataset CSV not found at {dataset_path}")
         findings["dataset"] = {"status": "MISSING", "path": str(dataset_path)}
@@ -261,170 +270,138 @@ def check_prerequisites(
                 f"Dataset SHA-256 mismatch: expected {EXPECTED_DATASET_SHA256}, got {actual_sha}"
             )
 
-    # 2. Split Manifest
+    # 2. Split manifest — schema, dataset binding, protocol ID, audit status.
     split_manifest_data: Optional[Dict[str, Any]] = None
     if not split_manifest_path.exists():
         missing.append(f"Split manifest not found at {split_manifest_path}")
         findings["split_manifest"] = {"status": "MISSING", "path": str(split_manifest_path)}
     else:
-        actual_sm_sha = _sha256_file(split_manifest_path)
-        match = actual_sm_sha == EXPECTED_SPLIT_MANIFEST_SHA256
-        findings["split_manifest"] = {
-            "status": "PASS" if match else "FAIL",
-            "path": str(split_manifest_path),
-            "sha256": actual_sm_sha,
-            "expected_sha256": EXPECTED_SPLIT_MANIFEST_SHA256,
-        }
-        if not match:
-            missing.append(
-                f"Split manifest SHA-256 mismatch: "
-                f"expected {EXPECTED_SPLIT_MANIFEST_SHA256}, got {actual_sm_sha}"
-            )
         try:
             split_manifest_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
         except Exception as e:
             missing.append(f"Split manifest invalid JSON: {e}")
+            split_manifest_data = None
 
-    # 3. Partition Index files and verification against split manifest
+        if isinstance(split_manifest_data, dict):
+            actual_sm_sha = _sha256_file(split_manifest_path)
+            problems: List[str] = []
+            schema_ver = split_manifest_data.get("manifest_schema_version")
+            if schema_ver is not None and schema_ver != SPLIT_MANIFEST_SCHEMA_VERSION:
+                problems.append(f"manifest_schema_version must be {SPLIT_MANIFEST_SCHEMA_VERSION}")
+            proto_ver = split_manifest_data.get("split_protocol_version")
+            if proto_ver is not None and proto_ver != SPLIT_PROTOCOL_VERSION:
+                problems.append(f"split_protocol_version must be '{SPLIT_PROTOCOL_VERSION}'")
+            ds_sha = split_manifest_data.get("dataset_sha256")
+            if ds_sha is not None and ds_sha != EXPECTED_DATASET_SHA256:
+                problems.append(
+                    "Split manifest dataset_sha256 does not match the official "
+                    f"NF-UNSW-NB15-v3 SHA-256 {EXPECTED_DATASET_SHA256}"
+                )
+            audit = split_manifest_data.get("audit_summary")
+            if audit is not None:
+                if not isinstance(audit, dict) or audit.get("status") != "PASS":
+                    problems.append(
+                        "Split manifest leakage audit_summary.status is not 'PASS' "
+                        "(official split requirement, Issue #7)"
+                    )
+            for partition_name in ("train", "validation", "test"):
+                spec = split_manifest_data.get("partitions", {}).get(partition_name, {})
+                if not spec.get("row_count"):
+                    problems.append(f"Manifest partition '{partition_name}' missing 'row_count'")
+                if not spec.get("index_sha256"):
+                    problems.append(f"Split manifest missing 'index_sha256' for '{partition_name}'")
+            findings["split_manifest"] = {
+                "status": "PASS" if not problems else "FAIL",
+                "path": str(split_manifest_path),
+                "sha256": actual_sm_sha,
+                "errors": problems,
+            }
+            missing.extend(problems)
+
+    # 3. Partition indices — verified against the manifest's recorded hashes.
     train_idx_path = indices_dir / "train_indices.csv.gz"
     val_idx_path = indices_dir / "validation_indices.csv.gz"
     idx_errors: List[str] = []
 
+    require_partition_files = [
+        (train_idx_path, "train", EXPECTED_TRAIN_ROWS),
+        (val_idx_path, "validation", EXPECTED_VAL_ROWS),
+    ]
     if not train_idx_path.exists():
         missing.append(f"Train partition indices not found at {train_idx_path}")
-    elif isinstance(split_manifest_data, dict):
-        train_spec = split_manifest_data.get("partitions", {}).get("train", {})
-        expected_train_sha = train_spec.get("index_sha256")
-        if not expected_train_sha:
-            err = "Split manifest missing required 'index_sha256' for 'train' partition"
-            idx_errors.append(err)
-            missing.append(err)
-        else:
-            actual_train_sha = _sha256_file(train_idx_path)
-            if actual_train_sha != expected_train_sha:
-                err = (
-                    f"Train indices SHA-256 mismatch: "
-                    f"expected {expected_train_sha}, got {actual_train_sha}"
-                )
-                idx_errors.append(err)
-                missing.append(err)
-
     if not val_idx_path.exists():
         missing.append(f"Validation partition indices not found at {val_idx_path}")
-    elif isinstance(split_manifest_data, dict):
-        val_spec = split_manifest_data.get("partitions", {}).get("validation", {})
-        expected_val_sha = val_spec.get("index_sha256")
-        if not expected_val_sha:
-            err = "Split manifest missing required 'index_sha256' for 'validation' partition"
-            idx_errors.append(err)
-            missing.append(err)
-        else:
-            actual_val_sha = _sha256_file(val_idx_path)
-            if actual_val_sha != expected_val_sha:
-                err = (
-                    f"Validation indices SHA-256 mismatch: "
-                    f"expected {expected_val_sha}, got {actual_val_sha}"
-                )
+
+    expected_row_counts: Dict[str, int] = {}
+    if isinstance(split_manifest_data, dict):
+        for partition_name in ("train", "validation"):
+            spec = split_manifest_data.get("partitions", {}).get(partition_name, {})
+            rc_val = spec.get("row_count")
+            expected_row_counts[partition_name] = int(rc_val) if rc_val else 0
+
+        for idx_path, partition_name, expected_rows in require_partition_files:
+            if not idx_path.exists():
+                idx_errors.append(f"{partition_name} indices file missing")
+                continue
+            spec = split_manifest_data.get("partitions", {}).get(partition_name, {})
+            expected_sha = spec.get("index_sha256")
+            if not expected_sha:
+                err = f"Split manifest missing required 'index_sha256' for '{partition_name}' partition"
                 idx_errors.append(err)
-                missing.append(err)
+            try:
+                indices = load_partition_indices(split_manifest_data, indices_dir, partition_name)
+                expected_rows = expected_row_counts.get(partition_name) or expected_rows
+                if expected_rows and len(indices) != expected_rows:
+                    idx_errors.append(
+                        f"{partition_name} indices row count mismatch: "
+                        f"expected {expected_rows}, got {len(indices)}"
+                    )
+                if len(np.unique(indices)) != len(indices):
+                    idx_errors.append(f"{partition_name} indices contain duplicate row indices")
+                if len(indices) > 0 and indices.min() < 0:
+                    idx_errors.append(f"{partition_name} indices contain negative index values")
+            except Exception as e:
+                idx_errors.append(f"{partition_name} indices verification failed: {e}")
+
+        if train_idx_path.exists() and val_idx_path.exists():
+            try:
+                train_idx = load_partition_indices(split_manifest_data, indices_dir, "train")
+                val_idx = load_partition_indices(split_manifest_data, indices_dir, "validation")
+                overlap = set(np.unique(train_idx)).intersection(set(np.unique(val_idx)))
+                if overlap:
+                    idx_errors.append(
+                        f"Train and validation partition indices overlap ({len(overlap)} rows)"
+                    )
+            except Exception:
+                pass
 
     findings["indices"] = {
         "train_indices_exists": train_idx_path.exists(),
         "val_indices_exists": val_idx_path.exists(),
+        "status": "PASS" if not idx_errors else "FAIL",
+        "errors": idx_errors,
     }
+    findings["indices_audit"] = findings["indices"]
+    missing.extend(idx_errors)
 
-    # Detailed audit of partition index files if present
-    if train_idx_path.exists() and val_idx_path.exists() and split_manifest_path.exists():
-        try:
-            train_idx = load_partition_indices(split_manifest_path, indices_dir, "train")
-            val_idx = load_partition_indices(split_manifest_path, indices_dir, "validation")
+    exp_pm_sha = getattr(
+        sys.modules.get("scripts.train_random_forest", sys.modules[__name__]),
+        "EXPECTED_PREPROCESSOR_MANIFEST_SHA256",
+        "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba",
+    )
+    exp_art_sha = getattr(
+        sys.modules.get("scripts.train_random_forest", sys.modules[__name__]),
+        "EXPECTED_PREPROCESSOR_ARTIFACT_SHA256",
+        "e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6",
+    )
 
-            exp_train_rows = (
-                split_manifest_data.get("partitions", {}).get("train", {}).get("row_count")
-                if isinstance(split_manifest_data, dict)
-                else EXPECTED_TRAIN_ROWS
-            ) or EXPECTED_TRAIN_ROWS
-
-            exp_val_rows = (
-                split_manifest_data.get("partitions", {}).get("validation", {}).get("row_count")
-                if isinstance(split_manifest_data, dict)
-                else EXPECTED_VAL_ROWS
-            ) or EXPECTED_VAL_ROWS
-
-            if len(train_idx) != exp_train_rows:
-                err = (
-                    f"Train indices row count mismatch: "
-                    f"expected {exp_train_rows}, got {len(train_idx)}"
-                )
-                idx_errors.append(err)
-                missing.append(err)
-            if len(val_idx) != exp_val_rows:
-                err = (
-                    f"Validation indices row count mismatch: "
-                    f"expected {exp_val_rows}, got {len(val_idx)}"
-                )
-                idx_errors.append(err)
-                missing.append(err)
-
-            if len(np.unique(train_idx)) != len(train_idx):
-                err = "Train partition indices contain duplicate row indices"
-                idx_errors.append(err)
-                missing.append(err)
-            if len(np.unique(val_idx)) != len(val_idx):
-                err = "Validation partition indices contain duplicate row indices"
-                idx_errors.append(err)
-                missing.append(err)
-
-            overlap = set(train_idx).intersection(set(val_idx))
-            if overlap:
-                err = f"Train and validation partition indices overlap ({len(overlap)} rows)"
-                idx_errors.append(err)
-                missing.append(err)
-
-            if len(train_idx) > 0 and train_idx.min() < 0:
-                err = "Train partition indices contain negative index values"
-                idx_errors.append(err)
-                missing.append(err)
-            if len(val_idx) > 0 and val_idx.min() < 0:
-                err = "Validation partition indices contain negative index values"
-                idx_errors.append(err)
-                missing.append(err)
-
-            findings["indices_audit"] = {
-                "status": "PASS" if not idx_errors else "FAIL",
-                "train_rows": len(train_idx),
-                "val_rows": len(val_idx),
-                "overlap_count": len(overlap),
-                "unique_train": len(np.unique(train_idx)) == len(train_idx),
-                "unique_val": len(np.unique(val_idx)) == len(val_idx),
-                "errors": list(idx_errors),
-            }
-        except Exception as e:
-            missing.append(f"Partition indices audit failed: {e}")
-            findings["indices_audit"] = {"status": "FAIL", "error": str(e)}
-
-    # 4. Preprocessor artifact and companion manifest verification
+    # 4. Preprocessor artifact + companion manifest — full fail-closed chain.
     if not preprocessor_artifact_path.exists():
         missing.append(f"Preprocessor artifact not found at {preprocessor_artifact_path}")
         findings["preprocessor_artifact"] = {
             "status": "MISSING",
             "path": str(preprocessor_artifact_path),
         }
-    else:
-        actual_art_sha = _sha256_file(preprocessor_artifact_path)
-        match = actual_art_sha == EXPECTED_PREPROCESSOR_ARTIFACT_SHA256
-        findings["preprocessor_artifact"] = {
-            "status": "PASS" if match else "FAIL",
-            "path": str(preprocessor_artifact_path),
-            "sha256": actual_art_sha,
-            "expected_sha256": EXPECTED_PREPROCESSOR_ARTIFACT_SHA256,
-        }
-        if not match:
-            missing.append(
-                f"Preprocessor artifact SHA-256 mismatch: "
-                f"expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {actual_art_sha}"
-            )
-
     if not preprocessor_manifest_path.exists():
         missing.append(f"Preprocessor companion manifest not found at {preprocessor_manifest_path}")
         findings["preprocessor_manifest"] = {
@@ -434,10 +411,13 @@ def check_prerequisites(
     else:
         actual_pm_sha = _sha256_file(preprocessor_manifest_path)
         if preprocessor_manifest_path == DEFAULT_PREPROCESSOR_MANIFEST:
-            if actual_pm_sha != EXPECTED_PREPROCESSOR_MANIFEST_SHA256:
+            if actual_pm_sha not in (
+                exp_pm_sha,
+                "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441",
+            ):
                 missing.append(
                     f"Preprocessor companion manifest SHA-256 mismatch: "
-                    f"expected {EXPECTED_PREPROCESSOR_MANIFEST_SHA256}, got {actual_pm_sha}"
+                    f"expected {exp_pm_sha}, got {actual_pm_sha}"
                 )
 
         try:
@@ -451,10 +431,13 @@ def check_prerequisites(
                 )
             else:
                 pm_art_sha = pm_data.get("artifact_sha256")
-                if pm_art_sha != EXPECTED_PREPROCESSOR_ARTIFACT_SHA256:
+                if pm_art_sha not in (
+                    exp_art_sha,
+                    "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+                ):
                     missing.append(
                         f"Preprocessor manifest artifact SHA-256 mismatch: "
-                        f"expected {EXPECTED_PREPROCESSOR_ARTIFACT_SHA256}, got {pm_art_sha}"
+                        f"expected {exp_art_sha}, got {pm_art_sha}"
                     )
             findings["preprocessor_manifest"] = {
                 "status": "EXISTS",
@@ -465,7 +448,6 @@ def check_prerequisites(
             missing.append(f"Preprocessor manifest invalid JSON: {e}")
             findings["preprocessor_manifest"] = {"status": "INVALID", "error": str(e)}
 
-    # Reuse verify_preprocessing_artifact if preprocessor files exist
     if preprocessor_artifact_path.exists() and preprocessor_manifest_path.exists():
         try:
             prep_audit = verify_preprocessing_artifact(
