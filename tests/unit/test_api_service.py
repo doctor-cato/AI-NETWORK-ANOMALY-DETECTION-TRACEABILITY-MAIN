@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import joblib
+import numpy as np
 import pandas as pd
 import pytest
+from sklearn.ensemble import RandomForestClassifier
 
 pytest.importorskip("fastapi")
 pytest.importorskip("pydantic")
@@ -15,6 +19,14 @@ from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.errors import ModelNotReadyError
 from network_anomaly.api.schemas import HealthResponse
 from network_anomaly.api.service import ApiService
+from network_anomaly.data.nf_unsw_nb15_v3 import CATEGORICAL_CODED_COLUMNS, ML_FEATURE_COLUMNS
+from network_anomaly.inference.predict import _sha256_file
+from network_anomaly.preprocessing import (
+    FEATURE_CONTRACT_VERSION,
+    PreprocessingConfig,
+    TrainOnlyPreprocessor,
+)
+from network_anomaly.preprocessing.pipeline import EXPECTED_DATASET_SHA256
 
 
 @pytest.fixture
@@ -64,6 +76,59 @@ def test_health_check_accepts_verified_pipeline(api_service: ApiService):
     assert health.model_ready is True
     assert health.preprocessor_ready is True
     assert health.status == "healthy"
+
+
+def test_health_check_accepts_real_verified_fixture(api_service: ApiService, tmp_path: Path):
+    """Health loads synthetic artifacts through the actual verification path."""
+    artifact_root = tmp_path / "artifacts"
+    prep_path = artifact_root / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    model_path = artifact_root / "models" / "random_forest" / "random_forest_baseline.joblib"
+    prep_manifest = (
+        tmp_path / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    )
+    model_manifest = tmp_path / "reports" / "models" / "random_forest_manifest.json"
+    prep_path.parent.mkdir(parents=True)
+    model_path.parent.mkdir(parents=True)
+    prep_manifest.parent.mkdir(parents=True)
+    model_manifest.parent.mkdir(parents=True)
+
+    data = {
+        col: (
+            np.arange(10, dtype=float) + 1
+            if col not in CATEGORICAL_CODED_COLUMNS
+            else np.arange(10) % 3
+        )
+        for col in ML_FEATURE_COLUMNS
+    }
+    features = pd.DataFrame(data)
+    preprocessor = TrainOnlyPreprocessor(
+        config=PreprocessingConfig(scaler_type="none"),
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="b" * 64,
+    )
+    preprocessor.fit(features)
+    prep_sha = preprocessor.save(prep_path, prep_manifest)
+    model = RandomForestClassifier(n_estimators=3, random_state=42)
+    model.fit(preprocessor.transform(features), np.arange(10) % 2)
+    joblib.dump(model, model_path)
+    model_manifest.write_text(
+        json.dumps(
+            {
+                "model_type": "RandomForestClassifier",
+                "model_artifact_sha256": _sha256_file(model_path),
+                "preprocessor_artifact_sha256": prep_sha,
+                "feature_contract_version": FEATURE_CONTRACT_VERSION,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", artifact_root),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        health = api_service.check_health()
+    assert health.status == "healthy"
+    assert health.model_ready and health.preprocessor_ready
 
 
 def test_ingest_events_atomicity_and_idempotency(api_service: ApiService):
