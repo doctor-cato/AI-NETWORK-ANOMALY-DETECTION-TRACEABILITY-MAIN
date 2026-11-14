@@ -23,7 +23,9 @@ class UnsupportedSourceAdapter(BaseSourceAdapter):
     def __init__(self, source_id: str = "source:sflow", schema_version: str = "1.0.0") -> None:
         super().__init__(source_id=source_id, schema_version=schema_version)
 
-    def adapt_record(self, raw_record: Dict[str, Any], record_idx: Optional[int] = None) -> CanonicalNetworkEvent:
+    def adapt_record(
+        self, raw_record: Dict[str, Any], record_idx: Optional[int] = None
+    ) -> CanonicalNetworkEvent:
         meta = EventMetadata(
             source_id=self.source_id,
             schema_version=self.schema_version,
@@ -50,5 +52,7 @@ class UnsupportedSourceAdapter(BaseSourceAdapter):
             trace_metadata={"raw_record": raw_record},
             eligibility=InferenceEligibility.SEMANTIC_MISMATCH,
             validation_status=ValidationStatus.PARSEABLE,
-            ood_warnings=[f"Source '{self.source_id}' is semantically incompatible with flow modeling."],
+            ood_warnings=[
+                f"Source '{self.source_id}' is semantically incompatible with flow modeling."
+            ],
         )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,12 +25,16 @@ class BenchmarkEvidence:
     source_id: str
     model_identifier: str = "rf-baseline-1794068628"
     model_artifact_sha256: str = "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea"
-    preprocessor_artifact_sha256: str = "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
+    preprocessor_artifact_sha256: str = (
+        "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
+    )
     feature_contract_version: str = "nf-unsw-nb15-v3-baseline-47"
     feature_contract_hash: Optional[str] = None
     dataset_name: str = "NF-UNSW-NB15-v3"
     dataset_version: str = "v3"
-    dataset_sha256: Optional[str] = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    dataset_sha256: Optional[str] = (
+        "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    )
     evaluation_protocol: str = "nf-unsw-nb15-v3-chronological-group-purged-v1"
     split_identity: str = "held-out-test-split"
     recall: float = 0.0
@@ -71,13 +75,28 @@ class BenchmarkEvidence:
     ) -> Tuple[bool, str]:
         """Verify that runtime model, preprocessor, and contract match benchmarked evidence."""
         if model_identifier and model_identifier != self.model_identifier:
-            return False, f"Model identifier mismatch: expected '{self.model_identifier}', got '{model_identifier}'"
+            return (
+                False,
+                f"Model identifier mismatch: expected '{self.model_identifier}', got '{model_identifier}'",
+            )
         if model_artifact_sha256 and model_artifact_sha256 != self.model_artifact_sha256:
-            return False, f"Model artifact SHA-256 mismatch: expected '{self.model_artifact_sha256[:12]}...', got '{model_artifact_sha256[:12]}...'"
-        if preprocessor_artifact_sha256 and preprocessor_artifact_sha256 != self.preprocessor_artifact_sha256:
-            return False, f"Preprocessor artifact SHA-256 mismatch: expected '{self.preprocessor_artifact_sha256[:12]}...', got '{preprocessor_artifact_sha256[:12]}...'"
+            return (
+                False,
+                f"Model artifact SHA-256 mismatch: expected '{self.model_artifact_sha256[:12]}...', got '{model_artifact_sha256[:12]}...'",
+            )
+        if (
+            preprocessor_artifact_sha256
+            and preprocessor_artifact_sha256 != self.preprocessor_artifact_sha256
+        ):
+            return (
+                False,
+                f"Preprocessor artifact SHA-256 mismatch: expected '{self.preprocessor_artifact_sha256[:12]}...', got '{preprocessor_artifact_sha256[:12]}...'",
+            )
         if feature_contract_version and feature_contract_version != self.feature_contract_version:
-            return False, f"Feature contract version mismatch: expected '{self.feature_contract_version}', got '{feature_contract_version}'"
+            return (
+                False,
+                f"Feature contract version mismatch: expected '{self.feature_contract_version}', got '{feature_contract_version}'",
+            )
         if self.verification_status in ("STALE", "EXPIRED", "REVOKED"):
             return False, f"Benchmark evidence status is {self.verification_status}."
         if not self.is_passed and not self.is_research_only:
@@ -138,7 +157,7 @@ DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = {
         feature_contract_version="nf-unsw-nb15-v3-baseline-47",
         dataset_name="NF-CSE-CIC-IDS2018-v3",
         dataset_version="v3",
-        dataset_sha256="4ac221b16bd642b1bdf703f4fc7efb22",
+        dataset_sha256=None,  # Source UUID is not a content SHA-256.
         evaluation_protocol="external-generalization-slice-100k",
         split_identity="sample100k",
         recall=0.000000,
@@ -159,7 +178,7 @@ DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = {
         feature_contract_version="nf-unsw-nb15-v3-baseline-47",
         dataset_name="NF-CSE-CIC-IDS2018-v3",
         dataset_version="v3",
-        dataset_sha256="4ac221b16bd642b1bdf703f4fc7efb22",
+        dataset_sha256=None,  # Source UUID is not a content SHA-256.
         evaluation_protocol="external-generalization-slice-100k",
         split_identity="sample100k",
         recall=0.000000,
@@ -180,7 +199,7 @@ DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = {
         feature_contract_version="nf-unsw-nb15-v3-baseline-47",
         dataset_name="NF-CSE-CIC-IDS2018-v3",
         dataset_version="v3",
-        dataset_sha256="4ac221b16bd642b1bdf703f4fc7efb22",
+        dataset_sha256=None,  # Source UUID is not a content SHA-256.
         evaluation_protocol="external-generalization-slice-100k",
         split_identity="sample100k",
         recall=0.000000,
@@ -382,7 +401,9 @@ class FeatureCompatibilityEvaluator:
                     total_events=total_events,
                     eligible_events_count=0,
                     missing_features=missing_or_invalid,
-                    feature_statuses={feat: FeatureMappingStatus.MISSING for feat in missing_or_invalid},
+                    feature_statuses={
+                        feat: FeatureMappingStatus.MISSING for feat in missing_or_invalid
+                    },
                     rejection_reasons=[
                         f"Batch contains incomplete or non-finite features (NaN/Inf): {missing_or_invalid[:5]}",
                         "Strict anti-imputation policy: Zero/median synthetic filling is prohibited.",
@@ -428,7 +449,9 @@ class FeatureCompatibilityEvaluator:
                 total_events=total_events,
                 eligible_events_count=0,
                 missing_features=missing_or_invalid,
-                feature_statuses={feat: FeatureMappingStatus.MISSING for feat in missing_or_invalid},
+                feature_statuses={
+                    feat: FeatureMappingStatus.MISSING for feat in missing_or_invalid
+                },
                 rejection_reasons=rejection_reasons,
                 trace_route_eligible=True,
                 risk_route_eligible=True,
@@ -464,7 +487,8 @@ class FeatureCompatibilityEvaluator:
                     val_status = ValidationStatus.UNVALIDATED
                     eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
                     rejection_reasons.append(
-                        f"Model '{eff_model or evidence.model_identifier}' on '{eff_source}' is designated RESEARCH_ONLY and not certified for production inference."
+                        f"Model '{eff_model or evidence.model_identifier}' on '{eff_source}' "
+                        "is designated RESEARCH_ONLY and not certified for production inference."
                     )
             elif evidence.is_passed:
                 val_status = ValidationStatus.MODEL_VALIDATED
@@ -489,13 +513,15 @@ class FeatureCompatibilityEvaluator:
                 )
 
         feature_statuses = {
-            feat: FeatureMappingStatus.EXACT
-            if feat not in (all_missing_keys | non_finite_keys)
-            else FeatureMappingStatus.MISSING
+            feat: (
+                FeatureMappingStatus.EXACT
+                if feat not in (all_missing_keys | non_finite_keys)
+                else FeatureMappingStatus.MISSING
+            )
             for feat in self.target_features
         }
 
-        is_research = (eligibility == InferenceEligibility.RESEARCH_ONLY)
+        is_research = eligibility == InferenceEligibility.RESEARCH_ONLY
 
         return CompatibilityEvaluationReport(
             source_id=eff_source,
@@ -508,7 +534,7 @@ class FeatureCompatibilityEvaluator:
             rejection_reasons=rejection_reasons,
             benchmark_evidence=evidence,
             trace_route_eligible=True,
-            risk_route_eligible=False if is_research else True,
+            risk_route_eligible=not is_research,
         )
 
     def evaluate_dataframe(
@@ -567,7 +593,9 @@ class FeatureCompatibilityEvaluator:
             rejection_reasons.append(
                 f"Missing, NaN, or non-finite (Inf) values detected in column(s): {list(cols_with_invalid.keys())[:5]}"
             )
-            rejection_reasons.append("Strict anti-imputation policy: Zero/median synthetic filling is prohibited.")
+            rejection_reasons.append(
+                "Strict anti-imputation policy: Zero/median synthetic filling is prohibited."
+            )
             return CompatibilityEvaluationReport(
                 source_id=source_id,
                 validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
@@ -576,7 +604,11 @@ class FeatureCompatibilityEvaluator:
                 eligible_events_count=int(row_is_finite.sum()),
                 missing_features=list(cols_with_invalid.keys()),
                 feature_statuses={
-                    col: FeatureMappingStatus.EXACT if col not in cols_with_invalid else FeatureMappingStatus.MISSING
+                    col: (
+                        FeatureMappingStatus.EXACT
+                        if col not in cols_with_invalid
+                        else FeatureMappingStatus.MISSING
+                    )
                     for col in self.target_features
                 },
                 rejection_reasons=rejection_reasons,
@@ -612,7 +644,8 @@ class FeatureCompatibilityEvaluator:
                     val_status = ValidationStatus.UNVALIDATED
                     eligibility = InferenceEligibility.VALIDATION_NOT_VERIFIED
                     rejection_reasons.append(
-                        f"Model '{eff_model or evidence.model_identifier}' on '{source_id}' is designated RESEARCH_ONLY and not certified for production inference."
+                        f"Model '{eff_model or evidence.model_identifier}' on '{source_id}' "
+                        "is designated RESEARCH_ONLY and not certified for production inference."
                     )
             elif evidence.is_passed:
                 val_status = ValidationStatus.MODEL_VALIDATED
@@ -620,7 +653,9 @@ class FeatureCompatibilityEvaluator:
             else:
                 val_status = ValidationStatus.BENCHMARK_FAILED
                 eligibility = InferenceEligibility.BENCHMARK_UNSATISFACTORY
-                rejection_reasons.append(f"Model benchmark failed for '{source_id}': {evidence.reason}")
+                rejection_reasons.append(
+                    f"Model benchmark failed for '{source_id}': {evidence.reason}"
+                )
         else:
             if allow_research_only:
                 val_status = ValidationStatus.RESEARCH_ONLY
@@ -632,7 +667,7 @@ class FeatureCompatibilityEvaluator:
                     f"Source '{source_id}' has no empirical benchmark evidence on file (unverified)."
                 )
 
-        is_research = (eligibility == InferenceEligibility.RESEARCH_ONLY)
+        is_research = eligibility == InferenceEligibility.RESEARCH_ONLY
 
         return CompatibilityEvaluationReport(
             source_id=source_id,
@@ -645,5 +680,5 @@ class FeatureCompatibilityEvaluator:
             rejection_reasons=rejection_reasons,
             benchmark_evidence=evidence,
             trace_route_eligible=True,
-            risk_route_eligible=False if is_research else True,
+            risk_route_eligible=not is_research,
         )

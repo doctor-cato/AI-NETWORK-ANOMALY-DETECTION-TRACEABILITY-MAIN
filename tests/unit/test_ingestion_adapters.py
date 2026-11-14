@@ -1,9 +1,5 @@
 """Unit tests for multi-source ingestion adapters (Issue #46)."""
 
-import numpy as np
-import pandas as pd
-import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import (
     AWSVPCFlowAdapter,
@@ -20,17 +16,19 @@ from network_anomaly.ingestion.schemas import InferenceEligibility, ValidationSt
 def test_netflow_v3_adapter_full_features():
     adapter = NetFlowV3Adapter()
     sample_record = {col: 1.0 for col in ML_FEATURE_COLUMNS}
-    sample_record.update({
-        "IPV4_SRC_ADDR": "192.168.1.100",
-        "L4_SRC_PORT": 44321,
-        "IPV4_DST_ADDR": "10.0.0.1",
-        "L4_DST_PORT": 80,
-        "PROTOCOL": 6,
-        "FLOW_START_MILLISECONDS": 1600000000000,
-        "FLOW_END_MILLISECONDS": 1600000001000,
-        "Label": 1,
-        "Attack": "Exploits",
-    })
+    sample_record.update(
+        {
+            "IPV4_SRC_ADDR": "192.168.1.100",
+            "L4_SRC_PORT": 44321,
+            "IPV4_DST_ADDR": "10.0.0.1",
+            "L4_DST_PORT": 80,
+            "PROTOCOL": 6,
+            "FLOW_START_MILLISECONDS": 1600000000000,
+            "FLOW_END_MILLISECONDS": 1600000001000,
+            "Label": 1,
+            "Attack": "Exploits",
+        }
+    )
 
     event = adapter.adapt_record(sample_record, record_idx=0)
 
@@ -184,7 +182,13 @@ def test_base_adapter_extract_ml_matrix():
     rec2 = {col: 20.0 for col in ML_FEATURE_COLUMNS}
 
     zeek_adapter = ZeekConnAdapter()
-    rec3 = {"id.orig_h": "1.1.1.1", "id.orig_p": 80, "id.resp_h": "2.2.2.2", "id.resp_p": 80, "proto": "tcp"}
+    rec3 = {
+        "id.orig_h": "1.1.1.1",
+        "id.orig_p": 80,
+        "id.resp_h": "2.2.2.2",
+        "id.resp_p": 80,
+        "proto": "tcp",
+    }
 
     events = [
         v3_adapter.adapt_record(rec1, 0),

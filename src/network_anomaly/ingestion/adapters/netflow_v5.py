@@ -27,7 +27,9 @@ class NetFlowV5Adapter(BaseSourceAdapter):
     def __init__(self, source_id: str = "source:netflow-v5", schema_version: str = "5.0.0") -> None:
         super().__init__(source_id=source_id, schema_version=schema_version)
 
-    def adapt_record(self, raw_record: Dict[str, Any], record_idx: Optional[int] = None) -> CanonicalNetworkEvent:
+    def adapt_record(
+        self, raw_record: Dict[str, Any], record_idx: Optional[int] = None
+    ) -> CanonicalNetworkEvent:
         meta = EventMetadata(
             source_id=self.source_id,
             schema_version=self.schema_version,
@@ -56,9 +58,7 @@ class NetFlowV5Adapter(BaseSourceAdapter):
             flow_duration_ms=duration_ms,
         )
 
-        telemetry = ExtendedTelemetry(
-            tcp_flags=int(raw_record.get("tcp_flags", 0))
-        )
+        telemetry = ExtendedTelemetry(tcp_flags=int(raw_record.get("tcp_flags", 0)))
 
         trace_meta = {
             "first": first,

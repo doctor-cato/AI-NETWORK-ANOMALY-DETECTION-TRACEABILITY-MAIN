@@ -1,13 +1,12 @@
 """Integration tests for multi-source ingestion, gate decision, and inference pipeline (Issue #46)."""
 
-import json
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS, ML_FEATURE_COLUMNS
+from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS
 from network_anomaly.inference.predict import (
     load_verified_model,
     load_verified_preprocessor,
@@ -106,7 +105,9 @@ def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict,
     m_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
     m_man = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
     p_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-    p_man = PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    p_man = (
+        PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    )
 
     if not m_path.is_file() or not p_path.is_file():
         pytest.skip("Canonical model/preprocessor binary artifacts excluded via .gitignore policy.")
@@ -116,7 +117,9 @@ def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict,
 
     all_preds = []
     # 1. Test canonical internal source -> Approved for ML
-    for chunk_events in parser.parse_file_chunks(v3_csv, explicit_source_id="source:nf-v3-canonical"):
+    for chunk_events in parser.parse_file_chunks(
+        v3_csv, explicit_source_id="source:nf-v3-canonical"
+    ):
         decision = gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is True
         assert decision.eligibility_status == InferenceEligibility.PREDICTION_AVAILABLE
@@ -137,7 +140,9 @@ def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict,
     assert len(all_preds) == 5
 
     # 2. Test external unverified/failed benchmark source -> Blocked fail-closed by Gate
-    for chunk_events in parser.parse_file_chunks(v3_csv, explicit_source_id="source:nf-v3-external"):
+    for chunk_events in parser.parse_file_chunks(
+        v3_csv, explicit_source_id="source:nf-v3-external"
+    ):
         decision = gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is False
         assert decision.eligibility_status == InferenceEligibility.BENCHMARK_UNSATISFACTORY
@@ -183,7 +188,9 @@ def test_multi_source_netflow_v5_abstention(synthetic_files_dir: dict):
         decision = gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is False
         assert decision.eligibility_status == InferenceEligibility.FEATURE_INCOMPATIBLE
-        assert any("NetFlow v5" in r or "anti-imputation" in r.lower() for r in decision.abstention_reasons)
+        assert any(
+            "NetFlow v5" in r or "anti-imputation" in r.lower() for r in decision.abstention_reasons
+        )
 
 
 def test_format_sniffer_empty_file_fails(synthetic_files_dir: dict):

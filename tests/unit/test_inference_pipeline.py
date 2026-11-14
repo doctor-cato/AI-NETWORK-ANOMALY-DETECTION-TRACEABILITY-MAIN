@@ -432,10 +432,23 @@ def test_inference_pipeline_isolation_forest(
 
     if_art_path = tmp_path / "if_model.joblib"
     joblib.dump(if_model, if_art_path)
+    if_sha = _sha256_file(if_art_path)
+    prep_sha = _sha256_file(prep_art_path)
+    if_man_path = tmp_path / "if_model_manifest.json"
+    if_manifest_data = {
+        "run_id": "test-run-if-001",
+        "model_type": "IsolationForest",
+        "feature_contract_version": FEATURE_CONTRACT_VERSION,
+        "model_artifact_path": str(if_art_path.name),
+        "model_artifact_sha256": if_sha,
+        "preprocessor_artifact_sha256": prep_sha,
+    }
+    if_man_path.write_text(json.dumps(if_manifest_data, indent=2) + "\n", encoding="utf-8")
 
     pipeline = InferencePipeline.from_artifacts(
         model_artifact_path=if_art_path,
         preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=if_man_path,
         preprocessor_manifest_path=prep_man_path,
     )
 
@@ -526,3 +539,162 @@ def test_predict_from_artifact_backward_compatibility(
     _, _, model_art_path, _ = synthetic_preprocessor_and_model
     preds = predict_from_artifact(synthetic_features, artifact_path=model_art_path)
     assert len(preds) == len(synthetic_features)
+
+
+# =========================================================================
+# 5. Issue #53 Secure Verified Model Loading & Anti-Deserialization Tests
+# =========================================================================
+
+
+def test_load_verified_model_missing_manifest_raises_fail_closed(tmp_path: Path):
+    """Issue #53: Enforce fail-closed error when companion manifest is missing."""
+    fake_model_path = tmp_path / "orphan_model.joblib"
+    joblib.dump({"dummy": "payload"}, fake_model_path)
+
+    with pytest.raises(FileNotFoundError, match="Companion manifest for model not found"):
+        load_verified_model(fake_model_path, manifest_path=None)
+
+
+def test_load_verified_model_explicit_nonexistent_manifest(tmp_path: Path):
+    """Issue #53: Enforce fail-closed FileNotFoundError on missing explicit manifest."""
+    fake_model_path = tmp_path / "model.joblib"
+    joblib.dump({"dummy": "payload"}, fake_model_path)
+    non_existent_man = tmp_path / "does_not_exist_manifest.json"
+
+    with pytest.raises(FileNotFoundError, match="Companion manifest for model not found"):
+        load_verified_model(fake_model_path, manifest_path=non_existent_man)
+
+
+def test_load_verified_model_tampered_single_byte_digest_mismatch(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    tmp_path: Path,
+):
+    """Issue #53: Enforce fail-closed ValueError on byte-by-byte SHA-256 mismatch."""
+    _, _, model_art_path, model_man_path = synthetic_preprocessor_and_model
+
+    # Create a 1-byte modified copy of the model artifact
+    raw_bytes = bytearray(model_art_path.read_bytes())
+    raw_bytes[0] ^= 0xFF  # Flip bits of first byte
+    tampered_model_path = tmp_path / "tampered_1byte_model.joblib"
+    tampered_model_path.write_bytes(raw_bytes)
+
+    with pytest.raises(ValueError, match="Model artifact SHA-256 mismatch"):
+        load_verified_model(tampered_model_path, manifest_path=model_man_path)
+
+
+def test_load_verified_model_missing_required_fields_in_manifest(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    tmp_path: Path,
+):
+    """Issue #53: Fail closed if manifest misses model sha256 or contract version."""
+    _, _, model_art_path, model_man_path = synthetic_preprocessor_and_model
+    man_data = json.loads(model_man_path.read_text(encoding="utf-8"))
+
+    # Missing model_artifact_sha256
+    bad_man_1 = tmp_path / "bad_man_no_sha.json"
+    data_no_sha = dict(man_data)
+    del data_no_sha["model_artifact_sha256"]
+    bad_man_1.write_text(json.dumps(data_no_sha), encoding="utf-8")
+    with pytest.raises(ValueError, match="missing required field 'model_artifact_sha256'"):
+        load_verified_model(model_art_path, manifest_path=bad_man_1)
+
+    # Missing feature_contract_version
+    bad_man_2 = tmp_path / "bad_man_no_contract.json"
+    data_no_contract = dict(man_data)
+    del data_no_contract["feature_contract_version"]
+    bad_man_2.write_text(json.dumps(data_no_contract), encoding="utf-8")
+    with pytest.raises(ValueError, match="missing required field 'feature_contract_version'"):
+        load_verified_model(model_art_path, manifest_path=bad_man_2)
+
+
+def test_load_verified_model_malformed_manifest_json(tmp_path: Path):
+    """Issue #53: Fail closed on malformed JSON manifest."""
+    fake_model_path = tmp_path / "model_bad_json.joblib"
+    joblib.dump({"dummy": "payload"}, fake_model_path)
+    bad_json_man = tmp_path / "bad_syntax.json"
+    bad_json_man.write_text("NOT_VALID_JSON{{{", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Failed to parse model manifest JSON"):
+        load_verified_model(fake_model_path, manifest_path=bad_json_man)
+
+
+def test_load_verified_model_non_dict_manifest_json(tmp_path: Path):
+    """Issue #53: Fail closed if manifest JSON is an array rather than object."""
+    fake_model_path = tmp_path / "model_non_dict.joblib"
+    joblib.dump({"dummy": "payload"}, fake_model_path)
+    array_man = tmp_path / "array_manifest.json"
+    array_man.write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Model manifest JSON must be a dict/object"):
+        load_verified_model(fake_model_path, manifest_path=array_man)
+
+
+def test_predict_from_artifact_rejects_unverified_model(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+    tmp_path: Path,
+):
+    """Issue #53: predict_from_artifact fails closed on unverified model without manifest."""
+    prep_art_path, prep_man_path, _, _ = synthetic_preprocessor_and_model
+    unverified_model_path = tmp_path / "unverified_legacy.joblib"
+    joblib.dump({"unsafe": True}, unverified_model_path)
+
+    with pytest.raises(FileNotFoundError, match="Companion manifest for model not found"):
+        predict_from_artifact(
+            synthetic_features,
+            artifact_path=unverified_model_path,
+            preprocessor_artifact_path=prep_art_path,
+            preprocessor_manifest_path=prep_man_path,
+        )
+
+    # Also fails closed if called completely standalone without preprocessor or manifest
+    with pytest.raises(FileNotFoundError):
+        predict_from_artifact(synthetic_features, artifact_path=unverified_model_path)
+
+
+def test_predict_from_artifact_rejects_tampered_model(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+    tmp_path: Path,
+):
+    """Issue #53: predict_from_artifact fails closed on tampered model artifact."""
+    prep_art_path, prep_man_path, model_art_path, model_man_path = synthetic_preprocessor_and_model
+
+    # Tamper with model
+    tampered_model = tmp_path / "tampered_legacy.joblib"
+    raw_bytes = bytearray(model_art_path.read_bytes())
+    raw_bytes[-1] ^= 0x01
+    tampered_model.write_bytes(raw_bytes)
+
+    with pytest.raises(ValueError, match="Model artifact SHA-256 mismatch"):
+        predict_from_artifact(
+            synthetic_features,
+            artifact_path=tampered_model,
+            manifest_path=model_man_path,
+            preprocessor_artifact_path=prep_art_path,
+            preprocessor_manifest_path=prep_man_path,
+        )
+
+
+def test_prohibit_unverified_deserialization_execution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    """Issue #53: Ensure joblib.load is NEVER invoked if manifest integrity check fails."""
+    fake_model = tmp_path / "probe_model.joblib"
+    fake_model.write_bytes(b"probe_payload")
+
+    joblib_called = False
+
+    def explosive_load(*args, **kwargs):
+        nonlocal joblib_called
+        joblib_called = True
+        raise AssertionError("CRITICAL INSECURITY: joblib.load invoked without verified manifest!")
+
+    monkeypatch.setattr(joblib, "load", explosive_load)
+
+    # Missing manifest: joblib.load MUST NOT be called
+    with pytest.raises(FileNotFoundError):
+        load_verified_model(fake_model, manifest_path=None)
+
+    assert not joblib_called, "joblib.load was called on an unverified model!"

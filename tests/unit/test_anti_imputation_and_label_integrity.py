@@ -1,10 +1,5 @@
 """Unit tests for Anti-Imputation, Finite Values, and Label Integrity (Issue #46 Audit)."""
 
-import math
-import numpy as np
-import pandas as pd
-import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import NetFlowV3Adapter
 from network_anomaly.ingestion.adapters.base import BaseSourceAdapter

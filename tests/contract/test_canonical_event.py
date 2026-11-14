@@ -1,10 +1,7 @@
 """Contract tests for CanonicalNetworkEvent and leakage isolation (Issue #46)."""
 
-import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
-    ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
@@ -23,7 +20,9 @@ from network_anomaly.ingestion.schemas import (
 
 def test_canonical_event_serialization_contract():
     event = CanonicalNetworkEvent(
-        metadata=EventMetadata(source_id="source:test", schema_version="1.0.0", raw_record_id="rec-1"),
+        metadata=EventMetadata(
+            source_id="source:test", schema_version="1.0.0", raw_record_id="rec-1"
+        ),
         network_5tuple=Network5Tuple(
             ipv4_src_addr="1.2.3.4",
             l4_src_port=12345,
@@ -31,7 +30,9 @@ def test_canonical_event_serialization_contract():
             l4_dst_port=80,
             protocol=6,
         ),
-        metrics=FlowMetrics(in_bytes=100, in_pkts=2, out_bytes=200, out_pkts=3, flow_duration_ms=15.5),
+        metrics=FlowMetrics(
+            in_bytes=100, in_pkts=2, out_bytes=200, out_pkts=3, flow_duration_ms=15.5
+        ),
         telemetry=ExtendedTelemetry(tcp_flags=18, min_ttl=64, max_ttl=64),
         app_context=ApplicationContext(l7_proto=80, service_name="http"),
         ml_features={"PROTOCOL": 6.0},

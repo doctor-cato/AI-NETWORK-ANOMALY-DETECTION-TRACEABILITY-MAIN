@@ -1,7 +1,6 @@
 """Unit tests for OODValidator and InferenceEligibilityGate (Issue #46)."""
 
 import pandas as pd
-import pytest
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import NetFlowV3Adapter, ZeekConnAdapter
@@ -12,14 +11,16 @@ from network_anomaly.ingestion.schemas import InferenceEligibility, ValidationSt
 
 def test_ood_validator_clean_data():
     validator = OODValidator(check_shortcut_drift=True)
-    df = pd.DataFrame({
-        "FLOW_DURATION_MILLISECONDS": [100.0, 50.0],
-        "MIN_TTL": [31, 62],  # Valid lab shortcuts
-        "MAX_TTL": [64, 128],
-        "LONGEST_FLOW_PKT": [1500, 1000],
-        "SHORTEST_FLOW_PKT": [64, 40],
-        "PROTOCOL": [6, 17],
-    })
+    df = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [100.0, 50.0],
+            "MIN_TTL": [31, 62],  # Valid lab shortcuts
+            "MAX_TTL": [64, 128],
+            "LONGEST_FLOW_PKT": [1500, 1000],
+            "SHORTEST_FLOW_PKT": [64, 40],
+            "PROTOCOL": [6, 17],
+        }
+    )
     report = validator.audit_dataframe(df)
     assert not report.has_ood_warning
     assert report.affected_rows_count == 0
@@ -29,9 +30,11 @@ def test_ood_validator_clean_data():
 
 def test_ood_validator_detects_negative_duration():
     validator = OODValidator()
-    df = pd.DataFrame({
-        "FLOW_DURATION_MILLISECONDS": [-10.0, 50.0],
-    })
+    df = pd.DataFrame(
+        {
+            "FLOW_DURATION_MILLISECONDS": [-10.0, 50.0],
+        }
+    )
     report = validator.audit_dataframe(df)
     assert report.has_ood_warning
     assert report.hard_violation_count == 1
@@ -40,10 +43,12 @@ def test_ood_validator_detects_negative_duration():
 
 def test_ood_validator_detects_inverted_ttl():
     validator = OODValidator()
-    df = pd.DataFrame({
-        "MIN_TTL": [100],
-        "MAX_TTL": [50],  # MIN > MAX
-    })
+    df = pd.DataFrame(
+        {
+            "MIN_TTL": [100],
+            "MAX_TTL": [50],  # MIN > MAX
+        }
+    )
     report = validator.audit_dataframe(df)
     assert report.has_ood_warning
     assert report.hard_violation_count == 1
@@ -52,10 +57,12 @@ def test_ood_validator_detects_inverted_ttl():
 
 def test_ood_validator_detects_shortcut_drift_and_zero_ttl():
     validator = OODValidator(check_shortcut_drift=True)
-    df = pd.DataFrame({
-        "MIN_TTL": [0, 0, 128],  # None are in {31, 62, 254, 255}
-        "MAX_TTL": [64, 64, 128],
-    })
+    df = pd.DataFrame(
+        {
+            "MIN_TTL": [0, 0, 128],  # None are in {31, 62, 254, 255}
+            "MAX_TTL": [64, 64, 128],
+        }
+    )
     report = validator.audit_dataframe(df)
     assert report.has_ood_warning
     assert report.shortcut_shift_count == 3
@@ -102,7 +109,9 @@ def test_eligibility_gate_blocks_benchmark_failed_source():
 def test_eligibility_gate_rejects_zeek_for_ml_but_routes_to_trace_and_risk():
     gate = InferenceEligibilityGate()
     adapter = ZeekConnAdapter()
-    event = adapter.adapt_record({"id.orig_h": "1.1.1.1", "id.orig_p": 80, "id.resp_h": "2.2.2.2", "id.resp_p": 80})
+    event = adapter.adapt_record(
+        {"id.orig_h": "1.1.1.1", "id.orig_p": 80, "id.resp_h": "2.2.2.2", "id.resp_p": 80}
+    )
 
     decision = gate.evaluate([event])
     assert not decision.can_proceed_to_ml
@@ -132,7 +141,7 @@ def test_eligibility_gate_abstains_on_critical_shortcut_drift():
     gate = InferenceEligibilityGate(strict_ood_abstain=True, max_allowed_shortcut_drift_ratio=0.50)
     adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
     rec = {col: 10.0 for col in ML_FEATURE_COLUMNS}
-    rec["MIN_TTL"] = 0  # Shortcut drift (not in 31, 62, 254, 255)
+    rec["MIN_TTL"] = 64  # Shortcut drift: legitimate Linux TTL outside {31, 62, 254, 255}
     rec["MAX_TTL"] = 64
     event = adapter.adapt_record(rec)
 

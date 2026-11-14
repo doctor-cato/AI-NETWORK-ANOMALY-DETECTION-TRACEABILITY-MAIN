@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
@@ -20,7 +19,9 @@ class BaseSourceAdapter(ABC):
         self.schema_version = schema_version
 
     @abstractmethod
-    def adapt_record(self, raw_record: Dict[str, Any], record_idx: Optional[int] = None) -> CanonicalNetworkEvent:
+    def adapt_record(
+        self, raw_record: Dict[str, Any], record_idx: Optional[int] = None
+    ) -> CanonicalNetworkEvent:
         """Convert a single raw dictionary record into a CanonicalNetworkEvent."""
 
     def adapt_dataframe(self, df: pd.DataFrame) -> List[CanonicalNetworkEvent]:
@@ -78,7 +79,9 @@ class BaseSourceAdapter(ABC):
         return pd.DataFrame(eligible_rows, columns=list(ML_FEATURE_COLUMNS)), eligible_indices
 
     @staticmethod
-    def extract_metadata_dataframe(events: List[CanonicalNetworkEvent]) -> Tuple[pd.DataFrame, List[int]]:
+    def extract_metadata_dataframe(
+        events: List[CanonicalNetworkEvent],
+    ) -> Tuple[pd.DataFrame, List[int]]:
         """Extract network metadata DataFrame from events for invariant, port, and OOD auditing."""
         rows = []
         indices = []

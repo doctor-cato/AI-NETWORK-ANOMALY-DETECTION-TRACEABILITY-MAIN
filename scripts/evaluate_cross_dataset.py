@@ -15,11 +15,9 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import joblib
 import numpy as np
-import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -28,8 +26,7 @@ from sklearn.metrics import (
     recall_score,
 )
 
-from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS, TARGET_COLUMNS
+from network_anomaly.config import PROJECT_ROOT
 from network_anomaly.inference.predict import (
     load_verified_model,
     load_verified_preprocessor,
@@ -38,22 +35,15 @@ from network_anomaly.ingestion.adapters.base import BaseSourceAdapter
 from network_anomaly.ingestion.compatibility import FeatureCompatibilityEvaluator
 from network_anomaly.ingestion.ood import OODValidator
 from network_anomaly.ingestion.parser import StreamingChunkParser
-from network_anomaly.ingestion.schemas import InferenceEligibility, ValidationStatus
-from network_anomaly.preprocessing import TrainOnlyPreprocessor
+from network_anomaly.ingestion.schemas import InferenceEligibility
 
 DEFAULT_DATASET_CSV = (
-    PROJECT_ROOT
-    / "data"
-    / "raw"
-    / "NF-CSE-CIC-IDS2018-v3"
-    / "NF-CSE-CIC-IDS2018-v3-sample100k.csv"
+    PROJECT_ROOT / "data" / "raw" / "NF-CSE-CIC-IDS2018-v3" / "NF-CSE-CIC-IDS2018-v3-sample100k.csv"
 )
 DEFAULT_MODEL_ARTIFACT = (
     PROJECT_ROOT / "artifacts" / "models" / "random_forest" / "random_forest_baseline.joblib"
 )
-DEFAULT_MODEL_MANIFEST = (
-    PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
-)
+DEFAULT_MODEL_MANIFEST = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
 DEFAULT_PREP_ARTIFACT = (
     PROJECT_ROOT / "artifacts" / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
 )
@@ -140,9 +130,7 @@ def evaluate_cross_dataset(
     preprocessor, prep_meta = load_verified_preprocessor(
         preprocessor_artifact, manifest_path=preprocessor_manifest
     )
-    model, model_meta = load_verified_model(
-        model_artifact, manifest_path=model_manifest
-    )
+    model, model_meta = load_verified_model(model_artifact, manifest_path=model_manifest)
 
     # 2. Ingestion & Compatibility (Raw Data Completeness Validator)
     parser = StreamingChunkParser(chunk_size=batch_size)
@@ -161,7 +149,9 @@ def evaluate_cross_dataset(
     t0 = time.time()
 
     print(f"Beginning cross-dataset evaluation of {dataset_csv.name}...")
-    for chunk_events in parser.parse_file_chunks(dataset_csv, explicit_source_id="source:nf-v3-external"):
+    for chunk_events in parser.parse_file_chunks(
+        dataset_csv, explicit_source_id="source:nf-v3-external"
+    ):
         # Evaluate feature completeness
         comp_report = evaluator.evaluate_events(chunk_events)
         if comp_report.inference_eligibility in (
@@ -295,7 +285,9 @@ def evaluate_cross_dataset(
         },
         "ood_summary": {
             "total_shortcut_drift_rows": total_ood_warnings,
-            "shortcut_drift_pct": round(total_ood_warnings / total_rows * 100, 2) if total_rows > 0 else 0.0,
+            "shortcut_drift_pct": (
+                round(total_ood_warnings / total_rows * 100, 2) if total_rows > 0 else 0.0
+            ),
         },
     }
 
@@ -311,12 +303,12 @@ def generate_markdown_report(results: Dict[str, Any], output_path: Path) -> str:
     delta_str = r"$\Delta$"
     report = f"""# Báo cáo Đánh giá Tổng quát hóa Cross-Dataset (Issue #46)
 
-**Tập dữ liệu Kiểm định Ngoại vi:** `{results['dataset_name']}`  
-**Mô hình Đánh giá:** Canonical Random Forest (`{results['canonical_model_provenance']['configuration_id']}`)  
-**Thời gian Đánh giá:** `{results['evaluation_timestamp_utc']}`  
-**Số dòng Đánh giá:** `{results['rows_evaluated']:,}` dòng  
-**Thời gian Thực thi:** `{results['evaluation_duration_seconds']}` giây  
-**Trạng thái Tương thích:** `MODEL_VALIDATED`  
+**Tập dữ liệu Kiểm định Ngoại vi:** `{results['dataset_name']}`
+**Mô hình Đánh giá:** Canonical Random Forest (`{results['canonical_model_provenance']['configuration_id']}`)
+**Thời gian Đánh giá:** `{results['evaluation_timestamp_utc']}`
+**Số dòng Đánh giá:** `{results['rows_evaluated']:,}` dòng
+**Thời gian Thực thi:** `{results['evaluation_duration_seconds']}` giây
+**Trạng thái Tương thích:** `MODEL_VALIDATED`
 
 ---
 
@@ -413,7 +405,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             json.dump(results, f, indent=2)
 
         generate_markdown_report(results, args.output_report)
-        print(f"\nEvaluation complete!")
+        print("\nEvaluation complete!")
         print(f"Results JSON: {args.output_results}")
         print(f"Report Markdown: {args.output_report}")
         print(f"Accuracy: {results['metrics']['accuracy']:.6f}")

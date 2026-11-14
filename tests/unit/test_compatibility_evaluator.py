@@ -1,13 +1,11 @@
 """Unit tests for FeatureCompatibilityEvaluator, Anti-Imputation, and Benchmark Binding (Issue #46)."""
 
-import math
 import numpy as np
 import pandas as pd
-import pytest
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import NetFlowV3Adapter, ZeekConnAdapter
-from network_anomaly.ingestion.compatibility import BenchmarkEvidence, FeatureCompatibilityEvaluator
+from network_anomaly.ingestion.compatibility import FeatureCompatibilityEvaluator
 from network_anomaly.ingestion.schemas import (
     FeatureMappingStatus,
     InferenceEligibility,
@@ -50,7 +48,9 @@ def test_evaluator_failed_external_benchmark_blocks_inference_eligibility():
     assert report.validation_status == ValidationStatus.BENCHMARK_FAILED
     assert report.inference_eligibility == InferenceEligibility.BENCHMARK_UNSATISFACTORY
     assert report.is_eligible_for_inference is False
-    assert any("failed" in r.lower() or "zero recall" in r.lower() for r in report.rejection_reasons)
+    assert any(
+        "failed" in r.lower() or "zero recall" in r.lower() for r in report.rejection_reasons
+    )
     assert report.benchmark_evidence is not None
     assert report.benchmark_evidence.is_passed is False
     assert report.benchmark_evidence.recall == 0.0
@@ -109,7 +109,9 @@ def test_evaluator_audits_every_row_not_just_first():
 def test_evaluator_zeek_events_fails_closed_feature_incompatible():
     evaluator = FeatureCompatibilityEvaluator()
     adapter = ZeekConnAdapter()
-    event = adapter.adapt_record({"id.orig_h": "10.0.0.1", "id.orig_p": 80, "id.resp_h": "10.0.0.2", "id.resp_p": 80})
+    event = adapter.adapt_record(
+        {"id.orig_h": "10.0.0.1", "id.orig_p": 80, "id.resp_h": "10.0.0.2", "id.resp_p": 80}
+    )
 
     report = evaluator.evaluate_events([event])
     assert report.validation_status == ValidationStatus.SCHEMA_COMPATIBLE

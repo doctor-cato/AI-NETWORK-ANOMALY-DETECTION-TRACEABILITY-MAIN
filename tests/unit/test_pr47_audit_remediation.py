@@ -187,7 +187,7 @@ def test_gate_validates_protocol_out_of_range():
     decision = gate.evaluate([event])
     assert decision.can_proceed_to_ml is False
     assert decision.eligibility_status == InferenceEligibility.ABSTAINED
-    assert any("Protocol number out of range" in r for r in decision.abstention_reasons)
+    assert any("Protocol out of range" in r for r in decision.abstention_reasons)
 
 
 # ---------------------------------------------------------------------------
