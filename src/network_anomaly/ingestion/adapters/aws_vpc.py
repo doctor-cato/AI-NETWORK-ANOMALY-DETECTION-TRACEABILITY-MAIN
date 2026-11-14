@@ -24,10 +24,14 @@ class AWSVPCFlowAdapter(BaseSourceAdapter):
     Rejects ML inference due to time-window aggregation and lack of 43/47 micro-features.
     """
 
-    def __init__(self, source_id: str = "source:aws-vpc-flow", schema_version: str = "2.0.0") -> None:
+    def __init__(
+        self, source_id: str = "source:aws-vpc-flow", schema_version: str = "2.0.0"
+    ) -> None:
         super().__init__(source_id=source_id, schema_version=schema_version)
 
-    def adapt_record(self, raw_record: Dict[str, Any], record_idx: Optional[int] = None) -> CanonicalNetworkEvent:
+    def adapt_record(
+        self, raw_record: Dict[str, Any], record_idx: Optional[int] = None
+    ) -> CanonicalNetworkEvent:
         meta = EventMetadata(
             source_id=self.source_id,
             schema_version=self.schema_version,
@@ -84,5 +88,7 @@ class AWSVPCFlowAdapter(BaseSourceAdapter):
             trace_metadata=trace_meta,
             eligibility=InferenceEligibility.FEATURE_INCOMPATIBLE,
             validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
-            ood_warnings=["AWS VPC Flow Logs are window-aggregated (1-10 min) and lack micro-telemetry."],
+            ood_warnings=[
+                "AWS VPC Flow Logs are window-aggregated (1-10 min) and lack micro-telemetry."
+            ],
         )

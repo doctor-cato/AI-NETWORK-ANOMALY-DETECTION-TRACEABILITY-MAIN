@@ -1,9 +1,9 @@
-"""Out-of-Distribution (OOD) Validator and Shortcut Drift Detection (Issue #46)."""
+"""Out-of-Distribution (OOD) Validator and Shortcut Drift Detection (Issue #46, #58)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 import numpy as np
 import pandas as pd
@@ -20,9 +20,13 @@ class OODReport:
     zero_ttl_count: int = 0
     affected_rows_count: int = 0
     shortcut_drift_ratio: float = 0.0
+    zero_ttl_ratio: float = 0.0
     ood_flags: List[str] = field(default_factory=list)
     out_of_range_details: Dict[str, int] = field(default_factory=dict)
     unseen_categories: Dict[str, List[Any]] = field(default_factory=dict)
+    hard_violation_indices: List[int] = field(default_factory=list)
+    zero_ttl_indices: List[int] = field(default_factory=list)
+    shortcut_drift_indices: List[int] = field(default_factory=list)
 
     @property
     def abstention_rate(self) -> float:
@@ -43,11 +47,14 @@ class OODReport:
             "zero_ttl_count": self.zero_ttl_count,
             "affected_rows_count": self.affected_rows_count,
             "shortcut_drift_ratio": round(self.shortcut_drift_ratio, 4),
+            "zero_ttl_ratio": round(self.zero_ttl_ratio, 4),
             "abstention_rate": round(self.abstention_rate, 4),
             "prediction_coverage": round(self.prediction_coverage, 4),
             "ood_flags": self.ood_flags,
             "out_of_range_details": self.out_of_range_details,
             "unseen_categories": self.unseen_categories,
+            "hard_violation_indices_count": len(self.hard_violation_indices),
+            "zero_ttl_indices_count": len(self.zero_ttl_indices),
         }
 
 
@@ -62,9 +69,10 @@ class OODValidator:
        These values are empirical lab generator shortcuts discovered in UNSW-NB15
        baseline audit; they are NOT network protocol violations (RFC 791). Real-world
        operating systems legitimately use initial TTLs such as 64 (Linux) or 128 (Windows).
-    3. Zero TTL (MIN_TTL=0): may reflect unobserved initial TTL on AWS virtual TAP
-       interfaces, NetFlow exporter aggregation without TTL recording, or packet sampling,
-       and should not be assumed to have a single unique cause.
+    3. Zero TTL (MIN_TTL=0): reflects unobserved initial TTL on AWS virtual TAP
+       interfaces, NetFlow exporter aggregation without TTL recording, or packet sampling.
+       Under strict anti-imputation, records with MIN_TTL=0 must NOT be synthetically imputed;
+       they trigger fail-closed prediction abstention when reject_zero_ttl=True.
     """
 
     # Lab generator shortcuts identified in reports/models/rf_baseline_validation_audit.json
@@ -72,11 +80,16 @@ class OODValidator:
 
     KNOWN_PROTOCOLS: Set[int] = {0, 1, 2, 6, 17, 47, 50, 51, 58, 89}
 
-    def __init__(self, check_shortcut_drift: bool = True) -> None:
+    def __init__(
+        self,
+        check_shortcut_drift: bool = True,
+        reject_zero_ttl: bool = True,
+    ) -> None:
         self.check_shortcut_drift = check_shortcut_drift
+        self.reject_zero_ttl = reject_zero_ttl
 
     def audit_dataframe(self, df: pd.DataFrame) -> OODReport:
-        """Audit a feature and metadata matrix for hard boundary violations and distribution drift."""
+        """Audit a feature matrix for hard boundary violations and distribution drift."""
         n_rows = len(df)
         if n_rows == 0:
             return OODReport(total_rows=0, has_ood_warning=False)
@@ -93,7 +106,9 @@ class OODValidator:
             if dur_neg.any():
                 c = int(dur_neg.sum())
                 out_of_range["FLOW_DURATION_MILLISECONDS_negative"] = c
-                flags.append(f"Hard constraint violation: Negative or invalid flow duration in {c} row(s).")
+                flags.append(
+                    f"Hard constraint violation: Negative/invalid flow duration in {c} row(s)."
+                )
                 hard_mask |= dur_neg.values
 
         # 2. Hard Check: Inverted TTL (MIN_TTL > MAX_TTL)
@@ -104,7 +119,9 @@ class OODValidator:
             if ttl_inv.any():
                 c = int(ttl_inv.sum())
                 out_of_range["MIN_TTL_greater_than_MAX_TTL"] = c
-                flags.append(f"Hard constraint violation: Inverted TTL (MIN_TTL > MAX_TTL) in {c} row(s).")
+                flags.append(
+                    f"Hard constraint violation: Inverted TTL (MIN_TTL > MAX_TTL) in {c} row(s)."
+                )
                 hard_mask |= ttl_inv.values
 
         # 3. Hard Check: Inverted packet lengths
@@ -118,6 +135,18 @@ class OODValidator:
                 flags.append(f"Hard constraint violation: Inverted packet lengths in {c} row(s).")
                 hard_mask |= pkt_inv.values
 
+        if "MAX_IP_PKT_LEN" in df.columns and "MIN_IP_PKT_LEN" in df.columns:
+            max_ip = pd.to_numeric(df["MAX_IP_PKT_LEN"], errors="coerce")
+            min_ip = pd.to_numeric(df["MIN_IP_PKT_LEN"], errors="coerce")
+            ip_inv = (min_ip > max_ip) & min_ip.notna() & max_ip.notna()
+            if ip_inv.any():
+                c = int(ip_inv.sum())
+                out_of_range["MIN_IP_greater_than_MAX_IP"] = c
+                flags.append(
+                    f"Hard constraint violation: Inverted IP packet lengths in {c} row(s)."
+                )
+                hard_mask |= ip_inv.values
+
         # 4. Hard Check: Negative byte or packet counters
         for col in ("IN_BYTES", "IN_PKTS", "OUT_BYTES", "OUT_PKTS"):
             if col in df.columns:
@@ -126,7 +155,9 @@ class OODValidator:
                 if neg_c.any():
                     c = int(neg_c.sum())
                     out_of_range[f"{col}_negative"] = c
-                    flags.append(f"Hard constraint violation: Negative counter in {col} ({c} rows).")
+                    flags.append(
+                        f"Hard constraint violation: Negative counter in {col} ({c} rows)."
+                    )
                     hard_mask |= neg_c.values
 
         # 5. Hard Check: Invalid port numbers [0, 65535]
@@ -137,7 +168,9 @@ class OODValidator:
                 if inv_port.any():
                     c = int(inv_port.sum())
                     out_of_range[f"{col}_out_of_range"] = c
-                    flags.append(f"Hard constraint violation: Port out of range [0, 65535] in {col} ({c} rows).")
+                    flags.append(
+                        f"Hard constraint violation: Port out of range in {col} ({c} rows)."
+                    )
                     hard_mask |= inv_port.values
 
         # 6. Hard Check: Protocol numbers [0, 255]
@@ -147,30 +180,44 @@ class OODValidator:
             if inv_proto.any():
                 c = int(inv_proto.sum())
                 out_of_range["PROTOCOL_out_of_range"] = c
-                flags.append(f"Hard constraint violation: Protocol number out of range [0, 255] in PROTOCOL ({c} rows).")
+                flags.append(
+                    f"Hard constraint violation: Protocol out of range in PROTOCOL ({c} rows)."
+                )
                 hard_mask |= inv_proto.values
 
         # 7. Statistical / Domain Drift Audit: MIN_TTL Shortcut Collapse & Zero TTL
         zero_ttl_count = 0
+        zero_ttl_indices: List[int] = []
+        zero_ttl_ratio = 0.0
         drift_count = 0
         drift_ratio = 0.0
+        drift_indices: List[int] = []
 
         if "MIN_TTL" in df.columns:
-            min_ttl_series = pd.to_numeric(df["MIN_TTL"], errors="coerce").dropna()
-            zero_mask = min_ttl_series == 0
+            min_ttl_series = pd.to_numeric(df["MIN_TTL"], errors="coerce")
+            zero_mask = (min_ttl_series == 0) & min_ttl_series.notna()
             zero_ttl_count = int(zero_mask.sum())
+            zero_ttl_ratio = float(zero_ttl_count / n_rows) if n_rows > 0 else 0.0
             if zero_ttl_count > 0:
+                zero_ttl_indices = [int(i) for i in np.where(zero_mask.values)[0]]
                 flags.append(
-                    f"Domain telemetry shift: {zero_ttl_count}/{n_rows} rows ({zero_ttl_count/n_rows*100:.1f}%) "
-                    "have MIN_TTL=0 (indicates probe unobserved initial TTL, TAP capture drop, or NetFlow export aggregation)."
+                    f"Domain telemetry shift: {zero_ttl_count}/{n_rows} rows "
+                    f"({zero_ttl_ratio*100:.1f}%) have MIN_TTL=0 (unobserved initial TTL). "
+                    "Anti-imputation policy: Synthetic filling prohibited."
                 )
+                if self.reject_zero_ttl:
+                    hard_mask |= zero_mask.values
+                    out_of_range["MIN_TTL_zero_unobserved"] = zero_ttl_count
 
             if self.check_shortcut_drift:
-                min_ttl_vals = min_ttl_series.astype(int)
-                drift_mask = ~min_ttl_vals.isin(self.CANONICAL_LAB_SHORTCUT_TTLS)
-                drift_count = int(drift_mask.sum())
+                valid_ttl = min_ttl_series.dropna()
+                min_ttl_vals = valid_ttl.astype(int)
+                drift_mask_series = ~min_ttl_vals.isin(self.CANONICAL_LAB_SHORTCUT_TTLS)
+                drift_count = int(drift_mask_series.sum())
                 drift_ratio = float(drift_count / n_rows) if n_rows > 0 else 0.0
                 if drift_count > 0:
+                    drift_idx = valid_ttl.index[drift_mask_series]
+                    drift_indices = [int(i) for i in drift_idx]
                     flags.append(
                         f"Shortcut shift: {drift_count}/{n_rows} rows ({drift_ratio*100:.1f}%) "
                         f"have MIN_TTL outside UNSW-NB15 lab generator shortcuts (31/62/254/255). "
@@ -180,12 +227,17 @@ class OODValidator:
         # 8. Unseen IP Protocols (Informational Domain Drift)
         if "PROTOCOL" in df.columns:
             proto_clean = pd.to_numeric(df["PROTOCOL"], errors="coerce").dropna().unique()
-            unknown = [int(p) for p in proto_clean if int(p) not in self.KNOWN_PROTOCOLS and 0 <= int(p) <= 255]
+            unknown = [
+                int(p)
+                for p in proto_clean
+                if int(p) not in self.KNOWN_PROTOCOLS and 0 <= int(p) <= 255
+            ]
             if unknown:
                 unseen_cats["PROTOCOL"] = unknown
                 flags.append(f"Unseen IP protocol IDs detected: {unknown}")
 
         hard_violation_count = int(hard_mask.sum())
+        hard_indices = [int(i) for i in np.where(hard_mask)[0]]
         total_affected = hard_violation_count
 
         return OODReport(
@@ -196,7 +248,11 @@ class OODValidator:
             zero_ttl_count=zero_ttl_count,
             affected_rows_count=total_affected,
             shortcut_drift_ratio=drift_ratio,
+            zero_ttl_ratio=zero_ttl_ratio,
             ood_flags=flags,
             out_of_range_details=out_of_range,
             unseen_categories=unseen_cats,
+            hard_violation_indices=hard_indices,
+            zero_ttl_indices=zero_ttl_indices,
+            shortcut_drift_indices=drift_indices,
         )

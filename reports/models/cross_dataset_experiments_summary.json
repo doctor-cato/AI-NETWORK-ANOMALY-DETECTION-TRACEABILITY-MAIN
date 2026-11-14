@@ -1,4 +1,8 @@
 {
+  "_verification_metadata": {
+    "status": "NOT_VERIFIED",
+    "note": "Historical 2026-11-10 run captured before PR #61/#47/#49 Train/Validation isolation and index-aware provenance hardening; must be re-run with verified --unsw-train-csv and --unsw-val-csv before claiming experimental validation."
+  },
   "E0": {
     "experiment_id": "E0",
     "model_family": "RandomForestClassifier",

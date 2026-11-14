@@ -2,9 +2,9 @@
 
 import pytest
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS, ML_FEATURE_COLUMNS
+from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS
 from network_anomaly.ingestion.exceptions import SourceUnsupportedError
-from network_anomaly.ingestion.registry import SourceDefinition, SourceRegistry
+from network_anomaly.ingestion.registry import SourceRegistry
 
 
 def test_registry_contains_default_sources():
@@ -47,7 +47,16 @@ def test_registry_detect_source_netflow_v3():
 
 def test_registry_detect_source_zeek():
     registry = SourceRegistry()
-    zeek_cols = ["ts", "uid", "id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p", "proto", "service"]
+    zeek_cols = [
+        "ts",
+        "uid",
+        "id.orig_h",
+        "id.orig_p",
+        "id.resp_h",
+        "id.resp_p",
+        "proto",
+        "service",
+    ]
     detected = registry.detect_source(zeek_cols)
     assert detected is not None
     assert detected.source_id == "source:zeek-conn"

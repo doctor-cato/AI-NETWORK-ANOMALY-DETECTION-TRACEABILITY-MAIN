@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS, TARGET_COLUMNS, TRACE_METADATA_COLUMNS
+from network_anomaly.data.nf_unsw_nb15_v3 import (
+    ML_FEATURE_COLUMNS,
+    TARGET_COLUMNS,
+    TRACE_METADATA_COLUMNS,
+)
 from network_anomaly.ingestion.adapters.base import BaseSourceAdapter
 from network_anomaly.ingestion.schemas import (
     ApplicationContext,
@@ -105,10 +109,14 @@ def _safe_float(val: Any, default: float = 0.0) -> float:
 class NetFlowV3Adapter(BaseSourceAdapter):
     """Adapter for 55-column NetFlow v3 formats (UNSW-NB15, CIC-IDS2018, ToN-IoT)."""
 
-    def __init__(self, source_id: str = "source:nf-v3-external", schema_version: str = "1.0.0") -> None:
+    def __init__(
+        self, source_id: str = "source:nf-v3-external", schema_version: str = "1.0.0"
+    ) -> None:
         super().__init__(source_id=source_id, schema_version=schema_version)
 
-    def adapt_record(self, raw_record: Dict[str, Any], record_idx: Optional[int] = None) -> CanonicalNetworkEvent:
+    def adapt_record(
+        self, raw_record: Dict[str, Any], record_idx: Optional[int] = None
+    ) -> CanonicalNetworkEvent:
         invalid_metadata: Dict[str, str] = {}
 
         # 1. Metadata
@@ -212,6 +220,7 @@ class NetFlowV3Adapter(BaseSourceAdapter):
                 continue
             try:
                 import math
+
                 f_val = float(val)
                 if not math.isfinite(f_val):
                     invalid_features_dict[col] = "non_finite_nan_or_inf"

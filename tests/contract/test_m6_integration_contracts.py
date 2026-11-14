@@ -1,7 +1,5 @@
 """Contract tests for M6 FastAPI, Streamlit, Risk, and Trace integration interfaces (Issue #46)."""
 
-import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import (
     NetFlowV3Adapter,
@@ -9,8 +7,6 @@ from network_anomaly.ingestion.adapters import (
     ZeekConnAdapter,
 )
 from network_anomaly.ingestion.contracts import (
-    APIIngestResponse,
-    DashboardViewModel,
     RiskEngineContract,
     TraceEngineContract,
     create_api_response,
@@ -19,7 +15,6 @@ from network_anomaly.ingestion.contracts import (
     route_to_trace_engine,
 )
 from network_anomaly.ingestion.gate import InferenceEligibilityGate
-from network_anomaly.ingestion.schemas import InferenceEligibility, ValidationStatus
 
 
 def test_api_ingest_response_contract_approved():
@@ -31,7 +26,9 @@ def test_api_ingest_response_contract_approved():
     event = v3_adapter.adapt_record(raw)
 
     decision = gate.evaluate([event])
-    response = create_api_response([event], decision, predictions=[{"row_id": 0, "prediction": 1, "confidence": 0.95}])
+    response = create_api_response(
+        [event], decision, predictions=[{"row_id": 0, "prediction": 1, "confidence": 0.95}]
+    )
 
     d = response.to_dict()
     assert d["can_proceed_to_ml"] is True
@@ -45,7 +42,9 @@ def test_api_ingest_response_contract_approved():
 def test_api_ingest_response_contract_abstained():
     gate = InferenceEligibilityGate()
     zeek_adapter = ZeekConnAdapter()
-    event = zeek_adapter.adapt_record({"id.orig_h": "1.1.1.1", "id.orig_p": 80, "id.resp_h": "2.2.2.2", "id.resp_p": 80})
+    event = zeek_adapter.adapt_record(
+        {"id.orig_h": "1.1.1.1", "id.orig_p": 80, "id.resp_h": "2.2.2.2", "id.resp_p": 80}
+    )
 
     decision = gate.evaluate([event])
     response = create_api_response([event], decision)
@@ -78,17 +77,19 @@ def test_dashboard_view_model_contract():
 
 def test_route_to_trace_engine_contract():
     zeek_adapter = ZeekConnAdapter()
-    event = zeek_adapter.adapt_record({
-        "uid": "C999",
-        "ts": 1600000000.0,
-        "id.orig_h": "192.168.1.10",
-        "id.orig_p": 5000,
-        "id.resp_h": "10.0.0.1",
-        "id.resp_p": 443,
-        "proto": "tcp",
-        "duration": "1.5",
-        "orig_bytes": "500",
-    })
+    event = zeek_adapter.adapt_record(
+        {
+            "uid": "C999",
+            "ts": 1600000000.0,
+            "id.orig_h": "192.168.1.10",
+            "id.orig_p": 5000,
+            "id.resp_h": "10.0.0.1",
+            "id.resp_p": 443,
+            "proto": "tcp",
+            "duration": "1.5",
+            "orig_bytes": "500",
+        }
+    )
 
     trace_payload = route_to_trace_engine(event)
 
@@ -105,16 +106,18 @@ def test_route_to_trace_engine_contract():
 
 def test_route_to_risk_engine_contract_with_suricata_alert():
     suricata_adapter = SuricataEveAdapter()
-    event = suricata_adapter.adapt_record({
-        "timestamp": "2026-11-08T12:00:00Z",
-        "event_type": "alert",
-        "src_ip": "1.2.3.4",
-        "src_port": 1234,
-        "dest_ip": "5.6.7.8",
-        "dest_port": 80,
-        "proto": "TCP",
-        "alert": {"signature": "ET SCAN", "severity": 1},
-    })
+    event = suricata_adapter.adapt_record(
+        {
+            "timestamp": "2026-11-08T12:00:00Z",
+            "event_type": "alert",
+            "src_ip": "1.2.3.4",
+            "src_port": 1234,
+            "dest_ip": "5.6.7.8",
+            "dest_port": 80,
+            "proto": "TCP",
+            "alert": {"signature": "ET SCAN", "severity": 1},
+        }
+    )
     gate = InferenceEligibilityGate()
     decision = gate.evaluate([event])
 

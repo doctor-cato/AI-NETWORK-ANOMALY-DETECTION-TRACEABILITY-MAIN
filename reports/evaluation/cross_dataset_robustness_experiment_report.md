@@ -1,6 +1,10 @@
 # Báo cáo Thực nghiệm Chống Suy thoái Cross-Dataset & Tổng quát hóa (Issue #48)
 
-**Thời điểm tạo:** 2026-11-10 09:17:05 UTC
+> [!WARNING]
+> **Trạng thái nghiệm thu hiện tại: `NOT VERIFIED` (Historical Run Only — Cần chạy lại sau khi sửa leakage & sampling)**
+> Các bảng số liệu bên dưới được kết xuất ở snapshot `2026-11-10 09:17:05 UTC` trước khi tích hợp tách `UNSW Train / Validation` độc lập và index-aware sample provenance binding (`#57`, `#58`). Không sử dụng các số liệu lịch sử này làm bằng chứng đã nghiệm thu cho `scripts/run_cross_dataset_experiments.py` phiên bản hiện tại cho tới khi chạy lại đầy đủ với `--unsw-train-csv` và `--unsw-val-csv` đã xác minh provenance.
+
+**Thời điểm tạo:** 2026-11-10 09:17:05 UTC (historical run — `NOT VERIFIED` post-remediation)
 **Mục tiêu:** Kiểm toán toàn diện hiện tượng shortcut learning, khắc phục rủi ro rò rỉ dữ liệu (leakage audit), đánh giá Leave-One-Dataset-Out (LODO), đối chiếu mô hình Gradient Boosting (HistGradientBoosting, XGBoost), và mở rộng framework sang các mô hình phi giám sát (Isolation Forest, Autoencoder).
 
 ---

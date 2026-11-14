@@ -70,7 +70,9 @@ class DashboardViewModel:
 
     source_id: str
     source_name: str
-    tier_badge: str  # "PARSEABLE", "SCHEMA_COMPATIBLE", "SEMANTICALLY_COMPATIBLE", "MODEL_VALIDATED"
+    tier_badge: (
+        str  # "PARSEABLE", "SCHEMA_COMPATIBLE", "SEMANTICALLY_COMPATIBLE", "MODEL_VALIDATED"
+    )
     eligibility_badge: str  # "READY", "ABSTAINED", "FEATURE_INCOMPATIBLE", etc.
     badge_color: str  # "green", "blue", "yellow", "red"
     summary_message: str
@@ -183,7 +185,9 @@ def create_dashboard_view_model(decision: GateDecision, source_name: str) -> Das
         summary = f"Rejected: {eligibility}."
 
     return DashboardViewModel(
-        source_id=decision.compatibility_report.source_id if decision.compatibility_report else "unknown",
+        source_id=(
+            decision.compatibility_report.source_id if decision.compatibility_report else "unknown"
+        ),
         source_name=source_name,
         tier_badge=tier,
         eligibility_badge=eligibility,
@@ -197,7 +201,9 @@ def create_dashboard_view_model(decision: GateDecision, source_name: str) -> Das
     )
 
 
-def route_to_trace_engine(event: CanonicalNetworkEvent, prediction_info: Optional[Dict[str, Any]] = None) -> TraceEngineContract:
+def route_to_trace_engine(
+    event: CanonicalNetworkEvent, prediction_info: Optional[Dict[str, Any]] = None
+) -> TraceEngineContract:
     """Format canonical event for consumption by Trace Engine (Issue #24)."""
     p_info = prediction_info or {}
     return TraceEngineContract(
@@ -212,7 +218,10 @@ def route_to_trace_engine(event: CanonicalNetworkEvent, prediction_info: Optiona
         in_bytes=event.metrics.in_bytes,
         in_pkts=event.metrics.in_pkts,
         flow_duration_ms=event.metrics.flow_duration_ms,
-        timestamp=event.trace_metadata.get("FLOW_START_MILLISECONDS", event.trace_metadata.get("timestamp", event.trace_metadata.get("start"))),
+        timestamp=event.trace_metadata.get(
+            "FLOW_START_MILLISECONDS",
+            event.trace_metadata.get("timestamp", event.trace_metadata.get("start")),
+        ),
         trace_metadata=event.trace_metadata,
         has_ml_prediction="prediction" in p_info,
         ml_prediction_label=p_info.get("prediction"),
@@ -228,7 +237,9 @@ def route_to_risk_engine(
     """Format canonical event for consumption by Risk Engine (Issue #32)."""
     p_info = prediction_info or {}
     has_ml = "prediction" in p_info and decision.can_proceed_to_ml
-    is_ood = len(event.ood_warnings) > 0 or (decision.ood_report is not None and decision.ood_report.has_ood_warning)
+    is_ood = len(event.ood_warnings) > 0 or (
+        decision.ood_report is not None and decision.ood_report.has_ood_warning
+    )
 
     alerts = []
     if "alert" in event.trace_metadata and event.trace_metadata["alert"]:

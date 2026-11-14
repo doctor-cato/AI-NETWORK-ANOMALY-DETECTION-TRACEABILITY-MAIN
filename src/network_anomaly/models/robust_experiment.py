@@ -215,8 +215,8 @@ def compute_fingerprint_disjoint_split(
         test_pairs = zip(
             pd.util.hash_pandas_object(df_test[cols_to_check], index=False), df_test["Label"]
         )
-        for h, l in test_pairs:
-            if h in train_map and train_map[h] != l:
+        for h, lbl in test_pairs:
+            if h in train_map and train_map[h] != lbl:
                 label_conflict_count += 1
 
     audit_findings = {
@@ -538,7 +538,6 @@ class UnsupervisedAnomalyExperiment:
             raise RuntimeError(f"Detector {self.experiment_id} is not fitted.")
         X_sub = X[self.feature_set].to_numpy(dtype=np.float32)
         if self.model_family == "IsolationForest":
-            # scikit-learn decision_function is lower for anomalies -> negate so higher = anomaly
             return -np.asarray(self.detector.decision_function(X_sub), dtype=np.float64)
         elif self.model_family == "Autoencoder":
             X_hat = self.detector.predict(X_sub)

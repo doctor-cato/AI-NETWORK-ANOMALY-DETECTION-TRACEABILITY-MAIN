@@ -178,7 +178,15 @@ class SourceRegistry:
                 ml_supported=False,
                 trace_supported=True,
                 description="Suricata EVE JSON event output for flow records and alert events.",
-                expected_columns=["timestamp", "event_type", "src_ip", "src_port", "dest_ip", "dest_port", "proto"],
+                expected_columns=[
+                    "timestamp",
+                    "event_type",
+                    "src_ip",
+                    "src_port",
+                    "dest_ip",
+                    "dest_port",
+                    "proto",
+                ],
                 adapter_name="SuricataEveAdapter",
             )
         )

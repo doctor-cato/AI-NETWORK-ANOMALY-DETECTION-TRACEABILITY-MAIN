@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import csv
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, Iterator, List, Optional, Tuple, Union
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 import pandas as pd
 
@@ -18,7 +17,11 @@ from network_anomaly.ingestion.adapters import (
     UnsupportedSourceAdapter,
     ZeekConnAdapter,
 )
-from network_anomaly.ingestion.exceptions import FormatInvalidError, IngestionError, SourceUnsupportedError
+from network_anomaly.ingestion.exceptions import (
+    FormatInvalidError,
+    IngestionError,
+    SourceUnsupportedError,
+)
 from network_anomaly.ingestion.registry import SourceDefinition, SourceRegistry
 from network_anomaly.ingestion.schemas import CanonicalNetworkEvent
 
@@ -120,17 +123,29 @@ class StreamingChunkParser:
         """Instantiate corresponding adapter for a source definition."""
         adapter_name = source_def.adapter_name
         if adapter_name == "NetFlowV3Adapter":
-            return NetFlowV3Adapter(source_id=source_def.source_id, schema_version=source_def.schema_version)
+            return NetFlowV3Adapter(
+                source_id=source_def.source_id, schema_version=source_def.schema_version
+            )
         elif adapter_name == "ZeekConnAdapter":
-            return ZeekConnAdapter(source_id=source_def.source_id, schema_version=source_def.schema_version)
+            return ZeekConnAdapter(
+                source_id=source_def.source_id, schema_version=source_def.schema_version
+            )
         elif adapter_name == "NetFlowV5Adapter":
-            return NetFlowV5Adapter(source_id=source_def.source_id, schema_version=source_def.schema_version)
+            return NetFlowV5Adapter(
+                source_id=source_def.source_id, schema_version=source_def.schema_version
+            )
         elif adapter_name == "AWSVPCFlowAdapter":
-            return AWSVPCFlowAdapter(source_id=source_def.source_id, schema_version=source_def.schema_version)
+            return AWSVPCFlowAdapter(
+                source_id=source_def.source_id, schema_version=source_def.schema_version
+            )
         elif adapter_name == "SuricataEveAdapter":
-            return SuricataEveAdapter(source_id=source_def.source_id, schema_version=source_def.schema_version)
+            return SuricataEveAdapter(
+                source_id=source_def.source_id, schema_version=source_def.schema_version
+            )
         else:
-            return UnsupportedSourceAdapter(source_id=source_def.source_id, schema_version=source_def.schema_version)
+            return UnsupportedSourceAdapter(
+                source_id=source_def.source_id, schema_version=source_def.schema_version
+            )
 
     def parse_file_chunks(
         self,
@@ -168,9 +183,14 @@ class StreamingChunkParser:
                             record_idx += 1
                     except json.JSONDecodeError as err:
                         if self.fail_on_malformed:
-                            raise FormatInvalidError(f"Malformed JSONL at line {record_idx+1}: {err}")
+                            raise FormatInvalidError(
+                                f"Malformed JSONL at line {record_idx+1}: {err}"
+                            )
                     if len(chunk_records) >= self.chunk_size:
-                        yield [adapter.adapt_record(r, record_idx=i) for i, r in enumerate(chunk_records)]
+                        yield [
+                            adapter.adapt_record(r, record_idx=i)
+                            for i, r in enumerate(chunk_records)
+                        ]
                         chunk_records = []
             if chunk_records:
                 yield [adapter.adapt_record(r, record_idx=i) for i, r in enumerate(chunk_records)]
@@ -180,7 +200,9 @@ class StreamingChunkParser:
         if source_def.source_id == "source:zeek-conn" or (file_type == "tsv" and delimiter == "\t"):
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 first_few = [f.readline() for _ in range(15)]
-            fields_line = next((l for l in first_few if l.startswith("#fields")), None)
+            fields_line = next(
+                (line_item for line_item in first_few if line_item.startswith("#fields")), None
+            )
             if fields_line:
                 cols = fields_line.strip().split("\t")[1:]
                 chunk_records = []
@@ -194,10 +216,15 @@ class StreamingChunkParser:
                             chunk_records.append(dict(zip(cols, parts)))
                             record_counter += 1
                         if len(chunk_records) >= self.chunk_size:
-                            yield [adapter.adapt_record(r, record_idx=i) for i, r in enumerate(chunk_records)]
+                            yield [
+                                adapter.adapt_record(r, record_idx=i)
+                                for i, r in enumerate(chunk_records)
+                            ]
                             chunk_records = []
                 if chunk_records:
-                    yield [adapter.adapt_record(r, record_idx=i) for i, r in enumerate(chunk_records)]
+                    yield [
+                        adapter.adapt_record(r, record_idx=i) for i, r in enumerate(chunk_records)
+                    ]
                 return
 
         # Delimited table stream via pandas chunks

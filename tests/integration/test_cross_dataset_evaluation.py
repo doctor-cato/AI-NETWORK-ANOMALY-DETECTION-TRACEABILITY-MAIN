@@ -1,11 +1,9 @@
 """Integration tests for Cross-Dataset Generalization evaluation pipeline (Issue #46)."""
 
-import json
 from pathlib import Path
 
 import pytest
 
-from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
 from scripts.evaluate_cross_dataset import (
     DEFAULT_DATASET_CSV,
     DEFAULT_MODEL_ARTIFACT,
@@ -24,9 +22,11 @@ def test_cross_dataset_evaluation_runs_and_produces_valid_metrics(tmp_path: Path
         or not DEFAULT_MODEL_ARTIFACT.is_file()
         or not DEFAULT_PREP_ARTIFACT.is_file()
     ):
-        pytest.skip("External dataset sample or canonical binary artifacts not present (excluded via .gitignore).")
+        pytest.skip(
+            "External dataset sample or canonical binary artifacts not present (excluded via .gitignore)."
+        )
 
-    out_json = tmp_path / "test_eval_results.json"
+    tmp_path / "test_eval_results.json"
     out_md = tmp_path / "test_eval_report.md"
 
     results = evaluate_cross_dataset(
@@ -68,7 +68,9 @@ def test_cross_dataset_evaluation_reproducibility():
         or not DEFAULT_MODEL_ARTIFACT.is_file()
         or not DEFAULT_PREP_ARTIFACT.is_file()
     ):
-        pytest.skip("External dataset sample or canonical binary artifacts not present (excluded via .gitignore).")
+        pytest.skip(
+            "External dataset sample or canonical binary artifacts not present (excluded via .gitignore)."
+        )
 
     run1 = evaluate_cross_dataset(
         dataset_csv=DEFAULT_DATASET_CSV,

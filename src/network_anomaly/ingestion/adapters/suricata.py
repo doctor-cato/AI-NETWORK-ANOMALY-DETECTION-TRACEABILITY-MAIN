@@ -30,10 +30,14 @@ class SuricataEveAdapter(BaseSourceAdapter):
     Abstains from 47-feature ML inference.
     """
 
-    def __init__(self, source_id: str = "source:suricata-eve", schema_version: str = "1.0.0") -> None:
+    def __init__(
+        self, source_id: str = "source:suricata-eve", schema_version: str = "1.0.0"
+    ) -> None:
         super().__init__(source_id=source_id, schema_version=schema_version)
 
-    def adapt_record(self, raw_record: Dict[str, Any], record_idx: Optional[int] = None) -> CanonicalNetworkEvent:
+    def adapt_record(
+        self, raw_record: Dict[str, Any], record_idx: Optional[int] = None
+    ) -> CanonicalNetworkEvent:
         meta = EventMetadata(
             source_id=self.source_id,
             schema_version=self.schema_version,
@@ -67,9 +71,7 @@ class SuricataEveAdapter(BaseSourceAdapter):
             flow_duration_ms=age_sec * 1000.0,
         )
 
-        app = ApplicationContext(
-            service_name=raw_record.get("app_proto")
-        )
+        app = ApplicationContext(service_name=raw_record.get("app_proto"))
 
         # Preserve alert for Risk Engine (#32)
         trace_meta = {

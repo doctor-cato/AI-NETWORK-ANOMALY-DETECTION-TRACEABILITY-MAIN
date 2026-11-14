@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 import sklearn
 
-from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
+from network_anomaly.config import PROJECT_ROOT
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
@@ -197,11 +197,13 @@ def load_verified_preprocessor(
     if manifest_path is None:
         candidates = [
             artifact_path.with_suffix(".json"),
+            artifact_path.parent / f"{artifact_path.stem}_manifest.json",
+            artifact_path.parent / "manifest.json",
+            artifact_path.parent / "nf_unsw_nb15_v3_preprocessing_manifest.json",
             PROJECT_ROOT
             / "reports"
             / "preprocessing"
             / "nf_unsw_nb15_v3_preprocessing_manifest.json",
-            artifact_path.parent / "nf_unsw_nb15_v3_preprocessing_manifest.json",
         ]
         for c in candidates:
             if c.is_file():
@@ -284,81 +286,97 @@ def load_verified_model(
         stem_lower = model_path.stem.lower()
         candidates = [
             model_path.with_suffix(".json"),
-            PROJECT_ROOT / "reports" / "models" / f"{model_path.stem}_manifest.json",
+            model_path.parent / f"{model_path.stem}_manifest.json",
             model_path.parent / "manifest.json",
+            PROJECT_ROOT / "reports" / "models" / f"{model_path.stem}_manifest.json",
         ]
         if "random_forest" in stem_lower:
             candidates.insert(
                 2, PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
             )
+            candidates.insert(3, model_path.parent / "random_forest_manifest.json")
         elif "isolation_forest" in stem_lower:
             candidates.insert(
                 2, PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
             )
+            candidates.insert(3, model_path.parent / "isolation_forest_manifest.json")
+        elif "xgboost" in stem_lower:
+            candidates.insert(2, PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json")
+            candidates.insert(3, model_path.parent / "xgboost_manifest.json")
         for c in candidates:
             if c.is_file():
                 manifest_path = c
                 break
 
+    if manifest_path is None or not Path(manifest_path).is_file():
+        raise FileNotFoundError(
+            f"Companion manifest for model not found for '{model_path}'. "
+            "A verified model requires a valid companion JSON manifest (Issue #53 fail-closed)."
+        )
+
+    man_p = Path(manifest_path)
+    try:
+        manifest_data = json.loads(man_p.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise ValueError(f"Failed to parse model manifest JSON at '{man_p}': {e}")
+
+    if not isinstance(manifest_data, dict):
+        raise ValueError(
+            f"Model manifest JSON must be a dict/object at '{man_p}', "
+            f"got {type(manifest_data).__name__}"
+        )
+
+    # Verify model artifact sha256 (mandatory byte-by-byte check)
+    expected_sha = manifest_data.get("model_artifact_sha256")
+    if not expected_sha or not isinstance(expected_sha, str):
+        raise ValueError(
+            f"Model manifest at '{man_p}' missing required field 'model_artifact_sha256'"
+        )
+    if expected_sha.strip().lower() != model_sha256.lower():
+        raise ValueError(
+            f"Model artifact SHA-256 mismatch: expected {expected_sha}, got {model_sha256}"
+        )
+
+    # Verify feature contract (mandatory contract version check)
+    feat_contract = manifest_data.get("feature_contract_version")
+    if not feat_contract or not isinstance(feat_contract, str):
+        raise ValueError(
+            f"Model manifest at '{man_p}' missing required field 'feature_contract_version'"
+        )
+    if feat_contract != FEATURE_CONTRACT_VERSION:
+        raise ValueError(
+            f"Model feature contract version '{feat_contract}' does not match "
+            f"expected '{FEATURE_CONTRACT_VERSION}'"
+        )
+
+    # Verify preprocessor compatibility if recorded in manifest
+    prep_sha = manifest_data.get("preprocessor_artifact_sha256")
+    if (
+        expected_preprocessor_sha256
+        and prep_sha
+        and prep_sha.lower() != expected_preprocessor_sha256.lower()
+    ):
+        raise ValueError(
+            f"Model was trained with preprocessor SHA-256 '{prep_sha}', "
+            f"but current preprocessor artifact has SHA-256 '{expected_preprocessor_sha256}'. "
+            "Inference pipeline requires exact preprocessor compatibility."
+        )
+
+    man_sha = _sha256_file(man_p)
     model_metadata: Dict[str, Any] = {
         "model_artifact_path": str(model_path),
         "model_artifact_sha256": model_sha256,
-        "model_manifest_path": str(manifest_path) if manifest_path else None,
-        "model_manifest_sha256": None,
-        "model_type": "unknown",
-        "run_id": "untracked",
-        "feature_contract_version": FEATURE_CONTRACT_VERSION,
-        "class_mapping": None,
-        "hyperparameters": {},
-        "raw_manifest": None,
+        "model_manifest_path": str(man_p),
+        "model_manifest_sha256": man_sha,
+        "model_type": manifest_data.get("model_type", "unknown"),
+        "run_id": manifest_data.get("run_id", "untracked"),
+        "feature_contract_version": feat_contract,
+        "class_mapping": manifest_data.get("class_mapping"),
+        "hyperparameters": manifest_data.get("hyperparameters", {}),
+        "raw_manifest": manifest_data,
     }
 
-    if manifest_path is not None:
-        man_p = Path(manifest_path)
-        if not man_p.is_file():
-            raise FileNotFoundError(f"Model manifest not found at '{man_p}'")
-        try:
-            manifest_data = json.loads(man_p.read_text(encoding="utf-8"))
-        except Exception as e:
-            raise ValueError(f"Failed to parse model manifest JSON at '{man_p}': {e}")
-
-        man_sha = _sha256_file(man_p)
-        model_metadata["model_manifest_sha256"] = man_sha
-        model_metadata["raw_manifest"] = manifest_data
-        model_metadata["model_type"] = manifest_data.get("model_type", "unknown")
-        model_metadata["run_id"] = manifest_data.get("run_id", "untracked")
-        model_metadata["class_mapping"] = manifest_data.get("class_mapping")
-        model_metadata["hyperparameters"] = manifest_data.get("hyperparameters", {})
-
-        # Verify model artifact sha256
-        expected_sha = manifest_data.get("model_artifact_sha256")
-        if expected_sha and expected_sha.lower() != model_sha256.lower():
-            raise ValueError(
-                f"Model artifact SHA-256 mismatch: expected {expected_sha}, got {model_sha256}"
-            )
-
-        # Verify feature contract
-        feat_contract = manifest_data.get("feature_contract_version")
-        if feat_contract and feat_contract != FEATURE_CONTRACT_VERSION:
-            raise ValueError(
-                f"Model feature contract version '{feat_contract}' does not match "
-                f"expected '{FEATURE_CONTRACT_VERSION}'"
-            )
-
-        # Verify preprocessor compatibility if recorded in manifest
-        prep_sha = manifest_data.get("preprocessor_artifact_sha256")
-        if (
-            expected_preprocessor_sha256
-            and prep_sha
-            and prep_sha.lower() != expected_preprocessor_sha256.lower()
-        ):
-            raise ValueError(
-                f"Model was trained with preprocessor SHA-256 '{prep_sha}', "
-                f"but current preprocessor artifact has SHA-256 '{expected_preprocessor_sha256}'. "
-                "Inference pipeline requires exact preprocessor compatibility."
-            )
-
-    # Deserialize model
+    # CRITICAL: Only deserialize AFTER all cryptographic hashes and contracts have passed!
     try:
         loaded_obj = joblib.load(model_path)
     except Exception as e:
@@ -419,10 +437,23 @@ class InferencePipeline:
         split_manifest_path: Optional[Union[str, Path]] = None,
     ) -> "InferencePipeline":
         """Instantiate InferencePipeline by loading verified preprocessor and model artifacts."""
+        model_path = Path(model_artifact_path)
         if preprocessor_artifact_path is None:
-            preprocessor_artifact_path = (
+            default_prep = (
                 PROJECT_ROOT / "artifacts" / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
             )
+            candidate_preprocessors = [
+                default_prep,
+                model_path.parent / "nf_unsw_nb15_v3_preprocessor.joblib",
+                model_path.parent / "test_preprocessor.joblib",
+                model_path.parent / "preprocessor.joblib",
+            ]
+            for cp in candidate_preprocessors:
+                if cp.is_file():
+                    preprocessor_artifact_path = cp
+                    break
+            if preprocessor_artifact_path is None:
+                preprocessor_artifact_path = default_prep
 
         preprocessor, prep_meta = load_verified_preprocessor(
             artifact_path=preprocessor_artifact_path,
@@ -669,8 +700,34 @@ def run_inference(
 def predict_from_artifact(
     input_data: Any,
     artifact_path: Optional[Union[str, Path]] = None,
+    manifest_path: Optional[Union[str, Path]] = None,
+    preprocessor_artifact_path: Optional[Union[str, Path]] = None,
+    preprocessor_manifest_path: Optional[Union[str, Path]] = None,
 ) -> Any:
-    """Legacy compatibility loader for predicting directly from a model artifact."""
-    path = Path(artifact_path) if artifact_path is not None else ARTIFACTS / "model.joblib"
-    model = joblib.load(path)
-    return model.predict(input_data)
+    """Verified prediction loader executing through InferencePipeline (Issue #53).
+
+    Eliminates unverified deserialization bypasses by routing all execution
+    through InferencePipeline.from_artifacts with fail-closed cryptographic
+    and contract verification.
+    """
+    default_model = (
+        PROJECT_ROOT / "artifacts" / "models" / "random_forest" / "random_forest_baseline.joblib"
+    )
+    path = Path(artifact_path) if artifact_path is not None else default_model
+    pipeline = InferencePipeline.from_artifacts(
+        model_artifact_path=path,
+        preprocessor_artifact_path=preprocessor_artifact_path,
+        model_manifest_path=manifest_path,
+        preprocessor_manifest_path=preprocessor_manifest_path,
+    )
+    if isinstance(input_data, pd.DataFrame):
+        preds_df = pipeline.predict(input_data)
+        return preds_df["prediction"].to_numpy()
+    elif isinstance(input_data, np.ndarray):
+        df_input = pd.DataFrame(input_data, columns=list(ML_FEATURE_COLUMNS))
+        preds_df = pipeline.predict(df_input)
+        return preds_df["prediction"].to_numpy()
+    else:
+        df_input = pd.DataFrame(input_data)
+        preds_df = pipeline.predict(df_input)
+        return preds_df["prediction"].to_numpy()

@@ -9,10 +9,12 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.ensemble import IsolationForest
+from sklearn.exceptions import NotFittedError
 
 from network_anomaly import config
 from network_anomaly.models.isolation_forest import (
     SUPPORTED_PARAMS,
+    IsolationForestModel,
     anomaly_scores,
     build_model,
     fit_model,
@@ -322,3 +324,206 @@ def test_anomaly_scores_is_reproducible_for_a_fixed_seed(synthetic_matrix):
     fit_model(first, X)
     fit_model(second, X)
     assert np.array_equal(anomaly_scores(first, X), anomaly_scores(second, X))
+
+
+# --- IsolationForestModel component tests (Issue #54 / Track C) ----------------
+
+
+class TestIsolationForestModel:
+    def test_model_init_defaults(self):
+        model = IsolationForestModel()
+        assert model.model_type == "IsolationForest"
+        assert model.score_direction == "higher_is_more_anomalous"
+        assert model.label_mapping == {"0": "Benign", "1": "Attack"}
+        assert model.threshold is None
+        assert not model._is_fitted
+
+    def test_model_init_with_config_and_threshold(self):
+        model = IsolationForestModel(config={"n_estimators": 25}, threshold=0.15)
+        assert model.config["n_estimators"] == 25
+        assert model.threshold == 0.15
+
+    def test_model_fit_and_predict_binary_labels(self, synthetic_matrix):
+        X, n_normal = synthetic_matrix
+        model = IsolationForestModel(threshold=0.0)
+        model.fit(X)
+        assert model._is_fitted
+
+        y_pred = model.predict(X)
+        assert set(np.unique(y_pred)).issubset({0, 1})
+        assert y_pred.shape == (X.shape[0],)
+        assert y_pred[-1] == 1  # Outlier labeled as Attack (1)
+        # Tight normal cluster mostly labeled as Benign (0)
+        assert float(np.mean(y_pred[:n_normal] == 0)) >= 0.85
+
+    def test_model_predict_requires_fitted(self, synthetic_matrix):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel(threshold=0.0)
+        with pytest.raises(NotFittedError):
+            model.predict(X)
+
+    def test_model_predict_requires_threshold(self, synthetic_matrix):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel()
+        model.fit(X)
+        with pytest.raises(ValueError, match="Threshold is not set"):
+            model.predict(X)
+
+    def test_model_decision_function_matches_anomaly_scores(self, synthetic_matrix):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel(threshold=0.0)
+        model.fit(X)
+        scores = model.anomaly_scores(X)
+        dec = model.decision_function(X)
+        assert np.array_equal(scores, dec)
+
+    def test_model_fit_records_feature_names(self):
+        df = pd.DataFrame({"f1": [1.0, 2.0, 3.0], "f2": [4.0, 5.0, 6.0]})
+        model = IsolationForestModel()
+        model.fit(df)
+        assert model.feature_names == ("f1", "f2")
+
+    def test_save_and_load_roundtrip(self, synthetic_matrix, tmp_path):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel(threshold=0.12)
+        model.fit(X)
+
+        model_file = tmp_path / "model.joblib"
+        man_file = tmp_path / "manifest.json"
+        valid_prep_sha = "e" * 64
+        valid_sm_sha = "d" * 64
+
+        sha = model.save(
+            model_path=model_file,
+            manifest_path=man_file,
+            preprocessor_artifact_sha256=valid_prep_sha,
+            split_manifest_sha256=valid_sm_sha,
+        )
+        assert model_file.exists()
+        assert man_file.exists()
+        assert len(sha) == 64
+
+        loaded = IsolationForestModel.load(model_file)
+        assert loaded._is_fitted
+        assert loaded.threshold == 0.12
+        assert loaded.score_direction == "higher_is_more_anomalous"
+        assert np.array_equal(model.predict(X), loaded.predict(X))
+
+    def test_save_and_load_verified_roundtrip(self, synthetic_matrix, tmp_path):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel(threshold=0.12)
+        model.fit(X)
+
+        model_file = tmp_path / "model.joblib"
+        man_file = tmp_path / "manifest.json"
+        valid_prep_sha = "e" * 64
+
+        model.save(
+            model_path=model_file,
+            manifest_path=man_file,
+            preprocessor_artifact_sha256=valid_prep_sha,
+        )
+
+        verified = IsolationForestModel.load_verified(
+            model_path=model_file,
+            manifest_path=man_file,
+            expected_preprocessor_artifact_sha256=valid_prep_sha,
+            expected_threshold=0.12,
+        )
+        assert verified._is_fitted
+        assert verified.threshold == 0.12
+        assert np.array_equal(model.predict(X), verified.predict(X))
+
+    def test_load_verified_fails_on_hash_tamper(self, synthetic_matrix, tmp_path):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel(threshold=0.12)
+        model.fit(X)
+
+        model_file = tmp_path / "model.joblib"
+        man_file = tmp_path / "manifest.json"
+        valid_prep_sha = "e" * 64
+
+        model.save(
+            model_path=model_file,
+            manifest_path=man_file,
+            preprocessor_artifact_sha256=valid_prep_sha,
+        )
+
+        with open(model_file, "ab") as f:
+            f.write(b"tamper")
+
+        with pytest.raises(ValueError, match="Integrity check failed"):
+            IsolationForestModel.load_verified(
+                model_path=model_file,
+                manifest_path=man_file,
+            )
+
+    def test_load_verified_fails_on_threshold_mismatch(self, synthetic_matrix, tmp_path):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel(threshold=0.12)
+        model.fit(X)
+
+        model_file = tmp_path / "model.joblib"
+        man_file = tmp_path / "manifest.json"
+        valid_prep_sha = "e" * 64
+
+        model.save(
+            model_path=model_file,
+            manifest_path=man_file,
+            preprocessor_artifact_sha256=valid_prep_sha,
+        )
+
+        with pytest.raises(ValueError, match="Threshold mismatch"):
+            IsolationForestModel.load_verified(
+                model_path=model_file,
+                manifest_path=man_file,
+                expected_threshold=0.99,
+            )
+
+    def test_load_verified_fails_on_preprocessor_mismatch(self, synthetic_matrix, tmp_path):
+        X, _ = synthetic_matrix
+        model = IsolationForestModel(threshold=0.12)
+        model.fit(X)
+
+        model_file = tmp_path / "model.joblib"
+        man_file = tmp_path / "manifest.json"
+        valid_prep_sha = "e" * 64
+
+        model.save(
+            model_path=model_file,
+            manifest_path=man_file,
+            preprocessor_artifact_sha256=valid_prep_sha,
+        )
+
+        with pytest.raises(ValueError, match="Preprocessor artifact SHA-256 mismatch"):
+            IsolationForestModel.load_verified(
+                model_path=model_file,
+                manifest_path=man_file,
+                expected_preprocessor_artifact_sha256="f" * 64,
+            )
+
+    def test_load_verified_fails_on_missing_files(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            IsolationForestModel.load_verified(
+                model_path=tmp_path / "nonexistent.joblib",
+                manifest_path=tmp_path / "nonexistent.json",
+            )
+
+
+def test_anomaly_scores_helper_with_wrapper(synthetic_matrix):
+    X, _ = synthetic_matrix
+    wrapper = IsolationForestModel(threshold=0.0)
+    wrapper.fit(X)
+    scores = anomaly_scores(wrapper, X)
+    assert scores.shape == (X.shape[0],)
+    assert np.array_equal(scores, wrapper.anomaly_scores(X))
+
+
+def test_anomaly_scores_helper_with_payload_dict(synthetic_matrix):
+    X, _ = synthetic_matrix
+    model = build_model({"n_estimators": 20, "n_jobs": 1})
+    fit_model(model, X)
+    payload = {"estimator": model}
+    scores = anomaly_scores(payload, X)
+    assert scores.shape == (X.shape[0],)
+    assert np.array_equal(scores, anomaly_scores(model, X))
