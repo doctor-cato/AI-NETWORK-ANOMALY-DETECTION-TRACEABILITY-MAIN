@@ -654,7 +654,7 @@
               }
             ],
             "title": "Threshold",
-            "description": "Decision threshold for binary anomaly",
+            "description": "Decision threshold for explicitly enabled heuristic fallback only",
             "default": 0.5
           },
           "create_incidents": {
@@ -703,6 +703,32 @@
             },
             "type": "array",
             "title": "Results"
+          },
+          "anomaly_scores": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Anomaly Scores",
+            "description": "Batch-level anomaly scores aligned with results order"
+          },
+          "probabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "number"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probabilities",
+            "description": "Batch-level per-item class probabilities aligned with results order when emitted"
           },
           "timestamp": {
             "type": "string",
@@ -785,14 +811,29 @@
           "is_anomaly": {
             "type": "boolean",
             "title": "Is Anomaly",
-            "description": "True if anomaly score exceeds threshold"
+            "description": "True when the active inference mode predicts anomaly"
           },
           "anomaly_score": {
             "type": "number",
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Anomaly Score",
-            "description": "Calibrated anomaly score or attack probability [0, 1]"
+            "description": "Display anomaly score or attack probability [0, 1]"
+          },
+          "probabilities": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probabilities",
+            "description": "Per-class probabilities (e.g. {'Benign': p0, 'Attack': p1}) when emitted by the model"
           },
           "prediction": {
             "type": "integer",

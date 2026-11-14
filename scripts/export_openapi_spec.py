@@ -22,7 +22,7 @@ def export_openapi() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     json_path = output_dir / "openapi.json"
-    with open(json_path, "w", encoding="utf-8") as f:
+    with open(json_path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(openapi_schema, f, indent=2)
     print(f"Exported OpenAPI JSON to: {json_path}")
 
@@ -57,8 +57,20 @@ def export_openapi() -> None:
                 "fields (`key_id`, `version`, `algorithm`, `status`). Key secrets are never stored."
             ),
             (
-                "- **Fail-Closed Artifact Health**: `/health` strictly checks model/preprocessor "
-                "artifact existence on disk before declaring `model_ready: true`."
+                "- **Fail-Closed Artifact Health**: `/health` verifies model and preprocessor "
+                "artifacts against companion manifests before declaring `model_ready: true`; "
+                "missing or mismatched artifacts report `degraded`."
+            ),
+            (
+                "- **Verified Decision Policy**: `/api/v1/analyze` preserves the verified "
+                "model's binary prediction and calibrated threshold, and returns `anomaly_scores` "
+                "plus per-class `probabilities` (`Benign`/`Attack`) when emitted by the model. "
+                "Request `threshold` applies only to an explicitly enabled heuristic fallback."
+            ),
+            (
+                "- **Key Metadata Scope**: Key and rotation endpoints record metadata and audit "
+                "events only. They do not encrypt flow payloads; `algorithm` describes a planned "
+                "key policy, not active AES-GCM encryption."
             ),
             (
                 "- **SQLite Durability**: Ingestion, incidents, timeline, and audit logs "
@@ -76,7 +88,7 @@ def export_openapi() -> None:
         ]
     )
 
-    with open(md_path, "w", encoding="utf-8") as f:
+    with open(md_path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines))
     print(f"Exported API Contract Markdown to: {md_path}")
 

@@ -193,7 +193,7 @@ class TestScenario1ModelTamperAndDeserializationBypass:
             np.zeros((5, len(ML_FEATURE_COLUMNS))), columns=list(ML_FEATURE_COLUMNS)
         )
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises((FileNotFoundError, ValueError)):
             predict_from_artifact(dummy_data, artifact_path=fake_artifact)
 
     def test_preprocessor_mismatch_fails_closed(self, tmp_path: Path):

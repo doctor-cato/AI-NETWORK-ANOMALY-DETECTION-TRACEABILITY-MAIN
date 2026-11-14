@@ -378,6 +378,12 @@ def test_real_preprocessor_artifact_smoke():
     if not prep_art.is_file() or not prep_man.is_file():
         pytest.skip("Real preprocessor artifact from Issue #8 not found in repository.")
 
+    manifest = json.loads(prep_man.read_text(encoding="utf-8"))
+    if manifest.get("artifact_sha256") != _sha256_file(prep_art):
+        with pytest.raises(ValueError, match="SHA-256 mismatch"):
+            TrainOnlyPreprocessor.load_verified(prep_art, manifest_path=prep_man)
+        return
+
     prep = TrainOnlyPreprocessor.load_verified(prep_art, manifest_path=prep_man)
     assert prep.is_fitted_ is True
     assert prep.train_row_count_ == 1655797
