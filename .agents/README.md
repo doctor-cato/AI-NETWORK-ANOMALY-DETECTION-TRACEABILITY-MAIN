@@ -25,7 +25,7 @@ Phân biệt rõ:
 - `tested` = đã chạy test/unit/integration (có thể synthetic).
 - `experimentally validated` = đã chạy trên UNSW-NB15 thật và ghi kết quả.
 
-Không tạo thêm milestone/issue, không thêm tài liệu chỉ để tăng số file, không triển khai Autoencoder/Transformer/GNN/post-quantum.
+Không tạo thêm milestone/issue, không thêm tài liệu chỉ để tăng số file; không triển khai Transformer/LSTM/GNN/post-quantum (Autoencoder thuộc phạm vi C4/Issue #29 được phê duyệt riêng).
 
 ## Dùng trong Codex
 

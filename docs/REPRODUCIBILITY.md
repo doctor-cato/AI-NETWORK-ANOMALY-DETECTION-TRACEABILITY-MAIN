@@ -168,6 +168,28 @@ Fail-closed properties:
 - Streams partition loading by chunks (default 100,000 via `--chunksize`) to minimize memory usage.
 - Saves model artifacts under `artifacts/models/isolation_forest/` and metrics under `reports/experiments/isolation_forest/`.
 
+## Reproduce the Autoencoder anomaly detection pipeline (scripts/train_autoencoder.py) (Issue #29)
+
+```text
+# Prerequisite check and parameter options:
+python scripts/train_autoencoder.py --help
+
+# Unsupervised training and validation-only threshold calibration:
+python scripts/train_autoencoder.py --batch-size 256 --max-iter 50 --target-fpr 0.05
+
+# Optional held-out Test evaluation (only after model and threshold are frozen):
+python scripts/train_autoencoder.py --evaluate-test
+```
+
+Fail-closed properties & safeguards:
+- Fail-closed prerequisite audit: verifies raw dataset SHA-256 (`4ebb97...`), split manifest + partition index checksums, and preprocessor artifact + companion manifest via `TrainOnlyPreprocessor.load_verified()` before execution.
+- Training population: strictly benign-only (`Label == 0`) from Train partition; targets and trace metadata are completely excluded from $X$.
+- Unknown-attack holdout: configured unknown categories (default `Worms`, `Backdoor`, persisted dynamically in `autoencoder_manifest.json`) are strictly isolated from model fitting, gradient updates, early stopping, and threshold calibration.
+- Threshold calibration: Validation-only (`benign_quantile`, `fpr_constrained` with exact empirical tie-aware `val_fpr <= target_fpr`, or `supervised_best_f1`); once selected, threshold is frozen (`threshold_frozen=True`).
+- Held-out Test Lock: because `NF-UNSW-NB15-v3.csv` is a single unified CSV, initial partition loading materializes and transforms only Train and Validation, stops streaming at the maximum Train/Validation row index, and discards non-Train/Validation rows at the chunk-mask boundary so `0` Test rows are materialized, transformed, or accessed before lock release; Test is loaded, transformed, and evaluated only with `--evaluate-test` strictly after verifying both fitted model state and frozen validation threshold (`verify_test_evaluation_lock` -> `load_and_transform_test_partition`).
+- Artifacts & Reports: produces `autoencoder_model.joblib`, `model_config.json`, `threshold.json`, `autoencoder_manifest.json` (linking dataset, split manifest, Train/Validation partition index, preprocessor, model, config, and threshold SHA-256 digests + configured unknown categories, verified fail-closed via `load_verified_autoencoder`), `metrics.json`, `threshold_calibration.json`, and `evaluation_report.md`.
+
+
 ## Reproduce CSV inference on new network flows (Issue #15)
 
 ```text
@@ -206,17 +228,15 @@ A skipped CI step is never reported as evidence that the validator or the EDA ra
 
 ## Lint scope
 
-| Scope | Ruff 0.17.1 | Black 26.10.1 | Tracking |
+| Scope | Ruff | Black | Verification |
 |---|---|---|---|
-| Files owned by the current change set | PASS | PASS | — |
-| Whole repository | 5 findings, exit `1` | 11 files, exit `1` | Issue #37 |
+| `src scripts tests` on PR #50 after PR #61 | PASS | PASS | `python -m ruff check src scripts tests`; `python -m black --check src scripts tests` |
 
-The repository-wide result is a FAIL while the findings remain. The Linux and CI-compatible
-re-check is the manual or pull-request workflow `.github/workflows/lint-audit.yml`.
+The pull-request workflow `.github/workflows/lint-audit.yml` also checks changed Python files.
 
 ## Split and experiment identity
 
-The official NF-UNSW-NB15-v3 chronological group-purged split (`reports/splits/nf_unsw_nb15_v3_split_manifest.json`, PR #41), train-only preprocessing contract (`reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`, PR #42), and Random Forest baseline training run (`reports/models/random_forest_manifest.json`, `reports/models/rf_baseline_training_report.md`, Issue #10 / PR #43, model artifact SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`) are recorded and verified on real `NF-UNSW-NB15-v3` bytes. Held-out Test partition benchmark evaluation remains `PLANNED` under Issue #12 (`test_partition_accessed: false`, `test_rows_loaded: 0`). Every accepted model run must record:
+The NF-UNSW-NB15-v3 split, train-only preprocessing contract and Random Forest training run are recorded in their respective manifests. The recovered held-out Test run `rf-heldout-ea330b9` is documented in `reports/evaluation/rf-heldout-ea330b9/` and `reports/evaluation/error_analysis_report.md`. Its Test predictions were checked against the historical October split snapshot, raw CSV labels and artifact hashes without rerunning model inference. The currently tracked split and preprocessing manifests describe a later November artifact set; their hashes must not be substituted for the historical run. Every accepted model run must record:
 
 - Git commit and dependency snapshot;
 - dataset SHA-256 and split identifier;
@@ -229,6 +249,16 @@ The official NF-UNSW-NB15-v3 chronological group-purged split (`reports/splits/n
 
 Random seed `42` is the default where randomness is required. It does not replace recording the
 actual seed or deterministic split algorithm.
+
+### Reconcile an existing Test run
+
+Run from repository root on a host with the historical dataset, indices, artifacts and stored run outputs. The command reads predictions and source rows; it never fits or predicts.
+
+```powershell
+python scripts/reconcile_rf_heldout_evidence.py --run-dir <stored-run-directory> --dataset-csv data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv --indices-dir data/processed/splits --split-manifest reports/evaluation/rf-heldout-ea330b9/split_manifest.json --preprocessing-manifest reports/evaluation/rf-heldout-ea330b9/preprocessing_manifest.json --model-manifest reports/models/random_forest_manifest.json --preprocessor-artifact artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib --model-artifact artifacts/models/random_forest/random_forest_baseline.joblib --output-dir reports/evaluation/rf-heldout-ea330b9 --report-path reports/evaluation/error_analysis_report.md
+```
+
+The CLI fails if a required artifact is absent, a hash or run ID differs, split indices overlap, source labels disagree with predictions, or metrics and confusion matrices cannot be reconciled. `predictions.csv` and model binaries stay outside Git; the committed summary records their SHA-256. The previous evaluation used Python 3.14.10; model training package versions and seed are recorded in `verified_summary.json`. Reproducing the model probabilities independently remains `NOT VERIFIED` because the held-out Test was not rerun.
 
 ## Leakage and transform rules
 

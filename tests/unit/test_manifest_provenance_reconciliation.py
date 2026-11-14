@@ -207,10 +207,25 @@ def test_canonical_pins_parity():
 # =========================================================================
 
 
-def test_train_rf_verify_only_cli_execution():
-    """Verify train_random_forest.py --verify-only fails closed on missing data only."""
+def test_train_rf_verify_only_cli_execution(tmp_path):
+    """Verify train_random_forest.py --verify-only fails closed cleanly when inputs are missing."""
+    missing_root = tmp_path / "missing_inputs"
     res = subprocess.run(
-        [sys.executable, str(PROJECT_ROOT / "scripts" / "train_random_forest.py"), "--verify-only"],
+        [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "train_random_forest.py"),
+            "--dataset",
+            str(missing_root / "NF-UNSW-NB15-v3.csv"),
+            "--split-manifest",
+            str(missing_root / "split_manifest.json"),
+            "--indices-dir",
+            str(missing_root / "splits"),
+            "--preprocessor-artifact",
+            str(missing_root / "preprocessor.joblib"),
+            "--preprocessor-manifest",
+            str(missing_root / "preprocessing_manifest.json"),
+            "--verify-only",
+        ],
         capture_output=True,
         text=True,
         cwd=str(PROJECT_ROOT),

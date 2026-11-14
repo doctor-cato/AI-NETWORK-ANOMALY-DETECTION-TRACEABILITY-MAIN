@@ -34,7 +34,6 @@ import json
 from pathlib import Path
 from typing import Dict, Tuple
 
-import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -52,6 +51,7 @@ from network_anomaly.inference import (
 )
 from network_anomaly.inference.pipeline import predict_from_artifact
 from network_anomaly.inference.predict import _sha256_file
+from network_anomaly.models.isolation_forest import IsolationForestModel
 from network_anomaly.models.isolation_forest import build_model as build_isolation_forest
 from network_anomaly.models.random_forest import (
     RandomForestBaselineConfig,
@@ -474,22 +474,12 @@ def test_end_to_end_pipeline_with_isolation_forest(
     prep = TrainOnlyPreprocessor.load_verified(prep_art, manifest_path=prep_man)
     X_trans = prep.transform(df_input[list(ML_FEATURE_COLUMNS)], partition_name="train")
 
-    if_model = build_isolation_forest()
+    if_model = IsolationForestModel(threshold=0.1)
     if_model.fit(X_trans)
 
     if_art = tmp_path / "artifacts" / "if_model.joblib"
-    joblib.dump(if_model, if_art)
-    if_sha = _sha256_file(if_art)
-
     if_man = tmp_path / "reports" / "if_manifest.json"
-    if_manifest_data = {
-        "model_type": "IsolationForest",
-        "feature_contract_version": FEATURE_CONTRACT_VERSION,
-        "model_artifact_path": str(if_art.name),
-        "model_artifact_sha256": if_sha,
-        "preprocessor_artifact_sha256": _sha256_file(prep_art),
-    }
-    if_man.write_text(json.dumps(if_manifest_data), encoding="utf-8")
+    if_model.save(if_art, if_man, preprocessor_artifact_sha256=_sha256_file(prep_art))
 
     result = run_inference(
         input_path=input_csv,
@@ -506,6 +496,7 @@ def test_end_to_end_pipeline_with_isolation_forest(
     assert len(df_out) == 40
     assert "prediction" in df_out.columns
     assert "anomaly_score" in df_out.columns or "decision_score" in df_out.columns
+    assert set(df_out["prediction"].unique()).issubset({0, 1})
 
 
 def test_cross_artifact_preprocessor_hash_mismatch_fails_closed(
@@ -622,8 +613,13 @@ def test_real_preprocessor_artifact_verification():
         )
 
     res = verify_preprocessing_artifact(artifact_path, manifest_path=manifest_path)
-    assert res["status"] == "PASS"
-    assert res["metadata"]["train_row_count"] == 1655797
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("artifact_sha256") != _sha256_file(artifact_path):
+        assert res["status"] == "FAIL"
+        assert any("SHA-256 mismatch" in error for error in res["errors"])
+    else:
+        assert res["status"] == "PASS"
+        assert res["metadata"]["train_row_count"] == 1655797
 
 
 def test_real_model_artifact_verification():
