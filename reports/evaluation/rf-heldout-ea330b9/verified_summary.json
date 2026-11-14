@@ -448,6 +448,39 @@
       "fn": 2
     }
   },
+  "model_comparison": {
+    "comparison_ready_on_test": false,
+    "protocol_comparability_note": "Random Forest is a mandatory supervised baseline evaluated at the locked probability threshold of 0.50. Isolation Forest is an optional unsupervised anomaly detector requiring separate validation score calibration; per project scope it does not block Random Forest core acceptance.",
+    "models": {
+      "random_forest": {
+        "model_name": "Random Forest Baseline",
+        "configuration_id": "rf-baseline-canonical-v1",
+        "project_role": "Mandatory Supervised Baseline (Core Scope)",
+        "learning_paradigm": "Supervised binary classification (Label: 0=Benign, 1=Attack)",
+        "decision_rule": "prob_attack >= 0.5",
+        "validation_status": "VERIFIED",
+        "validation_f1": 0.9998688567587948,
+        "validation_recall": 0.9999016393442623,
+        "validation_fpr": 1.5879518914094977e-05,
+        "held_out_test_status": "EXPERIMENTALLY VALIDATED",
+        "held_out_test_f1": 0.9998529339673513,
+        "held_out_test_recall": 0.9999346319780363,
+        "held_out_test_fpr": 2.2197065547934564e-05
+      },
+      "isolation_forest": {
+        "model_name": "Isolation Forest",
+        "configuration_id": "isolation-forest-optional-baseline",
+        "project_role": "Optional Unsupervised Baseline (Non-blocking per project scope)",
+        "learning_paradigm": "Unsupervised anomaly scoring (no attack labels used in fitting)",
+        "decision_rule": "Anomaly score threshold calibrated on Validation (separate protocol)",
+        "validation_status": "BLOCKED",
+        "experiment_status": "IMPLEMENTED \u2014 NOT EXPERIMENTALLY VALIDATED",
+        "held_out_test_status": "NOT EVALUATED",
+        "blocked_reason": "NF-UNSW-NB15-v3 CSV not found at data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv. Run: python scripts/fetch_nf_unsw_nb15_v3.py",
+        "blocks_random_forest_acceptance": false
+      }
+    }
+  },
   "limitations": [
     "Source is a laboratory NetFlow capture; deployment drift is untested.",
     "No session ID or payload context is available.",

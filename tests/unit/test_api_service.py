@@ -300,6 +300,12 @@ def test_analyze_flows_with_verified_pipeline_provenance(api_service: ApiService
     assert res.anomalies_detected == 1
     assert res.results[0].inference_mode == "verified_model"
     assert res.results[0].model_sha256 == "rf_sha256_mock_provenance_verified"
+    assert res.anomaly_scores == [0.12, 0.88]
+    assert res.probabilities == [
+        {"Benign": 0.88, "Attack": 0.12},
+        {"Benign": 0.12, "Attack": 0.88},
+    ]
+    assert res.results[1].probabilities == {"Benign": 0.12, "Attack": 0.88}
     assert res.results[1].is_anomaly is True
     assert res.results[1].incident_created is True
     from network_anomaly.api.repositories import EvidenceRepository

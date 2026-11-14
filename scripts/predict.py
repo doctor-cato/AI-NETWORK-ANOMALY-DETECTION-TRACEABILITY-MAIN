@@ -30,8 +30,12 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.inference import run_inference
+_LOCAL_SOURCE = Path(__file__).resolve().parents[1] / "src"
+if str(_LOCAL_SOURCE) not in sys.path:
+    sys.path.insert(0, str(_LOCAL_SOURCE))
+
+from network_anomaly.config import ARTIFACTS, PROJECT_ROOT  # noqa: E402
+from network_anomaly.inference import run_inference  # noqa: E402
 
 
 def _resolve_model_paths(

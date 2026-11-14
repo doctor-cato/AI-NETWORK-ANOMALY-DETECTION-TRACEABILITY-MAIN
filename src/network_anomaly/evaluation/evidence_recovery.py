@@ -117,6 +117,9 @@ def reconcile_run(
     dataset_manifest: Path = Path("data/NF_UNSW_NB15_V3_MANIFEST.json"),
     validation_audit: Path = Path("reports/models/rf_baseline_validation_audit.json"),
     eda_summary: Path | None = None,
+    isolation_forest_status: Path | None = Path(
+        "reports/experiments/isolation_forest/blocked_status.json"
+    ),
 ) -> dict[str, Any]:
     """Fail closed unless the stored run, manifests, and source rows agree."""
     required = {
@@ -493,6 +496,53 @@ def reconcile_run(
             ],
         }
         eda_hash = _sha256(eda_summary)
+    if_status_data: dict[str, Any] = {}
+    if isolation_forest_status is not None and isolation_forest_status.is_file():
+        if_status_data = _json(isolation_forest_status)
+
+    model_comparison = {
+        "comparison_ready_on_test": False,
+        "protocol_comparability_note": (
+            "Random Forest is a mandatory supervised baseline evaluated at the locked "
+            "probability threshold of 0.50. Isolation Forest is an optional unsupervised "
+            "anomaly detector requiring separate validation score calibration; per project "
+            "scope it does not block Random Forest core acceptance."
+        ),
+        "models": {
+            "random_forest": {
+                "model_name": "Random Forest Baseline",
+                "configuration_id": model.get("configuration_id", "rf-baseline-canonical-v1"),
+                "project_role": "Mandatory Supervised Baseline (Core Scope)",
+                "learning_paradigm": "Supervised binary classification (Label: 0=Benign, 1=Attack)",
+                "decision_rule": f"prob_attack >= {CANONICAL_DECISION_THRESHOLD}",
+                "validation_status": "VERIFIED",
+                "validation_f1": float(val.get("f1", 0.0)),
+                "validation_recall": float(val.get("recall", 0.0)),
+                "validation_fpr": float(val.get("fpr", 0.0)),
+                "held_out_test_status": "EXPERIMENTALLY VALIDATED",
+                "held_out_test_f1": float(calculated["f1"]),
+                "held_out_test_recall": float(calculated["recall"]),
+                "held_out_test_fpr": float(calculated["false_positive_rate"]),
+            },
+            "isolation_forest": {
+                "model_name": "Isolation Forest",
+                "configuration_id": "isolation-forest-optional-baseline",
+                "project_role": "Optional Unsupervised Baseline (Non-blocking per project scope)",
+                "learning_paradigm": "Unsupervised anomaly scoring (no attack labels used in fitting)",
+                "decision_rule": "Anomaly score threshold calibrated on Validation (separate protocol)",
+                "validation_status": if_status_data.get("status", "NOT EVALUATED"),
+                "experiment_status": if_status_data.get(
+                    "experiment_status", "IMPLEMENTED — NOT EXPERIMENTALLY VALIDATED"
+                ),
+                "held_out_test_status": "NOT EVALUATED",
+                "blocked_reason": if_status_data.get(
+                    "reason",
+                    "Isolation Forest artifact not trained/evaluated on held-out Test partition",
+                ),
+                "blocks_random_forest_acceptance": False,
+            },
+        },
+    }
     return {
         "run_id": metadata["run_id"],
         "status": "EXPERIMENTALLY VALIDATED",
@@ -539,6 +589,7 @@ def reconcile_run(
             "fn": int((band & predictions.outcome.eq("FN")).sum()),
         },
         "temporal_windows": temporal,
+        "model_comparison": model_comparison,
         "limitations": [
             "Source is a laboratory NetFlow capture; deployment drift is untested.",
             "No session ID or payload context is available.",
@@ -660,6 +711,33 @@ def render_report(result: dict[str, Any]) -> str:
     ]
     for hour, item in result["temporal_windows"].items():
         lines.append(f"| {hour} | {item['total']} | {item['fp']} | {item['fn']} |")
+    comparison = result.get("model_comparison")
+    if isinstance(comparison, dict) and isinstance(comparison.get("models"), dict):
+        rf_cmp = comparison["models"].get("random_forest", {})
+        if_cmp = comparison["models"].get("isolation_forest", {})
+        lines += [
+            "",
+            "## Model comparison: Random Forest vs Isolation Forest",
+            "",
+            "| Model | Project role | Learning paradigm | Validation status | Validation F1 | Held-out Test status | Held-out Test F1 | Held-out Test Recall | Held-out Test FPR | Blocks RF acceptance |",
+            "| --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | --- |",
+            (
+                f"| {rf_cmp.get('model_name', 'Random Forest Baseline')} | {rf_cmp.get('project_role', '')} | "
+                f"{rf_cmp.get('learning_paradigm', '')} | {rf_cmp.get('validation_status', 'VERIFIED')} | "
+                f"{float(rf_cmp.get('validation_f1', 0.0)):.6f} | {rf_cmp.get('held_out_test_status', 'EXPERIMENTALLY VALIDATED')} | "
+                f"{float(rf_cmp.get('held_out_test_f1', m['f1'])):.6f} | {float(rf_cmp.get('held_out_test_recall', m['recall'])):.6f} | "
+                f"{float(rf_cmp.get('held_out_test_fpr', m['false_positive_rate'])):.6f} | N/A (Core) |"
+            ),
+            (
+                f"| {if_cmp.get('model_name', 'Isolation Forest')} | {if_cmp.get('project_role', '')} | "
+                f"{if_cmp.get('learning_paradigm', '')} | {if_cmp.get('validation_status', 'NOT EVALUATED')} | "
+                f"N/A | {if_cmp.get('held_out_test_status', 'NOT EVALUATED')} | "
+                f"N/A | N/A | N/A | {if_cmp.get('blocks_random_forest_acceptance', False)} |"
+            ),
+            "",
+            f"- Comparability note: {comparison.get('protocol_comparability_note', '')}",
+            f"- Isolation Forest status note: {if_cmp.get('blocked_reason', 'Not evaluated on held-out Test')}",
+        ]
     lines += [
         "",
         "## Dataset limitations and future work",
@@ -712,6 +790,11 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path("reports/models/rf_baseline_validation_audit.json"),
     )
+    parser.add_argument(
+        "--isolation-forest-status",
+        type=Path,
+        default=Path("reports/experiments/isolation_forest/blocked_status.json"),
+    )
     parser.add_argument("--report-path", type=Path)
     args = parser.parse_args(argv)
     result = reconcile_run(
@@ -726,16 +809,20 @@ def main(argv: list[str] | None = None) -> int:
         dataset_manifest=args.dataset_manifest,
         validation_audit=args.validation_audit,
         eda_summary=args.eda_summary,
+        isolation_forest_status=args.isolation_forest_status,
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    (args.output_dir / "verified_summary.json").write_text(
-        json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8"
-    )
+    with open(
+        args.output_dir / "verified_summary.json", "w", encoding="utf-8", newline="\n"
+    ) as handle:
+        handle.write(json.dumps(result, indent=2, allow_nan=False) + "\n")
     report = render_report(result)
-    (args.output_dir / "error_analysis.md").write_text(report, encoding="utf-8")
+    with open(args.output_dir / "error_analysis.md", "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(report)
     if args.report_path is not None:
         args.report_path.parent.mkdir(parents=True, exist_ok=True)
-        args.report_path.write_text(report, encoding="utf-8")
+        with open(args.report_path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(report)
     print(
         json.dumps(
             {"run_id": result["run_id"], "status": result["status"], "counts": result["counts"]}

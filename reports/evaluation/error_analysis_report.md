@@ -100,6 +100,16 @@ Most frequent MIN_TTL values by source class:
 | 2015-02-18 11:00:00+00:00 | 100906 | 2 | 0 |
 | 2015-02-18 12:00:00+00:00 | 53923 | 2 | 2 |
 
+## Model comparison: Random Forest vs Isolation Forest
+
+| Model | Project role | Learning paradigm | Validation status | Validation F1 | Held-out Test status | Held-out Test F1 | Held-out Test Recall | Held-out Test FPR | Blocks RF acceptance |
+| --- | --- | --- | --- | ---: | --- | ---: | ---: | ---: | --- |
+| Random Forest Baseline | Mandatory Supervised Baseline (Core Scope) | Supervised binary classification (Label: 0=Benign, 1=Attack) | VERIFIED | 0.999869 | EXPERIMENTALLY VALIDATED | 0.999853 | 0.999935 | 0.000022 | N/A (Core) |
+| Isolation Forest | Optional Unsupervised Baseline (Non-blocking per project scope) | Unsupervised anomaly scoring (no attack labels used in fitting) | BLOCKED | N/A | NOT EVALUATED | N/A | N/A | N/A | False |
+
+- Comparability note: Random Forest is a mandatory supervised baseline evaluated at the locked probability threshold of 0.50. Isolation Forest is an optional unsupervised anomaly detector requiring separate validation score calibration; per project scope it does not block Random Forest core acceptance.
+- Isolation Forest status note: NF-UNSW-NB15-v3 CSV not found at data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv. Run: python scripts/fetch_nf_unsw_nb15_v3.py
+
 ## Dataset limitations and future work
 
 - Source is a laboratory NetFlow capture; deployment drift is untested.

@@ -141,6 +141,10 @@ class AnalyzeResultItem(BaseModel):
     anomaly_score: float = Field(
         ..., ge=0.0, le=1.0, description="Display anomaly score or attack probability [0, 1]"
     )
+    probabilities: Optional[Dict[str, float]] = Field(
+        None,
+        description="Per-class probabilities (e.g. {'Benign': p0, 'Attack': p1}) when emitted by the model",
+    )
     prediction: int = Field(..., description="Binary prediction: 0 (Normal), 1 (Anomaly)")
     attack_type: Optional[str] = Field(None, description="Inferred or classified attack category")
     model_used: str = Field(..., description="Model identifier used for analysis")
@@ -174,6 +178,14 @@ class AnalyzeResponse(BaseModel):
         ..., ge=0, description="Number of items classified as anomalous"
     )
     results: List[AnalyzeResultItem] = Field(default_factory=list)
+    anomaly_scores: List[float] = Field(
+        default_factory=list,
+        description="Batch-level anomaly scores aligned with results order",
+    )
+    probabilities: Optional[List[Dict[str, float]]] = Field(
+        None,
+        description="Batch-level per-item class probabilities aligned with results order when emitted",
+    )
     timestamp: str = Field(...)
     inference_mode: str = Field(
         "verified_model",

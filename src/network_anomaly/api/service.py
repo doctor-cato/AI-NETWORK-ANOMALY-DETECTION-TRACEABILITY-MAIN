@@ -435,11 +435,20 @@ class ApiService:
                             },
                         )
 
+        item_probs_list = [item.probabilities for item in results]
+        batch_probabilities: Optional[List[Dict[str, float]]] = (
+            item_probs_list
+            if results and all(probs is not None for probs in item_probs_list)
+            else None
+        )
+
         return AnalyzeResponse(
             model_ready=model_ready,
             count=len(results),
             anomalies_detected=anomalies_count,
             results=results,
+            anomaly_scores=[item.anomaly_score for item in results],
+            probabilities=batch_probabilities,
             timestamp=now,
             inference_mode=inference_mode,
             model_sha256=model_sha256,
@@ -479,20 +488,35 @@ class ApiService:
             row = preds_df.iloc[idx]
             raw_pred = row.get("prediction", 0)
 
-            # Determine anomaly score and probability
+            # Determine anomaly score and per-class probabilities when emitted
             score = 0.0
-            if "probability_Attack" in preds_df.columns:
-                score = float(row["probability_Attack"])
-            elif "probability_1" in preds_df.columns:
-                score = float(row["probability_1"])
-            elif "anomaly_score" in preds_df.columns:
-                val = float(row["anomaly_score"])
-                score = max(0.0, min(1.0, val))
-            elif "decision_score" in preds_df.columns:
-                val = float(row["decision_score"])
-                score = 1.0 / (1.0 + np.exp(-val))
+            item_probabilities: Optional[Dict[str, float]] = None
+            for atk_col, ben_col in (
+                ("probability_Attack", "probability_Benign"),
+                ("probability_1", "probability_0"),
+            ):
+                if atk_col in preds_df.columns:
+                    p_attack = float(row[atk_col])
+                    score = p_attack
+                    p_benign = (
+                        float(row[ben_col])
+                        if ben_col in preds_df.columns
+                        else max(0.0, min(1.0, 1.0 - p_attack))
+                    )
+                    item_probabilities = {
+                        "Benign": round(p_benign, 4),
+                        "Attack": round(p_attack, 4),
+                    }
+                    break
             else:
-                score = float(raw_pred == 1 or raw_pred == -1)
+                if "anomaly_score" in preds_df.columns:
+                    val = float(row["anomaly_score"])
+                    score = max(0.0, min(1.0, val))
+                elif "decision_score" in preds_df.columns:
+                    val = float(row["decision_score"])
+                    score = 1.0 / (1.0 + np.exp(-val))
+                else:
+                    score = float(raw_pred == 1 or raw_pred == -1)
 
             if isinstance(raw_pred, (bool, np.bool_)) or raw_pred not in (0, 1):
                 raise ValueError(f"Verified pipeline returned non-binary prediction: {raw_pred!r}")
@@ -505,6 +529,7 @@ class ApiService:
                     event_id=events[idx].get("event_id"),
                     is_anomaly=is_anom,
                     anomaly_score=round(score, 4),
+                    probabilities=item_probabilities,
                     prediction=pred_binary,
                     attack_type="Network Anomaly" if is_anom else None,
                     model_used=model_name,
