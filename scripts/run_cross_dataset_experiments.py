@@ -26,7 +26,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -49,7 +49,10 @@ from network_anomaly.models.robust_experiment import (  # noqa: E402
     compute_fingerprint_disjoint_split,
 )
 from network_anomaly.preprocessing import TrainOnlyPreprocessor  # noqa: E402
-from scripts.fetch_external_dataset import verify_unsw_sample_binding  # noqa: E402
+from scripts.fetch_external_dataset import (  # noqa: E402
+    _sha256_file,
+    verify_unsw_sample_binding,
+)
 
 # Default dataset paths
 DEFAULT_UNSW_VAL_CSV = (
@@ -108,6 +111,16 @@ def verify_split_manifest_and_test_lock(split_manifest_path: Path) -> Dict[str, 
     }
 
 
+def _load_slice_bounds(sample_path: Path) -> Tuple[int, int]:
+    """Read verified slice [start, end) source row bounds from sample manifest."""
+    manifest_path = sample_path.with_name(f"{sample_path.name}.manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    checksum = manifest.get("content_checksum", {})
+    start = int(checksum["skip_rows_offset"])
+    count = int(checksum["sample_rows_extracted"])
+    return start, start + count
+
+
 def run_all_cross_dataset_experiments(
     unsw_val_csv: Path,
     benchmark_csv: Path,
@@ -118,6 +131,7 @@ def run_all_cross_dataset_experiments(
     split_manifest_path: Optional[Path] = None,
     random_seed: int = 42,
     indices_dir: Optional[Path] = None,
+    source_csv_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Execute controlled ablation and domain shift experiments E0–E5 without train leakage."""
     split_manifest = split_manifest_path or DEFAULT_SPLIT_MANIFEST
@@ -131,14 +145,50 @@ def run_all_cross_dataset_experiments(
         raise FileNotFoundError(f"Validation dataset not found: {unsw_val_csv}")
     if not benchmark_csv.exists():
         raise FileNotFoundError(f"Benchmark dataset not found: {benchmark_csv}")
+    if unsw_train_csv is None or not unsw_train_csv.is_file():
+        raise FileNotFoundError("Dedicated UNSW Train sample required for E1-E5 fitting")
+    if unsw_train_csv.resolve() == unsw_val_csv.resolve():
+        raise ValueError("UNSW Train and Validation CSV paths must be distinct")
 
+    resolved_indices_dir = indices_dir or PROJECT_ROOT / "data" / "processed" / "splits"
     expected_val_rows = verify_unsw_sample_binding(
         unsw_val_csv,
         split_manifest,
-        indices_dir or PROJECT_ROOT / "data" / "processed" / "splits",
+        resolved_indices_dir,
+        expected_partition="validation",
+        source_csv_path=source_csv_path,
     )
-    if unsw_train_csv is None or not unsw_train_csv.is_file():
-        raise FileNotFoundError("Dedicated UNSW Train sample required for E1-E5 fitting")
+    expected_train_rows = verify_unsw_sample_binding(
+        unsw_train_csv,
+        split_manifest,
+        resolved_indices_dir,
+        expected_partition="train",
+        source_csv_path=source_csv_path,
+    )
+
+    unsw_val_sha256 = _sha256_file(unsw_val_csv)
+    unsw_train_sha256 = _sha256_file(unsw_train_csv)
+    if unsw_train_sha256 == unsw_val_sha256:
+        raise ValueError("UNSW Train and Validation samples must have distinct SHA-256 digests")
+
+    train_start, train_end = _load_slice_bounds(unsw_train_csv)
+    val_start, val_end = _load_slice_bounds(unsw_val_csv)
+    if train_start < val_end and val_start < train_end:
+        raise ValueError(
+            "UNSW Train and Validation source row slices overlap "
+            f"([{train_start}, {train_end}) vs [{val_start}, {val_end}))"
+        )
+    benchmark_sha256 = _sha256_file(benchmark_csv)
+    unsw_train_prov = {
+        "dataset": unsw_train_csv.name,
+        "dataset_sha256": unsw_train_sha256,
+        "split": "train_partition",
+    }
+    unsw_val_prov = {
+        "dataset": unsw_val_csv.name,
+        "dataset_sha256": unsw_val_sha256,
+        "split": "validation_partition",
+    }
 
     print(f"Loading official Validation partition: {unsw_val_csv.name}...")
     t0 = time.time()
@@ -175,6 +225,8 @@ def run_all_cross_dataset_experiments(
     # 3. Ablation models must never fit on the canonical Validation partition.
     print(f"Loading dedicated UNSW training partition: {unsw_train_csv.name}...")
     u_train_raw = pd.read_csv(unsw_train_csv)
+    if len(u_train_raw) != expected_train_rows:
+        raise ValueError("Train sample row count differs from companion manifest")
 
     prep_unsw = TrainOnlyPreprocessor()
     prep_unsw.fit(u_train_raw[feature_cols])
@@ -257,6 +309,7 @@ def run_all_cross_dataset_experiments(
         "description": "Frozen Canonical Baseline with 47 features (contains TTL shortcuts).",
         "features_count": len(FEATURES_E0),
         "excluded_features": [],
+        "validation_provenance": unsw_val_prov,
         "in_domain_evaluation": metrics_e0_in.to_dict(),
         "cross_domain_evaluation": metrics_e0_out.to_dict(),
         "held_out_test_evaluation": {
@@ -289,7 +342,7 @@ def run_all_cross_dataset_experiments(
     exp_e1.fit(
         u_train_trans,
         y_u_train,
-        train_provenance={"dataset": unsw_val_csv.name, "split": "train_partition"},
+        train_provenance=unsw_train_prov,
     )
     metrics_e1_in = exp_e1.evaluate(
         u_val_trans, y_u_val, attack_names=atk_u_val, evaluation_level="IN_DOMAIN_VALIDATION"
@@ -304,6 +357,8 @@ def run_all_cross_dataset_experiments(
         "description": "No-TTL Ablation Random Forest (excludes MIN_TTL & MAX_TTL).",
         "features_count": len(FEATURES_E1),
         "excluded_features": ["MIN_TTL", "MAX_TTL"],
+        "train_provenance": unsw_train_prov,
+        "validation_provenance": unsw_val_prov,
         "in_domain_evaluation": metrics_e1_in.to_dict(),
         "cross_domain_evaluation": metrics_e1_out.to_dict(),
     }
@@ -324,7 +379,7 @@ def run_all_cross_dataset_experiments(
     exp_e2.fit(
         u_train_trans,
         y_u_train,
-        train_provenance={"dataset": unsw_val_csv.name, "split": "train_partition"},
+        train_provenance=unsw_train_prov,
     )
     metrics_e2_in = exp_e2.evaluate(
         u_val_trans, y_u_val, attack_names=atk_u_val, evaluation_level="IN_DOMAIN_VALIDATION"
@@ -346,6 +401,8 @@ def run_all_cross_dataset_experiments(
             "DNS_TTL_ANSWER",
             "FTP_COMMAND_RET_CODE",
         ],
+        "train_provenance": unsw_train_prov,
+        "validation_provenance": unsw_val_prov,
         "in_domain_evaluation": metrics_e2_in.to_dict(),
         "cross_domain_evaluation": metrics_e2_out.to_dict(),
     }
@@ -374,13 +431,18 @@ def run_all_cross_dataset_experiments(
         random_state=random_seed,
         model_name="rf_experiment_e3_multidomain_joint",
     )
+    e3_train_provenance = {
+        "datasets": [unsw_train_csv.name, benchmark_csv.name],
+        "dataset_sha256s": {
+            unsw_train_csv.name: unsw_train_sha256,
+            benchmark_csv.name: benchmark_sha256,
+        },
+        "split": "joint_fingerprint_disjoint",
+    }
     exp_e3.fit(
         joint_train_trans,
         y_joint_train,
-        train_provenance={
-            "datasets": [unsw_val_csv.name, benchmark_csv.name],
-            "split": "joint_fingerprint_disjoint",
-        },
+        train_provenance=e3_train_provenance,
     )
     metrics_e3_heldout = exp_e3.evaluate(
         c_test_joint_trans,
@@ -397,6 +459,7 @@ def run_all_cross_dataset_experiments(
         "scientific_reclassification": "IN_DOMAIN_HOLDOUT / MIXED_DOMAIN_INTERPOLATION",
         "features_count": len(FEATURES_E1),
         "excluded_features": ["MIN_TTL", "MAX_TTL"],
+        "train_provenance": e3_train_provenance,
         "joint_training_rows": len(df_joint_train),
         "heldout_evaluation_target": f"CIC-IDS heldout {len(c_test_raw):,} rows (disjoint)",
         "leakage_audit": cic_leakage_audit,
@@ -457,7 +520,7 @@ def run_all_cross_dataset_experiments(
     exp_e5.fit(
         u_train_trans,
         y_u_train,
-        train_provenance={"dataset": unsw_val_csv.name, "split": "train_partition"},
+        train_provenance=unsw_train_prov,
     )
     metrics_e5_in = exp_e5.evaluate(
         u_val_trans, y_u_val, attack_names=atk_u_val, evaluation_level="IN_DOMAIN_VALIDATION"
@@ -472,6 +535,8 @@ def run_all_cross_dataset_experiments(
         "description": "HistGradientBoosting on 45 features (Issue #31 protocol).",
         "features_count": len(FEATURES_E1),
         "excluded_features": ["MIN_TTL", "MAX_TTL"],
+        "train_provenance": unsw_train_prov,
+        "validation_provenance": unsw_val_prov,
         "in_domain_evaluation": metrics_e5_in.to_dict(),
         "cross_domain_evaluation": metrics_e5_out.to_dict(),
     }
@@ -579,6 +644,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--unsw-train-csv", type=Path, default=DEFAULT_UNSW_TRAIN_CSV)
     parser.add_argument("--benchmark-csv", type=Path, default=DEFAULT_BENCHMARK_CSV)
     parser.add_argument("--ton-csv", type=Path, default=DEFAULT_TON_CSV)
+    parser.add_argument("--source-csv", type=Path, default=None)
     parser.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLIT_MANIFEST)
     parser.add_argument("--output-report", type=Path, default=DEFAULT_OUTPUT_REPORT)
     parser.add_argument("--output-json", type=Path, default=DEFAULT_OUTPUT_JSON)
@@ -608,6 +674,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             ton_csv=args.ton_csv,
             split_manifest_path=args.split_manifest,
             random_seed=args.seed,
+            source_csv_path=args.source_csv,
         )
         return 0
     except Exception as e:

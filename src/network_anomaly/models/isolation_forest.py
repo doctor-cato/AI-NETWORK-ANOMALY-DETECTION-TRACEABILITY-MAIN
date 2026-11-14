@@ -537,6 +537,18 @@ class IsolationForestModel:
             raise FileNotFoundError(f"Model artifact not found at {model_path}")
         payload = joblib.load(p)
         if isinstance(payload, dict) and "estimator" in payload:
+            payload_model_type = payload.get("model_type")
+            if payload_model_type is not None and payload_model_type != "IsolationForest":
+                raise ValueError(
+                    "Artifact payload model_type mismatch: expected 'IsolationForest', "
+                    f"got {payload_model_type!r}"
+                )
+            estimator = payload["estimator"]
+            if not isinstance(estimator, IsolationForest):
+                raise ValueError(
+                    "Artifact payload estimator must be IsolationForest, "
+                    f"got {type(estimator).__name__}"
+                )
             config = payload.get("config", {})
             threshold = payload.get("threshold")
             if "calibrated_threshold" in payload and payload["calibrated_threshold"] != threshold:
@@ -549,7 +561,7 @@ class IsolationForestModel:
                 score_direction=score_dir,
                 label_mapping=label_map,
             )
-            model._estimator = payload["estimator"]
+            model._estimator = estimator
             model._is_fitted = bool(payload.get("is_fitted", True))
             if payload.get("feature_names"):
                 model.feature_names = tuple(payload["feature_names"])
@@ -557,6 +569,10 @@ class IsolationForestModel:
                 model.feature_contract_version = payload["feature_contract_version"]
             return model
         elif hasattr(payload, "decision_function"):
+            if not isinstance(payload, IsolationForest):
+                raise ValueError(
+                    "Artifact payload must be IsolationForest, " f"got {type(payload).__name__}"
+                )
             config = payload.get_params() if hasattr(payload, "get_params") else {}
             model = cls(config=config)
             model._estimator = payload
@@ -735,6 +751,10 @@ class IsolationForestModel:
 
         # Load deserialized payload after cryptographic check passes
         model = cls.load(p_model)
+        if model.model_type != "IsolationForest" or not isinstance(
+            model._estimator, IsolationForest
+        ):
+            raise ValueError("Loaded artifact is not a valid IsolationForest estimator")
 
         # Validate loaded model internal attributes against manifest
         if model.threshold is None or abs(model.threshold - manifest_threshold) > 1e-9:

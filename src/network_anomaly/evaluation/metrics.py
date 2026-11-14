@@ -154,22 +154,25 @@ def compute_metrics(
                     f"outside explicit labels {target_labels}."
                 )
         else:
-            # Single-label subset (e.g., labels=[1] or labels=[0]):
-            # validate against canonical domain
+            # Expand single-label binary requests to the full canonical 2-class domain
+            # so confusion_matrix stays 2x2 and matches tn/fp/fn/tp counts.
             single_lbl = target_labels[0]
-            if single_lbl in (0, 1):
-                allowed_domain = {0, 1}
+            if not isinstance(single_lbl, bool) and single_lbl in (0, 1):
+                target_labels = [0, 1]
             elif single_lbl in ("0", "1"):
-                allowed_domain = {"0", "1"}
+                target_labels = ["0", "1"]
             elif single_lbl in ("Benign", "Attack"):
-                allowed_domain = {"Benign", "Attack"}
+                target_labels = ["Benign", "Attack"]
             else:
-                allowed_domain = {single_lbl}
-            invalid_vals = unique_vals - allowed_domain
+                raise ValueError(
+                    f"Unsupported single-class binary label {single_lbl!r}; "
+                    f"expected canonical binary labels."
+                )
+            invalid_vals = unique_vals - set(target_labels)
             if invalid_vals:
                 raise ValueError(
                     f"Found unexpected labels {sorted(str(v) for v in invalid_vals)} "
-                    f"outside domain {sorted(str(v) for v in allowed_domain)}."
+                    f"outside domain {sorted(str(v) for v in target_labels)}."
                 )
 
     cm = confusion_matrix(y_t, y_p, labels=target_labels)

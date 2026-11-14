@@ -252,3 +252,57 @@ class TestFailClosedIntegrity:
             IsolationForestModel.load_verified(
                 m_path, man_path, expected_preprocessor_artifact_sha256="d" * 64
             )
+
+    def test_mismatched_model_type_manifest_and_non_if_estimator_rejected(
+        self, synthetic_flow_data, tmp_path: Path
+    ):
+        """F1 regression: IsolationForestModel.load/load_verified enforce IsolationForest identity."""
+        import hashlib
+
+        from sklearn.ensemble import RandomForestClassifier
+
+        X, _, _ = synthetic_flow_data
+        model = IsolationForestModel(threshold=0.05)
+        model.fit(X)
+
+        m_path = tmp_path / "if_model.joblib"
+        man_path = tmp_path / "if_manifest.json"
+        model.save(m_path, man_path, preprocessor_artifact_sha256="c" * 64)
+
+        manifest = json.loads(man_path.read_text(encoding="utf-8"))
+        manifest["model_type"] = "RandomForestClassifier"
+        man_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        with pytest.raises(ValueError, match="model_type mismatch"):
+            IsolationForestModel.load_verified(m_path, man_path)
+
+        # Save a RandomForestClassifier under an IsolationForest-claiming manifest
+        rf = RandomForestClassifier(n_estimators=2, random_state=42).fit(
+            X, np.zeros(len(X), dtype=int)
+        )
+        rf_path = tmp_path / "rf_imposter.joblib"
+        joblib.dump({"model_type": "RandomForestClassifier", "estimator": rf}, rf_path)
+        rf_man_path = tmp_path / "rf_imposter_manifest.json"
+        manifest["model_type"] = "IsolationForest"
+        manifest["model_artifact_sha256"] = hashlib.sha256(rf_path.read_bytes()).hexdigest()
+        rf_man_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+        with pytest.raises(
+            ValueError, match="Unsupported|Expected IsolationForest|model_type mismatch"
+        ):
+            IsolationForestModel.load(rf_path)
+        with pytest.raises(
+            ValueError, match="Unsupported|Expected IsolationForest|model_type mismatch"
+        ):
+            IsolationForestModel.load_verified(rf_path, rf_man_path)
+
+        # Also reject raw non-IF estimator (no dict wrapper) under IsolationForest manifest
+        raw_rf_path = tmp_path / "rf_raw_imposter.joblib"
+        joblib.dump(rf, raw_rf_path)
+        manifest["model_artifact_sha256"] = hashlib.sha256(raw_rf_path.read_bytes()).hexdigest()
+        raw_rf_man = tmp_path / "rf_raw_imposter_manifest.json"
+        raw_rf_man.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        with pytest.raises(
+            ValueError,
+            match="Unsupported|Expected IsolationForest|Invalid model artifact payload",
+        ):
+            IsolationForestModel.load_verified(raw_rf_path, raw_rf_man)

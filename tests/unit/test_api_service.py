@@ -387,3 +387,166 @@ def test_timeline_chronological_ordering(api_service: ApiService):
     # Verify descending ordering
     timestamps = [item.timestamp for item in timeline.items]
     assert timestamps == sorted(timestamps, reverse=True)
+
+
+def _setup_synthetic_artifact_tree(
+    root: Path,
+    *,
+    include_rf: bool = True,
+    include_if: bool = False,
+) -> dict[str, Path]:
+    """Create isolated preprocessor + model artifact tree for ApiService F4/F6 tests."""
+    from network_anomaly.models.isolation_forest import IsolationForestModel
+
+    art_root = root / "artifacts"
+    prep_path = art_root / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    prep_manifest = (
+        root / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    )
+    rf_path = art_root / "models" / "random_forest" / "random_forest_baseline.joblib"
+    rf_manifest = root / "reports" / "models" / "random_forest_manifest.json"
+    if_path = art_root / "models" / "isolation_forest" / "isolation_forest.joblib"
+    if_manifest = root / "reports" / "models" / "isolation_forest_manifest.json"
+
+    prep_path.parent.mkdir(parents=True, exist_ok=True)
+    prep_manifest.parent.mkdir(parents=True, exist_ok=True)
+    rf_manifest.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        col: (
+            np.arange(12, dtype=float) + 1
+            if col not in CATEGORICAL_CODED_COLUMNS
+            else np.arange(12) % 3
+        )
+        for col in ML_FEATURE_COLUMNS
+    }
+    features = pd.DataFrame(data)
+    preprocessor = TrainOnlyPreprocessor(
+        config=PreprocessingConfig(scaler_type="none"),
+        dataset_sha256=EXPECTED_DATASET_SHA256,
+        split_manifest_sha256="b" * 64,
+    )
+    preprocessor.fit(features)
+    prep_sha = preprocessor.save(prep_path, prep_manifest)
+    X_trans = preprocessor.transform(features)
+
+    if include_rf:
+        rf_path.parent.mkdir(parents=True, exist_ok=True)
+        rf = RandomForestClassifier(n_estimators=3, random_state=42)
+        rf.fit(X_trans, np.arange(12) % 2)
+        joblib.dump(rf, rf_path)
+        rf_manifest.write_text(
+            json.dumps(
+                {
+                    "run_id": "test-rf-service-run",
+                    "model_type": "RandomForestClassifier",
+                    "model_artifact_sha256": _sha256_file(rf_path),
+                    "preprocessor_artifact_sha256": prep_sha,
+                    "feature_contract_version": FEATURE_CONTRACT_VERSION,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    if include_if:
+        if_path.parent.mkdir(parents=True, exist_ok=True)
+        iso = IsolationForestModel(config={"n_estimators": 5, "random_state": 42}, threshold=0.0)
+        iso.fit(X_trans)
+        iso.save(if_path, if_manifest, preprocessor_artifact_sha256=prep_sha)
+
+    return {
+        "artifacts": art_root,
+        "rf_path": rf_path,
+        "rf_manifest": rf_manifest,
+        "if_path": if_path,
+        "if_manifest": if_manifest,
+    }
+
+
+def test_health_check_does_not_mask_missing_default_rf_with_if_ready(
+    api_service: ApiService, tmp_path: Path
+):
+    """F4 regression: ready auxiliary IF model must not mark default RF health as healthy."""
+    paths = _setup_synthetic_artifact_tree(tmp_path, include_rf=False, include_if=True)
+    sample_flow = [{"features": {col: 1.0 for col in ML_FEATURE_COLUMNS}}]
+
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        health_default = api_service.check_health()
+        assert health_default.status == "degraded"
+        assert health_default.model_ready is False
+        assert health_default.preprocessor_ready is False
+        assert health_default.details["default_model"] == "random_forest"
+        assert health_default.details["default_analysis_ready"] is False
+        assert health_default.details["models_ready"] == {
+            "random_forest": False,
+            "isolation_forest": True,
+        }
+
+        with pytest.raises(ModelNotReadyError):
+            api_service.analyze_flows(sample_flow)
+
+        health_if = api_service.check_health(model_name="isolation_forest")
+        assert health_if.status == "healthy"
+        assert health_if.model_ready is True
+        assert health_if.details["target_model"] == "isolation_forest"
+        assert health_if.details["default_analysis_ready"] is False
+
+        res_if = api_service.analyze_flows(sample_flow, model_name="isolation_forest")
+        assert res_if.model_ready is True
+        assert res_if.inference_mode == "verified_model"
+        assert res_if.results[0].prediction in (0, 1)
+
+
+def test_pipeline_caching_avoids_redundant_loads_and_invalidates_on_change(
+    api_service: ApiService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """F6 regression: reuse digest-verified cached pipeline and invalidate when artifacts change."""
+    from network_anomaly.inference.predict import InferencePipeline
+
+    paths = _setup_synthetic_artifact_tree(tmp_path, include_rf=True, include_if=False)
+    sample_flow = [{"features": {col: 1.0 for col in ML_FEATURE_COLUMNS}}]
+
+    original_from_artifacts = InferencePipeline.from_artifacts
+    load_calls: list[Path] = []
+
+    def counting_from_artifacts(*args, **kwargs):
+        load_calls.append(Path(kwargs["model_artifact_path"]))
+        return original_from_artifacts(*args, **kwargs)
+
+    monkeypatch.setattr(InferencePipeline, "from_artifacts", counting_from_artifacts)
+
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        health = api_service.check_health()
+        assert health.status == "healthy"
+        assert len(load_calls) == 1
+
+        for _ in range(3):
+            res = api_service.analyze_flows(sample_flow, model_name="random_forest")
+            assert res.model_ready is True
+            assert res.inference_mode == "verified_model"
+        assert len(load_calls) == 1
+
+        api_service.invalidate_pipeline_cache("random_forest")
+        api_service.analyze_flows(sample_flow, model_name="random_forest")
+        assert len(load_calls) == 2
+
+        # Updating manifest run_id changes manifest SHA-256 and triggers one clean reload.
+        manifest_data = json.loads(paths["rf_manifest"].read_text(encoding="utf-8"))
+        manifest_data["run_id"] = "test-rf-service-run-v2"
+        paths["rf_manifest"].write_text(json.dumps(manifest_data), encoding="utf-8")
+        api_service.analyze_flows(sample_flow, model_name="random_forest")
+        assert len(load_calls) == 3
+        cached_pipe = api_service._load_inference_pipeline("random_forest")
+        assert cached_pipe.model_metadata["run_id"] == "test-rf-service-run-v2"
+        assert len(load_calls) == 3
+
+        # Tampering with model bytes invalidates cache and fails closed (no stale pipeline).
+        paths["rf_path"].write_bytes(paths["rf_path"].read_bytes() + b"\x00tamper")
+        with pytest.raises(ModelNotReadyError):
+            api_service.analyze_flows(sample_flow, model_name="random_forest")

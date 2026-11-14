@@ -618,3 +618,21 @@ def test_fail_closed_prerequisites_when_binaries_missing(tmp_path: Path) -> None
     assert limitations["rare_attack_classes"]["rare_categories_in_test"]["Worms"] == 36
     assert limitations["feature_overlap_ambiguity"]["overlapping_unique_feature_keys"] is None
     assert limitations["evidence_status"] == "NOT VERIFIED"
+
+
+def test_compute_metrics_single_label_binary_expands_confusion_matrix() -> None:
+    """F5 regression: single-class binary labels still yield 2x2 confusion_matrix matching tn/fp/fn/tp."""
+    for single_label in ([1], [0]):
+        metrics = compute_metrics([0, 1], [1, 1], labels=single_label)
+        cm = metrics["confusion_matrix"]
+        labeled = metrics["confusion_matrix_labeled"]
+        assert cm == [[0, 1], [0, 1]]
+        assert sum(sum(row) for row in cm) == sum(labeled.values()) == 2
+        assert labeled == {"tn": 0, "fp": 1, "fn": 0, "tp": 1}
+        assert metrics["false_positive_rate"] == 1.0
+
+    str_metrics = compute_metrics(["Benign", "Attack"], ["Attack", "Attack"], labels=["Attack"])
+    assert str_metrics["confusion_matrix"] == [[0, 1], [0, 1]]
+
+    with pytest.raises(ValueError, match="Unsupported single-class binary label"):
+        compute_metrics(["weird"], ["weird"], labels=["weird"])

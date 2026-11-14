@@ -781,3 +781,129 @@ def test_prohibit_unverified_deserialization_execution(
         load_verified_model(fake_model, manifest_path=None)
 
     assert not joblib_called, "joblib.load was called on an unverified model!"
+
+
+def test_load_verified_model_rejects_mismatched_isolation_forest_payload(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+    tmp_path: Path,
+):
+    """F1 regression: IsolationForest serialized with RF manifest must be rejected."""
+    from sklearn.ensemble import IsolationForest
+
+    prep_art_path, prep_man_path, _, model_man_path = synthetic_preprocessor_and_model
+    base_man = json.loads(model_man_path.read_text(encoding="utf-8"))
+    X_np = synthetic_features.to_numpy(dtype=np.float64)
+
+    # Case 1: IsolationForestModel wrapper saved to disk, disguised with RF manifest
+    if_model = IsolationForestModel(config={"n_estimators": 5, "random_state": 42}, threshold=0.0)
+    if_model.fit(X_np)
+    wrapped_path = tmp_path / "disguised_if_wrapped.joblib"
+    wrapped_man = tmp_path / "disguised_if_wrapped_manifest.json"
+    if_model.save(
+        wrapped_path,
+        wrapped_man,
+        preprocessor_artifact_sha256=base_man["preprocessor_artifact_sha256"],
+    )
+    rf_claimed = dict(base_man)
+    rf_claimed["model_type"] = "RandomForestClassifier"
+    rf_claimed["model_artifact_sha256"] = _sha256_file(wrapped_path)
+    wrapped_man.write_text(json.dumps(rf_claimed, indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Model type mismatch"):
+        load_verified_model(
+            wrapped_path,
+            manifest_path=wrapped_man,
+            expected_preprocessor_sha256=base_man["preprocessor_artifact_sha256"],
+        )
+    with pytest.raises(ValueError, match="Model type mismatch"):
+        InferencePipeline.from_artifacts(
+            model_artifact_path=wrapped_path,
+            preprocessor_artifact_path=prep_art_path,
+            model_manifest_path=wrapped_man,
+            preprocessor_manifest_path=prep_man_path,
+        )
+
+    # Case 2: Raw sklearn IsolationForest estimator disguised with RF manifest
+    raw_if = IsolationForest(n_estimators=5, random_state=42).fit(X_np)
+    raw_path = tmp_path / "disguised_if_raw.joblib"
+    joblib.dump(raw_if, raw_path)
+    raw_man = tmp_path / "disguised_if_raw_manifest.json"
+    raw_claimed = dict(base_man)
+    raw_claimed["model_type"] = "RandomForest"
+    raw_claimed["model_artifact_sha256"] = _sha256_file(raw_path)
+    raw_man.write_text(json.dumps(raw_claimed, indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Model type mismatch"):
+        load_verified_model(
+            raw_path,
+            manifest_path=raw_man,
+            expected_preprocessor_sha256=base_man["preprocessor_artifact_sha256"],
+        )
+
+
+def test_load_verified_model_rejects_rf_with_isolation_manifest_or_missing_type(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    tmp_path: Path,
+):
+    """F1 regression: RF payload under IsolationForest or missing model_type manifest is rejected."""
+    _, _, model_art_path, model_man_path = synthetic_preprocessor_and_model
+    base_man = json.loads(model_man_path.read_text(encoding="utf-8"))
+
+    if_claimed = dict(base_man)
+    if_claimed["model_type"] = "IsolationForest"
+    if_claimed["threshold"] = 0.0
+    if_claimed["score_direction"] = "higher_is_more_anomalous"
+    if_claimed["label_mapping"] = {"0": "Benign", "1": "Attack"}
+    if_claimed["feature_columns"] = list(ML_FEATURE_COLUMNS)
+    bad_man_if = tmp_path / "rf_as_if_manifest.json"
+    bad_man_if.write_text(json.dumps(if_claimed, indent=2), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError,
+        match="Unsupported|Expected IsolationForest|Invalid model artifact payload|Model type mismatch",
+    ):
+        load_verified_model(
+            model_art_path,
+            manifest_path=bad_man_if,
+            expected_preprocessor_sha256=base_man["preprocessor_artifact_sha256"],
+        )
+
+    missing_type = dict(base_man)
+    missing_type.pop("model_type", None)
+    bad_man_missing = tmp_path / "missing_type_manifest.json"
+    bad_man_missing.write_text(json.dumps(missing_type, indent=2), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing required field 'model_type'"):
+        load_verified_model(model_art_path, manifest_path=bad_man_missing)
+
+
+def test_inference_pipeline_rejects_non_binary_raw_predictions(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+):
+    """F1 regression: InferencePipeline.predict refuses raw {-1, 1} or non-binary predictions."""
+    prep_art_path, prep_man_path, _, model_man_path = synthetic_preprocessor_and_model
+    prep, prep_meta = load_verified_preprocessor(prep_art_path, prep_man_path)
+    model_meta = json.loads(model_man_path.read_text(encoding="utf-8"))
+
+    class BadPredictionModel:
+        def __init__(self, values):
+            self._values = values
+
+        def predict(self, X):
+            return self._values[: len(X)]
+
+    for bad_values in (
+        np.array([1, -1], dtype=np.int64),
+        np.array([True, False], dtype=bool),
+        np.array([1, True], dtype=object),
+    ):
+        pipeline = InferencePipeline(
+            model=BadPredictionModel(bad_values),
+            preprocessor=prep,
+            model_metadata=model_meta,
+            preprocessor_metadata=prep_meta,
+        )
+        with pytest.raises(ValueError, match="non-binary labels"):
+            pipeline.predict(synthetic_features.iloc[:2])

@@ -245,6 +245,23 @@ def load_verified_preprocessor(
     return preprocessor, metadata
 
 
+def _canonical_model_family(model_type: str) -> str:
+    """Map model class and manifest type aliases to canonical model family identifiers."""
+    normalized = model_type.strip()
+    aliases = {
+        "RandomForest": "random_forest",
+        "RandomForestClassifier": "random_forest",
+        "RandomForestModel": "random_forest",
+        "IsolationForest": "isolation_forest",
+        "IsolationForestModel": "isolation_forest",
+        "XGBoost": "xgboost",
+        "XGBClassifier": "xgboost",
+        "XGBoostModel": "xgboost",
+        "HistGradientBoostingClassifier": "hist_gradient_boosting",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def load_verified_model(
     model_artifact_path: Union[str, Path],
     manifest_path: Optional[Union[str, Path]] = None,
@@ -361,13 +378,24 @@ def load_verified_model(
             "Inference pipeline requires exact preprocessor compatibility."
         )
 
+    # Verify model_type is explicitly declared before deserialization
+    manifest_model_type = manifest_data.get("model_type")
+    if (
+        not isinstance(manifest_model_type, str)
+        or not manifest_model_type.strip()
+        or manifest_model_type.strip().lower() == "unknown"
+    ):
+        raise ValueError(f"Model manifest at '{man_p}' missing required field 'model_type'")
+    manifest_model_type = manifest_model_type.strip()
+    expected_family = _canonical_model_family(manifest_model_type)
+
     man_sha = _sha256_file(man_p)
     model_metadata: Dict[str, Any] = {
         "model_artifact_path": str(model_path),
         "model_artifact_sha256": model_sha256,
         "model_manifest_path": str(man_p),
         "model_manifest_sha256": man_sha,
-        "model_type": manifest_data.get("model_type", "unknown"),
+        "model_type": manifest_model_type,
         "run_id": manifest_data.get("run_id", "untracked"),
         "feature_contract_version": feat_contract,
         "class_mapping": manifest_data.get("class_mapping"),
@@ -375,7 +403,7 @@ def load_verified_model(
         "raw_manifest": manifest_data,
     }
 
-    if model_metadata["model_type"] == "IsolationForest":
+    if expected_family == "isolation_forest":
         from network_anomaly.models.isolation_forest import IsolationForestModel
 
         model = IsolationForestModel.load_verified(
@@ -391,11 +419,13 @@ def load_verified_model(
     except Exception as e:
         raise RuntimeError(f"Failed to deserialize model artifact from '{model_path}': {e}")
 
+    from sklearn.ensemble import IsolationForest
+
     if isinstance(loaded_obj, dict) and "estimator" in loaded_obj:
         # Artifact is a serialization payload dictionary (e.g. from RandomForestModel.save)
         model = loaded_obj["estimator"]
-        if model_metadata.get("model_type") == "unknown":
-            model_metadata["model_type"] = loaded_obj.get("model_type", type(model).__name__)
+        payload_model_type = loaded_obj.get("model_type")
+        estimator = model
         if not model_metadata.get("class_mapping") and "classes" in loaded_obj:
             classes = loaded_obj["classes"]
             if classes is not None and isinstance(classes, list):
@@ -404,9 +434,32 @@ def load_verified_model(
                 }
     else:
         model = loaded_obj
+        payload_model_type = getattr(loaded_obj, "model_type", None)
+        # Only unwrap private `_estimator` (our repo wrapper convention); sklearn
+        # ensembles expose public `.estimator` as the base template class, not self.
+        private_est = getattr(loaded_obj, "_estimator", None)
+        estimator = private_est if private_est is not None else loaded_obj
 
-    if model_metadata["model_type"] == "unknown":
-        model_metadata["model_type"] = type(model).__name__
+    estimator_name = type(estimator).__name__
+    if isinstance(estimator, IsolationForest) or (
+        payload_model_type is not None
+        and _canonical_model_family(str(payload_model_type)) == "isolation_forest"
+    ):
+        raise ValueError(
+            f"Model type mismatch between manifest ('{manifest_model_type}') and "
+            f"deserialized payload (model_type={payload_model_type!r}, estimator='{estimator_name}'): "
+            "IsolationForest artifacts must declare model_type='IsolationForest'"
+        )
+
+    estimator_family = _canonical_model_family(estimator_name)
+    if estimator_family != expected_family or (
+        payload_model_type is not None
+        and _canonical_model_family(str(payload_model_type)) != expected_family
+    ):
+        raise ValueError(
+            f"Model type mismatch between manifest ('{manifest_model_type}') and "
+            f"deserialized payload (model_type={payload_model_type!r}, estimator='{estimator_name}')"
+        )
 
     return model, model_metadata
 
@@ -542,6 +595,16 @@ class InferencePipeline:
 
         # 2. Predict with model
         preds = self.model.predict(X_trans)
+        preds_arr = np.asarray(preds)
+        if (
+            preds_arr.dtype == bool
+            or any(isinstance(v, (bool, np.bool_)) for v in preds_arr.flat)
+            or any(v not in (0, 1) for v in np.unique(preds_arr))
+        ):
+            raise ValueError(
+                "Verified model predict() produced non-binary labels: "
+                f"{np.unique(preds_arr).tolist()}. Expected strictly {{0, 1}}."
+            )
 
         now_str = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         inference_run_id = run_id or f"inference-{now_str}-{uuid.uuid4().hex[:6]}"
