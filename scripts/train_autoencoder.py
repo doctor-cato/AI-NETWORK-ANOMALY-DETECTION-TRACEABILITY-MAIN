@@ -11,16 +11,17 @@ Pipeline stages:
    preprocessor artifact + companion manifest, 47-feature schema contract.
 2. Verified preprocessor loading: loaded strictly via TrainOnlyPreprocessor.load_verified().
 3. Partition loading: reads canonical partition indices with 'source_row_index' header;
-   streams CSV using usecols to minimize memory footprint.
+   streams unified CSV using usecols up to max required index and filters by chunk mask.
 4. Leakage & schema audit: asserts zero target/metadata leakage across Train, Val, and Test.
 5. Training population filtering: benign-only (Label == 0) from Train partition.
 6. Model training: unsupervised MLP Autoencoder (reconstruction error objective).
-7. Validation-only threshold calibration: target FPR quantile or FPR-constrained
-   threshold; pre-registered unknown categories (Worms, Backdoor) strictly excluded.
-8. Held-out Test Lock: Test data is not loaded by default; evaluated only with --evaluate-test
-   after model and threshold are frozen.
-9. Verification & serialization: model artifact SHA-256, companion manifest,
-   round-trip reload check.
+7. Validation-only threshold calibration: target FPR quantile or empirical FPR-constrained
+   threshold; pre-registered unknown categories strictly excluded.
+8. Held-out Test Lock: Contract A isolates Test from fit, early stopping, and threshold
+   calibration; Contract B drops non-Train/Val rows at the chunk-mask boundary so 0 Test
+   rows are materialized unless --evaluate-test is enabled after model/threshold freeze.
+9. Verification & serialization: model/config/threshold SHA-256, companion manifest with
+   configured unknown categories & verified partition index hashes, round-trip reload check.
 10. Reports: metrics.json, threshold_calibration.json, training_metadata.json, run_metadata.json,
     evaluation_report.md.
 """
@@ -407,11 +408,12 @@ def check_no_leakage_in_matrix(X_df: pd.DataFrame) -> dict[str, Any]:
     return {"status": "PASS", "message": "No target or trace metadata leakage in X."}
 
 
-def check_finite_values(X_array: np.ndarray, partition_name: str) -> dict[str, Any]:
+def check_finite_values(X_array: Any, partition_name: str) -> dict[str, Any]:
     """Verify that array contains no NaN or infinite values."""
-    if not np.isfinite(X_array).all():
-        n_nan = int(np.isnan(X_array).sum())
-        n_inf = int(np.isinf(X_array).sum())
+    arr = np.asarray(X_array, dtype=np.float64)
+    if not np.isfinite(arr).all():
+        n_nan = int(np.isnan(arr).sum())
+        n_inf = int(np.isinf(arr).sum())
         return {
             "status": "FAIL",
             "message": f"Non-finite values in {partition_name}: NaN={n_nan}, Inf={n_inf}",
@@ -511,18 +513,26 @@ def load_and_transform_partitions(
     preprocessor: Any,
     include_test: bool = False,
     sample_size: int | None = None,
+    chunk_size: int = 100_000,
 ) -> dict[str, dict[str, Any]]:
-    """Stream raw CSV using usecols and extract transformed features, labels, and attacks.
+    """Stream unified raw CSV using usecols and extract transformed features, labels, and attacks.
 
     Guarantees:
-    - Held-out Test is never loaded unless include_test=True.
-    - Preprocessor transform-only (no fitting).
+    - Contract A (Fit/Calibration Isolation): Test data never enters fit, early stopping,
+      or threshold calibration.
+    - Contract B (Stream-Boundary Filtering & Materialization Lock): When include_test=False,
+      test_indices are not read into partition_map; the unified raw CSV stream stops as soon
+      as current_row exceeds max(train_indices, val_indices), non-Train/Val rows are dropped
+      at the chunk-mask boundary, and 0 Test rows are materialized or transformed.
+    - Preprocessor transform-only (no fitting); returns float64 NumPy feature matrices.
     - Uses usecols=list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS) to minimize RAM footprint.
     - Ensures exact 47 canonical ML features are in canonical order.
-    - Fast partition mapping with partition_map integer lookup.
     - Strict verification that partition indices are mutually disjoint.
     - Strict row count verification against expected index sizes.
     """
+    if chunk_size < 1:
+        raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
+
     train_indices = load_partition_indices(
         split_manifest, indices_dir, "train", max_rows=sample_size
     )
@@ -599,45 +609,47 @@ def load_and_transform_partitions(
     val_chunks: list[pd.DataFrame] = []
     test_chunks: list[pd.DataFrame] = []
 
-    # Stream CSV in chunks using usecols and partition_map
-    chunk_size = 100_000
+    # Stream unified CSV in chunks using usecols and partition_map; stop once max_idx is passed
     current_row = 0
-    for chunk in pd.read_csv(
+    with pd.read_csv(
         raw_data_path,
         usecols=cols_to_read,
         chunksize=chunk_size,
         low_memory=False,
-    ):
-        n_rows = len(chunk)
-        end_row = current_row + n_rows
-        if current_row <= max_idx:
+    ) as reader:
+        for chunk in reader:
+            if current_row > max_idx:
+                break
+
+            n_rows = len(chunk)
+            end_row = current_row + n_rows
             valid_len = min(n_rows, max_idx + 1 - current_row)
             chunk_mask = partition_map[current_row : current_row + valid_len]
             if valid_len < n_rows:
                 chunk_mask = np.pad(chunk_mask, (0, n_rows - valid_len), constant_values=-1)
-        else:
-            chunk_mask = np.full(n_rows, -1, dtype=np.int8)
 
-        m0 = np.where(chunk_mask == 0)[0]
-        if len(m0) > 0:
-            sub0 = chunk.iloc[m0].copy()
-            sub0["_src_row_idx"] = current_row + m0
-            train_chunks.append(sub0)
+            m0 = np.where(chunk_mask == 0)[0]
+            if len(m0) > 0:
+                sub0 = chunk.iloc[m0].copy()
+                sub0["_src_row_idx"] = current_row + m0
+                train_chunks.append(sub0)
 
-        m1 = np.where(chunk_mask == 1)[0]
-        if len(m1) > 0:
-            sub1 = chunk.iloc[m1].copy()
-            sub1["_src_row_idx"] = current_row + m1
-            val_chunks.append(sub1)
+            m1 = np.where(chunk_mask == 1)[0]
+            if len(m1) > 0:
+                sub1 = chunk.iloc[m1].copy()
+                sub1["_src_row_idx"] = current_row + m1
+                val_chunks.append(sub1)
 
-        if include_test:
-            m2 = np.where(chunk_mask == 2)[0]
-            if len(m2) > 0:
-                sub2 = chunk.iloc[m2].copy()
-                sub2["_src_row_idx"] = current_row + m2
-                test_chunks.append(sub2)
+            if include_test:
+                m2 = np.where(chunk_mask == 2)[0]
+                if len(m2) > 0:
+                    sub2 = chunk.iloc[m2].copy()
+                    sub2["_src_row_idx"] = current_row + m2
+                    test_chunks.append(sub2)
 
-        current_row = end_row
+            current_row = end_row
+            if current_row > max_idx:
+                break
 
     def assemble_partition(
         row_chunks: list[pd.DataFrame], expected_indices: np.ndarray, part_name: str
@@ -665,9 +677,9 @@ def load_and_transform_partitions(
         # Reorder columns explicitly to 47 canonical ML features
         X_raw = df[list(ML_FEATURE_COLUMNS)].copy()
 
-        # Transform via preprocessor
+        # Transform via preprocessor and normalize to float64 NumPy array
         if hasattr(preprocessor, "transform"):
-            X_trans = preprocessor.transform(X_raw)
+            X_trans = np.asarray(preprocessor.transform(X_raw), dtype=np.float64)
         else:
             X_trans = np.asarray(X_raw, dtype=np.float64)
 
@@ -713,6 +725,8 @@ def calibrate_threshold(
         raise ValueError("Cannot calibrate threshold: validation scores are empty.")
     if len(val_scores) != len(val_y):
         raise ValueError("val_scores and val_y length mismatch.")
+    if not np.isfinite(val_scores).all():
+        raise ValueError("Cannot calibrate threshold: validation scores contain NaN or Inf.")
 
     # Validate target_fpr
     if not isinstance(target_fpr, (numbers.Real, float, int)) or isinstance(target_fpr, bool):
@@ -731,9 +745,9 @@ def calibrate_threshold(
     if not np.any(is_benign):
         raise ValueError("Validation set contains no benign samples for threshold calibration.")
 
-    benign_scores = val_scores[is_benign]
-    calib_scores = val_scores[calib_mask]
-    calib_y = val_y[calib_mask]
+    benign_scores = np.asarray(val_scores[is_benign], dtype=np.float64)
+    calib_scores = np.asarray(val_scores[calib_mask], dtype=np.float64)
+    calib_y = np.asarray(val_y[calib_mask])
 
     n_benign = int(is_benign.sum())
     n_known_attack = int(is_known_attack.sum())
@@ -744,9 +758,27 @@ def calibrate_threshold(
         threshold = float(np.percentile(benign_scores, quantile * 100))
     elif method == "fpr_constrained":
         sorted_benign = np.sort(benign_scores)
-        idx = int(np.floor((1.0 - target_fpr) * len(sorted_benign)))
-        idx = max(0, min(idx, len(sorted_benign) - 1))
-        threshold = float(sorted_benign[idx])
+        n_ben = len(sorted_benign)
+        unique_vals, first_idxs = np.unique(sorted_benign, return_index=True)
+        # Because sorted_benign is non-decreasing and first_idxs holds the first index of each
+        # distinct score, the number of benign samples with (score >= unique_vals[k]) is
+        # exactly (n_ben - first_idxs[k]).
+        candidate_fprs = (n_ben - first_idxs) / n_ben
+        valid_mask = candidate_fprs <= target_fpr
+        if np.any(valid_mask):
+            first_valid_pos = int(np.argmax(valid_mask))
+            threshold = float(unique_vals[first_valid_pos])
+            while float(
+                (benign_scores >= threshold).sum() / n_ben
+            ) > target_fpr and first_valid_pos + 1 < len(unique_vals):
+                first_valid_pos += 1
+                threshold = float(unique_vals[first_valid_pos])
+            if float((benign_scores >= threshold).sum() / n_ben) > target_fpr:
+                threshold = float(np.nextafter(float(sorted_benign[-1]), np.inf))
+        else:
+            # No threshold inside observed benign scores meets FPR <= target_fpr (e.g.,
+            # target_fpr == 0.0, target_fpr < 1 / n_ben, or ties at the maximum benign score).
+            threshold = float(np.nextafter(float(sorted_benign[-1]), np.inf))
     elif method == "supervised_best_f1":
         candidate_thresholds = np.percentile(calib_scores, np.linspace(50, 99.9, 100))
         best_f1 = -1.0
@@ -772,7 +804,7 @@ def calibrate_threshold(
     return {
         "threshold": threshold,
         "calibration_method": method,
-        "target_fpr": target_fpr,
+        "target_fpr": float(target_fpr),
         "empirical_val_fpr": empirical_fpr,
         "n_benign_used": n_benign,
         "n_known_attack_used": n_known_attack,
@@ -780,6 +812,36 @@ def calibrate_threshold(
         "unknown_categories_excluded": sorted(unknown_categories),
         "threshold_frozen": True,
     }
+
+
+def verify_test_evaluation_lock(
+    model: Any,
+    threshold_meta: dict[str, Any] | None,
+    evaluate_test: bool,
+) -> None:
+    """Fail-closed check ensuring Test evaluation occurs only after model & threshold freeze."""
+    if not evaluate_test:
+        raise RuntimeError(
+            "Held-out Test Lock violation: Test evaluation requires --evaluate-test."
+        )
+    coefs = getattr(model, "coefs_", None)
+    if coefs is None or len(coefs) == 0:
+        raise RuntimeError(
+            "Held-out Test Lock violation: Autoencoder must be fitted before Test evaluation."
+        )
+    if not isinstance(threshold_meta, dict) or threshold_meta.get("threshold_frozen") is not True:
+        raise RuntimeError(
+            "Held-out Test Lock violation: Validation threshold must be calibrated and frozen "
+            "before Test evaluation."
+        )
+    th = threshold_meta.get("threshold")
+    if (
+        not isinstance(th, (numbers.Real, float, int))
+        or isinstance(th, bool)
+        or not np.isfinite(th)
+        or float(th) < 0.0
+    ):
+        raise RuntimeError(f"Held-out Test Lock violation: invalid frozen threshold value {th!r}.")
 
 
 # ---------------------------------------------------------------------------
@@ -911,14 +973,196 @@ def compute_metrics(
 # ---------------------------------------------------------------------------
 
 
+def _resolve_unknown_categories(
+    unknown_categories: Sequence[str] | frozenset[str] | set[str] | None,
+    training_meta: dict[str, Any],
+    threshold_meta: dict[str, Any],
+) -> list[str]:
+    """Resolve and normalize configured unknown attack categories for manifest metadata."""
+    raw = (
+        unknown_categories
+        if unknown_categories is not None
+        else training_meta.get("unknown_attack_categories")
+    )
+    if raw is None:
+        raw = threshold_meta.get("unknown_categories_excluded")
+    if raw is None:
+        raw = DEFAULT_UNKNOWN_ATTACK_CATEGORIES
+    if isinstance(raw, str):
+        items = [c.strip() for c in raw.split(",") if c.strip()]
+    else:
+        items = [str(c).strip() for c in raw if str(c).strip()]
+    return sorted(set(items))
+
+
+def _is_nonempty_str(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _is_optional_nonempty_str(value: Any) -> bool:
+    return value is None or _is_nonempty_str(value)
+
+
+def _is_valid_real_number(value: Any) -> bool:
+    return isinstance(value, numbers.Real) and not isinstance(value, bool) and np.isfinite(value)
+
+
+def _verify_safe_sidecar_file(
+    manifest_dir: Path,
+    manifest: dict[str, Any],
+    file_key: str,
+    sha_key: str,
+    label: str,
+) -> dict[str, Any]:
+    """Verify safe relative filename, existence, SHA-256 digest, and JSON payload."""
+    rel_name = manifest.get(file_key)
+    expected_sha = manifest.get(sha_key)
+    if not _is_nonempty_str(rel_name) or Path(rel_name).name != rel_name:
+        raise ValueError(f"Manifest has invalid or unsafe {file_key}: {rel_name!r}")
+    if not _is_nonempty_str(expected_sha):
+        raise ValueError(f"Manifest missing required field: {sha_key}")
+
+    sidecar_path = manifest_dir / rel_name
+    if not sidecar_path.exists():
+        raise FileNotFoundError(f"Autoencoder {label} sidecar not found: {sidecar_path}")
+
+    actual_sha = sha256_file(sidecar_path)
+    if actual_sha != expected_sha:
+        raise ValueError(
+            f"Autoencoder {label} SHA-256 mismatch!\n"
+            f"  expected: {expected_sha}\n"
+            f"  actual:   {actual_sha}"
+        )
+
+    try:
+        with sidecar_path.open("r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except Exception as exc:
+        raise ValueError(f"Autoencoder {label} JSON unreadable: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Autoencoder {label} JSON payload must be an object.")
+    return payload
+
+
+def _validate_manifest_provenance(
+    manifest: dict[str, Any],
+    config_payload: dict[str, Any],
+    threshold_payload: dict[str, Any],
+    require_complete_provenance: bool,
+) -> None:
+    """Validate linked dataset, split, preprocessor, model, and calibration provenance."""
+    unknown_cats = manifest.get("unknown_attack_categories")
+    if not isinstance(unknown_cats, list) or not all(_is_nonempty_str(c) for c in unknown_cats):
+        raise ValueError("Manifest field 'unknown_attack_categories' must be a list of strings.")
+
+    threshold_val = manifest.get("threshold")
+    if not _is_valid_real_number(threshold_val) or float(threshold_val) < 0.0:
+        raise ValueError(f"Manifest has invalid threshold: {threshold_val!r}")
+
+    th_cal = manifest.get("threshold_calibration")
+    if not isinstance(th_cal, dict) or th_cal != threshold_payload:
+        raise ValueError("Manifest 'threshold_calibration' does not match verified threshold file.")
+    cal_th = th_cal.get("threshold")
+    if not _is_valid_real_number(cal_th) or float(cal_th) != float(threshold_val):
+        raise ValueError("Manifest threshold disagrees with threshold_calibration.threshold.")
+
+    cal_unknown = th_cal.get("unknown_categories_excluded")
+    if cal_unknown is not None and sorted(map(str, cal_unknown)) != sorted(unknown_cats):
+        raise ValueError(
+            "Manifest unknown_attack_categories disagrees with "
+            "threshold_calibration.unknown_categories_excluded."
+        )
+
+    arch = manifest.get("model_architecture")
+    expected_dim = len(ML_FEATURE_COLUMNS)
+    if (
+        not isinstance(arch, dict)
+        or arch.get("input_dimension") != expected_dim
+        or arch.get("output_dimension") != expected_dim
+    ):
+        raise ValueError(
+            f"Manifest model_architecture dimensions must match canonical {expected_dim} features."
+        )
+
+    hparams = manifest.get("hyperparameters")
+    if not isinstance(hparams, dict) or not hparams or hparams != config_payload:
+        raise ValueError("Manifest hyperparameters missing or inconsistent with config sidecar.")
+
+    part_hashes = manifest.get("partition_indices_sha256")
+    if (
+        not isinstance(part_hashes, dict)
+        or "train" not in part_hashes
+        or "validation" not in part_hashes
+    ):
+        raise ValueError(
+            "Manifest missing required 'partition_indices_sha256' entries for train and validation."
+        )
+    for part_name in ("train", "validation"):
+        if not _is_optional_nonempty_str(part_hashes.get(part_name)):
+            raise ValueError(f"Manifest has invalid partition index hash for '{part_name}'.")
+    if "test" in part_hashes and not _is_optional_nonempty_str(part_hashes.get("test")):
+        raise ValueError("Manifest has invalid partition index hash for 'test'.")
+
+    for field in ("dataset_sha256", "split_manifest_sha256", "preprocessor_sha256"):
+        if field not in manifest or not _is_optional_nonempty_str(manifest.get(field)):
+            raise ValueError(f"Manifest has missing or invalid field: {field}")
+
+    provenance = manifest.get("provenance")
+    if not isinstance(provenance, dict):
+        raise ValueError("Manifest missing required 'provenance' metadata object.")
+    prov_dataset = provenance.get("dataset", {})
+    prov_split = provenance.get("split", {})
+    prov_prep = provenance.get("preprocessor", {})
+    prov_model = provenance.get("model", {})
+    prov_cal = provenance.get("calibration", {})
+    if (
+        not isinstance(prov_dataset, dict)
+        or not isinstance(prov_split, dict)
+        or not isinstance(prov_prep, dict)
+        or not isinstance(prov_model, dict)
+        or not isinstance(prov_cal, dict)
+    ):
+        raise ValueError("Manifest 'provenance' sections must be objects.")
+
+    if (
+        prov_dataset.get("sha256") != manifest.get("dataset_sha256")
+        or prov_split.get("manifest_sha256") != manifest.get("split_manifest_sha256")
+        or prov_split.get("partition_indices_sha256") != part_hashes
+        or prov_prep.get("artifact_sha256") != manifest.get("preprocessor_sha256")
+        or prov_model.get("sha256") != manifest.get("model_sha256")
+        or prov_model.get("config_sha256") != manifest.get("config_sha256")
+        or prov_cal.get("threshold_sha256") != manifest.get("threshold_sha256")
+        or prov_cal.get("unknown_attack_categories") != unknown_cats
+    ):
+        raise ValueError("Manifest 'provenance' object disagrees with top-level provenance fields.")
+
+    enforce_full = require_complete_provenance or bool(manifest.get("provenance_complete"))
+    if enforce_full:
+        required_hashes = {
+            "dataset_sha256": manifest.get("dataset_sha256"),
+            "split_manifest_sha256": manifest.get("split_manifest_sha256"),
+            "preprocessor_sha256": manifest.get("preprocessor_sha256"),
+            "partition_indices_sha256.train": part_hashes.get("train"),
+            "partition_indices_sha256.validation": part_hashes.get("validation"),
+        }
+        missing = [k for k, v in required_hashes.items() if not _is_nonempty_str(v)]
+        if missing:
+            raise ValueError(f"Manifest missing complete verified provenance hashes: {missing}")
+        if th_cal.get("threshold_frozen") is not True:
+            raise ValueError(
+                "Complete provenance requires threshold_calibration.threshold_frozen=True."
+            )
+
+
 def save_artifacts(
     model: Any,
     config: dict[str, Any],
     threshold_meta: dict[str, Any],
     training_meta: dict[str, Any],
     output_dir: Path,
+    unknown_categories: Sequence[str] | frozenset[str] | set[str] | None = None,
 ) -> dict[str, Any]:
-    """Save model artifact, configuration, threshold, and companion manifest."""
+    """Save model artifact, configuration, threshold, and verified companion manifest."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model_file = output_dir / "autoencoder_model.joblib"
@@ -931,15 +1175,86 @@ def save_artifacts(
 
     with config_file.open("w", encoding="utf-8") as fh:
         json.dump(config, fh, indent=2)
+    config_sha256 = sha256_file(config_file)
 
     with threshold_file.open("w", encoding="utf-8") as fh:
         json.dump(threshold_meta, fh, indent=2)
+    threshold_sha256 = sha256_file(threshold_file)
+
+    resolved_unknown = _resolve_unknown_categories(
+        unknown_categories=unknown_categories,
+        training_meta=training_meta,
+        threshold_meta=threshold_meta,
+    )
+
+    raw_part_hashes = training_meta.get("partition_indices_sha256")
+    part_hashes = dict(raw_part_hashes) if isinstance(raw_part_hashes, dict) else {}
+    train_idx_sha = part_hashes.get("train") or training_meta.get("train_indices_sha256")
+    val_idx_sha = part_hashes.get("validation") or training_meta.get("validation_indices_sha256")
+    test_idx_sha = part_hashes.get("test") or training_meta.get("test_indices_sha256")
+
+    partition_indices_sha256: dict[str, Any] = {
+        "train": train_idx_sha,
+        "validation": val_idx_sha,
+    }
+    if test_idx_sha is not None:
+        partition_indices_sha256["test"] = test_idx_sha
+
+    dataset_sha = training_meta.get("dataset_sha256")
+    split_manifest_sha = training_meta.get("split_manifest_sha256")
+    preprocessor_sha = training_meta.get("preprocessor_sha256")
+    preprocessor_manifest_sha = training_meta.get("preprocessor_manifest_sha256")
+    provenance_complete = all(
+        _is_nonempty_str(v)
+        for v in (
+            dataset_sha,
+            split_manifest_sha,
+            preprocessor_sha,
+            train_idx_sha,
+            val_idx_sha,
+        )
+    )
+
+    feature_contract_version = "nf-unsw-nb15-v3-baseline-47"
+    provenance = {
+        "dataset": {
+            "sha256": dataset_sha,
+        },
+        "split": {
+            "manifest_sha256": split_manifest_sha,
+            "partition_indices_sha256": partition_indices_sha256,
+        },
+        "preprocessor": {
+            "source": training_meta.get("preprocessor_source"),
+            "artifact_sha256": preprocessor_sha,
+            "manifest_sha256": preprocessor_manifest_sha,
+        },
+        "model": {
+            "file": model_file.name,
+            "sha256": model_sha256,
+            "config_file": config_file.name,
+            "config_sha256": config_sha256,
+        },
+        "calibration": {
+            "threshold_file": threshold_file.name,
+            "threshold_sha256": threshold_sha256,
+            "method": threshold_meta.get("calibration_method"),
+            "threshold_frozen": threshold_meta.get("threshold_frozen"),
+            "unknown_attack_categories": resolved_unknown,
+        },
+        "feature_contract_version": feature_contract_version,
+        "git_commit": training_meta.get("git_commit"),
+    }
 
     manifest_data = {
         "artifact_type": "autoencoder-anomaly-detector",
         "schema_version": "1.0",
         "model_file": model_file.name,
         "model_sha256": model_sha256,
+        "config_file": config_file.name,
+        "config_sha256": config_sha256,
+        "threshold_file": threshold_file.name,
+        "threshold_sha256": threshold_sha256,
         "model_architecture": {
             "class": "MLPRegressor",
             "hidden_layer_sizes": list(config.get("hidden_layer_sizes", ())),
@@ -955,12 +1270,19 @@ def save_artifacts(
         "training_population": training_meta.get("training_population"),
         "training_row_count": training_meta.get("n_train_samples"),
         "validation_row_count": training_meta.get("n_val_samples"),
-        "unknown_attack_categories": sorted(DEFAULT_UNKNOWN_ATTACK_CATEGORIES),
-        "dataset_sha256": training_meta.get("dataset_sha256"),
-        "split_manifest_sha256": training_meta.get("split_manifest_sha256"),
-        "preprocessor_sha256": training_meta.get("preprocessor_sha256"),
+        "unknown_attack_categories": resolved_unknown,
+        "dataset_sha256": dataset_sha,
+        "split_manifest_sha256": split_manifest_sha,
+        "partition_indices_sha256": partition_indices_sha256,
+        "train_indices_sha256": train_idx_sha,
+        "validation_indices_sha256": val_idx_sha,
+        "preprocessor_sha256": preprocessor_sha,
+        "preprocessor_manifest_sha256": preprocessor_manifest_sha,
         "preprocessor_source": training_meta.get("preprocessor_source"),
-        "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+        "test_lock": training_meta.get("test_lock"),
+        "provenance_complete": provenance_complete,
+        "provenance": provenance,
+        "feature_contract_version": feature_contract_version,
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "git_commit": training_meta.get("git_commit"),
     }
@@ -977,6 +1299,8 @@ def save_artifacts(
             "manifest": str(manifest_file),
         },
         "model_sha256": model_sha256,
+        "config_sha256": config_sha256,
+        "threshold_sha256": threshold_sha256,
         "manifest": manifest_data,
     }
 
@@ -1007,18 +1331,43 @@ def verify_saved_model(
 def load_verified_autoencoder(
     model_path: Path,
     manifest_path: Path,
+    *,
+    require_complete_provenance: bool = False,
 ) -> tuple[Any, dict[str, Any]]:
-    """Fail-closed verified loader for Autoencoder artifact and manifest."""
+    """Fail-closed verified loader for Autoencoder artifact, sidecars, and manifest."""
     if not model_path.exists():
         raise FileNotFoundError(f"Autoencoder model artifact not found: {model_path}")
     if not manifest_path.exists():
         raise FileNotFoundError(f"Autoencoder companion manifest not found: {manifest_path}")
 
-    with manifest_path.open("r", encoding="utf-8") as fh:
-        manifest = json.load(fh)
+    try:
+        with manifest_path.open("r", encoding="utf-8") as fh:
+            manifest = json.load(fh)
+    except Exception as exc:
+        raise ValueError(f"Autoencoder manifest JSON unreadable: {exc}") from exc
+
+    if not isinstance(manifest, dict):
+        raise ValueError("Autoencoder manifest must be a JSON object.")
+
+    if manifest.get("artifact_type") != "autoencoder-anomaly-detector":
+        raise ValueError(f"Unexpected artifact_type in manifest: {manifest.get('artifact_type')!r}")
+    if manifest.get("schema_version") != "1.0":
+        raise ValueError(f"Unsupported manifest schema_version: {manifest.get('schema_version')!r}")
+    if manifest.get("feature_contract_version") != "nf-unsw-nb15-v3-baseline-47":
+        raise ValueError(
+            f"Unsupported feature_contract_version: {manifest.get('feature_contract_version')!r}"
+        )
+
+    model_file = manifest.get("model_file")
+    if not _is_nonempty_str(model_file) or Path(model_file).name != model_file:
+        raise ValueError(f"Manifest has invalid or unsafe model_file: {model_file!r}")
+    if model_file != model_path.name:
+        raise ValueError(
+            f"Manifest model_file {model_file!r} does not match requested {model_path.name!r}."
+        )
 
     expected_sha = manifest.get("model_sha256")
-    if not expected_sha:
+    if not _is_nonempty_str(expected_sha):
         raise ValueError("Manifest missing required field: model_sha256")
 
     actual_sha = sha256_file(model_path)
@@ -1028,6 +1377,20 @@ def load_verified_autoencoder(
             f"  expected: {expected_sha}\n"
             f"  actual:   {actual_sha}"
         )
+
+    config_payload = _verify_safe_sidecar_file(
+        manifest_path.parent, manifest, "config_file", "config_sha256", "config"
+    )
+    threshold_payload = _verify_safe_sidecar_file(
+        manifest_path.parent, manifest, "threshold_file", "threshold_sha256", "threshold"
+    )
+
+    _validate_manifest_provenance(
+        manifest=manifest,
+        config_payload=config_payload,
+        threshold_payload=threshold_payload,
+        require_complete_provenance=require_complete_provenance,
+    )
 
     model = joblib.load(model_path)
     return model, manifest
@@ -1051,6 +1414,17 @@ def generate_markdown_report(
     val_roc = f"{metrics_val['roc_auc']:.4f}" if metrics_val.get("roc_auc") is not None else "N/A"
     val_pr = f"{metrics_val['pr_auc']:.4f}" if metrics_val.get("pr_auc") is not None else "N/A"
 
+    configured_unknown = (
+        training_meta.get("unknown_attack_categories")
+        if training_meta.get("unknown_attack_categories") is not None
+        else threshold_meta.get("unknown_categories_excluded")
+    )
+    if configured_unknown is None:
+        configured_unknown = sorted(DEFAULT_UNKNOWN_ATTACK_CATEGORIES)
+    else:
+        configured_unknown = sorted(str(c) for c in configured_unknown)
+    part_hashes = training_meta.get("partition_indices_sha256") or {}
+
     lines = [
         "# Autoencoder Anomaly Detection Evaluation Report (Issue #29 / C4)",
         "",
@@ -1067,10 +1441,12 @@ def generate_markdown_report(
             f"- Target FPR: `{threshold_meta.get('target_fpr')}` "
             f"(Empirical Val FPR: `{threshold_meta.get('empirical_val_fpr'):.4f}`)"
         ),
-        (
-            "- Pre-registered unknown attack categories: "
-            f"`{sorted(DEFAULT_UNKNOWN_ATTACK_CATEGORIES)}`"
-        ),
+        ("- Configured unknown attack categories: " f"`{configured_unknown}`"),
+        f"- Dataset SHA-256: `{training_meta.get('dataset_sha256', 'N/A')}`",
+        f"- Split manifest SHA-256: `{training_meta.get('split_manifest_sha256', 'N/A')}`",
+        f"- Train partition indices SHA-256: `{part_hashes.get('train', 'N/A')}`",
+        f"- Validation partition indices SHA-256: `{part_hashes.get('validation', 'N/A')}`",
+        f"- Preprocessor SHA-256: `{training_meta.get('preprocessor_sha256', 'N/A')}`",
         "",
         "## 1. Validation Performance",
         "",
@@ -1168,8 +1544,11 @@ def generate_markdown_report(
                 "## 2. Test Performance",
                 "",
                 "> [!NOTE]",
-                "> Held-out Test partition was LOCKED during this run (safety lock).",
-                "> Pass `--evaluate-test` to evaluate Test only after threshold is frozen.",
+                "> Held-out Test partition was LOCKED during this run (`--evaluate-test` not set).",
+                "> When reading the unified CSV, Test rows were excluded at the chunk-mask",
+                "> boundary (0 Test rows materialized, transformed, or used in training,",
+                "> early stopping, or threshold calibration). Pass `--evaluate-test` to",
+                "> evaluate Test only after model fitting and threshold freeze.",
                 "",
             ]
         )
@@ -1381,7 +1760,16 @@ def run_pipeline(args: argparse.Namespace) -> int:
     )
 
     metrics_test = None
-    if args.evaluate_test and test_data:
+    if not args.evaluate_test and test_data is not None:
+        raise RuntimeError(
+            "Held-out Test Lock violation: Test partition loaded without --evaluate-test."
+        )
+    if args.evaluate_test and test_data is not None:
+        verify_test_evaluation_lock(
+            model=model,
+            threshold_meta=threshold_meta,
+            evaluate_test=args.evaluate_test,
+        )
         print("  Evaluating on held-out Test partition...")
         test_scores = reconstruction_errors(model, test_data["X"])
         test_preds = (test_scores >= th_val).astype(np.int64)
@@ -1403,6 +1791,33 @@ def run_pipeline(args: argparse.Namespace) -> int:
     except Exception:
         git_commit = "unknown"
 
+    verified_idx = split_res.get("verified_indices") or {}
+    train_idx_sha = (verified_idx.get("train") or {}).get("sha256")
+    val_idx_sha = (verified_idx.get("validation") or {}).get("sha256")
+    partition_indices_sha256: dict[str, Any] = {
+        "train": train_idx_sha,
+        "validation": val_idx_sha,
+    }
+    if args.evaluate_test and test_data is not None:
+        test_idx_sha = (verified_idx.get("test") or {}).get("sha256")
+        if test_idx_sha is not None:
+            partition_indices_sha256["test"] = test_idx_sha
+
+    prep_man_path = prep_res.get("manifest_path")
+    prep_man_sha = (
+        sha256_file(Path(prep_man_path)) if prep_man_path and Path(prep_man_path).exists() else None
+    )
+
+    test_lock_meta = {
+        "contract": "held_out_test_lock_v1",
+        "evaluate_test_flag": bool(args.evaluate_test),
+        "test_evaluated": metrics_test is not None,
+        "test_rows_materialized": len(test_data["y"]) if test_data is not None else 0,
+        "test_excluded_from_fit_early_stopping_calibration": True,
+        "threshold_frozen_before_test_eval": bool(threshold_meta.get("threshold_frozen")),
+        "unified_csv_stream_bounded_to_loaded_partitions": True,
+    }
+
     training_meta = {
         "model_type": "Autoencoder (MLPRegressor)",
         "hidden_layer_sizes": hidden_layers,
@@ -1410,10 +1825,16 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "n_train_samples": n_train_benign,
         "n_val_samples": len(val_data["y"]),
         "n_test_samples": len(test_data["y"]) if test_data else 0,
+        "unknown_attack_categories": sorted(unknown_cats),
         "dataset_sha256": dataset_res.get("sha256"),
         "split_manifest_sha256": split_res.get("manifest_sha256"),
+        "partition_indices_sha256": partition_indices_sha256,
+        "train_indices_sha256": train_idx_sha,
+        "validation_indices_sha256": val_idx_sha,
         "preprocessor_sha256": prep_res.get("sha256"),
+        "preprocessor_manifest_sha256": prep_man_sha,
         "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
+        "test_lock": test_lock_meta,
         "git_commit": git_commit,
         "elapsed_seconds": round(time.time() - start_time, 2),
     }
@@ -1424,6 +1845,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
         threshold_meta=threshold_meta,
         training_meta=training_meta,
         output_dir=output_dir,
+        unknown_categories=unknown_cats,
     )
     print(f"  OK Artifacts saved to: {output_dir}")
 
@@ -1436,7 +1858,13 @@ def run_pipeline(args: argparse.Namespace) -> int:
     if verify_res["status"] != "PASS":
         print(f"FAILED: {verify_res['message']}")
         return 1
-    print("  OK Saved artifact verified via reload check.")
+
+    load_verified_autoencoder(
+        model_path=Path(art_res["files"]["model"]),
+        manifest_path=Path(art_res["files"]["manifest"]),
+        require_complete_provenance=True,
+    )
+    print("  OK Saved artifact, companion manifest, and provenance verified.")
 
     report_dir.mkdir(parents=True, exist_ok=True)
     with (report_dir / "metrics.json").open("w", encoding="utf-8") as fh:

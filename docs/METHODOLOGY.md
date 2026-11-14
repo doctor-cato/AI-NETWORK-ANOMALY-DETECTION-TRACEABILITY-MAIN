@@ -58,8 +58,8 @@
   - Quyết định phân loại: $\text{anomaly} = 1$ khi $\text{reconstruction\_error} \ge \tau$, ngược lại $0$.
   - Sau khi chọn xong trên Validation, ngưỡng $\tau$ được đóng băng (frozen) vĩnh viễn trước khi đánh giá bất kỳ mẫu nào khác.
 - Bảo vệ khóa tập kiểm thử (Held-out Test Lock):
-  - Tập Test hoàn toàn không được nạp hay truy cập trong suốt quá trình fit, early stopping và hiệu chuẩn ngưỡng.
-  - Chỉ được đánh giá khi có cờ `--evaluate-test` sau khi mô hình và ngưỡng đã đóng băng.
+  - Vì nguồn dữ liệu gốc `NF-UNSW-NB15-v3.csv` là một tệp CSV hợp nhất, trình nạp phân vùng chỉ stream qua tệp CSV tới chỉ số lớn nhất của Train/Validation khi không bật `--evaluate-test` và loại bỏ ngay mọi dòng không thuộc Train/Validation tại bước lọc chunk mask (`0` dòng Test được materialize, biến đổi qua preprocessor hay dùng cho fit, early stopping và hiệu chuẩn ngưỡng).
+  - Tập Test chỉ được materialize và đánh giá khi có cờ `--evaluate-test` **sau khi** mô hình đã fit xong và ngưỡng Validation đã đóng băng (`verify_test_evaluation_lock`).
 - Giới hạn khoa học bắt buộc:
   - Unknown-attack holdout là protocol kiểm chuẩn trong môi trường kiểm soát (controlled benchmark), không phải bằng chứng phát hiện tấn công zero-day thực tế.
   - Đặc trưng NetFlow v3 có giới hạn tóm lược theo flow, không có payload, có thể gặp hiện tượng lặp lại mẫu hành vi hoặc ghi nhớ phân phối.
