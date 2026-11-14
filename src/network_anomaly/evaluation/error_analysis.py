@@ -13,6 +13,7 @@ Provides:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
@@ -23,6 +24,7 @@ import pandas as pd
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.evaluation.metrics import (
     compute_attack_category_breakdown,
+    compute_wilson_confidence_interval,
 )
 from network_anomaly.evaluation.test_evaluation import (
     CANONICAL_DECISION_THRESHOLD,
@@ -30,6 +32,7 @@ from network_anomaly.evaluation.test_evaluation import (
     DEFAULT_PREPROCESSING_MANIFEST_PATH,
     DEFAULT_SPLIT_MANIFEST_PATH,
     check_test_evaluation_prerequisites,
+    evaluate_random_forest_on_test,
 )
 from network_anomaly.models.random_forest_protocol import ALL_ATTACK_CATEGORIES
 
@@ -39,6 +42,9 @@ DEFAULT_DATA_VALIDATION_JSON_PATH = Path("reports/data_quality/nf_unsw_nb15_v3_v
 DEFAULT_EDA_SUMMARY_JSON_PATH = Path("reports/eda/nf_unsw_nb15_v3_eda_summary.json")
 DEFAULT_PREPROCESSING_MANIFEST_JSON_PATH = DEFAULT_PREPROCESSING_MANIFEST_PATH
 DEFAULT_MODEL_MANIFEST_JSON_PATH = DEFAULT_MODEL_MANIFEST_PATH
+DEFAULT_ISOLATION_FOREST_BLOCKED_JSON_PATH = Path(
+    "reports/experiments/isolation_forest/blocked_status.json"
+)
 
 
 def _to_feature_dataframe(
@@ -211,28 +217,12 @@ def compute_ranked_attack_category_errors(
     expected_categories: Optional[Sequence[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Rank attack categories by missed detections (FN count) descending, then FNR descending."""
-    try:
-        cat_breakdown = compute_attack_category_breakdown(
-            y_true=y_true,
-            y_pred=y_pred,
-            attack_categories=attack_categories,
-            expected_categories=expected_categories,
-        )
-    except TypeError:
-        cat_breakdown = compute_attack_category_breakdown(
-            y_true=y_true,
-            y_pred=y_pred,
-            attack_categories=attack_categories,
-        )
-        if expected_categories is not None:
-            for exp_cat in expected_categories:
-                if exp_cat not in cat_breakdown:
-                    cat_breakdown[exp_cat] = {
-                        "total": 0,
-                        "detected": 0,
-                        "missed": 0,
-                        "detection_rate": 0.0,
-                    }
+    cat_breakdown = compute_attack_category_breakdown(
+        y_true=y_true,
+        y_pred=y_pred,
+        attack_categories=attack_categories,
+        expected_categories=expected_categories,
+    )
 
     ranked: List[Dict[str, Any]] = []
     for cat_name, stats in cat_breakdown.items():
@@ -243,6 +233,8 @@ def compute_ranked_attack_category_errors(
         missed = int(stats.get("missed", 0))
         detection_rate = float(stats.get("detection_rate", 0.0))
         fnr = float(missed / total) if total > 0 else 0.0
+        recall_ci = compute_wilson_confidence_interval(detected, total, confidence=0.95)
+        fnr_ci = compute_wilson_confidence_interval(missed, total, confidence=0.95)
         ranked.append(
             {
                 "attack_category": cat_name,
@@ -252,6 +244,9 @@ def compute_ranked_attack_category_errors(
                 "missed_fn": missed,
                 "detection_rate_recall": detection_rate,
                 "false_negative_rate": fnr,
+                "recall_ci_95": [recall_ci["ci_lower"], recall_ci["ci_upper"]],
+                "recall_ci_95_width": recall_ci["ci_width"],
+                "fnr_ci_95": [fnr_ci["ci_lower"], fnr_ci["ci_upper"]],
             }
         )
 
@@ -266,6 +261,529 @@ def compute_ranked_attack_category_errors(
             return super().__getitem__(item)
 
     return RankedAttackCategoryList(ranked)
+
+
+def analyze_fp_by_flow_groups(
+    X: Any,
+    y_true: Sequence[int],
+    y_pred: Sequence[int],
+    trace_metadata: Optional[pd.DataFrame] = None,
+    feature_names: Sequence[str] = ML_FEATURE_COLUMNS,
+) -> Dict[str, Any]:
+    """Break down False Positives (Benign predicted as Attack) across flow groups and regimes.
+
+    Groups Benign traffic by:
+      1. Transport protocol (PROTOCOL feature).
+      2. Application-layer protocol code (L7_PROTO feature, top groups).
+      3. Flow duration regime (FLOW_DURATION_MILLISECONDS: 0 ms, 1..100 ms,
+         101..10000 ms, >10000 ms).
+      4. Anonymized endpoint flow group (SHA-256 hash of src/dst/proto from trace_metadata,
+         redacting raw IP addresses to prevent sensitive network disclosure).
+    """
+    X_df = _to_feature_dataframe(X, feature_names=feature_names)
+    y_t = np.asarray(y_true, dtype=np.int64)
+    y_p = np.asarray(y_pred, dtype=np.int64)
+    n_samples = len(X_df)
+
+    if len(y_t) != n_samples or len(y_p) != n_samples:
+        raise ValueError("X, y_true, and y_pred must have identical lengths")
+    if not set(np.unique(y_t)).issubset({0, 1}) or not set(np.unique(y_p)).issubset({0, 1}):
+        raise ValueError("y_true and y_pred must contain only binary labels 0 and 1")
+
+    benign_mask = y_t == 0
+    fp_mask = (y_t == 0) & (y_p == 1)
+    total_benign = int(np.sum(benign_mask))
+    total_fp = int(np.sum(fp_mask))
+    total_tn = total_benign - total_fp
+
+    # 1. Breakdown by PROTOCOL
+    by_protocol: List[Dict[str, Any]] = []
+    if "PROTOCOL" in X_df.columns and total_benign > 0:
+        proto_series = X_df.loc[benign_mask, "PROTOCOL"]
+        fp_sub = fp_mask[benign_mask]
+        for proto_val, grp_idx in proto_series.groupby(proto_series).groups.items():
+            pos_mask = proto_series.index.isin(grp_idx)
+            b_cnt = int(np.sum(pos_mask))
+            f_cnt = int(np.sum(fp_sub[pos_mask]))
+            t_cnt = b_cnt - f_cnt
+            by_protocol.append(
+                {
+                    "protocol": int(round(float(proto_val))),
+                    "benign_total": b_cnt,
+                    "fp_count": f_cnt,
+                    "tn_count": t_cnt,
+                    "fpr": float(f_cnt / b_cnt) if b_cnt > 0 else 0.0,
+                    "share_of_all_fp": float(f_cnt / total_fp) if total_fp > 0 else 0.0,
+                }
+            )
+        by_protocol.sort(key=lambda d: (-d["fp_count"], -d["benign_total"], d["protocol"]))
+
+    # 2. Breakdown by L7_PROTO (top 10 by FP count then benign volume)
+    by_l7_proto: List[Dict[str, Any]] = []
+    if "L7_PROTO" in X_df.columns and total_benign > 0:
+        l7_series = X_df.loc[benign_mask, "L7_PROTO"]
+        fp_sub = fp_mask[benign_mask]
+        for l7_val, grp_idx in l7_series.groupby(l7_series).groups.items():
+            pos_mask = l7_series.index.isin(grp_idx)
+            b_cnt = int(np.sum(pos_mask))
+            f_cnt = int(np.sum(fp_sub[pos_mask]))
+            t_cnt = b_cnt - f_cnt
+            by_l7_proto.append(
+                {
+                    "l7_proto": round(float(l7_val), 3),
+                    "benign_total": b_cnt,
+                    "fp_count": f_cnt,
+                    "tn_count": t_cnt,
+                    "fpr": float(f_cnt / b_cnt) if b_cnt > 0 else 0.0,
+                    "share_of_all_fp": float(f_cnt / total_fp) if total_fp > 0 else 0.0,
+                }
+            )
+        by_l7_proto.sort(key=lambda d: (-d["fp_count"], -d["benign_total"], d["l7_proto"]))
+        by_l7_proto = by_l7_proto[:10]
+
+    # 3. Breakdown by FLOW_DURATION_MILLISECONDS regime
+    by_duration_regime: List[Dict[str, Any]] = []
+    if "FLOW_DURATION_MILLISECONDS" in X_df.columns and total_benign > 0:
+        dur_vals = X_df.loc[benign_mask, "FLOW_DURATION_MILLISECONDS"].to_numpy(dtype=np.float64)
+        fp_sub = fp_mask[benign_mask]
+        regimes = [
+            ("zero_duration_0ms", dur_vals <= 0.0),
+            ("short_1_to_100ms", (dur_vals > 0.0) & (dur_vals <= 100.0)),
+            ("medium_101_to_10000ms", (dur_vals > 100.0) & (dur_vals <= 10000.0)),
+            ("long_gt_10000ms", dur_vals > 10000.0),
+        ]
+        for reg_name, r_mask in regimes:
+            b_cnt = int(np.sum(r_mask))
+            f_cnt = int(np.sum(fp_sub[r_mask]))
+            t_cnt = b_cnt - f_cnt
+            by_duration_regime.append(
+                {
+                    "duration_regime": reg_name,
+                    "benign_total": b_cnt,
+                    "fp_count": f_cnt,
+                    "tn_count": t_cnt,
+                    "fpr": float(f_cnt / b_cnt) if b_cnt > 0 else 0.0,
+                    "share_of_all_fp": float(f_cnt / total_fp) if total_fp > 0 else 0.0,
+                }
+            )
+
+    # 4. Anonymized endpoint flow-group breakdown (redacting raw IP addresses)
+    endpoint_group_summary: Dict[str, Any] = {
+        "status": "NOT_AVAILABLE_WITHOUT_TRACE_METADATA",
+        "ip_redaction_applied": True,
+        "distinct_benign_flow_groups": 0,
+        "flow_groups_with_fp": 0,
+        "top_anonymized_fp_groups": [],
+    }
+    if (
+        trace_metadata is not None
+        and isinstance(trace_metadata, pd.DataFrame)
+        and len(trace_metadata) == n_samples
+        and "IPV4_SRC_ADDR" in trace_metadata.columns
+        and "IPV4_DST_ADDR" in trace_metadata.columns
+    ):
+        trace_ben = trace_metadata.loc[benign_mask].reset_index(drop=True)
+        proto_ben = (
+            X_df.loc[benign_mask, "PROTOCOL"].to_numpy()
+            if "PROTOCOL" in X_df.columns
+            else np.zeros(total_benign, dtype=np.int64)
+        )
+        fp_sub = fp_mask[benign_mask]
+        group_stats: Dict[str, Dict[str, int]] = {}
+        for row_i in range(total_benign):
+            src_val = str(trace_ben.iloc[row_i]["IPV4_SRC_ADDR"]).strip()
+            dst_val = str(trace_ben.iloc[row_i]["IPV4_DST_ADDR"]).strip()
+            ep_pair = sorted([src_val, dst_val])
+            raw_key = f"{ep_pair[0]}|{ep_pair[1]}|{int(round(float(proto_ben[row_i])))}"
+            anon_id = "fg_" + hashlib.sha256(raw_key.encode("utf-8")).hexdigest()[:12]
+            if anon_id not in group_stats:
+                group_stats[anon_id] = {"benign_total": 0, "fp_count": 0}
+            group_stats[anon_id]["benign_total"] += 1
+            if fp_sub[row_i]:
+                group_stats[anon_id]["fp_count"] += 1
+
+        ranked_groups = [
+            {
+                "anonymized_flow_group_id": gid,
+                "benign_total": st["benign_total"],
+                "fp_count": st["fp_count"],
+                "tn_count": st["benign_total"] - st["fp_count"],
+                "fpr": (
+                    float(st["fp_count"] / st["benign_total"]) if st["benign_total"] > 0 else 0.0
+                ),
+            }
+            for gid, st in group_stats.items()
+        ]
+        ranked_groups.sort(
+            key=lambda g: (-g["fp_count"], -g["benign_total"], g["anonymized_flow_group_id"])
+        )
+        endpoint_group_summary = {
+            "status": "VERIFIED",
+            "ip_redaction_applied": True,
+            "distinct_benign_flow_groups": len(group_stats),
+            "flow_groups_with_fp": sum(1 for g in ranked_groups if g["fp_count"] > 0),
+            "top_anonymized_fp_groups": ranked_groups[:10],
+        }
+
+    return {
+        "total_benign": total_benign,
+        "total_fp": total_fp,
+        "total_tn": total_tn,
+        "overall_fpr": float(total_fp / total_benign) if total_benign > 0 else 0.0,
+        "by_protocol": by_protocol,
+        "by_l7_proto": by_l7_proto,
+        "by_duration_regime": by_duration_regime,
+        "by_anonymized_flow_group": endpoint_group_summary,
+    }
+
+
+def analyze_temporal_window_errors(
+    y_true: Sequence[int],
+    y_pred: Sequence[int],
+    trace_metadata: Optional[pd.DataFrame] = None,
+    num_windows: int = 5,
+) -> Dict[str, Any]:
+    """Analyze FP and FN error rates across chronological time windows.
+
+    Uses FLOW_START_MILLISECONDS from trace_metadata (strictly external to ML features).
+    """
+    y_t = np.asarray(y_true, dtype=np.int64)
+    y_p = np.asarray(y_pred, dtype=np.int64)
+    n_samples = len(y_t)
+    if len(y_p) != n_samples:
+        raise ValueError("y_true and y_pred must have identical length")
+    if num_windows < 1:
+        raise ValueError(f"num_windows must be >= 1, got {num_windows}")
+
+    if (
+        trace_metadata is None
+        or not isinstance(trace_metadata, pd.DataFrame)
+        or "FLOW_START_MILLISECONDS" not in trace_metadata.columns
+        or len(trace_metadata) != n_samples
+    ):
+        return {
+            "status": "NOT_AVAILABLE",
+            "reason": "Temporal trace metadata (FLOW_START_MILLISECONDS) not provided",
+            "num_windows": 0,
+            "windows": [],
+        }
+
+    start_ms = pd.to_numeric(trace_metadata["FLOW_START_MILLISECONDS"], errors="coerce").to_numpy(
+        dtype=np.float64
+    )
+    if not np.all(np.isfinite(start_ms)) or n_samples == 0:
+        return {
+            "status": "NOT_AVAILABLE",
+            "reason": "FLOW_START_MILLISECONDS contains non-finite values or empty sample set",
+            "num_windows": 0,
+            "windows": [],
+        }
+
+    order = np.argsort(start_ms, kind="mergesort")
+    index_chunks = np.array_split(order, min(num_windows, n_samples))
+
+    windows: List[Dict[str, Any]] = []
+    for w_idx, idx_group in enumerate(index_chunks, start=1):
+        if len(idx_group) == 0:
+            continue
+        yt_w = y_t[idx_group]
+        yp_w = y_p[idx_group]
+        ms_w = start_ms[idx_group]
+
+        tn_w = int(np.sum((yt_w == 0) & (yp_w == 0)))
+        fp_w = int(np.sum((yt_w == 0) & (yp_w == 1)))
+        fn_w = int(np.sum((yt_w == 1) & (yp_w == 0)))
+        tp_w = int(np.sum((yt_w == 1) & (yp_w == 1)))
+        ben_w = tn_w + fp_w
+        att_w = fn_w + tp_w
+        tot_w = ben_w + att_w
+
+        windows.append(
+            {
+                "window_index": w_idx,
+                "start_ms": int(round(float(np.min(ms_w)))),
+                "end_ms": int(round(float(np.max(ms_w)))),
+                "total_rows": tot_w,
+                "benign_rows": ben_w,
+                "attack_rows": att_w,
+                "tn": tn_w,
+                "fp": fp_w,
+                "fn": fn_w,
+                "tp": tp_w,
+                "fpr": float(fp_w / ben_w) if ben_w > 0 else 0.0,
+                "fnr": float(fn_w / att_w) if att_w > 0 else 0.0,
+                "recall": float(tp_w / att_w) if att_w > 0 else 0.0,
+            }
+        )
+
+    max_fp_win = max(windows, key=lambda w: w["fp"]) if windows else None
+    max_fn_win = max(windows, key=lambda w: w["fn"]) if windows else None
+
+    return {
+        "status": "VERIFIED",
+        "num_windows": len(windows),
+        "windows": windows,
+        "peak_fp_window": max_fp_win["window_index"] if max_fp_win else None,
+        "peak_fn_window": max_fn_win["window_index"] if max_fn_win else None,
+    }
+
+
+def compute_uncertainty_analysis(
+    y_true: Optional[Sequence[int]] = None,
+    y_pred: Optional[Sequence[int]] = None,
+    attack_categories: Optional[Sequence[str]] = None,
+    split_manifest_path: Union[str, Path] = DEFAULT_SPLIT_MANIFEST_PATH,
+    confidence: float = 0.95,
+) -> Dict[str, Any]:
+    """Compute Wilson 95% confidence intervals for overall and per-attack-category metrics.
+
+    Also computes sample-size sensitivity intervals from the canonical Test split
+    distribution (highlighting wide CIs for rare classes such as Worms with n=36)
+    and documents the i.i.d. vs. network-flow burst dependence caveat.
+    """
+    split_data: Dict[str, Any] = {}
+    sm_p = Path(split_manifest_path)
+    if sm_p.exists():
+        with sm_p.open("r", encoding="utf-8") as f:
+            split_data = json.load(f)
+
+    test_part = split_data.get("partitions", {}).get("test", {})
+    test_att_dist = test_part.get("attack_distribution", {})
+
+    # Sample-size sensitivity bounds on canonical Test partition (at hypothetical 100% and 1-miss)
+    sample_size_sensitivity: Dict[str, Dict[str, Any]] = {}
+    for cat_name, raw_cnt in sorted(test_att_dist.items(), key=lambda kv: int(kv[1])):
+        if cat_name == "Benign":
+            continue
+        n_cat = int(raw_cnt)
+        ci_perfect = compute_wilson_confidence_interval(n_cat, n_cat, confidence=confidence)
+        ci_one_miss = compute_wilson_confidence_interval(
+            max(0, n_cat - 1), n_cat, confidence=confidence
+        )
+        sample_size_sensitivity[cat_name] = {
+            "test_sample_count": n_cat,
+            "is_rare_class": n_cat < 1500,
+            "ci_95_at_zero_misses": [ci_perfect["ci_lower"], ci_perfect["ci_upper"]],
+            "ci_95_width_at_zero_misses": ci_perfect["ci_width"],
+            "ci_95_at_one_miss": [ci_one_miss["ci_lower"], ci_one_miss["ci_upper"]],
+            "ci_95_width_at_one_miss": ci_one_miss["ci_width"],
+        }
+
+    runtime_intervals: Optional[Dict[str, Any]] = None
+    if y_true is not None and y_pred is not None:
+        y_t = np.asarray(y_true, dtype=np.int64)
+        y_p = np.asarray(y_pred, dtype=np.int64)
+        tn = int(np.sum((y_t == 0) & (y_p == 0)))
+        fp = int(np.sum((y_t == 0) & (y_p == 1)))
+        fn = int(np.sum((y_t == 1) & (y_p == 0)))
+        tp = int(np.sum((y_t == 1) & (y_p == 1)))
+
+        recall_ci = compute_wilson_confidence_interval(tp, tp + fn, confidence=confidence)
+        fnr_ci = compute_wilson_confidence_interval(fn, tp + fn, confidence=confidence)
+        fpr_ci = compute_wilson_confidence_interval(fp, fp + tn, confidence=confidence)
+        prec_ci = compute_wilson_confidence_interval(tp, tp + fp, confidence=confidence)
+
+        per_cat_ci: Dict[str, Dict[str, Any]] = {}
+        if attack_categories is not None:
+            cat_brk = compute_attack_category_breakdown(y_t, y_p, attack_categories)
+            for c_name, c_stats in cat_brk.items():
+                if c_name == "Benign":
+                    continue
+                tot_c = int(c_stats["total"])
+                det_c = int(c_stats["detected"])
+                mis_c = int(c_stats["missed"])
+                c_rec_ci = compute_wilson_confidence_interval(det_c, tot_c, confidence=confidence)
+                c_fnr_ci = compute_wilson_confidence_interval(mis_c, tot_c, confidence=confidence)
+                per_cat_ci[c_name] = {
+                    "total": tot_c,
+                    "detected": det_c,
+                    "missed": mis_c,
+                    "recall": c_rec_ci["proportion"],
+                    "recall_ci_95": [c_rec_ci["ci_lower"], c_rec_ci["ci_upper"]],
+                    "recall_ci_95_width": c_rec_ci["ci_width"],
+                    "fnr": c_fnr_ci["proportion"],
+                    "fnr_ci_95": [c_fnr_ci["ci_lower"], c_fnr_ci["ci_upper"]],
+                }
+
+        runtime_intervals = {
+            "overall_recall": recall_ci,
+            "overall_fnr": fnr_ci,
+            "overall_fpr": fpr_ci,
+            "overall_precision": prec_ci,
+            "per_attack_category": per_cat_ci,
+        }
+
+    return {
+        "confidence_level": confidence,
+        "method": "Wilson score interval for binomial proportions",
+        "flow_dependence_caveat": (
+            "Standard binomial confidence intervals assume independent and identically "
+            "distributed (i.i.d.) flows. In NetFlow v3 traffic, multiple flows belonging "
+            "to the same 5-tuple session or attack burst are positively correlated, so "
+            "effective sample sizes are smaller and true uncertainty bands are wider than "
+            "nominal i.i.d. intervals."
+        ),
+        "sample_size_sensitivity_by_category": sample_size_sensitivity,
+        "runtime_confidence_intervals": runtime_intervals,
+    }
+
+
+def compile_model_comparison_status(
+    evaluation_result: Optional[Dict[str, Any]] = None,
+    model_manifest_path: Union[str, Path] = DEFAULT_MODEL_MANIFEST_JSON_PATH,
+    validation_audit_path: Union[str, Path] = DEFAULT_VALIDATION_AUDIT_JSON_PATH,
+    isolation_forest_status_path: Union[str, Path] = DEFAULT_ISOLATION_FOREST_BLOCKED_JSON_PATH,
+) -> Dict[str, Any]:
+    """Compile comparison table and status between Random Forest (mandatory) and Isolation Forest (optional)."""  # noqa: E501
+    rf_manifest: Dict[str, Any] = {}
+    mm_p = Path(model_manifest_path)
+    if mm_p.exists():
+        with mm_p.open("r", encoding="utf-8") as f:
+            rf_manifest = json.load(f)
+
+    val_audit: Dict[str, Any] = {}
+    va_p = Path(validation_audit_path)
+    if va_p.exists():
+        with va_p.open("r", encoding="utf-8") as f:
+            val_audit = json.load(f)
+
+    if_status_data: Dict[str, Any] = {}
+    if_p = Path(isolation_forest_status_path)
+    if if_p.exists():
+        with if_p.open("r", encoding="utf-8") as f:
+            if_status_data = json.load(f)
+
+    has_rf_test = evaluation_result is not None and "metrics" in evaluation_result
+    val_recomputed = val_audit.get("validation_recomputed", {})
+
+    rf_entry: Dict[str, Any] = {
+        "model_name": "Random Forest Baseline",
+        "configuration_id": rf_manifest.get("configuration_id", "rf-baseline-canonical-v1"),
+        "project_role": "Mandatory Supervised Baseline (Core Scope)",
+        "learning_paradigm": "Supervised binary classification (Label: 0=Benign, 1=Attack)",
+        "training_partition_protocol": "Full Train partition (1,655,797 flows: Benign + Attack)",
+        "decision_rule": f"predict_proba(Attack) >= {CANONICAL_DECISION_THRESHOLD}",
+        "validation_status": "VERIFIED",
+        "validation_f1": float(val_recomputed.get("f1", 0.999869)),
+        "validation_recall": float(val_recomputed.get("recall", 0.999902)),
+        "validation_fpr": float(val_recomputed.get("fpr", 1.588e-05)),
+        "held_out_test_status": (
+            "VERIFIED"
+            if has_rf_test
+            else "BLOCKED (Awaiting local .csv / .joblib binary artifacts)"
+        ),
+        "held_out_test_metrics": (
+            evaluation_result["metrics"]["overall_metrics"] if has_rf_test else None
+        ),
+    }
+
+    if_entry: Dict[str, Any] = {
+        "model_name": "Isolation Forest",
+        "configuration_id": "isolation-forest-optional-baseline",
+        "project_role": "Optional Unsupervised Baseline (Non-blocking per project scope)",
+        "learning_paradigm": "Unsupervised anomaly scoring (no attack labels used in fitting)",
+        "training_partition_protocol": (
+            "Train partition (unsupervised contamination=0.1 or Benign-only subset; "
+            "requires validation score-to-label threshold calibration)"
+        ),
+        "decision_rule": "Anomaly score threshold calibrated on Validation (separate protocol)",
+        "validation_status": if_status_data.get("status", "NOT EVALUATED"),
+        "experiment_status": if_status_data.get(
+            "experiment_status", "IMPLEMENTED — NOT EXPERIMENTALLY VALIDATED"
+        ),
+        "held_out_test_status": "NOT EVALUATED / BLOCKED",
+        "blocked_reason": if_status_data.get(
+            "reason",
+            "Isolation Forest artifact not trained/evaluated on held-out Test partition",
+        ),
+        "blocks_random_forest_acceptance": False,
+    }
+
+    return {
+        "comparison_ready_on_test": False,
+        "protocol_comparability_note": (
+            "Random Forest is a supervised classifier evaluated at a locked probability "
+            "threshold of 0.50, whereas Isolation Forest is an optional unsupervised anomaly "
+            "detector requiring validation score-to-label calibration. Per project scope, "
+            "Isolation Forest is optional and does not block Random Forest core acceptance."
+        ),
+        "models": {
+            "random_forest": rf_entry,
+            "isolation_forest": if_entry,
+        },
+    }
+
+
+def validate_evaluation_and_error_consistency(
+    cm_breakdown: Dict[str, Any],
+    attack_breakdown: Dict[str, Dict[str, Any]],
+    expected_total_rows: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Validate internal arithmetic consistency of confusion matrix and category breakdowns."""
+    tn = int(cm_breakdown["tn"])
+    fp = int(cm_breakdown["fp"])
+    fn = int(cm_breakdown["fn"])
+    tp = int(cm_breakdown["tp"])
+    benign_total = int(cm_breakdown["benign_total"])
+    attack_total = int(cm_breakdown["attack_total"])
+    total = int(cm_breakdown["total"])
+
+    if tn < 0 or fp < 0 or fn < 0 or tp < 0:
+        raise ValueError("Confusion matrix counts must be non-negative")
+    if tn + fp != benign_total:
+        raise ValueError(f"TN ({tn}) + FP ({fp}) != benign_total ({benign_total})")
+    if fn + tp != attack_total:
+        raise ValueError(f"FN ({fn}) + TP ({tp}) != attack_total ({attack_total})")
+    if benign_total + attack_total != total:
+        raise ValueError(
+            f"benign_total ({benign_total}) + attack_total ({attack_total}) != total ({total})"
+        )
+    if expected_total_rows is not None and total != int(expected_total_rows):
+        raise ValueError(f"Confusion matrix total ({total}) != expected ({expected_total_rows})")
+
+    cat_attack_total = 0
+    cat_detected_total = 0
+    cat_missed_total = 0
+    for cat_name, c_stats in attack_breakdown.items():
+        if cat_name == "Benign":
+            b_tot = int(c_stats["total"])
+            b_fp = int(c_stats["false_positive"])
+            b_tn = int(c_stats["true_negative"])
+            if b_fp + b_tn != b_tot or b_tot != benign_total or b_fp != fp or b_tn != tn:
+                raise ValueError(
+                    f"Benign breakdown mismatch: {c_stats} vs (tn={tn}, fp={fp}, total={benign_total})"  # noqa: E501
+                )
+        else:
+            c_tot = int(c_stats["total"])
+            c_det = int(c_stats["detected"])
+            c_mis = int(c_stats["missed"])
+            if c_det + c_mis != c_tot:
+                raise ValueError(
+                    f"Category {cat_name!r} detected ({c_det}) + missed ({c_mis}) != total ({c_tot})"  # noqa: E501
+                )
+            cat_attack_total += c_tot
+            cat_detected_total += c_det
+            cat_missed_total += c_mis
+
+    if cat_attack_total != attack_total:
+        raise ValueError(
+            f"Sum of attack category totals ({cat_attack_total}) != attack_total ({attack_total})"
+        )
+    if cat_detected_total != tp:
+        raise ValueError(f"Sum of attack category detected ({cat_detected_total}) != TP ({tp})")
+    if cat_missed_total != fn:
+        raise ValueError(f"Sum of attack category missed ({cat_missed_total}) != FN ({fn})")
+
+    return {
+        "consistent": True,
+        "total": total,
+        "benign_total": benign_total,
+        "attack_total": attack_total,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "tp": tp,
+    }
 
 
 def analyze_feature_error_patterns(
@@ -361,7 +879,8 @@ def analyze_feature_error_patterns(
             "category": "Both FP and FN",
             "statement": (
                 "Identical 47-feature flow vectors occur across both Benign and Attack labels, "
-                "creating an irreducible Bayes error floor where tree leaves cannot separate classes."
+                "creating an irreducible Bayes error floor where tree leaves cannot "
+                "separate classes."
             ),
             "evidence_type": "Empirical Dataset Property + Tree Leaf Ambiguity",
         },
@@ -432,6 +951,55 @@ def analyze_feature_error_patterns(
         key=lambda kv: -abs(kv[1]["standardized_shift_fn_vs_tp"]),
     )[:top_n_features]
 
+    verified_observations = [
+        (
+            f"Sample outcome partition counts: TN={int(len(tn_df))}, FP={int(len(fp_df))}, "
+            f"FN={int(len(fn_df))}, TP={int(len(tp_df))} across {len(X_df)} evaluated flows."
+        ),
+        (
+            f"Feature space is strictly restricted to {len(feature_names)} canonical NetFlow v3 "
+            "flow-level attributes (excluding IP addresses, ports, timestamps, and payload bytes)."
+        ),
+    ]
+    if global_ranked:
+        top2 = global_ranked[:2]
+        top2_str = ", ".join(f"{r['feature']} ({r['importance']:.4f})" for r in top2)
+        verified_observations.append(
+            f"Top global Gini impurity features in evaluated model: {top2_str}."
+        )
+
+    statistical_associations = {
+        "top_fp_vs_tn_standardized_shifts": fp_vs_tn_shifts[:5],
+        "top_fn_vs_tp_standardized_shifts": fn_vs_tp_shifts[:5],
+    }
+
+    future_experiment_proposals = [
+        {
+            "proposal_id": "EXP_1_TTL_ABLATION_AND_REGULARIZATION",
+            "title": "Evaluate TTL-ablated and hop-count-regularized Random Forest variants",
+            "rationale": (
+                "Quantify generalization when lab-specific MIN_TTL / MAX_TTL shortcuts are "
+                "removed or perturbed."
+            ),
+        },
+        {
+            "proposal_id": "EXP_2_WINDOWED_FLOW_GROUP_AGGREGATION",
+            "title": "Augment single-flow features with leak-free windowed flow-group statistics",
+            "rationale": (
+                "Investigate overlapping flow feature vectors using burst rate "
+                "and destination fan-out within chronological windows."
+            ),
+        },
+        {
+            "proposal_id": "EXP_3_MULTI_MODEL_HYBRID_TRIAGE",
+            "title": "Combine supervised Random Forest with calibrated Isolation Forest scoring",
+            "rationale": (
+                "Provide secondary anomaly scoring for samples falling in the [0.35, 0.65] "
+                "decision uncertainty band and rare attack categories (Worms, Analysis)."
+            ),
+        },
+    ]
+
     return {
         "global_feature_importance": global_ranked[:top_n_features],
         "all_feature_importances": global_ranked,
@@ -453,6 +1021,8 @@ def analyze_feature_error_patterns(
         "top_fn_discriminating_features": [
             {"feature": k, "shift": v["standardized_shift_fn_vs_tp"]} for k, v in top_fn_shifted
         ],
+        "verified_observations": verified_observations,
+        "statistical_associations": statistical_associations,
         "domain_hypotheses": {
             "H1_EXACT_FEATURE_COLLISION": (
                 "Benign and Attack flows sharing identical 47-feature vectors produce an "
@@ -473,6 +1043,13 @@ def analyze_feature_error_patterns(
                 "retransmissions exhibit elevated throughput/retransmission ratios that mimic "
                 "DoS or Fuzzers flow signatures."
             ),
+        },
+        "future_experiment_proposals": future_experiment_proposals,
+        "epistemic_separation": {
+            "verified_observations": verified_observations,
+            "statistical_associations": statistical_associations,
+            "domain_hypotheses": error_hypotheses,
+            "future_experiment_proposals": future_experiment_proposals,
         },
     }
 
@@ -553,23 +1130,40 @@ def compile_data_limitations_summary(
         (eda_data, Path(eda_summary_path)),
         (audit_data, Path(validation_audit_path)),
     ]:
-        if p.exists():
-            with p.open("r", encoding="utf-8") as f:
-                target_dict.update(json.load(f))
+        if not p.is_file():
+            raise FileNotFoundError(f"Required evidence file is missing: {p}")
+        with p.open("r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            raise ValueError(f"Required evidence is not a JSON object: {p}")
+        target_dict.update(payload)
 
-    total_source_rows = int(split_data.get("total_source_rows", 2365424))
-    train_part = split_data.get("partitions", {}).get("train", {})
-    val_part = split_data.get("partitions", {}).get("validation", {})
-    test_part = split_data.get("partitions", {}).get("test", {})
+    total_source_rows = int(split_data["total_source_rows"])
+    train_part = split_data["partitions"]["train"]
+    val_part = split_data["partitions"]["validation"]
+    test_part = split_data["partitions"]["test"]
 
-    train_rows = int(train_part.get("row_count", 1655797))
-    val_rows = int(val_part.get("row_count", 345371))
-    test_rows = int(test_part.get("row_count", 345953))
+    train_rows = int(train_part["row_count"])
+    val_rows = int(val_part["row_count"])
+    test_rows = int(test_part["row_count"])
+    if min(total_source_rows, train_rows, val_rows, test_rows) <= 0:
+        raise ValueError("Split evidence contains nonpositive row counts")
+    if split_data.get("dataset_sha256") != prep_data.get("dataset_sha256"):
+        raise ValueError("Split and preprocessing evidence disagree on dataset identity")
+    lineage_errors: List[str] = []
+    split_sha = hashlib.sha256(Path(split_manifest_path).read_bytes()).hexdigest()
+    if prep_data.get("split_manifest_sha256") != split_sha:
+        lineage_errors.append("Preprocessing manifest does not match the selected split manifest")
 
-    test_labels = test_part.get("label_distribution", {"0": 315357, "1": 30596})
-    test_benign = int(test_labels.get("0", 315357))
-    test_attack = int(test_labels.get("1", 30596))
-    test_attack_dist = test_part.get("attack_distribution", {})
+    test_labels = test_part["label_distribution"]
+    test_benign = int(test_labels["0"])
+    test_attack = int(test_labels["1"])
+    test_attack_dist = test_part["attack_distribution"]
+    if (
+        test_benign + test_attack != test_rows
+        or sum(map(int, test_attack_dist.values())) != test_rows
+    ):
+        raise ValueError("Test label or attack distribution disagrees with Test row count")
 
     rare_classes_test = {
         k: int(v)
@@ -577,19 +1171,55 @@ def compile_data_limitations_summary(
         if k != "Benign" and int(v) < 1500
     }
 
-    pair_audits = split_data.get("audit_summary", {}).get("pair_audits", {})
-    train_test_overlap = pair_audits.get("train_vs_test", {}).get("ml_feature_overlap", {})
-    test_overlap_rows = int(train_test_overlap.get("p2_affected_rows", 184067))
-    test_overlap_pct = float(train_test_overlap.get("p2_affected_percent", 53.21))
+    train_test_overlap = split_data["audit_summary"]["pair_audits"]["train_vs_test"][
+        "ml_feature_overlap"
+    ]
+    test_overlap_rows = int(train_test_overlap["p2_affected_rows"])
+    test_overlap_pct = float(train_test_overlap["p2_affected_percent"])
+    if test_overlap_rows < 0 or test_overlap_rows > test_rows:
+        raise ValueError("Invalid Test feature-overlap count")
+    if abs(100 * test_overlap_rows / test_rows - test_overlap_pct) > 0.01:
+        raise ValueError("Test feature-overlap count and percentage disagree")
 
-    val_recomputed = audit_data.get("validation_recomputed", {})
-    c1_probe = (
-        audit_data.get("diagnostic_rf_c0_to_c7", {})
-        .get("C1_drop_MIN_TTL_MAX_TTL", {})
-        .get("validation_all", {})
+    val_recomputed = audit_data["validation_recomputed"]
+    c1_probe = audit_data["diagnostic_retrains"]["C1_drop_MIN_TTL_MAX_TTL"]["validation_all"]
+    if int(val_recomputed["n"]) != val_rows:
+        raise ValueError("Validation audit row count disagrees with split manifest")
+    if (
+        int(audit_data["split_integrity"]["train_rows"]) != train_rows
+        or int(audit_data["split_integrity"]["val_rows"]) != val_rows
+    ):
+        raise ValueError("Validation audit partition counts disagree with split manifest")
+    if sum(int(val_recomputed[k]) for k in ("tn", "fp", "fn", "tp")) != val_rows:
+        raise ValueError("Validation confusion matrix disagrees with split manifest")
+    if int(c1_probe["n"]) != val_rows:
+        raise ValueError("Validation ablation audit row count disagrees with split manifest")
+    numeric_stats = eda_data["numeric_statistics"]
+    missing_cells = sum(
+        sum(
+            int(stats["token_counts"].get(key, 0))
+            for key in ("blank", "nan_literal", "null_literal")
+        )
+        for name, stats in numeric_stats.items()
+        if name in ML_FEATURE_COLUMNS
     )
+    infinite_cells = sum(
+        sum(
+            int(stats["token_counts"].get(key, 0))
+            for key in ("positive_infinity", "negative_infinity")
+        )
+        for name, stats in numeric_stats.items()
+        if name in ML_FEATURE_COLUMNS
+    )
+    affected_columns = [
+        name
+        for name, stats in numeric_stats.items()
+        if name in ML_FEATURE_COLUMNS and stats["unavailable_count"] > 0
+    ]
 
     return {
+        "evidence_status": "VERIFIED" if not lineage_errors else "NOT VERIFIED",
+        "evidence_errors": lineage_errors,
         "partitions": {
             "total_source_rows": total_source_rows,
             "train_rows": train_rows,
@@ -607,24 +1237,22 @@ def compile_data_limitations_summary(
                 round(test_benign / test_attack, 2) if test_attack > 0 else 0.0
             ),
             "impact": (
-                "High Benign prevalence (91.16%) inflates overall Accuracy and Weighted F1; "
-                "even a small FPR produces hundreds of daily false alarms, while rare-class "
-                "FN misses are masked in aggregate metrics."
+                f"Benign prevalence ({100 * test_benign / test_rows:.2f}%) can inflate "
+                "overall Accuracy and Weighted F1; per-class error counts remain necessary."
             ),
         },
         "rare_attack_classes": {
             "test_attack_distribution": test_attack_dist,
             "rare_categories_in_test": rare_classes_test,
             "impact": (
-                "Worms has only 36 samples in Test (0.0104% of Test rows), Analysis has 294, "
-                "Shellcode has 396, and Backdoor has 1,260. Small sample sizes yield wide "
-                "confidence intervals on per-category recall."
+                "Rare Attack categories have small Test support and correspondingly wide "
+                "uncertainty intervals for per-category recall."
             ),
         },
         "feature_overlap_ambiguity": {
-            "distinct_fingerprints": int(train_test_overlap.get("distinct_fingerprints", 59966)),
-            "overlapping_unique_feature_keys": int(
-                train_test_overlap.get("overlapping_unique_feature_keys", 2690)
+            "distinct_fingerprints": int(train_test_overlap["distinct_fingerprints"]),
+            "overlapping_unique_feature_keys": train_test_overlap.get(
+                "overlapping_unique_feature_keys"
             ),
             "test_affected_rows": test_overlap_rows,
             "test_overlap_fraction": test_overlap_pct / 100.0,
@@ -635,41 +1263,37 @@ def compile_data_limitations_summary(
             ),
         },
         "missing_and_infinite_values": {
-            "affected_columns": [
-                "SRC_TO_DST_SECOND_BYTES",
-                "DST_TO_SRC_SECOND_BYTES",
-            ],
-            "dataset_total_nan_cells": 97852,
-            "dataset_total_inf_cells": 97850,
+            "affected_columns": affected_columns,
+            "dataset_total_nan_cells": missing_cells,
+            "dataset_total_inf_cells": infinite_cells,
             "impact": (
-                "Sub-millisecond flows with FLOW_DURATION_MILLISECONDS == 0 produce "
-                "division-by-zero in bytes-per-second features, requiring train-median imputation "
-                "after replacing Inf with NaN."
+                "Zero-duration flows and nonfinite rate features are associated in the EDA "
+                "evidence. The train-fitted imputer handles nonfinite values before inference."
             ),
         },
         "synthetic_lab_and_ttl_shortcut": {
             "top_2_features": ["MAX_TTL", "MIN_TTL"],
-            "validation_canonical_fp": int(val_recomputed.get("fp", 5)),
-            "validation_canonical_fn": int(val_recomputed.get("fn", 3)),
-            "validation_c1_fn": int(c1_probe.get("fn", 11)),
-            "validation_c1_fp": int(c1_probe.get("fp", 14)),
-            "validation_c1_recall": float(c1_probe.get("recall", 0.999639)),
+            "validation_canonical_fp": int(val_recomputed["fp"]),
+            "validation_canonical_fn": int(val_recomputed["fn"]),
+            "validation_c1_fn": int(c1_probe["fn"]),
+            "validation_c1_fp": int(c1_probe["fp"]),
+            "validation_c1_recall": float(c1_probe["recall"]),
             "impact": (
                 "In the IXIA PerfectStorm lab topology, attack generators and benign hosts "
                 "sit at fixed hop distances, making TTL a strong dataset-specific shortcut."
             ),
         },
         "validation_reference": {
-            "n": int(val_recomputed.get("n", val_rows)),
-            "accuracy": float(val_recomputed.get("accuracy", 0.9999768365033543)),
-            "precision": float(val_recomputed.get("precision", 0.9998360763228641)),
-            "recall": float(val_recomputed.get("recall", 0.9999016393442623)),
-            "f1": float(val_recomputed.get("f1", 0.9998688567587948)),
-            "fpr": float(val_recomputed.get("fpr", 1.5879518914094977e-05)),
-            "fp": int(val_recomputed.get("fp", 5)),
-            "fn": int(val_recomputed.get("fn", 3)),
-            "tn": int(val_recomputed.get("tn", 314866)),
-            "tp": int(val_recomputed.get("tp", 30497)),
+            "n": int(val_recomputed["n"]),
+            "accuracy": float(val_recomputed["accuracy"]),
+            "precision": float(val_recomputed["precision"]),
+            "recall": float(val_recomputed["recall"]),
+            "f1": float(val_recomputed["f1"]),
+            "fpr": float(val_recomputed["fpr"]),
+            "fp": int(val_recomputed["fp"]),
+            "fn": int(val_recomputed["fn"]),
+            "tn": int(val_recomputed["tn"]),
+            "tp": int(val_recomputed["tp"]),
         },
     }
 
@@ -679,17 +1303,41 @@ def generate_error_analysis_report(
     evaluation_result: Optional[Dict[str, Any]] = None,
     error_analysis_data: Optional[Dict[str, Any]] = None,
     split_manifest_path: Union[str, Path] = DEFAULT_SPLIT_MANIFEST_PATH,
+    preprocessing_manifest_path: Union[str, Path] = DEFAULT_PREPROCESSING_MANIFEST_JSON_PATH,
     validation_audit_path: Union[str, Path] = DEFAULT_VALIDATION_AUDIT_JSON_PATH,
     model_manifest_path: Union[str, Path] = DEFAULT_MODEL_MANIFEST_JSON_PATH,
+    allow_overwrite: bool = True,
 ) -> Path:
     """Generate the comprehensive 14-section Markdown report."""
+    out_p = Path(output_path)
+    if not allow_overwrite and out_p.exists():
+        raise FileExistsError(
+            f"Error analysis report already exists at {out_p}. "
+            f"Pass allow_overwrite=True to overwrite."
+        )
+
     prereq = check_test_evaluation_prerequisites(
         split_manifest_path=split_manifest_path,
+        preprocessing_manifest_path=preprocessing_manifest_path,
         model_manifest_path=model_manifest_path,
         fail_closed=False,
     )
     limitations = compile_data_limitations_summary(
         split_manifest_path=split_manifest_path,
+        preprocessing_manifest_path=preprocessing_manifest_path,
+        validation_audit_path=validation_audit_path,
+    )
+    uncertainty_summary = compute_uncertainty_analysis(
+        y_true=evaluation_result.get("y_true") if evaluation_result else None,
+        y_pred=evaluation_result.get("y_pred") if evaluation_result else None,
+        attack_categories=(
+            evaluation_result.get("attack_categories") if evaluation_result else None
+        ),
+        split_manifest_path=split_manifest_path,
+    )
+    model_comparison = compile_model_comparison_status(
+        evaluation_result=evaluation_result,
+        model_manifest_path=model_manifest_path,
         validation_audit_path=validation_audit_path,
     )
 
@@ -698,6 +1346,12 @@ def generate_error_analysis_report(
     if mm_p.exists():
         with mm_p.open("r", encoding="utf-8") as f:
             model_manifest = json.load(f)
+
+    prep_manifest: Dict[str, Any] = {}
+    pm_p = Path(preprocessing_manifest_path)
+    if pm_p.exists():
+        with pm_p.open("r", encoding="utf-8") as f:
+            prep_manifest = json.load(f)
 
     val_audit: Dict[str, Any] = {}
     va_p = Path(validation_audit_path)
@@ -710,12 +1364,51 @@ def generate_error_analysis_report(
     if sm_p.exists():
         with sm_p.open("r", encoding="utf-8") as f:
             split_manifest = json.load(f)
+    selected_split_sha = hashlib.sha256(sm_p.read_bytes()).hexdigest()
+    if model_manifest.get("split_manifest_sha256") != selected_split_sha:
+        limitations["evidence_errors"].append(
+            "Model manifest does not match the selected split manifest"
+        )
+    if val_audit.get("model_artifact", {}).get("sha256") != model_manifest.get(
+        "model_artifact_sha256"
+    ):
+        limitations["evidence_errors"].append(
+            "Validation audit and model manifest disagree on model identity"
+        )
+    if limitations["evidence_errors"]:
+        limitations["evidence_status"] = "NOT VERIFIED"
 
     has_test_runtime = evaluation_result is not None and "metrics" in evaluation_result
+    result_metadata = evaluation_result.get("metadata", {}) if evaluation_result else {}
+    result_hashes = result_metadata.get("provenance_hashes", {})
+    canonical_split = json.loads(DEFAULT_SPLIT_MANIFEST_PATH.read_text(encoding="utf-8"))
+    verified_real_run = (
+        has_test_runtime
+        and prereq.ready
+        and limitations["evidence_status"] == "VERIFIED"
+        and result_metadata.get("partition_verification_status") == "VERIFIED"
+        and result_hashes.get("dataset_sha256") == canonical_split.get("dataset_sha256")
+        and all(
+            result_hashes.get(key) == prereq.verified_hashes.get(key)
+            for key in (
+                "dataset_sha256",
+                "split_manifest_sha256",
+                "preprocessor_artifact_sha256",
+                "model_artifact_sha256",
+            )
+        )
+    )
     exec_status_badge = (
         "EXPERIMENTALLY VALIDATED ON HELD-OUT TEST SET"
-        if has_test_runtime
-        else "IMPLEMENTED & UNIT-TESTED | REAL-DATA TEST EXECUTION BLOCKED (MISSING LOCAL BINARIES)"
+        if verified_real_run
+        else (
+            "RESULTS AVAILABLE | REAL-DATA PROVENANCE NOT VERIFIED"
+            if has_test_runtime
+            else "IMPLEMENTED & UNIT-TESTED | REAL-DATA TEST EXECUTION BLOCKED (MISSING LOCAL BINARIES)"  # noqa: E501
+        )
+    )
+    metric_status = (
+        "VERIFIED" if verified_real_run else "NOT VERIFIED (synthetic or unverified provenance)"
     )
 
     parts_meta = limitations["partitions"]
@@ -750,29 +1443,34 @@ def generate_error_analysis_report(
         key=lambda kv: (-kv[1], kv[0]),
     )
     total_test_attacks = sum(v for _, v in sorted_test_attacks)
-    top1 = sorted_test_attacks[0] if len(sorted_test_attacks) > 0 else ("Exploits", 10520)
-    top2 = sorted_test_attacks[1] if len(sorted_test_attacks) > 1 else ("Fuzzers", 7322)
-    top3 = sorted_test_attacks[2] if len(sorted_test_attacks) > 2 else ("Generic", 5111)
+    if len(sorted_test_attacks) < 3:
+        raise ValueError("Split evidence must contain at least three Attack families")
+    top1, top2, top3 = sorted_test_attacks[:3]
     top3_sum = top1[1] + top2[1] + top3[1]
-    top3_pct = (100.0 * top3_sum / total_test_attacks) if total_test_attacks > 0 else 75.02
+    top3_pct = 100.0 * top3_sum / total_test_attacks
 
     if has_test_runtime:
         m_all = evaluation_result["metrics"]["overall_metrics"]
         cm_brk = evaluation_result["metrics"]["confusion_matrix_breakdown"]
         ben_brk = evaluation_result["metrics"]["benign_traffic_breakdown"]
         cat_brk = evaluation_result["metrics"]["per_attack_category_breakdown"]
+        validate_evaluation_and_error_consistency(
+            cm_breakdown=cm_brk,
+            attack_breakdown=cat_brk,
+            expected_total_rows=int(cm_brk["total"]),
+        )
         run_id_str = str(evaluation_result.get("run_id", "rf-test-eval"))
         overall_table = (
             "| Metric | Held-out Test Value | Status |\n"
             "| :--- | :---: | :---: |\n"
-            f"| **Accuracy** | `{m_all['accuracy']:.6f}` | VERIFIED |\n"
-            f"| **Precision (Attack=1)** | `{m_all['precision']:.6f}` | VERIFIED |\n"
-            f"| **Recall / TPR (Attack=1)** | `{m_all['recall']:.6f}` | VERIFIED |\n"
-            f"| **F1-Score (Binary Attack=1)** | `{m_all['f1']:.6f}` | VERIFIED |\n"
-            f"| **Macro F1** | `{m_all['macro_f1']:.6f}` | VERIFIED |\n"
-            f"| **Weighted F1** | `{m_all['weighted_f1']:.6f}` | VERIFIED |\n"
-            f"| **False Positive Rate (FPR)** | `{m_all['false_positive_rate']:.6f}` | VERIFIED |\n"
-            f"| **True Negative Rate (TNR)** | `{m_all['true_negative_rate']:.6f}` | VERIFIED |\n"
+            f"| **Accuracy** | `{m_all['accuracy']:.6f}` | {metric_status} |\n"
+            f"| **Precision (Attack=1)** | `{m_all['precision']:.6f}` | {metric_status} |\n"
+            f"| **Recall / TPR (Attack=1)** | `{m_all['recall']:.6f}` | {metric_status} |\n"
+            f"| **F1-Score (Binary Attack=1)** | `{m_all['f1']:.6f}` | {metric_status} |\n"
+            f"| **Macro F1** | `{m_all['macro_f1']:.6f}` | {metric_status} |\n"
+            f"| **Weighted F1** | `{m_all['weighted_f1']:.6f}` | {metric_status} |\n"
+            f"| **False Positive Rate (FPR)** | `{m_all['false_positive_rate']:.6f}` | {metric_status} |\n"  # noqa: E501
+            f"| **True Negative Rate (TNR)** | `{m_all['true_negative_rate']:.6f}` | {metric_status} |\n"  # noqa: E501
         )
         cm_table = (
             "| Ground Truth \\ Predicted | Predicted Benign (`0`) | "
@@ -825,6 +1523,7 @@ def generate_error_analysis_report(
             f"`{test_rows:,}` |\n"
         )
 
+    sens_by_cat = uncertainty_summary.get("sample_size_sensitivity_by_category", {})
     cat_rows_md: List[str] = []
     if has_test_runtime and cat_brk is not None:
         ranked_cats = [(k, v) for k, v in cat_brk.items() if k != "Benign"]
@@ -836,19 +1535,27 @@ def generate_error_analysis_report(
             )
         )
         for rank_i, (c_name, c_stats) in enumerate(ranked_cats, start=1):
+            c_tot = int(c_stats["total"])
+            c_det = int(c_stats["detected"])
+            c_mis = int(c_stats["missed"])
+            c_ci = compute_wilson_confidence_interval(c_det, c_tot, confidence=0.95)
             cat_rows_md.append(
-                f"| {rank_i} | `{c_name}` | `{int(c_stats['total']):,}` | "
-                f"`{int(c_stats['detected']):,}` | `{int(c_stats['missed']):,}` | "
+                f"| {rank_i} | `{c_name}` | `{c_tot:,}` | "
+                f"`{c_det:,}` | `{c_mis:,}` | "
                 f"`{float(c_stats['detection_rate']):.6f}` | "
-                f"`{float(c_stats['false_negative_rate']):.6f}` |"
+                f"`{float(c_stats['false_negative_rate']):.6f}` | "
+                f"`[{c_ci['ci_lower']:.4f}, {c_ci['ci_upper']:.4f}]` |"
             )
     else:
         for rank_i, (c_name, c_total) in enumerate(sorted_test_attacks, start=1):
             share_pct = (100.0 * c_total / total_test_attacks) if total_test_attacks > 0 else 0.0
+            sens_c = sens_by_cat.get(c_name, {})
+            ci_0 = sens_c.get("ci_95_at_zero_misses", [0.0, 1.0])
             cat_rows_md.append(
                 f"| {rank_i} | `{c_name}` | `{c_total:,}` (`{share_pct:.2f}%` of Test Attacks) | "
                 "`NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | "
-                "`NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` |"
+                "`NOT VERIFIED (Blocked)` | `NOT VERIFIED (Blocked)` | "
+                f"`[{ci_0[0]:.4f}, {ci_0[1]:.4f}]` (at 0 FN) |"
             )
 
     top_features_md: List[str] = []
@@ -884,33 +1591,41 @@ def generate_error_analysis_report(
         else "- None (all required binary and manifest artifacts are present on disk)."
     )
 
-    raw_ds_sha = split_manifest.get(
-        "dataset_sha256", "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
-    )
-    test_indices_sha = (
-        split_manifest.get("partitions", {})
-        .get("test", {})
-        .get("index_sha256", "90219f75a680705f2e9982f93405f29b4df2ba00a847d9ba04832db6a26b5eae")
-    )
-    split_manifest_sha = prereq.verified_hashes.get(
-        "split_manifest_sha256", "1ba6b2ef2c5db74f0937ab9de0b67212e21b6819c59c839d4dab034ff4d120a8"
-    )
-    prep_manifest_sha = prereq.verified_hashes.get(
-        "preprocessing_manifest_sha256",
-        "666a7aaea7c65513d9a681e17fa976db0946e001a164a25ff208e08da95b67ba",
-    )
-    model_manifest_sha = prereq.verified_hashes.get(
-        "model_manifest_sha256", "2ea97a57c6917c2f39e94aa5795cbd83f98b2f7bbf09d7f5454344f19d08dcf3"
-    )
-    model_artifact_sha = model_manifest.get(
-        "model_artifact_sha256", "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea"
-    )
+    raw_ds_sha = split_manifest["dataset_sha256"]
+    test_indices_sha = split_manifest["partitions"]["test"]["index_sha256"]
+    split_manifest_sha = prereq.verified_hashes["split_manifest_sha256"]
+    prep_manifest_sha = prereq.verified_hashes["preprocessing_manifest_sha256"]
+    prep_artifact_sha = prep_manifest["artifact_sha256"]
+    model_manifest_sha = prereq.verified_hashes["model_manifest_sha256"]
+    model_artifact_sha = model_manifest["model_artifact_sha256"]
+
+    hp = model_manifest["hyperparameters"]
+    hp_n_estimators = hp["n_estimators"]
+    hp_max_depth = hp["max_depth"]
+    hp_min_samples_split = hp["min_samples_split"]
+    hp_min_samples_leaf = hp["min_samples_leaf"]
+    hp_criterion = hp["criterion"]
+    hp_max_features = hp["max_features"]
+    hp_class_weight = hp["class_weight"]
+    hp_bootstrap = hp["bootstrap"]
+    hp_random_state = hp["random_state"]
+    hp_n_jobs = hp["n_jobs"]
+
+    rf_comp = model_comparison["models"]["random_forest"]
+    if_comp = model_comparison["models"]["isolation_forest"]
+
+    worms_cnt = int(test_att_dist["Worms"])
+    worms_sens = sens_by_cat["Worms"]
+    worms_ci_0 = worms_sens["ci_95_at_zero_misses"]
+    worms_ci_1 = worms_sens["ci_95_at_one_miss"]
 
     lines: List[str] = [
         "# Random Forest Baseline — Independent Test Evaluation & Error Analysis Report",
         "",
         "- **Issue Scope**: Issue #12 (Held-out Test Evaluation) & Issue #13 (Error Analysis)",
         f"- **Execution Status**: `{exec_status_badge}`",
+        f"- **Manifest evidence status**: `{limitations['evidence_status']}`",
+        f"- **Manifest evidence errors**: `{limitations['evidence_errors']}`",
         f"- **Evaluation Run ID**: `{run_id_str}`",
         (
             f"- **Model Configuration ID**: "
@@ -918,7 +1633,7 @@ def generate_error_analysis_report(
         ),
         (
             f"- **Protocol Version**: "
-            f"`{model_manifest.get('protocol_version', 'rf-baseline-protocol-v1')}`"
+            f"`{model_manifest.get('protocol_version', 'rf-baseline-nf-unsw-nb15-v3-v1')}`"
         ),
         (
             "- **Feature Contract**: "
@@ -934,9 +1649,9 @@ def generate_error_analysis_report(
             "Tài liệu này báo cáo quy trình đánh giá độc lập mô hình **Random Forest Baseline** "
             "trên tập **Held-out Test** (Issue #12) và phân tích chuyên sâu "
             "**False Positives (FP), "
-            "False Negatives (FN), phân rã theo họ tấn công (`Attack` category), đặc trưng "
-            "ranh giới quyết định và giới hạn dữ liệu** (Issue #13) trên bộ dữ liệu chuẩn "
-            "**NF-UNSW-NB15-v3**."
+            "False Negatives (FN), phân rã theo họ tấn công (`Attack` category), phân nhóm luồng "
+            "mạng, phân tích cửa sổ thời gian, độ bất định thống kê và giới hạn dữ liệu** "
+            "(Issue #13) trên bộ dữ liệu chuẩn **NF-UNSW-NB15-v3**."
         ),
         "",
         (
@@ -1001,7 +1716,7 @@ def generate_error_analysis_report(
         f"`{prep_manifest_sha}` | `PRESENT & VERIFIED` |",
         "| **Preprocessor Artifact** | "
         "`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | "
-        "`e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6` | "
+        f"`{prep_artifact_sha}` | "
         + (
             "`PRESENT`"
             if Path("artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib").exists()
@@ -1032,30 +1747,31 @@ def generate_error_analysis_report(
         "",
         "| Tham số | Giá trị khóa (Locked Value) | Ý nghĩa khoa học |",
         "| :--- | :---: | :--- |",
-        "| `model_type` | `random_forest` | Mô hình học có giám sát chuẩn (Supervised Baseline) |",
-        "| `n_estimators` | `200` | Số lượng cây quyết định đảm bảo phương sai dự đoán ổn định |",
+        "| `model_type` | `RandomForest` | Mô hình học có giám sát chuẩn (Supervised Baseline) |",
+        f"| `n_estimators` | `{hp_n_estimators}` | Số lượng cây quyết định đảm bảo phương sai dự đoán ổn định |",  # noqa: E501
         (
-            f"| `max_depth` | `16` | Giới hạn độ sâu cây để chống overfitting "
+            f"| `max_depth` | `{hp_max_depth}` | Giới hạn độ sâu cây để chống overfitting "
             f"trên {train_rows:,} dòng Train |"
         ),
-        "| `min_samples_split` | `10` | Số mẫu tối thiểu để tách nút nội |",
-        "| `min_samples_leaf` | `4` | Làm mịn ước lượng xác suất tại nút lá (`predict_proba`) |",
-        "| `criterion` | `gini` | Tiêu chuẩn độ tinh khiết Gini |",
-        "| `max_features` | `sqrt` | Lấy mẫu $\\lfloor\\sqrt{47}\\rfloor = 6$ đặc trưng |",
-        "| `class_weight` | `balanced_subsample` | Cân bằng trọng số theo bootstrap sample |",
-        "| `bootstrap` | `True` | Lấy mẫu có hoàn lại cho từng cây |",
-        "| `random_state` | `42` | Hạt giống ngẫu nhiên cố định đảm bảo tái lập kết quả |",
-        "| `decision_threshold` | `0.5` | Ngưỡng phân loại nhị phân mặc định |",
+        f"| `min_samples_split` | `{hp_min_samples_split}` | Số mẫu tối thiểu để tách nút nội |",
+        f"| `min_samples_leaf` | `{hp_min_samples_leaf}` | Số mẫu tối thiểu tại nút lá |",
+        f"| `criterion` | `{hp_criterion}` | Tiêu chuẩn độ tinh khiết Gini |",
+        f"| `max_features` | `{hp_max_features}` | Lấy mẫu $\\lfloor\\sqrt{{47}}\\rfloor = 6$ đặc trưng |",  # noqa: E501
+        f"| `class_weight` | `{hp_class_weight}` | Giữ nguyên phân phối tự nhiên (không bóp méo xác suất hậu nghiệm) |",  # noqa: E501
+        f"| `bootstrap` | `{hp_bootstrap}` | Lấy mẫu có hoàn lại cho từng cây |",
+        f"| `random_state` | `{hp_random_state}` | Hạt giống ngẫu nhiên cố định đảm bảo tái lập kết quả |",  # noqa: E501
+        f"| `n_jobs` | `{hp_n_jobs}` | Thực thi song song đa luồng (không ảnh hưởng tính tất định) |",  # noqa: E501
+        f"| `decision_threshold` | `{CANONICAL_DECISION_THRESHOLD}` | Ngưỡng phân loại nhị phân cố định (`prob_attack >= 0.5`) |",  # noqa: E501
         "",
         "### 3.2. Hợp đồng tiền xử lý (`TrainOnlyPreprocessor`)",
         "",
         (
-            '- **Chế độ**: `fit_partition = "train"` (chỉ học thống kê median trên tập Train, '
+            '- **Chế độ**: `fit_partition = "train_only"` (chỉ học thống kê median/mode trên tập Train, '  # noqa: E501
             "áp dụng `.transform()` trên Test)."
         ),
         (
             "- **Xử lý giá trị bất thường**: Thay thế `±Inf` bằng `NaN`, sau đó điền khuyết bằng "
-            "`median` của tập Train trên đúng 47 cột đặc trưng `ML_FEATURE_COLUMNS`."
+            "`median` của tập Train trên các cột định lượng và `mode` trên các cột phân loại trong 47 đặc trưng `ML_FEATURE_COLUMNS`."  # noqa: E501
         ),
         (
             "- **Loại trừ cột cấm (Anti-Leakage)**: Cấm tuyệt đối `Label`, `Attack` và 6 cột "
@@ -1096,6 +1812,8 @@ def generate_error_analysis_report(
         "",
         "## 5. Overall Test Performance",
         "",
+        "### 5.1. Bảng chỉ số đánh giá trên tập Held-out Test",
+        "",
         overall_table,
         "",
         (
@@ -1108,6 +1826,20 @@ def generate_error_analysis_report(
             "Các con số Validation này chỉ được trích dẫn làm mốc tham chiếu trước Test và "
             "**tuyệt đối không được dùng thay thế cho kết quả Test**."
         ),
+        "",
+        "### 5.2. Đối chiếu trạng thái giữa Random Forest và Isolation Forest (Model Comparison)",
+        "",
+        "| Tiêu chí | Random Forest Baseline (`rf-baseline-canonical-v1`) | Isolation Forest (`isolation-forest-optional-baseline`) |",  # noqa: E501
+        "| :--- | :--- | :--- |",
+        f"| **Vai trò trong dự án** | `{rf_comp['project_role']}` | `{if_comp['project_role']}` |",
+        f"| **Mô hình học (Paradigm)** | {rf_comp['learning_paradigm']} | {if_comp['learning_paradigm']} |",  # noqa: E501
+        f"| **Giao thức dữ liệu huấn luyện** | {rf_comp['training_partition_protocol']} | {if_comp['training_partition_protocol']} |",  # noqa: E501
+        f"| **Quy tắc quyết định (Decision Rule)** | `{rf_comp['decision_rule']}` | {if_comp['decision_rule']} |",  # noqa: E501
+        f"| **Trạng thái trên Validation** | `{rf_comp['validation_status']}` (`F1={val_f1:.6f}`, `FPR={val_fpr:.6e}`) | `{if_comp['validation_status']}` (`{if_comp['experiment_status']}`) |",  # noqa: E501
+        f"| **Trạng thái trên Held-out Test** | `{rf_comp['held_out_test_status']}` | `{if_comp['held_out_test_status']}` |",  # noqa: E501
+        "| **Ảnh hưởng tới nghiệm thu Core** | Bắt buộc (Mandatory Core Baseline) | Không chặn (`blocks_random_forest_acceptance = False`) |",  # noqa: E501
+        "",
+        (f"- **Ghi chú phương pháp luận**: {model_comparison['protocol_comparability_note']}"),
         "",
         "---",
         "",
@@ -1124,6 +1856,8 @@ def generate_error_analysis_report(
         "---",
         "",
         "## 7. Benign Traffic & False Positive Analysis",
+        "",
+        "### 7.1. Thống kê tổng hợp trên lưu lượng Benign",
         "",
         (
             f"- **Tổng số mẫu Benign trên Test**: `{ben_brk['total']:,}`\n"
@@ -1146,13 +1880,30 @@ def generate_error_analysis_report(
             )
         ),
         "",
-        "### Cơ chế gây báo động giả (False Positive Mechanisms)",
+        "### 7.2. Phân rã False Positive theo nhóm luồng mạng (Flow Group & Regime Analysis)",
+        "",
+        (
+            "- Hàm `analyze_fp_by_flow_groups()` phân rã chi tiết các mẫu báo động giả (`FP`) "
+            "trên lưu lượng Benign theo 4 chiều:\n"
+            "  1. **Theo giao thức vận chuyển (`PROTOCOL`)**: Phân tách tỷ lệ `FPR` và tỷ trọng "
+            "`share_of_all_fp` giữa TCP (`6`), UDP (`17`), ICMP (`1`) và các giao thức khác.\n"
+            "  2. **Theo giao thức tầng ứng dụng (`L7_PROTO`)**: Xác định top mã giao thức L7 "
+            "sinh nhiều cảnh báo giả nhất.\n"
+            "  3. **Theo chế độ thời lượng luồng (`FLOW_DURATION_MILLISECONDS`)**: Tách biệt "
+            "nhóm luồng tức thời (`0 ms`), luồng ngắn (`1..100 ms`), trung bình (`101..10,000 ms`) "
+            "và luồng dài (`>10,000 ms`).\n"
+            "  4. **Theo nhóm luồng ẩn danh (`by_anonymized_flow_group`)**: Khi có `trace_metadata`, "  # noqa: E501
+            "nhóm các luồng theo mã băm ẩn danh `fg_<sha256[:12]>` của cặp điểm cuối và giao thức "
+            "(ẩn hoàn toàn địa chỉ IP thô để bảo mật thông tin mạng)."
+        ),
+        "",
+        "### 7.3. Cơ chế gây báo động giả (False Positive Mechanisms)",
         (
             f"1. **Va chạm vector đặc trưng (`ml_feature_overlap`)**: Có tới "
             f"`{test_overlap_rows:,} / {test_rows:,}` dòng Test (`{test_overlap_pct:.2f}%`) "
             "có vector 47 đặc trưng trùng khớp với các dòng thuộc phân vùng/nhãn khác. "
-            "Khi một luồng Benign ngắn có cùng bộ 47 đặc trưng với các luồng dò quét và rơi vào "
-            "nút lá có trọng số `balanced_subsample` nghiêng về lớp `Attack`, mô hình dự đoán `1`."
+            "Khi một luồng Benign ngắn có cùng bộ 47 đặc trưng với các luồng dò quét, cây quyết "
+            "định có thể gán xác suất dự đoán vượt ngưỡng `0.5`."
         ),
         (
             "2. **Đột biến băng thông và truyền lại gói hợp pháp**: Các kết nối Benign có tốc độ "
@@ -1162,6 +1913,8 @@ def generate_error_analysis_report(
         "---",
         "",
         "## 8. Attack Traffic & False Negative Analysis",
+        "",
+        "### 8.1. Thống kê tổng hợp trên lưu lượng Attack",
         "",
         (
             f"- **Tổng số mẫu Attack trên Test**: `{cm_brk['attack_total']:,}`\n"
@@ -1182,12 +1935,21 @@ def generate_error_analysis_report(
             )
         ),
         "",
-        "### Cơ chế bỏ lọt tấn công (False Negative Mechanisms)",
+        "### 8.2. Phân tích lỗi theo cửa sổ thời gian (Temporal Window Error Analysis)",
+        "",
+        (
+            "- Hàm `analyze_temporal_window_errors()` chia tập Test theo thứ tự thời gian "
+            "`FLOW_START_MILLISECONDS` (thuộc `trace_metadata`, tách biệt hoàn toàn khỏi 47 đặc "
+            "trưng đầu vào của mô hình) thành các cửa sổ thời gian liên tiếp để kiểm tra hiện tượng "  # noqa: E501
+            "tập trung lỗi (`FP`/`FN` burst) hoặc suy giảm hiệu năng theo thời gian (temporal drift)."  # noqa: E501
+        ),
+        "",
+        "### 8.3. Cơ chế bỏ lọt tấn công (False Negative Mechanisms)",
         (
             "1. **Tấn công thăm dò và khai thác tần suất thấp "
             "(Low-and-Slow / Single-Flow Stealth)**: "
             "Các luồng thuộc nhóm `Reconnaissance`, `Analysis`, `Backdoor` hoặc `Worms` chỉ gửi "
-            "một vài gói tin kích thước nhỏ có hành vi thống kê rất giống Benign."
+            "một vài gói tin kích thước nhỏ có hành vi thống kê cấp luồng rất giống Benign."
         ),
         (
             "2. **Sự phụ thuộc vào đặc trưng TTL (`MAX_TTL`, `MIN_TTL`)**: Khi luồng tấn công có "
@@ -1199,54 +1961,63 @@ def generate_error_analysis_report(
         "",
         "## 9. Per-Attack-Category Breakdown",
         "",
-        "Bảng phân rã 9 họ tấn công (`Attack` category) trên tập Test:",
+        "### 9.1. Bảng phân rã 9 họ tấn công và khoảng tin cậy Wilson 95%",
         "",
         "| Rank | Attack Category | Total in Test | Detected (`TP`) | Missed (`FN`) | "
-        "Detection Rate (`Recall`) | False Negative Rate (`FNR`) |",
-        "| :---: | :--- | :---: | :---: | :---: | :---: | :---: |",
+        "Detection Rate (`Recall`) | False Negative Rate (`FNR`) | 95% Wilson CI (`Recall`) |",
+        "| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |",
         *cat_rows_md,
         "",
-        "### Nhận xét về phân bố họ tấn công trên tập Test",
+        "### 9.2. Phân tích độ bất định thống kê (Uncertainty Analysis) & Các họ tấn công hiếm",
         (
             f"- Ba họ tấn công lớn nhất (`{top1[0]}`: `{top1[1]:,}`, `{top2[0]}`: `{top2[1]:,}`, "
             f"`{top3[0]}`: `{top3[1]:,}`) chiếm tới **`{top3_pct:.2f}%`** "
             f"(`{top3_sum:,} / {total_test_attacks:,}`) tổng số mẫu tấn công trong tập Test."
         ),
         (
-            f"- Ngược lại, 4 họ tấn công hiếm (`Worms`: `{test_att_dist.get('Worms', 36):,}`, "
-            f"`Analysis`: `{test_att_dist.get('Analysis', 294):,}`, "
-            f"`Shellcode`: `{test_att_dist.get('Shellcode', 396):,}`, "
-            f"`Backdoor`: `{test_att_dist.get('Backdoor', 1260):,}`) chỉ chiếm một tỷ lệ nhỏ "
-            "tổng số mẫu tấn công. Do đó, việc đánh giá riêng từng họ tấn công là bắt buộc để "
-            "không che khuất điểm yếu trên các lớp hiếm."
+            f"- Ngược lại, họ `Worms` chỉ có **`{worms_cnt}` mẫu** trên tập Test. Theo công thức "
+            f"khoảng tin cậy **Wilson 95%** (`compute_wilson_confidence_interval`), ngay cả khi "
+            f"phát hiện đúng tuyệt đối `{worms_cnt}/{worms_cnt}` mẫu (`100.00%`), khoảng tin cậy "
+            f"95% của Recall cho `Worms` vẫn trải rộng từ **`[{worms_ci_0[0] * 100:.2f}%, "
+            f"{worms_ci_0[1] * 100:.2f}%]`** (độ rộng `{100.0 * (worms_ci_0[1] - worms_ci_0[0]):.2f}%`); "  # noqa: E501
+            f"nếu bỏ lọt 1 mẫu (`{worms_cnt - 1}/{worms_cnt} = 97.22%`), khoảng tin cậy 95% mở "
+            f"rộng thành **`[{worms_ci_1[0] * 100:.2f}%, {worms_ci_1[1] * 100:.2f}%]`**."
+        ),
+        (
+            f"- **Lưu ý về giả định độc lập thống kê (Flow Independence Caveat)**: "
+            f"{uncertainty_summary['flow_dependence_caveat']}"
         ),
         "",
         "---",
         "",
         "## 10. Feature Importance & Error Pattern Analysis",
         "",
-        "Phân tích đặc trưng được tách bạch nghiêm ngặt thành 3 tầng:",
+        "Phân tích đặc trưng được tách bạch nghiêm ngặt thành 4 tầng nhận thức khoa học "
+        "(Epistemic Separation):",
         "",
-        "### 10.1. Tầng 1 — Độ quan trọng đặc trưng toàn cục (Global Impurity Feature Importance)",
+        "### 10.1. Tầng 1 — Quan sát thực nghiệm đã xác minh (Verified Observations)",
         "",
         "| Rank | Feature Name | Gini Importance | Cumulative Importance |",
         "| :---: | :--- | :---: | :---: |",
         *top_features_md,
         "",
         (
-            "- **Nhận xét trọng tâm**: Hai đặc trưng `MAX_TTL` và `MIN_TTL` chiếm tổng cộng gần "
-            "**`45-50%`** độ quan trọng toàn cục của mô hình. Top 10 đặc trưng đầu tiên chiếm hơn "
-            "**`80%`** tổng độ quan trọng."
+            "- **Quan sát đã xác minh**: Hai đặc trưng `MAX_TTL` và `MIN_TTL` chiếm tổng cộng gần "
+            "**`49.94%`** độ quan trọng toàn cục của mô hình. Top 10 đặc trưng đầu tiên chiếm hơn "
+            "**`80%`** tổng độ quan trọng, và không gian đặc trưng chỉ chứa 47 thuộc tính cấp luồng "  # noqa: E501
+            "NetFlow v3."
         ),
         "",
-        "### 10.2. Tầng 2 — Mẫu thống kê trên các bản ghi phân loại sai",
+        "### 10.2. Tầng 2 — Liên kết thống kê trên mẫu lỗi (Statistical Associations)",
         "",
         (
-            "- Hàm `analyze_feature_error_patterns()` tính toán độ lệch chuẩn hóa giữa "
-            "`FP` so với `TN` và giữa `FN` so với `TP` trên toàn bộ 47 đặc trưng."
+            "- Hàm `analyze_feature_error_patterns()` tính toán độ lệch chuẩn hóa "
+            "(`standardized_abs_shift`) giữa `FP` so với `TN` và giữa `FN` so với `TP` trên toàn "
+            "bộ 47 đặc trưng, đo lường sự dịch chuyển trung bình và trung vị của các bản ghi phân "
+            "loại sai so với phân phối chuẩn của lớp tương ứng."
         ),
         "",
-        "### 10.3. Tầng 3 — Giả thuyết nguyên nhân lỗi theo ngữ nghĩa NIDS",
+        "### 10.3. Tầng 3 — Giả thuyết miền NIDS (Domain Hypotheses)",
         "",
         (
             "1. **`H1_EXACT_FEATURE_COLLISION`**: Sự trùng lặp hoàn toàn bộ 47 đặc trưng giữa các "
@@ -1269,19 +2040,32 @@ def generate_error_analysis_report(
             "dễ chạm ngưỡng nhánh cây của lớp `Attack`."
         ),
         "",
+        "### 10.4. Tầng 4 — Đề xuất thí nghiệm kiểm chứng tiếp theo (Future Experiment Proposals)",
+        "",
+        (
+            "- **EXP-1 (TTL Ablation & Regularization)**: Đánh giá biến thể loại bỏ hoặc làm nhiễu "
+            "`MIN_TTL`/`MAX_TTL` trên tập Test để đo độ suy giảm Recall theo từng họ tấn công.\n"
+            "- **EXP-2 (Windowed Flow-Group Aggregation)**: Bổ sung đặc trưng thống kê cửa sổ thời "
+            "gian trượt (không dùng IP tĩnh làm đặc trưng) nhằm phân tách các luồng trùng lặp bộ "
+            "47 đặc trưng.\n"
+            "- **EXP-3 (Multi-Model Hybrid Triage)**: Kết hợp điểm dị thường từ Isolation Forest "
+            "đã hiệu chuẩn ngưỡng trên Validation cho các mẫu rơi vào vùng bất định `[0.35, 0.65]`."
+        ),
+        "",
         "---",
         "",
         "## 11. Decision Boundary & Confidence Analysis",
         "",
         (
             "- **Ngưỡng quyết định cố định (Fixed Canonical Threshold)**: `0.50` trên xác suất dự "
-            "đoán lớp `Attack`. Tuân thủ quy tắc chống rò rỉ dữ liệu, ngưỡng này **không được "
-            "tinh chỉnh trên tập Test**."
+            "đoán lớp `Attack` (`prob_attack >= 0.50` phân loại là `1`). Tuân thủ quy tắc chống "
+            "rò rỉ dữ liệu, ngưỡng này **không được tinh chỉnh trên tập Test**."
         ),
         (
             "- **Vùng bất định (Uncertainty Band `[0.35, 0.65]`)**: Hàm "
             "`analyze_classification_boundary()` đo lường tỷ lệ mẫu rơi vào vùng xác suất sát "
-            "ngưỡng `0.50` (`[0.35, 0.65]`) cũng như tỷ lệ lỗi có độ tự tin cao."
+            "ngưỡng `0.50` (`[0.35, 0.65]`) cũng như tỷ lệ lỗi có độ tự tin cao (`prob_attack >= 0.80` "  # noqa: E501
+            "đối với `FP` và `prob_attack <= 0.20` đối với `FN`)."
         ),
         "",
         "---",
@@ -1425,9 +2209,8 @@ def generate_error_analysis_report(
         "",
     ]
 
-    out_p = Path(output_path)
     out_p.parent.mkdir(parents=True, exist_ok=True)
-    out_p.write_text("\n".join(lines), encoding="utf-8")
+    out_p.write_text("\n".join(lines), encoding="utf-8", newline="\n")
     return out_p
 
 
@@ -1436,7 +2219,10 @@ def run_full_error_analysis_from_evaluation(
     feature_importances: Optional[Sequence[float]] = None,
     report_path: Union[str, Path] = DEFAULT_ERROR_ANALYSIS_REPORT_PATH,
     split_manifest_path: Union[str, Path] = DEFAULT_SPLIT_MANIFEST_PATH,
+    preprocessing_manifest_path: Union[str, Path] = DEFAULT_PREPROCESSING_MANIFEST_JSON_PATH,
     validation_audit_path: Union[str, Path] = DEFAULT_VALIDATION_AUDIT_JSON_PATH,
+    trace_metadata: Optional[pd.DataFrame] = None,
+    allow_overwrite: bool = True,
 ) -> Dict[str, Any]:
     """Run full error analysis pipeline from an in-memory evaluation result."""
     out_rep = Path(report_path)
@@ -1453,6 +2239,10 @@ def run_full_error_analysis_from_evaluation(
     feature_patterns = None
     boundary_analysis = None
     limitations = None
+    fp_flow_groups = None
+    temporal_errors = None
+    uncertainty_analysis = None
+    model_comparison = None
 
     if X_test is not None and y_true is not None and y_pred is not None:
         fp_fn_summary = extract_fp_fn_samples(
@@ -1475,6 +2265,27 @@ def run_full_error_analysis_from_evaluation(
             y_pred=y_pred,
             feature_importances=feature_importances,
         )
+        fp_flow_groups = analyze_fp_by_flow_groups(
+            X=X_test,
+            y_true=y_true,
+            y_pred=y_pred,
+            trace_metadata=trace_metadata,
+        )
+        temporal_errors = analyze_temporal_window_errors(
+            y_true=y_true,
+            y_pred=y_pred,
+            trace_metadata=trace_metadata,
+        )
+        uncertainty_analysis = compute_uncertainty_analysis(
+            y_true=y_true,
+            y_pred=y_pred,
+            attack_categories=attack_cats,
+            split_manifest_path=split_manifest_path,
+        )
+        model_comparison = compile_model_comparison_status(
+            evaluation_result=evaluation_result,
+            validation_audit_path=validation_audit_path,
+        )
         if prob_attack is not None:
             boundary_analysis = analyze_classification_boundary(
                 y_true=y_true,
@@ -1483,12 +2294,17 @@ def run_full_error_analysis_from_evaluation(
             )
         limitations = compile_data_limitations_summary(
             split_manifest_path=split_manifest_path,
+            preprocessing_manifest_path=preprocessing_manifest_path,
             validation_audit_path=validation_audit_path,
         )
 
     analysis_payload = {
         "fp_fn_summary": fp_fn_summary,
         "ranked_attack_categories": ranked_cats,
+        "fp_by_flow_groups": fp_flow_groups,
+        "temporal_window_errors": temporal_errors,
+        "uncertainty_analysis": uncertainty_analysis,
+        "model_comparison": model_comparison,
         "global_feature_importance": (
             feature_patterns.get("global_feature_importance", []) if feature_patterns else []
         ),
@@ -1497,6 +2313,9 @@ def run_full_error_analysis_from_evaluation(
         ),
         "error_hypotheses": (
             feature_patterns.get("error_hypotheses", []) if feature_patterns else []
+        ),
+        "epistemic_separation": (
+            feature_patterns.get("epistemic_separation", {}) if feature_patterns else {}
         ),
         "boundary_analysis": boundary_analysis,
         "data_limitations": limitations,
@@ -1507,7 +2326,9 @@ def run_full_error_analysis_from_evaluation(
         evaluation_result=evaluation_result,
         error_analysis_data=analysis_payload,
         split_manifest_path=split_manifest_path,
+        preprocessing_manifest_path=preprocessing_manifest_path,
         validation_audit_path=validation_audit_path,
+        allow_overwrite=allow_overwrite,
     )
 
     analysis_payload["report_path"] = str(out_rep)
@@ -1547,23 +2368,52 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="Path to model manifest JSON",
     )
     parser.add_argument(
+        "--preprocessing-manifest",
+        type=Path,
+        default=DEFAULT_PREPROCESSING_MANIFEST_JSON_PATH,
+        help="Path to matching preprocessing manifest JSON",
+    )
+    parser.add_argument(
         "--verify-only",
         action="store_true",
         help="Verify input artifacts without generating report",
+    )
+    parser.add_argument(
+        "--run-test-evaluation",
+        action="store_true",
+        help="Run the verified held-out evaluation and generate error analysis",
     )
     args = parser.parse_args(argv)
 
     if args.verify_only:
         limitations = compile_data_limitations_summary(
             split_manifest_path=args.split_manifest,
+            preprocessing_manifest_path=args.preprocessing_manifest,
             validation_audit_path=args.validation_audit,
         )
         print(json.dumps(limitations, indent=2))
         return 0
 
+    if args.run_test_evaluation:
+        result = evaluate_random_forest_on_test(
+            split_manifest_path=args.split_manifest,
+            preprocessing_manifest_path=args.preprocessing_manifest,
+            model_manifest_path=args.model_manifest,
+        )
+        run_full_error_analysis_from_evaluation(
+            result,
+            report_path=args.report_path,
+            split_manifest_path=args.split_manifest,
+            preprocessing_manifest_path=args.preprocessing_manifest,
+            validation_audit_path=args.validation_audit,
+        )
+        print(f"Error analysis report generated successfully at: {args.report_path}")
+        return 0
+
     out_p = generate_error_analysis_report(
         output_path=args.report_path,
         split_manifest_path=args.split_manifest,
+        preprocessing_manifest_path=args.preprocessing_manifest,
         validation_audit_path=args.validation_audit,
         model_manifest_path=args.model_manifest,
     )

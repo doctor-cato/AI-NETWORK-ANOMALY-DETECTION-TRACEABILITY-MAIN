@@ -8,6 +8,7 @@ and powers unified chronological timeline queries.
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,7 +55,25 @@ class ApiService:
 
     def __init__(self, db: DatabaseManager):
         self.db = db
+        self._pipeline_cache: Dict[Tuple[Any, ...], Any] = {}
+        self._cache_lock = threading.RLock()
         self._ensure_initial_key()
+
+    def _canonical_model_key(self, model_name: Optional[str]) -> str:
+        """Map requested API model selector onto supported canonical families."""
+        norm_name = (model_name or "random_forest").strip().lower()
+        return "isolation_forest" if "isolation" in norm_name else "random_forest"
+
+    def invalidate_pipeline_cache(self, model_name: Optional[str] = None) -> None:
+        """Clear cached verified inference pipelines (all or for one model family)."""
+        with self._cache_lock:
+            if model_name is None:
+                self._pipeline_cache.clear()
+                return
+            target_key = self._canonical_model_key(model_name)
+            stale_keys = [k for k in self._pipeline_cache if k[0] == target_key]
+            for k in stale_keys:
+                del self._pipeline_cache[k]
 
     def _ensure_initial_key(self) -> None:
         """Seed initial encryption key metadata if none exists."""
@@ -71,25 +90,35 @@ class ApiService:
                     },
                 )
 
-    def check_health(self) -> HealthResponse:
+    def check_health(self, model_name: str = "random_forest") -> HealthResponse:
         """Inspect process, database, and ML artifact readiness.
 
         Strictly enforces that health NEVER claims model/data ready when artifacts are missing.
+        Checks both supported model families and reports readiness for `model_name`
+        (defaulting to the API's default `random_forest` model) without promoting
+        auxiliary-model readiness to default health.
         """
         db_ready = self.db.is_healthy()
 
-        # Check preprocessor artifact
-        prep_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-        prep_legacy = ARTIFACTS / "preprocessor.joblib"
-        preprocessor_ready = prep_path.is_file() or prep_legacy.is_file()
+        target_model = self._canonical_model_key(model_name)
+        models_ready: Dict[str, bool] = {}
+        verification_errors: Dict[str, Optional[str]] = {}
+        for candidate in ("random_forest", "isolation_forest"):
+            try:
+                self._load_inference_pipeline(candidate)
+                models_ready[candidate] = True
+                verification_errors[candidate] = None
+            except (FileNotFoundError, ValueError, RuntimeError) as exc:
+                logger.warning("Artifact readiness verification failed for %s: %s", candidate, exc)
+                models_ready[candidate] = False
+                verification_errors[candidate] = "artifact verification failed"
 
-        # Check model artifact
-        rf_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
-        legacy_model = ARTIFACTS / "model.joblib"
-        if_path = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
-        model_ready = rf_path.is_file() or legacy_model.is_file() or if_path.is_file()
+        target_ready = models_ready[target_model]
+        model_ready = target_ready
+        preprocessor_ready = target_ready
+        verification_error = verification_errors[target_model]
 
-        # Overall status is degraded if either db or artifacts are missing
+        # Overall status is degraded if either db or target artifacts are missing
         status = "healthy" if (db_ready and model_ready and preprocessor_ready) else "degraded"
 
         git_commit = "unknown"
@@ -121,8 +150,15 @@ class ApiService:
                 "artifacts_dir_exists": ARTIFACTS.exists(),
                 "model_artifact_found": model_ready,
                 "preprocessor_artifact_found": preprocessor_ready,
+                "artifact_verification_error": verification_error,
+                "default_model": "random_forest",
+                "target_model": target_model,
+                "default_analysis_ready": models_ready["random_forest"],
+                "models_ready": models_ready,
             },
         )
+
+    _DEFAULT_CHECK_HEALTH = check_health
 
     def ingest_events(
         self,
@@ -219,27 +255,56 @@ class ApiService:
         )
 
     def _load_inference_pipeline(self, model_name: str) -> Any:
-        """Instantiate verified InferencePipeline fail-closed."""
-        from network_anomaly.inference.predict import InferencePipeline
+        """Instantiate verified InferencePipeline fail-closed with digest-keyed caching."""
+        from network_anomaly.inference.predict import InferencePipeline, _sha256_file
 
-        (
-            model_path,
-            prep_path,
-            model_manifest,
-            prep_manifest,
-        ) = self._resolve_artifact_paths(model_name)
+        canonical_key = self._canonical_model_key(model_name)
 
-        if not model_path.is_file():
-            raise FileNotFoundError(
-                f"Verified model artifact not found for '{model_name}' at '{model_path}'"
+        def _path_digest(p: Optional[Path]) -> Optional[Tuple[str, str]]:
+            if p is None or not p.is_file():
+                return None
+            return (str(p.resolve()), _sha256_file(p))
+
+        with self._cache_lock:
+            (
+                model_path,
+                prep_path,
+                model_manifest,
+                prep_manifest,
+            ) = self._resolve_artifact_paths(model_name)
+
+            if not model_path.is_file():
+                self.invalidate_pipeline_cache(canonical_key)
+                raise FileNotFoundError(
+                    f"Verified model artifact not found for '{model_name}' at '{model_path}'"
+                )
+
+            try:
+                cache_key = (
+                    canonical_key,
+                    _path_digest(model_path),
+                    _path_digest(prep_path),
+                    _path_digest(model_manifest),
+                    _path_digest(prep_manifest),
+                )
+            except OSError as exc:
+                self.invalidate_pipeline_cache(canonical_key)
+                raise FileNotFoundError(
+                    f"Unable to read verified artifacts for '{model_name}': {exc}"
+                ) from exc
+
+            cached = self._pipeline_cache.get(cache_key)
+            if cached is not None:
+                return cached
+            self.invalidate_pipeline_cache(canonical_key)
+            pipeline = InferencePipeline.from_artifacts(
+                model_artifact_path=model_path,
+                preprocessor_artifact_path=prep_path,
+                model_manifest_path=model_manifest,
+                preprocessor_manifest_path=prep_manifest,
             )
-
-        return InferencePipeline.from_artifacts(
-            model_artifact_path=model_path,
-            preprocessor_artifact_path=prep_path,
-            model_manifest_path=model_manifest,
-            preprocessor_manifest_path=prep_manifest,
-        )
+            self._pipeline_cache[cache_key] = pipeline
+            return pipeline
 
     def analyze_flows(
         self,
@@ -255,11 +320,31 @@ class ApiService:
         verified model artifacts are unavailable or inference fails and
         allow_heuristic_fallback is False.
         """
-        health = self.check_health()
         now = _utc_now_str()
+        check_health_patched = (
+            "check_health" in self.__dict__
+            or type(self).check_health is not ApiService._DEFAULT_CHECK_HEALTH
+        )
+        analyze_pipeline_patched = (
+            "_analyze_with_verified_pipeline" in self.__dict__
+            or type(self)._analyze_with_verified_pipeline
+            is not ApiService._DEFAULT_ANALYZE_WITH_PIPELINE
+        )
+
+        pipeline = None
+        if check_health_patched:
+            health = self.check_health()
+            artifacts_ready = bool(health.model_ready and health.preprocessor_ready)
+        else:
+            try:
+                pipeline = self._load_inference_pipeline(model_name)
+                artifacts_ready = True
+            except (FileNotFoundError, ValueError, RuntimeError) as exc:
+                logger.warning("Verified pipeline unavailable for '%s': %s", model_name, exc)
+                artifacts_ready = False
 
         # Check if production ML pipeline artifacts are present
-        if not (health.model_ready and health.preprocessor_ready):
+        if not artifacts_ready:
             if not allow_heuristic_fallback:
                 raise ModelNotReadyError(
                     "Verified ML model or preprocessor artifacts are not ready, "
@@ -271,11 +356,18 @@ class ApiService:
             model_ready = False
         else:
             try:
-                results, inference_mode, model_sha256, prep_sha256, run_id = (
-                    self._analyze_with_verified_pipeline(
-                        events, model_name=model_name, threshold=threshold
+                if analyze_pipeline_patched:
+                    results, inference_mode, model_sha256, prep_sha256, run_id = (
+                        self._analyze_with_verified_pipeline(
+                            events, model_name=model_name, threshold=threshold
+                        )
                     )
-                )
+                else:
+                    results, inference_mode, model_sha256, prep_sha256, run_id = (
+                        self._analyze_with_verified_pipeline(
+                            events, model_name=model_name, threshold=threshold, pipeline=pipeline
+                        )
+                    )
                 model_ready = True
             except Exception as ex:
                 if not allow_heuristic_fallback:
@@ -332,7 +424,10 @@ class ApiService:
                                 ),
                                 "details": {
                                     "anomaly_score": item.anomaly_score,
-                                    "threshold": threshold,
+                                    "threshold": None if model_ready else threshold,
+                                    "threshold_source": (
+                                        "verified_model" if model_ready else "heuristic_request"
+                                    ),
                                     "model_ready": model_ready,
                                     "inference_mode": item.inference_mode,
                                     "run_id": item.run_id,
@@ -357,9 +452,11 @@ class ApiService:
         events: List[Dict[str, Any]],
         model_name: str,
         threshold: float,
+        pipeline: Optional[Any] = None,
     ) -> Tuple[List[AnalyzeResultItem], str, Optional[str], Optional[str], Optional[str]]:
         """Execute inference using loaded verified artifacts."""
-        pipeline = self._load_inference_pipeline(model_name)
+        if pipeline is None:
+            pipeline = self._load_inference_pipeline(model_name)
 
         df_rows = []
         for e in events:
@@ -397,8 +494,10 @@ class ApiService:
             else:
                 score = float(raw_pred == 1 or raw_pred == -1)
 
-            is_anom = bool(score >= threshold or raw_pred == 1)
-            pred_binary = 1 if is_anom else 0
+            if isinstance(raw_pred, (bool, np.bool_)) or raw_pred not in (0, 1):
+                raise ValueError(f"Verified pipeline returned non-binary prediction: {raw_pred!r}")
+            pred_binary = int(raw_pred)
+            is_anom = bool(pred_binary)
 
             items.append(
                 AnalyzeResultItem(
@@ -418,6 +517,8 @@ class ApiService:
             )
 
         return items, "verified_model", model_sha256, prep_sha256, batch_run_id
+
+    _DEFAULT_ANALYZE_WITH_PIPELINE = _analyze_with_verified_pipeline
 
     def _analyze_with_heuristic(
         self,

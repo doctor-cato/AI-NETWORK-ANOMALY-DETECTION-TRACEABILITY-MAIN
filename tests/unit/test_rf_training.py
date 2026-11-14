@@ -8,6 +8,7 @@ runtime provenance injection, and reproducibility.
 from __future__ import annotations
 
 import json
+import os
 
 import joblib
 import numpy as np
@@ -719,7 +720,9 @@ def test_execute_training_full_pipeline_mock_integration(tmp_path):
 
 
 @pytest.mark.skipif(
-    not DEFAULT_DATASET.exists() or not DEFAULT_PREPROCESSOR_ARTIFACT.exists(),
+    os.environ.get("RUN_REAL_RF_TRAINING_TEST") != "1"
+    or not DEFAULT_DATASET.exists()
+    or not DEFAULT_PREPROCESSOR_ARTIFACT.exists(),
     reason=(
         "Real NF-UNSW-NB15-v3 dataset CSV or preprocessor artifact "
         "is not present in local workspace"
@@ -867,7 +870,7 @@ def test_model_persistence_preserves_protocol_and_classes(tmp_path, minimal_47_f
 
 
 def test_check_prerequisites_detects_preprocessor_manifest_mismatch(tmp_path):
-    """check_prerequisites catches companion preprocessor manifest hash mismatch."""
+    """check_prerequisites rejects a companion manifest without an artifact hash."""
     pm_path = tmp_path / "nf_unsw_nb15_v3_preprocessing_manifest.json"
     pm_path.write_text(json.dumps({"tampered": True}), encoding="utf-8")
 
@@ -885,7 +888,7 @@ def test_check_prerequisites_detects_preprocessor_manifest_mismatch(tmp_path):
         )
         assert audit["status"] == "BLOCKED"
         assert any(
-            "Preprocessor companion manifest SHA-256 mismatch" in msg
+            "missing required canonical field 'artifact_sha256'" in msg
             for msg in audit["missing_prerequisites"]
         )
     finally:

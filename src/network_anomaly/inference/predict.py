@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -244,6 +245,23 @@ def load_verified_preprocessor(
     return preprocessor, metadata
 
 
+def _canonical_model_family(model_type: str) -> str:
+    """Map model class and manifest type aliases to canonical model family identifiers."""
+    normalized = model_type.strip()
+    aliases = {
+        "RandomForest": "random_forest",
+        "RandomForestClassifier": "random_forest",
+        "RandomForestModel": "random_forest",
+        "IsolationForest": "isolation_forest",
+        "IsolationForestModel": "isolation_forest",
+        "XGBoost": "xgboost",
+        "XGBClassifier": "xgboost",
+        "XGBoostModel": "xgboost",
+        "HistGradientBoostingClassifier": "hist_gradient_boosting",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def load_verified_model(
     model_artifact_path: Union[str, Path],
     manifest_path: Optional[Union[str, Path]] = None,
@@ -328,7 +346,7 @@ def load_verified_model(
 
     # Verify model artifact sha256 (mandatory byte-by-byte check)
     expected_sha = manifest_data.get("model_artifact_sha256")
-    if not expected_sha or not isinstance(expected_sha, str):
+    if not isinstance(expected_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha):
         raise ValueError(
             f"Model manifest at '{man_p}' missing required field 'model_artifact_sha256'"
         )
@@ -349,18 +367,27 @@ def load_verified_model(
             f"expected '{FEATURE_CONTRACT_VERSION}'"
         )
 
-    # Verify preprocessor compatibility if recorded in manifest
+    # A caller-supplied digest cannot replace the model's companion binding.
     prep_sha = manifest_data.get("preprocessor_artifact_sha256")
-    if (
-        expected_preprocessor_sha256
-        and prep_sha
-        and prep_sha.lower() != expected_preprocessor_sha256.lower()
-    ):
+    if not isinstance(prep_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", prep_sha):
+        raise ValueError("Model manifest missing required field 'preprocessor_artifact_sha256'")
+    if expected_preprocessor_sha256 and prep_sha.lower() != expected_preprocessor_sha256.lower():
         raise ValueError(
             f"Model was trained with preprocessor SHA-256 '{prep_sha}', "
             f"but current preprocessor artifact has SHA-256 '{expected_preprocessor_sha256}'. "
             "Inference pipeline requires exact preprocessor compatibility."
         )
+
+    # Verify model_type is explicitly declared before deserialization
+    manifest_model_type = manifest_data.get("model_type")
+    if (
+        not isinstance(manifest_model_type, str)
+        or not manifest_model_type.strip()
+        or manifest_model_type.strip().lower() == "unknown"
+    ):
+        raise ValueError(f"Model manifest at '{man_p}' missing required field 'model_type'")
+    manifest_model_type = manifest_model_type.strip()
+    expected_family = _canonical_model_family(manifest_model_type)
 
     man_sha = _sha256_file(man_p)
     model_metadata: Dict[str, Any] = {
@@ -368,7 +395,7 @@ def load_verified_model(
         "model_artifact_sha256": model_sha256,
         "model_manifest_path": str(man_p),
         "model_manifest_sha256": man_sha,
-        "model_type": manifest_data.get("model_type", "unknown"),
+        "model_type": manifest_model_type,
         "run_id": manifest_data.get("run_id", "untracked"),
         "feature_contract_version": feat_contract,
         "class_mapping": manifest_data.get("class_mapping"),
@@ -376,17 +403,29 @@ def load_verified_model(
         "raw_manifest": manifest_data,
     }
 
+    if expected_family == "isolation_forest":
+        from network_anomaly.models.isolation_forest import IsolationForestModel
+
+        model = IsolationForestModel.load_verified(
+            model_path,
+            man_p,
+            expected_preprocessor_artifact_sha256=expected_preprocessor_sha256,
+        )
+        return model, model_metadata
+
     # CRITICAL: Only deserialize AFTER all cryptographic hashes and contracts have passed!
     try:
         loaded_obj = joblib.load(model_path)
     except Exception as e:
         raise RuntimeError(f"Failed to deserialize model artifact from '{model_path}': {e}")
 
+    from sklearn.ensemble import IsolationForest
+
     if isinstance(loaded_obj, dict) and "estimator" in loaded_obj:
         # Artifact is a serialization payload dictionary (e.g. from RandomForestModel.save)
         model = loaded_obj["estimator"]
-        if model_metadata.get("model_type") == "unknown":
-            model_metadata["model_type"] = loaded_obj.get("model_type", type(model).__name__)
+        payload_model_type = loaded_obj.get("model_type")
+        estimator = model
         if not model_metadata.get("class_mapping") and "classes" in loaded_obj:
             classes = loaded_obj["classes"]
             if classes is not None and isinstance(classes, list):
@@ -395,9 +434,32 @@ def load_verified_model(
                 }
     else:
         model = loaded_obj
+        payload_model_type = getattr(loaded_obj, "model_type", None)
+        # Only unwrap private `_estimator` (our repo wrapper convention); sklearn
+        # ensembles expose public `.estimator` as the base template class, not self.
+        private_est = getattr(loaded_obj, "_estimator", None)
+        estimator = private_est if private_est is not None else loaded_obj
 
-    if model_metadata["model_type"] == "unknown":
-        model_metadata["model_type"] = type(model).__name__
+    estimator_name = type(estimator).__name__
+    if isinstance(estimator, IsolationForest) or (
+        payload_model_type is not None
+        and _canonical_model_family(str(payload_model_type)) == "isolation_forest"
+    ):
+        raise ValueError(
+            f"Model type mismatch between manifest ('{manifest_model_type}') and "
+            f"deserialized payload (model_type={payload_model_type!r}, estimator='{estimator_name}'): "
+            "IsolationForest artifacts must declare model_type='IsolationForest'"
+        )
+
+    estimator_family = _canonical_model_family(estimator_name)
+    if estimator_family != expected_family or (
+        payload_model_type is not None
+        and _canonical_model_family(str(payload_model_type)) != expected_family
+    ):
+        raise ValueError(
+            f"Model type mismatch between manifest ('{manifest_model_type}') and "
+            f"deserialized payload (model_type={payload_model_type!r}, estimator='{estimator_name}')"
+        )
 
     return model, model_metadata
 
@@ -421,11 +483,13 @@ class InferencePipeline:
         model: Any,
         preprocessor_metadata: Dict[str, Any],
         model_metadata: Dict[str, Any],
+        eligibility_gate: Any = None,
     ) -> None:
         self.preprocessor = preprocessor
         self.model = model
         self.preprocessor_metadata = preprocessor_metadata
         self.model_metadata = model_metadata
+        self.eligibility_gate = eligibility_gate
 
     @classmethod
     def from_artifacts(
@@ -435,6 +499,7 @@ class InferencePipeline:
         model_manifest_path: Optional[Union[str, Path]] = None,
         preprocessor_manifest_path: Optional[Union[str, Path]] = None,
         split_manifest_path: Optional[Union[str, Path]] = None,
+        eligibility_gate: Any = None,
     ) -> "InferencePipeline":
         """Instantiate InferencePipeline by loading verified preprocessor and model artifacts."""
         model_path = Path(model_artifact_path)
@@ -472,6 +537,7 @@ class InferencePipeline:
             model=model,
             preprocessor_metadata=prep_meta,
             model_metadata=model_meta,
+            eligibility_gate=eligibility_gate,
         )
 
     def predict(
@@ -489,6 +555,39 @@ class InferencePipeline:
         - Output probabilities included if model supports predict_proba.
         - Output anomaly scores included if model supports decision_function/score_samples.
         """
+        if self.eligibility_gate is not None and isinstance(df, pd.DataFrame) and len(df) > 0:
+            decision = self.eligibility_gate.evaluate(
+                df=df,
+                model_artifact_sha256=self.model_metadata.get("model_artifact_sha256"),
+                preprocessor_artifact_sha256=self.preprocessor_metadata.get("artifact_sha256"),
+                feature_contract_version=self.model_metadata.get("feature_contract_version"),
+            )
+            if not decision.can_proceed_to_ml:
+                abstain_run_id = run_id or f"inference-{uuid.uuid4().hex[:12]}"
+                if "row_id" in df.columns:
+                    row_ids = df["row_id"].to_numpy()
+                elif "id" in df.columns:
+                    row_ids = df["id"].to_numpy()
+                else:
+                    row_ids = np.arange(len(df), dtype=np.int64)
+                return pd.DataFrame(
+                    {
+                        "row_id": row_ids,
+                        "prediction": pd.Series([pd.NA] * len(df), dtype="Int64"),
+                        "model_type": self.model_metadata.get(
+                            "model_type", type(self.model).__name__
+                        ),
+                        "run_id": abstain_run_id,
+                        "model_artifact_sha256": self.model_metadata.get("model_artifact_sha256"),
+                        "preprocessor_artifact_sha256": self.preprocessor_metadata.get(
+                            "artifact_sha256"
+                        ),
+                        "inference_status": "ABSTAINED",
+                        "abstention_reason": "; ".join(decision.abstention_reasons)
+                        or "Eligibility gate rejected the batch",
+                    }
+                )
+
         X_ordered, summary = validate_inference_input(df)
 
         # 1. Transform features with train-only frozen preprocessor state
@@ -496,6 +595,16 @@ class InferencePipeline:
 
         # 2. Predict with model
         preds = self.model.predict(X_trans)
+        preds_arr = np.asarray(preds)
+        if (
+            preds_arr.dtype == bool
+            or any(isinstance(v, (bool, np.bool_)) for v in preds_arr.flat)
+            or any(v not in (0, 1) for v in np.unique(preds_arr))
+        ):
+            raise ValueError(
+                "Verified model predict() produced non-binary labels: "
+                f"{np.unique(preds_arr).tolist()}. Expected strictly {{0, 1}}."
+            )
 
         now_str = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         inference_run_id = run_id or f"inference-{now_str}-{uuid.uuid4().hex[:6]}"
@@ -650,9 +759,11 @@ class InferencePipeline:
             "preprocessing_policy_version": PREPROCESSING_POLICY_VERSION,
             "environment": environment,
             "git_commit": _get_git_commit(),
-            "prediction_count": len(predictions_df),
+            "prediction_count": int(predictions_df["prediction"].notna().sum()),
             "error_count": 0,
-            "execution_status": "SUCCESS",
+            "execution_status": (
+                "ABSTAINED" if predictions_df["prediction"].isna().any() else "SUCCESS"
+            ),
         }
 
         metadata_p: Optional[Path] = None
@@ -681,6 +792,7 @@ def run_inference(
     preprocessor_manifest_path: Optional[Union[str, Path]] = None,
     metadata_path: Optional[Union[str, Path]] = None,
     run_id: Optional[str] = None,
+    eligibility_gate: Any = None,
 ) -> InferenceResult:
     """Convenience functional interface to execute verified CSV inference."""
     pipeline = InferencePipeline.from_artifacts(
@@ -688,6 +800,7 @@ def run_inference(
         preprocessor_artifact_path=preprocessor_artifact_path,
         model_manifest_path=model_manifest_path,
         preprocessor_manifest_path=preprocessor_manifest_path,
+        eligibility_gate=eligibility_gate,
     )
     return pipeline.run(
         input_path=input_path,

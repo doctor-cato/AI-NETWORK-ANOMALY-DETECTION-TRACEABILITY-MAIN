@@ -8,7 +8,7 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-%3E%3D3.11-3776AB)](pyproject.toml)
 [![License: Apache-2.0](https://img.shields.io/badge/code-Apache--2.0-blue)](LICENSE)
 
-> **Trạng thái tại `main` (10/11/2026):** Đã có acquisition, kiểm định chất lượng, EDA, split, preprocessing và hai baseline Random Forest/XGBoost với kết quả **Validation** trên dữ liệu thật. Chưa có báo cáo hiệu năng **held-out Test** cho hai baseline, chưa có model binary trong Git, và chưa có hệ thống Risk/Trace/API/UI hoàn chỉnh. Các điểm này là ranh giới của kết quả trình bày bên dưới.
+> **Cập nhật PR #50 (13/11/2026):** Run Random Forest `rf-heldout-ea330b9` trên held-out Test đã được đối chiếu từ predictions, dữ liệu nguồn và artifact lịch sử; xem [báo cáo lỗi](reports/evaluation/error_analysis_report.md) và [hướng dẫn tái lập](docs/REPRODUCIBILITY.md). XGBoost chưa có Test run được kiểm chứng. Model binaries và predictions lớn không nằm trong Git. Các nhận xét về `main` ở phần dưới là snapshot lịch sử ngày 10/11 và cần đọc cùng cập nhật này và PR #61.
 
 **Đọc nhanh:** [Tổng quan](#tổng-quan-dự-án) · [Dữ liệu](#bộ-dữ-liệu) · [Mô hình](#các-mô-hình-ai) · [Kết quả](#thực-nghiệm-và-kết-quả) · [Tái lập](#cài-đặt-và-tái-lập) · [Hạn chế](#hạn-chế) · [Tài liệu](docs/REPRODUCIBILITY.md)
 
@@ -16,7 +16,7 @@
 
 Một Network Intrusion Detection System (NIDS) cần phân biệt hoạt động bình thường với lưu lượng đáng nghi, đồng thời cho người phân tích biết dự đoán xuất phát từ dữ liệu và mô hình nào. Dự án xây dựng nền tảng nghiên cứu cho mục tiêu đó trên **network flow**: kiểm tra nguồn dữ liệu, tạo phân vùng có kiểm soát, huấn luyện mô hình và lưu bằng chứng cấu hình, checksum, metric. Người đọc có thể kiểm tra từng bước qua [traceability matrix](docs/TRACEABILITY_MATRIX.md) và các báo cáo trong `reports/`.
 
-**Đã đạt được:** hai baseline supervised được huấn luyện trên 1.655.797 flow Train và chấm trên 345.371 flow Validation; pipeline inference CSV có kiểm tra hợp đồng đặc trưng và artifact; unit/integration tests cho các đường đi chính. **Mục tiêu tiếp theo:** đánh giá Test và khả năng tổng quát hóa, hoàn thiện unsupervised models, Behavioral Vector, Risk/Trace Engine, storage, API và dashboard. Đây là prototype nghiên cứu, chưa phải NIDS triển khai trên mạng thật.
+**Đã đạt được:** hai baseline supervised được huấn luyện trên 1.655.797 flow Train và chấm trên 345.371 flow Validation; Random Forest có thêm một run held-out Test được đối chiếu; pipeline inference CSV có kiểm tra hợp đồng đặc trưng và artifact. **Mục tiêu tiếp theo:** đánh giá khả năng tổng quát hóa ngoài benchmark, hoàn thiện unsupervised models, Behavioral Vector, Risk/Trace Engine và dashboard. Đây là prototype nghiên cứu, chưa phải NIDS triển khai trên mạng thật.
 
 ## Bài toán nghiên cứu
 
@@ -116,7 +116,7 @@ Hướng nghiên cứu là học tái tạo flow và dùng reconstruction error 
 
 | Model | Cách tiếp cận / vai trò | Implementation trên `main` | Validation thật | Held-out Test |
 |---|---|---|---|---|
-Random Forest | Supervised baseline | Code + tests + run manifest | Có, 345.371 flow | Chưa có báo cáo |
+Random Forest | Supervised baseline | Code + tests + run manifest | Có, 345.371 flow | Có, 345.953 flow; [báo cáo](reports/evaluation/error_analysis_report.md) |
 XGBoost | Supervised comparison | Code + tests + run manifest | Có, 345.371 flow | Chưa có báo cáo |
 Isolation Forest | Unsupervised anomaly score | Code + tests; real run bị chặn | Chưa có | Chưa có |
 Autoencoder | Reconstruction error | Chưa merge | Chưa có | Chưa có |
@@ -134,7 +134,7 @@ F1 (Attack) | 0,999869 | 0,999984 |
 Macro-F1 | 0,999928 | 0,999991 |
 FPR | 0,00001588 | 0,00000318 |
 Confusion matrix `[[TN, FP], [FN, TP]]` | `[[314866, 5], [3, 30497]]` | `[[314870, 1], [0, 30500]]` |
-Held-out Test | **NOT VERIFIED** | **NOT VERIFIED** |
+Held-out Test | **VERIFIED**: F1 0,999853, TN 315350, FP 7, FN 2, TP 30594 | **NOT VERIFIED** |
 
 Precision cho biết tỷ lệ cảnh báo Attack là đúng; Recall cho biết tỷ lệ Attack được phát hiện; F1 cân bằng hai chỉ số; FPR đo tỷ lệ Benign bị báo nhầm. Trong Validation này XGBoost ghi ít hơn 4 FP và 3 FN so với RF, nhưng khác biệt nhỏ trên cùng một benchmark không đủ kết luận ưu thế tổng quát. [Báo cáo RF](reports/models/rf_baseline_training_report.md) và [XGBoost](reports/models/xgboost_training_report.md) ghi cấu hình, môi trường và phân rã theo `Attack`.
 
@@ -144,7 +144,7 @@ Precision cho biết tỷ lệ cảnh báo Attack là đúng; Recall cho biết 
 
 Nhóm đã tạo manifest nguồn và kiểm định CSV thật, EDA có bằng chứng chạy lặp, split và kiểm toán leakage, train-only preprocessor, hai baseline supervised đã chạy trên Train/Validation, model manifests và báo cáo metric, cùng CLI inference CSV và unit/integration tests. `reports/` chứa metadata và báo cáo nhỏ; `data/raw/`, `data/processed/` và `artifacts/` chỉ có marker trong Git. Vì vậy người kiểm tra có thể đọc bằng chứng đã ghi, nhưng để **chạy lại** cần tải dataset chính thức và tái tạo artifact cục bộ.
 
-Chưa có kết quả held-out Test cho hai baseline, đánh giá độc lập trên dataset ngoài, Isolation Forest real run, Autoencoder trên `main`, Risk/Trace Engine, storage/API/UI hay deployment. [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) cung cấp lịch sử yêu cầu → code → test → bằng chứng; trạng thái cũ trong tài liệu phải đối chiếu với HEAD và báo cáo mới hơn.
+Chưa có kết quả held-out Test cho XGBoost, đánh giá độc lập trên dataset ngoài, hoặc bằng chứng triển khai hệ thống end-to-end. Random Forest Test run dùng bộ artifact lịch sử khác bộ manifest tái sinh hiện được theo dõi tại `main`; không coi các hash khác nhau là cùng một artifact. [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) cung cấp lịch sử yêu cầu → code → test → bằng chứng; trạng thái cũ trong tài liệu phải đối chiếu với HEAD và báo cáo mới hơn.
 
 ## Cài đặt và tái lập
 
@@ -176,7 +176,7 @@ Sau khi có artifact hợp lệ, có thể kiểm tra prerequisite mà không tr
 python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv --model-artifact artifacts/models/random_forest/random_forest_baseline.joblib --model-manifest reports/models/random_forest_manifest.json --preprocessor-artifact artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib --preprocessor-manifest reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json
 ```
 
-Lệnh inference cần `data/new_flows.csv` do người dùng cung cấp, không có sẵn trong Git. Mặc định đường dẫn preprocessor của CLI hiện có thể chứa đường dẫn checkout tại môi trường build, nên ví dụ dùng flag tường minh. Xem [hướng dẫn tái lập](docs/REPRODUCIBILITY.md) và [testing](docs/TESTING.md). Đánh giá held-out Test hiện **chưa có lệnh/báo cáo đã được xác minh trên `main`**; không suy ra Test score từ Validation.
+Lệnh inference cần `data/new_flows.csv` do người dùng cung cấp, không có sẵn trong Git. Mặc định đường dẫn preprocessor của CLI hiện có thể chứa đường dẫn checkout tại môi trường build, nên ví dụ dùng flag tường minh. Xem [hướng dẫn tái lập](docs/REPRODUCIBILITY.md), [testing](docs/TESTING.md) và [báo cáo Test Random Forest](reports/evaluation/error_analysis_report.md). Không suy ra Test score từ Validation.
 
 ## Cấu trúc thư mục
 

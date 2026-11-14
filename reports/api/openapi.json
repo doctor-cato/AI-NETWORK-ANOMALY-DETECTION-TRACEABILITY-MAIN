@@ -654,7 +654,7 @@
               }
             ],
             "title": "Threshold",
-            "description": "Decision threshold for binary anomaly",
+            "description": "Decision threshold for explicitly enabled heuristic fallback only",
             "default": 0.5
           },
           "create_incidents": {
@@ -785,14 +785,14 @@
           "is_anomaly": {
             "type": "boolean",
             "title": "Is Anomaly",
-            "description": "True if anomaly score exceeds threshold"
+            "description": "True when the active inference mode predicts anomaly"
           },
           "anomaly_score": {
             "type": "number",
             "maximum": 1.0,
             "minimum": 0.0,
             "title": "Anomaly Score",
-            "description": "Calibrated anomaly score or attack probability [0, 1]"
+            "description": "Display anomaly score or attack probability [0, 1]"
           },
           "prediction": {
             "type": "integer",

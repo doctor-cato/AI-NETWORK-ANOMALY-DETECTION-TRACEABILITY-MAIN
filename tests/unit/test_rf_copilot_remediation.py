@@ -120,9 +120,6 @@ def test_finding1_verification_call_graph_never_loads_test_indices(tmp_path, mon
     pm_path.write_text(json.dumps(pm_data), encoding="utf-8")
 
     monkeypatch.setattr(trf, "EXPECTED_DATASET_SHA256", ds_hash)
-    monkeypatch.setattr(trf, "EXPECTED_SPLIT_MANIFEST_SHA256", sm_hash)
-    monkeypatch.setattr(trf, "EXPECTED_PREPROCESSOR_ARTIFACT_SHA256", prep_hash)
-    monkeypatch.setattr(trf, "EXPECTED_PREPROCESSOR_MANIFEST_SHA256", _sha256_file(pm_path))
 
     # Mock verify_preprocessing_artifact to return PASS
     monkeypatch.setattr(

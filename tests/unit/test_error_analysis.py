@@ -183,11 +183,148 @@ def test_analyze_feature_error_patterns_and_boundary() -> None:
     assert boundary["high_confidence_false_positives_p_ge_0_8"] == 1  # 0.85
     assert boundary["high_confidence_false_negatives_p_le_0_2"] == 1  # 0.15
 
-    # Feature pattern shifts
+    # Feature pattern shifts and 4-part epistemic separation
     patterns = analyze_feature_error_patterns(X, y_true, y_pred)
     assert "top_fp_discriminating_features" in patterns
     assert "top_fn_discriminating_features" in patterns
     assert "domain_hypotheses" in patterns
+    assert "epistemic_separation" in patterns
+    ep = patterns["epistemic_separation"]
+    assert "verified_observations" in ep
+    assert "statistical_associations" in ep
+    assert "domain_hypotheses" in ep
+    assert "future_experiment_proposals" in ep
+
+
+def test_fp_by_flow_groups_and_ip_redaction() -> None:
+    """Verify P1-05/P2-03: FP flow-group breakdown by protocol, duration, and redacted IPs."""
+    from network_anomaly.evaluation.error_analysis import analyze_fp_by_flow_groups
+
+    X = _make_dummy_feature_df(6)
+    X["PROTOCOL"] = [6, 6, 17, 17, 6, 6]
+    X["FLOW_DURATION_MILLISECONDS"] = [0.0, 25.0, 500.0, 25000.0, 10.0, 100.0]
+    y_true = [0, 0, 0, 0, 1, 1]
+    y_pred = [0, 1, 1, 0, 1, 0]  # 2 Benign FPs (row 1: TCP/25ms, row 2: UDP/500ms)
+
+    trace_df = pd.DataFrame(
+        {
+            "IPV4_SRC_ADDR": [
+                "192.168.10.1",
+                "192.168.10.25",
+                "10.0.0.99",
+                "10.0.0.99",
+                "172.16.0.5",
+                "172.16.0.6",
+            ],
+            "IPV4_DST_ADDR": [
+                "8.8.8.8",
+                "8.8.4.4",
+                "1.1.1.1",
+                "1.1.1.1",
+                "10.0.0.1",
+                "10.0.0.1",
+            ],
+        }
+    )
+
+    grp = analyze_fp_by_flow_groups(X=X, y_true=y_true, y_pred=y_pred, trace_metadata=trace_df)
+    assert grp["total_benign"] == 4
+    assert grp["total_fp"] == 2
+    assert grp["total_tn"] == 2
+    assert grp["overall_fpr"] == pytest.approx(0.5)
+    assert sum(p["fp_count"] for p in grp["by_protocol"]) == 2
+    assert sum(d["fp_count"] for d in grp["by_duration_regime"]) == 2
+
+    anon = grp["by_anonymized_flow_group"]
+    assert anon["status"] == "VERIFIED"
+    assert anon["ip_redaction_applied"] is True
+    assert anon["flow_groups_with_fp"] == 2
+    serialized = json.dumps(anon)
+    assert "192.168.10.25" not in serialized
+    assert "10.0.0.99" not in serialized
+    assert all(
+        g["anonymized_flow_group_id"].startswith("fg_") for g in anon["top_anonymized_fp_groups"]
+    )
+
+
+def test_temporal_window_error_analysis() -> None:
+    """Verify P1-05: temporal window error analysis across chronological flow timestamps."""
+    from network_anomaly.evaluation.error_analysis import analyze_temporal_window_errors
+
+    y_true = [0, 0, 1, 0, 1, 1, 0, 1, 0, 1]
+    y_pred = [0, 1, 1, 0, 0, 1, 0, 0, 1, 1]  # 2 FP, 2 FN
+
+    # Without trace_metadata -> NOT_AVAILABLE
+    no_trace = analyze_temporal_window_errors(y_true, y_pred, trace_metadata=None)
+    assert no_trace["status"] == "NOT_AVAILABLE"
+
+    # With FLOW_START_MILLISECONDS -> VERIFIED
+    trace_df = pd.DataFrame(
+        {"FLOW_START_MILLISECONDS": [1000 + i * 500 for i in range(len(y_true))]}
+    )
+    res = analyze_temporal_window_errors(
+        y_true=y_true,
+        y_pred=y_pred,
+        trace_metadata=trace_df,
+        num_windows=2,
+    )
+    assert res["status"] == "VERIFIED"
+    assert res["num_windows"] == 2
+    assert sum(w["fp"] for w in res["windows"]) == 2
+    assert sum(w["fn"] for w in res["windows"]) == 2
+    assert sum(w["total_rows"] for w in res["windows"]) == len(y_true)
+
+
+def test_uncertainty_analysis_and_model_comparison_status(tmp_path: Path) -> None:
+    """Verify P2-04 (Wilson 95% CI & rare class Worms) and P2-05 (RF vs Isolation Forest)."""
+    from network_anomaly.evaluation.error_analysis import (
+        compile_model_comparison_status,
+        compute_uncertainty_analysis,
+        validate_evaluation_and_error_consistency,
+    )
+
+    unc = compute_uncertainty_analysis(
+        y_true=[0, 0, 1, 1, 1],
+        y_pred=[0, 1, 1, 0, 1],
+        attack_categories=["Benign", "Benign", "Exploits", "Worms", "Worms"],
+    )
+    assert unc["confidence_level"] == 0.95
+    assert "i.i.d." in unc["flow_dependence_caveat"]
+    sens = unc["sample_size_sensitivity_by_category"]
+    assert "Worms" in sens
+    assert sens["Worms"]["test_sample_count"] == 36
+    assert sens["Worms"]["is_rare_class"] is True
+    # Worms (n=36) CI width at 0 misses (~9.64%) is much wider than Exploits (n=10520, ~0.04%)
+    assert sens["Worms"]["ci_95_width_at_zero_misses"] > 0.08
+    assert (
+        sens["Worms"]["ci_95_width_at_zero_misses"]
+        > sens["Exploits"]["ci_95_width_at_zero_misses"] * 100
+    )
+
+    comp = compile_model_comparison_status()
+    assert comp["models"]["random_forest"]["configuration_id"] == "rf-baseline-canonical-v1"
+    assert comp["models"]["isolation_forest"]["blocks_random_forest_acceptance"] is False
+    assert "NOT EVALUATED" in comp["models"]["isolation_forest"]["held_out_test_status"]
+
+    # Consistency check and overwrite protection
+    with pytest.raises(ValueError, match="!= total"):
+        validate_evaluation_and_error_consistency(
+            cm_breakdown={
+                "tn": 10,
+                "fp": 2,
+                "fn": 1,
+                "tp": 7,
+                "benign_total": 12,
+                "attack_total": 8,
+                "total": 999,
+            },
+            attack_breakdown={},
+        )
+
+    rep_p = tmp_path / "locked_report.md"
+    generate_error_analysis_report(output_path=rep_p, allow_overwrite=True)
+    with pytest.raises(FileExistsError):
+        generate_error_analysis_report(output_path=rep_p, allow_overwrite=False)
 
 
 # ==============================================================================
@@ -208,3 +345,20 @@ def test_error_analysis_cli_verify_only(capsys: pytest.CaptureFixture) -> None:
     assert payload["partitions"]["test_rows"] == 345_953
     assert payload["validation_reference"]["fp"] == 5
     assert payload["validation_reference"]["fn"] == 3
+
+
+def test_cli_runs_evaluation_and_analysis(monkeypatch, tmp_path):
+    import network_anomaly.evaluation.error_analysis as module
+
+    result = {"run_id": "test"}
+    calls = []
+    monkeypatch.setattr(module, "evaluate_random_forest_on_test", lambda **kw: result)
+    monkeypatch.setattr(
+        module,
+        "run_full_error_analysis_from_evaluation",
+        lambda value, **kw: calls.append((value, kw)),
+    )
+    report = tmp_path / "report.md"
+    assert main(["--run-test-evaluation", "--report-path", str(report)]) == 0
+    assert calls[0][0] is result
+    assert calls[0][1]["report_path"] == report
