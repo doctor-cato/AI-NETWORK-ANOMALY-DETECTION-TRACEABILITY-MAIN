@@ -102,6 +102,13 @@ def _resolve_git_commit() -> str:
     return "UNKNOWN"
 
 
+def _is_valid_sha256_hex(val: Any) -> bool:
+    """Return True if val is a valid 64-character hexadecimal SHA-256 string."""
+    if not isinstance(val, str) or len(val) != 64:
+        return False
+    return all(c in "0123456789abcdefABCDEF" for c in val)
+
+
 def _load_indices_csv_gz(path: Union[str, Path]) -> np.ndarray:
     """Load integer row indices from a gzipped or plain CSV index file."""
     p = Path(path)
@@ -115,17 +122,28 @@ def _load_indices_csv_gz(path: Union[str, Path]) -> np.ndarray:
         header = next(reader, None)
         if header is None:
             raise ValueError(f"Split index file is empty: {p}")
+        clean_header = [h.strip() for h in header]
         col_idx = 0
-        if "row_index" in header:
-            col_idx = header.index("row_index")
-        elif len(header) == 1 and header[0].strip().isdigit():
-            indices.append(int(header[0].strip()))
+        if "source_row_index" in clean_header:
+            col_idx = clean_header.index("source_row_index")
+        elif "row_index" in clean_header:
+            col_idx = clean_header.index("row_index")
+        elif len(clean_header) == 1 and clean_header[0].isdigit():
+            indices.append(int(clean_header[0]))
+        else:
+            raise ValueError(
+                f"Unrecognized header {header!r} in split index file {p}; "
+                f"expected 'source_row_index' or 'row_index'"
+            )
 
         for line_num, row in enumerate(reader, start=2):
-            if not row:
+            if not row or all(not cell.strip() for cell in row):
                 continue
             try:
-                val = int(row[col_idx].strip())
+                token = row[col_idx].strip()
+                if not token or "." in token:
+                    raise ValueError(f"Non-integer token {token!r}")
+                val = int(token)
             except (ValueError, IndexError) as exc:
                 raise ValueError(f"Malformed row index at line {line_num} in {p}: {row!r}") from exc
             if val < 0:
@@ -202,10 +220,11 @@ def verify_index_disjointness(
 
     Verifies:
       1. Train, Validation, and Test index files all exist on disk (fail-closed if missing).
-      2. SHA-256 of each index file matches split manifest 'index_sha256'.
-      3. No duplicate row indices exist within any partition.
-      4. All row indices fall within [0, total_source_rows - 1].
-      5. Genuine pairwise disjointness via set operations:
+      2. SHA-256 of each index file matches canonical split manifest 'index_sha256'.
+      3. Partition row counts match split manifest 'row_count' when manifest is provided.
+      4. No duplicate row indices exist within any partition.
+      5. All row indices fall within [0, total_source_rows - 1].
+      6. Genuine pairwise disjointness via set operations:
          - Train & Test == empty set
          - Validation & Test == empty set
          - Train & Validation == empty set
@@ -230,26 +249,44 @@ def verify_index_disjointness(
         )
         return False, errors
 
-    # Check index_sha256 if split_manifest is provided
-    if split_manifest and "partitions" in split_manifest:
-        partitions_meta = split_manifest.get("partitions", {})
-        for name, p in paths.items():
-            if p is None:
-                continue
-            expected_sha = partitions_meta.get(name, {}).get("index_sha256")
-            if not expected_sha:
-                expected_sha = partitions_meta.get(name, {}).get("sha256")
-            if not expected_sha:
-                errors.append(
-                    f"Split manifest partitions.{name} missing required 'index_sha256' key"
-                )
-            else:
-                actual_sha = _sha256_file(p)
-                if actual_sha.lower() != str(expected_sha).lower():
+    # Check canonical index_sha256 if split_manifest is provided
+    partitions_meta: Dict[str, Any] = {}
+    if split_manifest is not None:
+        raw_parts = split_manifest.get("partitions")
+        if not isinstance(raw_parts, dict):
+            errors.append("Split manifest missing required 'partitions' object")
+        else:
+            partitions_meta = raw_parts
+            for name, p in paths.items():
+                if p is None:
+                    continue
+                part_meta = partitions_meta.get(name)
+                if not isinstance(part_meta, dict):
                     errors.append(
-                        f"{name} index file SHA-256 mismatch: "
-                        f"expected {expected_sha}, got {actual_sha}"
+                        f"Split manifest missing required partition metadata for '{name}'"
                     )
+                    continue
+                expected_sha = part_meta.get("index_sha256")
+                if (
+                    not expected_sha
+                    or not isinstance(expected_sha, str)
+                    or not expected_sha.strip()
+                ):
+                    errors.append(
+                        f"Split manifest partitions.{name} missing required 'index_sha256' key"
+                    )
+                else:
+                    if not _is_valid_sha256_hex(expected_sha):
+                        errors.append(
+                            f"Split manifest partitions.{name} has malformed 'index_sha256': "
+                            f"{expected_sha!r}"
+                        )
+                    actual_sha = _sha256_file(p)
+                    if actual_sha.lower() != expected_sha.lower():
+                        errors.append(
+                            f"{name} index file SHA-256 mismatch: "
+                            f"expected {expected_sha}, got {actual_sha}"
+                        )
 
     # Load indices
     try:
@@ -263,10 +300,36 @@ def verify_index_disjointness(
         errors.append(f"Failed loading indices for disjointness check: {exc}")
         return False, errors
 
+    # Verify partition row counts against split manifest when available
+    if partitions_meta:
+        for part_key, arr in [
+            ("train", train_idx),
+            ("validation", val_idx),
+            ("test", test_idx),
+        ]:
+            part_meta = partitions_meta.get(part_key)
+            if isinstance(part_meta, dict) and "row_count" in part_meta:
+                exp_rows = part_meta.get("row_count")
+                if (
+                    isinstance(exp_rows, int)
+                    and not isinstance(exp_rows, bool)
+                    and len(arr) != exp_rows
+                ):
+                    errors.append(
+                        f"{part_key} index row count ({len(arr)}) != "
+                        f"split manifest expected row_count ({exp_rows})"
+                    )
+
     # Check internal duplicates and bounds
     max_rows = total_source_rows
-    if max_rows is None and split_manifest:
+    if max_rows is None and split_manifest is not None:
         max_rows = split_manifest.get("total_source_rows")
+
+    if max_rows is not None and (
+        isinstance(max_rows, bool) or not isinstance(max_rows, int) or max_rows <= 0
+    ):
+        errors.append(f"Invalid total_source_rows in split manifest: {max_rows!r}")
+        max_rows = None
 
     for name, arr in [("Train", train_idx), ("Validation", val_idx), ("Test", test_idx)]:
         if len(np.unique(arr)) != len(arr):
@@ -323,6 +386,7 @@ class TestEvaluationPrerequisiteStatus:
     expected_attack_rows: Optional[int] = None
     expected_attack_distribution: Optional[Dict[str, int]] = None
     train_validation_disjoint_verified: bool = False
+    partition_verification_status: str = "NOT_CHECKED"
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert status to a serializable dictionary."""
@@ -343,7 +407,27 @@ class TestPartitionData:
     num_rows: int = 0
 
     def __post_init__(self) -> None:
+        if not isinstance(self.X_test_raw, pd.DataFrame):
+            raise ValueError("X_test_raw must be a pandas DataFrame")
         self.num_rows = len(self.X_test_raw)
+        if self.row_indices is None:
+            raise ValueError("row_indices must not be None")
+        idx_arr = np.asarray(self.row_indices)
+        if idx_arr.ndim != 1 or len(idx_arr) != self.num_rows:
+            raise ValueError(
+                f"row_indices must be 1D with length matching X_test_raw ({self.num_rows}), "
+                f"got shape {idx_arr.shape}"
+            )
+        if idx_arr.dtype == bool or not np.issubdtype(idx_arr.dtype, np.integer):
+            raise ValueError(f"row_indices must have integer dtype, got {idx_arr.dtype}")
+        if np.any(idx_arr < 0):
+            raise ValueError("row_indices must not contain negative values")
+        if len(np.unique(idx_arr)) != len(idx_arr):
+            raise ValueError("row_indices must not contain duplicate source row identifiers")
+        if len(self.y_test) != self.num_rows or len(self.attack_categories) != self.num_rows:
+            raise ValueError(
+                "y_test and attack_categories must have identical length to X_test_raw"
+            )
 
 
 def check_test_evaluation_prerequisites(
@@ -398,6 +482,8 @@ def check_test_evaluation_prerequisites(
     ds_path = Path(dataset_csv_path)
     sm_path = Path(split_manifest_path)
     ti_path = Path(test_indices_path)
+    tri_path = Path(train_indices_path) if train_indices_path is not None else None
+    vi_path = Path(val_indices_path) if val_indices_path is not None else None
     pm_path = Path(preprocessing_manifest_path)
     pa_path = Path(preprocessor_artifact_path)
     mm_path = Path(model_manifest_path)
@@ -415,6 +501,14 @@ def check_test_evaluation_prerequisites(
         if not p.exists():
             missing.append(f"{label}: {p.as_posix()}")
 
+    for part_label, opt_p in [
+        ("train_indices", tri_path),
+        ("validation_indices", vi_path),
+    ]:
+        if opt_p is None or not opt_p.exists():
+            p_str = opt_p.as_posix() if opt_p is not None else "None"
+            missing.append(f"{part_label}: {p_str}")
+
     expected_test_rows: Optional[int] = None
     expected_benign_rows: Optional[int] = None
     expected_attack_rows: Optional[int] = None
@@ -426,6 +520,9 @@ def check_test_evaluation_prerequisites(
             hashes["split_manifest_sha256"] = _sha256_file(sm_path)
             with sm_path.open("r", encoding="utf-8") as f:
                 split_manifest = json.load(f)
+            if not isinstance(split_manifest, dict) or "partitions" not in split_manifest:
+                errors.append(f"Split manifest {sm_path} missing required 'partitions' object")
+                split_manifest = split_manifest if isinstance(split_manifest, dict) else {}
             test_info = split_manifest.get("partitions", {}).get("test", {})
             if isinstance(test_info, dict):
                 expected_test_rows = test_info.get("row_count")
@@ -445,13 +542,69 @@ def check_test_evaluation_prerequisites(
             hashes["preprocessing_manifest_sha256"] = _sha256_file(pm_path)
             with pm_path.open("r", encoding="utf-8") as f:
                 prep_manifest = json.load(f)
-            artifact_type = prep_manifest.get("artifact_type")
-            fit_part = prep_manifest.get("fit_partition")
-            if artifact_type != "nf-unsw-nb15-v3-train-only-preprocessor" and fit_part != "train":
-                errors.append(
-                    f"Preprocessing manifest must represent train-only preprocessor, "
-                    f"got artifact_type={artifact_type!r}, fit_partition={fit_part!r}"
-                )
+            if not isinstance(prep_manifest, dict) or not prep_manifest:
+                errors.append(f"Preprocessing manifest {pm_path} is empty or not a JSON object")
+                prep_manifest = {}
+            else:
+                artifact_type = prep_manifest.get("artifact_type")
+                if artifact_type != "nf-unsw-nb15-v3-train-only-preprocessor":
+                    errors.append(
+                        f"Preprocessing manifest must have "
+                        f"artifact_type='nf-unsw-nb15-v3-train-only-preprocessor', "
+                        f"got {artifact_type!r}"
+                    )
+                if "fit_partition" in prep_manifest:
+                    fit_part = prep_manifest.get("fit_partition")
+                    if fit_part not in ("train", "train_only"):
+                        errors.append(
+                            f"Preprocessing manifest fit_partition must be 'train' or 'train_only', "  # noqa: E501
+                            f"got {fit_part!r}"
+                        )
+                pm_ds_sha = prep_manifest.get("dataset_sha256")
+                if not _is_valid_sha256_hex(pm_ds_sha):
+                    errors.append(
+                        f"Preprocessing manifest missing or malformed 'dataset_sha256': {pm_ds_sha!r}"  # noqa: E501
+                    )
+                pm_sm_sha = prep_manifest.get("split_manifest_sha256")
+                if not _is_valid_sha256_hex(pm_sm_sha):
+                    errors.append(
+                        f"Preprocessing manifest missing or malformed 'split_manifest_sha256': "
+                        f"{pm_sm_sha!r}"
+                    )
+                pm_art_sha = prep_manifest.get("artifact_sha256")
+                if not _is_valid_sha256_hex(pm_art_sha):
+                    errors.append(
+                        f"Preprocessing manifest missing or malformed 'artifact_sha256': "
+                        f"{pm_art_sha!r}"
+                    )
+                pm_fc_ver = prep_manifest.get("feature_contract_version")
+                if pm_fc_ver != FEATURE_CONTRACT_VERSION:
+                    errors.append(
+                        f"Preprocessing manifest feature_contract_version mismatch: "
+                        f"expected {FEATURE_CONTRACT_VERSION!r}, got {pm_fc_ver!r}"
+                    )
+                pm_base_feats = prep_manifest.get("baseline_ml_features_in_order")
+                if pm_base_feats != list(ML_FEATURE_COLUMNS):
+                    errors.append(
+                        "Preprocessing manifest 'baseline_ml_features_in_order' "
+                        "does not match canonical ML_FEATURE_COLUMNS"
+                    )
+                pm_out_feats = prep_manifest.get("output_features_in_order")
+                if pm_out_feats != list(ML_FEATURE_COLUMNS):
+                    errors.append(
+                        "Preprocessing manifest 'output_features_in_order' "
+                        "does not match canonical ML_FEATURE_COLUMNS"
+                    )
+                pm_train_rows = prep_manifest.get("train_row_count")
+                if (
+                    isinstance(pm_train_rows, bool)
+                    or not isinstance(pm_train_rows, int)
+                    or pm_train_rows <= 0
+                ):
+                    errors.append(
+                        f"Preprocessing manifest 'train_row_count' must be a positive integer, "
+                        f"got {pm_train_rows!r}"
+                    )
         except Exception as exc:
             errors.append(f"Failed to parse preprocessing manifest {pm_path}: {exc}")
 
@@ -465,6 +618,39 @@ def check_test_evaluation_prerequisites(
             errors.append(f"Failed to parse model manifest {mm_path}: {exc}")
 
     # Cross-check manifest lineage even when binary files are absent
+    if split_manifest and prep_manifest:
+        sm_sha = hashes.get("split_manifest_sha256")
+        pm_sm_sha = prep_manifest.get("split_manifest_sha256")
+        if sm_sha and pm_sm_sha and sm_sha.lower() != str(pm_sm_sha).lower():
+            errors.append(
+                f"Split manifest SHA-256 mismatch between {sm_path} ({sm_sha}) "
+                f"and preprocessing manifest ({pm_sm_sha})"
+            )
+        sm_ds_sha = split_manifest.get("dataset_sha256")
+        pm_ds_sha = prep_manifest.get("dataset_sha256")
+        if sm_ds_sha and pm_ds_sha and str(sm_ds_sha).lower() != str(pm_ds_sha).lower():
+            errors.append(
+                f"Dataset SHA-256 mismatch between split manifest ({sm_ds_sha}) "
+                f"and preprocessing manifest ({pm_ds_sha})"
+            )
+        sm_train_rows = (
+            split_manifest.get("partitions", {}).get("train", {}).get("row_count")
+            if isinstance(split_manifest.get("partitions"), dict)
+            else None
+        )
+        pm_train_rows = prep_manifest.get("train_row_count")
+        if (
+            isinstance(sm_train_rows, int)
+            and not isinstance(sm_train_rows, bool)
+            and isinstance(pm_train_rows, int)
+            and not isinstance(pm_train_rows, bool)
+            and sm_train_rows != pm_train_rows
+        ):
+            errors.append(
+                f"Train row count mismatch between split manifest ({sm_train_rows}) "
+                f"and preprocessing manifest ({pm_train_rows})"
+            )
+
     if split_manifest and model_manifest:
         sm_sha = hashes.get("split_manifest_sha256")
         mm_sm_sha = model_manifest.get("split_manifest_sha256")
@@ -482,9 +668,7 @@ def check_test_evaluation_prerequisites(
             )
 
     if prep_manifest and model_manifest:
-        pm_prep_sha = prep_manifest.get("artifact_sha256") or prep_manifest.get(
-            "preprocessor_artifact_sha256"
-        )
+        pm_prep_sha = prep_manifest.get("artifact_sha256")
         mm_prep_sha = model_manifest.get("preprocessor_artifact_sha256")
         if pm_prep_sha and mm_prep_sha and str(pm_prep_sha).lower() != str(mm_prep_sha).lower():
             errors.append(
@@ -508,15 +692,31 @@ def check_test_evaluation_prerequisites(
         try:
             actual_ti_sha = _sha256_file(ti_path)
             hashes["test_indices_sha256"] = actual_ti_sha
-            test_part_meta = (split_manifest or {}).get("partitions", {}).get("test", {})
-            expected_ti_sha = test_part_meta.get("index_sha256") or test_part_meta.get("sha256")
-            if not expected_ti_sha:
+            test_part_meta = (
+                (split_manifest or {}).get("partitions", {}).get("test", {})
+                if isinstance((split_manifest or {}).get("partitions"), dict)
+                else {}
+            )
+            expected_ti_sha = (
+                test_part_meta.get("index_sha256") if isinstance(test_part_meta, dict) else None
+            )
+            if (
+                not expected_ti_sha
+                or not isinstance(expected_ti_sha, str)
+                or not expected_ti_sha.strip()
+            ):
                 errors.append("Split manifest partitions.test missing required 'index_sha256' key")
-            elif actual_ti_sha.lower() != str(expected_ti_sha).lower():
-                errors.append(
-                    f"test_indices SHA-256 mismatch: "
-                    f"expected {expected_ti_sha}, got {actual_ti_sha}"
-                )
+            else:
+                if not _is_valid_sha256_hex(expected_ti_sha):
+                    errors.append(
+                        f"Split manifest partitions.test has malformed 'index_sha256': "
+                        f"{expected_ti_sha!r}"
+                    )
+                if actual_ti_sha.lower() != expected_ti_sha.lower():
+                    errors.append(
+                        f"test_indices SHA-256 mismatch: "
+                        f"expected {expected_ti_sha}, got {actual_ti_sha}"
+                    )
             test_idx = _load_indices_csv_gz(ti_path)
             if expected_test_rows is not None and len(test_idx) != int(expected_test_rows):
                 errors.append(
@@ -527,6 +727,13 @@ def check_test_evaluation_prerequisites(
             errors.append(f"Failed to verify test_indices at {ti_path}: {exc}")
 
     # Index disjointness verification (fail-closed if any partition indices missing)
+    all_index_files_present = (
+        tri_path is not None
+        and tri_path.exists()
+        and vi_path is not None
+        and vi_path.exists()
+        and ti_path.exists()
+    )
     disjoint_verified, disjoint_errors = verify_index_disjointness(
         train_indices_path=train_indices_path,
         val_indices_path=val_indices_path,
@@ -537,21 +744,38 @@ def check_test_evaluation_prerequisites(
     if not disjoint_verified:
         errors.extend(disjoint_errors)
 
+    if not all_index_files_present:
+        partition_status = "BLOCKED"
+    elif disjoint_verified:
+        partition_status = "VERIFIED"
+    else:
+        partition_status = "FAILED"
+
     if pa_path.exists():
         try:
             actual_pa_sha = _sha256_file(pa_path)
             hashes["preprocessor_artifact_sha256"] = actual_pa_sha
-            expected_pa_sha = (
-                (prep_manifest or {}).get("artifact_sha256")
-                or (prep_manifest or {}).get("preprocessor_artifact_sha256")
-                or (model_manifest or {}).get("preprocessor_artifact_sha256")
-            )
+            expected_pa_sha = (prep_manifest or {}).get("artifact_sha256") or (
+                model_manifest or {}
+            ).get("preprocessor_artifact_sha256")
             if expected_pa_sha and actual_pa_sha.lower() != str(expected_pa_sha).lower():
                 errors.append(
                     f"Preprocessor artifact SHA-256 mismatch: "
                     f"expected {expected_pa_sha}, got {actual_pa_sha}"
                 )
-            preprocessor = TrainOnlyPreprocessor.load(pa_path)
+            if pm_path.exists():
+                expected_ds_for_prep = (prep_manifest or {}).get("dataset_sha256") or (
+                    split_manifest or {}
+                ).get("dataset_sha256")
+                load_kwargs: Dict[str, Any] = {
+                    "artifact_path": pa_path,
+                    "manifest_path": pm_path,
+                }
+                if isinstance(expected_ds_for_prep, str) and expected_ds_for_prep:
+                    load_kwargs["expected_dataset_sha256"] = expected_ds_for_prep
+                preprocessor = TrainOnlyPreprocessor.load_verified(**load_kwargs)
+            else:
+                preprocessor = TrainOnlyPreprocessor.load(pa_path)
             if not getattr(preprocessor, "is_fitted_", getattr(preprocessor, "is_fitted", False)):
                 errors.append(f"Preprocessor artifact at {pa_path} is not fitted.")
         except Exception as exc:
@@ -585,6 +809,7 @@ def check_test_evaluation_prerequisites(
         expected_attack_rows=expected_attack_rows,
         expected_attack_distribution=expected_attack_dist,
         train_validation_disjoint_verified=disjoint_verified,
+        partition_verification_status=partition_status,
     )
 
     if fail_closed and not ready:
@@ -709,8 +934,51 @@ def stream_test_partition_data(
     if all_trace is not None:
         all_trace = all_trace.loc[test_indices].reset_index(drop=True)
 
-    y_test = all_targets["Label"].to_numpy(dtype=np.int64)
+    raw_labels = all_targets["Label"].tolist()
+    validated_labels: List[int] = []
+    for idx_pos, lbl_val in enumerate(raw_labels):
+        if lbl_val is None or isinstance(lbl_val, (bool, np.bool_)):
+            raise ValueError(
+                f"Invalid Label value at test position {idx_pos}: {lbl_val!r} "
+                f"(None/bool not allowed)"
+            )
+        if isinstance(lbl_val, (float, np.floating)):
+            if not np.isfinite(lbl_val) or not float(lbl_val).is_integer():
+                raise ValueError(
+                    f"Invalid fractional or non-finite Label value at test position {idx_pos}: "
+                    f"{lbl_val!r} (strict binary integer labels 0/1 required)"
+                )
+            int_lbl = int(lbl_val)
+        elif isinstance(lbl_val, (int, np.integer)):
+            int_lbl = int(lbl_val)
+        else:
+            raise ValueError(
+                f"Invalid Label type at test position {idx_pos}: {lbl_val!r} "
+                f"(strict binary integer labels 0/1 required)"
+            )
+        if int_lbl not in (0, 1):
+            raise ValueError(
+                f"Out-of-domain Label value at test position {idx_pos}: {int_lbl} "
+                f"(expected 0 or 1)"
+            )
+        validated_labels.append(int_lbl)
+
+    y_test = np.asarray(validated_labels, dtype=np.int64)
     attack_cats = all_targets["Attack"].to_numpy(dtype=object)
+    for idx_pos, (int_lbl, cat_val) in enumerate(zip(validated_labels, attack_cats)):
+        if cat_val is None or not isinstance(cat_val, str) or not cat_val.strip():
+            raise ValueError(f"Invalid Attack category at test position {idx_pos}: {cat_val!r}")
+        cat_clean = cat_val.strip()
+        if int_lbl == 0 and cat_clean != "Benign":
+            raise ValueError(
+                f"Contradictory ground truth at test position {idx_pos}: "
+                f"Label=0 but Attack={cat_clean!r} (expected 'Benign')"
+            )
+        if int_lbl == 1 and cat_clean == "Benign":
+            raise ValueError(
+                f"Contradictory ground truth at test position {idx_pos}: "
+                f"Label=1 but Attack='Benign' (expected non-Benign attack category)"
+            )
 
     return TestPartitionData(
         X_test_raw=all_features,
@@ -734,7 +1002,18 @@ def save_confusion_matrix_artifacts(
     csv_p.parent.mkdir(parents=True, exist_ok=True)
     png_p.parent.mkdir(parents=True, exist_ok=True)
 
-    cm_arr = np.asarray(cm, dtype=np.int64)
+    try:
+        cm_arr = np.asarray(cm, dtype=np.int64)
+    except Exception as exc:
+        raise ValueError(f"Confusion matrix must be convertible to 2D int64 array: {exc}") from exc
+
+    if cm_arr.ndim != 2 or cm_arr.shape != (2, 2):
+        raise ValueError(f"Binary confusion matrix must have shape (2, 2), got {cm_arr.shape}")
+    if np.any(cm_arr < 0):
+        raise ValueError(f"Confusion matrix counts must be non-negative, got {cm_arr.tolist()}")
+    if len(classes) != 2:
+        raise ValueError(f"Expected 2 class labels for binary confusion matrix, got {classes!r}")
+
     cm_df = pd.DataFrame(
         cm_arr,
         index=[f"True_{c}" for c in classes],
@@ -743,33 +1022,60 @@ def save_confusion_matrix_artifacts(
     cm_df.to_csv(csv_p, index=True)
     csv_sha = _sha256_file(csv_p)
 
-    fig, ax = plt.subplots(figsize=(6, 5), dpi=300)
-    im = ax.imshow(cm_arr, interpolation="nearest", cmap="Blues")
-    ax.figure.colorbar(im, ax=ax)
+    cell_tags = [["TN", "FP"], ["FN", "TP"]]
+    fig = None
+    try:
+        fig, ax = plt.subplots(figsize=(6, 5), dpi=300)
+        im = ax.imshow(cm_arr, interpolation="nearest", cmap="Blues")
+        ax.figure.colorbar(im, ax=ax)
 
-    ax.set(
-        xticks=np.arange(cm_arr.shape[1]),
-        yticks=np.arange(cm_arr.shape[0]),
-        xticklabels=list(classes),
-        yticklabels=list(classes),
-        title=title,
-        ylabel="True Label",
-        xlabel="Predicted Label",
-    )
-    plt.setp(ax.get_xticklabels(), rotation=0, ha="center")
+        ax.set(
+            xticks=np.arange(cm_arr.shape[1]),
+            yticks=np.arange(cm_arr.shape[0]),
+            xticklabels=list(classes),
+            yticklabels=list(classes),
+            title=title,
+            ylabel="True Label",
+            xlabel="Predicted Label",
+        )
+        plt.setp(ax.get_xticklabels(), rotation=0, ha="center")
 
-    thresh = cm_arr.max() / 2.0
-    for i in range(cm_arr.shape[0]):
-        for j in range(cm_arr.shape[1]):
-            val = cm_arr[i, j]
-            color = "white" if val > thresh else "black"
-            ax.text(j, i, f"{val:,}", ha="center", va="center", color=color, fontsize=11)
+        thresh = cm_arr.max() / 2.0 if cm_arr.max() > 0 else 0.5
+        for i in range(cm_arr.shape[0]):
+            row_sum = int(cm_arr[i, :].sum())
+            for j in range(cm_arr.shape[1]):
+                val = int(cm_arr[i, j])
+                row_pct = (100.0 * val / row_sum) if row_sum > 0 else 0.0
+                color = "white" if val > thresh else "black"
+                tag = cell_tags[i][j]
+                ax.text(
+                    j,
+                    i,
+                    f"{tag}: {val:,}\n({row_pct:.2f}%)",
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontsize=10,
+                    fontweight="bold",
+                )
 
-    fig.tight_layout()
-    fig.savefig(png_p, bbox_inches="tight")
-    plt.close(fig)
+        fig.tight_layout()
+        fig.savefig(png_p, bbox_inches="tight")
+    except Exception as exc:
+        raise RuntimeError(f"Failed to render confusion matrix PNG to {png_p}: {exc}") from exc
+    finally:
+        if fig is not None:
+            plt.close(fig)
+
+    if not png_p.exists() or png_p.stat().st_size == 0:
+        raise RuntimeError(f"Confusion matrix PNG was not written or is empty: {png_p}")
+    png_bytes = png_p.read_bytes()
+    if not png_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise RuntimeError(
+            f"Generated confusion matrix file does not have a valid PNG header: {png_p}"
+        )
+
     png_sha = _sha256_file(png_p)
-
     return csv_sha, png_sha
 
 
@@ -786,8 +1092,54 @@ def save_predictions_csv(
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
 
+    idx_arr = np.asarray(row_indices)
+    if idx_arr.ndim != 1 or len(idx_arr) == 0:
+        raise ValueError("row_indices must be a non-empty 1D sequence")
+    if idx_arr.dtype == bool or not np.issubdtype(idx_arr.dtype, np.integer):
+        raise ValueError(f"row_indices must have integer dtype, got {idx_arr.dtype}")
+    if np.any(idx_arr < 0):
+        raise ValueError("row_indices must be non-negative")
+    if len(np.unique(idx_arr)) != len(idx_arr):
+        raise ValueError("row_indices must not contain duplicate row identifiers")
+
+    n_rows = len(idx_arr)
+    if (
+        len(y_true) != n_rows
+        or len(y_pred) != n_rows
+        or len(prob_benign) != n_rows
+        or len(prob_attack) != n_rows
+        or len(attack_categories) != n_rows
+    ):
+        raise ValueError("All prediction columns must have identical length matching row_indices")
+
+    for seq_name, seq_vals in [("y_true", y_true), ("y_pred", y_pred)]:
+        for pos, v in enumerate(seq_vals):
+            if (
+                isinstance(v, (bool, np.bool_))
+                or not isinstance(v, (int, np.integer))
+                or int(v) not in (0, 1)
+            ):
+                raise ValueError(
+                    f"Invalid binary integer label in {seq_name} at index {pos}: {v!r}"
+                )
+
     y_t = np.asarray(y_true, dtype=np.int64)
     y_p = np.asarray(y_pred, dtype=np.int64)
+    p_ben = np.asarray(prob_benign, dtype=np.float64)
+    p_att = np.asarray(prob_attack, dtype=np.float64)
+
+    if not (np.all(np.isfinite(p_ben)) and np.all(np.isfinite(p_att))):
+        raise ValueError("Predicted probabilities must be finite floats")
+    if (
+        np.any(p_ben < -1e-6)
+        or np.any(p_ben > 1.0 + 1e-6)
+        or np.any(p_att < -1e-6)
+        or np.any(p_att > 1.0 + 1e-6)
+    ):
+        raise ValueError("Predicted probabilities must lie within [0.0, 1.0]")
+    if not np.allclose(p_ben + p_att, 1.0, atol=1e-5):
+        raise ValueError("prob_benign + prob_attack must sum to 1.0 for every sample")
+
     outcomes = []
     for yt, yp in zip(y_t, y_p):
         if yt == 0 and yp == 0:
@@ -801,11 +1153,11 @@ def save_predictions_csv(
 
     df = pd.DataFrame(
         {
-            "row_index": np.asarray(row_indices, dtype=np.int64),
+            "row_index": idx_arr.astype(np.int64),
             "y_true": y_t,
             "y_pred": y_p,
-            "prob_benign": np.asarray(prob_benign, dtype=np.float64),
-            "prob_attack": np.asarray(prob_attack, dtype=np.float64),
+            "prob_benign": p_ben,
+            "prob_attack": p_att,
             "attack_category": np.asarray(attack_categories, dtype=object),
             "outcome": outcomes,
         }
@@ -857,13 +1209,56 @@ def evaluate_loaded_random_forest_on_test(
                     f"Use allow_overwrite=True or a separate output directory."
                 )
 
+    # 0. Validate test_data invariants (feature schema, row_indices, y_test, model classes_)
+    validate_feature_selection(list(test_data.X_test_raw.columns))
+    if list(test_data.X_test_raw.columns) != list(ML_FEATURE_COLUMNS):
+        raise ValueError(
+            "test_data.X_test_raw columns must match canonical ML_FEATURE_COLUMNS order"
+        )
+
+    for idx_pos, val in enumerate(test_data.y_test):
+        if isinstance(val, (bool, np.bool_)) or isinstance(val, (float, np.floating)):
+            raise ValueError(
+                f"Invalid non-integer label in test_data.y_test at index {idx_pos}: {val!r}"
+            )
+        if not isinstance(val, (int, np.integer)) or int(val) not in (0, 1):
+            raise ValueError(
+                f"Invalid binary label in test_data.y_test at index {idx_pos}: {val!r}"
+            )
+
+    est = getattr(model, "estimator", getattr(model, "_estimator", None))
+    model_classes = getattr(model, "classes_", getattr(est, "classes_", None))
+    if model_classes is not None:
+        classes_list = [int(c) if isinstance(c, (int, np.integer)) else c for c in model_classes]
+        if classes_list != [0, 1]:
+            raise ValueError(
+                f"Model classes_ must follow canonical binary ordering [0, 1], "
+                f"got {classes_list!r}"
+            )
+
     # 1. Transform features with train-only preprocessor
     X_test_trans = preprocessor.transform(test_data.X_test_raw)
 
     # 2. Predict probabilities and binary decisions
-    probas = model.predict_proba(X_test_trans)
+    probas = np.asarray(model.predict_proba(X_test_trans), dtype=np.float64)
+    if probas.ndim != 2 or probas.shape != (test_data.num_rows, 2):
+        raise ValueError(
+            f"predict_proba output must have shape ({test_data.num_rows}, 2), "
+            f"got {probas.shape}"
+        )
+    if not np.all(np.isfinite(probas)):
+        raise ValueError("predict_proba output contains non-finite values (NaN or Inf)")
+    if np.any(probas < -1e-6) or np.any(probas > 1.0 + 1e-6):
+        raise ValueError(
+            f"predict_proba output contains values outside [0.0, 1.0]: "
+            f"min={probas.min()}, max={probas.max()}"
+        )
+    if not np.allclose(probas.sum(axis=1), 1.0, atol=1e-5):
+        raise ValueError("predict_proba row probabilities do not sum to 1.0")
+
     prob_benign = probas[:, 0]
     prob_attack = probas[:, 1]
+    # Locked canonical threshold = 0.5; tie at prob_attack == 0.5 resolves to positive class 1
     y_pred = (prob_attack >= CANONICAL_DECISION_THRESHOLD).astype(np.int64)
     y_true = np.asarray(test_data.y_test, dtype=np.int64)
     attack_cats = [str(c) for c in test_data.attack_categories]
@@ -932,6 +1327,7 @@ def evaluate_loaded_random_forest_on_test(
         "test_row_count": int(test_data.num_rows),
         "benign_row_count": int(cm_breakdown["benign_total"]),
         "attack_row_count": int(cm_breakdown["attack_total"]),
+        "partition_verification_status": "VERIFIED" if disjoint_verified else "UNVERIFIED",
         "test_lock_compliance": {
             "model_retrained_on_test": False,
             "preprocessor_refitted_on_test": False,
@@ -1041,19 +1437,29 @@ def evaluate_random_forest_on_test(
         fail_closed=True,
     )
 
-    # 2. Load preprocessor
-    preprocessor = TrainOnlyPreprocessor.load(preprocessor_artifact_path)
-
-    # 3. Load model with verified provenance check
+    # 2. Load split manifest and verified preprocessor
     split_manifest: Dict[str, Any] = {}
     if Path(split_manifest_path).exists():
         with open(split_manifest_path, "r", encoding="utf-8") as f:
             split_manifest = json.load(f)
 
+    expected_ds_sha = split_manifest.get("dataset_sha256")
+    if Path(preprocessing_manifest_path).exists():
+        load_kwargs: Dict[str, Any] = {
+            "artifact_path": preprocessor_artifact_path,
+            "manifest_path": preprocessing_manifest_path,
+        }
+        if isinstance(expected_ds_sha, str) and expected_ds_sha:
+            load_kwargs["expected_dataset_sha256"] = expected_ds_sha
+        preprocessor = TrainOnlyPreprocessor.load_verified(**load_kwargs)
+    else:
+        preprocessor = TrainOnlyPreprocessor.load(preprocessor_artifact_path)
+
+    # 3. Load model with verified provenance check
     loaded_res = RandomForestModel.load_verified(
         model_path=model_artifact_path,
         manifest_path=model_manifest_path,
-        expected_dataset_sha256=split_manifest.get("dataset_sha256"),
+        expected_dataset_sha256=expected_ds_sha,
         expected_split_manifest_sha256=prereq.verified_hashes.get("split_manifest_sha256"),
         expected_preprocessor_artifact_sha256=prereq.verified_hashes.get(
             "preprocessor_artifact_sha256"

@@ -195,6 +195,12 @@ def test_analyze_endpoint_verified_model_provenance(client: TestClient, monkeypa
     assert len(data["results"]) == 2
     assert data["results"][0]["inference_mode"] == "verified_model"
     assert data["results"][0]["model_sha256"] == "sha256_mock_rf_model_digest_abc"
+    assert data["anomaly_scores"] == [0.08, 0.92]
+    assert data["probabilities"] == [
+        {"Benign": 0.92, "Attack": 0.08},
+        {"Benign": 0.08, "Attack": 0.92},
+    ]
+    assert data["results"][0]["probabilities"] == {"Benign": 0.92, "Attack": 0.08}
     assert data["results"][1]["is_anomaly"] is True
     assert data["results"][1]["incident_created"] is True
 
