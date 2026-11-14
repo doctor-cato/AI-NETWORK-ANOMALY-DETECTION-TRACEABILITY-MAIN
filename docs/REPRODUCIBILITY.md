@@ -168,6 +168,28 @@ Fail-closed properties:
 - Streams partition loading by chunks (default 100,000 via `--chunksize`) to minimize memory usage.
 - Saves model artifacts under `artifacts/models/isolation_forest/` and metrics under `reports/experiments/isolation_forest/`.
 
+## Reproduce the Autoencoder anomaly detection pipeline (scripts/train_autoencoder.py) (Issue #29)
+
+```text
+# Prerequisite check and parameter options:
+python scripts/train_autoencoder.py --help
+
+# Unsupervised training and validation-only threshold calibration:
+python scripts/train_autoencoder.py --batch-size 256 --max-iter 50 --target-fpr 0.05
+
+# Optional held-out Test evaluation (only after model and threshold are frozen):
+python scripts/train_autoencoder.py --evaluate-test
+```
+
+Fail-closed properties & safeguards:
+- Fail-closed prerequisite audit: verifies raw dataset SHA-256 (`4ebb97...`), split manifest + partition index checksums, and preprocessor artifact + companion manifest via `TrainOnlyPreprocessor.load_verified()` before execution.
+- Training population: strictly benign-only (`Label == 0`) from Train partition; targets and trace metadata are completely excluded from $X$.
+- Unknown-attack holdout: configured unknown categories (default `Worms`, `Backdoor`, persisted dynamically in `autoencoder_manifest.json`) are strictly isolated from model fitting, gradient updates, early stopping, and threshold calibration.
+- Threshold calibration: Validation-only (`benign_quantile`, `fpr_constrained` with exact empirical tie-aware `val_fpr <= target_fpr`, or `supervised_best_f1`); once selected, threshold is frozen (`threshold_frozen=True`).
+- Held-out Test Lock: because `NF-UNSW-NB15-v3.csv` is a single unified CSV, initial partition loading materializes and transforms only Train and Validation, stops streaming at the maximum Train/Validation row index, and discards non-Train/Validation rows at the chunk-mask boundary so `0` Test rows are materialized, transformed, or accessed before lock release; Test is loaded, transformed, and evaluated only with `--evaluate-test` strictly after verifying both fitted model state and frozen validation threshold (`verify_test_evaluation_lock` -> `load_and_transform_test_partition`).
+- Artifacts & Reports: produces `autoencoder_model.joblib`, `model_config.json`, `threshold.json`, `autoencoder_manifest.json` (linking dataset, split manifest, Train/Validation partition index, preprocessor, model, config, and threshold SHA-256 digests + configured unknown categories, verified fail-closed via `load_verified_autoencoder`), `metrics.json`, `threshold_calibration.json`, and `evaluation_report.md`.
+
+
 ## Reproduce CSV inference on new network flows (Issue #15)
 
 ```text
