@@ -875,6 +875,7 @@ def fetch_dataset_sample(
 
     rng = random.Random(random_seed)
     seen_lines = 0
+    class_counts: Dict[str, int] = {}
 
     with zf.open(matched_member) as f:
         text_io = io.TextIOWrapper(f, encoding="utf-8")
@@ -976,6 +977,11 @@ def fetch_dataset_sample(
             "source_doi": cfg["doi"],
             "random_seed": random_seed if sample_mode != "slice" else None,
             "class_distribution": attacks,
+            "class_prevalence": (
+                {k: round(v / seen_lines, 6) for k, v in class_counts.items()}
+                if sample_mode != "slice" and seen_lines > 0
+                else {}
+            ),
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
         },
         "governance": {
