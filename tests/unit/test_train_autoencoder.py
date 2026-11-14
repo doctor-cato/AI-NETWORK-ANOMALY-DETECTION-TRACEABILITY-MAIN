@@ -62,6 +62,7 @@ from scripts.train_autoencoder import (
     check_split_manifest,
     compute_metrics,
     load_and_transform_partitions,
+    load_and_transform_test_partition,
     load_partition_indices,
     load_verified_autoencoder,
     read_partition_indices_file,
@@ -1735,4 +1736,204 @@ def test_pipeline_strict_isolation_no_test_in_fit_or_calibration(tmp_path):
 
     assert clean_man["threshold"] == pytest.approx(poison_man["threshold"], rel=0.0, abs=0.0)
     for w_clean, w_poison in zip(clean_model.coefs_, poison_model.coefs_, strict=True):
+        np.testing.assert_array_equal(w_clean, w_poison)
+
+
+def test_load_and_transform_test_partition_fails_closed_before_fit_or_freeze(
+    tmp_path, fitted_autoencoder
+):
+    dummy_csv = tmp_path / "should_not_be_read.csv"
+    dummy_man = {"partitions": {}}
+    frozen_meta = {"threshold": 0.5, "threshold_frozen": True}
+
+    with mock.patch("scripts.train_autoencoder.pd.read_csv") as mock_read_csv:
+        with pytest.raises(RuntimeError, match="requires --evaluate-test"):
+            load_and_transform_test_partition(
+                raw_data_path=dummy_csv,
+                indices_dir=tmp_path,
+                split_manifest=dummy_man,
+                preprocessor=IdentityPreprocessor(),
+                model=fitted_autoencoder,
+                threshold_meta=frozen_meta,
+                evaluate_test=False,
+            )
+
+        unfitted = build_model(hidden_layer_sizes=(16, 8, 16), max_iter=5, random_state=42)
+        with pytest.raises(RuntimeError, match="must be fitted"):
+            load_and_transform_test_partition(
+                raw_data_path=dummy_csv,
+                indices_dir=tmp_path,
+                split_manifest=dummy_man,
+                preprocessor=IdentityPreprocessor(),
+                model=unfitted,
+                threshold_meta=frozen_meta,
+                evaluate_test=True,
+            )
+
+        with pytest.raises(RuntimeError, match="must be calibrated and frozen"):
+            load_and_transform_test_partition(
+                raw_data_path=dummy_csv,
+                indices_dir=tmp_path,
+                split_manifest=dummy_man,
+                preprocessor=IdentityPreprocessor(),
+                model=fitted_autoencoder,
+                threshold_meta={"threshold": 0.5, "threshold_frozen": False},
+                evaluate_test=True,
+            )
+
+        mock_read_csv.assert_not_called()
+
+
+def test_run_pipeline_evaluates_test_strictly_after_fit_and_threshold_freeze(tmp_path, rng):
+    fixture = _build_real_preprocessor_e2e_fixture(tmp_path, rng)
+    out_dir = tmp_path / "artifacts_eval_order"
+    rep_dir = tmp_path / "reports_eval_order"
+    args = _make_real_prep_args(fixture, out_dir, rep_dir)
+    args.evaluate_test = True
+
+    events: list[Any] = []
+    real_load_parts = load_and_transform_partitions
+    real_load_test = load_and_transform_test_partition
+    real_fit = fit_model
+    real_cal = calibrate_threshold
+    real_verify_lock = verify_test_evaluation_lock
+
+    def spy_load_parts(*p_args, **p_kwargs):
+        events.append(
+            (
+                "load_partitions",
+                p_kwargs.get("include_test"),
+                p_kwargs.get("partitions"),
+            )
+        )
+        return real_load_parts(*p_args, **p_kwargs)
+
+    def spy_fit(*p_args, **p_kwargs):
+        events.append("fit_model")
+        return real_fit(*p_args, **p_kwargs)
+
+    def spy_cal(*p_args, **p_kwargs):
+        events.append("calibrate_threshold")
+        return real_cal(*p_args, **p_kwargs)
+
+    def spy_verify_lock(*p_args, **p_kwargs):
+        events.append("verify_test_evaluation_lock")
+        return real_verify_lock(*p_args, **p_kwargs)
+
+    def spy_load_test(*p_args, **p_kwargs):
+        events.append("load_and_transform_test_partition")
+        return real_load_test(*p_args, **p_kwargs)
+
+    with (
+        mock.patch(
+            "scripts.train_autoencoder.load_and_transform_partitions", side_effect=spy_load_parts
+        ),
+        mock.patch("scripts.train_autoencoder.fit_model", side_effect=spy_fit),
+        mock.patch("scripts.train_autoencoder.calibrate_threshold", side_effect=spy_cal),
+        mock.patch(
+            "scripts.train_autoencoder.verify_test_evaluation_lock", side_effect=spy_verify_lock
+        ),
+        mock.patch(
+            "scripts.train_autoencoder.load_and_transform_test_partition",
+            side_effect=spy_load_test,
+        ),
+    ):
+        exit_code = run_pipeline(args)
+
+    assert exit_code == 0
+    assert events[0] == ("load_partitions", False, None)
+    idx_initial = 0
+    idx_fit = events.index("fit_model")
+    idx_cal = events.index("calibrate_threshold")
+    idx_lock = events.index("verify_test_evaluation_lock")
+    idx_test_loader = events.index("load_and_transform_test_partition")
+    idx_test_stream = events.index(("load_partitions", True, ("test",)))
+
+    assert idx_initial < idx_fit < idx_cal < idx_lock < idx_test_loader < idx_test_stream
+
+    manifest = json.loads((out_dir / "autoencoder_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["test_lock"]["test_evaluated"] is True
+    assert manifest["test_lock"]["test_rows_materialized"] == 20
+    assert manifest["test_lock"]["test_loaded_after_model_fit_and_threshold_freeze"] is True
+    assert manifest["test_lock"]["threshold_frozen_before_test_eval"] is True
+
+
+def test_run_pipeline_with_evaluate_test_disabled_never_calls_test_loader(tmp_path, rng):
+    fixture = _build_real_preprocessor_e2e_fixture(tmp_path, rng)
+    out_dir = tmp_path / "artifacts_locked"
+    rep_dir = tmp_path / "reports_locked"
+    args = _make_real_prep_args(fixture, out_dir, rep_dir)
+    args.evaluate_test = False
+
+    requested_partitions: list[str] = []
+    real_load_idx = load_partition_indices
+
+    def spy_load_idx(split_manifest, indices_dir, partition_name, max_rows=None):
+        requested_partitions.append(partition_name)
+        return real_load_idx(split_manifest, indices_dir, partition_name, max_rows=max_rows)
+
+    with (
+        mock.patch("scripts.train_autoencoder.load_partition_indices", side_effect=spy_load_idx),
+        mock.patch(
+            "scripts.train_autoencoder.load_and_transform_test_partition"
+        ) as mock_test_loader,
+    ):
+        assert run_pipeline(args) == 0
+
+    mock_test_loader.assert_not_called()
+    assert "test" not in requested_partitions
+
+
+def test_run_pipeline_evaluate_test_invariance_with_poisoned_test_rows(tmp_path):
+    """Even with --evaluate-test=True, poisoning Test rows must not alter weights or threshold."""
+    clean_dir = tmp_path / "eval_clean"
+    poison_dir = tmp_path / "eval_poison"
+    clean_dir.mkdir()
+    poison_dir.mkdir()
+
+    def _run_eval(base_dir: Path, poison_offset: int):
+        local_rng = np.random.default_rng(11)
+        fixture = _build_real_preprocessor_e2e_fixture(base_dir, local_rng)
+        if poison_offset != 0:
+            df = pd.read_csv(fixture["csv_path"])
+            test_mask = np.isin(
+                np.arange(len(df)),
+                np.concatenate([np.arange(70, 80), np.arange(110, 120)]),
+            )
+            df.loc[test_mask, list(ML_FEATURE_COLUMNS)] += poison_offset
+            df.to_csv(fixture["csv_path"], index=False)
+            new_sha = sha256_file(fixture["csv_path"])
+            fixture["data_man_path"].write_text(
+                json.dumps({"files": [{"file": "data/NF-UNSW-NB15-v3.csv", "sha256": new_sha}]}),
+                encoding="utf-8",
+            )
+            split_obj = json.loads(fixture["split_man_path"].read_text(encoding="utf-8"))
+            split_obj["dataset_sha256"] = new_sha
+            fixture["split_man_path"].write_text(json.dumps(split_obj), encoding="utf-8")
+            train_idx = np.concatenate([np.arange(0, 50), np.arange(80, 90)])
+            prep = TrainOnlyPreprocessor(
+                config=PreprocessingConfig(scaler_type="standard", add_missing_indicators=False),
+                dataset_sha256=new_sha,
+                split_manifest_sha256=sha256_file(fixture["split_man_path"]),
+                split_protocol_version=SPLIT_PROTOCOL_VERSION,
+            )
+            prep.fit(df.iloc[train_idx][list(ML_FEATURE_COLUMNS)])
+            prep.save(fixture["prep_path"], manifest_path=fixture["prep_man_path"])
+
+        out_dir = base_dir / "out"
+        rep_dir = base_dir / "rep"
+        args = _make_real_prep_args(fixture, out_dir, rep_dir)
+        args.evaluate_test = True
+        assert run_pipeline(args) == 0
+        return load_verified_autoencoder(
+            out_dir / "autoencoder_model.joblib",
+            out_dir / "autoencoder_manifest.json",
+            require_complete_provenance=True,
+        )
+
+    m_clean, man_clean = _run_eval(clean_dir, 0)
+    m_poison, man_poison = _run_eval(poison_dir, 1000)
+
+    assert man_clean["threshold"] == pytest.approx(man_poison["threshold"], rel=0.0, abs=0.0)
+    for w_clean, w_poison in zip(m_clean.coefs_, m_poison.coefs_, strict=True):
         np.testing.assert_array_equal(w_clean, w_poison)

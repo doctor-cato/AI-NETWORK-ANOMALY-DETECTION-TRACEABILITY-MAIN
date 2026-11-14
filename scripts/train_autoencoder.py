@@ -10,16 +10,19 @@ Pipeline stages:
 1. Fail-closed prerequisite audit: dataset SHA-256, split manifest + index checksums,
    preprocessor artifact + companion manifest, 47-feature schema contract.
 2. Verified preprocessor loading: loaded strictly via TrainOnlyPreprocessor.load_verified().
-3. Partition loading: reads canonical partition indices with 'source_row_index' header;
-   streams unified CSV using usecols up to max required index and filters by chunk mask.
-4. Leakage & schema audit: asserts zero target/metadata leakage across Train, Val, and Test.
+3. Partition loading (Train/Validation only prior to lock): reads canonical Train/Validation
+   indices with 'source_row_index' header; streams unified CSV using usecols up to max required
+   Train/Validation index and drops non-selected rows at the chunk-mask boundary.
+4. Leakage & schema audit: asserts zero target/metadata leakage across Train and Validation.
 5. Training population filtering: benign-only (Label == 0) from Train partition.
 6. Model training: unsupervised MLP Autoencoder (reconstruction error objective).
 7. Validation-only threshold calibration: target FPR quantile or empirical FPR-constrained
    threshold; pre-registered unknown categories strictly excluded.
-8. Held-out Test Lock: Contract A isolates Test from fit, early stopping, and threshold
-   calibration; Contract B drops non-Train/Val rows at the chunk-mask boundary so 0 Test
-   rows are materialized unless --evaluate-test is enabled after model/threshold freeze.
+8. Held-out Test Lock: Contract A isolates Test from loading, preprocessing transformation,
+   fit, early stopping, and threshold calibration; Contract B drops non-Train/Val rows at the
+   chunk-mask boundary so 0 Test rows are materialized by default. Only when --evaluate-test
+   is enabled, verify_test_evaluation_lock() and load_and_transform_test_partition() load,
+   transform, audit, and evaluate Test strictly AFTER model fitting and threshold freeze.
 9. Verification & serialization: model/config/threshold SHA-256, companion manifest with
    configured unknown categories & verified partition index hashes, round-trip reload check.
 10. Reports: metrics.json, threshold_calibration.json, training_metadata.json, run_metadata.json,
@@ -514,16 +517,17 @@ def load_and_transform_partitions(
     include_test: bool = False,
     sample_size: int | None = None,
     chunk_size: int = 100_000,
+    partitions: Sequence[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Stream unified raw CSV using usecols and extract transformed features, labels, and attacks.
 
     Guarantees:
     - Contract A (Fit/Calibration Isolation): Test data never enters fit, early stopping,
       or threshold calibration.
-    - Contract B (Stream-Boundary Filtering & Materialization Lock): When include_test=False,
+    - Contract B (Stream-Boundary Filtering & Materialization Lock): When Test is not selected,
       test_indices are not read into partition_map; the unified raw CSV stream stops as soon
-      as current_row exceeds max(train_indices, val_indices), non-Train/Val rows are dropped
-      at the chunk-mask boundary, and 0 Test rows are materialized or transformed.
+      as current_row exceeds max selected index, non-selected rows are dropped at the chunk-mask
+      boundary, and 0 Test rows are materialized or transformed.
     - Preprocessor transform-only (no fitting); returns float64 NumPy feature matrices.
     - Uses usecols=list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS) to minimize RAM footprint.
     - Ensures exact 47 canonical ML features are in canonical order.
@@ -533,27 +537,50 @@ def load_and_transform_partitions(
     if chunk_size < 1:
         raise ValueError(f"chunk_size must be >= 1, got {chunk_size}")
 
-    train_indices = load_partition_indices(
-        split_manifest, indices_dir, "train", max_rows=sample_size
+    allowed_partitions = ("train", "validation", "test")
+    if partitions is None:
+        selected_partitions = (
+            ("train", "validation", "test") if include_test else ("train", "validation")
+        )
+    else:
+        deduped = tuple(dict.fromkeys(partitions))
+        invalid = [p for p in deduped if p not in allowed_partitions]
+        if not deduped or invalid:
+            raise ValueError(f"Invalid partition selection {partitions!r}")
+        if "test" in deduped and not include_test:
+            raise ValueError("Loading 'test' partition requires include_test=True.")
+        selected_partitions = deduped
+
+    need_train = "train" in selected_partitions or "test" in selected_partitions
+    need_val = "validation" in selected_partitions or "test" in selected_partitions
+    need_test = "test" in selected_partitions
+
+    train_indices = (
+        load_partition_indices(split_manifest, indices_dir, "train", max_rows=sample_size)
+        if need_train
+        else np.array([], dtype=np.int64)
     )
-    val_indices = load_partition_indices(
-        split_manifest, indices_dir, "validation", max_rows=sample_size
+    val_indices = (
+        load_partition_indices(split_manifest, indices_dir, "validation", max_rows=sample_size)
+        if need_val
+        else np.array([], dtype=np.int64)
     )
     test_indices = (
         load_partition_indices(split_manifest, indices_dir, "test", max_rows=sample_size)
-        if include_test
+        if need_test
         else np.array([], dtype=np.int64)
     )
 
     # Strict assertion: partition index sets must be mutually disjoint
     train_set = set(train_indices)
     val_set = set(val_indices)
-    tv_overlap = train_set.intersection(val_set)
-    if tv_overlap:
-        raise ValueError(
-            f"Split contamination: train and validation partitions overlap ({len(tv_overlap)} rows)"
-        )
-    if include_test and len(test_indices) > 0:
+    if need_train and need_val:
+        tv_overlap = train_set.intersection(val_set)
+        if tv_overlap:
+            raise ValueError(
+                f"Split contamination: train and validation partitions overlap ({len(tv_overlap)} rows)"
+            )
+    if need_test and len(test_indices) > 0:
         test_set = set(test_indices)
         tt_overlap = train_set.intersection(test_set)
         if tt_overlap:
@@ -567,6 +594,9 @@ def load_and_transform_partitions(
                 f"({len(vt_overlap)} rows)"
             )
 
+    all_indices = {"train": train_indices, "validation": val_indices, "test": test_indices}
+    indices_by_part = {part: all_indices[part] for part in selected_partitions}
+
     cols_to_read = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
 
     # Verify that required columns exist in raw CSV header
@@ -575,11 +605,7 @@ def load_and_transform_partitions(
     if missing_cols:
         raise ValueError(f"Raw dataset CSV missing required columns: {missing_cols}")
 
-    valid_indices = [
-        idx
-        for idx in (train_indices, val_indices, test_indices if include_test else None)
-        if idx is not None and len(idx) > 0
-    ]
+    valid_indices = [idx for idx in indices_by_part.values() if len(idx) > 0]
     if not valid_indices:
 
         def _empty_part() -> dict[str, Any]:
@@ -591,23 +617,17 @@ def load_and_transform_partitions(
                 "X_raw_cols": list(ML_FEATURE_COLUMNS),
             }
 
-        empty_res = {"train": _empty_part(), "validation": _empty_part()}
-        if include_test:
-            empty_res["test"] = _empty_part()
-        return empty_res
+        return {part: _empty_part() for part in selected_partitions}
 
     max_idx = max(int(np.max(idx)) for idx in valid_indices)
     partition_map = np.full(max_idx + 1, -1, dtype=np.int8)
-    if len(train_indices) > 0:
-        partition_map[train_indices] = 0
-    if len(val_indices) > 0:
-        partition_map[val_indices] = 1
-    if include_test and len(test_indices) > 0:
-        partition_map[test_indices] = 2
+    part_codes = {part: code for code, part in enumerate(selected_partitions)}
+    for part, code in part_codes.items():
+        part_idx = indices_by_part[part]
+        if len(part_idx) > 0:
+            partition_map[part_idx] = code
 
-    train_chunks: list[pd.DataFrame] = []
-    val_chunks: list[pd.DataFrame] = []
-    test_chunks: list[pd.DataFrame] = []
+    row_chunks: dict[str, list[pd.DataFrame]] = {part: [] for part in selected_partitions}
 
     # Stream unified CSV in chunks using usecols and partition_map; stop once max_idx is passed
     current_row = 0
@@ -628,36 +648,24 @@ def load_and_transform_partitions(
             if valid_len < n_rows:
                 chunk_mask = np.pad(chunk_mask, (0, n_rows - valid_len), constant_values=-1)
 
-            m0 = np.where(chunk_mask == 0)[0]
-            if len(m0) > 0:
-                sub0 = chunk.iloc[m0].copy()
-                sub0["_src_row_idx"] = current_row + m0
-                train_chunks.append(sub0)
-
-            m1 = np.where(chunk_mask == 1)[0]
-            if len(m1) > 0:
-                sub1 = chunk.iloc[m1].copy()
-                sub1["_src_row_idx"] = current_row + m1
-                val_chunks.append(sub1)
-
-            if include_test:
-                m2 = np.where(chunk_mask == 2)[0]
-                if len(m2) > 0:
-                    sub2 = chunk.iloc[m2].copy()
-                    sub2["_src_row_idx"] = current_row + m2
-                    test_chunks.append(sub2)
+            for part, code in part_codes.items():
+                matched = np.where(chunk_mask == code)[0]
+                if len(matched) > 0:
+                    sub = chunk.iloc[matched].copy()
+                    sub["_src_row_idx"] = current_row + matched
+                    row_chunks[part].append(sub)
 
             current_row = end_row
             if current_row > max_idx:
                 break
 
     def assemble_partition(
-        row_chunks: list[pd.DataFrame], expected_indices: np.ndarray, part_name: str
+        part_chunks: list[pd.DataFrame], expected_indices: np.ndarray, part_name: str
     ) -> dict[str, Any]:
-        if not row_chunks:
+        if not part_chunks:
             df = pd.DataFrame(columns=cols_to_read)
         else:
-            df = pd.concat(row_chunks, ignore_index=True)
+            df = pd.concat(part_chunks, ignore_index=True)
 
         if len(df) != len(expected_indices):
             raise ValueError(
@@ -691,13 +699,39 @@ def load_and_transform_partitions(
             "X_raw_cols": list(X_raw.columns),
         }
 
-    results = {
-        "train": assemble_partition(train_chunks, train_indices, "Train"),
-        "validation": assemble_partition(val_chunks, val_indices, "Validation"),
+    return {
+        part: assemble_partition(row_chunks[part], indices_by_part[part], part.capitalize())
+        for part in selected_partitions
     }
-    if include_test:
-        results["test"] = assemble_partition(test_chunks, test_indices, "Test")
-    return results
+
+
+def load_and_transform_test_partition(
+    raw_data_path: Path,
+    indices_dir: Path,
+    split_manifest: Any,
+    preprocessor: Any,
+    model: Any,
+    threshold_meta: dict[str, Any],
+    evaluate_test: bool,
+    sample_size: int | None = None,
+    chunk_size: int = 100_000,
+) -> dict[str, Any]:
+    """Load and transform the held-out Test partition strictly after model fit and threshold freeze."""
+    verify_test_evaluation_lock(
+        model=model,
+        threshold_meta=threshold_meta,
+        evaluate_test=evaluate_test,
+    )
+    return load_and_transform_partitions(
+        raw_data_path=raw_data_path,
+        indices_dir=indices_dir,
+        split_manifest=split_manifest,
+        preprocessor=preprocessor,
+        include_test=True,
+        sample_size=sample_size,
+        chunk_size=chunk_size,
+        partitions=("test",),
+    )["test"]
 
 
 # ---------------------------------------------------------------------------
@@ -1632,8 +1666,8 @@ def run_pipeline(args: argparse.Namespace) -> int:
         return 1
     print("  OK Preprocessor verified and loaded via TrainOnlyPreprocessor.load_verified.")
 
-    # 3. Stream & Extract Partitions using usecols
-    print(f"[3/8] Loading and transforming partitions (Held-out Test: {args.evaluate_test})...")
+    # 3. Stream & Extract Train/Validation Partitions ONLY (Held-out Test strictly deferred)
+    print("[3/8] Loading and transforming Train/Validation partitions (Held-out Test locked)...")
     split_manifest_obj = split_res.get("manifest") or json.loads(
         Path(split_res["path"]).read_text(encoding="utf-8")
     )
@@ -1643,38 +1677,35 @@ def run_pipeline(args: argparse.Namespace) -> int:
             indices_dir=args.indices_dir or INDICES_DIR_PATH,
             split_manifest=split_manifest_obj,
             preprocessor=preprocessor,
-            include_test=args.evaluate_test,
+            include_test=False,
             sample_size=args.sample_size,
         )
     except Exception as exc:
         print(f"[BLOCKED] Failed to load partitions: {exc}")
         return 1
 
+    if "test" in partitions:
+        raise RuntimeError(
+            "Held-out Test Lock violation: Test partition must not load prior to fit/calibration."
+        )
+
     train_data = partitions["train"]
     val_data = partitions["validation"]
-    test_data = partitions.get("test")
 
     print(f"  Train raw samples loaded: {len(train_data['y']):,}")
     print(f"  Validation raw samples loaded: {len(val_data['y']):,}")
-    if test_data:
-        print(f"  Test raw samples loaded: {len(test_data['y']):,}")
 
-    # 4. Leakage checks across all partitions
-    print("[4/8] Auditing feature matrices for target and metadata leakage...")
+    # 4. Leakage checks across Train and Validation partitions
+    print("[4/8] Auditing Train/Validation feature matrices for target and metadata leakage...")
     for part_name, p_data in [("Train", train_data), ("Validation", val_data)]:
         leak_res = check_no_leakage_in_matrix(p_data["X_raw_df"])
         if leak_res["status"] != "PASS":
             print(f"FAILED: Data leakage in {part_name}: {leak_res['message']}")
             return 1
-    if test_data is not None:
-        leak_res = check_no_leakage_in_matrix(test_data["X_raw_df"])
-        if leak_res["status"] != "PASS":
-            print(f"FAILED: Data leakage in Test: {leak_res['message']}")
-            return 1
-    print("  OK No leakage detected across all loaded partitions.")
+    print("  OK No leakage detected across Train and Validation partitions.")
 
-    # 5. Schema and Finite checks
-    print("[5/8] Verifying feature schema and finite numeric values...")
+    # 5. Schema and Finite checks for Train and Validation
+    print("[5/8] Verifying Train/Validation feature schema and finite numeric values...")
     for part_name, p_data in [("Train", train_data), ("Validation", val_data)]:
         schema_res = check_feature_schema(p_data["X_raw_cols"])
         if schema_res["status"] != "PASS":
@@ -1683,15 +1714,6 @@ def run_pipeline(args: argparse.Namespace) -> int:
         fin_res = check_finite_values(p_data["X"], part_name)
         if fin_res["status"] != "PASS":
             print(f"FAILED: Non-finite values in {part_name}: {fin_res['message']}")
-            return 1
-    if test_data is not None:
-        schema_res = check_feature_schema(test_data["X_raw_cols"])
-        if schema_res["status"] != "PASS":
-            print(f"FAILED: Feature schema mismatch in Test: {schema_res['message']}")
-            return 1
-        fin_res = check_finite_values(test_data["X"], "Test")
-        if fin_res["status"] != "PASS":
-            print(f"FAILED: Non-finite values in Test: {fin_res['message']}")
             return 1
     print("  OK 47 canonical baseline features and finite values verified.")
 
@@ -1759,18 +1781,45 @@ def run_pipeline(args: argparse.Namespace) -> int:
         unknown_categories=unknown_cats,
     )
 
+    test_data: dict[str, Any] | None = None
     metrics_test = None
-    if not args.evaluate_test and test_data is not None:
-        raise RuntimeError(
-            "Held-out Test Lock violation: Test partition loaded without --evaluate-test."
-        )
-    if args.evaluate_test and test_data is not None:
+    if args.evaluate_test:
+        # Unlock Test ONLY after Autoencoder fit and Validation threshold freeze
         verify_test_evaluation_lock(
             model=model,
             threshold_meta=threshold_meta,
             evaluate_test=args.evaluate_test,
         )
-        print("  Evaluating on held-out Test partition...")
+        print("  Loading, transforming, and evaluating held-out Test partition after lock...")
+        try:
+            test_data = load_and_transform_test_partition(
+                raw_data_path=Path(dataset_res["path"]),
+                indices_dir=args.indices_dir or INDICES_DIR_PATH,
+                split_manifest=split_manifest_obj,
+                preprocessor=preprocessor,
+                model=model,
+                threshold_meta=threshold_meta,
+                evaluate_test=args.evaluate_test,
+                sample_size=args.sample_size,
+            )
+        except Exception as exc:
+            print(f"[BLOCKED] Failed to load held-out Test partition: {exc}")
+            return 1
+
+        print(f"  Test raw samples loaded: {len(test_data['y']):,}")
+        leak_res = check_no_leakage_in_matrix(test_data["X_raw_df"])
+        if leak_res["status"] != "PASS":
+            print(f"FAILED: Data leakage in Test: {leak_res['message']}")
+            return 1
+        schema_res = check_feature_schema(test_data["X_raw_cols"])
+        if schema_res["status"] != "PASS":
+            print(f"FAILED: Feature schema mismatch in Test: {schema_res['message']}")
+            return 1
+        fin_res = check_finite_values(test_data["X"], "Test")
+        if fin_res["status"] != "PASS":
+            print(f"FAILED: Non-finite values in Test: {fin_res['message']}")
+            return 1
+
         test_scores = reconstruction_errors(model, test_data["X"])
         test_preds = (test_scores >= th_val).astype(np.int64)
         metrics_test = compute_metrics(
@@ -1815,6 +1864,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "test_rows_materialized": len(test_data["y"]) if test_data is not None else 0,
         "test_excluded_from_fit_early_stopping_calibration": True,
         "threshold_frozen_before_test_eval": bool(threshold_meta.get("threshold_frozen")),
+        "test_loaded_after_model_fit_and_threshold_freeze": True,
         "unified_csv_stream_bounded_to_loaded_partitions": True,
     }
 
