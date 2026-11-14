@@ -108,7 +108,8 @@ class AnalyzeRequest(BaseModel):
         ..., min_length=1, description="List of flow records to analyze"
     )
     model_name: Optional[str] = Field(
-        "random_forest", description="Model family: 'random_forest' or 'isolation_forest'"
+        "random_forest",
+        description="Model family: 'random_forest', 'xgboost', 'isolation_forest', or 'autoencoder'",
     )
     threshold: Optional[float] = Field(
         0.5,

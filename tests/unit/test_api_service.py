@@ -400,6 +400,8 @@ def _setup_synthetic_artifact_tree(
     *,
     include_rf: bool = True,
     include_if: bool = False,
+    include_xgb: bool = False,
+    include_ae: bool = False,
 ) -> dict[str, Path]:
     """Create isolated preprocessor + model artifact tree for ApiService F4/F6 tests."""
     from network_anomaly.models.isolation_forest import IsolationForestModel
@@ -413,6 +415,10 @@ def _setup_synthetic_artifact_tree(
     rf_manifest = root / "reports" / "models" / "random_forest_manifest.json"
     if_path = art_root / "models" / "isolation_forest" / "isolation_forest.joblib"
     if_manifest = root / "reports" / "models" / "isolation_forest_manifest.json"
+    xgb_path = art_root / "models" / "xgboost" / "xgboost_baseline.joblib"
+    xgb_manifest = root / "reports" / "models" / "xgboost_manifest.json"
+    ae_path = art_root / "models" / "autoencoder" / "autoencoder_model.joblib"
+    ae_manifest = art_root / "models" / "autoencoder" / "autoencoder_manifest.json"
 
     prep_path.parent.mkdir(parents=True, exist_ok=True)
     prep_manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -460,12 +466,64 @@ def _setup_synthetic_artifact_tree(
         iso.fit(X_trans)
         iso.save(if_path, if_manifest, preprocessor_artifact_sha256=prep_sha)
 
+    if include_xgb:
+        from xgboost import XGBClassifier
+
+        xgb_path.parent.mkdir(parents=True, exist_ok=True)
+        xgb = XGBClassifier(n_estimators=5, max_depth=3, random_state=42, eval_metric="logloss")
+        xgb.fit(X_trans, np.arange(12) % 2)
+        joblib.dump(
+            {"estimator": xgb, "model_type": "XGBoost", "classes": [0, 1]},
+            xgb_path,
+        )
+        xgb_manifest.write_text(
+            json.dumps(
+                {
+                    "run_id": "test-xgb-service-run",
+                    "model_type": "XGBoost",
+                    "model_artifact_sha256": _sha256_file(xgb_path),
+                    "preprocessor_artifact_sha256": prep_sha,
+                    "feature_contract_version": FEATURE_CONTRACT_VERSION,
+                    "class_mapping": {"0": "Benign", "1": "Attack"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    if include_ae:
+        from network_anomaly.models.autoencoder import build_model as build_ae_model
+        from network_anomaly.models.autoencoder import fit_model as fit_ae_model
+
+        ae_path.parent.mkdir(parents=True, exist_ok=True)
+        ae = build_ae_model({"hidden_layer_sizes": (8, 4, 8), "max_iter": 10, "random_state": 42})
+        fit_ae_model(ae, X_trans)
+        joblib.dump(ae, ae_path)
+        ae_manifest.write_text(
+            json.dumps(
+                {
+                    "artifact_type": "autoencoder-anomaly-detector",
+                    "schema_version": "1.0",
+                    "run_id": "test-ae-service-run",
+                    "model_file": ae_path.name,
+                    "model_sha256": _sha256_file(ae_path),
+                    "preprocessor_sha256": prep_sha,
+                    "feature_contract_version": FEATURE_CONTRACT_VERSION,
+                    "threshold": 0.5,
+                }
+            ),
+            encoding="utf-8",
+        )
+
     return {
         "artifacts": art_root,
         "rf_path": rf_path,
         "rf_manifest": rf_manifest,
         "if_path": if_path,
         "if_manifest": if_manifest,
+        "xgb_path": xgb_path,
+        "xgb_manifest": xgb_manifest,
+        "ae_path": ae_path,
+        "ae_manifest": ae_manifest,
     }
 
 
@@ -488,7 +546,9 @@ def test_health_check_does_not_mask_missing_default_rf_with_if_ready(
         assert health_default.details["default_analysis_ready"] is False
         assert health_default.details["models_ready"] == {
             "random_forest": False,
+            "xgboost": False,
             "isolation_forest": True,
+            "autoencoder": False,
         }
 
         with pytest.raises(ModelNotReadyError):
@@ -556,3 +616,41 @@ def test_pipeline_caching_avoids_redundant_loads_and_invalidates_on_change(
         paths["rf_path"].write_bytes(paths["rf_path"].read_bytes() + b"\x00tamper")
         with pytest.raises(ModelNotReadyError):
             api_service.analyze_flows(sample_flow, model_name="random_forest")
+
+
+def test_four_model_families_health_and_verified_inference(api_service: ApiService, tmp_path: Path):
+    """Verify check_health and analyze_flows across RF, XGBoost, Isolation Forest, and Autoencoder."""
+    paths = _setup_synthetic_artifact_tree(
+        tmp_path, include_rf=True, include_if=True, include_xgb=True, include_ae=True
+    )
+    sample_flow = [{"features": {col: 1.0 for col in ML_FEATURE_COLUMNS}}]
+
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        health = api_service.check_health()
+        assert health.status == "healthy"
+        assert health.details["models_ready"] == {
+            "random_forest": True,
+            "xgboost": True,
+            "isolation_forest": True,
+            "autoencoder": True,
+        }
+
+        for model_key, expect_proba in (
+            ("random_forest", True),
+            ("xgboost", True),
+            ("isolation_forest", False),
+            ("autoencoder", False),
+        ):
+            res = api_service.analyze_flows(sample_flow, model_name=model_key)
+            assert res.model_ready is True
+            assert res.inference_mode == "verified_model"
+            assert res.results[0].prediction in (0, 1)
+            assert 0.0 <= res.results[0].anomaly_score <= 1.0
+            if expect_proba:
+                assert res.results[0].probabilities is not None
+                assert set(res.results[0].probabilities) == {"Benign", "Attack"}
+            else:
+                assert res.results[0].probabilities is None

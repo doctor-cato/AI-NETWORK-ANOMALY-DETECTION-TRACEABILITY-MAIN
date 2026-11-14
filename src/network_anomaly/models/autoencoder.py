@@ -357,3 +357,39 @@ def predict(model: MLPRegressor, X: Any, threshold: float) -> np.ndarray:
 
     scores = reconstruction_errors(model, X)
     return (scores >= threshold).astype(np.int64)
+
+
+class AutoencoderModel:
+    """Verified-inference wrapper pairing a fitted MLPRegressor autoencoder with its threshold."""
+
+    model_type = "Autoencoder"
+
+    def __init__(self, estimator: MLPRegressor, threshold: float) -> None:
+        if not isinstance(estimator, MLPRegressor):
+            raise TypeError(
+                f"AutoencoderModel requires an MLPRegressor estimator, got {type(estimator).__name__}"
+            )
+        if not _is_float(threshold) and not _is_int(threshold):
+            raise TypeError(f"threshold must be a real number, got {type(threshold).__name__}")
+        threshold_val = float(threshold)
+        if not np.isfinite(threshold_val) or threshold_val < 0.0:
+            raise ValueError(f"threshold must be non-negative and finite, got {threshold!r}")
+        self._estimator = estimator
+        self.threshold = threshold_val
+
+    @property
+    def estimator(self) -> MLPRegressor:
+        """Return the underlying fitted MLPRegressor instance."""
+        return self._estimator
+
+    def anomaly_scores(self, X: Any) -> np.ndarray:
+        """Compute per-sample MSE reconstruction errors (higher = more anomalous)."""
+        return anomaly_scores(self._estimator, X)
+
+    def score_samples(self, X: Any) -> np.ndarray:
+        """Alias returning MSE reconstruction errors for uniform score extraction."""
+        return anomaly_scores(self._estimator, X)
+
+    def predict(self, X: Any) -> np.ndarray:
+        """Predict binary anomaly labels {0, 1} using the frozen threshold."""
+        return predict(self._estimator, X, threshold=self.threshold)

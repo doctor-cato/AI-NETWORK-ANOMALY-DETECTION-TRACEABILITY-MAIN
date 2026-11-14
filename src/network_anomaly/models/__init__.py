@@ -1,5 +1,6 @@
 """Model definitions, baseline protocols, and constructors."""
 
+from network_anomaly.models.autoencoder import AutoencoderModel
 from network_anomaly.models.autoencoder import build_model as build_autoencoder_model
 from network_anomaly.models.isolation_forest import build_model as build_if_model
 from network_anomaly.models.random_forest import (
@@ -26,6 +27,7 @@ from network_anomaly.models.xgboost_protocol import (
 __all__ = [
     "RandomForestModel",
     "XGBoostModel",
+    "AutoencoderModel",
     "build_rf_model",
     "build_xgb_model",
     "build_if_model",

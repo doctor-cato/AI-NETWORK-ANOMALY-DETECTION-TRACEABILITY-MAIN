@@ -57,9 +57,26 @@ def _resolve_model_paths(
             artifact = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
             manifest = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
             return artifact, manifest
+        elif norm in {"xgboost", "xgb"}:
+            xgb_baseline = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
+            artifact = (
+                xgb_baseline
+                if xgb_baseline.is_file()
+                else ARTIFACTS / "models" / "xgboost" / "xgboost.joblib"
+            )
+            xgb_sidecar = artifact.parent / "xgboost_manifest.json"
+            xgb_report = PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json"
+            manifest = xgb_sidecar if xgb_sidecar.is_file() else xgb_report
+            return artifact, manifest
         elif norm in {"isolation_forest", "if", "isolation-forest"}:
             artifact = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
             manifest = PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
+            return artifact, manifest
+        elif norm in {"autoencoder", "ae"}:
+            artifact = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
+            ae_sidecar = artifact.parent / "autoencoder_manifest.json"
+            ae_report = PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json"
+            manifest = ae_sidecar if ae_sidecar.is_file() else ae_report
             return artifact, manifest
         elif Path(model_arg).suffix in {".joblib", ".pkl"}:
             artifact = Path(model_arg)
@@ -102,7 +119,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-m",
         type=str,
         default="random_forest",
-        help="Model selector ('random_forest', 'isolation_forest', or path to model .joblib)",
+        help=(
+            "Model selector ('random_forest', 'xgboost', 'isolation_forest', 'autoencoder', "
+            "or path to model .joblib)"
+        ),
     )
     parser.add_argument(
         "--model-artifact",

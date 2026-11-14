@@ -1,82 +1,49 @@
-# Roadmap triển khai hệ thống đầy đủ — Phương án B
+# Roadmap triển khai hệ thống — Phạm vi Củng cố Demo Cuối kỳ (Consolidated MVP)
 
 ## Mục đích và nguyên tắc
 
-Tài liệu này chuyển yêu cầu trong `docs/Ke_hoach_de_tai_22_AI_Anomaly_Detection.docx`
-thành roadmap prototype lab có thể kiểm chứng. Đây là kế hoạch, không phải bằng chứng
-rằng bất kỳ module hoặc thí nghiệm nào đã hoàn thành. Mọi claim phải truy vết theo
-`Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment
-Results` và dùng một trong các trạng thái `PLANNED`, `IMPLEMENTED`, `TESTED`,
-`EXPERIMENTALLY VALIDATED`, `PASS`, `FAIL`, `SKIPPED`, hoặc `NOT VERIFIED`.
+Tài liệu này đồng bộ lộ trình từ đề cương gốc `docs/Ke_hoach_de_tai_22_AI_Anomaly_Detection.docx` thành **kiến trúc và phạm vi sản phẩm AI cuối kỳ có thể chạy, demo offline trên Windows và bàn giao được**. Đây là tài liệu phạm vi/kế hoạch thực tế gắn trực tiếp với GitHub issues và milestones (`M0–M7`), không tự thay thế bằng chứng kiểm chứng. Mọi claim phải truy vết theo `Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment Results` với các trạng thái trung thực (`PLANNED`, `IMPLEMENTED`, `TESTED`, `EXPERIMENTALLY VALIDATED`, `DEFERRED`, `REDUCED`, `BLOCKED / NOT READY`, `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`).
 
-Raw dataset, secret và artifact lớn không được commit. Không tự động block, cô lập
-người dùng thật, hoặc suy diễn danh tính thật của attacker; mọi response là dry-run
-trong lab cho đến khi có phê duyệt riêng.
+Raw dataset lớn, secret và model binaries không được commit vào Git. Hệ thống hoạt động cục bộ (`offline` sau khi chuẩn bị dependencies, artifacts và mẫu demo), tuyệt đối không tự động block mạng thật hoặc quy kết danh tính cá nhân.
 
-## Kiến trúc đã chốt
+## Kiến trúc đã chốt (MVP Củng cố)
 
-- **Core services:** Python package tách theo `data`, `preprocessing`, `detection`,
-  `classification`, `behavioral`, `risk`, `trace`, `security`, `response`, `storage`
-  và `api`.
-- **AI:** Random Forest, XGBoost, Isolation Forest và Autoencoder; LSTM/Transformer
-  vẫn là hướng tùy chọn, không chặn prototype.
-- **Integration:** FastAPI là lớp API; Streamlit là dashboard mỏng và chỉ gọi API,
-  không lặp inference logic.
-- **Storage:** SQLite là mặc định local/lab; repository abstraction cho PostgreSQL
-  là tùy chọn triển khai. Event, session, incident, evidence reference, key metadata
-  và rotation audit phải persistent.
-- **Security:** AES-GCM với nonce duy nhất, authentication tag, key identifier và
-  quản lý vòng đời khóa; không tự thiết kế cryptography.
+- **Desktop UI (`CORE-DEMO`, #16):** **Rust / Tauri 2 + Svelte 5** (ứng dụng desktop cục bộ trên Windows). Rust đảm nhận native file dialogs, quản lý lifecycle (khởi chạy/giám sát health/tắt gọn) của Python backend process và typed HTTP client tới localhost; **không** dùng Streamlit, không thêm frontend thứ hai và không nhân bản ML inference trong Rust. *(Trạng thái hiện tại: `PLANNED` trên #16 — chưa có mã nguồn Rust/Svelte trong repo.)*
+- **Backend & Storage (`IMPLEMENTED`, #30):** **Python FastAPI** chạy local-only trên `127.0.0.1:8000` (`scripts/run_api.py`), **SQLite** là cơ sở dữ liệu duy nhất do Python FastAPI làm chủ ghi (single writer, tránh Rust và Python ghi tranh chấp file DB). Contract chuẩn nằm tại `reports/api/openapi.json` và `reports/api/API_CONTRACT.md`.
+- **AI / ML Pipeline (`CORE-ML`):**
+  - 4 mô hình được giữ và hỗ trợ đồng nhất trong `InferencePipeline` / `ApiService` / `scripts/predict.py`: **Random Forest**, **XGBoost**, **Isolation Forest** và **Autoencoder**.
+  - `TrainOnlyPreprocessor` + kiểm thực SHA-256 fail-closed cho mọi `.joblib`/`.pt` + `manifest`; thiếu artifact nhị phân phải báo `BLOCKED / NOT READY`, **không** tự tạo model giả hoặc fallback heuristic ẩn.
+- **Demo CSV Contract (Validation-Only):** `scripts/prepare_demo_dataset.py` tái sử dụng hàm lấy mẫu `partition_indices` (`scripts/fetch_external_dataset.py` từ PR #47) để tạo 100–300 dòng cân bằng (mặc định 200 dòng: 100 Benign / 100 Attack) từ **Validation partition** (`validation_indices.csv.gz`), tách biệt `demo_flows.csv` (không chứa `Label`/`Attack`), `demo_labels.csv` và `demo_manifest.json`.
+- **Thành phần rút gọn / hoãn để bảo vệ khả năng bàn giao MVP:**
+  - `C5` (#28 Behavioral): **REDUCE / DEFER** — chỉ giữ thống kê trên NetFlow metadata có thật, loại bỏ Auth/API log giả lập.
+  - `C6` (#32 Risk & #24 Trace): **REDUCE** — giảm xuống deterministic scoring/ranking từ output model + evidence timeline từ NetFlow metadata (`/api/v1/timeline`); không cần FFI/PyO3 hay graph engine lớn.
+  - `C7` (#26 Encryption/Key Lifecycle) & `C8` (#27 Adaptive Response): **DEFER** — chỉ giữ localhost-only safety, SHA-256 artifact gate và SQLite key metadata audit (`algorithm` chỉ là policy metadata, không phải AES-256-GCM đang mã hóa payload).
 
-API tối thiểu sẽ hỗ trợ ingest event, analyze event/session, truy vấn incident/timeline,
-xem rotation events và health. Toàn bộ input phải được schema-validate.
+## GitHub, milestone và nhánh
 
-## GitHub, roadmap và nhánh
+- **Milestones lịch sử `M0–M5` được giữ nguyên.** Các milestone mục tiêu đang hoạt động:
+  - **M3 (`#4`):** Đánh giá mô hình, provenance, leakage và reproducibility (#11, #14, #54, #55, #56).
+  - **M6 (`#7`):** Rust/Tauri 2 + Svelte 5 Desktop UI (#16), Python FastAPI/SQLite (#30 CLOSED, #59 CLOSED), Canonical Ingestion & Demo Gate (#46 / PR #47, #58 CLOSED), và các module reduced/deferred (#24, #28, #32, #26, #27).
+  - **M7 (`#8`):** Thực nghiệm trọng tâm (#25), Cross-Dataset robustness research (#48 / PR #49, #57 CLOSED), Audit tổng hợp (#60) và Tài liệu/Slide/QA bàn giao (#18–#20).
+- **Trạng thái PR chính:** PR #52 đã đóng (`SUPERSEDED`); PR #47 (`f999930`, 6/6 CI PASS) và PR #49 (`7344994`, stacked trên PR #47) đang ở trạng thái **Ready for Review** chờ maintainer duyệt merge (`REVIEW_REQUIRED`).
 
-- Giữ M0–M5 và toàn bộ lịch sử. Bổ sung M6 (Backend, Dashboard & Integration) và M7
-  (Experiments, Documentation & Delivery) thay vì đổi số milestone cũ.
-- Chỉ cập nhật Issue khi thiếu mục tiêu, dependency, implementation tasks, Acceptance
-  Criteria, Test Plan, deliverable hoặc Definition of Done; chỉ tạo Issue cho module
-  thực sự chưa có Issue tương ứng.
-- PR #22 là workstream review độc lập: không là dependency bắt buộc để viết hoặc cập
-  nhật roadmap này, không bị thay đổi/merge trước khi review hoàn tất, và không đóng
-  #4/#5 nếu chưa có bằng chứng Acceptance Criteria.
-- Mỗi checkpoint chức năng dùng branch và PR riêng; không gom dự án vào một PR lớn.
+## Checkpoint C0–C11 (Sau điều chỉnh phạm vi)
 
-## Quyết định C0 và mapping GitHub
-
-- Đề cương ghi nhóm 6 người, nhưng yêu cầu triển khai hiện tại chốt **5 vai trò**; tên
-  thành viên để trống đến khi nhóm xác nhận.
-- NF-UNSW-NB15-v3 thay thế dataset cũ: 53 feature + `Label` + `Attack`, một CSV và không có
-  official split. UNSW-NB15 (2015) chỉ còn là historical evidence.
-- M6 (milestone #7) chứa C5–C9; M7 (milestone #8) chứa C0, C10–C11.
-- Issue mapping mới: C0 #23; C3 XGBoost #31; C4 Autoencoder #29; C5 #28;
-  C6 Risk #32 và Trace #24; C7 #26; C8 #27; C9 API #30 và Streamlit #16;
-  C10 #25; C11 #18–#20.
-- Issue #11 được nâng từ optional M0–M5 thành phần Isolation Forest bắt buộc của C4.
-  LSTM/Transformer/GNN vẫn ngoài phạm vi.
-
-## Checkpoint C0–C11
-
-| Checkpoint | Phạm vi, kết quả cần có và điều kiện chuyển tiếp |
+| Checkpoint | Phạm vi củng cố & Trạng thái hiện tại |
 | --- | --- |
-| C0 — Governance & documentation | Cập nhật charter, traceability, architecture, roadmap và backlog cho Phương án B; mapping DOCX → module → Issue → milestone → evidence. Review PR #22 là workstream riêng, không chặn tài liệu roadmap. |
-| C1 — Data quality & EDA | Source/manifest/checksum, schema, missing, duplicate, class distribution, EDA và leakage audit. Không ghi số liệu khi raw dataset không khả dụng. |
-| C2 — Preprocessing | Split trước mọi fit; feature selection có căn cứ; transformers fit trên train duy nhất; artifact serialization và test leakage. |
-| C3 — Supervised ML | Random Forest và XGBoost dùng cùng protocol; binary/multiclass evaluation, Precision, Recall, F1, Macro-F1, FPR, confusion matrix, artifacts và reproduction config. |
-| C4 — Unsupervised & unknown attacks | Isolation Forest và Autoencoder reconstruction-error; threshold chỉ chọn trên validation; holdout-attack evaluation không dùng lớp bị giữ lại để tối ưu detector. |
-| C5 — Behavioral Vector | Versioned network/API/session vector schemas; API/session event schemas; nguồn dữ liệu lab có ground truth; deterministic fixtures; correlation labels; normalization, missing-feature policy và similarity. Test phải bao gồm false association và thiếu evidence; correlation chỉ là confidence, không là kết luận danh tính. |
-| C6 — Risk & Trace | Risk score 0–100, configurable normalized weights, explanation, calibration và boundary tests; incident grouping, identity/time/behavior correlation tách bạch, evidence references, confidence và attack timeline. |
-| C7 — Encryption & key lifecycle | AES-GCM, key-id/tag/nonce, local/lab key-storage strategy không lưu secret trong source, metadata versioning, restart recovery, historical decryption, backup, retention, retirement/revocation và rotation 30 phút. Test cả encryption integrity, recovery và mất/hỏng key metadata. |
-| C8 — Adaptive security response | Risk-triggered early rotation và lab-only dry-run response. Acceptance Criteria: cooldown ngăn duplicate rotation trong cửa sổ cấu hình; rate limit chặn vượt quota; idempotency trả kết quả nhất quán cho cùng request; concurrency tests chứng minh không tạo nhiều rotation cho một trigger; rotation-storm prevention có audit event và fallback an toàn. |
-| C9 — Backend & dashboard | FastAPI tái dùng services đã test; SQLite persistence và PostgreSQL adapter optional; Streamlit hiển thị traffic, anomaly/classification/risk, incidents, related sessions, confidence, timeline, encryption và rotation events; integration/E2E tests. |
-| C10 — Experiments | Thực hiện đủ bảy experiments DOCX: RF vs XGBoost; Isolation Forest vs Autoencoder; imbalance; known vs unknown; identity vs behavioral correlation; fixed vs adaptive rotation; encryption overhead. Mỗi experiment bắt buộc có protocol, baseline, dataset/split identifier, metrics, artifact, results có bằng chứng, limitations và reproduction command. C10 không được đóng khi experiment bắt buộc còn chưa chạy hoặc chưa xác minh. |
-| C11 — Delivery | Regression/security audit, reproducibility, deployment/user guide, report PDF, 10–12 slides, demo, experiment results và bảng phân công đúng năm vai trò, không tự điền tên thành viên. |
+| C0 — Governance & Consolidation | #23 COMPLETED; rà soát backlog, đóng PR #52 superseded, hợp nhất contract 4 model + Validation demo CSV. |
+| C1 — Data quality & EDA | #4–#7 COMPLETED; `NF-UNSW-NB15-v3.csv` (2.365.424 dòng), SHA-256 và EDA reproducibility đã xác minh. |
+| C2 — Preprocessing | #8 COMPLETED; `TrainOnlyPreprocessor` fit chỉ trên Train (1.655.797 dòng) + verify hash-chain fail-closed. |
+| C3 — Supervised ML | **Random Forest** (#9, #10, #12, #13): **EXPERIMENTALLY VALIDATED** cả Validation và Held-out Test (`rf-heldout-ea330b9`: `345.953` dòng, `F1=0.999853`, `TN=315350, FP=7, FN=2, TP=30594`). **XGBoost** (#31): **EXPERIMENTALLY VALIDATED trên Validation** (`345.371` dòng, `F1=0.999984`); Test `NOT VERIFIED`. |
+| C4 — Unsupervised & Unknown Attacks | **Isolation Forest** (#11) và **Autoencoder** (#29, PR #51 merged): **IMPLEMENTED / TESTED** với synthetic fixtures + tích hợp verified loading vào API/CLI; real-data benchmark **NOT VERIFIED** (`BLOCKED / NOT READY` nếu thiếu binary). |
+| C5 — Behavioral Vector (REDUCED) | #28 **REDUCE / DEFER**: chỉ thống kê theo NetFlow metadata thật nếu UI cần; không dùng Auth/API log không tồn tại. |
+| C6 — Risk & Trace (REDUCED) | #32 Risk & #24 Trace **REDUCE**: deterministic priority ranking + timeline NetFlow metadata (`/api/v1/timeline`); không FFI phức tạp, không quy kết danh tính. |
+| C7 — Encryption & Key Lifecycle (DEFERRED) | #26 **DEFER**: giữ SQLite key metadata audit + SHA-256 verification + localhost-only; hoãn full AES-256-GCM & 30-min rotation. |
+| C8 — Adaptive Response (DEFERRED) | #27 **DEFER**: không triển khai response/rotation tự động trong Demo MVP M6. |
+| C9 — Desktop App, FastAPI, SQLite & Demo Ingestion | **Python FastAPI + SQLite** (#30 CLOSED), 4-model inference, `prepare_demo_dataset.py` và `API_CONTRACT.md` **IMPLEMENTED / TESTED**. **PR #47** (#46/#58) chờ maintainer merge. **Desktop UI Rust/Tauri 2 + Svelte 5** (#16) đang **PLANNED** là trọng tâm xây dựng tiếp theo. |
+| C10 — Focused Experiments & Cross-Dataset M7 | #25 **REDUCE** từ 7 xuống các thí nghiệm ML trọng tâm (Exp 1–3/4); Exp 5–7 thu gọn/hoãn theo C5–C8. #48 Cross-dataset research (PR #49 `7344994`) nằm ở M7, không chặn Demo MVP. |
+| C11 — Delivery & QA | #18–#20, #60: đồng bộ docs, kịch bản demo offline trên Windows, báo cáo PDF, 10–12 slide và kiểm tra cổng bàn giao cuối kỳ. |
 
 ## Kiểm chứng chung
 
-Mỗi PR chạy targeted unit/integration tests trước, sau đó checkpoint bàn giao chạy
-environment check, full pytest phù hợp, serialization compatibility, schema/input
-validation, `git diff --check`, và kiểm tra CI. CI hoặc fixture synthetic không thay thế
-kết quả thực nghiệm trên NF-UNSW-NB15-v3. PostgreSQL, Docker và GPU không là yêu cầu cho CI
-mặc định; mọi check phụ thuộc dịch vụ phải ghi rõ điều kiện và trạng thái.
+Mọi thay đổi chạy kiểm tra môi trường (`PYTHONPATH=src python scripts/check_environment.py`), `export_openapi_spec.py --check`, `compileall`, `ruff check`, `black --check`, `pytest tests -q` và `git diff --check`. Test bằng fixture synthetic chứng minh tính đúng đắn của phần mềm, **không** thay thế real-data experiment hay che lấp trạng thái `BLOCKED / NOT READY` khi thiếu file `.joblib`/`.pt` cục bộ.

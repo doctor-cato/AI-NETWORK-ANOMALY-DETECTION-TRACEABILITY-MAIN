@@ -61,8 +61,14 @@ class ApiService:
 
     def _canonical_model_key(self, model_name: Optional[str]) -> str:
         """Map requested API model selector onto supported canonical families."""
-        norm_name = (model_name or "random_forest").strip().lower()
-        return "isolation_forest" if "isolation" in norm_name else "random_forest"
+        norm_name = (model_name or "random_forest").strip().lower().replace("-", "_")
+        if "isolation" in norm_name or norm_name == "if":
+            return "isolation_forest"
+        if "xgboost" in norm_name or norm_name == "xgb":
+            return "xgboost"
+        if "autoencoder" in norm_name or norm_name == "ae":
+            return "autoencoder"
+        return "random_forest"
 
     def invalidate_pipeline_cache(self, model_name: Optional[str] = None) -> None:
         """Clear cached verified inference pipelines (all or for one model family)."""
@@ -103,7 +109,7 @@ class ApiService:
         target_model = self._canonical_model_key(model_name)
         models_ready: Dict[str, bool] = {}
         verification_errors: Dict[str, Optional[str]] = {}
-        for candidate in ("random_forest", "isolation_forest"):
+        for candidate in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
             try:
                 self._load_inference_pipeline(candidate)
                 models_ready[candidate] = True
@@ -229,10 +235,25 @@ class ApiService:
         self, model_name: str
     ) -> Tuple[Path, Optional[Path], Optional[Path], Optional[Path]]:
         """Resolve model and preprocessor artifact paths and companion manifests."""
-        norm_name = (model_name or "random_forest").lower()
-        if "isolation" in norm_name:
+        canonical_key = self._canonical_model_key(model_name)
+        if canonical_key == "isolation_forest":
             model_path = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
             model_manifest = PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
+        elif canonical_key == "xgboost":
+            xgb_baseline = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
+            model_path = (
+                xgb_baseline
+                if xgb_baseline.is_file()
+                else ARTIFACTS / "models" / "xgboost" / "xgboost.joblib"
+            )
+            xgb_sidecar = model_path.parent / "xgboost_manifest.json"
+            xgb_report = PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json"
+            model_manifest = xgb_sidecar if xgb_sidecar.is_file() else xgb_report
+        elif canonical_key == "autoencoder":
+            model_path = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
+            ae_sidecar = ARTIFACTS / "models" / "autoencoder" / "autoencoder_manifest.json"
+            ae_report = PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json"
+            model_manifest = ae_sidecar if ae_sidecar.is_file() else ae_report
         else:
             rf_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
             model_path = rf_path if rf_path.is_file() else ARTIFACTS / "model.joblib"
@@ -494,6 +515,7 @@ class ApiService:
             for atk_col, ben_col in (
                 ("probability_Attack", "probability_Benign"),
                 ("probability_1", "probability_0"),
+                ("probability_class_1", "probability_class_0"),
             ):
                 if atk_col in preds_df.columns:
                     p_attack = float(row[atk_col])

@@ -907,3 +907,102 @@ def test_inference_pipeline_rejects_non_binary_raw_predictions(
         )
         with pytest.raises(ValueError, match="non-binary labels"):
             pipeline.predict(synthetic_features.iloc[:2])
+
+
+def test_inference_pipeline_supports_verified_xgboost_and_autoencoder(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+    tmp_path: Path,
+):
+    """InferencePipeline loads verified XGBoost and Autoencoder artifacts fail-closed."""
+    from xgboost import XGBClassifier
+
+    from network_anomaly.models.autoencoder import (
+        AutoencoderModel,
+    )
+    from network_anomaly.models.autoencoder import (
+        build_model as build_ae_model,
+    )
+    from network_anomaly.models.autoencoder import (
+        fit_model as fit_ae_model,
+    )
+
+    prep_art_path, prep_man_path, _, _ = synthetic_preprocessor_and_model
+    prep, prep_meta = load_verified_preprocessor(prep_art_path, prep_man_path)
+    prep_sha = prep_meta["artifact_sha256"]
+    X_trans = prep.transform(synthetic_features)
+
+    # 1. XGBoost verified round-trip
+    xgb = XGBClassifier(n_estimators=4, max_depth=3, random_state=42, eval_metric="logloss")
+    xgb.fit(X_trans, np.array([i % 2 for i in range(len(X_trans))]))
+    xgb_path = tmp_path / "xgboost_baseline.joblib"
+    joblib.dump({"estimator": xgb, "model_type": "XGBoost", "classes": [0, 1]}, xgb_path)
+    xgb_man = tmp_path / "xgboost_manifest.json"
+    xgb_man.write_text(
+        json.dumps(
+            {
+                "run_id": "test-xgb-pipe",
+                "model_type": "XGBoost",
+                "model_artifact_sha256": _sha256_file(xgb_path),
+                "preprocessor_artifact_sha256": prep_sha,
+                "feature_contract_version": FEATURE_CONTRACT_VERSION,
+                "class_mapping": {"0": "Benign", "1": "Attack"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    xgb_pipe = InferencePipeline.from_artifacts(
+        model_artifact_path=xgb_path,
+        preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=xgb_man,
+        preprocessor_manifest_path=prep_man_path,
+    )
+    xgb_df = xgb_pipe.predict(synthetic_features)
+    assert len(xgb_df) == len(synthetic_features)
+    assert set(xgb_df["prediction"].tolist()).issubset({0, 1})
+    assert "probability_Attack" in xgb_df.columns
+    assert "probability_Benign" in xgb_df.columns
+
+    # 2. Autoencoder verified round-trip with sidecar threshold verification
+    ae = build_ae_model({"hidden_layer_sizes": (8, 4, 8), "max_iter": 10, "random_state": 42})
+    fit_ae_model(ae, X_trans)
+    ae_path = tmp_path / "autoencoder_model.joblib"
+    joblib.dump(ae, ae_path)
+    cfg_path = tmp_path / "model_config.json"
+    cfg_path.write_text(json.dumps({"hidden_layer_sizes": [8, 4, 8]}), encoding="utf-8")
+    th_path = tmp_path / "threshold.json"
+    th_path.write_text(json.dumps({"threshold": 0.25}), encoding="utf-8")
+    ae_man = tmp_path / "autoencoder_manifest.json"
+    ae_manifest_payload = {
+        "artifact_type": "autoencoder-anomaly-detector",
+        "schema_version": "1.0",
+        "run_id": "test-ae-pipe",
+        "model_file": ae_path.name,
+        "model_sha256": _sha256_file(ae_path),
+        "config_file": cfg_path.name,
+        "config_sha256": _sha256_file(cfg_path),
+        "threshold_file": th_path.name,
+        "threshold_sha256": _sha256_file(th_path),
+        "threshold": 0.25,
+        "preprocessor_sha256": prep_sha,
+        "feature_contract_version": FEATURE_CONTRACT_VERSION,
+    }
+    ae_man.write_text(json.dumps(ae_manifest_payload), encoding="utf-8")
+
+    ae_pipe = InferencePipeline.from_artifacts(
+        model_artifact_path=ae_path,
+        preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=ae_man,
+        preprocessor_manifest_path=prep_man_path,
+    )
+    assert isinstance(ae_pipe.model, AutoencoderModel)
+    ae_df = ae_pipe.predict(synthetic_features)
+    assert len(ae_df) == len(synthetic_features)
+    assert set(ae_df["prediction"].tolist()).issubset({0, 1})
+    assert "anomaly_score" in ae_df.columns
+    assert np.all(np.isfinite(ae_df["anomaly_score"]))
+
+    # Fail closed if Autoencoder sidecar threshold JSON is tampered or threshold missing
+    th_path.write_text(json.dumps({"threshold": 999.0}), encoding="utf-8")
+    with pytest.raises(ValueError, match="sidecar SHA-256 mismatch"):
+        load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
