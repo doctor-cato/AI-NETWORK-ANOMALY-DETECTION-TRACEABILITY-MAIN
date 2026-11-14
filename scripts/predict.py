@@ -30,8 +30,12 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.inference import run_inference
+_LOCAL_SOURCE = Path(__file__).resolve().parents[1] / "src"
+if str(_LOCAL_SOURCE) not in sys.path:
+    sys.path.insert(0, str(_LOCAL_SOURCE))
+
+from network_anomaly.config import ARTIFACTS, PROJECT_ROOT  # noqa: E402
+from network_anomaly.inference import run_inference  # noqa: E402
 
 
 def _resolve_model_paths(
@@ -142,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional custom run ID for traceability tracking",
     )
+    parser.add_argument(
+        "--eligibility-gate",
+        action="store_true",
+        help="Enable source and OOD eligibility checks before model prediction",
+    )
     return parser
 
 
@@ -190,6 +199,11 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # 4. Execute inference pipeline
     try:
+        gate = None
+        if args.eligibility_gate:
+            from network_anomaly.ingestion.gate import InferenceEligibilityGate
+
+            gate = InferenceEligibilityGate()
         result = run_inference(
             input_path=input_path,
             output_path=output_path,
@@ -198,6 +212,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             model_manifest_path=model_manifest_path,
             preprocessor_manifest_path=prep_manifest_path,
             metadata_path=args.metadata_output,
+            eligibility_gate=gate,
             run_id=args.run_id,
         )
     except Exception as e:
@@ -205,8 +220,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     # Print success report
+    status_label = "Success" if result.metadata["execution_status"] == "SUCCESS" else "ABSTAINED"
     print(
-        f"[INFERENCE] Success: generated {result.metadata['prediction_count']} predictions.\n"
+        f"[INFERENCE] {status_label}: "
+        f"generated {result.metadata['prediction_count']} predictions.\n"
         f"  Input:    {result.metadata['input_file_path']} "
         f"({result.metadata['input_row_count']} rows)\n"
         f"  Output:   {result.metadata['output_file_path']}\n"

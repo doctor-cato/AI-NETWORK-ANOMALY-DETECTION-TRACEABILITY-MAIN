@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 import time
 import traceback
@@ -920,6 +921,11 @@ def save_artifacts(
     """Save model, config, threshold and metadata; return artifact checksums."""
     import joblib
 
+    from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
+    if isinstance(threshold, bool) or not math.isfinite(float(threshold)):
+        raise ValueError("Calibrated threshold must be finite")
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     model_path = output_dir / "isolation_forest.joblib"
@@ -937,9 +943,11 @@ def save_artifacts(
         "estimator": raw_estimator,
         "config": dict(config),
         "threshold": float(threshold),
+        "calibrated_threshold": float(threshold),
         "score_direction": "higher_is_more_anomalous",
         "label_mapping": {"0": "Benign", "1": "Attack"},
         "feature_contract_version": FEATURE_CONTRACT_VERSION,
+        "feature_names": list(ML_FEATURE_COLUMNS),
         "classes": [0, 1],
         "is_fitted": True,
         "metadata": training_meta,
@@ -973,6 +981,7 @@ def save_artifacts(
         "preprocessor_artifact_sha256": training_meta.get("preprocessor_artifact_sha256"),
         "split_manifest_sha256": training_meta.get("split_manifest_sha256"),
         "threshold": float(threshold),
+        "calibrated_threshold": float(threshold),
         "score_direction": "higher_is_more_anomalous",
         "label_mapping": {"0": "Benign", "1": "Attack"},
         "feature_contract_version": FEATURE_CONTRACT_VERSION,

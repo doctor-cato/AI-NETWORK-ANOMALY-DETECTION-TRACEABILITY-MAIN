@@ -8,8 +8,10 @@ Covers:
 - Score direction monotonicity and semantic label mapping (0: Benign, 1: Attack).
 """
 
+import json
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pytest
 
@@ -113,6 +115,9 @@ class TestEvaluationInferenceParity:
             preprocessor_artifact_sha256=valid_prep_sha,
             split_manifest_sha256=valid_sm_sha,
         )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["calibrated_threshold"] == tau
+        assert joblib.load(model_path)["calibrated_threshold"] == tau
 
         loaded = IsolationForestModel.load_verified(
             model_path=model_path,
@@ -129,6 +134,25 @@ class TestEvaluationInferenceParity:
 
         assert np.array_equal(y_eval, y_loaded)
         assert np.array_equal(model.predict(X), y_loaded)
+
+
+def test_nonfinite_or_conflicting_calibrated_threshold_fails_closed(
+    synthetic_flow_data, tmp_path: Path
+):
+    X, _, _ = synthetic_flow_data
+    with pytest.raises(ValueError, match="finite"):
+        IsolationForestModel(threshold=float("nan"))
+
+    model = IsolationForestModel(threshold=0.05)
+    model.fit(X)
+    model_path = tmp_path / "if.joblib"
+    manifest_path = tmp_path / "if.json"
+    model.save(model_path, manifest_path, preprocessor_artifact_sha256="a" * 64)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["calibrated_threshold"] = 0.5
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    with pytest.raises(ValueError, match="calibrated_threshold conflicts"):
+        IsolationForestModel.load_verified(model_path, manifest_path)
 
 
 class TestScoreDirectionAndSemantics:
@@ -228,3 +252,57 @@ class TestFailClosedIntegrity:
             IsolationForestModel.load_verified(
                 m_path, man_path, expected_preprocessor_artifact_sha256="d" * 64
             )
+
+    def test_mismatched_model_type_manifest_and_non_if_estimator_rejected(
+        self, synthetic_flow_data, tmp_path: Path
+    ):
+        """F1 regression: IsolationForestModel.load/load_verified enforce IsolationForest identity."""
+        import hashlib
+
+        from sklearn.ensemble import RandomForestClassifier
+
+        X, _, _ = synthetic_flow_data
+        model = IsolationForestModel(threshold=0.05)
+        model.fit(X)
+
+        m_path = tmp_path / "if_model.joblib"
+        man_path = tmp_path / "if_manifest.json"
+        model.save(m_path, man_path, preprocessor_artifact_sha256="c" * 64)
+
+        manifest = json.loads(man_path.read_text(encoding="utf-8"))
+        manifest["model_type"] = "RandomForestClassifier"
+        man_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        with pytest.raises(ValueError, match="model_type mismatch"):
+            IsolationForestModel.load_verified(m_path, man_path)
+
+        # Save a RandomForestClassifier under an IsolationForest-claiming manifest
+        rf = RandomForestClassifier(n_estimators=2, random_state=42).fit(
+            X, np.zeros(len(X), dtype=int)
+        )
+        rf_path = tmp_path / "rf_imposter.joblib"
+        joblib.dump({"model_type": "RandomForestClassifier", "estimator": rf}, rf_path)
+        rf_man_path = tmp_path / "rf_imposter_manifest.json"
+        manifest["model_type"] = "IsolationForest"
+        manifest["model_artifact_sha256"] = hashlib.sha256(rf_path.read_bytes()).hexdigest()
+        rf_man_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+        with pytest.raises(
+            ValueError, match="Unsupported|Expected IsolationForest|model_type mismatch"
+        ):
+            IsolationForestModel.load(rf_path)
+        with pytest.raises(
+            ValueError, match="Unsupported|Expected IsolationForest|model_type mismatch"
+        ):
+            IsolationForestModel.load_verified(rf_path, rf_man_path)
+
+        # Also reject raw non-IF estimator (no dict wrapper) under IsolationForest manifest
+        raw_rf_path = tmp_path / "rf_raw_imposter.joblib"
+        joblib.dump(rf, raw_rf_path)
+        manifest["model_artifact_sha256"] = hashlib.sha256(raw_rf_path.read_bytes()).hexdigest()
+        raw_rf_man = tmp_path / "rf_raw_imposter_manifest.json"
+        raw_rf_man.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        with pytest.raises(
+            ValueError,
+            match="Unsupported|Expected IsolationForest|Invalid model artifact payload",
+        ):
+            IsolationForestModel.load_verified(raw_rf_path, raw_rf_man)

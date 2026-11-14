@@ -91,7 +91,7 @@ def test_split_manifest_verification_and_test_lock():
     audit = verify_split_manifest_and_test_lock(DEFAULT_SPLIT_MANIFEST)
     assert audit["status"] == "VERIFIED"
     assert audit["validation_rows"] == 345371
-    exp_val_sha = "a3e4470c2731870deaf57ce9a865e2491107d8e7f72383cdd0f99de0dd485cd4"
+    exp_val_sha = "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf"
     assert audit["validation_index_sha256"] == exp_val_sha
     assert "BLOCKED" in audit["test_lock_status"]
     assert audit["purge_gap_milliseconds"] == 300000

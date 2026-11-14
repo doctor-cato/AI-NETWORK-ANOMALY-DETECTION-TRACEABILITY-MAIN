@@ -1,0 +1,130 @@
+{
+  "run_id": "rf-heldout-ea330b9",
+  "timestamp_utc": "2026-11-10T07:34:37.653352+00:00",
+  "issue_references": [
+    "Issue #12",
+    "Issue #13"
+  ],
+  "evaluation_stage": "held_out_test_evaluation",
+  "partition": "test",
+  "model_type": "RandomForest",
+  "task": "binary_classification",
+  "target_column": "Label",
+  "positive_class": "Attack",
+  "configuration_id": "rf-baseline-canonical-v1",
+  "is_canonical_baseline": true,
+  "protocol_version": "rf-baseline-nf-unsw-nb15-v3-v1",
+  "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+  "split_protocol_id": "nf-unsw-nb15-v3-chronological-group-purged-v1",
+  "preprocessing_contract_id": "nf-unsw-nb15-v3-preproc-v1",
+  "feature_count": 47,
+  "selected_features": [
+    "PROTOCOL",
+    "L7_PROTO",
+    "IN_BYTES",
+    "IN_PKTS",
+    "OUT_BYTES",
+    "OUT_PKTS",
+    "TCP_FLAGS",
+    "CLIENT_TCP_FLAGS",
+    "SERVER_TCP_FLAGS",
+    "FLOW_DURATION_MILLISECONDS",
+    "DURATION_IN",
+    "DURATION_OUT",
+    "MIN_TTL",
+    "MAX_TTL",
+    "LONGEST_FLOW_PKT",
+    "SHORTEST_FLOW_PKT",
+    "MIN_IP_PKT_LEN",
+    "MAX_IP_PKT_LEN",
+    "SRC_TO_DST_SECOND_BYTES",
+    "DST_TO_SRC_SECOND_BYTES",
+    "RETRANSMITTED_IN_BYTES",
+    "RETRANSMITTED_IN_PKTS",
+    "RETRANSMITTED_OUT_BYTES",
+    "RETRANSMITTED_OUT_PKTS",
+    "SRC_TO_DST_AVG_THROUGHPUT",
+    "DST_TO_SRC_AVG_THROUGHPUT",
+    "NUM_PKTS_UP_TO_128_BYTES",
+    "NUM_PKTS_128_TO_256_BYTES",
+    "NUM_PKTS_256_TO_512_BYTES",
+    "NUM_PKTS_512_TO_1024_BYTES",
+    "NUM_PKTS_1024_TO_1514_BYTES",
+    "TCP_WIN_MAX_IN",
+    "TCP_WIN_MAX_OUT",
+    "ICMP_TYPE",
+    "ICMP_IPV4_TYPE",
+    "DNS_QUERY_ID",
+    "DNS_QUERY_TYPE",
+    "DNS_TTL_ANSWER",
+    "FTP_COMMAND_RET_CODE",
+    "SRC_TO_DST_IAT_MIN",
+    "SRC_TO_DST_IAT_MAX",
+    "SRC_TO_DST_IAT_AVG",
+    "SRC_TO_DST_IAT_STDDEV",
+    "DST_TO_SRC_IAT_MIN",
+    "DST_TO_SRC_IAT_MAX",
+    "DST_TO_SRC_IAT_AVG",
+    "DST_TO_SRC_IAT_STDDEV"
+  ],
+  "hyperparameters": {
+    "model_type": "RandomForest",
+    "task": "binary_classification",
+    "target": "Label",
+    "positive_class": "Attack",
+    "n_estimators": 200,
+    "max_depth": 16,
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "criterion": "gini",
+    "max_features": "sqrt",
+    "class_weight": null,
+    "random_state": 42,
+    "n_jobs": -1,
+    "bootstrap": true,
+    "configuration_id": "rf-baseline-canonical-v1",
+    "is_canonical_baseline": true
+  },
+  "decision_threshold": 0.5,
+  "test_row_count": 345953,
+  "benign_row_count": 315357,
+  "attack_row_count": 30596,
+  "test_lock_compliance": {
+    "model_retrained_on_test": false,
+    "preprocessor_refitted_on_test": false,
+    "hyperparameters_tuned_on_test": false,
+    "threshold_tuned_on_test": false,
+    "train_validation_disjoint_verified": true
+  },
+  "provenance_hashes": {
+    "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+    "preprocessing_manifest_sha256": "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441",
+    "model_manifest_sha256": "2ea97a57c6917c2f39e94aa5795cbd83f98b2f7bbf09d7f5454344f19d08dcf3",
+    "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
+    "test_indices_sha256": "63e2e081300955fe06835b0cf7405e07e53985ca3d84164e768be09116269d03",
+    "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+    "model_artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea"
+  },
+  "generated_artifacts": {
+    "metrics_json": {
+      "path": "C:/Users/ASUS/AppData/Local/Temp/pr50-real-evaluation-ea330b9/test_metrics.json",
+      "sha256": "0efc4ba25012707851c6b2c6f175f6004b3bdea3fe670d94f832a48eba13aa65"
+    },
+    "confusion_matrix_csv": {
+      "path": "C:/Users/ASUS/AppData/Local/Temp/pr50-real-evaluation-ea330b9/confusion_matrix.csv",
+      "sha256": "ced60c3baca4130edcdd783690b3079aea5b16c9d870c884eb712afc0a24fe2f"
+    },
+    "confusion_matrix_png": {
+      "path": "C:/Users/ASUS/AppData/Local/Temp/pr50-real-evaluation-ea330b9/confusion_matrix.png",
+      "sha256": "ee88d7d2bf66a2042a75bdd9ea817d34469ddb3aabafecffdf2e20ef55e2b996"
+    },
+    "predictions_csv": {
+      "path": "C:/Users/ASUS/AppData/Local/Temp/pr50-real-evaluation-ea330b9/test_predictions.csv",
+      "sha256": "3396d0f2c3d1b4970064f3ee364e40e0c9aa0747d47a37d984cf5aad70ff0c6c"
+    }
+  },
+  "environment": {
+    "git_commit": "ea330b9db98605ffc19a88c20bd1e9b61b92e6fb",
+    "python_version": "3.14.10"
+  }
+}

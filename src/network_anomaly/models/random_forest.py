@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import joblib
+import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import NotFittedError
 
@@ -66,9 +67,37 @@ class RandomForestModel:
             Union[Dict[str, Any], RandomForestBaselineConfig, RandomForestBaselineProtocol]
         ] = None,
         protocol: Optional[RandomForestBaselineProtocol] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         if protocol is not None:
+            if not isinstance(protocol, RandomForestBaselineProtocol):
+                raise TypeError(
+                    f"Unsupported protocol type: {type(protocol)}, "
+                    f"expected RandomForestBaselineProtocol"
+                )
             protocol.validate()
+            if config is not None:
+                if isinstance(config, RandomForestBaselineProtocol):
+                    config.validate()
+                    if config.to_dict() != protocol.to_dict():
+                        raise ValueError(
+                            "Provided config protocol conflicts with explicit protocol argument."
+                        )
+                elif isinstance(config, RandomForestBaselineConfig):
+                    config.validate()
+                    if config.to_dict() != protocol.model_config.to_dict():
+                        raise ValueError(
+                            "Provided RandomForestBaselineConfig conflicts with "
+                            "protocol.model_config."
+                        )
+                elif isinstance(config, dict):
+                    parsed_cfg = RandomForestBaselineConfig.from_dict(config)
+                    if parsed_cfg.to_dict() != protocol.model_config.to_dict():
+                        raise ValueError(
+                            "Provided config dictionary conflicts with protocol.model_config."
+                        )
+                else:
+                    raise TypeError(f"Unsupported config type: {type(config)}")
             self.protocol: Optional[RandomForestBaselineProtocol] = protocol
             self.config: RandomForestBaselineConfig = protocol.model_config
             self.config.validate()
@@ -92,6 +121,10 @@ class RandomForestModel:
             self.config.validate()
         else:
             raise TypeError(f"Unsupported config type: {type(config)}")
+
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got {type(metadata).__name__}")
+        self.metadata: Dict[str, Any] = dict(metadata) if metadata is not None else {}
 
         self.model_type: str = self.config.model_type
         self.task: str = self.config.task
@@ -129,37 +162,128 @@ class RandomForestModel:
         """Class labels known to the classifier."""
         return getattr(self._estimator, "classes_", None)
 
-    def fit(self, X: Any, y: Any, **fit_params: Any) -> "RandomForestModel":
-        """Fit interface on verified NF-UNSW-NB15-v3 feature data."""
-        # 1. Feature schema validation before delegating to estimator
+    def _validate_feature_input(self, X: Any) -> int:
+        """Validate feature matrix schema, dimensions, and finite numeric values."""
+        if X is None or isinstance(X, (str, bytes, dict)):
+            raise ValueError(f"Expected 2D feature matrix X, got {type(X).__name__}")
+
+        expected_width = len(self.feature_names)
+
         if hasattr(X, "columns"):
             cols = list(X.columns)
+            if len(cols) != len(set(cols)):
+                raise ValueError("feature selection contains duplicate columns")
+            forbidden = sorted(set(cols) & set(TRACE_METADATA_COLUMNS + TARGET_COLUMNS))
+            if forbidden:
+                raise ValueError(f"feature selection contains forbidden columns: {forbidden}")
             if self.config.is_canonical_baseline:
                 validate_feature_selection(cols, require_complete=True)
+            if tuple(cols) != tuple(self.feature_names):
+                raise ValueError(
+                    f"Input DataFrame columns {cols} do not match model feature names "
+                    f"{list(self.feature_names)}"
+                )
+            n_samples = len(X)
+            if n_samples == 0:
+                raise ValueError("Feature matrix X must not be empty (0 rows).")
+            try:
+                numeric_arr = np.asarray(X, dtype=np.float64)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"Feature matrix X contains non-numeric values that cannot be cast to float: "
+                    f"{exc}"
+                ) from exc
+            if not np.isfinite(numeric_arr).all():
+                raise ValueError("Feature matrix X contains NaN or infinite values.")
+            return n_samples
+
+        # Array-like / sequence input
+        try:
+            raw_arr = np.asarray(X)
+        except Exception as exc:
+            raise ValueError(f"Cannot convert feature input X to array: {exc}") from exc
+
+        if raw_arr.ndim != 2:
+            raise ValueError(f"Expected 2D feature matrix X, got array with ndim={raw_arr.ndim}")
+        if raw_arr.shape[0] == 0:
+            raise ValueError("Feature matrix X must not be empty (0 rows).")
+        if raw_arr.shape[1] != expected_width:
+            raise ValueError(
+                f"Expected {expected_width} feature columns, "
+                f"got matrix with {raw_arr.shape[1]} columns"
+            )
+        if raw_arr.dtype == bool or np.issubdtype(raw_arr.dtype, np.bool_):
+            raise ValueError("Feature matrix X cannot have boolean dtype.")
+
+        try:
+            numeric_arr = np.asarray(raw_arr, dtype=np.float64)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                f"Feature matrix X contains non-numeric values that cannot be cast to float: {exc}"
+            ) from exc
+        if not np.isfinite(numeric_arr).all():
+            raise ValueError("Feature matrix X contains NaN or infinite values.")
+        return int(raw_arr.shape[0])
+
+    def _validate_target_input(self, y: Any, expected_samples: int) -> None:
+        """Validate target label vector y for binary classification."""
+        if y is None or isinstance(y, (str, bytes, dict)):
+            raise ValueError(f"Invalid target vector y: {type(y).__name__}")
+        try:
+            y_arr = np.asarray(y, dtype=object)
+        except Exception as exc:
+            raise ValueError(f"Cannot convert target y to 1D array: {exc}") from exc
+
+        if y_arr.ndim != 1:
+            raise ValueError(f"Expected 1D target vector y, got array with ndim={y_arr.ndim}")
+        if len(y_arr) == 0:
+            raise ValueError("Target vector y must not be empty.")
+        if len(y_arr) != expected_samples:
+            raise ValueError(
+                f"Target vector y length ({len(y_arr)}) does not match "
+                f"feature matrix X row count ({expected_samples})."
+            )
+
+        valid_str_labels = {
+            "0",
+            "1",
+            "benign",
+            "normal",
+            "attack",
+            "anomaly",
+            NEGATIVE_CLASS_NAME.lower(),
+            POSITIVE_CLASS_NAME.lower(),
+        }
+        for idx, val in enumerate(y_arr):
+            if val is None or isinstance(val, (bool, np.bool_)):
+                raise ValueError(
+                    f"Invalid target label at index {idx}: {val!r} (booleans/None not allowed)"
+                )
+            if isinstance(val, (int, np.integer)):
+                if int(val) not in (NEGATIVE_CLASS_LABEL, POSITIVE_CLASS_LABEL):
+                    raise ValueError(
+                        f"Invalid numeric target label at index {idx}: {val!r}; "
+                        f"expected {NEGATIVE_CLASS_LABEL} or {POSITIVE_CLASS_LABEL}"
+                    )
+            elif isinstance(val, (float, np.floating)):
+                if not np.isfinite(val) or float(val) not in (
+                    float(NEGATIVE_CLASS_LABEL),
+                    float(POSITIVE_CLASS_LABEL),
+                ):
+                    raise ValueError(
+                        f"Invalid float target label at index {idx}: {val!r}; "
+                        f"expected {NEGATIVE_CLASS_LABEL} or {POSITIVE_CLASS_LABEL}"
+                    )
+            elif isinstance(val, str):
+                if val.strip().lower() not in valid_str_labels:
+                    raise ValueError(f"Invalid string target label at index {idx}: {val!r}")
             else:
-                if len(cols) != len(set(cols)):
-                    raise ValueError("feature selection contains duplicate columns")
-                forbidden = sorted(set(cols) & set(TRACE_METADATA_COLUMNS + TARGET_COLUMNS))
-                if forbidden:
-                    raise ValueError(f"feature selection contains forbidden columns: {forbidden}")
-                if tuple(cols) != tuple(self.feature_names):
-                    raise ValueError(
-                        f"Input DataFrame columns {cols} do not match model feature names "
-                        f"{list(self.feature_names)}"
-                    )
-        else:
-            # ndarray-like input
-            if hasattr(X, "ndim") and X.ndim != 2:
-                raise ValueError(f"Expected 2D feature matrix X, got array with ndim={X.ndim}")
-            if hasattr(X, "shape"):
-                if len(X.shape) != 2:
-                    raise ValueError(f"Expected 2D feature matrix X, got shape {X.shape}")
-                expected_width = len(self.feature_names)
-                if X.shape[1] != expected_width:
-                    raise ValueError(
-                        f"Expected {expected_width} feature columns, "
-                        f"got matrix with {X.shape[1]} columns"
-                    )
+                raise ValueError(f"Unsupported target label type at index {idx}: {type(val)}")
+
+    def fit(self, X: Any, y: Any, **fit_params: Any) -> "RandomForestModel":
+        """Fit interface on verified NF-UNSW-NB15-v3 feature data."""
+        n_samples = self._validate_feature_input(X)
+        self._validate_target_input(y, expected_samples=n_samples)
 
         self._estimator.fit(X, y, **fit_params)
         self._is_fitted = True
@@ -172,6 +296,7 @@ class RandomForestModel:
                 "This RandomForestModel instance is not fitted yet. "
                 "Call 'fit' with verified NF-UNSW-NB15-v3 training data before using 'predict'."
             )
+        self._validate_feature_input(X)
         return self._estimator.predict(X)
 
     def predict_proba(self, X: Any) -> Any:
@@ -182,6 +307,7 @@ class RandomForestModel:
                 "Call 'fit' with verified NF-UNSW-NB15-v3 training data "
                 "before using 'predict_proba'."
             )
+        self._validate_feature_input(X)
         return self._estimator.predict_proba(X)
 
     def save(
@@ -192,6 +318,13 @@ class RandomForestModel:
         """Save fitted model artifact using joblib and return file SHA-256."""
         if not self._is_fitted:
             raise NotFittedError("Cannot save an unfitted RandomForestModel.")
+        if metadata is not None and not isinstance(metadata, dict):
+            raise TypeError(f"metadata must be a dict or None, got {type(metadata).__name__}")
+        merged_metadata: Dict[str, Any] = dict(self.metadata)
+        if metadata:
+            merged_metadata.update(metadata)
+        self.metadata = dict(merged_metadata)
+
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         payload = {
@@ -211,7 +344,7 @@ class RandomForestModel:
             "is_canonical_baseline": getattr(self.config, "is_canonical_baseline", True),
             "estimator": self._estimator,
             "feature_names": list(self.feature_names),
-            "metadata": metadata or {},
+            "metadata": merged_metadata,
         }
         joblib.dump(payload, p, compress=3)
         return _sha256_file(p)
@@ -235,7 +368,9 @@ class RandomForestModel:
                 raise ValueError(
                     f"Failed to deserialize model protocol from artifact payload at {path}: {e}"
                 ) from e
-        model = cls(config=config, protocol=protocol)
+        raw_metadata = payload.get("metadata")
+        loaded_metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+        model = cls(config=config, protocol=protocol, metadata=loaded_metadata)
         model._estimator = payload["estimator"]
         is_fitted_flag = payload.get("is_fitted", True)
         est = payload["estimator"]
