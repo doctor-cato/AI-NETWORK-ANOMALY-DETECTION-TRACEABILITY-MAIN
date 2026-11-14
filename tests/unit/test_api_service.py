@@ -287,7 +287,7 @@ def test_analyze_flows_with_verified_pipeline_provenance(api_service: ApiService
     res = api_service.analyze_flows(
         flows,
         model_name="random_forest",
-        threshold=0.5,
+        threshold=0.95,
         create_incidents=True,
         allow_heuristic_fallback=False,
     )
@@ -302,6 +302,14 @@ def test_analyze_flows_with_verified_pipeline_provenance(api_service: ApiService
     assert res.results[0].model_sha256 == "rf_sha256_mock_provenance_verified"
     assert res.results[1].is_anomaly is True
     assert res.results[1].incident_created is True
+    from network_anomaly.api.repositories import EvidenceRepository
+
+    with api_service.db.transaction() as conn:
+        evidence = EvidenceRepository.list_by_incident(conn, res.results[1].incident_id)
+    assert len(evidence) == 1
+    details = evidence[0]["details"]
+    assert details["threshold"] is None
+    assert details["threshold_source"] == "verified_model"
 
 
 def test_verified_inference_keeps_calibrated_prediction(api_service: ApiService, monkeypatch):

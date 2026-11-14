@@ -337,7 +337,10 @@ class ApiService:
                                 ),
                                 "details": {
                                     "anomaly_score": item.anomaly_score,
-                                    "threshold": threshold,
+                                    "threshold": None if model_ready else threshold,
+                                    "threshold_source": (
+                                        "verified_model" if model_ready else "heuristic_request"
+                                    ),
                                     "model_ready": model_ready,
                                     "inference_mode": item.inference_mode,
                                     "run_id": item.run_id,
