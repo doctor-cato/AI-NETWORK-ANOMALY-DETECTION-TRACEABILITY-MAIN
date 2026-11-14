@@ -62,6 +62,11 @@ def export_openapi() -> None:
                 "missing or mismatched artifacts report `degraded`."
             ),
             (
+                "- **Verified Decision Policy**: `/api/v1/analyze` preserves the verified "
+                "model's binary prediction and calibrated threshold. Request `threshold` "
+                "applies only to an explicitly enabled heuristic fallback."
+            ),
+            (
                 "- **Key Metadata Scope**: Key and rotation endpoints record metadata and audit "
                 "events only. They do not encrypt flow payloads; `algorithm` describes a planned "
                 "key policy, not active AES-GCM encryption."

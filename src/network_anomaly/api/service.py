@@ -402,8 +402,10 @@ class ApiService:
             else:
                 score = float(raw_pred == 1 or raw_pred == -1)
 
-            is_anom = bool(score >= threshold or raw_pred == 1)
-            pred_binary = 1 if is_anom else 0
+            if raw_pred not in (0, 1):
+                raise ValueError(f"Verified pipeline returned non-binary prediction: {raw_pred!r}")
+            pred_binary = int(raw_pred)
+            is_anom = bool(pred_binary)
 
             items.append(
                 AnalyzeResultItem(

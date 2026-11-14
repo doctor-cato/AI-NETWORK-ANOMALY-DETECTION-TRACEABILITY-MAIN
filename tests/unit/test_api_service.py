@@ -304,6 +304,22 @@ def test_analyze_flows_with_verified_pipeline_provenance(api_service: ApiService
     assert res.results[1].incident_created is True
 
 
+def test_verified_inference_keeps_calibrated_prediction(api_service: ApiService, monkeypatch):
+    """An API request threshold cannot reclassify a verified model's output."""
+    mock_pipeline = MagicMock()
+    mock_pipeline.model_metadata = {"model_artifact_sha256": "a" * 64}
+    mock_pipeline.preprocessor_metadata = {"artifact_sha256": "b" * 64}
+    mock_pipeline.predict.return_value = pd.DataFrame(
+        {"prediction": [0, 1], "anomaly_score": [0.8, 0.2]}
+    )
+    monkeypatch.setattr(api_service, "_load_inference_pipeline", lambda _: mock_pipeline)
+    results, *_ = api_service._analyze_with_verified_pipeline(
+        [{"features": {}}, {"features": {}}], "isolation_forest", threshold=0.5
+    )
+    assert [item.prediction for item in results] == [0, 1]
+    assert [item.is_anomaly for item in results] == [False, True]
+
+
 def test_key_rotation_lifecycle_cooldown_and_idempotency(api_service: ApiService):
     """Verify key rotation enforces cooldown and records audit log."""
     # Rotation 1: Successful

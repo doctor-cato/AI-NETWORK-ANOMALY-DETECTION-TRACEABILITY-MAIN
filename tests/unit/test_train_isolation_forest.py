@@ -41,6 +41,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     TRACE_METADATA_COLUMNS,
 )
 from network_anomaly.models.isolation_forest import (  # noqa: E402
+    IsolationForestModel,
     anomaly_scores,
     build_model,
     fit_model,
@@ -468,6 +469,36 @@ class TestArtifactSaveLoad:
         with thresh_path.open() as fh:
             data = json.load(fh)
         assert abs(data["threshold"] - threshold) < 1e-12
+
+    def test_training_artifact_preserves_verified_calibration(
+        self, fitted_model, synthetic_benign, tmp_artifact_dir
+    ):
+        """The training entrypoint must write the threshold consumed by verified inference."""
+        threshold = 0.123456
+        prep_sha = "a" * 64
+        info = save_artifacts(
+            fitted_model,
+            {"n_estimators": 20, "random_state": 42},
+            threshold,
+            {"preprocessor_artifact_sha256": prep_sha},
+            tmp_artifact_dir,
+        )
+        model_path = Path(info["files"]["model"])
+        manifest_path = Path(info["files"]["manifest"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["calibrated_threshold"] == threshold
+        loaded = IsolationForestModel.load_verified(
+            model_path, manifest_path, expected_preprocessor_artifact_sha256=prep_sha
+        )
+        expected = (anomaly_scores(fitted_model, synthetic_benign[:10]) >= threshold).astype(int)
+        np.testing.assert_array_equal(loaded.predict(synthetic_benign[:10]), expected)
+
+    @pytest.mark.parametrize("threshold", [float("nan"), float("inf"), -float("inf")])
+    def test_save_artifacts_rejects_nonfinite_threshold(
+        self, fitted_model, tmp_artifact_dir, threshold
+    ):
+        with pytest.raises(ValueError, match="finite"):
+            save_artifacts(fitted_model, {}, threshold, {}, tmp_artifact_dir)
 
     def test_save_artifacts_config_round_trips(self, fitted_model, tmp_artifact_dir):
         config = {"n_estimators": 20, "random_state": 42, "contamination": 0.05}

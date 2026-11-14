@@ -111,7 +111,10 @@ class AnalyzeRequest(BaseModel):
         "random_forest", description="Model family: 'random_forest' or 'isolation_forest'"
     )
     threshold: Optional[float] = Field(
-        0.5, ge=0.0, le=1.0, description="Decision threshold for binary anomaly"
+        0.5,
+        ge=0.0,
+        le=1.0,
+        description="Decision threshold for explicitly enabled heuristic fallback only",
     )
     create_incidents: bool = Field(
         True, description="Whether to automatically create incident records for high anomalies"
@@ -132,9 +135,11 @@ class AnalyzeResultItem(BaseModel):
 
     index: int = Field(..., ge=0, description="Row index in input batch")
     event_id: Optional[str] = Field(None, description="Associated event ID if provided")
-    is_anomaly: bool = Field(..., description="True if anomaly score exceeds threshold")
+    is_anomaly: bool = Field(
+        ..., description="True when the active inference mode predicts anomaly"
+    )
     anomaly_score: float = Field(
-        ..., ge=0.0, le=1.0, description="Calibrated anomaly score or attack probability [0, 1]"
+        ..., ge=0.0, le=1.0, description="Display anomaly score or attack probability [0, 1]"
     )
     prediction: int = Field(..., description="Binary prediction: 0 (Normal), 1 (Anomaly)")
     attack_type: Optional[str] = Field(None, description="Inferred or classified attack category")

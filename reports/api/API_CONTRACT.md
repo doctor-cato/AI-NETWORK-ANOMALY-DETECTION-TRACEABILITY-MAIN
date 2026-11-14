@@ -24,6 +24,7 @@
 ## Key Deliverables & Design Rules
 - **Zero Secret Leaks**: Key metadata endpoints only return non-sensitive fields (`key_id`, `version`, `algorithm`, `status`). Key secrets are never stored.
 - **Fail-Closed Artifact Health**: `/health` verifies model and preprocessor artifacts against companion manifests before declaring `model_ready: true`; missing or mismatched artifacts report `degraded`.
+- **Verified Decision Policy**: `/api/v1/analyze` preserves the verified model's binary prediction and calibrated threshold. Request `threshold` applies only to an explicitly enabled heuristic fallback.
 - **Key Metadata Scope**: Key and rotation endpoints record metadata and audit events only. They do not encrypt flow payloads; `algorithm` describes a planned key policy, not active AES-GCM encryption.
 - **SQLite Durability**: Ingestion, incidents, timeline, and audit logs persist durably across restarts.
 - **Idempotent Ingestion & Rotation**: Supported via `X-Idempotency-Key` or `idempotency_key` payload property.
