@@ -41,7 +41,9 @@ Reproduction command (requires data/raw/NF-UNSW-NB15-v3 + artifact set):
 from __future__ import annotations
 
 import argparse
+import csv
 import gc
+import io
 import json
 import os
 import platform
@@ -64,6 +66,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import sklearn  # noqa: E402
 import xgboost  # noqa: E402
+from sklearn.metrics import average_precision_score, roc_auc_score  # noqa: E402
 
 from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     DATASET_NAME,
@@ -134,6 +137,7 @@ DEFAULT_OUTPUT_MODEL_PATH = DEFAULT_OUTPUT_MODEL_DIR / "xgboost_baseline.joblib"
 DEFAULT_OUTPUT_MANIFEST_PATH = DEFAULT_OUTPUT_MODEL_DIR / "xgboost_manifest.json"
 DEFAULT_REPORT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json"
 DEFAULT_REPORT_MD_PATH = PROJECT_ROOT / "reports" / "models" / "xgboost_training_report.md"
+DEFAULT_EVALUATION_DIR = PROJECT_ROOT / "reports" / "evaluation" / "xgboost"
 RF_REFERENCE_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
 
 
@@ -185,6 +189,18 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=Path,
         default=DEFAULT_REPORT_MD_PATH,
         help="Destination path for the training report markdown",
+    )
+    parser.add_argument(
+        "--evaluate-test",
+        action="store_true",
+        default=False,
+        help="Evaluate held-out Test partition strictly AFTER fit, reload check, and validation.",
+    )
+    parser.add_argument(
+        "--evaluation-dir",
+        type=Path,
+        default=DEFAULT_EVALUATION_DIR,
+        help="Destination directory for held-out Test evaluation artifacts when --evaluate-test is enabled",
     )
     parser.add_argument(
         "--verify-only",
@@ -394,6 +410,9 @@ def execute_training(
     output_model_path: Path,
     output_manifest_path: Path,
     report_md_path: Optional[Path] = None,
+    *,
+    evaluate_test: bool = False,
+    evaluation_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Execute real XGBoost baseline training using verified prerequisites."""
     tracker = PartitionAccessTracker()
@@ -828,12 +847,328 @@ def execute_training(
         "probabilities equal within tolerance (atol=1e-7, rtol=0)."
     )
 
+    if evaluate_test:
+        # Free validation buffers before streaming the held-out Test partition post-lock.
+        del X_val_trans, y_val, attack_val, orig_val_preds, orig_val_probs
+        del reloaded_val_preds, reloaded_val_probs
+        gc.collect()
+        _evaluate_xgb_test_partition(
+            reloaded_model=reloaded_model,
+            preprocessor=preprocessor,
+            manifest=manifest,
+            dataset_path=dataset_path,
+            split_manifest_path=split_manifest_path,
+            indices_dir=indices_dir,
+            train_indices=train_indices,
+            val_indices=val_indices,
+            evaluation_dir=evaluation_dir or DEFAULT_EVALUATION_DIR,
+            output_manifest_path=output_manifest_path,
+        )
+
     if report_md_path is not None:
         report_md_path.parent.mkdir(parents=True, exist_ok=True)
         report_md_path.write_text(render_training_report_md(manifest), encoding="utf-8")
         print(f"[train_xgboost] Training report rendered at {report_md_path}.")
 
     return manifest
+
+
+def _stream_test_partition_post_fit(
+    dataset_path: Path,
+    test_indices: np.ndarray,
+    usecols: List[str],
+    chunksize: int = 100_000,
+) -> pd.DataFrame:
+    """Stream strictly the held-out Test indices after fit and reload verification."""
+    test_idx_set = set(int(x) for x in test_indices)
+    chunks: List[pd.DataFrame] = []
+    line_buffer: List[str] = []
+    row_offsets: List[int] = []
+
+    def flush() -> None:
+        if not line_buffer:
+            return
+        content = header_line + "".join(line_buffer)
+        df_chunk = pd.read_csv(
+            io.StringIO(content),
+            usecols=usecols,
+            keep_default_na=False,
+            low_memory=False,
+        )
+        df_chunk.index = row_offsets[-len(line_buffer) :]
+        chunks.append(df_chunk)
+        line_buffer.clear()
+
+    with dataset_path.open("r", encoding="utf-8", errors="replace") as f:
+        header_line = f.readline()
+        if not header_line:
+            raise ValueError(f"Empty dataset file at {dataset_path}")
+        row_idx = 0
+        for line in f:
+            if row_idx in test_idx_set:
+                line_buffer.append(line)
+                row_offsets.append(row_idx)
+                if len(line_buffer) >= chunksize:
+                    flush()
+            row_idx += 1
+        flush()
+
+    if not chunks:
+        raise ValueError(f"No held-out Test rows loaded from {dataset_path}")
+
+    df_raw = pd.concat(chunks)
+    chunks.clear()
+    df_test = df_raw.loc[test_indices].copy()
+    del df_raw
+    if len(df_test) != len(test_indices):
+        raise ValueError(
+            f"Row count mismatch for held-out Test: expected {len(test_indices)}, got {len(df_test)}"
+        )
+    return df_test
+
+
+def _render_xgb_test_evaluation_md(
+    manifest: Dict[str, Any],
+    test_eval: Dict[str, Any],
+) -> str:
+    """Render concise held-out Test evaluation Markdown report for XGBoost."""
+    cm = test_eval["confusion_matrix_labeled"]
+    roc_str = f"{test_eval['roc_auc']:.6f}" if test_eval.get("roc_auc") is not None else "N/A"
+    pr_str = f"{test_eval['pr_auc']:.6f}" if test_eval.get("pr_auc") is not None else "N/A"
+    lines = [
+        "# XGBoost Held-Out Test Evaluation Report (Issue #31 / C3)",
+        "",
+        f"- **Run ID:** `{manifest['run_id']}`",
+        f"- **Evaluated at (UTC):** `{test_eval['evaluated_at_utc']}`",
+        f"- **Decision threshold:** `{test_eval['decision_threshold']}` (canonical fixed 0.5; zero test tuning)",
+        f"- **Model SHA-256:** `{manifest['model_artifact_sha256']}`",
+        f"- **Test Indices SHA-256:** `{manifest.get('test_indices_sha256')}`",
+        f"- **Rows evaluated:** {test_eval['rows_evaluated']:,}",
+        "",
+        "## Metrics Summary",
+        "| Metric | Value |",
+        "|---|---|",
+        f"| Accuracy | {test_eval['accuracy']:.6f} |",
+        f"| Precision | {test_eval['precision']:.6f} |",
+        f"| Recall | {test_eval['recall']:.6f} |",
+        f"| F1-Score | {test_eval['f1']:.6f} |",
+        f"| Macro-F1 | {test_eval['macro_f1']:.6f} |",
+        f"| FPR | {test_eval['false_positive_rate']:.6f} |",
+        f"| ROC-AUC | {roc_str} |",
+        f"| PR-AUC | {pr_str} |",
+        "",
+        "## Confusion Matrix (label order [0=Benign, 1=Attack])",
+        f"- TN={cm['tn']:,}, FP={cm['fp']:,}, FN={cm['fn']:,}, TP={cm['tp']:,}",
+        "",
+        "## Per-Category Breakdown",
+        "| Category | Total | Detected / True Neg | Missed / False Pos | Rate |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for cat, row in sorted((test_eval.get("per_category_breakdown") or {}).items()):
+        if cat == "Benign":
+            rate = row.get("false_positive_rate")
+            rate_s = f"FPR={rate:.6f}" if isinstance(rate, (int, float)) else "N/A"
+            lines.append(
+                f"| Benign | {row.get('total', 0):,} | "
+                f"TN={row.get('true_negative', 0):,} | "
+                f"FP={row.get('false_positive', 0):,} | {rate_s} |"
+            )
+        else:
+            rate = row.get("detection_rate")
+            rate_s = f"DR={rate:.6f}" if isinstance(rate, (int, float)) else "N/A"
+            lines.append(
+                f"| {cat} | {row.get('total', 0):,} | "
+                f"TP={row.get('detected', 0):,} | "
+                f"FN={row.get('missed', 0):,} | {rate_s} |"
+            )
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def _evaluate_xgb_test_partition(
+    *,
+    reloaded_model: XGBoostModel,
+    preprocessor: TrainOnlyPreprocessor,
+    manifest: Dict[str, Any],
+    dataset_path: Path,
+    split_manifest_path: Path,
+    indices_dir: Path,
+    train_indices: np.ndarray,
+    val_indices: np.ndarray,
+    evaluation_dir: Path,
+    output_manifest_path: Path,
+) -> Dict[str, Any]:
+    """Evaluate verified reloaded XGBoost model once on the locked Test partition."""
+    if manifest.get("reload_verification", {}).get("status") != "PASSED":
+        raise RuntimeError("Held-out Test evaluation aborted: reload verification has not PASSED.")
+
+    split_manifest_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+    test_indices = load_partition_indices(split_manifest_data, indices_dir, "test")
+    if len(test_indices) == 0:
+        raise ValueError("Held-out Test indices array is empty.")
+
+    train_set = set(int(x) for x in train_indices)
+    val_set = set(int(x) for x in val_indices)
+    test_set = set(int(x) for x in test_indices)
+    if train_set.intersection(test_set) or val_set.intersection(test_set):
+        raise ValueError("Leakage guard triggered: test_indices overlap with train or validation.")
+
+    test_indices_sha = _sha256_file(indices_dir / "test_indices.csv.gz")
+    print(
+        f"[train_xgboost] Evaluating verified model once on held-out Test ({len(test_indices):,} rows)..."
+    )
+
+    usecols = list(ML_FEATURE_COLUMNS) + ["Label", "Attack"]
+    df_test = _stream_test_partition_post_fit(
+        dataset_path=dataset_path,
+        test_indices=test_indices,
+        usecols=usecols,
+    )
+    X_test_raw = df_test[list(ML_FEATURE_COLUMNS)]
+    y_test = df_test["Label"].astype(int)
+    attack_test = df_test["Attack"].astype(str)
+    del df_test
+
+    X_test_trans = preprocessor.transform(X_test_raw)
+    del X_test_raw
+    if list(X_test_trans.columns) != list(ML_FEATURE_COLUMNS):
+        raise ValueError("Transformed X_test features do not match 47-feature canonical order.")
+    if not np.isfinite(np.asarray(X_test_trans)).all():
+        raise ValueError("Transformed X_test contains non-finite values.")
+
+    test_preds = reloaded_model.predict(X_test_trans)
+    test_probs = reloaded_model.predict_proba(X_test_trans)
+    del X_test_trans
+    gc.collect()
+
+    if not set(np.unique(y_test)).issubset({0, 1}):
+        raise ValueError(f"Test labels must be binary {{0, 1}}, got {np.unique(y_test)}")
+
+    attack_prob = np.asarray(test_probs[:, 1], dtype=np.float64)
+    test_metrics = compute_metrics(y_test, test_preds, labels=[0, 1])
+    test_breakdown = compute_attack_category_breakdown(y_test, test_preds, attack_test)
+    cm = test_metrics["confusion_matrix"]
+    cm_labeled = {
+        "tn": int(cm[0][0]),
+        "fp": int(cm[0][1]),
+        "fn": int(cm[1][0]),
+        "tp": int(cm[1][1]),
+    }
+
+    has_both_classes = len(np.unique(y_test)) == 2
+    roc_auc = float(roc_auc_score(y_test, attack_prob)) if has_both_classes else None
+    pr_auc = float(average_precision_score(y_test, attack_prob)) if has_both_classes else None
+    unique_preds, pred_counts = np.unique(test_preds, return_counts=True)
+    pred_dist = {str(k): int(v) for k, v in zip(unique_preds, pred_counts)}
+    evaluated_at_utc = datetime.now(timezone.utc).isoformat()
+
+    evaluation_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = evaluation_dir / "metrics.json"
+    cm_csv_path = evaluation_dir / "confusion_matrix.csv"
+    eval_meta_path = evaluation_dir / "evaluation_metadata.json"
+    eval_report_path = evaluation_dir / "evaluation_report.md"
+
+    test_eval_payload: Dict[str, Any] = {
+        "partition": "test",
+        "rows_evaluated": int(len(test_indices)),
+        "decision_threshold": 0.5,
+        "evaluated_at_utc": evaluated_at_utc,
+        "class_support": {
+            "benign_rows_total": int((y_test == 0).sum()),
+            "attack_rows_total": int((y_test == 1).sum()),
+        },
+        "prediction_distribution": pred_dist,
+        "accuracy": float(test_metrics["accuracy"]),
+        "precision": float(test_metrics["precision"]),
+        "recall": float(test_metrics["recall"]),
+        "f1": float(test_metrics["f1"]),
+        "macro_f1": float(test_metrics["macro_f1"]),
+        "false_positive_rate": float(test_metrics["false_positive_rate"]),
+        "roc_auc": roc_auc,
+        "pr_auc": pr_auc,
+        "confusion_matrix": cm,
+        "confusion_matrix_labeled": cm_labeled,
+        "per_category_breakdown": test_breakdown,
+        "evaluation_artifacts": {
+            "metrics_json": _safe_relpath(metrics_path),
+            "confusion_matrix_csv": _safe_relpath(cm_csv_path),
+            "evaluation_metadata_json": _safe_relpath(eval_meta_path),
+            "evaluation_report_md": _safe_relpath(eval_report_path),
+        },
+    }
+
+    with metrics_path.open("w", encoding="utf-8") as fh:
+        json.dump(
+            {
+                "run_id": manifest["run_id"],
+                "model_type": "XGBoost",
+                "validation": manifest["validation_summary"],
+                "test": test_eval_payload,
+            },
+            fh,
+            indent=2,
+        )
+
+    with cm_csv_path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["true_label", "pred_benign_0", "pred_attack_1"])
+        writer.writerow(["benign_0", cm_labeled["tn"], cm_labeled["fp"]])
+        writer.writerow(["attack_1", cm_labeled["fn"], cm_labeled["tp"]])
+
+    with eval_meta_path.open("w", encoding="utf-8") as fh:
+        json.dump(
+            {
+                "run_id": manifest["run_id"],
+                "model_type": "XGBoost",
+                "model_artifact_path": manifest["model_artifact_path"],
+                "model_artifact_sha256": manifest["model_artifact_sha256"],
+                "dataset_sha256": manifest["dataset_sha256"],
+                "split_manifest_sha256": manifest["split_manifest_sha256"],
+                "test_indices_sha256": test_indices_sha,
+                "preprocessor_artifact_sha256": manifest["preprocessor_artifact_sha256"],
+                "evaluated_at_utc": evaluated_at_utc,
+                "test_evaluated_post_fit": True,
+                "decision_threshold": 0.5,
+            },
+            fh,
+            indent=2,
+        )
+
+    manifest["test_indices_sha256"] = test_indices_sha
+    manifest["split_provenance"]["test_indices_sha256"] = test_indices_sha
+
+    eval_report_path.write_text(
+        _render_xgb_test_evaluation_md(manifest, test_eval_payload),
+        encoding="utf-8",
+    )
+    manifest["test_evaluation"] = test_eval_payload
+    manifest["experiment_status"] = "EXPERIMENTALLY VALIDATED"
+    manifest["test_lock_audit"].update(
+        {
+            "test_partition_accessed": True,
+            "test_rows_loaded": int(len(test_indices)),
+            "test_indices_loaded": True,
+            "test_evaluated_post_fit": True,
+            "test_accessed_strictly_after_fit_and_reload": True,
+        }
+    )
+
+    with output_manifest_path.open("w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    if output_manifest_path == DEFAULT_OUTPUT_MANIFEST_PATH:
+        DEFAULT_REPORT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with DEFAULT_REPORT_MANIFEST_PATH.open("w", encoding="utf-8") as f:
+            json.dump(manifest, f, indent=2)
+
+    print(
+        f"[train_xgboost] Held-out Test Metrics: "
+        f"Precision={test_eval_payload['precision']:.6f}, "
+        f"Recall={test_eval_payload['recall']:.6f}, "
+        f"F1={test_eval_payload['f1']:.6f}, "
+        f"FPR={test_eval_payload['false_positive_rate']:.6f}, "
+        f"TN={cm_labeled['tn']}, FP={cm_labeled['fp']}, "
+        f"FN={cm_labeled['fn']}, TP={cm_labeled['tp']}"
+    )
+    return test_eval_payload
 
 
 def render_training_report_md(manifest: Dict[str, Any]) -> str:
@@ -892,16 +1227,34 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
         f"FN={vs['confusion_matrix_labeled']['fn']:,}, "
         f"TP={vs['confusion_matrix_labeled']['tp']:,}",
         "",
-        "## Test-partition lock",
+        "## Test-partition lock & held-out evaluation",
         f"- `test_partition_accessed`: `{prov['test_partition_accessed']}`",
         f"- `test_rows_loaded`: `{prov['test_rows_loaded']}`",
+        f"- `test_evaluated_post_fit`: `{prov.get('test_evaluated_post_fit', False)}`",
         "",
         f"- Artifact: `{manifest['model_artifact_path']}` "
         f"(SHA-256 `{manifest['model_artifact_sha256']}`)",
         f"- Reload verification: `{manifest['reload_verification']['status']}`",
         "",
-        "## Comparison with Random Forest reference (same protocol, Validation)",
     ]
+    te = manifest.get("test_evaluation")
+    if isinstance(te, dict):
+        te_cm = te["confusion_matrix_labeled"]
+        lines.extend(
+            [
+                "## Held-out Test metrics (post-fit one-shot evaluation)",
+                f"- Rows evaluated: **{te['rows_evaluated']:,}**",
+                f"- Precision: **{te['precision']:.6f}**",
+                f"- Recall: **{te['recall']:.6f}**",
+                f"- F1: **{te['f1']:.6f}**",
+                f"- Macro-F1: **{te['macro_f1']:.6f}**",
+                f"- FPR: **{te['false_positive_rate']:.6f}**",
+                f"- Confusion matrix (label order [0, 1]): `{te['confusion_matrix']}`",
+                f"  - TN={te_cm['tn']:,}, FP={te_cm['fp']:,}, FN={te_cm['fn']:,}, TP={te_cm['tp']:,}",
+                "",
+            ]
+        )
+    lines.extend(["## Comparison with Random Forest reference (same protocol, Validation)"])
     if rf_vs:
         lines.append(
             "| Metric | Random Forest | XGBoost |\n|---|---|---|\n"
@@ -1008,6 +1361,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             output_model_path=args.output_model,
             output_manifest_path=args.output_manifest,
             report_md_path=args.report_md,
+            evaluate_test=args.evaluate_test,
+            evaluation_dir=args.evaluation_dir,
         )
         print("\n[PASS] XGBoost supervised baseline training completed successfully.")
         return 0

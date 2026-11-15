@@ -1,0 +1,206 @@
+{
+  "validation": {
+    "total_samples": 345371,
+    "tp": 3561,
+    "fp": 15744,
+    "tn": 299127,
+    "fn": 26939,
+    "accuracy": 0.876414059084289,
+    "precision": 0.18445998445998446,
+    "recall_detection_rate": 0.11675409836065574,
+    "f1_score": 0.14299769099488002,
+    "macro_f1": 0.5382015011406623,
+    "fpr": 0.05000142915670227,
+    "fnr": 0.8832459016393442,
+    "tnr": 0.9499985708432978,
+    "roc_auc": 0.6224054535786735,
+    "pr_auc": 0.15792481699870253,
+    "confusion_matrix": {
+      "tp": 3561,
+      "fp": 15744,
+      "tn": 299127,
+      "fn": 26939
+    },
+    "per_category": {
+      "Analysis": {
+        "total": 285,
+        "detected": 1,
+        "detection_rate": 0.0035087719298245615,
+        "type": "known_attack"
+      },
+      "Backdoor": {
+        "total": 144,
+        "detected": 12,
+        "detection_rate": 0.08333333333333333,
+        "type": "unknown_attack"
+      },
+      "Benign": {
+        "total": 314871,
+        "false_positives": 15744,
+        "fpr": 0.05000142915670227,
+        "type": "benign"
+      },
+      "DoS": {
+        "total": 1445,
+        "detected": 230,
+        "detection_rate": 0.15916955017301038,
+        "type": "known_attack"
+      },
+      "Exploits": {
+        "total": 10294,
+        "detected": 1022,
+        "detection_rate": 0.09928113464153876,
+        "type": "known_attack"
+      },
+      "Fuzzers": {
+        "total": 8495,
+        "detected": 942,
+        "detection_rate": 0.11088875809299588,
+        "type": "known_attack"
+      },
+      "Generic": {
+        "total": 5137,
+        "detected": 1001,
+        "detection_rate": 0.1948608137044968,
+        "type": "known_attack"
+      },
+      "Reconnaissance": {
+        "total": 4107,
+        "detected": 264,
+        "detection_rate": 0.06428049671292914,
+        "type": "known_attack"
+      },
+      "Shellcode": {
+        "total": 556,
+        "detected": 85,
+        "detection_rate": 0.1528776978417266,
+        "type": "known_attack"
+      },
+      "Worms": {
+        "total": 37,
+        "detected": 4,
+        "detection_rate": 0.10810810810810811,
+        "type": "unknown_attack"
+      }
+    },
+    "aggregate_known_attacks": {
+      "total": 30319,
+      "detected": 3545,
+      "detection_rate": 0.11692338137801378
+    },
+    "aggregate_unknown_attacks": {
+      "total": 181,
+      "detected": 16,
+      "detection_rate": 0.08839779005524862
+    }
+  },
+  "test": {
+    "total_samples": 345953,
+    "tp": 3343,
+    "fp": 15189,
+    "tn": 300168,
+    "fn": 27253,
+    "accuracy": 0.8773185953005177,
+    "precision": 0.18039067558817182,
+    "recall_detection_rate": 0.10926264871224997,
+    "f1_score": 0.13609347011887316,
+    "macro_f1": 0.535032226162119,
+    "fpr": 0.04816446122965401,
+    "fnr": 0.89073735128775,
+    "tnr": 0.951835538770346,
+    "roc_auc": 0.6303096017251912,
+    "pr_auc": 0.16146488959316813,
+    "confusion_matrix": {
+      "tp": 3343,
+      "fp": 15189,
+      "tn": 300168,
+      "fn": 27253
+    },
+    "per_category": {
+      "Analysis": {
+        "total": 294,
+        "detected": 0,
+        "detection_rate": 0.0,
+        "type": "known_attack"
+      },
+      "Backdoor": {
+        "total": 1260,
+        "detected": 79,
+        "detection_rate": 0.0626984126984127,
+        "type": "unknown_attack"
+      },
+      "Benign": {
+        "total": 315357,
+        "false_positives": 15189,
+        "fpr": 0.04816446122965401,
+        "type": "benign"
+      },
+      "DoS": {
+        "total": 1193,
+        "detected": 136,
+        "detection_rate": 0.11399832355406538,
+        "type": "known_attack"
+      },
+      "Exploits": {
+        "total": 10520,
+        "detected": 1218,
+        "detection_rate": 0.11577946768060836,
+        "type": "known_attack"
+      },
+      "Fuzzers": {
+        "total": 7322,
+        "detected": 555,
+        "detection_rate": 0.07579896203223163,
+        "type": "known_attack"
+      },
+      "Generic": {
+        "total": 5111,
+        "detected": 722,
+        "detection_rate": 0.1412639405204461,
+        "type": "known_attack"
+      },
+      "Reconnaissance": {
+        "total": 4464,
+        "detected": 630,
+        "detection_rate": 0.14112903225806453,
+        "type": "known_attack"
+      },
+      "Shellcode": {
+        "total": 396,
+        "detected": 1,
+        "detection_rate": 0.0025252525252525255,
+        "type": "known_attack"
+      },
+      "Worms": {
+        "total": 36,
+        "detected": 2,
+        "detection_rate": 0.05555555555555555,
+        "type": "unknown_attack"
+      }
+    },
+    "aggregate_known_attacks": {
+      "total": 29300,
+      "detected": 3262,
+      "detection_rate": 0.11133105802047781
+    },
+    "aggregate_unknown_attacks": {
+      "total": 1296,
+      "detected": 81,
+      "detection_rate": 0.0625
+    }
+  },
+  "threshold_calibration": {
+    "threshold": 17234106.380850367,
+    "calibration_method": "benign_quantile",
+    "target_fpr": 0.05,
+    "empirical_val_fpr": 0.05000142915670227,
+    "n_benign_used": 314871,
+    "n_known_attack_used": 30319,
+    "n_unknown_excluded": 181,
+    "unknown_categories_excluded": [
+      "Backdoor",
+      "Worms"
+    ],
+    "threshold_frozen": true
+  }
+}

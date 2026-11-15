@@ -24,6 +24,7 @@ function makeItem(overrides: Partial<CsvFlowPredictionItem>): CsvFlowPredictionI
     predicted_class: "Benign",
     attack_probability: 0.1,
     raw_anomaly_score: 0.1,
+    normalized_anomaly_score: 0.1,
     decision_threshold: 0.5,
     score_type: "attack_probability",
     score_direction: "higher_is_more_anomalous",
@@ -46,18 +47,27 @@ function makeItem(overrides: Partial<CsvFlowPredictionItem>): CsvFlowPredictionI
 
 describe("score semantics and OOD abstention display", () => {
   it("distinguishes supervised probability from unsupervised raw anomaly score", () => {
-    const rf = makeItem({ attack_probability: 0.9125, raw_anomaly_score: 0.9125, decision_threshold: 0.5 });
-    expect(formatScoreSemantically(rf).probabilityText).toBe("91.25%");
+    const rf = makeItem({
+      attack_probability: 0.9125,
+      raw_anomaly_score: 0.9125,
+      normalized_anomaly_score: 0.9125,
+      decision_threshold: 0.5,
+    });
+    const rfFmt = formatScoreSemantically(rf);
+    expect(rfFmt.probabilityText).toBe("91.25%");
+    expect(rfFmt.normalizedScoreText).toBe("N/A (Supervised)");
 
     const iso = makeItem({
       attack_probability: null,
       raw_anomaly_score: -0.0715,
+      normalized_anomaly_score: 0.824,
       decision_threshold: -0.0335,
       score_type: "isolation_forest_anomaly_score",
     });
     const fmt = formatScoreSemantically(iso);
     expect(fmt.probabilityText).toBe("N/A (Unsupervised)");
     expect(fmt.anomalyScoreText).toBe("-0.0715");
+    expect(fmt.normalizedScoreText).toBe("0.8240 (Val quantile)");
     expect(fmt.thresholdText).toBe("-0.0335");
   });
 
@@ -67,6 +77,7 @@ describe("score semantics and OOD abstention display", () => {
       predicted_class: "ABSTAINED_OOD",
       attack_probability: null,
       raw_anomaly_score: null,
+      normalized_anomaly_score: null,
       is_ood_flagged: true,
       risk_score: null,
       risk_level: "ABSTAINED_OOD",
@@ -75,6 +86,7 @@ describe("score semantics and OOD abstention display", () => {
     const fmt = formatScoreSemantically(oodRow);
     expect(fmt.probabilityText).toBe("ABSTAINED (OOD)");
     expect(fmt.anomalyScoreText).toBe("ABSTAINED (OOD)");
+    expect(fmt.normalizedScoreText).toBe("ABSTAINED (OOD)");
   });
 });
 

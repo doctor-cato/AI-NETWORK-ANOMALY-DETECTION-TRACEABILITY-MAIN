@@ -18,7 +18,7 @@ Tài liệu này hướng dẫn cài đặt, chuẩn bị môi trường phụ t
 | **Python Runtime** | Python `>= 3.11` (ưu tiên **Python 3.11** hoặc **Python 3.12** đã kiểm chứng trong CI, khớp `requires-python = ">=3.11"` tại `pyproject.toml`) | Cần có `python` trên `PATH` hoặc đặt biến môi trường `NETWORK_ANOMALY_PYTHON` |
 | **Python Dependencies** | `numpy`, `pandas`, `scikit-learn`, `joblib`, `pyarrow`, `fastapi`, `uvicorn`, `pydantic`, `httpx` | Cài đặt qua `pip install -e .` từ `pyproject.toml` của repository |
 | **Dung lượng lưu trữ** | - Ứng dụng Desktop + Python venv: ~600 MB<br>- Model & Preprocessor artifacts (`.joblib`): ~50 MB<br>- Bộ dữ liệu gốc `NF-UNSW-NB15-v3.csv` (tùy chọn khi tự sinh demo): ~1.1 GB | Nếu chỉ chạy bộ dữ liệu mẫu `data/demo/` (~200 dòng), chỉ cần < 1 MB cho dữ liệu demo |
-| **Verified Artifacts** | 1. `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`<br>2. `artifacts/models/random_forest/random_forest_baseline.joblib`<br>3. `artifacts/models/isolation_forest/isolation_forest.joblib` | Bắt buộc khớp mã băm SHA-256 trong `reports/preprocessing/*.json` và `reports/models/*.json` (cơ chế fail-closed) |
+| **Verified Artifacts** | 1. `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`<br>2. `artifacts/models/random_forest/random_forest_baseline.joblib`<br>3. `artifacts/models/xgboost/xgboost_baseline.joblib`<br>4. `artifacts/models/isolation_forest/isolation_forest.joblib`<br>5. `artifacts/models/autoencoder/autoencoder_model.joblib` (+ `model_config.json`, `threshold.json`) | Bắt buộc khớp mã băm SHA-256 trong `reports/` và sidecars (xác minh bằng `python scripts/verify_companion_artifacts.py`; fail-closed `HTTP 503` nếu thiếu/sai) |
 | **Biến môi trường Repo Root** | `NETWORK_ANOMALY_REPO_ROOT` | Bắt buộc thiết lập nếu chạy ứng dụng từ thư mục cài đặt NSIS (`%LOCALAPPDATA%\NetFlow Sentinel M6`) nằm ngoài cây thư mục Git repository |
 
 ---
@@ -94,13 +94,23 @@ py -3.12 -m venv .venv
 
 ### Bước 6: Chuẩn bị và xác minh Model & Preprocessor Artifacts
 
-Đặt các tệp `.joblib` đã được huấn luyện và nghiệm thu vào đúng cấu trúc thư mục trong `$RepoRoot\artifacts\`:
+Đặt toàn bộ gói companion artifacts (5 `.joblib` + `model_config.json`/`threshold.json`/manifests, **không gồm raw CSV**) vào đúng cấu trúc thư mục trong `$RepoRoot\`:
 
 - `artifacts\preprocessing\nf_unsw_nb15_v3_preprocessor.joblib`
 - `artifacts\models\random_forest\random_forest_baseline.joblib`
-- `artifacts\models\isolation_forest\isolation_forest.joblib`
+- `artifacts\models\xgboost\xgboost_baseline.joblib`
+- `artifacts\models\isolation_forest\isolation_forest.joblib` (`+ model_config.json, threshold.json`)
+- `artifacts\models\autoencoder\autoencoder_model.joblib` (`+ autoencoder_manifest.json, model_config.json, threshold.json`)
 
-Kiểm tra nhanh mã băm SHA-256 của 3 tệp artifact khớp với manifest trong `reports/`:
+Cách chuẩn nhất để kiểm tra toàn bộ 4 model + preprocessor + `data/demo/` hoặc đóng gói thư mục companion ngoài Git (kèm `COMPANION_SHA256SUMS.txt`):
+
+```powershell
+python scripts/verify_companion_artifacts.py
+# Hoặc tạo gói companion để chép sang máy Windows mới:
+python scripts/verify_companion_artifacts.py --stage-dir C:\companion-artifacts
+```
+
+Hoặc kiểm tra thủ công mã băm SHA-256 của từng tệp artifact khớp với manifest trong `reports/`:
 
 ```powershell
 Set-Location $RepoRoot
@@ -138,7 +148,7 @@ foreach ($item in $ArtifactsToVerify) {
 ```
 
 > [!NOTE]
-> Trong phạm vi M6 hiện tại, hai mô hình **Random Forest** (`random_forest`) và **Isolation Forest** (`isolation_forest`) ở trạng thái `READY`. Hai mô hình **XGBoost** (`xgboost`) và **Autoencoder** (`autoencoder`) chưa có artifact nghiệm thu nên được khóa an toàn ở trạng thái `BLOCKED / NOT READY` (HTTP 503 fail-closed nếu gọi phân tích).
+> Trong phạm vi **`v0.6.0` Stable**, cả **4 mô hình** (**Random Forest** `random_forest`, **XGBoost** `xgboost`, **Isolation Forest** `isolation_forest`, **Autoencoder** `autoencoder`) đều ở trạng thái `READY` và chạy inference thật trên `data/demo/demo_flows.csv` **khi máy đích có đủ gói companion artifacts khớp SHA-256** (dùng `python scripts/verify_companion_artifacts.py` để kiểm tra hoặc đóng gói bộ companion ngoài Git). Bất kỳ mô hình nào thiếu file `.joblib` / manifest / threshold hoặc sai SHA-256 sẽ bị khóa an toàn ở trạng thái `BLOCKED / NOT READY` (HTTP 503 fail-closed, không fallback ngầm).
 
 ### Bước 7: Chuẩn bị dữ liệu Demo (`demo_flows.csv`, `demo_labels.csv`, `demo_manifest.json`)
 
@@ -176,7 +186,8 @@ Start-Process "$env:LOCALAPPDATA\NetFlow Sentinel M6\netflow-sentinel-desktop.ex
 Trên thanh tiêu đề của cửa sổ ứng dụng:
 1. Huy hiệu **Preprocessor READY** màu xanh lá xác nhận `nf_unsw_nb15_v3_preprocessor.joblib` và cơ sở dữ liệu SQLite cục bộ đã sẵn sàng.
 2. Huy hiệu **FastAPI :`<port>`** hiển thị cổng loopback (`127.0.0.1:<port>`) mà tiến trình Rust đã cấp phát động.
-3. Trong bảng **Trạng thái Sẵn sàng Mô hình**, hai thẻ **Random Forest** và **Isolation Forest** hiển thị `READY` kèm SHA-256 rút gọn; **XGBoost** và **Autoencoder** hiển thị `BLOCKED / NOT READY`.
+3. Trong bảng **Trạng thái Sẵn sàng Mô hình**, cả 4 thẻ **Random Forest**, **XGBoost**, **Isolation Forest** và **Autoencoder** hiển thị `READY` kèm SHA-256 rút gọn nếu đã chép đủ gói companion artifacts (nếu chưa chép đủ binary/manifest cho mô hình nào thì thẻ đó hiển thị `BLOCKED / NOT READY` fail-closed).
+4. Trên cùng dữ liệu `demo_flows.csv`, chọn từng model hoặc bấm **So sánh 4 Model READY** để đối chiếu trực tiếp Confusion Matrix, `Precision`, `Recall`, `F1`, `FPR`, `coverage` và mở **Tab 4 (Security Response Dry-Run #27)** để xem khuyến nghị mô phỏng (`executed=false`).
 
 Bạn cũng có thể kiểm tra trực tiếp từ PowerShell nếu biết cổng `<port>` trên thanh tiêu đề:
 
@@ -272,7 +283,7 @@ Bảng dưới đây phân biệt rõ các yêu cầu ở từng giai đoạn kh
 
 ### 4.11. Mô hình báo `BLOCKED / NOT READY` hoặc cổng Eligibility Gate chặn suy luận (HTTP 503)
 - **Nguyên nhân:**
-  1. Người dùng chọn **XGBoost** hoặc **Autoencoder** (2 mô hình ngoài phạm vi baseline M6, chưa có artifact nghiệm thu).
+  1. Mô hình được chọn thiếu tệp `.joblib`, thiếu `threshold.json`/`model_config.json` (đối với `isolation_forest`/`autoencoder`) hoặc tệp companion chưa được chép từ gói companion artifacts vào thư mục `NETWORK_ANOMALY_REPO_ROOT`. Hãy chạy `python scripts/verify_companion_artifacts.py` để kiểm tra từng file và checksum.
   2. Tệp CSV chứa 100% số dòng vi phạm bất biến OOD (`MIN_TTL == 0` hoặc `hard_violation`), khiến toàn bộ batch bị từ chối suy luận (`ABSTAINED_OOD`).
   3. Tệp CSV bên ngoài không có biên bản provenance (`source:nf-v3-unverified` -> trạng thái `VALIDATION_NOT_VERIFIED`) nhưng gọi API với `allow_research_only = false`.
 - **Cách khắc phục:** Sử dụng mô hình **Random Forest** (baseline chính) hoặc **Isolation Forest** trên dữ liệu hợp lệ. Khi phân tích tệp CSV bên ngoài chưa có manifest chuẩn, lưu ý trạng thái cổng tương thích sẽ là `VALIDATION_NOT_VERIFIED` (`SEMANTICALLY_COMPATIBLE`), không được coi là kết quả benchmark `MODEL_VALIDATED`.

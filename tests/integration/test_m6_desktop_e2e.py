@@ -20,7 +20,9 @@ from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
 RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
+XGB_MODEL = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
 IF_MODEL = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
+AE_MODEL = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
 PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
 
 
@@ -135,29 +137,56 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
             "isolation_forest",
             "autoencoder",
         }
-        assert model_map["autoencoder"]["ready"] is False
-        assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
+        if AE_MODEL.is_file():
+            assert model_map["autoencoder"]["ready"] is True
+            assert model_map["autoencoder"]["status"] == "READY"
+            ae_resp = httpx.post(
+                f"{base_url}/api/v1/csv/analyze",
+                json={"file_path": str(synth_csv), "model_name": "autoencoder"},
+                timeout=15.0,
+            )
+            assert ae_resp.status_code == 200
+            ae_data = ae_resp.json()
+            assert ae_data["abstained_rows"] == 1
+            assert ae_data["evaluated_rows"] == n_rows - 1
+        else:
+            assert model_map["autoencoder"]["ready"] is False
+            assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
 
-        ins_resp = httpx.post(
-            f"{base_url}/api/v1/csv/inspect",
-            json={"file_path": str(synth_csv), "preview_limit": 10},
-            timeout=15.0,
-        )
-        assert ins_resp.status_code == 200
-        ins = ins_resp.json()
-        assert ins["row_count"] == n_rows
-        assert ins["ml_feature_count"] == 47
-        assert ins["ml_features_valid"] is True
-        assert ins["target_columns_excluded"] == ["Label"]
-        assert ins["ood_report"]["zero_ttl_count"] == 1
-        assert len(ins["models_status"]) == 4
+            ins_resp = httpx.post(
+                f"{base_url}/api/v1/csv/inspect",
+                json={"file_path": str(synth_csv), "preview_limit": 10},
+                timeout=15.0,
+            )
+            assert ins_resp.status_code == 200
+            ins = ins_resp.json()
+            assert ins["row_count"] == n_rows
+            assert ins["ml_feature_count"] == 47
+            assert ins["ml_features_valid"] is True
+            assert ins["target_columns_excluded"] == ["Label"]
+            assert ins["ood_report"]["zero_ttl_count"] == 1
+            assert len(ins["models_status"]) == 4
 
-        blocked_resp = httpx.post(
-            f"{base_url}/api/v1/csv/analyze",
-            json={"file_path": str(synth_csv), "model_name": "autoencoder"},
-            timeout=10.0,
-        )
-        assert blocked_resp.status_code == 503
+            blocked_resp = httpx.post(
+                f"{base_url}/api/v1/csv/analyze",
+                json={"file_path": str(synth_csv), "model_name": "autoencoder"},
+                timeout=10.0,
+            )
+            assert blocked_resp.status_code == 503
+        if AE_MODEL.is_file():
+            ins_resp = httpx.post(
+                f"{base_url}/api/v1/csv/inspect",
+                json={"file_path": str(synth_csv), "preview_limit": 10},
+                timeout=15.0,
+            )
+            assert ins_resp.status_code == 200
+            ins = ins_resp.json()
+            assert ins["row_count"] == n_rows
+            assert ins["ml_feature_count"] == 47
+            assert ins["ml_features_valid"] is True
+            assert ins["target_columns_excluded"] == ["Label"]
+            assert ins["ood_report"]["zero_ttl_count"] == 1
+            assert len(ins["models_status"]) == 4
     finally:
         _terminate_process(proc)
 
@@ -186,16 +215,21 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         model_map = {m["model_key"]: m for m in models}
         assert model_map["random_forest"]["status"] == "READY"
         assert model_map["isolation_forest"]["status"] == "READY"
-        assert model_map["xgboost"]["status"] == "BLOCKED / NOT READY"
-        assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
-
-        # Step 4: Blocked model must fail closed with 503
-        blocked_resp = httpx.post(
-            f"{base_url}/api/v1/csv/analyze",
-            json={"file_path": str(DEMO_FLOWS), "model_name": "autoencoder"},
-            timeout=10.0,
-        )
-        assert blocked_resp.status_code == 503
+        if XGB_MODEL.is_file():
+            assert model_map["xgboost"]["status"] == "READY"
+        else:
+            assert model_map["xgboost"]["status"] == "BLOCKED / NOT READY"
+        if AE_MODEL.is_file():
+            assert model_map["autoencoder"]["status"] == "READY"
+        else:
+            assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
+            # Step 4: Blocked model must fail closed with 503
+            blocked_resp = httpx.post(
+                f"{base_url}/api/v1/csv/analyze",
+                json={"file_path": str(DEMO_FLOWS), "model_name": "autoencoder"},
+                timeout=10.0,
+            )
+            assert blocked_resp.status_code == 503
 
         # Step 5: Inspect demo_flows.csv (47 features valid, OOD MIN_TTL=0 surfaced)
         ins_resp = httpx.post(

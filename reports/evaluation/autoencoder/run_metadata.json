@@ -1,0 +1,30 @@
+{
+  "arguments": {
+    "raw_data": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\raw\\NF-UNSW-NB15-v3\\data\\NF-UNSW-NB15-v3.csv",
+    "data_manifest": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\NF_UNSW_NB15_V3_MANIFEST.json",
+    "split_manifest": "reports\\splits\\nf_unsw_nb15_v3_split_manifest.json",
+    "indices_dir": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\data\\processed\\splits",
+    "preprocessor_artifact": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\preprocessing\\nf_unsw_nb15_v3_preprocessor.joblib",
+    "preprocessor_manifest": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\preprocessing\\nf_unsw_nb15_v3_preprocessing_manifest.json",
+    "output_dir": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\autoencoder",
+    "report_dir": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\evaluation\\autoencoder",
+    "hidden_layers": "32,16,32",
+    "activation": "relu",
+    "solver": "adam",
+    "alpha": 0.0001,
+    "batch_size": 256,
+    "learning_rate": 0.001,
+    "max_iter": 50,
+    "target_fpr": 0.05,
+    "calibration_method": "benign_quantile",
+    "unknown_categories": "Worms,Backdoor",
+    "evaluate_test": true,
+    "sample_size": null,
+    "skip_checksums": false
+  },
+  "platform": "Windows-11-10.0.26200-SP0",
+  "python_version": "3.14.10 (tags/v3.14.10:b703b2c, Oct 25 2026, 17:36:52) [MSC v.1944 64 bit (AMD64)]",
+  "execution_time_seconds": 70.7,
+  "git_commit": "7f51390bfe4cea76a413733ac1882d8579fc4a34",
+  "preprocessor_source": "TrainOnlyPreprocessor.load_verified"
+}

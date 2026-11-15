@@ -1,19 +1,19 @@
 # XGBoost Baseline Training Report — NF-UNSW-NB15-v3 (Issue #31 / C3)
 
-- **Run ID:** `xgb-baseline-1794151507`
-- **Trained at (UTC):** `2026-11-08T15:24:43.195015+00:00`
-- **Git commit:** `7d760e0ca3b43e1ed48108978922bf8638168dde`
+- **Run ID:** `xgb-baseline-1794755807`
+- **Trained at (UTC):** `2026-11-15T15:16:31.093690+00:00`
+- **Git commit:** `7f51390bfe4cea76a413733ac1882d8579fc4a34`
 - **Dataset:** `NF-UNSW-NB15-v3` (SHA-256 `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`)
-- **Split protocol:** `nf-unsw-nb15-v3-chronological-group-purged-v1` (manifest SHA-256 `845d8863deeae84d2f7ce29758366d8e8146d0484faadc3b2721cdcc2fc92b2f`)
-- **Preprocessing artifact:** `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (SHA-256 `e1e89bde7c6504cc26bc48a5ef41fc151f762dc61fe8f053252fb32035fb25e6`)
+- **Split protocol:** `nf-unsw-nb15-v3-chronological-group-purged-v1` (manifest SHA-256 `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`)
+- **Preprocessing artifact:** `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (SHA-256 `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`)
 
 ## Configuration (canonical, locked)
 - model: XGBClassifier, objective `binary:logistic`
 - n_estimators=200, max_depth=6, learning_rate=0.1, subsample=0.8, colsample_bytree=0.8, tree_method=`hist`
 - random_state=42
 - Training rows: 1,655,797, Validation rows: 345,371, features: 47
-- Training duration: 19.66 s, peak memory: 4422.59 MB
-- Environment: Python 3.13.9, xgboost 3.4.1, scikit-learn 1.9.1, pandas 3.0.6, numpy 2.5.3
+- Training duration: 13.92 s, peak memory: 3871.07 MB
+- Environment: Python 3.14.10, xgboost 3.4.1, scikit-learn 1.9.1, pandas 3.1.1, numpy 2.5.4
 
 ## Label policy
 - Positive class: `Attack` = label **1**; Negative class: `Benign` = label **0**.
@@ -28,12 +28,23 @@
 - Confusion matrix (label order [0, 1]): `[[314870, 1], [0, 30500]]`
   - TN=314,870, FP=1, FN=0, TP=30,500
 
-## Test-partition lock
-- `test_partition_accessed`: `False`
-- `test_rows_loaded`: `0`
+## Test-partition lock & held-out evaluation
+- `test_partition_accessed`: `True`
+- `test_rows_loaded`: `345953`
+- `test_evaluated_post_fit`: `True`
 
-- Artifact: `artifacts/models/xgboost/xgboost_baseline.joblib` (SHA-256 `c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e`)
+- Artifact: `artifacts/models/xgboost/xgboost_baseline.joblib` (SHA-256 `3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e`)
 - Reload verification: `PASSED`
+
+## Held-out Test metrics (post-fit one-shot evaluation)
+- Rows evaluated: **345,953**
+- Precision: **0.999967**
+- Recall: **1.000000**
+- F1: **0.999984**
+- Macro-F1: **0.999991**
+- FPR: **0.000003**
+- Confusion matrix (label order [0, 1]): `[[315356, 1], [0, 30596]]`
+  - TN=315,356, FP=1, FN=0, TP=30,596
 
 ## Comparison with Random Forest reference (same protocol, Validation)
 | Metric | Random Forest | XGBoost |

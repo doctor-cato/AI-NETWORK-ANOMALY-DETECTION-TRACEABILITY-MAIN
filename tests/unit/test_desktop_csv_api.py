@@ -39,7 +39,9 @@ from network_anomaly.inference.predict import InferencePipeline
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
 RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
+XGB_MODEL = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
 IF_MODEL = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
+AE_MODEL = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
 PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
 
 
@@ -389,15 +391,24 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     models_map = {m["model_key"]: m for m in models_resp.json()}
     assert models_map["random_forest"]["status"] == "READY"
     assert models_map["isolation_forest"]["status"] == "READY"
-    assert models_map["xgboost"]["status"] == "BLOCKED / NOT READY"
-    assert models_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
-
-    # Unready model must fail closed with HTTP 503
-    blocked_resp = client.post(
-        "/api/v1/csv/analyze",
-        json={"file_path": str(DEMO_FLOWS), "model_name": "xgboost"},
-    )
-    assert blocked_resp.status_code == 503
+    if XGB_MODEL.is_file():
+        assert models_map["xgboost"]["status"] == "READY"
+    else:
+        assert models_map["xgboost"]["status"] == "BLOCKED / NOT READY"
+        blocked_resp = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(DEMO_FLOWS), "model_name": "xgboost"},
+        )
+        assert blocked_resp.status_code == 503
+    if AE_MODEL.is_file():
+        assert models_map["autoencoder"]["status"] == "READY"
+    else:
+        assert models_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
+        blocked_ae = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(DEMO_FLOWS), "model_name": "autoencoder"},
+        )
+        assert blocked_ae.status_code == 503
 
     demo_df = pd.read_csv(DEMO_FLOWS)
 

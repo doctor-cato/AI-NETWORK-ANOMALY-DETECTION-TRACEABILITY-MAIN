@@ -694,6 +694,7 @@ class CsvFlowPredictionItem(BaseModel):
     predicted_class: str
     attack_probability: Optional[float] = None
     raw_anomaly_score: Optional[float] = None
+    normalized_anomaly_score: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     decision_threshold: Optional[float] = None
     score_type: str
     score_direction: str
@@ -714,6 +715,7 @@ class CsvFlowPredictionItem(BaseModel):
     @field_validator(
         "attack_probability",
         "raw_anomaly_score",
+        "normalized_anomaly_score",
         "decision_threshold",
         "risk_score",
         "min_ttl",

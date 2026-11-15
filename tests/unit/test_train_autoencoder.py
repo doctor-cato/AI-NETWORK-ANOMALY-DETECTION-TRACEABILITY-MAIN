@@ -1935,5 +1935,11 @@ def test_run_pipeline_evaluate_test_invariance_with_poisoned_test_rows(tmp_path)
     m_poison, man_poison = _run_eval(poison_dir, 1000)
 
     assert man_clean["threshold"] == pytest.approx(man_poison["threshold"], rel=0.0, abs=0.0)
+    assert man_clean["score_normalization"] == man_poison["score_normalization"]
+    assert man_clean["score_normalization"]["calibration_partition"] == "validation"
+    assert man_clean["score_normalization"]["score_direction"] == "higher_is_more_anomalous"
+    vals = man_clean["score_normalization"]["score_values"]
+    assert len(vals) == 101
+    assert all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
     for w_clean, w_poison in zip(m_clean.coefs_, m_poison.coefs_, strict=True):
         np.testing.assert_array_equal(w_clean, w_poison)

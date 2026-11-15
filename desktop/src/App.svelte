@@ -23,6 +23,7 @@
   import EvaluationPanel from "./lib/components/EvaluationPanel.svelte";
   import ForensicTimelinePanel from "./lib/components/ForensicTimelinePanel.svelte";
   import Icons from "./lib/components/Icons.svelte";
+  import ModelComparisonPanel from "./lib/components/ModelComparisonPanel.svelte";
   import ModelReadinessPanel from "./lib/components/ModelReadinessPanel.svelte";
   import PredictionsTable from "./lib/components/PredictionsTable.svelte";
   import type {
@@ -53,10 +54,13 @@
   let labelsPath = $state("");
   let lastInspectedInputPath = $state("");
   let inspectData = $state<CsvInspectResponse | null>(null);
-  let analysisData = $state<CsvAnalyzeResponse | null>(null);
-  let evalData = $state<CsvEvaluateResponse | null>(null);
+  let analysesByModel = $state<Record<string, CsvAnalyzeResponse>>({});
+  let evaluationsByModel = $state<Record<string, CsvEvaluateResponse>>({});
+  let simulationsByModel = $state<Record<string, SecurityResponseSimulationResponse>>({});
+  let analysisData = $derived(analysesByModel[selectedModel] ?? null);
+  let evalData = $derived(evaluationsByModel[selectedModel] ?? null);
   let exportData = $state<CsvExportResponse | null>(null);
-  let simulationData = $state<SecurityResponseSimulationResponse | null>(null);
+  let simulationData = $derived(simulationsByModel[selectedModel] ?? null);
   let simulationHistory = $state<SecuritySimulationHistoryItem[]>([]);
   let simulationExportData = $state<SecuritySimulationExportResponse | null>(null);
 
@@ -150,8 +154,9 @@
       const inspected = await inspectCsv(path, 20);
       lastInspectedInputPath = path.trim();
       inspectData = inspected;
-      analysisData = null;
-      evalData = null;
+      analysesByModel = {};
+      evaluationsByModel = {};
+      simulationsByModel = {};
       exportData = null;
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
@@ -211,16 +216,84 @@
         createIncidents: false,
         batchSize: 500,
       });
-      analysisData = res;
-      evalData = null;
+      analysesByModel = { ...analysesByModel, [selectedModel]: res };
+      const { [selectedModel]: _droppedEval, ...restEvals } = evaluationsByModel;
+      evaluationsByModel = restEvals;
       simulationExportData = null;
-      simulationData = await simulateSecurityResponse({
+      const simRes = await simulateSecurityResponse({
         analysis_id: res.analysis_id,
         triggered_by: "desktop_operator",
         dry_run: true,
       });
+      simulationsByModel = { ...simulationsByModel, [selectedModel]: simRes };
       await refreshSimulationHistory();
       activeTab = "predictions";
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      busyMessage = null;
+    }
+  }
+
+  async function handleRunAllComparison() {
+    if (!flowsPath.trim()) {
+      errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
+      return;
+    }
+    const readyList = models.filter((m) => m.ready);
+    if (readyList.length === 0) {
+      errorMessage = "Không có mô hình nào ở trạng thái READY để so sánh.";
+      return;
+    }
+    errorMessage = null;
+    exportData = null;
+    try {
+      const trimmedFlowsPath = flowsPath.trim();
+      if (
+        !inspectData ||
+        (inspectData.file_path !== trimmedFlowsPath && lastInspectedInputPath !== trimmedFlowsPath)
+      ) {
+        busyMessage = "Đang kiểm tra schema 47 ML features & OOD...";
+        inspectData = await inspectCsv(trimmedFlowsPath, 20);
+        lastInspectedInputPath = trimmedFlowsPath;
+      }
+
+      const nextAnalyses: Record<string, CsvAnalyzeResponse> = { ...analysesByModel };
+      const nextEvaluations: Record<string, CsvEvaluateResponse> = { ...evaluationsByModel };
+      const nextSimulations: Record<string, SecurityResponseSimulationResponse> = { ...simulationsByModel };
+
+      for (const m of readyList) {
+        busyMessage = `Đang chạy suy luận ${m.display_name} (${m.model_key})...`;
+        const res = await analyzeCsv({
+          filePath: flowsPath,
+          modelName: m.model_key,
+          createIncidents: false,
+          batchSize: 500,
+        });
+        nextAnalyses[m.model_key] = res;
+        analysesByModel = { ...nextAnalyses };
+
+        if (labelsPath.trim()) {
+          busyMessage = `Đang đối chiếu Ground Truth cho ${m.display_name}...`;
+          nextEvaluations[m.model_key] = await evaluateCsv(labelsPath, res.results);
+          evaluationsByModel = { ...nextEvaluations };
+        }
+      }
+
+      const activeRes = nextAnalyses[selectedModel] ?? nextAnalyses[readyList[0].model_key];
+      if (activeRes) {
+        if (!nextAnalyses[selectedModel]) {
+          selectedModel = activeRes.model_key;
+        }
+        nextSimulations[activeRes.model_key] = await simulateSecurityResponse({
+          analysis_id: activeRes.analysis_id,
+          triggered_by: "desktop_operator",
+          dry_run: true,
+        });
+        simulationsByModel = nextSimulations;
+        await refreshSimulationHistory();
+      }
+      activeTab = "overview";
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
@@ -243,14 +316,36 @@
 
   async function handleRunEvaluate() {
     if (!analysisData || !labelsPath.trim()) return;
+    const targetModel = selectedModel;
     evaluatedFlag = true;
     errorMessage = null;
     try {
-      evalData = await evaluateCsv(labelsPath, analysisData.results);
+      const ev = await evaluateCsv(labelsPath, analysisData.results);
+      evaluationsByModel = { ...evaluationsByModel, [targetModel]: ev };
       activeTab = "evaluation";
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
+      evaluatedFlag = false;
+    }
+  }
+
+  async function handleEvaluateAllAnalyzed() {
+    const analyzedEntries = Object.entries(analysesByModel);
+    if (analyzedEntries.length === 0 || !labelsPath.trim()) return;
+    evaluatedFlag = true;
+    errorMessage = null;
+    try {
+      const nextEvals: Record<string, CsvEvaluateResponse> = { ...evaluationsByModel };
+      for (const [key, res] of analyzedEntries) {
+        busyMessage = `Đang đối chiếu Ground Truth cho ${key}...`;
+        nextEvals[key] = await evaluateCsv(labelsPath, res.results);
+      }
+      evaluationsByModel = nextEvals;
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      busyMessage = null;
       evaluatedFlag = false;
     }
   }
@@ -266,15 +361,17 @@
 
   async function handleRunSecuritySimulation() {
     if (!analysisData) return;
+    const targetModel = selectedModel;
     simulatingFlag = true;
     errorMessage = null;
     simulationExportData = null;
     try {
-      simulationData = await simulateSecurityResponse({
+      const simRes = await simulateSecurityResponse({
         analysis_id: analysisData.analysis_id,
         triggered_by: "desktop_operator",
         dry_run: true,
       });
+      simulationsByModel = { ...simulationsByModel, [targetModel]: simRes };
       await refreshSimulationHistory();
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
@@ -337,7 +434,7 @@
         <Icons name="shield" size={20} />
       </div>
       <div>
-        <h1 class="brand-title">NetFlow Sentinel M6 — Phân tích Bất thường Lưu lượng Mạng</h1>
+        <h1 class="brand-title">NetFlow Sentinel v0.6.0 — Phân tích Bất thường Lưu lượng Mạng</h1>
         <p class="brand-subtitle">
           Offline Desktop • Rust Tauri 2 + Svelte 5 + Python FastAPI (127.0.0.1 Only) • UNSW-NB15-v3
         </p>
@@ -425,6 +522,15 @@
         <button
           type="button"
           class="btn"
+          onclick={handleRunAllComparison}
+          disabled={!flowsPath.trim() || Boolean(busyMessage)}
+        >
+          <Icons name="target" size={15} />
+          So sánh 4 Model READY
+        </button>
+        <button
+          type="button"
+          class="btn"
           onclick={handleExportResults}
           disabled={!analysisData || Boolean(busyMessage)}
         >
@@ -493,6 +599,19 @@
     </div>
 
     {#if activeTab === "overview"}
+      <ModelComparisonPanel
+        {models}
+        {selectedModel}
+        {analysesByModel}
+        {evaluationsByModel}
+        canRunComparison={Boolean(flowsPath.trim())}
+        hasLabelsPath={Boolean(labelsPath.trim())}
+        busy={Boolean(busyMessage)}
+        onSelectModel={(k) => (selectedModel = k)}
+        onRunAllComparison={handleRunAllComparison}
+        onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
+      />
+
       {#if analysisData}
         <div class="grid-5">
           <div class="kpi-box">

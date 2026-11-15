@@ -24,6 +24,7 @@ export interface FilterSortOptions {
 export function formatScoreSemantically(item: CsvFlowPredictionItem): {
   probabilityText: string;
   anomalyScoreText: string;
+  normalizedScoreText: string;
   thresholdText: string;
 } {
   const thresholdText =
@@ -39,6 +40,7 @@ export function formatScoreSemantically(item: CsvFlowPredictionItem): {
     return {
       probabilityText: "ABSTAINED (OOD)",
       anomalyScoreText: "ABSTAINED (OOD)",
+      normalizedScoreText: "ABSTAINED (OOD)",
       thresholdText,
     };
   }
@@ -53,7 +55,14 @@ export function formatScoreSemantically(item: CsvFlowPredictionItem): {
       ? item.raw_anomaly_score.toFixed(4)
       : "N/A";
 
-  return { probabilityText, anomalyScoreText, thresholdText };
+  const normalizedScoreText =
+    item.attack_probability !== null
+      ? "N/A (Supervised)"
+      : item.normalized_anomaly_score !== null && Number.isFinite(item.normalized_anomaly_score)
+        ? `${item.normalized_anomaly_score.toFixed(4)} (Val quantile)`
+        : "Chưa hiệu chuẩn";
+
+  return { probabilityText, anomalyScoreText, normalizedScoreText, thresholdText };
 }
 
 export function formatRiskDisplay(item: CsvFlowPredictionItem): string {

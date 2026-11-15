@@ -43,26 +43,31 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import joblib
-import numpy as np
-import pandas as pd
-from sklearn.metrics import average_precision_score, roc_auc_score
+_SCRIPT_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_LOCAL_SRC = _SCRIPT_PROJECT_ROOT / "src"
+if str(_LOCAL_SRC) not in sys.path:
+    sys.path.insert(0, str(_LOCAL_SRC))
 
-from network_anomaly.config import (
+import joblib  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from sklearn.metrics import average_precision_score, roc_auc_score  # noqa: E402
+
+from network_anomaly.config import (  # noqa: E402
     PROJECT_ROOT,
     RANDOM_SEED,
 )
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
-from network_anomaly.models.autoencoder import (
+from network_anomaly.models.autoencoder import (  # noqa: E402
     build_model,
     fit_model,
     reconstruction_errors,
 )
-from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor
+from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Default Paths and Constants
@@ -82,6 +87,7 @@ PREPROCESSOR_MANIFEST_PATH = (
 )
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "artifacts" / "models" / "autoencoder"
+DEFAULT_REPORT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json"
 DEFAULT_REPORT_DIR = PROJECT_ROOT / "reports" / "evaluation" / "autoencoder"
 
 ATTACK_CATEGORIES = (
@@ -1188,6 +1194,22 @@ def _validate_manifest_provenance(
             )
 
 
+def compute_score_normalization(scores_val_cal: np.ndarray) -> dict[str, Any]:
+    """Build quantile-based [0, 1] display normalization strictly from Validation scores."""
+    arr = np.asarray(scores_val_cal, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return {}
+    grid = np.linspace(0.0, 1.0, 101)
+    values = np.quantile(arr, grid)
+    return {
+        "calibration_partition": "validation",
+        "score_direction": "higher_is_more_anomalous",
+        "quantile_grid": [round(float(x), 4) for x in grid],
+        "score_values": [float(v) for v in values],
+    }
+
+
 def save_artifacts(
     model: Any,
     config: dict[str, Any],
@@ -1195,6 +1217,8 @@ def save_artifacts(
     training_meta: dict[str, Any],
     output_dir: Path,
     unknown_categories: Sequence[str] | frozenset[str] | set[str] | None = None,
+    score_normalization: dict[str, Any] | None = None,
+    evaluation_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Save model artifact, configuration, threshold, and verified companion manifest."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1317,9 +1341,16 @@ def save_artifacts(
         "provenance_complete": provenance_complete,
         "provenance": provenance,
         "feature_contract_version": feature_contract_version,
+        "model_artifact_path": safe_relpath(model_file),
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "git_commit": training_meta.get("git_commit"),
     }
+    if score_normalization:
+        manifest_data["score_normalization"] = score_normalization
+    if evaluation_summary:
+        manifest_data["evaluation_summary"] = evaluation_summary
+        if evaluation_summary.get("test") is not None:
+            manifest_data["experiment_status"] = "EXPERIMENTALLY VALIDATED"
 
     with manifest_file.open("w", encoding="utf-8") as fh:
         json.dump(manifest_data, fh, indent=2)
@@ -1764,6 +1795,9 @@ def run_pipeline(args: argparse.Namespace) -> int:
         target_fpr=args.target_fpr,
         unknown_categories=unknown_cats,
     )
+    known_cal_mask = ~np.isin(np.asarray(val_data["attack"], dtype=str), list(unknown_cats))
+    cal_scores_for_norm = val_scores[known_cal_mask] if np.any(known_cal_mask) else val_scores
+    score_norm = compute_score_normalization(cal_scores_for_norm)
     th_val = threshold_meta["threshold"]
     print(f"  OK Frozen threshold: {th_val:.6f} (Method: {args.calibration_method})")
     print(
@@ -1896,8 +1930,16 @@ def run_pipeline(args: argparse.Namespace) -> int:
         training_meta=training_meta,
         output_dir=output_dir,
         unknown_categories=unknown_cats,
+        score_normalization=score_norm,
+        evaluation_summary={"validation": metrics_val, "test": metrics_test},
     )
     print(f"  OK Artifacts saved to: {output_dir}")
+
+    if output_dir.resolve() == DEFAULT_OUTPUT_DIR.resolve():
+        DEFAULT_REPORT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with DEFAULT_REPORT_MANIFEST_PATH.open("w", encoding="utf-8") as fh:
+            json.dump(art_res["manifest"], fh, indent=2)
+        print(f"  OK Report manifest mirrored to: {DEFAULT_REPORT_MANIFEST_PATH}")
 
     sample_eval = val_data["X"][: min(100, len(val_data["X"]))]
     verify_res = verify_saved_model(

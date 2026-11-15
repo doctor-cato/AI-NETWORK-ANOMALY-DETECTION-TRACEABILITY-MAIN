@@ -132,6 +132,7 @@ export interface CsvFlowPredictionItem {
   predicted_class: "Benign" | "Attack" | "ABSTAINED_OOD";
   attack_probability: number | null;
   raw_anomaly_score: number | null;
+  normalized_anomaly_score: number | null;
   decision_threshold: number | null;
   score_type: string;
   score_direction: string;

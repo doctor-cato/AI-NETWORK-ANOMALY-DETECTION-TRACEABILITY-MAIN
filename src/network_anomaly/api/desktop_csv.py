@@ -491,6 +491,8 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
                 if meta.get("threshold") is not None
                 else raw_manifest.get("threshold")
             )
+            if thresh is None and semantics == "attack_probability":
+                thresh = 0.5
             items.append(
                 ModelStatusItem(
                     model_key=key,
@@ -1278,6 +1280,7 @@ def analyze_csv_file(
             pred_class = "ABSTAINED_OOD"
             pred_attack_prob: Optional[float] = None
             pred_raw_score: Optional[float] = None
+            pred_norm_score: Optional[float] = None
             risk_score: Optional[float] = None
             risk_level = "ABSTAINED_OOD"
             is_ood_flagged = True
@@ -1303,6 +1306,7 @@ def analyze_csv_file(
             pred_class = "Attack" if pred_label == 1 else "Benign"
             pred_attack_prob = api_item.attack_probability
             pred_raw_score = api_item.raw_anomaly_score
+            pred_norm_score = api_item.normalized_anomaly_score
             decision_threshold = api_item.decision_threshold
             score_type = api_item.score_type
             score_direction = api_item.score_direction
@@ -1319,6 +1323,7 @@ def analyze_csv_file(
                 predicted_class=pred_class,
                 attack_probability=pred_attack_prob,
                 raw_anomaly_score=pred_raw_score,
+                normalized_anomaly_score=pred_norm_score,
                 decision_threshold=decision_threshold,
                 score_type=score_type,
                 score_direction=score_direction,

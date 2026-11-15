@@ -610,3 +610,64 @@ def test_check_prerequisites_passes_on_real_artifacts():
         ]
     )
     assert rc == 0
+
+
+def test_execute_training_evaluate_test_post_fit_and_lock(
+    tmp_path, mock_split_environment, patch_dataset_sha
+):
+    """Held-out Test evaluation runs only post-fit/post-reload and leaves Validation invariant."""
+    env = mock_split_environment
+    patch_dataset_sha(env["dataset_sha"])
+
+    df_train_only = env["df_raw"].iloc[env["train_idx"]][list(ML_FEATURE_COLUMNS)]
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig())
+    prep.dataset_sha256 = env["dataset_sha"]
+    prep.split_manifest_sha256 = env["split_manifest_sha"]
+    prep.fit(df_train_only)
+
+    preprocessor_artifact_path = tmp_path / "preprocessor.joblib"
+    preprocessor_manifest_path = tmp_path / "preprocessor_manifest.json"
+    prep.save(preprocessor_artifact_path, manifest_path=preprocessor_manifest_path)
+
+    base_manifest = execute_training(
+        dataset_path=env["dataset_path"],
+        split_manifest_path=env["split_manifest_path"],
+        indices_dir=env["indices_dir"],
+        preprocessor_artifact_path=preprocessor_artifact_path,
+        preprocessor_manifest_path=preprocessor_manifest_path,
+        output_model_path=tmp_path / "xgb_no_test.joblib",
+        output_manifest_path=tmp_path / "xgb_no_test_manifest.json",
+        report_md_path=tmp_path / "xgb_no_test.md",
+        evaluate_test=False,
+    )
+
+    eval_dir = tmp_path / "eval_xgb"
+    test_manifest = execute_training(
+        dataset_path=env["dataset_path"],
+        split_manifest_path=env["split_manifest_path"],
+        indices_dir=env["indices_dir"],
+        preprocessor_artifact_path=preprocessor_artifact_path,
+        preprocessor_manifest_path=preprocessor_manifest_path,
+        output_model_path=tmp_path / "xgb_with_test.joblib",
+        output_manifest_path=tmp_path / "xgb_with_test_manifest.json",
+        report_md_path=tmp_path / "xgb_with_test.md",
+        evaluate_test=True,
+        evaluation_dir=eval_dir,
+    )
+
+    assert base_manifest["validation_summary"]["precision"] == pytest.approx(
+        test_manifest["validation_summary"]["precision"]
+    )
+    assert base_manifest["validation_summary"]["recall"] == pytest.approx(
+        test_manifest["validation_summary"]["recall"]
+    )
+    assert base_manifest["validation_summary"]["confusion_matrix"] == (
+        test_manifest["validation_summary"]["confusion_matrix"]
+    )
+    assert test_manifest["test_lock_audit"]["test_evaluated_post_fit"] is True
+    assert test_manifest["test_lock_audit"]["test_rows_loaded"] == len(env["test_idx"])
+    assert test_manifest["test_evaluation"]["rows_evaluated"] == len(env["test_idx"])
+    assert (eval_dir / "metrics.json").is_file()
+    assert (eval_dir / "confusion_matrix.csv").is_file()
+    assert (eval_dir / "evaluation_metadata.json").is_file()
+    assert (eval_dir / "evaluation_report.md").is_file()

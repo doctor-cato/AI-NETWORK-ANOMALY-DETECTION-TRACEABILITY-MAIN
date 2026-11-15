@@ -319,3 +319,58 @@ def test_audit_cli_passes_on_valid_manifest_without_strict_membership(tmp_path: 
     assert "Protocol Equivalence" in content
     assert "Membership Equivalence" in content
     assert "UNPROVEN_HYPOTHESIS" in content
+
+
+def test_audit_recognizes_post_fit_held_out_eval_and_violation_renders_safely(tmp_path: Path):
+    """Verify post-fit Test eval is distinct from pre-fit leakage and renders without KeyError."""
+    m_path = tmp_path / "valid.json"
+    m_path.write_text(json.dumps(_build_valid_runtime_manifest()), encoding="utf-8")
+
+    post_fit_manifest = {
+        "run_id": "xgb-postfit",
+        "test_lock_audit": {
+            "test_partition_accessed": True,
+            "test_rows_loaded": 345953,
+            "test_indices_loaded": True,
+            "test_evaluated_post_fit": True,
+            "test_accessed_strictly_after_fit_and_reload": True,
+        },
+    }
+    post_fit_path = tmp_path / "postfit.json"
+    post_fit_path.write_text(json.dumps(post_fit_manifest), encoding="utf-8")
+    report_ok = tmp_path / "report_ok.md"
+    rc_ok = main(
+        [
+            "--runtime-manifest",
+            str(m_path),
+            "--training-manifest",
+            str(post_fit_path),
+            "--output-report",
+            str(report_ok),
+        ]
+    )
+    assert rc_ok == 0
+    assert "VERIFIED_POST_FIT_HELD_OUT_EVALUATION" in report_ok.read_text(encoding="utf-8")
+
+    leak_manifest = {
+        "run_id": "xgb-leak",
+        "test_lock_audit": {
+            "test_partition_accessed": True,
+            "test_rows_loaded": 100,
+        },
+    }
+    leak_path = tmp_path / "leak.json"
+    leak_path.write_text(json.dumps(leak_manifest), encoding="utf-8")
+    report_leak = tmp_path / "report_leak.md"
+    rc_leak = main(
+        [
+            "--runtime-manifest",
+            str(m_path),
+            "--training-manifest",
+            str(leak_path),
+            "--output-report",
+            str(report_leak),
+        ]
+    )
+    assert rc_leak == 0
+    assert "VIOLATION_DETECTED" in report_leak.read_text(encoding="utf-8")

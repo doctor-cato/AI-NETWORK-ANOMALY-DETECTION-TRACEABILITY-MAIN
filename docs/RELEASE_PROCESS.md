@@ -166,7 +166,7 @@ Mọi tag phát hành (cả **Beta** lẫn **Stable**) trên `.github/workflows/
 2. Tên tag (`v<VERSION>`) phải khớp 1-1 với phiên bản trong 5 tệp cấu hình desktop, binary ứng dụng và tên tệp NSIS (`python scripts/check_desktop_version.py --check --expect-tag <TAG>`).
 3. Tag chưa từng được xuất bản GitHub Release trước đó (`gh release view <TAG>` phải báo chưa tồn tại — nghiêm cấm ghi đè hoặc di chuyển tag đã phát hành).
 
-*(Ghi chú hiện tại trên nhánh PR #67: cả 5 tệp cấu hình desktop đang được đặt ở `0.6.0` nhằm chuẩn bị trực tiếp cho bản Stable `v0.6.0` sau khi merge vào `main`.)*
+*(Ghi chú phát hành Stable `v0.6.0`: Kế tiếp bản thử nghiệm `v0.6.0-beta.1` đã gắn tag trước đó, cả 5 tệp cấu hình desktop hiện được đồng bộ ở `0.6.0` nhằm phát hành bản Stable `v0.6.0` sau khi cả PR #69 và PR 4-model Stable được duyệt merge vào `main`.)*
 
 ### 6.1. Giai đoạn 1 — Bản Thử nghiệm `v0.6.0-beta.1` (GitHub Pre-release, Tùy chọn)
 
@@ -198,7 +198,8 @@ Nếu cần xuất bản bản thử nghiệm Beta trước bản chính thức 
 ### 6.2. Giai đoạn 2 — Bản Chính thức `v0.6.0` (Stable Release)
 
 **Điều kiện bắt buộc trước khi tạo tag `v0.6.0`:**
-- PR #67 (hoặc PR nâng phiên bản từ `0.6.0-beta.1` → `0.6.0` bằng `python scripts/check_desktop_version.py --set-version 0.6.0` nếu trước đó đã phát hành Beta) đã được review **Approve** và **merged vào nhánh `main`**.
+- PR #69 (**Issue #27 Security Response Dry-Run**) và PR **4-Model Desktop Demo & `v0.6.0` Stable Release** (hoặc các PR nâng từ `0.6.0-beta.1` → `0.6.0` bằng `python scripts/check_desktop_version.py --set-version 0.6.0 --expect-tag v0.6.0`) đã được review **Approve** và **merged vào nhánh `main`**, không di chuyển hoặc ghi đè tag `v0.6.0-beta.1`.
+- Bộ companion artifacts cho đủ 4 model (`python scripts/verify_companion_artifacts.py`) đã được kiểm chứng trên Windows sạch (NSIS install -> 4-model E2E -> clean shutdown) và không đưa file `.joblib` nhị phân lớn hay raw CSV vào Git.
 - Toàn bộ các kiểm tra CI trên `main` đều **PASS**.
 - Phiên bản trong cả 5 tệp cấu hình desktop là `0.6.0`.
 
