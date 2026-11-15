@@ -533,8 +533,9 @@ def _resolve_simulation_inputs(
                 items = list(request.results)
             else:
                 raise ValueError(
-                    f"Cached prediction rows for analysis_id {request.analysis_id!r} exceeded "
-                    "the in-memory cache budget or were evicted; re-run CSV analysis or supply matching results."
+                    f"Prediction rows for analysis_id {request.analysis_id!r} are not retained in "
+                    "the in-memory cache (batch exceeded cache limit or was evicted); supply "
+                    "matching results (<= 10,000 rows) or analyze a smaller CSV batch for dry-run simulation."
                 )
         gate = CompatibilityGateSummarySchema.model_validate(rec["compatibility_gate"])
         return (

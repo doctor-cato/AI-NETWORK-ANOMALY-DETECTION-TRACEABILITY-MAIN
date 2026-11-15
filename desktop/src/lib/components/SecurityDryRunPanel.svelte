@@ -43,6 +43,14 @@
       : [],
   );
   let visibleRecs = $derived(filteredRecs.slice(0, 80));
+  let totalFlows = $derived(simulation ? simulation.total_flows : 0);
+  let storedRecsCount = $derived(simulation ? simulation.recommendations.length : 0);
+  let isTruncated = $derived(
+    Boolean(
+      simulation &&
+        (simulation.provenance?.recommendations_truncated === true || storedRecsCount < totalFlows),
+    ),
+  );
 </script>
 
 <section class="card" aria-labelledby="dry-run-heading">
@@ -93,6 +101,9 @@
           <strong>Action Status:</strong> <span class="mono">{simulation.action_status} / {simulation.recommendation_status}</span> •
           <strong>Executed:</strong> <span class="mono">{String(simulation.executed)}</span> •
           <strong>Provenance:</strong> <span class="mono">{simulation.provenance_verification}</span>
+          {#if isTruncated}
+            • <span class="badge badge-warning">Hiển thị {storedRecsCount}/{totalFlows} — xem action_counts / export</span>
+          {/if}
         </div>
         <div style="margin-top: 4px; color: var(--text-secondary);">
           {simulation.policy_summary}
@@ -208,7 +219,7 @@
           class:btn-primary={actionFilter === "all"}
           onclick={() => (actionFilter = "all")}
         >
-          Tất cả ({simulation.recommendations.length})
+          Tất cả ({isTruncated ? `${storedRecsCount}/${totalFlows}` : storedRecsCount})
         </button>
         <button
           type="button"
@@ -310,7 +321,11 @@
         </tbody>
       </table>
     </div>
-    {#if filteredRecs.length > visibleRecs.length}
+    {#if isTruncated}
+      <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+        Đang hiển thị {visibleRecs.length}/{filteredRecs.length} dòng trong mẫu ưu tiên ({storedRecsCount}/{totalFlows} tổng flows; <span class="mono">action_counts</span> phản ánh đủ {totalFlows} flows; JSON export chứa {storedRecsCount} dòng mẫu).
+      </div>
+    {:else if filteredRecs.length > visibleRecs.length}
       <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
         Đang hiển thị {visibleRecs.length}/{filteredRecs.length} dòng khuyến nghị. Export JSON để xem đầy đủ.
       </div>

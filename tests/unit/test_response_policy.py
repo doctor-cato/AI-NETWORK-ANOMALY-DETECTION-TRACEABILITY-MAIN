@@ -805,6 +805,22 @@ def test_simulation_payload_limit_bounded_storage_and_memory_cache(
     assert len(store["csvrun_cache_0"]["results_sha256"]) == 64
     assert store["csvrun_cache_2"]["results_gz"] is not None
 
+    with pytest.raises(ValueError, match="not retained in the in-memory cache"):
+        simulate_security_response(
+            svc_cache,
+            SecurityResponseSimulateRequest(analysis_id="csvrun_cache_0", dry_run=True),
+        )
+    fallback_sim = simulate_security_response(
+        svc_cache,
+        SecurityResponseSimulateRequest(
+            analysis_id="csvrun_cache_0",
+            results=sample_batch,
+            dry_run=True,
+        ),
+    )
+    assert fallback_sim.provenance_verification == "server_verified_analysis"
+    assert fallback_sim.total_flows == len(sample_batch)
+
 
 def test_response_policy_module_has_zero_os_command_or_subprocess_calls():
     """Static & runtime check: response_policy.py never imports OS/subprocess shells or invokes them."""
