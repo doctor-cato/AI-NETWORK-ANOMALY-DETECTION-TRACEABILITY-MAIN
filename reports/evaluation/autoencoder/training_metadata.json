@@ -1,4 +1,5 @@
 {
+  "run_id": "ae_fpr_constrained_20261115T163000Z",
   "model_type": "Autoencoder (MLPRegressor)",
   "hidden_layer_sizes": [
     32,
@@ -35,6 +36,6 @@
     "test_loaded_after_model_fit_and_threshold_freeze": true,
     "unified_csv_stream_bounded_to_loaded_partitions": true
   },
-  "git_commit": "7f51390bfe4cea76a413733ac1882d8579fc4a34",
-  "elapsed_seconds": 70.7
+  "git_commit": "aabccee4e7f60304bdb972b4b1dd49e2a79d0e80",
+  "elapsed_seconds": 76.41
 }

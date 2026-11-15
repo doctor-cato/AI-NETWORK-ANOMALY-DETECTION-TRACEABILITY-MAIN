@@ -1,11 +1,12 @@
 # Autoencoder Anomaly Detection Evaluation Report (Issue #29 / C4)
 
-- Generated at: 2026-11-15 15:18:59 UTC
-- Git commit: `7f51390bfe4cea76a413733ac1882d8579fc4a34`
+- Run ID: `ae_fpr_constrained_20261115T163000Z`
+- Generated at: 2026-11-15 16:31:28 UTC
+- Git commit: `aabccee4e7f60304bdb972b4b1dd49e2a79d0e80`
 - Model architecture: MLP Autoencoder `(32, 16, 32)`
 - Training population: `benign-only (Label == 0)`
-- Threshold calibration method: `benign_quantile` (Frozen: `True`)
-- Calibrated threshold: `17234106.380850`
+- Threshold calibration method: `fpr_constrained` (Frozen: `True`)
+- Calibrated threshold: `17234985.792476`
 - Target FPR: `0.05` (Empirical Val FPR: `0.0500`)
 - Configured unknown attack categories: `['Backdoor', 'Worms']`
 - Dataset SHA-256: `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`
@@ -32,8 +33,8 @@
 ### Validation Confusion Matrix
 
 - True Positives (TP): 3,561
-- False Positives (FP): 15,744
-- True Negatives (TN): 299,127
+- False Positives (FP): 15,743
+- True Negatives (TN): 299,128
 - False Negatives (FN): 26,939
 
 ### Validation Per-Category Breakdown
@@ -42,7 +43,7 @@
 |---|---|---|---|---|
 | Analysis | known_attack | 285 | 1 | 0.0035 |
 | Backdoor | unknown_attack | 144 | 12 | 0.0833 |
-| Benign | benign | 314,871 | 15,744 | 0.0500 |
+| Benign | benign | 314,871 | 15,743 | 0.0500 |
 | DoS | known_attack | 1,445 | 230 | 0.1592 |
 | Exploits | known_attack | 10,294 | 1,022 | 0.0993 |
 | Fuzzers | known_attack | 8,495 | 942 | 0.1109 |

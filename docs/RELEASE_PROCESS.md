@@ -61,8 +61,15 @@ Mọi bản phát hành bắt buộc phải vượt qua toàn bộ các bài ki�
 python scripts/check_environment.py
 python -m ruff check src scripts tests
 python -m black --check src scripts tests
-python -m pytest tests/unit tests/contract tests/integration -q
+python -m pytest tests -q -rs
 ```
+
+> [!IMPORTANT]
+> **Không coi bài test bị `SKIPPED` trên CI là `PASS` cho release:** Trên GitHub Actions runner không có raw dataset hoặc `.joblib` companion artifacts ngoài Git, các test real-data sẽ hiển thị `SKIPPED`. Trước khi đề xuất phát hành `v0.6.0` Stable, maintainer **bắt buộc chạy** kiểm chứng E2E dữ liệu thật cho đủ 4 model trên máy phát hành có companion artifacts:
+> ```powershell
+> python scripts/verify_companion_artifacts.py --verify-e2e
+> ```
+> Lệnh này chỉ `PASS` (exit code `0`) khi cả 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) đạt `READY`, chạy thực tế `POST /api/v1/csv/analyze` + `/evaluate` trên `data/demo/demo_flows.csv`, bảo toàn `ABSTAINED_OOD` và xác minh Issue #27 dry-run provenance mà không fallback ngầm.
 
 ### 3.2. Kiểm chứng Hợp đồng OpenAPI (`reports/api/openapi.json` & `API_CONTRACT.md`)
 
@@ -198,8 +205,8 @@ Nếu cần xuất bản bản thử nghiệm Beta trước bản chính thức 
 ### 6.2. Giai đoạn 2 — Bản Chính thức `v0.6.0` (Stable Release)
 
 **Điều kiện bắt buộc trước khi tạo tag `v0.6.0`:**
-- PR #69 (**Issue #27 Security Response Dry-Run**) và PR **4-Model Desktop Demo & `v0.6.0` Stable Release** (hoặc các PR nâng từ `0.6.0-beta.1` → `0.6.0` bằng `python scripts/check_desktop_version.py --set-version 0.6.0 --expect-tag v0.6.0`) đã được review **Approve** và **merged vào nhánh `main`**, không di chuyển hoặc ghi đè tag `v0.6.0-beta.1`.
-- Bộ companion artifacts cho đủ 4 model (`python scripts/verify_companion_artifacts.py`) đã được kiểm chứng trên Windows sạch (NSIS install -> 4-model E2E -> clean shutdown) và không đưa file `.joblib` nhị phân lớn hay raw CSV vào Git.
+- PR #69 (**Issue #27 Security Response Dry-Run**) và PR **#70** (`feat/stable-four-model-demo-and-release`) đã được review **Approve** và **merged vào nhánh `main`**, không di chuyển hoặc ghi đè tag `v0.6.0-beta.1`.
+- Bộ companion artifacts cho đủ 4 model và kiểm chứng E2E thực tế (`python scripts/verify_companion_artifacts.py --verify-e2e`) đã **PASS** trên Windows sạch (NSIS install -> 4-model E2E -> clean shutdown) với **0 test bị skip ở nhóm 4-model/demo**, không đưa file `.joblib` nhị phân lớn hay raw CSV vào Git.
 - Toàn bộ các kiểm tra CI trên `main` đều **PASS**.
 - Phiên bản trong cả 5 tệp cấu hình desktop là `0.6.0`.
 
@@ -256,8 +263,8 @@ Xác nhận bản phát hành trên GitHub có:
 
 ### 7.3. Những trường hợp TUYỆT ĐỐI KHÔNG được phát hành Stable (`v0.6.0`)
 
-1. PR #67 chưa được review Approve hoặc chưa được merge vào nhánh `main`.
-2. Bất kỳ job nào trong `.github/workflows/ci.yml` hoặc `.github/workflows/release.yml` bị `FAIL`.
+1. PR #69 hoặc PR #70 chưa được review Approve hoặc chưa được merge vào nhánh `main`.
+2. Bất kỳ job nào trong `.github/workflows/ci.yml` hoặc `.github/workflows/release.yml` bị `FAIL`, hoặc bước real-data E2E (`python scripts/verify_companion_artifacts.py --verify-e2e`) chưa chạy/bị `SKIPPED`/bị `BLOCKED`.
 3. Phiên bản giữa `Cargo.toml`, `Cargo.lock`, `package.json`, `package-lock.json` và `tauri.conf.json` không đồng nhất.
 4. Hợp đồng OpenAPI (`reports/api/openapi.json`) bị lệch so với mã nguồn (`export_openapi_spec.py --check` báo lỗi).
 5. Tệp CSV bên ngoài chưa xác minh provenance vẫn bị gán nhầm trạng thái `MODEL_VALIDATED`, hoặc dòng OOD (`ABSTAINED_OOD`) vẫn bị tính gộp vào Confusion Matrix.

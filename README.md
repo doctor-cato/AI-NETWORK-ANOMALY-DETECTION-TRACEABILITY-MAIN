@@ -37,7 +37,7 @@ False positive (FP) làm tăng công điều tra, false negative (FN) bỏ lọt
 | Random Forest baseline (#10, #12, #13) | **EXPERIMENTALLY VALIDATED** cả Validation (`345.371`) và Held-out Test `rf-heldout-ea330b9` (`345.953`) |
 | XGBoost theo giao thức binary chung (#31) | **EXPERIMENTALLY VALIDATED** trên Validation (`F1=0.999984`) và Held-out Test (`xgb-baseline-1794755807`: `F1=0.999984`, `TN=315356, FP=1, FN=0, TP=30596`) |
 | Isolation Forest (#11) | **EXPERIMENTALLY VALIDATED & REPRODUCED** trên Validation & Held-out Test (`if-c4-20261115T055359Z`, `F1=0.5064`, `Recall=0.8997`, `ROC-AUC=0.893730`) |
-| Autoencoder (#29) | **EXPERIMENTALLY VALIDATED** (`reports/evaluation/autoencoder/`: threshold `17234106.380850`, Held-out Test `F1=0.1361`, `ROC-AUC=0.6303`, Unknown `R=0.0625`; `BLOCKED / NOT READY` nếu thiếu binary) |
+| Autoencoder (#29) | **EXPERIMENTALLY VALIDATED** (`ae_fpr_constrained_20261115T163000Z`: Val `FPR=0.049998 <= 0.05`, threshold `17234985.792476`, Held-out Test `F1=0.1361`, `Recall=0.1093`, `ROC-AUC=0.6303`, Unknown `R=0.0625`; run cũ `benign_quantile` lưu riêng tại `runs/ae_benign_quantile_20261115T151859Z/`; `BLOCKED / NOT READY` nếu thiếu binary) |
 | FastAPI (`127.0.0.1`), SQLite persistence, 4-model inference & Validation Demo CSV Prep | **IMPLEMENTED / TESTED** (#30, #15, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
 | Desktop UI **Rust / Tauri 2 + Svelte 5** (#16 — thay Streamlit) | **IMPLEMENTED / TESTED** (`v0.6.0` Stable — so sánh 4 model & Tab 4 dry-run; localhost HTTP tới FastAPI, Windows NSIS installer) |
 | Behavioral Vector (#28), Risk Ranking (#32), Trace Timeline (#24), Adaptive Response Dry-Run (#27), Bảo mật cục bộ (#26) | **IMPLEMENTED / TESTED (Scoped M6/M7)** — thống kê NetFlow, risk/timeline tất định, mô phỏng phản ứng dry-run (`executed=false`); live firewall/OS commands & AES-256-GCM keyring **DEFERRED** |
@@ -112,14 +112,14 @@ Mô hình unsupervised cô lập điểm khác thường bằng đường đi ng
 
 ### Autoencoder
 
-Học tái tạo đặc trưng flow bằng mạng PyTorch Autoencoder (hoặc `MLPRegressor` fallback trong kiến trúc PR #51) trained trên benign-only Train (`1.590.608` dòng) và dùng reconstruction MSE làm `raw_anomaly_score` (tách biệt với supervised `attack_probability`, có `normalized_anomaly_score` nội suy từ phân bố Validation). Ngưỡng đóng băng trên Validation (`17234106.380850` tại target `FPR=0.05`, cô lập unknown `{Backdoor, Worms}`) đạt Held-out Test (`345.953` dòng): `Acc=0.8773, P=0.1804, R=0.1093, F1=0.1361, ROC-AUC=0.6303, PR-AUC=0.1615`, Unknown `R=0.0625` (xem [evaluation report](reports/evaluation/autoencoder/evaluation_report.md) và [manifest](reports/models/autoencoder_manifest.json)). Trạng thái **EXPERIMENTALLY VALIDATED**; báo `BLOCKED / NOT READY` fail-closed nếu thiếu file `.joblib` / `threshold` cục bộ.
+Học tái tạo đặc trưng flow bằng mạng PyTorch Autoencoder (hoặc `MLPRegressor` fallback trong kiến trúc PR #51) trained trên benign-only Train (`1.590.608` dòng) và dùng reconstruction MSE làm `raw_anomaly_score` (tách biệt với supervised `attack_probability`, có `normalized_anomaly_score` nội suy từ phân bố Validation). Ngưỡng đóng băng trên Validation được hiệu chỉnh lại bằng `fpr_constrained` (`ae_fpr_constrained_20261115T163000Z`: ngưỡng `17234985.792476`, `empirical_val_fpr = 0.049998253 <= 0.05`, cô lập unknown `{Backdoor, Worms}`) đạt Held-out Test (`345.953` dòng): `TP=3343, FP=15188, TN=300169, FN=27253`, `Acc=0.8773, P=0.1804, R=0.1093, F1=0.1361, FPR=0.0482, ROC-AUC=0.6303, PR-AUC=0.1615`, Unknown `R=0.0625` (xem [evaluation report](reports/evaluation/autoencoder/evaluation_report.md) và [manifest](reports/models/autoencoder_manifest.json)). Run ban đầu (`ae_benign_quantile_20261115T151859Z`, ngưỡng `17234106.380850`, Val `FPR=0.050001429 > 0.05`, Held-out Test `F1=0.1361`, `R=0.1093`) được lưu nguyên trạng tại `reports/evaluation/autoencoder/runs/ae_benign_quantile_20261115T151859Z/`. Trạng thái **EXPERIMENTALLY VALIDATED**; báo `BLOCKED / NOT READY` fail-closed nếu thiếu file `.joblib` / `threshold` cục bộ.
 
 | Model | Cách tiếp cận / vai trò | Code & Verified Loading | Validation thật | Held-out Test |
 |---|---|---|---|---|
 Random Forest | Supervised baseline | Có + tests + manifest | Có (`345.371` flow) | Có (`rf-heldout-ea330b9`, `345.953` flow); [báo cáo](reports/evaluation/error_analysis_report.md) |
 XGBoost | Supervised comparison | Có + tests + manifest | Có (`345.371` flow) | **VERIFIED** (`345.953` flow, F1 `0,999984`) |
 Isolation Forest | Unsupervised anomaly score | Có + tests + verified `READY` | Có (`345.371` flow, threshold `-0.033527`) | Có (`345.953` flow, Known `0.9012`, Unknown `0.8657`); [báo cáo](reports/experiments/isolation_forest/evaluation_report.md) |
-Autoencoder | Reconstruction error | Có (#29 + `AutoencoderModel`) | Có (`345.371` flow, FPR `0,0500`) | **VERIFIED** (`345.953` flow, F1 `0,1361`, Unknown R `0,0625`) |
+Autoencoder | Reconstruction error | Có (#29 + `AutoencoderModel`) | Có (`345.371` flow, `FPR 0,049998 <= 0,05`) | **VERIFIED** (`345.953` flow, F1 `0,1361`, Recall `0,1093`, Unknown R `0,0625`) |
 
 ## Thực nghiệm và kết quả
 
@@ -204,7 +204,7 @@ File `data/demo/demo_flows.csv` tuyệt đối không chứa `Label`/`Attack`; g
 
 ## Kiểm thử và bảo đảm chất lượng
 
-CI [`ci.yml`](.github/workflows/ci.yml) chạy trên Ubuntu/Windows với Python 3.11/3.12: environment, compile/import, `pytest tests`, rồi các bước data/EDA/preprocessing. Trên runner không có raw CSV, bước phụ thuộc dữ liệu có thể **SKIPPED**; badge CI chỉ nói workflow chạy theo cấu hình, **không** xác minh benchmark thật. Unit/integration tests dùng fixture để kiểm tra schema, split, fit boundary, model protocol và inference behavior; không thay thế thí nghiệm trên dataset.
+CI [`ci.yml`](.github/workflows/ci.yml) chạy trên Ubuntu/Windows với Python 3.11/3.12: environment, compile/import, `pytest tests`, rồi các bước data/EDA/preprocessing. Trên runner không có raw CSV hoặc companion `.joblib` ngoài Git, bước phụ thuộc dữ liệu thật hiển thị **SKIPPED**; badge CI **không** đồng nghĩa benchmark hoặc E2E 4 model đã `PASS` — phát hành Stable bắt buộc chạy `python scripts/verify_companion_artifacts.py --verify-e2e` trên môi trường đã nạp đủ companion artifacts. Unit/integration tests dùng fixture để kiểm tra schema, split, fit boundary, model protocol và inference behavior; không thay thế thí nghiệm trên dataset.
 
 ```powershell
 python scripts/check_environment.py
@@ -225,7 +225,7 @@ Split, leakage audit, preprocessing | **COMPLETED / REAL-DATA VERIFIED**; [split
 Random Forest | **EXPERIMENTALLY VALIDATED** Validation & Held-out Test `rf-heldout-ea330b9` |
 XGBoost | **EXPERIMENTALLY VALIDATED** cả Validation (`F1=0.999984`) và Held-out Test (`xgb-baseline-1794755807`, `F1=0.999984`, `ROC-AUC=1.000000`) |
 Isolation Forest (#11) | **EXPERIMENTALLY VALIDATED & REPRODUCED** Validation & Held-out Test (`if-c4-20261115T055359Z`) |
-Autoencoder (#29) | **EXPERIMENTALLY VALIDATED** (`reports/evaluation/autoencoder/`, Held-out Test `F1=0.1361`, `ROC-AUC=0.6303`, Unknown `R=0.0625`; `BLOCKED / NOT READY` nếu thiếu binary) |
+Autoencoder (#29) | **EXPERIMENTALLY VALIDATED** (`ae_fpr_constrained_20261115T163000Z`, Val `FPR=0.049998 <= 0.05`, Held-out Test `F1=0.1361`, `Recall=0.1093`, `ROC-AUC=0.6303`, Unknown `R=0.0625`; run cũ lưu riêng tại `runs/ae_benign_quantile_20261115T151859Z/`; `BLOCKED / NOT READY` nếu thiếu binary) |
 4-Model Inference, FastAPI (`127.0.0.1`), SQLite & Demo CSV Prep | **IMPLEMENTED / TESTED** (#15, #30, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
 Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, `v0.6.0`) | **IMPLEMENTED / TESTED** (Windows x64 executable + NSIS installer, `/api/v1/csv/*`, OOD abstention, provenance gate) |
 Multi-Source Ingestion & Gate (#46) | **IMPLEMENTED / TESTED** (xác minh provenance `source:nf-v3-canonical` vs `source:nf-v3-unverified`) |
@@ -236,8 +236,8 @@ Tài liệu và CI | **IMPLEMENTED / TESTED** ([cài đặt Windows](docs/WINDOW
 
 ## Hạn chế
 
-- **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ đạt Accuracy Validation `0,999849` và `49,98%` flow Validation trùng vector 47 features với Train; đánh giá cross-dataset trên PR #47 / #48 cho thấy model có thể suy giảm mạnh khi chuyển môi trường mạng (domain shift).
-- **Real-data benchmarks & Fail-closed Safety:** Cả 4 mô hình (`Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder`) đều đã hoàn tất Train/Validation/Held-out Test trên `NF-UNSW-NB15-v3`. Tuy nhiên trên bản cài đặt Windows mới hoặc CI không chứa `.joblib` ngoài Git, các mô hình thiếu/sai SHA-256 đều báo `BLOCKED / NOT READY` fail-closed (`HTTP 503`) và tuyệt đối không fallback ngầm; cần chuẩn bị gói companion artifacts qua `scripts/verify_companion_artifacts.py`.
+- **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ đạt Accuracy Validation `0,999849` và `49,98%` flow Validation trùng vector 47 features với Train; đánh giá cross-dataset trên PR #47 / #48 cho thấy supervised models có thể suy giảm rất mạnh ngoài domain (ví dụ Random Forest đạt `recall = 0.0`, `fpr = 0.380191` trên `NF-CSE-CIC-IDS2018-v3`), trong khi Autoencoder đạt Held-out Test in-domain `F1 = 0.1361`, `Recall = 0.1093` dưới ngưỡng Validation `FPR <= 0.05`.
+- **Real-data benchmarks & Fail-closed Safety:** Cả 4 mô hình (`Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder`) đều đã hoàn tất Train/Validation/Held-out Test trên `NF-UNSW-NB15-v3`. Tuy nhiên trên bản cài đặt Windows mới hoặc CI không chứa `.joblib` ngoài Git, các test real-data bị `SKIPPED` (không được coi là `PASS`) và mô hình thiếu/sai SHA-256 đều báo `BLOCKED / NOT READY` fail-closed (`HTTP 503`) không fallback ngầm; cần chuẩn bị gói companion artifacts và chạy bắt buộc `python scripts/verify_companion_artifacts.py --verify-e2e`.
 - **Giới hạn đóng gói Desktop M6 (`v0.6.0`):** Bộ cài đặt Windows NSIS (`NetFlow Sentinel M6_0.6.0_x64-setup.exe`) đã nhúng giao diện Svelte 5 và nhân Rust Tauri 2, nhưng **chưa phải bản standalone đóng gói sẵn Python**. Máy đích vẫn cần Python tương thích + dependencies, thư mục gốc repository (`NETWORK_ANOMALY_REPO_ROOT`), các tệp `.joblib` khớp SHA-256, `data/demo/*.csv` và Microsoft Edge WebView2 Runtime (xem [docs/WINDOWS_INSTALLATION.md](docs/WINDOWS_INSTALLATION.md)).
 - **Phạm vi thu gọn minh bạch:** Thực thi tự động hóa tường lửa hệ điều hành/PowerShell (#27), xoay vòng khóa AES-256-GCM thực tế trong OS Keyring (#26, #27) và tương quan đa nguồn log Auth/API ngoài NetFlow (#28) được ghi nhận trạng thái `DEFERRED` (hỗ trợ mô phỏng phản ứng dry-run không tác động hệ thống).
 

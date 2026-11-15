@@ -7,7 +7,7 @@
 | F01 | Provenance, schema, quality, EDA và leakage audit `NF-UNSW-NB15-v3` | C1 | #4–#7 | **COMPLETED** |
 | F02 | Split trước fit; preprocessing artifact (`TrainOnlyPreprocessor`) và leakage tests | C2 | #8 | **COMPLETED** |
 | F03 | Random Forest và XGBoost theo cùng supervised binary protocol | C3 | #9, #10, #12, #13, #31 | **RF & XGBoost Held-out Test EXPERIMENTALLY VALIDATED** (`rf-heldout-ea330b9`, `xgb-baseline-1794755807`) |
-| F04 | Isolation Forest và Autoencoder; validation-only threshold; unknown holdout protocol | C4 | #11, #29 | **Isolation Forest & Autoencoder EXPERIMENTALLY VALIDATED** (`if-c4-20261115T055359Z`, `reports/evaluation/autoencoder/`); giữ tách biệt anomaly score / threshold với supervised probability; báo `BLOCKED / NOT READY` nếu thiếu binary |
+| F04 | Isolation Forest và Autoencoder; validation-only threshold (`FPR <= 0.05`); unknown holdout protocol | C4 | #11, #29 | **Isolation Forest & Autoencoder EXPERIMENTALLY VALIDATED** (`if-c4-20261115T055359Z`, `ae_fpr_constrained_20261115T163000Z` với `Val FPR=0.049998 <= 0.05`, lưu song song run gốc `ae_benign_quantile_20261115T151859Z`); giữ tách biệt anomaly score / threshold với supervised probability; báo `BLOCKED / NOT READY` nếu thiếu binary |
 | F05 | Thống kê/tổng hợp hành vi chỉ từ NetFlow metadata có thật (loại Auth/API log) | C5 | #28 | **REDUCED / DEFERRED** (không chặn MVP) |
 | F06 | Deterministic Risk Ranking & Evidence Timeline từ NetFlow metadata qua FastAPI | C6 | #32, #24 | **REDUCED** (thay thế graph engine & Rust FFI phức tạp) |
 | F07 | An toàn cục bộ (localhost bind, SHA-256 fail-closed, SQLite key metadata audit) | C7 | #26 | **DEFERRED / REDUCED** (hoãn full AES-256-GCM keyring & auto-rotation) |

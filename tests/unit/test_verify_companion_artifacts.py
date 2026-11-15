@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.verify_companion_artifacts import (
+    main as verify_companion_main,
+)
+from scripts.verify_companion_artifacts import (
+    run_four_model_e2e_verification,
     stage_companion_bundle,
     verify_companion_artifacts,
 )
@@ -28,3 +32,13 @@ def test_stage_companion_bundle_fails_closed_when_incomplete(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="Cannot stage companion bundle"):
         stage_companion_bundle(destination=stage_out, root=empty_src)
+
+
+def test_run_four_model_e2e_verification_fails_closed_when_artifacts_missing(tmp_path: Path):
+    import pytest
+
+    with pytest.raises(RuntimeError, match="Mandatory 4-model E2E gate BLOCKED"):
+        run_four_model_e2e_verification(root=tmp_path)
+
+    exit_code = verify_companion_main(["--root", str(tmp_path), "--verify-e2e"])
+    assert exit_code == 1

@@ -1307,6 +1307,7 @@ def save_artifacts(
     manifest_data = {
         "artifact_type": "autoencoder-anomaly-detector",
         "schema_version": "1.0",
+        "run_id": training_meta.get("run_id"),
         "model_file": model_file.name,
         "model_sha256": model_sha256,
         "config_file": config_file.name,
@@ -1493,6 +1494,7 @@ def generate_markdown_report(
     lines = [
         "# Autoencoder Anomaly Detection Evaluation Report (Issue #29 / C4)",
         "",
+        f"- Run ID: `{training_meta.get('run_id', 'N/A')}`",
         f"- Generated at: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}",
         f"- Git commit: `{training_meta.get('git_commit', 'N/A')}`",
         f"- Model architecture: MLP Autoencoder `{training_meta.get('hidden_layer_sizes')}`",
@@ -1802,8 +1804,17 @@ def run_pipeline(args: argparse.Namespace) -> int:
     print(f"  OK Frozen threshold: {th_val:.6f} (Method: {args.calibration_method})")
     print(
         f"  Target FPR: {args.target_fpr}, "
-        f"Empirical Val FPR: {threshold_meta['empirical_val_fpr']:.4f}"
+        f"Empirical Val FPR: {threshold_meta['empirical_val_fpr']:.9f}"
     )
+    if (
+        getattr(args, "enforce_target_fpr", False) or args.calibration_method == "fpr_constrained"
+    ) and threshold_meta["empirical_val_fpr"] > threshold_meta["target_fpr"]:
+        print(
+            "FAILED: Validation empirical FPR "
+            f"({threshold_meta['empirical_val_fpr']:.9f}) exceeded target_fpr "
+            f"({threshold_meta['target_fpr']:.9f})."
+        )
+        return 1
     print(f"  Unknown categories held out: {sorted(unknown_cats)}")
 
     val_preds = (val_scores >= th_val).astype(np.int64)
@@ -1902,7 +1913,15 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "unified_csv_stream_bounded_to_loaded_partitions": True,
     }
 
+    raw_run_id = getattr(args, "run_id", None)
+    run_id = (
+        str(raw_run_id).strip()
+        if raw_run_id and str(raw_run_id).strip()
+        else f"ae_{args.calibration_method}_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    )
+
     training_meta = {
+        "run_id": run_id,
         "model_type": "Autoencoder (MLPRegressor)",
         "hidden_layer_sizes": hidden_layers,
         "training_population": "benign-only (Label == 0)",
@@ -2000,6 +2019,20 @@ def run_pipeline(args: argparse.Namespace) -> int:
         report_path=report_md_path,
     )
     print(f"  OK Evaluation report written to: {report_md_path}")
+
+    run_snapshot_dir = report_dir / "runs" / run_id
+    run_snapshot_dir.mkdir(parents=True, exist_ok=True)
+    for fname in (
+        "metrics.json",
+        "threshold_calibration.json",
+        "training_metadata.json",
+        "run_metadata.json",
+        "evaluation_report.md",
+    ):
+        (run_snapshot_dir / fname).write_bytes((report_dir / fname).read_bytes())
+    with (run_snapshot_dir / "autoencoder_manifest.json").open("w", encoding="utf-8") as fh:
+        json.dump(art_res["manifest"], fh, indent=2)
+    print(f"  OK Run snapshot archived to: {run_snapshot_dir}")
     print("=" * 70)
     print(f"Pipeline completed successfully in {training_meta['elapsed_seconds']:.2f}s!")
     print("=" * 70)
@@ -2041,6 +2074,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--unknown-categories", type=str, default="Worms,Backdoor")
     parser.add_argument("--evaluate-test", action="store_true", default=False)
+    parser.add_argument("--run-id", type=str, default=None)
+    parser.add_argument(
+        "--enforce-target-fpr",
+        action="store_true",
+        default=False,
+        help="Fail closed if empirical Validation FPR exceeds --target-fpr.",
+    )
     parser.add_argument("--sample-size", type=int, default=None)
     parser.add_argument("--skip-checksums", action="store_true", default=False)
 

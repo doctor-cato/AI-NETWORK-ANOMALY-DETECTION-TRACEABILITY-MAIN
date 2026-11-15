@@ -2,23 +2,23 @@
   "validation": {
     "total_samples": 345371,
     "tp": 3561,
-    "fp": 15744,
-    "tn": 299127,
+    "fp": 15743,
+    "tn": 299128,
     "fn": 26939,
-    "accuracy": 0.876414059084289,
-    "precision": 0.18445998445998446,
+    "accuracy": 0.8764169545213698,
+    "precision": 0.18446953999171156,
     "recall_detection_rate": 0.11675409836065574,
-    "f1_score": 0.14299769099488002,
-    "macro_f1": 0.5382015011406623,
-    "fpr": 0.05000142915670227,
+    "f1_score": 0.14300056220383905,
+    "macro_f1": 0.5382037688027581,
+    "fpr": 0.04999825325291945,
     "fnr": 0.8832459016393442,
-    "tnr": 0.9499985708432978,
+    "tnr": 0.9500017467470806,
     "roc_auc": 0.6224054535786735,
     "pr_auc": 0.15792481699870253,
     "confusion_matrix": {
       "tp": 3561,
-      "fp": 15744,
-      "tn": 299127,
+      "fp": 15743,
+      "tn": 299128,
       "fn": 26939
     },
     "per_category": {
@@ -36,8 +36,8 @@
       },
       "Benign": {
         "total": 314871,
-        "false_positives": 15744,
-        "fpr": 0.05000142915670227,
+        "false_positives": 15743,
+        "fpr": 0.04999825325291945,
         "type": "benign"
       },
       "DoS": {
@@ -97,23 +97,23 @@
   "test": {
     "total_samples": 345953,
     "tp": 3343,
-    "fp": 15189,
-    "tn": 300168,
+    "fp": 15188,
+    "tn": 300169,
     "fn": 27253,
-    "accuracy": 0.8773185953005177,
-    "precision": 0.18039067558817182,
+    "accuracy": 0.8773214858665772,
+    "precision": 0.18040041012357672,
     "recall_detection_rate": 0.10926264871224997,
-    "f1_score": 0.13609347011887316,
-    "macro_f1": 0.535032226162119,
-    "fpr": 0.04816446122965401,
+    "f1_score": 0.1360962403566267,
+    "macro_f1": 0.5350344405154743,
+    "fpr": 0.04816129022029002,
     "fnr": 0.89073735128775,
-    "tnr": 0.951835538770346,
+    "tnr": 0.95183870977971,
     "roc_auc": 0.6303096017251912,
     "pr_auc": 0.16146488959316813,
     "confusion_matrix": {
       "tp": 3343,
-      "fp": 15189,
-      "tn": 300168,
+      "fp": 15188,
+      "tn": 300169,
       "fn": 27253
     },
     "per_category": {
@@ -131,8 +131,8 @@
       },
       "Benign": {
         "total": 315357,
-        "false_positives": 15189,
-        "fpr": 0.04816446122965401,
+        "false_positives": 15188,
+        "fpr": 0.04816129022029002,
         "type": "benign"
       },
       "DoS": {
@@ -190,10 +190,10 @@
     }
   },
   "threshold_calibration": {
-    "threshold": 17234106.380850367,
-    "calibration_method": "benign_quantile",
+    "threshold": 17234985.792475585,
+    "calibration_method": "fpr_constrained",
     "target_fpr": 0.05,
-    "empirical_val_fpr": 0.05000142915670227,
+    "empirical_val_fpr": 0.04999825325291945,
     "n_benign_used": 314871,
     "n_known_attack_used": 30319,
     "n_unknown_excluded": 181,

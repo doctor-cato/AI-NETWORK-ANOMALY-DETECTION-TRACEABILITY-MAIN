@@ -281,11 +281,15 @@ def test_dry_run_isolation_never_executes_system_commands_on_ood_or_attack(
         assert sim["executed"] is False
         assert sim["os_firewall_touched"] is False
         assert sim["real_key_rotated"] is False
+        assert sim["provenance_verification"] == "client_supplied_unverified"
         by_row = {int(r["row_id"]): r for r in sim["recommendations"]}
         assert by_row[77]["action"] in {"MONITOR", "INVESTIGATE", "NO_ACTION"}
         assert by_row[77]["action"] != "ISOLATE_RECOMMENDED"
         assert by_row[77]["containment_allowed"] is False
-        assert by_row[78]["action"] == "ISOLATE_RECOMMENDED"
+        assert by_row[78]["action"] == "INVESTIGATE"
+        assert by_row[78]["containment_allowed"] is False
+        assert sim["key_rotation_simulation"]["decision"] == "HOLD_UNVERIFIED_PROVENANCE"
+        assert sim["key_rotation_simulation"]["recommended"] is False
 
 
 @pytest.mark.skipif(
@@ -401,4 +405,6 @@ def test_all_four_verified_models_real_demo_csv_parity_and_eval(tmp_path: Path):
                 json={"analysis_id": az["analysis_id"], "dry_run": True},
             )
             assert sim_resp.status_code == 200, sim_resp.text
-            assert sim_resp.json()["executed"] is False
+            sim_body = sim_resp.json()
+            assert sim_body["executed"] is False
+            assert sim_body["provenance_verification"] == "server_verified_analysis"

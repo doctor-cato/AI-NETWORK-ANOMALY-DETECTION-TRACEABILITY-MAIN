@@ -106,6 +106,8 @@ Cách chuẩn nhất để kiểm tra toàn bộ 4 model + preprocessor + `data/
 
 ```powershell
 python scripts/verify_companion_artifacts.py
+# Kiểm chứng E2E thực tế đủ 4 model qua FastAPI 127.0.0.1 trên demo_flows.csv (bắt buộc trước phát hành):
+python scripts/verify_companion_artifacts.py --verify-e2e
 # Hoặc tạo gói companion để chép sang máy Windows mới:
 python scripts/verify_companion_artifacts.py --stage-dir C:\companion-artifacts
 ```
