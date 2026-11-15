@@ -1,5 +1,5 @@
 {
-  "run_id": "if-c4-20261115T053123Z",
+  "run_id": "if-c4-20261115T055359Z",
   "model_type": "IsolationForest",
   "task": "unsupervised_anomaly_detection",
   "target": "Label",
@@ -7,8 +7,8 @@
   "dataset_name": "NF-UNSW-NB15-v3",
   "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
   "model_artifact_path": "artifacts/models/isolation_forest/isolation_forest.joblib",
-  "model_artifact_sha256": "c2ff6e7ca841205357d1923cdd96281e55ba26706ea7afbd7b7230d7b3155f84",
-  "model_artifact_size_bytes": 268739,
+  "model_artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
+  "model_artifact_size_bytes": 268895,
   "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
   "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
   "partition_indices_sha256": {
@@ -98,7 +98,10 @@
     "python_version": "3.12.10",
     "platform": "Windows-11-10.0.26200-SP0",
     "cpu_count": 12,
-    "git_commit": "c84f3375372df97768a9bf3b020f28025df03488",
+    "git_commit": "bf0f3ec46c93d445120b2bb9852a02057c273189",
+    "git_dirty": false,
+    "script_sha256": "bdd985561e16a6d7fb8c62faf380d431caf968a913c910e897bb5ff04bc88a9b",
+    "model_module_sha256": "73547fb52052952e3eb9b06d09bd5f31f899b5202a2d2cfe0760184a65ddba65",
     "packages": {
       "scikit-learn": "1.9.1",
       "pandas": "3.1.1",
@@ -241,13 +244,13 @@
     }
   },
   "training_metadata": {
-    "run_id": "if-c4-20261115T053123Z",
+    "run_id": "if-c4-20261115T055359Z",
     "status": "COMPLETED",
     "n_train_total": 1655797,
     "n_train_benign": 1590608,
     "n_train_attack_excluded": 65189,
     "training_population": "benign-only (Label == 0)",
-    "training_duration_seconds": 6.84,
+    "training_duration_seconds": 7.97,
     "random_state": 42,
     "hyperparameters": {
       "n_estimators": 100,
@@ -323,7 +326,10 @@
       "python_version": "3.12.10",
       "platform": "Windows-11-10.0.26200-SP0",
       "cpu_count": 12,
-      "git_commit": "c84f3375372df97768a9bf3b020f28025df03488",
+      "git_commit": "bf0f3ec46c93d445120b2bb9852a02057c273189",
+      "git_dirty": false,
+      "script_sha256": "bdd985561e16a6d7fb8c62faf380d431caf968a913c910e897bb5ff04bc88a9b",
+      "model_module_sha256": "73547fb52052952e3eb9b06d09bd5f31f899b5202a2d2cfe0760184a65ddba65",
       "packages": {
         "scikit-learn": "1.9.1",
         "pandas": "3.1.1",

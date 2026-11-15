@@ -1,8 +1,10 @@
 # Isolation Forest Evaluation Report
 
-Run ID: 20261115T053123Z
-Timestamp: 2026-11-15T05:31:24.395920+00:00
-Git commit: c84f3375372df97768a9bf3b020f28025df03488
+Run ID: 20261115T055359Z
+Timestamp: 2026-11-15T05:54:00.732855+00:00
+Git commit: bf0f3ec46c93d445120b2bb9852a02057c273189
+Git dirty: False
+Script SHA-256: bdd985561e16a6d7fb8c62faf380d431caf968a913c910e897bb5ff04bc88a9b
 Issue: #11 — C4 Isolation Forest real-data experiment
 
 ## Status
@@ -17,7 +19,7 @@ Issue: #11 — C4 Isolation Forest real-data experiment
 - Training population: benign-only (Label == 0) from Train partition
 - n_train_benign: 1,590,608
 - n_train_attack_excluded: 65,189
-- Training duration: 6.84 s
+- Training duration: 7.97 s
 - Random seed: 42
 
 ## Hyperparameters

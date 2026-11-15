@@ -416,15 +416,16 @@ Completed: EXPERIMENTALLY VALIDATED & REPRODUCED on verified NF-UNSW-NB15-v3 byt
         seed=42, `n_estimators=100`, `max_samples="auto"`, `contamination=0.1`) and Validation threshold calibration
         (`314,871` Benign + `30,319` Known attacks; `74,421` candidate thresholds; excluding `181` pre-registered
         Unknown `{Backdoor, Worms}`) -> frozen `threshold = -0.033526858092757406` (`max-F1-on-known-attacks`).
-      * Executed one-shot Held-out Test evaluation (`345,953` flows, run `if-c4-20261115T053123Z`, Python 3.12.10):
+      * Executed one-shot Held-out Test evaluation (`345,953` flows, run `if-c4-20261115T055359Z`, Python 3.12.10,
+        clean source commit `bf0f3ec`, `git_dirty=false`, `script_sha256=bdd98556...`, `model_module_sha256=73547fb5...`):
         `TP=27,528`, `TN=264,755`, `FP=50,602`, `FN=3,068`, `Accuracy=0.844863`, `Precision=0.352336`,
         `Recall=0.899725`, `F1=0.506374`, `FPR=0.160459`, `ROC-AUC=0.893730`, `PR-AUC=0.288753`.
       * Known vs Unknown breakdown on Test: Known attacks `26,406 / 29,300` (`Recall=0.901229`);
         Unknown `{Backdoor, Worms}` `1,122 / 1,296` (`Recall=0.865741`: `Backdoor 1,093/1,260 = 0.8675`,
         `Worms 29/36 = 0.8056`). Documented non-zero-day and `MIN_TTL` (`benign_median=31.0`, `attack_median=254.0`)
         limitations transparently.
-      * Generated verified artifact `artifacts/models/isolation_forest/isolation_forest.joblib` (`c2ff6e7c...`, gitignored),
-        `reports/models/isolation_forest_manifest.json` (`a3f42644...`), and reports under
+      * Generated verified artifact `artifacts/models/isolation_forest/isolation_forest.joblib` (`15a69cc4...`, gitignored),
+        `reports/models/isolation_forest_manifest.json` (`cd360a73...`), and reports under
         `reports/experiments/isolation_forest/`. Verified `READY` in `prepare_demo_dataset.py --check-only`,
         `InferencePipeline.from_artifacts`, `scripts/predict.py --model isolation_forest`, and FastAPI
         `/api/v1/health` + `/api/v1/analyze` (`normalized_anomaly_score = 0.829298...`, `attack_probability = null`).

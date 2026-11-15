@@ -6,7 +6,7 @@
 | 2 | C1 Data quality & EDA | M1 (#4–#7) | **COMPLETED** (`NF-UNSW-NB15-v3.csv` verified, EDA reproducible, split/leakage audit) |
 | 3 | C2 Preprocessing | M2 (#8) | **COMPLETED** (`TrainOnlyPreprocessor` fit chỉ trên Train 1.655.797 dòng) |
 | 4 | C3 Supervised ML | M2–M3 (#9, #10, #12, #13, #31) | **COMPLETED** với Random Forest (`rf-heldout-ea330b9` Test verified); **XGBoost (#31 CLOSED)** verified trên Validation, Test `NOT VERIFIED` |
-| 5 | C4 Unsupervised & unknown | M3 (#11, #29) | **Isolation Forest (#11)** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** trên `NF-UNSW-NB15-v3` (`if-c4-20261115T053123Z`: Test `Recall=0.8997`, `FPR=0.1605`, Unknown `Backdoor`/`Worms` `Recall=0.8657`); **Autoencoder (#29 CLOSED)** `IMPLEMENTED / TESTED` (synthetic) |
+| 5 | C4 Unsupervised & unknown | M3 (#11, #29) | **Isolation Forest (#11)** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** trên `NF-UNSW-NB15-v3` (`if-c4-20261115T055359Z`, clean commit `bf0f3ec`: Test `Recall=0.8997`, `FPR=0.1605`, Unknown `Backdoor`/`Worms` `Recall=0.8657`); **Autoencoder (#29 CLOSED)** `IMPLEMENTED / TESTED` (synthetic) |
 | 6 | C5 Behavioral Vector | M6 (#28) | **REDUCED / DEFERRED** — chỉ giữ thống kê NetFlow metadata thật nếu cần |
 | 7 | C6 Risk & Trace | M6 (#32, #24) | **REDUCED** — deterministic risk ranking & NetFlow evidence timeline qua FastAPI |
 | 8 | C7 Encryption & key lifecycle | M6 (#26) | **DEFERRED** — chỉ giữ SHA-256 verification, localhost-only & SQLite key metadata audit |
