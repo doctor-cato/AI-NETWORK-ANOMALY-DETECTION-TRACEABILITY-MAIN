@@ -307,3 +307,51 @@ def test_inspect_artifact_readiness_blocks_missing_artifacts_without_faking(tmp_
     for model_key in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
         assert readiness["models"][model_key]["status"] == "BLOCKED / NOT READY"
     assert not empty_art.exists()
+
+
+def test_two_pass_validation_sampling_parity_with_legacy_stream(tmp_path: Path):
+    """P2: 2-pass label-first Validation sampling selects identical rows and CSV SHA-256 as full-column scan."""
+    import scripts.prepare_demo_dataset as prep_demo
+
+    csv_path, split_man, idx_dir, _ = _build_synthetic_canonical_fixture(tmp_path)
+    man_data = json.loads(split_man.read_text(encoding="utf-8"))
+    val_indices = pd.read_csv(
+        idx_dir / "validation_indices.csv.gz",
+        compression="gzip",
+    )[
+        "source_row_index"
+    ].to_numpy(dtype=np.int64)
+
+    # 2-pass label-only sampling with chunk size smaller than dataset to exercise multi-chunk streaming
+    sampled_row_ids = prep_demo._sample_validation_row_ids(
+        csv_path, val_indices, sample_rows=100, random_seed=42, chunk_size=37
+    )
+    assert len(sampled_row_ids) == 100
+
+    # Compare against legacy full-column validation candidate extractor using identical RNG algorithm
+    legacy_df = prep_demo._stream_validation_candidates(csv_path, val_indices, chunk_size=37)
+    labels = legacy_df["Label"].to_numpy(dtype=np.int64)
+    row_ids = legacy_df["row_id"].to_numpy(dtype=np.int64)
+    rng = np.random.default_rng(42)
+    per_class = 50
+    benign_sel = rng.choice(row_ids[labels == 0], size=per_class, replace=False)
+    attack_sel = rng.choice(row_ids[labels == 1], size=per_class, replace=False)
+    expected_row_ids = np.sort(np.concatenate([benign_sel, attack_sel]))
+
+    assert np.array_equal(sampled_row_ids, expected_row_ids)
+    # Zero overlap with Train or Test from manifest
+    assert man_data["partitions"]["validation"]["row_count"] == len(val_indices)
+
+    out_dir = tmp_path / "out_parity"
+    demo_result = prepare_demo_dataset(
+        source_csv_path=csv_path,
+        split_manifest_path=split_man,
+        indices_dir=idx_dir,
+        output_dir=out_dir,
+        sample_rows=100,
+        random_seed=42,
+    )
+    flows_df = pd.read_csv(out_dir / "demo_flows.csv")
+    assert flows_df["row_id"].to_numpy(dtype=np.int64).tolist() == expected_row_ids.tolist()
+    assert demo_result["manifest"]["sampling"]["train_overlap_count"] == 0
+    assert demo_result["manifest"]["sampling"]["test_overlap_count"] == 0

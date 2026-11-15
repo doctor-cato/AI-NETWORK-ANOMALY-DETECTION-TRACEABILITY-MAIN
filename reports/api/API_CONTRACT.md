@@ -23,8 +23,9 @@
 
 ## Key Deliverables & Design Rules
 - **Zero Secret Leaks**: Key metadata endpoints only return non-sensitive fields (`key_id`, `version`, `algorithm`, `status`). Key secrets are never stored.
-- **Fail-Closed Artifact Health**: `/health` verifies model and preprocessor artifacts against companion manifests before declaring `model_ready: true`; missing or mismatched artifacts report `degraded`.
-- **Verified Decision Policy**: `/api/v1/analyze` preserves the verified model's binary prediction and calibrated threshold, and returns `anomaly_scores` plus per-class `probabilities` (`Benign`/`Attack`) when emitted by the model. Request `threshold` applies only to an explicitly enabled heuristic fallback.
+- **Fail-Closed Artifact Health**: `/health` verifies preprocessor and model artifacts independently (`preprocessor_ready` vs `model_ready`) against companion manifests before declaring readiness; missing or mismatched target model artifacts report `degraded`.
+- **Strict Model Identity**: `/api/v1/analyze` enforces an explicit 4-model allowlist (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`), rejects invalid `model_name` selectors with HTTP `422` without silent fallback, and binds `model_used` to the canonical verified model family.
+- **Anomaly Score Semantics & Verified Decision Policy**: `/api/v1/analyze` preserves the verified model's binary prediction and frozen `decision_threshold`, returns unclamped `raw_anomaly_score`/`anomaly_score` (`higher_is_more_anomalous`), emits `attack_probability` and `probabilities` only for supervised probabilistic models (`null` for Isolation Forest and Autoencoder), and sets `normalized_anomaly_score` to `null` unless a valid Train/Validation calibration contract exists. Request `threshold` applies only to an explicitly enabled heuristic fallback.
 - **Key Metadata Scope**: Key and rotation endpoints record metadata and audit events only. They do not encrypt flow payloads; `algorithm` describes a planned key policy, not active AES-GCM encryption.
 - **SQLite Durability**: Ingestion, incidents, timeline, and audit logs persist durably across restarts.
 - **Idempotent Ingestion & Rotation**: Supported via `X-Idempotency-Key` or `idempotency_key` payload property.

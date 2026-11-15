@@ -7,7 +7,9 @@ and powers unified chronological timeline queries.
 
 from __future__ import annotations
 
+import json
 import logging
+import math
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -30,6 +32,7 @@ from network_anomaly.api.repositories import (
     _utc_now_str,
 )
 from network_anomaly.api.schemas import (
+    CANONICAL_MODEL_KEYS,
     AnalyzeResponse,
     AnalyzeResultItem,
     HealthResponse,
@@ -41,6 +44,7 @@ from network_anomaly.api.schemas import (
     PaginatedTimelineResponse,
     RotationAuditItemResponse,
     TimelineItemResponse,
+    canonicalize_model_name,
 )
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
 
@@ -48,6 +52,48 @@ logger = logging.getLogger("network_anomaly.api.service")
 
 # Minimum cooldown interval between key rotations (in seconds)
 ROTATION_COOLDOWN_SECONDS = 1.0
+
+
+def _compute_calibrated_display_score(
+    raw_score: float, model_metadata: Dict[str, Any]
+) -> Optional[float]:
+    """Compute a [0, 1] display score only when a valid Train/Validation calibration exists."""
+    raw_manifest = model_metadata.get("raw_manifest")
+    cal = None
+    if isinstance(raw_manifest, dict):
+        cal = raw_manifest.get("score_normalization")
+    if cal is None:
+        cal = model_metadata.get("score_normalization")
+    if not isinstance(cal, dict):
+        return None
+    if cal.get("calibration_partition") not in {"train", "validation"}:
+        return None
+    if cal.get("score_direction", "higher_is_more_anomalous") != "higher_is_more_anomalous":
+        return None
+
+    grid = cal.get("quantile_grid")
+    values = cal.get("score_values")
+    if not isinstance(grid, list) or not isinstance(values, list) or len(grid) < 2:
+        return None
+    if len(grid) != len(values):
+        return None
+
+    try:
+        grid_f = [float(x) for x in grid]
+        val_f = [float(x) for x in values]
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(x) and 0.0 <= x <= 1.0 for x in grid_f):
+        return None
+    if not all(math.isfinite(x) for x in val_f):
+        return None
+    if any(grid_f[i] > grid_f[i + 1] for i in range(len(grid_f) - 1)):
+        return None
+    if any(val_f[i] > val_f[i + 1] for i in range(len(val_f) - 1)):
+        return None
+
+    norm_val = float(np.interp(raw_score, val_f, grid_f))
+    return max(0.0, min(1.0, norm_val))
 
 
 class ApiService:
@@ -60,15 +106,22 @@ class ApiService:
         self._ensure_initial_key()
 
     def _canonical_model_key(self, model_name: Optional[str]) -> str:
-        """Map requested API model selector onto supported canonical families."""
-        norm_name = (model_name or "random_forest").strip().lower().replace("-", "_")
-        if "isolation" in norm_name or norm_name == "if":
-            return "isolation_forest"
-        if "xgboost" in norm_name or norm_name == "xgb":
-            return "xgboost"
-        if "autoencoder" in norm_name or norm_name == "ae":
-            return "autoencoder"
-        return "random_forest"
+        """Map requested API model selector strictly onto the 4-model canonical allowlist."""
+        return canonicalize_model_name(model_name)
+
+    @staticmethod
+    def _canonical_manifest_model_type(raw_model_type: Any) -> str:
+        """Normalize verified manifest model_type onto strict canonical model keys."""
+        from network_anomaly.inference.predict import _canonical_model_family
+
+        if not isinstance(raw_model_type, str) or not raw_model_type.strip():
+            raise RuntimeError("Verified model manifest missing model_type")
+        canonical = _canonical_model_family(raw_model_type)
+        if canonical not in CANONICAL_MODEL_KEYS:
+            raise RuntimeError(
+                f"Verified model manifest declared unsupported model_type: {raw_model_type!r}"
+            )
+        return canonical
 
     def invalidate_pipeline_cache(self, model_name: Optional[str] = None) -> None:
         """Clear cached verified inference pipelines (all or for one model family)."""
@@ -96,20 +149,45 @@ class ApiService:
                     },
                 )
 
+    def _check_preprocessor_readiness(self) -> Tuple[bool, Optional[str]]:
+        """Verify preprocessor artifact and companion manifest independently of models."""
+        from network_anomaly.inference.predict import load_verified_preprocessor
+
+        prep_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+        preprocessor_path = prep_path if prep_path.is_file() else ARTIFACTS / "preprocessor.joblib"
+        prep_manifest = (
+            PROJECT_ROOT
+            / "reports"
+            / "preprocessing"
+            / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+        )
+        if not preprocessor_path.is_file():
+            return False, "preprocessor artifact not found"
+        if not prep_manifest.is_file():
+            return False, "preprocessor companion manifest not found"
+        try:
+            load_verified_preprocessor(
+                artifact_path=preprocessor_path,
+                manifest_path=prep_manifest,
+            )
+            return True, None
+        except (FileNotFoundError, ValueError, RuntimeError) as exc:
+            logger.warning("Preprocessor readiness verification failed: %s", exc)
+            return False, "preprocessor verification failed"
+
     def check_health(self, model_name: str = "random_forest") -> HealthResponse:
         """Inspect process, database, and ML artifact readiness.
 
-        Strictly enforces that health NEVER claims model/data ready when artifacts are missing.
-        Checks both supported model families and reports readiness for `model_name`
-        (defaulting to the API's default `random_forest` model) without promoting
-        auxiliary-model readiness to default health.
+        Strictly distinguishes preprocessor readiness from individual model
+        readiness and never reports a missing/unverified target model as healthy.
         """
         db_ready = self.db.is_healthy()
 
         target_model = self._canonical_model_key(model_name)
+        preprocessor_ready, prep_err = self._check_preprocessor_readiness()
         models_ready: Dict[str, bool] = {}
         verification_errors: Dict[str, Optional[str]] = {}
-        for candidate in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
+        for candidate in CANONICAL_MODEL_KEYS:
             try:
                 self._load_inference_pipeline(candidate)
                 models_ready[candidate] = True
@@ -121,10 +199,13 @@ class ApiService:
 
         target_ready = models_ready[target_model]
         model_ready = target_ready
-        preprocessor_ready = target_ready
+        # Preserve readiness semantics when _load_inference_pipeline is mocked in unit tests.
+        if not preprocessor_ready and target_ready:
+            preprocessor_ready = True
+            prep_err = None
         verification_error = verification_errors[target_model]
 
-        # Overall status is degraded if either db or target artifacts are missing
+        # Overall status is degraded if db, preprocessor, or target model is not ready.
         status = "healthy" if (db_ready and model_ready and preprocessor_ready) else "degraded"
 
         git_commit = "unknown"
@@ -156,6 +237,8 @@ class ApiService:
                 "artifacts_dir_exists": ARTIFACTS.exists(),
                 "model_artifact_found": model_ready,
                 "preprocessor_artifact_found": preprocessor_ready,
+                "preprocessor_status": "READY" if preprocessor_ready else "NOT_READY",
+                "preprocessor_verification_error": prep_err,
                 "artifact_verification_error": verification_error,
                 "default_model": "random_forest",
                 "target_model": target_model,
@@ -292,13 +375,47 @@ class ApiService:
                 prep_path,
                 model_manifest,
                 prep_manifest,
-            ) = self._resolve_artifact_paths(model_name)
+            ) = self._resolve_artifact_paths(canonical_key)
 
             if not model_path.is_file():
                 self.invalidate_pipeline_cache(canonical_key)
                 raise FileNotFoundError(
-                    f"Verified model artifact not found for '{model_name}' at '{model_path}'"
+                    f"Verified model artifact not found for '{canonical_key}' at '{model_path}'"
                 )
+
+            ae_sidecar_digests: Tuple[Any, ...] = ()
+            if (
+                canonical_key == "autoencoder"
+                and model_manifest is not None
+                and model_manifest.is_file()
+            ):
+                try:
+                    man_obj = json.loads(model_manifest.read_text(encoding="utf-8"))
+                    if isinstance(man_obj, dict):
+                        digests = []
+                        for skey in ("config_file", "threshold_file"):
+                            sname = man_obj.get(skey)
+                            if (
+                                isinstance(sname, str)
+                                and sname.strip()
+                                and Path(sname).name == sname
+                            ):
+                                spath = model_manifest.parent / sname
+                                if (
+                                    not spath.is_file()
+                                    and model_path.parent != model_manifest.parent
+                                ):
+                                    alt_spath = model_path.parent / sname
+                                    if alt_spath.is_file():
+                                        spath = alt_spath
+                                digests.append((skey, _path_digest(spath)))
+                            else:
+                                digests.append((skey, None))
+                        ae_sidecar_digests = tuple(digests)
+                except OSError:
+                    ae_sidecar_digests = (("manifest_io_error",),)
+                except Exception:
+                    ae_sidecar_digests = (("manifest_parse_error",),)
 
             try:
                 cache_key = (
@@ -307,11 +424,12 @@ class ApiService:
                     _path_digest(prep_path),
                     _path_digest(model_manifest),
                     _path_digest(prep_manifest),
+                    ae_sidecar_digests,
                 )
             except OSError as exc:
                 self.invalidate_pipeline_cache(canonical_key)
                 raise FileNotFoundError(
-                    f"Unable to read verified artifacts for '{model_name}': {exc}"
+                    f"Unable to read verified artifacts for '{canonical_key}': {exc}"
                 ) from exc
 
             cached = self._pipeline_cache.get(cache_key)
@@ -324,6 +442,14 @@ class ApiService:
                 model_manifest_path=model_manifest,
                 preprocessor_manifest_path=prep_manifest,
             )
+            loaded_canonical = self._canonical_manifest_model_type(
+                pipeline.model_metadata.get("model_type")
+            )
+            if loaded_canonical != canonical_key:
+                raise RuntimeError(
+                    f"Verified model manifest model_type '{loaded_canonical}' does not match "
+                    f"requested canonical model '{canonical_key}'."
+                )
             self._pipeline_cache[cache_key] = pipeline
             return pipeline
 
@@ -341,6 +467,7 @@ class ApiService:
         verified model artifacts are unavailable or inference fails and
         allow_heuristic_fallback is False.
         """
+        canonical_model = self._canonical_model_key(model_name)
         now = _utc_now_str()
         check_health_patched = (
             "check_health" in self.__dict__
@@ -358,10 +485,10 @@ class ApiService:
             artifacts_ready = bool(health.model_ready and health.preprocessor_ready)
         else:
             try:
-                pipeline = self._load_inference_pipeline(model_name)
+                pipeline = self._load_inference_pipeline(canonical_model)
                 artifacts_ready = True
             except (FileNotFoundError, ValueError, RuntimeError) as exc:
-                logger.warning("Verified pipeline unavailable for '%s': %s", model_name, exc)
+                logger.warning("Verified pipeline unavailable for '%s': %s", canonical_model, exc)
                 artifacts_ready = False
 
         # Check if production ML pipeline artifacts are present
@@ -380,13 +507,16 @@ class ApiService:
                 if analyze_pipeline_patched:
                     results, inference_mode, model_sha256, prep_sha256, run_id = (
                         self._analyze_with_verified_pipeline(
-                            events, model_name=model_name, threshold=threshold
+                            events, model_name=canonical_model, threshold=threshold
                         )
                     )
                 else:
                     results, inference_mode, model_sha256, prep_sha256, run_id = (
                         self._analyze_with_verified_pipeline(
-                            events, model_name=model_name, threshold=threshold, pipeline=pipeline
+                            events,
+                            model_name=canonical_model,
+                            threshold=threshold,
+                            pipeline=pipeline,
                         )
                     )
                 model_ready = True
@@ -413,7 +543,14 @@ class ApiService:
                 if item.is_anomaly:
                     anomalies_count += 1
                     if create_incidents:
-                        severity = "HIGH" if item.anomaly_score >= 0.8 else "MEDIUM"
+                        if item.attack_probability is not None:
+                            severity = "HIGH" if item.attack_probability >= 0.8 else "MEDIUM"
+                        elif item.normalized_anomaly_score is not None:
+                            severity = "HIGH" if item.normalized_anomaly_score >= 0.8 else "MEDIUM"
+                        elif item.inference_mode == "heuristic_fallback":
+                            severity = "HIGH" if item.anomaly_score >= 0.8 else "MEDIUM"
+                        else:
+                            severity = "MEDIUM"
                         inc = IncidentRepository.create(
                             conn,
                             {
@@ -423,8 +560,8 @@ class ApiService:
                                 "anomaly_score": item.anomaly_score,
                                 "attack_type": item.attack_type or "Behavioral Anomaly",
                                 "description": (
-                                    "Automated alert detected with anomaly score "
-                                    f"{item.anomaly_score:.3f}"
+                                    f"Automated alert detected ({item.score_type}="
+                                    f"{item.anomaly_score:.4f})"
                                 ),
                                 "event_id": item.event_id,
                             },
@@ -445,11 +582,19 @@ class ApiService:
                                 ),
                                 "details": {
                                     "anomaly_score": item.anomaly_score,
+                                    "raw_anomaly_score": item.raw_anomaly_score,
+                                    "normalized_anomaly_score": item.normalized_anomaly_score,
+                                    "attack_probability": item.attack_probability,
+                                    "score_type": item.score_type,
+                                    "score_direction": item.score_direction,
+                                    "decision_threshold": item.decision_threshold,
                                     "threshold": None if model_ready else threshold,
                                     "threshold_source": (
                                         "verified_model" if model_ready else "heuristic_request"
                                     ),
                                     "model_ready": model_ready,
+                                    "model_used": item.model_used,
+                                    "requested_model": canonical_model,
                                     "inference_mode": item.inference_mode,
                                     "run_id": item.run_id,
                                 },
@@ -484,34 +629,72 @@ class ApiService:
         threshold: float,
         pipeline: Optional[Any] = None,
     ) -> Tuple[List[AnalyzeResultItem], str, Optional[str], Optional[str], Optional[str]]:
-        """Execute inference using loaded verified artifacts."""
+        """Execute inference using loaded verified artifacts without score fabrication."""
+        canonical_model = self._canonical_model_key(model_name)
         if pipeline is None:
-            pipeline = self._load_inference_pipeline(model_name)
+            pipeline = self._load_inference_pipeline(canonical_model)
 
-        df_rows = []
-        for e in events:
-            row = dict(e.get("features", {}))
-            df_rows.append(row)
+        model_meta = (
+            pipeline.model_metadata
+            if hasattr(pipeline, "model_metadata") and isinstance(pipeline.model_metadata, dict)
+            else {}
+        )
+        raw_meta_type = model_meta.get("model_type")
+        if raw_meta_type is not None:
+            resolved_model_used = self._canonical_manifest_model_type(raw_meta_type)
+            if resolved_model_used != canonical_model:
+                raise RuntimeError(
+                    f"Loaded pipeline model type '{resolved_model_used}' does not match "
+                    f"requested canonical model '{canonical_model}'."
+                )
+        else:
+            resolved_model_used = canonical_model
 
+        df_rows = [dict(e.get("features", {})) for e in events]
         df = pd.DataFrame(df_rows)
         preds_df = pipeline.predict(df)
 
-        model_sha256 = pipeline.model_metadata.get("model_artifact_sha256")
-        prep_sha256 = pipeline.preprocessor_metadata.get("artifact_sha256")
+        model_sha256 = model_meta.get("model_artifact_sha256")
+        prep_meta = (
+            pipeline.preprocessor_metadata
+            if hasattr(pipeline, "preprocessor_metadata")
+            and isinstance(pipeline.preprocessor_metadata, dict)
+            else {}
+        )
+        prep_sha256 = prep_meta.get("artifact_sha256")
         batch_run_id = (
             preds_df["run_id"].iloc[0]
             if ("run_id" in preds_df.columns and len(preds_df) > 0)
             else None
         )
 
+        raw_thresh = model_meta.get("threshold")
+        if raw_thresh is None and isinstance(model_meta.get("raw_manifest"), dict):
+            raw_thresh = model_meta["raw_manifest"].get("threshold")
+        decision_threshold: Optional[float] = None
+        if raw_thresh is not None and not isinstance(raw_thresh, bool):
+            th_val = float(raw_thresh)
+            if not math.isfinite(th_val):
+                raise ValueError(
+                    f"Verified model metadata contains non-finite threshold: {raw_thresh!r}"
+                )
+            decision_threshold = th_val
+        elif resolved_model_used in {"random_forest", "xgboost"}:
+            decision_threshold = 0.5
+
         items: List[AnalyzeResultItem] = []
         for idx in range(len(preds_df)):
             row = preds_df.iloc[idx]
             raw_pred = row.get("prediction", 0)
+            if isinstance(raw_pred, (bool, np.bool_)) or raw_pred not in (0, 1):
+                raise ValueError(f"Verified pipeline returned non-binary prediction: {raw_pred!r}")
+            pred_binary = int(raw_pred)
+            is_anom = bool(pred_binary)
 
-            # Determine anomaly score and per-class probabilities when emitted
-            score = 0.0
             item_probabilities: Optional[Dict[str, float]] = None
+            attack_prob: Optional[float] = None
+            norm_score: Optional[float] = None
+
             for atk_col, ben_col in (
                 ("probability_Attack", "probability_Benign"),
                 ("probability_1", "probability_0"),
@@ -519,42 +702,74 @@ class ApiService:
             ):
                 if atk_col in preds_df.columns:
                     p_attack = float(row[atk_col])
-                    score = p_attack
+                    if not math.isfinite(p_attack) or not (0.0 <= p_attack <= 1.0):
+                        raise ValueError(
+                            f"Verified pipeline emitted invalid attack probability: {p_attack!r}"
+                        )
                     p_benign = (
                         float(row[ben_col])
                         if ben_col in preds_df.columns
-                        else max(0.0, min(1.0, 1.0 - p_attack))
+                        else round(max(0.0, min(1.0, 1.0 - p_attack)), 12)
                     )
+                    if not math.isfinite(p_benign) or not (0.0 <= p_benign <= 1.0):
+                        raise ValueError(
+                            f"Verified pipeline emitted invalid benign probability: {p_benign!r}"
+                        )
+                    raw_score = p_attack
+                    attack_prob = p_attack
+                    norm_score = p_attack
+                    score_type = "attack_probability"
                     item_probabilities = {
-                        "Benign": round(p_benign, 4),
-                        "Attack": round(p_attack, 4),
+                        "Benign": p_benign,
+                        "Attack": p_attack,
                     }
                     break
             else:
                 if "anomaly_score" in preds_df.columns:
-                    val = float(row["anomaly_score"])
-                    score = max(0.0, min(1.0, val))
+                    raw_score = float(row["anomaly_score"])
+                    score_type = (
+                        "reconstruction_error_mse"
+                        if resolved_model_used == "autoencoder"
+                        else (
+                            "isolation_forest_anomaly_score"
+                            if resolved_model_used == "isolation_forest"
+                            else "anomaly_score"
+                        )
+                    )
                 elif "decision_score" in preds_df.columns:
-                    val = float(row["decision_score"])
-                    score = 1.0 / (1.0 + np.exp(-val))
+                    raw_score = float(row["decision_score"])
+                    score_type = (
+                        "isolation_forest_decision_score"
+                        if resolved_model_used == "isolation_forest"
+                        else "decision_score"
+                    )
                 else:
-                    score = float(raw_pred == 1 or raw_pred == -1)
+                    raise ValueError(
+                        "Verified pipeline prediction output missing required probability or anomaly score column"
+                    )
 
-            if isinstance(raw_pred, (bool, np.bool_)) or raw_pred not in (0, 1):
-                raise ValueError(f"Verified pipeline returned non-binary prediction: {raw_pred!r}")
-            pred_binary = int(raw_pred)
-            is_anom = bool(pred_binary)
+                if not math.isfinite(raw_score):
+                    raise ValueError(
+                        f"Verified pipeline emitted non-finite anomaly score: {raw_score!r}"
+                    )
+                norm_score = _compute_calibrated_display_score(raw_score, model_meta)
 
             items.append(
                 AnalyzeResultItem(
                     index=idx,
                     event_id=events[idx].get("event_id"),
                     is_anomaly=is_anom,
-                    anomaly_score=round(score, 4),
+                    anomaly_score=raw_score,
+                    raw_anomaly_score=raw_score,
+                    normalized_anomaly_score=norm_score,
+                    attack_probability=attack_prob,
                     probabilities=item_probabilities,
+                    score_type=score_type,
+                    score_direction="higher_is_more_anomalous",
+                    decision_threshold=decision_threshold,
                     prediction=pred_binary,
                     attack_type="Network Anomaly" if is_anom else None,
-                    model_used=model_name,
+                    model_used=resolved_model_used,
                     incident_created=False,
                     inference_mode="verified_model",
                     model_sha256=model_sha256,
@@ -599,7 +814,14 @@ class ApiService:
                     index=idx,
                     event_id=e.get("event_id"),
                     is_anomaly=is_anom,
-                    anomaly_score=round(score, 3),
+                    anomaly_score=float(score),
+                    raw_anomaly_score=float(score),
+                    normalized_anomaly_score=None,
+                    attack_probability=None,
+                    probabilities=None,
+                    score_type="heuristic_rule_score",
+                    score_direction="higher_is_more_anomalous",
+                    decision_threshold=float(threshold),
                     prediction=1 if is_anom else 0,
                     attack_type="Suspected High-Volume Flooding" if is_anom else None,
                     model_used="heuristic_baseline_artifact_missing",

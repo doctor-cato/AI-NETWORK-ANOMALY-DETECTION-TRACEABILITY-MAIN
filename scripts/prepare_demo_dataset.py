@@ -192,6 +192,56 @@ def inspect_artifact_readiness(
     }
 
 
+def _stream_rows_by_indices(
+    source_csv_path: Path,
+    target_indices: np.ndarray,
+    columns: List[str],
+    chunk_size: int = 100_000,
+) -> pd.DataFrame:
+    """Stream canonical CSV for requested columns and return only matching source rows."""
+    sorted_idx = np.sort(target_indices.astype(np.int64))
+    if sorted_idx.size == 0:
+        return pd.DataFrame(columns=["row_id", *columns])
+
+    max_target_idx = int(sorted_idx[-1])
+    row_mask = np.zeros(max_target_idx + 1, dtype=bool)
+    row_mask[sorted_idx] = True
+
+    chunks: List[pd.DataFrame] = []
+    current_row = 0
+    with pd.read_csv(
+        source_csv_path,
+        usecols=columns,
+        chunksize=chunk_size,
+        low_memory=False,
+    ) as reader:
+        for chunk in reader:
+            if current_row > max_target_idx:
+                break
+            n_rows = len(chunk)
+            valid_len = min(n_rows, max_target_idx + 1 - current_row)
+            local_mask = row_mask[current_row : current_row + valid_len]
+            if np.any(local_mask):
+                sub = chunk.iloc[:valid_len].loc[local_mask].copy()
+                row_positions = current_row + np.nonzero(local_mask)[0]
+                sub.insert(0, "row_id", row_positions.astype(np.int64))
+                chunks.append(sub)
+            current_row += n_rows
+
+    if current_row <= max_target_idx:
+        raise ValueError(
+            f"Canonical source CSV ended prematurely at row {current_row} before max "
+            f"Validation index {max_target_idx}"
+        )
+
+    combined = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
+    if len(combined) != int(sorted_idx.size):
+        raise ValueError(
+            f"Validation row count mismatch: expected {sorted_idx.size}, loaded {len(combined)}"
+        )
+    return combined
+
+
 def _stream_validation_candidates(
     source_csv_path: Path,
     validation_indices: np.ndarray,
@@ -204,44 +254,51 @@ def _stream_validation_candidates(
     if missing_cols:
         raise ValueError(f"Canonical source CSV missing required columns: {missing_cols}")
 
-    sorted_val = np.sort(validation_indices.astype(np.int64))
-    max_val_idx = int(sorted_val[-1])
-    val_mask = np.zeros(max_val_idx + 1, dtype=bool)
-    val_mask[sorted_val] = True
+    return _stream_rows_by_indices(
+        source_csv_path=source_csv_path,
+        target_indices=validation_indices,
+        columns=required_cols,
+        chunk_size=chunk_size,
+    )
 
-    chunks: List[pd.DataFrame] = []
-    current_row = 0
-    with pd.read_csv(
-        source_csv_path,
-        usecols=required_cols,
-        chunksize=chunk_size,
-        low_memory=False,
-    ) as reader:
-        for chunk in reader:
-            if current_row > max_val_idx:
-                break
-            n_rows = len(chunk)
-            valid_len = min(n_rows, max_val_idx + 1 - current_row)
-            local_mask = val_mask[current_row : current_row + valid_len]
-            if np.any(local_mask):
-                sub = chunk.iloc[:valid_len].loc[local_mask].copy()
-                row_positions = current_row + np.nonzero(local_mask)[0]
-                sub.insert(0, "row_id", row_positions.astype(np.int64))
-                chunks.append(sub)
-            current_row += n_rows
 
-    if current_row <= max_val_idx:
+def _sample_validation_row_ids(
+    source_csv_path: Path,
+    validation_indices: np.ndarray,
+    sample_rows: int,
+    random_seed: int,
+    chunk_size: int = 100_000,
+) -> np.ndarray:
+    """Pass 1 (low-RAM): stream only Label column on Validation rows to pick balanced row_ids."""
+    required_cols = list(TRACE_METADATA_COLUMNS) + list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
+    header_cols = pd.read_csv(source_csv_path, nrows=0).columns.tolist()
+    missing_cols = [c for c in required_cols if c not in header_cols]
+    if missing_cols:
+        raise ValueError(f"Canonical source CSV missing required columns: {missing_cols}")
+
+    labels_df = _stream_rows_by_indices(
+        source_csv_path=source_csv_path,
+        target_indices=validation_indices,
+        columns=["Label"],
+        chunk_size=chunk_size,
+    )
+    benign_pool = labels_df.loc[labels_df["Label"] == 0, "row_id"].to_numpy(dtype=np.int64)
+    attack_pool = labels_df.loc[labels_df["Label"] == 1, "row_id"].to_numpy(dtype=np.int64)
+    n_benign = sample_rows // 2
+    n_attack = sample_rows - n_benign
+    if benign_pool.size < n_benign:
         raise ValueError(
-            f"Canonical source CSV ended prematurely at row {current_row} before max "
-            f"Validation index {max_val_idx}"
+            f"Validation partition has only {benign_pool.size} Benign rows; need {n_benign}"
+        )
+    if attack_pool.size < n_attack:
+        raise ValueError(
+            f"Validation partition has only {attack_pool.size} Attack rows; need {n_attack}"
         )
 
-    combined = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-    if len(combined) != int(sorted_val.size):
-        raise ValueError(
-            f"Validation row count mismatch: expected {sorted_val.size}, loaded {len(combined)}"
-        )
-    return combined
+    rng = np.random.default_rng(random_seed)
+    chosen_benign = rng.choice(benign_pool, size=n_benign, replace=False)
+    chosen_attack = rng.choice(attack_pool, size=n_attack, replace=False)
+    return np.sort(np.concatenate([chosen_benign, chosen_attack])).astype(np.int64)
 
 
 def prepare_demo_dataset(
@@ -302,31 +359,16 @@ def prepare_demo_dataset(
     if np.intersect1d(val_indices, test_indices).size > 0:
         raise ValueError("Canonical Validation and Test split indices overlap")
 
-    # 2. Stream ONLY Validation rows (stopping strictly before Held-out Test boundary)
-    val_df = _stream_validation_candidates(
-        source_csv, validation_indices=val_indices, chunk_size=chunk_size
+    # 2. Low-RAM Pass 1: stream ONLY Label on Validation rows to choose deterministic row_ids
+    selected_indices = _sample_validation_row_ids(
+        source_csv,
+        validation_indices=val_indices,
+        sample_rows=sample_rows,
+        random_seed=random_seed,
+        chunk_size=chunk_size,
     )
 
-    # 3. Deterministic class-balanced sampling inside verified Validation pool
-    benign_pool = val_df.loc[val_df["Label"] == 0, "row_id"].to_numpy(dtype=np.int64)
-    attack_pool = val_df.loc[val_df["Label"] == 1, "row_id"].to_numpy(dtype=np.int64)
-    n_benign = sample_rows // 2
-    n_attack = sample_rows - n_benign
-    if benign_pool.size < n_benign:
-        raise ValueError(
-            f"Validation partition has only {benign_pool.size} Benign rows; need {n_benign}"
-        )
-    if attack_pool.size < n_attack:
-        raise ValueError(
-            f"Validation partition has only {attack_pool.size} Attack rows; need {n_attack}"
-        )
-
-    rng = np.random.default_rng(random_seed)
-    chosen_benign = rng.choice(benign_pool, size=n_benign, replace=False)
-    chosen_attack = rng.choice(attack_pool, size=n_attack, replace=False)
-    selected_indices = np.sort(np.concatenate([chosen_benign, chosen_attack])).astype(np.int64)
-
-    # 4. Re-verify partition membership and zero Train/Test overlap via PR #47 canonical verifier
+    # 3. Re-verify partition membership and zero Train/Test overlap via PR #47 canonical verifier
     _verify_unsw_row_indices_membership(
         selected_indices, split_manifest, idx_dir, partition="validation"
     )
@@ -337,9 +379,14 @@ def prepare_demo_dataset(
             f"Leakage detected in demo sample: train_overlap={train_overlap}, test_overlap={test_overlap}"
         )
 
-    selected_df = val_df[val_df["row_id"].isin(set(selected_indices.tolist()))].sort_values(
-        "row_id", kind="mergesort"
-    )
+    # 4. Low-RAM Pass 2: stream full columns ONLY for the sampled Validation row_ids
+    required_cols = list(TRACE_METADATA_COLUMNS) + list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
+    selected_df = _stream_rows_by_indices(
+        source_csv_path=source_csv,
+        target_indices=selected_indices,
+        columns=required_cols,
+        chunk_size=chunk_size,
+    ).sort_values("row_id", kind="mergesort")
     if len(selected_df) != sample_rows:
         raise RuntimeError(
             f"Selected demo row count mismatch: expected {sample_rows}, got {len(selected_df)}"

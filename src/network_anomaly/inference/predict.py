@@ -247,23 +247,30 @@ def load_verified_preprocessor(
 
 def _canonical_model_family(model_type: str) -> str:
     """Map model class and manifest type aliases to canonical model family identifiers."""
-    normalized = model_type.strip()
+    if not isinstance(model_type, str) or not model_type.strip():
+        return ""
+    normalized = re.sub(r"[\s\-]+", "_", model_type.strip().lower())
     aliases = {
-        "RandomForest": "random_forest",
-        "RandomForestClassifier": "random_forest",
-        "RandomForestModel": "random_forest",
-        "IsolationForest": "isolation_forest",
-        "IsolationForestModel": "isolation_forest",
-        "XGBoost": "xgboost",
-        "XGBClassifier": "xgboost",
-        "XGBoostModel": "xgboost",
-        "Autoencoder": "autoencoder",
-        "AutoencoderModel": "autoencoder",
-        "MLPRegressor": "autoencoder",
-        "autoencoder-anomaly-detector": "autoencoder",
-        "HistGradientBoostingClassifier": "hist_gradient_boosting",
+        "random_forest": "random_forest",
+        "randomforest": "random_forest",
+        "randomforestclassifier": "random_forest",
+        "randomforestmodel": "random_forest",
+        "random_forest_baseline": "random_forest",
+        "isolation_forest": "isolation_forest",
+        "isolationforest": "isolation_forest",
+        "isolationforestmodel": "isolation_forest",
+        "xgboost": "xgboost",
+        "xgbclassifier": "xgboost",
+        "xgboostmodel": "xgboost",
+        "xgboost_baseline": "xgboost",
+        "autoencoder": "autoencoder",
+        "autoencodermodel": "autoencoder",
+        "mlpregressor": "autoencoder",
+        "autoencoder_anomaly_detector": "autoencoder",
+        "histgradientboostingclassifier": "hist_gradient_boosting",
+        "hist_gradient_boosting": "hist_gradient_boosting",
     }
-    return aliases.get(normalized, normalized)
+    return aliases.get(normalized, model_type.strip())
 
 
 def load_verified_model(
@@ -351,17 +358,25 @@ def load_verified_model(
             f"got {type(manifest_data).__name__}"
         )
 
-    is_ae_artifact = manifest_data.get("artifact_type") == "autoencoder-anomaly-detector"
+    is_ae_artifact = manifest_data.get("artifact_type") == "autoencoder-anomaly-detector" or (
+        isinstance(manifest_data.get("model_type"), str)
+        and _canonical_model_family(manifest_data["model_type"]) == "autoencoder"
+    )
+    if is_ae_artifact:
+        from network_anomaly.models.autoencoder import load_verified_autoencoder_bundle
+
+        return load_verified_autoencoder_bundle(
+            model_artifact_path=model_path,
+            manifest_path=man_p,
+            expected_preprocessor_sha256=expected_preprocessor_sha256,
+        )
 
     # Verify model artifact sha256 (mandatory byte-by-byte check)
-    expected_sha = (
-        manifest_data.get("model_artifact_sha256") or manifest_data.get("model_sha256")
-        if is_ae_artifact
-        else manifest_data.get("model_artifact_sha256")
-    )
-    sha_field_name = "model_sha256" if is_ae_artifact else "model_artifact_sha256"
+    expected_sha = manifest_data.get("model_artifact_sha256")
     if not isinstance(expected_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha):
-        raise ValueError(f"Model manifest at '{man_p}' missing required field '{sha_field_name}'")
+        raise ValueError(
+            f"Model manifest at '{man_p}' missing required field 'model_artifact_sha256'"
+        )
     if expected_sha.strip().lower() != model_sha256.lower():
         raise ValueError(
             f"Model artifact SHA-256 mismatch: expected {expected_sha}, got {model_sha256}"
@@ -380,12 +395,7 @@ def load_verified_model(
         )
 
     # A caller-supplied digest cannot replace the model's companion binding.
-    prep_sha = (
-        manifest_data.get("preprocessor_artifact_sha256")
-        or manifest_data.get("preprocessor_sha256")
-        if is_ae_artifact
-        else manifest_data.get("preprocessor_artifact_sha256")
-    )
+    prep_sha = manifest_data.get("preprocessor_artifact_sha256")
     if not isinstance(prep_sha, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", prep_sha):
         raise ValueError("Model manifest missing required field 'preprocessor_artifact_sha256'")
     if expected_preprocessor_sha256 and prep_sha.lower() != expected_preprocessor_sha256.lower():
@@ -398,10 +408,6 @@ def load_verified_model(
     # Verify model_type is explicitly declared before deserialization
     manifest_model_type = manifest_data.get("model_type")
     if (
-        not isinstance(manifest_model_type, str) or not manifest_model_type.strip()
-    ) and is_ae_artifact:
-        manifest_model_type = "Autoencoder"
-    if (
         not isinstance(manifest_model_type, str)
         or not manifest_model_type.strip()
         or manifest_model_type.strip().lower() == "unknown"
@@ -409,57 +415,6 @@ def load_verified_model(
         raise ValueError(f"Model manifest at '{man_p}' missing required field 'model_type'")
     manifest_model_type = manifest_model_type.strip()
     expected_family = _canonical_model_family(manifest_model_type)
-
-    ae_threshold: Optional[float] = None
-    if expected_family == "autoencoder":
-        model_file_decl = manifest_data.get("model_file")
-        if model_file_decl is not None:
-            if (
-                not isinstance(model_file_decl, str)
-                or not model_file_decl.strip()
-                or Path(model_file_decl).name != model_file_decl
-                or model_file_decl != model_path.name
-            ):
-                raise ValueError(
-                    f"Autoencoder manifest model_file {model_file_decl!r} does not match {model_path.name!r}"
-                )
-        raw_threshold = manifest_data.get("threshold")
-        if (
-            isinstance(raw_threshold, bool)
-            or not isinstance(raw_threshold, (int, float))
-            or not np.isfinite(float(raw_threshold))
-            or float(raw_threshold) < 0.0
-        ):
-            raise ValueError(
-                f"Autoencoder manifest at '{man_p}' has invalid threshold: {raw_threshold!r}"
-            )
-        ae_threshold = float(raw_threshold)
-        for file_key, sha_key in (
-            ("config_file", "config_sha256"),
-            ("threshold_file", "threshold_sha256"),
-        ):
-            sidecar_name = manifest_data.get(file_key)
-            sidecar_sha = manifest_data.get(sha_key)
-            if sidecar_name is not None:
-                if (
-                    not isinstance(sidecar_name, str)
-                    or not sidecar_name.strip()
-                    or Path(sidecar_name).name != sidecar_name
-                ):
-                    raise ValueError(
-                        f"Autoencoder manifest has unsafe {file_key}: {sidecar_name!r}"
-                    )
-                sidecar_path = man_p.parent / sidecar_name
-                if not sidecar_path.is_file():
-                    raise FileNotFoundError(
-                        f"Autoencoder sidecar referenced by {file_key} not found: '{sidecar_path}'"
-                    )
-                if not isinstance(sidecar_sha, str) or not re.fullmatch(
-                    r"[0-9a-fA-F]{64}", sidecar_sha
-                ):
-                    raise ValueError(f"Autoencoder manifest missing valid {sha_key}")
-                if _sha256_file(sidecar_path).lower() != sidecar_sha.lower():
-                    raise ValueError(f"Autoencoder sidecar SHA-256 mismatch for {file_key}")
 
     man_sha = _sha256_file(man_p)
     model_metadata: Dict[str, Any] = {
@@ -472,6 +427,8 @@ def load_verified_model(
         "feature_contract_version": feat_contract,
         "class_mapping": manifest_data.get("class_mapping"),
         "hyperparameters": manifest_data.get("hyperparameters", {}),
+        "threshold": manifest_data.get("threshold"),
+        "score_direction": manifest_data.get("score_direction"),
         "raw_manifest": manifest_data,
     }
 
@@ -532,25 +489,6 @@ def load_verified_model(
             f"Model type mismatch between manifest ('{manifest_model_type}') and "
             f"deserialized payload (model_type={payload_model_type!r}, estimator='{estimator_name}')"
         )
-
-    if expected_family == "autoencoder":
-        from sklearn.neural_network import MLPRegressor
-
-        from network_anomaly.models.autoencoder import AutoencoderModel
-
-        if isinstance(model, AutoencoderModel):
-            if ae_threshold is not None:
-                model = AutoencoderModel(model.estimator, threshold=ae_threshold)
-        elif isinstance(estimator, MLPRegressor):
-            assert ae_threshold is not None
-            model = AutoencoderModel(estimator, threshold=ae_threshold)
-        else:
-            raise ValueError(
-                f"Autoencoder artifact must deserialize to MLPRegressor or AutoencoderModel, "
-                f"got '{type(model).__name__}'"
-            )
-        if ae_threshold is not None:
-            model_metadata["threshold"] = ae_threshold
 
     return model, model_metadata
 
@@ -703,40 +641,49 @@ class InferencePipeline:
         # 3. Collect probability columns if available
         proba_cols: Dict[str, np.ndarray] = {}
         if hasattr(self.model, "predict_proba"):
-            try:
-                probas = self.model.predict_proba(X_trans)
-                classes = getattr(self.model, "classes_", None)
-                if classes is None and hasattr(self.model, "estimator"):
-                    classes = getattr(self.model.estimator, "classes_", None)
-                class_map = self.model_metadata.get("class_mapping") or {}
-                if classes is not None and len(classes) == probas.shape[1]:
-                    for i, c in enumerate(classes):
-                        c_str = str(c)
-                        label = class_map.get(c_str, f"class_{c_str}")
-                        proba_cols[f"probability_{label}"] = probas[:, i]
-                else:
-                    for i in range(probas.shape[1]):
-                        proba_cols[f"probability_{i}"] = probas[:, i]
-            except Exception:
-                pass
+            probas = np.asarray(self.model.predict_proba(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(probas)):
+                raise ValueError("Verified model predict_proba() produced non-finite values")
+            classes = getattr(self.model, "classes_", None)
+            if classes is None and hasattr(self.model, "estimator"):
+                classes = getattr(self.model.estimator, "classes_", None)
+            class_map = self.model_metadata.get("class_mapping") or {}
+            if classes is not None and len(classes) == probas.shape[1]:
+                for i, c in enumerate(classes):
+                    c_str = str(c)
+                    label = class_map.get(c_str, f"class_{c_str}")
+                    proba_cols[f"probability_{label}"] = probas[:, i]
+            else:
+                for i in range(probas.shape[1]):
+                    proba_cols[f"probability_{i}"] = probas[:, i]
 
-        # 4. Collect anomaly score / decision score columns if available
+        # 4. Collect raw anomaly score / decision score columns without clamping
+        from sklearn.ensemble import IsolationForest
+
         score_cols: Dict[str, np.ndarray] = {}
-        if hasattr(self.model, "decision_function"):
-            try:
-                score_cols["decision_score"] = self.model.decision_function(X_trans)
-            except Exception:
-                pass
+        if isinstance(self.model, IsolationForest):
+            scores_arr = -np.asarray(self.model.decision_function(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("IsolationForest decision_function() produced non-finite values")
+            score_cols["anomaly_score"] = scores_arr
+            score_cols["decision_score"] = scores_arr
         elif hasattr(self.model, "anomaly_scores"):
-            try:
-                score_cols["anomaly_score"] = self.model.anomaly_scores(X_trans)
-            except Exception:
-                pass
+            scores_arr = np.asarray(self.model.anomaly_scores(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("Verified model anomaly_scores() produced non-finite values")
+            score_cols["anomaly_score"] = scores_arr
+            if hasattr(self.model, "decision_function"):
+                score_cols["decision_score"] = scores_arr
+        elif hasattr(self.model, "decision_function"):
+            scores_arr = np.asarray(self.model.decision_function(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("Verified model decision_function() produced non-finite values")
+            score_cols["decision_score"] = scores_arr
         elif hasattr(self.model, "score_samples"):
-            try:
-                score_cols["anomaly_score"] = self.model.score_samples(X_trans)
-            except Exception:
-                pass
+            scores_arr = np.asarray(self.model.score_samples(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("Verified model score_samples() produced non-finite values")
+            score_cols["anomaly_score"] = scores_arr
 
         # 5. Build output DataFrame preserving row identity
         out_dict: Dict[str, Any] = {
