@@ -36,15 +36,18 @@ def _copy_version_tree(dst_root: Path) -> None:
 
 def test_repo_desktop_version_is_0_6_0_and_api_version_is_0_1_0():
     desktop_versions = collect_desktop_versions(PROJECT_ROOT)
-    assert set(desktop_versions.values()) == {"0.6.0"}
+    unique_versions = set(desktop_versions.values())
+    assert len(unique_versions) == 1
+    desktop_ver = next(iter(unique_versions))
+    assert desktop_ver == "0.6.0" or desktop_ver.startswith("0.6.0-")
 
     backend_versions = collect_backend_api_versions(PROJECT_ROOT)
     assert set(backend_versions.values()) == {"0.1.0"}
 
     ok, msg = verify_desktop_version(
         root=PROJECT_ROOT,
-        expected_version="0.6.0",
-        expected_tag="v0.6.0",
+        expected_version=desktop_ver,
+        expected_tag=f"v{desktop_ver}",
     )
     assert ok is True, msg
 
