@@ -146,3 +146,57 @@ class NetworkAnomalyApiClient:
         resp = self._client.get("/api/v1/keys", params={"limit": limit, "offset": offset})
         resp.raise_for_status()
         return resp.json()
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        """Fetch readiness and provenance status for all 4 M6 models."""
+        resp = self._client.get("/api/v1/models")
+        resp.raise_for_status()
+        return resp.json()
+
+    def inspect_csv(self, file_path: str, preview_limit: int = 20) -> Dict[str, Any]:
+        """Inspect and validate a local NetFlow CSV file."""
+        resp = self._client.post(
+            "/api/v1/csv/inspect",
+            json={"file_path": file_path, "preview_limit": preview_limit},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def analyze_csv(
+        self,
+        file_path: str,
+        model_name: str = "random_forest",
+        create_incidents: bool = False,
+        batch_size: int = 500,
+        include_timeline: bool = True,
+        allow_research_only: bool = True,
+    ) -> Dict[str, Any]:
+        """Run verified batch inference on a local NetFlow CSV file."""
+        resp = self._client.post(
+            "/api/v1/csv/analyze",
+            json={
+                "file_path": file_path,
+                "model_name": model_name,
+                "create_incidents": create_incidents,
+                "batch_size": batch_size,
+                "include_timeline": include_timeline,
+                "allow_research_only": allow_research_only,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def evaluate_csv(self, labels_path: str, predictions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Evaluate predictions against a separate Ground Truth CSV."""
+        resp = self._client.post(
+            "/api/v1/csv/evaluate",
+            json={"labels_path": labels_path, "predictions": predictions},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def export_csv(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Export row-aligned predictions CSV and companion metadata JSON."""
+        resp = self._client.post("/api/v1/csv/export", json=payload)
+        resp.raise_for_status()
+        return resp.json()

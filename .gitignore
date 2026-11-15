@@ -68,3 +68,11 @@ logs/
 # Agent session artifacts
 .agents/checkpoints/
 .agents/teamwork/
+
+# Desktop app (Svelte/Vite + Tauri 2 Rust build artifacts)
+desktop/node_modules/
+desktop/dist/
+desktop/.svelte-kit/
+desktop/src-tauri/gen/
+desktop/src-tauri/target/
+desktop/*.log

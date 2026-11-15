@@ -10,13 +10,29 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from network_anomaly.api.db import DatabaseManager
+from network_anomaly.api.desktop_csv import (
+    analyze_csv_file,
+    collect_models_status,
+    evaluate_predictions_with_ground_truth,
+    export_predictions_csv,
+    inspect_csv_file,
+)
 from network_anomaly.api.errors import register_error_handlers
 from network_anomaly.api.repositories import IncidentRepository
 from network_anomaly.api.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    CsvAnalyzeRequest,
+    CsvAnalyzeResponse,
+    CsvEvaluateRequest,
+    CsvEvaluateResponse,
+    CsvExportRequest,
+    CsvExportResponse,
+    CsvInspectRequest,
+    CsvInspectResponse,
     HealthResponse,
     IncidentCreateRequest,
     IncidentResponse,
@@ -26,6 +42,7 @@ from network_anomaly.api.schemas import (
     KeyMetadataResponse,
     KeyRotationRequest,
     KeyRotationResponse,
+    ModelStatusItem,
     PaginatedIncidentsResponse,
     PaginatedRotationAuditResponse,
     PaginatedTimelineResponse,
@@ -63,6 +80,24 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
 
     # Register error sanitization handlers
     register_error_handlers(app)
+
+    # Restrict CORS strictly to localhost / Tauri WebView2 origins (#26)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://127.0.0.1:1420",
+            "http://localhost:1420",
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "tauri://localhost",
+        ],
+        allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Idempotency-Key"],
+    )
 
     # Dependency getters
     def get_service() -> ApiService:
@@ -278,6 +313,79 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
     ) -> List[KeyMetadataResponse]:
         """List active and retired key metadata (secrets are never exposed)."""
         return svc.list_keys(limit=limit, offset=offset)
+
+    @app.get(
+        "/api/v1/models",
+        response_model=List[ModelStatusItem],
+        tags=["Models & CSV"],
+        summary="List readiness and provenance status for all 4 M6 models",
+    )
+    def list_models_status(
+        svc: ApiService = Depends(get_service),
+    ) -> List[ModelStatusItem]:
+        """Return genuine readiness, artifact digest, and threshold metadata."""
+        return collect_models_status(svc)
+
+    @app.post(
+        "/api/v1/csv/inspect",
+        response_model=CsvInspectResponse,
+        tags=["Models & CSV"],
+        summary="Validate CSV contract, exclude leakage targets/metadata, and preview rows",
+    )
+    def inspect_csv(
+        request: CsvInspectRequest,
+        svc: ApiService = Depends(get_service),
+    ) -> CsvInspectResponse:
+        """Inspect local NetFlow CSV safely before ML inference."""
+        return inspect_csv_file(
+            svc,
+            file_path=request.file_path,
+            preview_limit=request.preview_limit,
+        )
+
+    @app.post(
+        "/api/v1/csv/analyze",
+        response_model=CsvAnalyzeResponse,
+        tags=["Models & CSV"],
+        summary="Run verified batch inference on local NetFlow CSV with OOD, timeline, and risk scoring",
+    )
+    def analyze_csv(
+        request: CsvAnalyzeRequest,
+        svc: ApiService = Depends(get_service),
+    ) -> CsvAnalyzeResponse:
+        """Execute verified ML inference, deterministic risk scoring (#32), and timeline (#24)."""
+        return analyze_csv_file(
+            svc,
+            file_path=request.file_path,
+            model_name=request.model_name,
+            create_incidents=request.create_incidents,
+            batch_size=request.batch_size,
+            include_timeline=request.include_timeline,
+            allow_research_only=request.allow_research_only,
+        )
+
+    @app.post(
+        "/api/v1/csv/evaluate",
+        response_model=CsvEvaluateResponse,
+        tags=["Models & CSV"],
+        summary="Evaluate CSV predictions against a separate Ground Truth CSV",
+    )
+    def evaluate_csv(request: CsvEvaluateRequest) -> CsvEvaluateResponse:
+        """Compute confusion matrix and binary/per-attack metrics using Ground Truth CSV."""
+        return evaluate_predictions_with_ground_truth(
+            labels_path=request.labels_path,
+            predictions=request.predictions,
+        )
+
+    @app.post(
+        "/api/v1/csv/export",
+        response_model=CsvExportResponse,
+        tags=["Models & CSV"],
+        summary="Export predictions CSV and companion SHA-256 provenance JSON",
+    )
+    def export_csv(request: CsvExportRequest) -> CsvExportResponse:
+        """Export analyzed flow predictions safely without overwriting source CSV."""
+        return export_predictions_csv(request)
 
     return app
 
