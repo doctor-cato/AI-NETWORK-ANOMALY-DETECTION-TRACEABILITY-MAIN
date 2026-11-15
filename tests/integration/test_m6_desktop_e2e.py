@@ -293,6 +293,7 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         assert meta["rows_exported"] == 200
         assert meta["model_artifact_sha256"] == rf["model_sha256"]
         assert meta["provenance_verification"] == "server_verified_analysis"
+        assert meta["evaluation_verification"] == "server_verified_evaluation"
         assert meta["analysis_id"] == rf["analysis_id"]
         assert meta["source_csv_sha256"] == rf["file_sha256"]
     finally:

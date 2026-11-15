@@ -1573,7 +1573,7 @@ def _resolve_export_provenance(
     canonical_model = canonicalize_model_name(request.model_key)
     source_csv_path = request.source_csv_path
     source_csv_sha256: Optional[str] = None
-    if source_csv_path:
+    if source_csv_path is not None:
         try:
             src_resolved = validate_safe_csv_path(source_csv_path)
             source_csv_path = str(src_resolved)
@@ -1597,8 +1597,21 @@ def _resolve_export_provenance(
             raise ValueError(
                 f"Export model_key {canonical_model!r} does not match recorded analysis model {rec['model_key']!r}."
             )
-        if source_csv_path and source_csv_path != rec["source_csv_path"]:
+        if request.source_csv_path is not None and source_csv_path != rec["source_csv_path"]:
             raise ValueError("Export source_csv_path does not match recorded analysis source CSV.")
+        # Always verify the recorded source CSV file on disk against its inference-time SHA-256,
+        # even when request.source_csv_path is omitted (#F-07).
+        try:
+            recorded_src_resolved = validate_safe_csv_path(rec["source_csv_path"])
+            live_source_sha256 = _sha256_file(recorded_src_resolved)
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"Recorded source CSV for analysis {request.analysis_id!r} cannot be verified: {exc}"
+            ) from exc
+        if live_source_sha256 != rec["source_csv_sha256"]:
+            raise ValueError(
+                "Source CSV file on disk changed after inference; refusing verified export provenance."
+            )
         if request.run_id is not None and request.run_id != rec["run_id"]:
             raise ValueError("Export run_id does not match server-verified analysis run_id.")
         if request.model_sha256 is not None and request.model_sha256 != rec["model_sha256"]:
@@ -1619,7 +1632,7 @@ def _resolve_export_provenance(
         return {
             "analysis_id": rec["analysis_id"],
             "source_csv_path": rec["source_csv_path"],
-            "source_csv_sha256": rec["source_csv_sha256"],
+            "source_csv_sha256": live_source_sha256,
             "model_key": rec["model_key"],
             "model_type": rec["model_type"],
             "run_id": rec["run_id"],
@@ -1668,12 +1681,41 @@ def _resolve_export_provenance(
     }
 
 
+def _resolve_evaluation_provenance(
+    request: CsvExportRequest,
+    verified_meta: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Verify Ground Truth evaluation against server computation or mark client-supplied."""
+    if request.evaluation is None:
+        return None, "none"
+
+    if verified_meta.get("provenance_verification") != "server_verified_analysis":
+        return request.evaluation.model_dump(), "client_supplied_unverified"
+
+    recomputed = evaluate_predictions_with_ground_truth(
+        labels_path=request.evaluation.labels_path,
+        predictions=request.results,
+    )
+    if recomputed.labels_sha256 != request.evaluation.labels_sha256:
+        raise ValueError(
+            "Export evaluation labels_sha256 does not match the current Ground Truth CSV on disk."
+        )
+    if recomputed.model_dump() != request.evaluation.model_dump():
+        raise ValueError(
+            "Export evaluation summary does not match server-recomputed Ground Truth metrics."
+        )
+    return recomputed.model_dump(), "server_verified_evaluation"
+
+
 def export_predictions_csv(
     request: CsvExportRequest,
     service: Optional[ApiService] = None,
 ) -> CsvExportResponse:
     """Write predictions CSV and companion .metadata.json provenance atomically."""
     verified_meta = _resolve_export_provenance(request, service)
+    evaluation_summary, evaluation_verification = _resolve_evaluation_provenance(
+        request, verified_meta
+    )
     csv_out = validate_safe_export_path(
         request.output_path, source_csv_path=verified_meta["source_csv_path"]
     )
@@ -1692,9 +1734,8 @@ def export_predictions_csv(
         "output_csv_sha256": csv_sha256,
         "rows_exported": len(rows),
         **verified_meta,
-        "evaluation_summary": (
-            request.evaluation.model_dump() if request.evaluation is not None else None
-        ),
+        "evaluation_verification": evaluation_verification,
+        "evaluation_summary": evaluation_summary,
         "security_notice": _SECURITY_NOTICE,
     }
 

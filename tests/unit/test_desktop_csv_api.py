@@ -359,6 +359,7 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
     meta_json = json.loads(Path(exp["metadata_path"]).read_text(encoding="utf-8"))
     assert meta_json["rows_exported"] == 4
     assert meta_json["evaluation_summary"]["f1"] == 1.0
+    assert meta_json["evaluation_verification"] == "server_verified_evaluation"
     assert meta_json["provenance_verification"] == "server_verified_analysis"
     assert meta_json["analysis_id"] == az["analysis_id"]
     assert len(meta_json["source_csv_sha256"]) == 64
@@ -531,6 +532,7 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     assert Path(exp_resp.json()["metadata_path"]).is_file()
     demo_meta = json.loads(Path(exp_resp.json()["metadata_path"]).read_text(encoding="utf-8"))
     assert demo_meta["provenance_verification"] == "server_verified_analysis"
+    assert demo_meta["evaluation_verification"] == "server_verified_evaluation"
     assert len(demo_meta["source_csv_sha256"]) == 64
 
 
@@ -1643,7 +1645,295 @@ def test_f3_export_provenance_verification_and_tamper_rejection(client: TestClie
     assert unv_resp.status_code == 200, unv_resp.text
     unv_meta = json.loads(Path(unv_resp.json()["metadata_path"]).read_text(encoding="utf-8"))
     assert unv_meta["provenance_verification"] == "unverified_client_supplied"
+    assert unv_meta["evaluation_verification"] == "none"
     assert unv_meta["source_csv_sha256"] == az["file_sha256"]
+
+
+def test_f07_export_verifies_source_csv_immutability(client: TestClient, tmp_path: Path):
+    """F-07 P1 regression: server_verified_analysis must verify recorded source CSV digest on disk."""
+    svc = client.app.state.service
+
+    class _PassthroughPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    def _predict_clean(frame: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "prediction": [0] * len(frame),
+                "probability_Attack": [0.1] * len(frame),
+                "probability_Benign": [0.9] * len(frame),
+                "run_id": ["rf-f07-test"] * len(frame),
+            }
+        )
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-f07-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_PassthroughPrep(),
+        predict=_predict_clean,
+    )
+    gate_ok = (
+        CompatibilityGateSummarySchema(
+            model_key="random_forest",
+            model_identifier="rf-f07-test",
+            eligible=True,
+            eligibility_status="ELIGIBLE",
+            compatibility_status="MODEL_VALIDATED",
+            reasons=[],
+            warnings=[],
+            missing_features=[],
+        ),
+        True,
+    )
+
+    flows_csv = tmp_path / "f07_source.csv"
+    _make_synthetic_flow_df(4).to_csv(flows_csv, index=False)
+
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch("network_anomaly.api.desktop_csv._evaluate_gate", return_value=gate_ok),
+    ):
+        az = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(flows_csv), "model_name": "random_forest"},
+        ).json()
+
+    base_payload = {
+        "analysis_id": az["analysis_id"],
+        "source_csv_path": str(flows_csv),
+        "model_key": "random_forest",
+        "model_type": "RandomForest",
+        "run_id": az["run_id"],
+        "model_sha256": az["model_sha256"],
+        "preprocessor_sha256": az["preprocessor_sha256"],
+        "results": az["results"],
+        "evaluation": None,
+    }
+
+    # 1. Valid unchanged CSV passes with server_verified_analysis
+    ok_resp = client.post(
+        "/api/v1/csv/export",
+        json={**base_payload, "output_path": str(tmp_path / "f07_ok.csv")},
+    )
+    assert ok_resp.status_code == 200, ok_resp.text
+    ok_meta = json.loads(Path(ok_resp.json()["metadata_path"]).read_text(encoding="utf-8"))
+    assert ok_meta["provenance_verification"] == "server_verified_analysis"
+    assert ok_meta["source_csv_sha256"] == az["file_sha256"]
+
+    # 2. source_csv_path=None with intact CSV still verifies recorded CSV on disk
+    none_ok = client.post(
+        "/api/v1/csv/export",
+        json={
+            **base_payload,
+            "source_csv_path": None,
+            "output_path": str(tmp_path / "f07_none_ok.csv"),
+        },
+    )
+    assert none_ok.status_code == 200, none_ok.text
+    none_meta = json.loads(Path(none_ok.json()["metadata_path"]).read_text(encoding="utf-8"))
+    assert none_meta["provenance_verification"] == "server_verified_analysis"
+    assert none_meta["source_csv_path"] == str(flows_csv.resolve())
+    assert none_meta["source_csv_sha256"] == az["file_sha256"]
+
+    # 3. Empty string source_csv_path fails closed
+    empty_src = client.post(
+        "/api/v1/csv/export",
+        json={
+            **base_payload,
+            "source_csv_path": "",
+            "output_path": str(tmp_path / "f07_empty_src.csv"),
+        },
+    )
+    assert empty_src.status_code == 400
+
+    # 4. Modifying source CSV after inference fails closed (both with path and with None)
+    flows_csv.write_text(flows_csv.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    mod_with_path = client.post(
+        "/api/v1/csv/export",
+        json={**base_payload, "output_path": str(tmp_path / "f07_mod1.csv")},
+    )
+    assert mod_with_path.status_code == 400
+    mod_with_none = client.post(
+        "/api/v1/csv/export",
+        json={
+            **base_payload,
+            "source_csv_path": None,
+            "output_path": str(tmp_path / "f07_mod2.csv"),
+        },
+    )
+    assert mod_with_none.status_code == 400
+
+    # 5. Deleting source CSV after inference fails closed (both with path and with None)
+    flows_csv.unlink()
+    del_with_path = client.post(
+        "/api/v1/csv/export",
+        json={**base_payload, "output_path": str(tmp_path / "f07_del1.csv")},
+    )
+    assert del_with_path.status_code == 400
+    del_with_none = client.post(
+        "/api/v1/csv/export",
+        json={
+            **base_payload,
+            "source_csv_path": None,
+            "output_path": str(tmp_path / "f07_del2.csv"),
+        },
+    )
+    assert del_with_none.status_code == 400
+
+
+def test_f08_export_verifies_evaluation_summary_or_marks_unverified(
+    client: TestClient, tmp_path: Path
+):
+    """F-08 P2 regression: evaluation summary on export must match server evaluation or be marked unverified."""
+    svc = client.app.state.service
+
+    class _PassthroughPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    def _predict_in_bytes(frame: pd.DataFrame) -> pd.DataFrame:
+        preds = [1 if float(v) >= 2.5 else 0 for v in frame["IN_BYTES"].tolist()]
+        probs = [0.9 if p == 1 else 0.1 for p in preds]
+        return pd.DataFrame(
+            {
+                "prediction": preds,
+                "probability_Attack": probs,
+                "probability_Benign": [round(1.0 - p, 4) for p in probs],
+                "run_id": ["rf-f08-test"] * len(frame),
+            }
+        )
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-f08-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_PassthroughPrep(),
+        predict=_predict_in_bytes,
+    )
+    gate_ok = (
+        CompatibilityGateSummarySchema(
+            model_key="random_forest",
+            model_identifier="rf-f08-test",
+            eligible=True,
+            eligibility_status="ELIGIBLE",
+            compatibility_status="MODEL_VALIDATED",
+            reasons=[],
+            warnings=[],
+            missing_features=[],
+        ),
+        True,
+    )
+
+    df = _make_synthetic_flow_df(4)
+    df["Label"] = [0, 0, 1, 1]
+    df["Attack"] = ["Benign", "Benign", "Exploits", "Fuzzers"]
+    flows_csv = tmp_path / "f08_flows.csv"
+    labels_csv = tmp_path / "f08_labels.csv"
+    df.drop(columns=["Label", "Attack"]).to_csv(flows_csv, index=False)
+    df[["row_id", "Label", "Attack"]].to_csv(labels_csv, index=False)
+
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch("network_anomaly.api.desktop_csv._evaluate_gate", return_value=gate_ok),
+    ):
+        az = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(flows_csv), "model_name": "random_forest"},
+        ).json()
+
+    ev_resp = client.post(
+        "/api/v1/csv/evaluate",
+        json={"labels_path": str(labels_csv), "predictions": az["results"]},
+    )
+    assert ev_resp.status_code == 200, ev_resp.text
+    ev = ev_resp.json()
+
+    base_payload = {
+        "analysis_id": az["analysis_id"],
+        "source_csv_path": str(flows_csv),
+        "model_key": "random_forest",
+        "model_type": "RandomForest",
+        "run_id": az["run_id"],
+        "model_sha256": az["model_sha256"],
+        "preprocessor_sha256": az["preprocessor_sha256"],
+        "results": az["results"],
+        "evaluation": ev,
+    }
+
+    # 1. Tampered metric (e.g. forged f1 / accuracy) -> fail-closed 400
+    forged_metrics = {**ev, "f1": 0.123456}
+    assert (
+        client.post(
+            "/api/v1/csv/export",
+            json={
+                **base_payload,
+                "output_path": str(tmp_path / "f08_bad_metric.csv"),
+                "evaluation": forged_metrics,
+            },
+        ).status_code
+        == 400
+    )
+
+    # 2. Tampered labels_sha256 -> fail-closed 400
+    forged_labels_sha = {**ev, "labels_sha256": "f" * 64}
+    assert (
+        client.post(
+            "/api/v1/csv/export",
+            json={
+                **base_payload,
+                "output_path": str(tmp_path / "f08_bad_sha.csv"),
+                "evaluation": forged_labels_sha,
+            },
+        ).status_code
+        == 400
+    )
+
+    # 3. Export without analysis_id containing evaluation -> explicitly marked client_supplied_unverified
+    unverified_eval_resp = client.post(
+        "/api/v1/csv/export",
+        json={
+            **base_payload,
+            "analysis_id": None,
+            "output_path": str(tmp_path / "f08_unverified.csv"),
+            "evaluation": forged_metrics,
+        },
+    )
+    assert unverified_eval_resp.status_code == 200, unverified_eval_resp.text
+    unverified_meta = json.loads(
+        Path(unverified_eval_resp.json()["metadata_path"]).read_text(encoding="utf-8")
+    )
+    assert unverified_meta["provenance_verification"] == "unverified_client_supplied"
+    assert unverified_meta["evaluation_verification"] == "client_supplied_unverified"
+
+    # 4. Valid server-verified export records server_verified_evaluation
+    valid_resp = client.post(
+        "/api/v1/csv/export",
+        json={**base_payload, "output_path": str(tmp_path / "f08_valid.csv")},
+    )
+    assert valid_resp.status_code == 200, valid_resp.text
+    valid_meta = json.loads(Path(valid_resp.json()["metadata_path"]).read_text(encoding="utf-8"))
+    assert valid_meta["provenance_verification"] == "server_verified_analysis"
+    assert valid_meta["evaluation_verification"] == "server_verified_evaluation"
+
+    # 5. Modifying labels CSV after evaluation fails closed against recorded labels_sha256
+    labels_csv.write_text("row_id,Label,Attack\n100,1,Exploits\n", encoding="utf-8")
+    assert (
+        client.post(
+            "/api/v1/csv/export",
+            json={**base_payload, "output_path": str(tmp_path / "f08_tampered_labels_disk.csv")},
+        ).status_code
+        == 400
+    )
 
 
 def test_f4_path_hardening_blocks_unc_and_enforces_allowed_roots(
