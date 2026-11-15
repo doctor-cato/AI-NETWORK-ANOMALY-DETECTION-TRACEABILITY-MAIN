@@ -72,6 +72,19 @@ SEVERITY_BY_ACTION: Dict[str, str] = {
 ADAPTIVE_ROTATION_MIN_ATTACK_RATIO: float = 0.25
 ADAPTIVE_ROTATION_MIN_ESCALATED_FLOWS: int = 5
 
+DISALLOWED_ISOLATION_COMPAT_STATUSES: frozenset[str] = frozenset(
+    {
+        "INCOMPATIBLE",
+        "UNVERIFIED_CLIENT_INPUT",
+        "BENCHMARK_FAILED",
+        "SCHEMA_INVALID",
+        "FEATURE_INCOMPATIBLE",
+        "VALIDATION_NOT_VERIFIED",
+        "UNVALIDATED",
+        "PARSEABLE",
+    }
+)
+
 
 def _build_flow_provenance(
     *,
@@ -83,6 +96,7 @@ def _build_flow_provenance(
     model_sha256: Optional[str],
     source_id: str,
     provenance_verified: bool,
+    provenance_verification: str,
     compatibility_status: str,
     inference_mode: str,
 ) -> Dict[str, Any]:
@@ -95,6 +109,7 @@ def _build_flow_provenance(
         "model_sha256": model_sha256,
         "source_id": source_id,
         "provenance_verified": bool(provenance_verified),
+        "provenance_verification": provenance_verification,
         "compatibility_status": compatibility_status,
         "inference_mode": inference_mode,
         "score_type": item.score_type,
@@ -114,6 +129,7 @@ def evaluate_flow_response_policy(
     model_sha256: Optional[str] = None,
     source_id: str = "source:nf-v3-unverified",
     provenance_verified: bool = False,
+    provenance_verification: str = "client_supplied_unverified",
     compatibility_status: str = "VALIDATION_NOT_VERIFIED",
     eligible: bool = True,
     inference_mode: str = "verified_model",
@@ -127,8 +143,9 @@ def evaluate_flow_response_policy(
     2. Benign (`predicted_class == "Benign"` or `predicted_label == 0`): issues
        `MONITOR` when borderline risk >= 25.0, else `NO_ACTION`.
     3. Attack (`predicted_class == "Attack"` or `predicted_label == 1`):
-       - `CRITICAL` (`risk_score >= 80.0`) with `inference_mode == "verified_model"` and
-         compatible & eligible gate -> `ISOLATE_RECOMMENDED` (`CRITICAL`, advisory only);
+       - `CRITICAL` (`risk_score >= 80.0`) with `provenance_verification == "server_verified_analysis"`,
+         non-empty `analysis_id`, `inference_mode == "verified_model"`, and compatible & eligible gate
+         -> `ISOLATE_RECOMMENDED` (`CRITICAL`, advisory only);
          otherwise downgraded to `INVESTIGATE` (`HIGH`) without containment permission.
        - `HIGH` (`50.0 <= risk_score < 80.0`) or unavailable risk -> `INVESTIGATE` (`HIGH`).
        - `MEDIUM` (`25.0 <= risk_score < 50.0`) -> `MONITOR` (`MEDIUM`).
@@ -149,6 +166,7 @@ def evaluate_flow_response_policy(
         model_sha256=model_sha256,
         source_id=source_id,
         provenance_verified=provenance_verified,
+        provenance_verification=provenance_verification,
         compatibility_status=compatibility_status,
         inference_mode=inference_mode,
     )
@@ -190,10 +208,14 @@ def evaluate_flow_response_policy(
     else:
         risk_val = item.risk_score
         risk_tier = (item.risk_level or "").upper()
+        is_server_verified = provenance_verification == "server_verified_analysis" and bool(
+            analysis_id
+        )
         evidence_ok = (
-            inference_mode == "verified_model"
-            and eligible
-            and compatibility_status != "INCOMPATIBLE"
+            is_server_verified
+            and inference_mode == "verified_model"
+            and bool(eligible)
+            and compatibility_status not in DISALLOWED_ISOLATION_COMPAT_STATUSES
         )
         is_critical = risk_tier == "CRITICAL" or (risk_val is not None and risk_val >= 80.0)
         score_txt = f"{risk_val:.1f}" if risk_val is not None else "N/A"
@@ -214,11 +236,16 @@ def evaluate_flow_response_policy(
         elif is_critical or risk_tier == "HIGH" or (risk_val is not None and risk_val >= 50.0):
             action = "INVESTIGATE"
             severity = "HIGH"
-            downgrade_note = (
-                " [downgraded from isolation because evidence/risk gate is unverified]"
-                if is_critical
-                else ""
-            )
+            if not is_critical:
+                downgrade_note = ""
+            elif not is_server_verified:
+                downgrade_note = (
+                    " [downgraded from isolation: requires server-verified analysis provenance]"
+                )
+            else:
+                downgrade_note = (
+                    " [downgraded from isolation because evidence/risk gate is unverified]"
+                )
             reason = (
                 f"Attack predicted with risk {score_txt} ({risk_tier or 'UNAVAILABLE'}); "
                 f"SOC analyst triage recommended{downgrade_note}."
@@ -269,6 +296,8 @@ def evaluate_adaptive_key_rotation(
     total_flows: int,
     evaluated_flows: int,
     ood_abstained_flows: int,
+    provenance_verification: str = "client_supplied_unverified",
+    analysis_id: Optional[str] = None,
 ) -> AdaptiveKeyRotationSimulation:
     """Simulate an adaptive key rotation readiness decision without generating or changing keys."""
     with service.db.transaction() as conn:
@@ -291,6 +320,7 @@ def evaluate_adaptive_key_rotation(
         except (TypeError, ValueError):
             cooldown_remaining = 0.0
 
+    server_verified = provenance_verification == "server_verified_analysis" and bool(analysis_id)
     isolate_count = sum(1 for r in recommendations if r.action == "ISOLATE_RECOMMENDED")
     investigate_non_ood = sum(
         1 for r in recommendations if r.action == "INVESTIGATE" and not r.is_ood_flagged
@@ -307,6 +337,8 @@ def evaluate_adaptive_key_rotation(
         "isolate_recommended_flows": isolate_count,
         "investigate_attack_flows": investigate_non_ood,
         "evaluated_attack_ratio": attack_ratio,
+        "provenance_verification": provenance_verification,
+        "server_verified_provenance": server_verified,
     }
 
     pressure_triggered = isolate_count >= 1 or (
@@ -321,6 +353,14 @@ def evaluate_adaptive_key_rotation(
         reason = (
             "All flows abstained under OOD invariants; adaptive key rotation simulation "
             "suppressed to prevent drift-driven churn."
+        )
+    elif not server_verified:
+        decision = "HOLD_UNVERIFIED_PROVENANCE"
+        recommended = False
+        would_rotate = False
+        reason = (
+            "Client-supplied simulation inputs lack server-verified analysis provenance "
+            "(analysis_id); adaptive key rotation escalation is suppressed."
         )
     elif pressure_triggered and cooldown_remaining > 0.0:
         decision = "DEFERRED_COOLDOWN"
@@ -405,6 +445,30 @@ def _resolve_simulation_inputs(
                 raise ValueError("source_csv_path does not match server-recorded analysis CSV.")
         if request.model_key is not None and request.model_key != rec["model_key"]:
             raise ValueError("model_key does not match server-recorded analysis model.")
+        if request.model_type is not None and request.model_type != rec["model_type"]:
+            raise ValueError("model_type does not match server-recorded analysis model.")
+        if request.run_id is not None and request.run_id != rec["run_id"]:
+            raise ValueError("run_id does not match server-recorded analysis run_id.")
+        if request.model_sha256 is not None and request.model_sha256 != rec["model_sha256"]:
+            raise ValueError("model_sha256 does not match server-recorded model artifact digest.")
+        if (
+            request.preprocessor_sha256 is not None
+            and request.preprocessor_sha256 != rec["preprocessor_sha256"]
+        ):
+            raise ValueError(
+                "preprocessor_sha256 does not match server-recorded preprocessor digest."
+            )
+        if request.inference_mode is not None and request.inference_mode != rec["inference_mode"]:
+            raise ValueError(
+                "inference_mode does not match server-recorded analysis inference_mode."
+            )
+        if (
+            request.compatibility_gate is not None
+            and request.compatibility_gate.model_dump() != rec["compatibility_gate"]
+        ):
+            raise ValueError(
+                "compatibility_gate does not match server-recorded analysis compatibility gate."
+            )
 
         items = [CsvFlowPredictionItem.model_validate(r) for r in rec["results"]]
         gate = CompatibilityGateSummarySchema.model_validate(rec["compatibility_gate"])
@@ -432,29 +496,42 @@ def _resolve_simulation_inputs(
         source_csv_path = str(resolved)
         source_csv_sha256 = _sha256_file(resolved)
 
-    gate = (
-        request.compatibility_gate.model_copy(update={"provenance_verified": False})
-        if request.compatibility_gate is not None
-        else CompatibilityGateSummarySchema(
-            source_id="source:client-supplied-unverified",
-            provenance_verified=False,
-            model_key=model_key,
-            model_identifier=request.run_id,
-            eligible=True,
-            eligibility_status="CLIENT_SUPPLIED_UNVERIFIED",
-            compatibility_status="UNVERIFIED_CLIENT_INPUT",
-        )
+    # Client-supplied inputs without a server-recorded analysis_id MUST fail closed:
+    # ignore client compatibility_gate / inference_mode / digest assertions so unverified
+    # payloads can never spoof verified provenance or elevate to containment/rotation.
+    gate = CompatibilityGateSummarySchema(
+        source_id="source:client-supplied-unverified",
+        provenance_verified=False,
+        model_key=model_key,
+        model_identifier=None,
+        eligible=False,
+        eligibility_status="VALIDATION_NOT_VERIFIED",
+        compatibility_status="UNVERIFIED_CLIENT_INPUT",
+        reasons=[
+            "Client-supplied predictions lack a server-verified analysis_id; "
+            "ISOLATE_RECOMMENDED and adaptive key-rotation escalation are suppressed."
+        ],
+        warnings=(
+            list(request.compatibility_gate.warnings)
+            if request.compatibility_gate is not None
+            else []
+        ),
+        missing_features=(
+            list(request.compatibility_gate.missing_features)
+            if request.compatibility_gate is not None
+            else []
+        ),
     )
     return (
         items,
         model_key,
         model_type,
-        request.run_id,
-        request.model_sha256,
-        request.preprocessor_sha256,
+        None,
+        None,
+        None,
         source_csv_path,
         source_csv_sha256,
-        request.inference_mode or "verified_model",
+        "client_supplied_unverified",
         gate,
         "client_supplied_unverified",
     )
@@ -492,6 +569,7 @@ def simulate_security_response(
             model_sha256=model_sha256,
             source_id=gate.source_id,
             provenance_verified=gate.provenance_verified,
+            provenance_verification=provenance_verification,
             compatibility_status=gate.compatibility_status,
             eligible=gate.eligible,
             inference_mode=inference_mode,
@@ -532,6 +610,8 @@ def simulate_security_response(
         total_flows=total_flows,
         evaluated_flows=evaluated_flows,
         ood_abstained_flows=ood_abstained_flows,
+        provenance_verification=provenance_verification,
+        analysis_id=request.analysis_id,
     )
 
     policy_summary = (
