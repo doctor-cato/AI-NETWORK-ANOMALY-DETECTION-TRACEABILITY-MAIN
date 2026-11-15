@@ -1,0 +1,138 @@
+{
+  "e2e_status": "PASS",
+  "host": "127.0.0.1",
+  "port": 55825,
+  "verify_script_sha256": "f025b7292872437a3e1cc02e5694a52bf6503730d668bb673ebdc78a86a0107e",
+  "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+  "demo_sha256": {
+    "data/demo/demo_flows.csv": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
+    "data/demo/demo_labels.csv": "fdf635808f9672631289c554c6238e90089bf2fea29b79a467517bec42a85b4d",
+    "data/demo/demo_manifest.json": "d75186c86ef9f8cd9805fac4ff489b71da1c23eec87775fedb4770859fd80dac"
+  },
+  "companion_status": "READY",
+  "ready_models": [
+    "random_forest",
+    "xgboost",
+    "isolation_forest",
+    "autoencoder"
+  ],
+  "models": {
+    "random_forest": {
+      "analysis_id": "csvrun_592574f1b2f8",
+      "artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+      "compatibility_status": "MODEL_VALIDATED",
+      "inference_mode": "verified_model",
+      "evaluated_rows": 198,
+      "abstained_rows": 2,
+      "confusion_matrix": {
+        "tn": 98,
+        "fp": 0,
+        "fn": 0,
+        "tp": 100
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "fpr": 0.0,
+      "prediction_coverage": 0.99,
+      "dry_run_simulation_id": "sim_9ece489d718a",
+      "dry_run_provenance": "server_verified_analysis",
+      "dry_run_action_counts": {
+        "NO_ACTION": 98,
+        "MONITOR": 2,
+        "INVESTIGATE": 0,
+        "ISOLATE_RECOMMENDED": 100
+      },
+      "dry_run_rotation_decision": "SIMULATED_ROTATION_RECOMMENDED"
+    },
+    "xgboost": {
+      "analysis_id": "csvrun_7af2c358772e",
+      "artifact_sha256": "3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e",
+      "compatibility_status": "RESEARCH_ONLY",
+      "inference_mode": "verified_model",
+      "evaluated_rows": 198,
+      "abstained_rows": 2,
+      "confusion_matrix": {
+        "tn": 98,
+        "fp": 0,
+        "fn": 0,
+        "tp": 100
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "fpr": 0.0,
+      "prediction_coverage": 0.99,
+      "dry_run_simulation_id": "sim_69064109006f",
+      "dry_run_provenance": "server_verified_analysis",
+      "dry_run_action_counts": {
+        "NO_ACTION": 98,
+        "MONITOR": 2,
+        "INVESTIGATE": 100,
+        "ISOLATE_RECOMMENDED": 0
+      },
+      "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
+    },
+    "isolation_forest": {
+      "analysis_id": "csvrun_74673e19fdee",
+      "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
+      "compatibility_status": "RESEARCH_ONLY",
+      "inference_mode": "verified_model",
+      "evaluated_rows": 198,
+      "abstained_rows": 2,
+      "confusion_matrix": {
+        "tn": 89,
+        "fp": 9,
+        "fn": 12,
+        "tp": 88
+      },
+      "precision": 0.907216,
+      "recall": 0.88,
+      "f1": 0.893401,
+      "fpr": 0.091837,
+      "prediction_coverage": 0.99,
+      "dry_run_simulation_id": "sim_76d388d0b49b",
+      "dry_run_provenance": "server_verified_analysis",
+      "dry_run_action_counts": {
+        "NO_ACTION": 13,
+        "MONITOR": 90,
+        "INVESTIGATE": 97,
+        "ISOLATE_RECOMMENDED": 0
+      },
+      "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
+    },
+    "autoencoder": {
+      "analysis_id": "csvrun_4946aa11056d",
+      "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
+      "compatibility_status": "RESEARCH_ONLY",
+      "inference_mode": "verified_model",
+      "evaluated_rows": 198,
+      "abstained_rows": 2,
+      "confusion_matrix": {
+        "tn": 93,
+        "fp": 5,
+        "fn": 87,
+        "tp": 13
+      },
+      "precision": 0.722222,
+      "recall": 0.13,
+      "f1": 0.220339,
+      "fpr": 0.05102,
+      "prediction_coverage": 0.99,
+      "dry_run_simulation_id": "sim_58329326795d",
+      "dry_run_provenance": "server_verified_analysis",
+      "dry_run_action_counts": {
+        "NO_ACTION": 180,
+        "MONITOR": 2,
+        "INVESTIGATE": 18,
+        "ISOLATE_RECOMMENDED": 0
+      },
+      "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
+    }
+  },
+  "client_spoof_fail_closed": {
+    "provenance_verification": "client_supplied_unverified",
+    "critical_downgraded_action": "INVESTIGATE",
+    "rotation_decision": "HOLD_UNVERIFIED_PROVENANCE"
+  }
+}

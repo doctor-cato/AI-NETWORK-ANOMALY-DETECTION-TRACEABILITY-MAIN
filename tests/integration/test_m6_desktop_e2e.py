@@ -32,26 +32,33 @@ def _find_free_loopback_port() -> int:
         return int(s.getsockname()[1])
 
 
-def _spawn_localhost_api(db_file: Path) -> tuple[subprocess.Popen[bytes], str]:
+def _spawn_localhost_api(
+    db_file: Path, log_path: Path | None = None
+) -> tuple[subprocess.Popen[bytes], str]:
     port = _find_free_loopback_port()
     env = dict(os.environ)
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            str(PROJECT_ROOT / "scripts" / "run_api.py"),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--db-path",
-            str(db_file),
-        ],
-        cwd=str(PROJECT_ROOT),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    sink = log_path.open("w", encoding="utf-8") if log_path is not None else subprocess.DEVNULL
+    try:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "run_api.py"),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--db-path",
+                str(db_file),
+            ],
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            stdout=sink,
+            stderr=subprocess.STDOUT if log_path is not None else subprocess.DEVNULL,
+        )
+    finally:
+        if log_path is not None and not isinstance(sink, int):
+            sink.close()
     return proc, f"http://127.0.0.1:{port}"
 
 
@@ -122,7 +129,7 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
     synth_csv = tmp_path / "synthetic_47_features.csv"
     pd.DataFrame(synth).to_csv(synth_csv, index=False)
 
-    proc, base_url = _spawn_localhost_api(tmp_path / "ci_synthetic.db")
+    proc, base_url = _spawn_localhost_api(tmp_path / "ci_synthetic.db", tmp_path / "ci_api.log")
     try:
         health_json = _wait_for_health(proc, base_url)
         assert health_json["db_ready"] is True
@@ -137,6 +144,20 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
             "isolation_forest",
             "autoencoder",
         }
+        ins_resp = httpx.post(
+            f"{base_url}/api/v1/csv/inspect",
+            json={"file_path": str(synth_csv), "preview_limit": 10},
+            timeout=15.0,
+        )
+        assert ins_resp.status_code == 200
+        ins = ins_resp.json()
+        assert ins["row_count"] == n_rows
+        assert ins["ml_feature_count"] == 47
+        assert ins["ml_features_valid"] is True
+        assert ins["target_columns_excluded"] == ["Label"]
+        assert ins["ood_report"]["zero_ttl_count"] == 1
+        assert len(ins["models_status"]) == 4
+
         if AE_MODEL.is_file():
             assert model_map["autoencoder"]["ready"] is True
             assert model_map["autoencoder"]["status"] == "READY"
@@ -153,40 +174,12 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
             assert model_map["autoencoder"]["ready"] is False
             assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
 
-            ins_resp = httpx.post(
-                f"{base_url}/api/v1/csv/inspect",
-                json={"file_path": str(synth_csv), "preview_limit": 10},
-                timeout=15.0,
-            )
-            assert ins_resp.status_code == 200
-            ins = ins_resp.json()
-            assert ins["row_count"] == n_rows
-            assert ins["ml_feature_count"] == 47
-            assert ins["ml_features_valid"] is True
-            assert ins["target_columns_excluded"] == ["Label"]
-            assert ins["ood_report"]["zero_ttl_count"] == 1
-            assert len(ins["models_status"]) == 4
-
             blocked_resp = httpx.post(
                 f"{base_url}/api/v1/csv/analyze",
                 json={"file_path": str(synth_csv), "model_name": "autoencoder"},
                 timeout=10.0,
             )
             assert blocked_resp.status_code == 503
-        if AE_MODEL.is_file():
-            ins_resp = httpx.post(
-                f"{base_url}/api/v1/csv/inspect",
-                json={"file_path": str(synth_csv), "preview_limit": 10},
-                timeout=15.0,
-            )
-            assert ins_resp.status_code == 200
-            ins = ins_resp.json()
-            assert ins["row_count"] == n_rows
-            assert ins["ml_feature_count"] == 47
-            assert ins["ml_features_valid"] is True
-            assert ins["target_columns_excluded"] == ["Label"]
-            assert ins["ood_report"]["zero_ttl_count"] == 1
-            assert len(ins["models_status"]) == 4
     finally:
         _terminate_process(proc)
 

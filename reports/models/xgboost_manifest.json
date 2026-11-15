@@ -170,7 +170,7 @@
     "train_rows_loaded": 1655797,
     "val_rows_loaded": 345371,
     "contract_a_guarantee": "PASSED: No Test data is used in fitting, hyperparameter tuning, threshold selection, validation, or model selection.",
-    "contract_b_guarantee": "PASSED: Zero Test partition rows are materialized or converted into DataFrames.",
+    "contract_b_guarantee": "PASSED_DURING_FIT: Zero Test partition rows were materialized during training, tuning, preprocessing, or validation; post-fit held-out evaluation materialized 345,953 Test rows strictly after model freeze and reload verification.",
     "test_evaluated_post_fit": true,
     "test_accessed_strictly_after_fit_and_reload": true
   },
@@ -183,6 +183,7 @@
     "cpu_count": 12,
     "git_commit": "7f51390bfe4cea76a413733ac1882d8579fc4a34",
     "git_dirty": true,
+    "git_dirty_disclosure": "Trained from ancestor commit 7f51390 with local uncommitted XGBoost training/report files before commit 54d7c8a; binary SHA-256 3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e verified intact.",
     "provenance_complete": true,
     "packages": {
       "xgboost": "3.4.1",

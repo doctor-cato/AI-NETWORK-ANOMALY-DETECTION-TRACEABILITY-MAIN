@@ -1943,3 +1943,71 @@ def test_run_pipeline_evaluate_test_invariance_with_poisoned_test_rows(tmp_path)
     assert all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
     for w_clean, w_poison in zip(m_clean.coefs_, m_poison.coefs_, strict=True):
         np.testing.assert_array_equal(w_clean, w_poison)
+
+
+def test_run_pipeline_enforce_target_fpr_fails_closed_without_writing_artifacts(tmp_path, rng):
+    fixture = _build_real_preprocessor_e2e_fixture(tmp_path, rng)
+    out_dir = tmp_path / "artifacts_fpr_fail"
+    rep_dir = tmp_path / "reports_fpr_fail"
+    args = _make_real_prep_args(fixture, out_dir, rep_dir)
+    args.evaluate_test = False
+    args.enforce_target_fpr = True
+    args.target_fpr = 0.05
+    args.calibration_method = "benign_quantile"
+
+    forced_cal = {
+        "threshold": 1.0,
+        "calibration_method": "benign_quantile",
+        "target_fpr": 0.05,
+        "empirical_val_fpr": 0.0500015,
+        "n_benign_used": 20,
+        "n_known_attack_used": 10,
+        "n_unknown_excluded": 0,
+        "unknown_categories_excluded": [],
+        "threshold_frozen": True,
+    }
+    with mock.patch("scripts.train_autoencoder.calibrate_threshold", return_value=forced_cal):
+        exit_code = run_pipeline(args)
+
+    assert exit_code == 1
+    assert not (out_dir / "autoencoder_model.joblib").exists()
+    assert not (rep_dir / "metrics.json").exists()
+
+
+@pytest.mark.parametrize("bad_run_id", ["../escape", "sub/dir", "sub\\dir", "..", "   "])
+def test_run_pipeline_rejects_unsafe_run_id_traversal(tmp_path, rng, bad_run_id):
+    fixture = _build_real_preprocessor_e2e_fixture(tmp_path, rng)
+    out_dir = tmp_path / "artifacts_bad_id"
+    rep_dir = tmp_path / "reports_bad_id"
+    args = _make_real_prep_args(fixture, out_dir, rep_dir)
+    args.evaluate_test = False
+    args.run_id = bad_run_id
+
+    with pytest.raises(ValueError, match="Invalid --run-id"):
+        run_pipeline(args)
+
+
+def test_shipped_autoencoder_manifest_satisfies_val_fpr_constraint():
+    repo_root = Path(__file__).resolve().parents[2]
+    manifest = json.loads(
+        (repo_root / "reports" / "models" / "autoencoder_manifest.json").read_text(encoding="utf-8")
+    )
+    cal = json.loads(
+        (
+            repo_root / "reports" / "evaluation" / "autoencoder" / "threshold_calibration.json"
+        ).read_text(encoding="utf-8")
+    )
+    metrics = json.loads(
+        (repo_root / "reports" / "evaluation" / "autoencoder" / "metrics.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert cal["threshold_frozen"] is True
+    assert cal["target_fpr"] <= 0.05
+    assert cal["empirical_val_fpr"] <= cal["target_fpr"]
+    man_cal = manifest["threshold_calibration"]
+    assert man_cal["empirical_val_fpr"] <= man_cal["target_fpr"]
+    assert man_cal["threshold"] == pytest.approx(cal["threshold"], rel=0.0, abs=1e-9)
+    assert metrics["run_id"] == manifest["run_id"]
+    assert metrics["validation"]["fpr"] <= cal["target_fpr"]

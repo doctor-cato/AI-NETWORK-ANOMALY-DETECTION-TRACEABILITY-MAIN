@@ -101,8 +101,9 @@
           {@const isSelected = selectedModel === m.model_key}
           <tr
             class="clickable-row"
+            class:disabled-row={!m.ready || busy}
             class:row-selected={isSelected}
-            onclick={() => m.ready && onSelectModel(m.model_key)}
+            onclick={() => !busy && m.ready && onSelectModel(m.model_key)}
           >
             <td>
               <strong>{m.display_name}</strong>
@@ -165,6 +166,11 @@
 <style>
   .clickable-row {
     cursor: pointer;
+  }
+
+  .disabled-row {
+    cursor: not-allowed;
+    opacity: 0.72;
   }
 
   .row-selected {

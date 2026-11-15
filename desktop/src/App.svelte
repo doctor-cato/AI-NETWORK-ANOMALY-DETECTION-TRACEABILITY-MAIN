@@ -223,7 +223,8 @@
       errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
       return;
     }
-    busyMessage = `Đang chạy mô hình ${selectedModel} qua InferencePipeline...`;
+    const targetModel = selectedModel;
+    busyMessage = `Đang chạy mô hình ${targetModel} qua InferencePipeline...`;
     errorMessage = null;
     simulationWarning = null;
     exportData = null;
@@ -238,21 +239,21 @@
       }
       const res = await analyzeCsv({
         filePath: flowsPath,
-        modelName: selectedModel,
+        modelName: targetModel,
         createIncidents: false,
         batchSize: 500,
       });
-      analysesByModel = { ...analysesByModel, [selectedModel]: res };
-      const { [selectedModel]: _droppedEval, ...restEvals } = evaluationsByModel;
+      analysesByModel = { ...analysesByModel, [targetModel]: res };
+      const { [targetModel]: _droppedEval, ...restEvals } = evaluationsByModel;
       evaluationsByModel = restEvals;
       simulationExportData = null;
       activeTab = "predictions";
       try {
         const simRes = await runDryRunSimulationForAnalysis(res);
-        simulationsByModel = { ...simulationsByModel, [selectedModel]: simRes };
+        simulationsByModel = { ...simulationsByModel, [targetModel]: simRes };
         await refreshSimulationHistory();
       } catch (simErr) {
-        const { [selectedModel]: _droppedSim, ...restSims } = simulationsByModel;
+        const { [targetModel]: _droppedSim, ...restSims } = simulationsByModel;
         simulationsByModel = restSims;
         const detail = simErr instanceof Error ? simErr.message : String(simErr);
         simulationWarning = `Phân tích CSV đã hoàn tất, nhưng mô phỏng Dry-Run (#27) chưa thể chạy: ${detail}`;
@@ -591,6 +592,7 @@
     <ModelReadinessPanel
       {models}
       {selectedModel}
+      busy={Boolean(busyMessage)}
       onSelect={(k) => (selectedModel = k)}
     />
 

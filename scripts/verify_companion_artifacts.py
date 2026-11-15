@@ -167,6 +167,7 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
 
     demo_status: Dict[str, Any] = {}
     demo_ready = True
+    demo_error: Optional[str] = None
     for rel in DEMO_FILES_REL:
         abs_path = resolved_root / rel
         if abs_path.is_file():
@@ -180,6 +181,40 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
             demo_ready = False
             demo_status[rel.as_posix()] = {"present": False, "sha256": None, "size_bytes": 0}
 
+    if demo_ready:
+        try:
+            demo_manifest = json.loads(
+                (resolved_root / "data/demo/demo_manifest.json").read_text(encoding="utf-8")
+            )
+            sampling = demo_manifest.get("sampling") or {}
+            if sampling.get("partition") != "validation":
+                raise ValueError(
+                    f"demo_manifest sampling.partition must be 'validation', got {sampling.get('partition')!r}"
+                )
+            if (
+                int(sampling.get("train_overlap_count", -1)) != 0
+                or int(sampling.get("test_overlap_count", -1)) != 0
+            ):
+                raise ValueError("demo_manifest records non-zero train/test overlap")
+            outputs = demo_manifest.get("outputs") or {}
+            expected_flows_sha = (outputs.get("demo_flows_csv") or {}).get("sha256")
+            expected_labels_sha = (outputs.get("demo_labels_csv") or {}).get("sha256")
+            actual_flows_sha = demo_status["data/demo/demo_flows.csv"]["sha256"]
+            actual_labels_sha = demo_status["data/demo/demo_labels.csv"]["sha256"]
+            if not expected_flows_sha or actual_flows_sha != expected_flows_sha:
+                raise ValueError("demo_flows.csv SHA-256 mismatch with demo_manifest.json")
+            if not expected_labels_sha or actual_labels_sha != expected_labels_sha:
+                raise ValueError("demo_labels.csv SHA-256 mismatch with demo_manifest.json")
+            if split_manifest.is_file():
+                expected_split_sha = demo_manifest.get("split_manifest_sha256")
+                if expected_split_sha and expected_split_sha != _sha256_file(split_manifest):
+                    raise ValueError(
+                        "demo_manifest split_manifest_sha256 mismatch with split manifest"
+                    )
+        except Exception as exc:
+            demo_ready = False
+            demo_error = str(exc)
+
     all_four_ready = prep_status["ready"] and len(ready_models) == len(MODEL_SPECS) and demo_ready
     unique_staged = sorted({p.as_posix() for p in staged_files})
 
@@ -190,6 +225,7 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
         "models": models_status,
         "demo": demo_status,
         "demo_ready": demo_ready,
+        "demo_verification_error": demo_error,
         "companion_files": unique_staged,
     }
 
@@ -253,6 +289,65 @@ def _http_json(
         return int(resp.status), json.loads(body)
 
 
+def _start_api_process(
+    resolved_root: Path,
+    run_api_script: Path,
+    db_path: Path,
+    log_path: Path,
+    env: Dict[str, str],
+) -> Tuple[subprocess.Popen[str], str]:
+    """Start loopback FastAPI on a free port with file-backed logs (no pipe deadlock)."""
+    last_err: Optional[Exception] = None
+    for _attempt in range(3):
+        port = _find_free_loopback_port()
+        base_url = f"http://127.0.0.1:{port}"
+        log_fh = log_path.open("w", encoding="utf-8")
+        try:
+            proc = subprocess.Popen(  # noqa: S603 - explicit trusted local interpreter + script
+                [
+                    sys.executable,
+                    str(run_api_script),
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                    "--db-path",
+                    str(db_path),
+                ],
+                cwd=str(resolved_root),
+                env=env,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        finally:
+            log_fh.close()
+
+        deadline = time.monotonic() + 25.0
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                output = log_path.read_text(encoding="utf-8", errors="replace")
+                last_err = RuntimeError(f"run_api.py exited early ({proc.returncode}): {output}")
+                break
+            try:
+                status_code, _ = _http_json(f"{base_url}/api/v1/health", timeout=2.0)
+                if status_code == 200:
+                    return proc, base_url
+            except (urllib.error.URLError, TimeoutError, OSError):
+                time.sleep(0.25)
+        else:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+            last_err = RuntimeError("Timed out waiting for FastAPI /api/v1/health on 127.0.0.1.")
+
+    assert last_err is not None
+    raise last_err
+
+
 def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
     """Fail-closed live loopback E2E verification across all 4 models on demo_flows.csv."""
     resolved_root = Path(root).resolve()
@@ -260,7 +355,8 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
     if summary["overall_status"] != "READY":
         raise RuntimeError(
             "Mandatory 4-model E2E gate BLOCKED: companion artifacts incomplete or unverified "
-            f"(ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']})."
+            f"(ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']}, "
+            f"demo_error={summary.get('demo_verification_error')})."
         )
 
     demo_flows = resolved_root / "data/demo/demo_flows.csv"
@@ -269,50 +365,19 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
     if not run_api_script.is_file():
         raise RuntimeError(f"Missing server entrypoint: {run_api_script}")
 
-    port = _find_free_loopback_port()
-    base_url = f"http://127.0.0.1:{port}"
     tmp_dir = tempfile.TemporaryDirectory(prefix="netflow_e2e_")
     db_path = Path(tmp_dir.name) / "e2e_verify.db"
+    log_path = Path(tmp_dir.name) / "run_api.log"
 
     env = os.environ.copy()
     src_path = str(resolved_root / "src")
     existing_py = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_py}" if existing_py else src_path
 
-    proc = subprocess.Popen(  # noqa: S603 - explicit trusted local interpreter + script
-        [
-            sys.executable,
-            str(run_api_script),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--db-path",
-            str(db_path),
-        ],
-        cwd=str(resolved_root),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-
+    proc: Optional[subprocess.Popen[str]] = None
     try:
-        deadline = time.monotonic() + 25.0
-        health_payload: Optional[Dict[str, Any]] = None
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                output = proc.stdout.read() if proc.stdout else ""
-                raise RuntimeError(f"run_api.py exited early ({proc.returncode}): {output}")
-            try:
-                status_code, health_payload = _http_json(f"{base_url}/api/v1/health", timeout=2.0)
-                if status_code == 200:
-                    break
-            except (urllib.error.URLError, TimeoutError, OSError):
-                time.sleep(0.25)
-
-        if health_payload is None:
-            raise RuntimeError("Timed out waiting for FastAPI /api/v1/health on 127.0.0.1.")
+        proc, base_url = _start_api_process(resolved_root, run_api_script, db_path, log_path, env)
+        port = int(base_url.rsplit(":", 1)[1])
 
         _, models_payload = _http_json(f"{base_url}/api/v1/models", timeout=10.0)
         models_by_key = {item["model_key"]: item for item in models_payload}
@@ -338,6 +403,15 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
                 raise RuntimeError(
                     f"{key}: expected verified_model, got {az.get('inference_mode')}"
                 )
+            gate = az.get("compatibility_gate") or {}
+            expected_compat = "MODEL_VALIDATED" if key == "random_forest" else "RESEARCH_ONLY"
+            if (
+                gate.get("source_id") != "source:nf-v3-canonical"
+                or gate.get("provenance_verified") is not True
+                or gate.get("compatibility_status") != expected_compat
+            ):
+                raise RuntimeError(f"{key}: unexpected compatibility_gate: {gate}")
+
             results = az.get("results") or []
             non_ood = [r for r in results if not r.get("is_ood_flagged")]
             ood_rows = [r for r in results if r.get("is_ood_flagged")]
@@ -364,6 +438,16 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
             cm = ev["confusion_matrix"]
             if cm["tp"] + cm["fp"] + cm["tn"] + cm["fn"] != 198 or ev.get("abstained_rows") != 2:
                 raise RuntimeError(f"{key}: invalid confusion matrix coverage: {ev}")
+            if key in ("random_forest", "xgboost") and (
+                ev["f1"] < 0.99 or cm["tp"] != 100 or cm["tn"] != 98
+            ):
+                raise RuntimeError(f"{key}: unexpected supervised demo metrics: {ev}")
+            if key == "isolation_forest" and (ev["f1"] < 0.80 or cm["tp"] < 80 or cm["tn"] < 80):
+                raise RuntimeError(f"{key}: unexpected Isolation Forest demo metrics: {ev}")
+            if key == "autoencoder" and (
+                ev["f1"] < 0.15 or cm["tp"] < 10 or ev["false_positive_rate"] > 0.10
+            ):
+                raise RuntimeError(f"{key}: unexpected Autoencoder demo metrics: {ev}")
 
             _, sim = _http_json(
                 f"{base_url}/api/v1/security/simulate-response",
@@ -379,8 +463,39 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
             ):
                 raise RuntimeError(f"{key}: invalid Issue #27 dry-run provenance/flags: {sim}")
 
+            ood_row_ids = {int(r["row_id"]) for r in ood_rows}
+            for rec in sim.get("recommendations") or []:
+                if int(rec["row_id"]) in ood_row_ids and (
+                    rec.get("containment_allowed") is not False
+                    or rec.get("action") == "ISOLATE_RECOMMENDED"
+                ):
+                    raise RuntimeError(f"{key}: OOD row received containment: {rec}")
+
+            action_counts = sim.get("action_counts") or {}
+            rot_decision = (sim.get("key_rotation_simulation") or {}).get("decision")
+            if key == "random_forest":
+                if int(action_counts.get("ISOLATE_RECOMMENDED", 0)) <= 0:
+                    raise RuntimeError(
+                        f"{key}: expected ISOLATE_RECOMMENDED > 0, got {action_counts}"
+                    )
+                if rot_decision != "SIMULATED_ROTATION_RECOMMENDED":
+                    raise RuntimeError(
+                        f"{key}: expected SIMULATED_ROTATION_RECOMMENDED, got {rot_decision}"
+                    )
+            else:
+                if (
+                    int(action_counts.get("ISOLATE_RECOMMENDED", 0)) != 0
+                    or rot_decision != "HOLD_RESEARCH_ONLY_MODEL"
+                ):
+                    raise RuntimeError(
+                        f"{key}: RESEARCH_ONLY model bypassed fail-closed gate: "
+                        f"counts={action_counts}, rotation={rot_decision}"
+                    )
+
             per_model_results[key] = {
                 "analysis_id": az["analysis_id"],
+                "artifact_sha256": summary["models"][key]["sha256"],
+                "compatibility_status": gate["compatibility_status"],
                 "inference_mode": az["inference_mode"],
                 "evaluated_rows": az["evaluated_rows"],
                 "abstained_rows": az["abstained_rows"],
@@ -392,6 +507,8 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
                 "prediction_coverage": ev["prediction_coverage"],
                 "dry_run_simulation_id": sim["simulation_id"],
                 "dry_run_provenance": sim["provenance_verification"],
+                "dry_run_action_counts": action_counts,
+                "dry_run_rotation_decision": rot_decision,
             }
 
         # Verify client-supplied spoofing without analysis_id fails closed
@@ -442,6 +559,9 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
             "e2e_status": "PASS",
             "host": "127.0.0.1",
             "port": port,
+            "verify_script_sha256": _sha256_file(Path(__file__).resolve()),
+            "preprocessor_sha256": summary["preprocessor"]["sha256"],
+            "demo_sha256": {rel: info["sha256"] for rel, info in summary["demo"].items()},
             "companion_status": summary["overall_status"],
             "ready_models": summary["ready_models"],
             "models": per_model_results,
@@ -452,7 +572,7 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
             },
         }
     finally:
-        if proc.poll() is None:
+        if proc is not None and proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
@@ -460,6 +580,72 @@ def run_four_model_e2e_verification(root: Path = PROJECT_ROOT) -> Dict[str, Any]
                 proc.kill()
                 proc.wait(timeout=5)
         tmp_dir.cleanup()
+
+
+def verify_e2e_attestation(
+    attestation_path: Path,
+    root: Path = PROJECT_ROOT,
+) -> Dict[str, Any]:
+    """Verify a committed 4-model E2E attestation JSON against tracked manifests."""
+    resolved_root = Path(root).resolve()
+    report = json.loads(Path(attestation_path).read_text(encoding="utf-8"))
+    if report.get("e2e_status") != "PASS" or report.get("companion_status") != "READY":
+        raise RuntimeError(f"E2E attestation did not record PASS/READY: {attestation_path}")
+    if set(report.get("ready_models") or []) != set(MODEL_SPECS.keys()):
+        raise RuntimeError(
+            f"E2E attestation missing one or more models: {report.get('ready_models')}"
+        )
+
+    actual_script_sha = _sha256_file(resolved_root / "scripts/verify_companion_artifacts.py")
+    if report.get("verify_script_sha256") != actual_script_sha:
+        raise RuntimeError(
+            "E2E attestation is stale: scripts/verify_companion_artifacts.py SHA-256 changed "
+            f"({report.get('verify_script_sha256')} != {actual_script_sha})."
+        )
+
+    prep_manifest = json.loads(
+        (resolved_root / PREPROCESSOR_MANIFEST_REL).read_text(encoding="utf-8")
+    )
+    if report.get("preprocessor_sha256") != prep_manifest.get("artifact_sha256"):
+        raise RuntimeError("E2E attestation preprocessor_sha256 does not match tracked manifest.")
+
+    models_report = report.get("models") or {}
+    for model_key, (_, manifest_candidates) in MODEL_SPECS.items():
+        entry = models_report.get(model_key) or {}
+        tracked_manifest = json.loads(
+            (resolved_root / manifest_candidates[0]).read_text(encoding="utf-8")
+        )
+        expected_sha = (
+            tracked_manifest.get("model_artifact_sha256")
+            or tracked_manifest.get("model_sha256")
+            or tracked_manifest.get("artifact_sha256")
+        )
+        if entry.get("artifact_sha256") != expected_sha:
+            raise RuntimeError(
+                f"E2E attestation artifact_sha256 mismatch for {model_key}: "
+                f"{entry.get('artifact_sha256')} != {expected_sha}"
+            )
+        if entry.get("inference_mode") != "verified_model":
+            raise RuntimeError(f"E2E attestation invalid inference_mode for {model_key}")
+        if entry.get("evaluated_rows") != 198 or entry.get("abstained_rows") != 2:
+            raise RuntimeError(f"E2E attestation invalid OOD coverage for {model_key}")
+        if entry.get("dry_run_provenance") != "server_verified_analysis":
+            raise RuntimeError(f"E2E attestation invalid dry-run provenance for {model_key}")
+
+    spoof = report.get("client_spoof_fail_closed") or {}
+    if (
+        spoof.get("provenance_verification") != "client_supplied_unverified"
+        or spoof.get("critical_downgraded_action") != "INVESTIGATE"
+        or spoof.get("rotation_decision") != "HOLD_UNVERIFIED_PROVENANCE"
+    ):
+        raise RuntimeError(f"E2E attestation missing valid anti-spoof verification: {spoof}")
+
+    return {
+        "attestation_status": "PASS",
+        "attestation_path": str(attestation_path),
+        "verified_models": list(MODEL_SPECS.keys()),
+        "verify_script_sha256": actual_script_sha,
+    }
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -484,6 +670,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run mandatory live 127.0.0.1 FastAPI 4-model E2E verification on real demo CSV (fails closed).",
     )
     parser.add_argument(
+        "--verify-attestation",
+        type=Path,
+        default=None,
+        help="Verify a committed 4-model E2E JSON attestation against tracked manifests.",
+    )
+    parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
@@ -502,6 +694,19 @@ def main(argv: Optional[List[str]] = None) -> int:
             sys.stderr.write(f"[COMPANION ARTIFACTS BLOCKED] {exc}\n")
             return 1
         payload_text = json.dumps(staged, indent=2)
+        if args.output_json is not None:
+            args.output_json.parent.mkdir(parents=True, exist_ok=True)
+            args.output_json.write_text(payload_text + "\n", encoding="utf-8")
+        print(payload_text)
+        return 0
+
+    if args.verify_attestation is not None:
+        try:
+            att_report = verify_e2e_attestation(args.verify_attestation, root=args.root)
+        except Exception as exc:
+            sys.stderr.write(f"[E2E ATTESTATION VERIFICATION FAILED] {exc}\n")
+            return 1
+        payload_text = json.dumps(att_report, indent=2)
         if args.output_json is not None:
             args.output_json.parent.mkdir(parents=True, exist_ok=True)
             args.output_json.write_text(payload_text + "\n", encoding="utf-8")

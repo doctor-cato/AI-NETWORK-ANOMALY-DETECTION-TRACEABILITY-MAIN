@@ -6,10 +6,11 @@
   interface Props {
     models: ModelStatusItem[];
     selectedModel: string;
+    busy?: boolean;
     onSelect: (modelKey: string) => void;
   }
 
-  let { models, selectedModel, onSelect }: Props = $props();
+  let { models, selectedModel, busy = false, onSelect }: Props = $props();
 
   function semanticsLabel(semantics: string | null): string {
     if (semantics === "attack_probability") return "Xác suất phân lớp [0..1]";
@@ -39,10 +40,10 @@
           class="model-card"
           class:selected={isSelected}
           class:blocked={!model.ready}
-          disabled={!model.ready}
+          disabled={!model.ready || busy}
           aria-checked={isSelected}
           role="radio"
-          onclick={() => model.ready && onSelect(model.model_key)}
+          onclick={() => !busy && model.ready && onSelect(model.model_key)}
         >
           <div class="model-top">
             <span class="model-name">{model.display_name}</span>

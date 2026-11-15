@@ -43,7 +43,6 @@ from __future__ import annotations
 import argparse
 import csv
 import gc
-import io
 import json
 import os
 import platform
@@ -111,6 +110,7 @@ from scripts.train_random_forest import (  # noqa: E402
     _safe_relpath,
     load_partition,
     stream_partition_data,
+    stream_single_partition_csv,
 )
 
 # Canonical artifact references recorded at acceptance time (PR #41 split /
@@ -731,6 +731,7 @@ def execute_training(
             "cpu_count": os.cpu_count(),
             "git_commit": git_commit,
             "git_dirty": git_dirty,
+            "git_clean": not git_dirty,
             "provenance_complete": provenance_complete,
             "packages": {
                 "xgboost": xgboost.__version__,
@@ -880,51 +881,13 @@ def _stream_test_partition_post_fit(
     chunksize: int = 100_000,
 ) -> pd.DataFrame:
     """Stream strictly the held-out Test indices after fit and reload verification."""
-    test_idx_set = set(int(x) for x in test_indices)
-    chunks: List[pd.DataFrame] = []
-    line_buffer: List[str] = []
-    row_offsets: List[int] = []
-
-    def flush() -> None:
-        if not line_buffer:
-            return
-        content = header_line + "".join(line_buffer)
-        df_chunk = pd.read_csv(
-            io.StringIO(content),
-            usecols=usecols,
-            keep_default_na=False,
-            low_memory=False,
-        )
-        df_chunk.index = row_offsets[-len(line_buffer) :]
-        chunks.append(df_chunk)
-        line_buffer.clear()
-
-    with dataset_path.open("r", encoding="utf-8", errors="replace") as f:
-        header_line = f.readline()
-        if not header_line:
-            raise ValueError(f"Empty dataset file at {dataset_path}")
-        row_idx = 0
-        for line in f:
-            if row_idx in test_idx_set:
-                line_buffer.append(line)
-                row_offsets.append(row_idx)
-                if len(line_buffer) >= chunksize:
-                    flush()
-            row_idx += 1
-        flush()
-
-    if not chunks:
-        raise ValueError(f"No held-out Test rows loaded from {dataset_path}")
-
-    df_raw = pd.concat(chunks)
-    chunks.clear()
-    df_test = df_raw.loc[test_indices].copy()
-    del df_raw
-    if len(df_test) != len(test_indices):
-        raise ValueError(
-            f"Row count mismatch for held-out Test: expected {len(test_indices)}, got {len(df_test)}"
-        )
-    return df_test
+    return stream_single_partition_csv(
+        dataset_path=dataset_path,
+        partition_indices=test_indices,
+        usecols=usecols,
+        chunksize=chunksize,
+        partition_label="held-out Test",
+    )
 
 
 def _render_xgb_test_evaluation_md(
@@ -1147,6 +1110,12 @@ def _evaluate_xgb_test_partition(
             "test_partition_accessed": True,
             "test_rows_loaded": int(len(test_indices)),
             "test_indices_loaded": True,
+            "contract_b_guarantee": (
+                "PASSED_DURING_FIT: Zero Test partition rows were materialized during "
+                "training, tuning, preprocessing, or validation; post-fit held-out "
+                f"evaluation materialized {int(len(test_indices)):,} Test rows strictly "
+                "after model freeze and reload verification."
+            ),
             "test_evaluated_post_fit": True,
             "test_accessed_strictly_after_fit_and_reload": True,
         }
@@ -1154,10 +1123,12 @@ def _evaluate_xgb_test_partition(
 
     with output_manifest_path.open("w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
+        f.write("\n")
     if output_manifest_path == DEFAULT_OUTPUT_MANIFEST_PATH:
         DEFAULT_REPORT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
         with DEFAULT_REPORT_MANIFEST_PATH.open("w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2)
+            f.write("\n")
 
     print(
         f"[train_xgboost] Held-out Test Metrics: "
@@ -1185,7 +1156,7 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
         "",
         f"- **Run ID:** `{manifest['run_id']}`",
         f"- **Trained at (UTC):** `{manifest['trained_at_utc']}`",
-        f"- **Git commit:** `{manifest['environment']['git_commit']}`",
+        f"- **Git commit:** `{manifest['environment']['git_commit']}` (`git_dirty={manifest['environment'].get('git_dirty')}`)",
         f"- **Dataset:** `{manifest['dataset_name']}` (SHA-256 `{manifest['dataset_sha256']}`)",
         f"- **Split protocol:** `{manifest['split_protocol_id']}` "
         f"(manifest SHA-256 `{manifest['split_manifest_sha256']}`)",

@@ -413,9 +413,15 @@ def test_all_four_verified_models_real_demo_csv_parity_and_eval(tmp_path: Path):
                 if int(rec["row_id"]) in ood_row_ids:
                     assert rec["containment_allowed"] is False
                     assert rec["action"] != "ISOLATE_RECOMMENDED"
-            if az["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED":
+            if key == "random_forest":
+                assert az["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED"
                 assert sim_body["action_counts"]["ISOLATE_RECOMMENDED"] > 0
+                assert (
+                    sim_body["key_rotation_simulation"]["decision"]
+                    == "SIMULATED_ROTATION_RECOMMENDED"
+                )
             else:
+                assert az["compatibility_gate"]["compatibility_status"] == "RESEARCH_ONLY"
                 assert sim_body["action_counts"]["ISOLATE_RECOMMENDED"] == 0
                 assert sim_body["key_rotation_simulation"]["decision"] == "HOLD_RESEARCH_ONLY_MODEL"
                 assert sim_body["key_rotation_simulation"]["recommended"] is False

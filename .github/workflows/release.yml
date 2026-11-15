@@ -138,13 +138,32 @@ jobs:
           cache-all-crates: true
           cache-on-failure: true
 
-      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest)
+      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest, 4-Model E2E Gate)
         run: |
           python scripts/check_environment.py
           python -m ruff check src scripts tests
           python -m black --check src scripts tests
           python scripts/export_openapi_spec.py --check
           python -m pytest tests/unit tests/contract tests/integration -q
+        shell: pwsh
+      - name: Enforce 4-model E2E release gate (live if binaries present, or verified attestation)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
+          $baseSemVer = ($desktopVer -split '-')[0]
+          $attestation = "reports/releases/v${baseSemVer}_e2e_verification.json"
+          if ((Test-Path "artifacts/models/random_forest/random_forest_baseline.joblib") -and (Test-Path "data/demo/demo_flows.csv")) {
+            python scripts/verify_companion_artifacts.py --verify-e2e
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } elseif ("${{ steps.meta.outputs.is_prerelease }}" -ne "true" -or (Test-Path $attestation)) {
+            if (-not (Test-Path $attestation)) {
+              Write-Error "Refusing stable release: missing required 4-model E2E attestation $attestation and live companion binaries are absent."
+              exit 1
+            }
+            python scripts/verify_companion_artifacts.py --verify-attestation $attestation
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
 
       - name: Install and verify Svelte 5 frontend
         run: |

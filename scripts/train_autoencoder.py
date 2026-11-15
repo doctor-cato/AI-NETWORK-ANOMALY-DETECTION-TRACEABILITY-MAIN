@@ -36,6 +36,7 @@ import hashlib
 import json
 import numbers
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -1913,12 +1914,21 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "unified_csv_stream_bounded_to_loaded_partitions": True,
     }
 
+    _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
     raw_run_id = getattr(args, "run_id", None)
-    run_id = (
-        str(raw_run_id).strip()
-        if raw_run_id and str(raw_run_id).strip()
-        else f"ae_{args.calibration_method}_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
-    )
+    if raw_run_id is not None:
+        candidate_run_id = str(raw_run_id).strip()
+        if (
+            not candidate_run_id
+            or not _SAFE_RUN_ID_RE.fullmatch(candidate_run_id)
+            or ".." in candidate_run_id
+        ):
+            raise ValueError(
+                f"Invalid --run-id {raw_run_id!r}: must match {_SAFE_RUN_ID_RE.pattern} without path separators or '..'."
+            )
+        run_id = candidate_run_id
+    else:
+        run_id = f"ae_{args.calibration_method}_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
 
     training_meta = {
         "run_id": run_id,
@@ -1981,6 +1991,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     with (report_dir / "metrics.json").open("w", encoding="utf-8") as fh:
         json.dump(
             {
+                "run_id": run_id,
                 "validation": metrics_val,
                 "test": metrics_test,
                 "threshold_calibration": threshold_meta,
@@ -1988,6 +1999,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
             fh,
             indent=2,
         )
+        fh.write("\n")
 
     with (report_dir / "threshold_calibration.json").open("w", encoding="utf-8") as fh:
         json.dump(threshold_meta, fh, indent=2)
@@ -2020,7 +2032,12 @@ def run_pipeline(args: argparse.Namespace) -> int:
     )
     print(f"  OK Evaluation report written to: {report_md_path}")
 
-    run_snapshot_dir = report_dir / "runs" / run_id
+    runs_root = (report_dir / "runs").resolve()
+    run_snapshot_dir = (runs_root / run_id).resolve()
+    if not run_snapshot_dir.is_relative_to(runs_root) or run_snapshot_dir == runs_root:
+        raise ValueError(
+            f"Unsafe run snapshot directory resolved outside runs/: {run_snapshot_dir}"
+        )
     run_snapshot_dir.mkdir(parents=True, exist_ok=True)
     for fname in (
         "metrics.json",

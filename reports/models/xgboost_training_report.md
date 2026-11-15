@@ -2,7 +2,7 @@
 
 - **Run ID:** `xgb-baseline-1794755807`
 - **Trained at (UTC):** `2026-11-15T15:16:31.093690+00:00`
-- **Git commit:** `7f51390bfe4cea76a413733ac1882d8579fc4a34`
+- **Git commit:** `7f51390bfe4cea76a413733ac1882d8579fc4a34` (`git_dirty=True` — trained from uncommitted XGBoost changes prior to commit `54d7c8a`; `.joblib` SHA-256 `3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e`)
 - **Dataset:** `NF-UNSW-NB15-v3` (SHA-256 `4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`)
 - **Split protocol:** `nf-unsw-nb15-v3-chronological-group-purged-v1` (manifest SHA-256 `bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`)
 - **Preprocessing artifact:** `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (SHA-256 `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`)

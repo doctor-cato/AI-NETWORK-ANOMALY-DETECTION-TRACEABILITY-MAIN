@@ -671,3 +671,24 @@ def test_execute_training_evaluate_test_post_fit_and_lock(
     assert (eval_dir / "confusion_matrix.csv").is_file()
     assert (eval_dir / "evaluation_metadata.json").is_file()
     assert (eval_dir / "evaluation_report.md").is_file()
+    assert "Zero Test partition rows are materialized or converted into DataFrames." != (
+        test_manifest["test_lock_audit"]["contract_b_guarantee"]
+    )
+    assert test_manifest["test_lock_audit"]["contract_b_guarantee"].startswith("PASSED_DURING_FIT:")
+
+
+def test_shipped_xgboost_manifest_test_lock_audit_consistent():
+    manifest_path = (
+        Path(__file__).resolve().parents[2] / "reports" / "models" / "xgboost_manifest.json"
+    )
+    raw = manifest_path.read_text(encoding="utf-8")
+    assert raw.endswith("\n")
+    manifest = json.loads(raw)
+    audit = manifest["test_lock_audit"]
+    assert audit["test_partition_accessed"] is True
+    assert audit["test_rows_loaded"] > 0
+    assert (
+        "Zero Test partition rows are materialized or converted into DataFrames."
+        not in audit["contract_b_guarantee"]
+    )
+    assert "PASSED_DURING_FIT" in audit["contract_b_guarantee"]
