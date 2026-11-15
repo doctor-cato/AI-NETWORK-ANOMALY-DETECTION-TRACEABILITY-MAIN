@@ -47,6 +47,7 @@ UNSW_VALIDATION_START = 1665240  # rows 1,665,240..2,010,610
 UNSW_VALIDATION_END = 2010611
 UNSW_PURGED_GAP_2_END = 2019471  # rows 2,010,611..2,019,470
 UNSW_TEST_LOCK_START = 2019471  # rows 2,019,471..2,365,423 (BLOCKED)
+_UNSET = object()
 
 DATASET_CONFIGS = {
     "NF-CSE-CIC-IDS2018-v3": {
@@ -560,6 +561,9 @@ def verify_unsw_sample_binding(
     expected_count: Optional[int] = None,
     expected_partition: str = "validation",
     source_csv_path: Optional[Path] = None,
+    expected_offset_in_partition: Optional[int] = None,
+    expected_random_seed: Any = _UNSET,
+    expected_sampling_method: Optional[str] = None,
 ) -> int:
     """Verify sample content, source CSV binding, recorded offset/indices, and split membership."""
     if expected_partition not in ("train", "validation"):
@@ -571,9 +575,24 @@ def verify_unsw_sample_binding(
     if not manifest_path.is_file():
         raise FileNotFoundError(f"Sample manifest not found: {manifest_path}")
 
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    checksum = manifest.get("content_checksum", {})
-    if manifest.get("dataset_identity", {}).get("dataset_name") != "NF-UNSW-NB15-v3":
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid sample manifest JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("Sample manifest must be a JSON object")
+
+    checksum = manifest.get("content_checksum")
+    dataset_identity = manifest.get("dataset_identity")
+    provenance = manifest.get("provenance")
+    if (
+        not isinstance(checksum, dict)
+        or not isinstance(dataset_identity, dict)
+        or not isinstance(provenance, dict)
+    ):
+        raise ValueError("Sample manifest missing required metadata sections")
+
+    if dataset_identity.get("dataset_name") != "NF-UNSW-NB15-v3":
         raise ValueError("Sample manifest dataset identity mismatch")
 
     slice_type, source_rows = _extract_verified_source_row_indices(checksum)
@@ -586,7 +605,9 @@ def verify_unsw_sample_binding(
             f"got {declared_partition!r}"
         )
 
-    declared_schema = manifest.get("dataset_identity", {}).get("feature_schema")
+    declared_schema = dataset_identity.get("feature_schema")
+    if slice_type == "partition_indices" and not isinstance(declared_schema, list):
+        raise ValueError("Sample manifest lacks feature_schema")
     if declared_schema is not None and declared_schema != list(ML_FEATURE_COLUMNS):
         raise ValueError(
             "Sample manifest feature_schema does not match baseline ML_FEATURE_COLUMNS"
@@ -636,6 +657,102 @@ def verify_unsw_sample_binding(
         source_rows, split_manifest_path, indices_dir, partition=expected_partition
     )
 
+    if slice_type == "partition_indices":
+        manifest_offset = checksum.get("partition_offset")
+        if (
+            isinstance(manifest_offset, bool)
+            or not isinstance(manifest_offset, int)
+            or manifest_offset < 0
+        ):
+            raise ValueError("Sample manifest lacks valid integer partition_offset")
+
+        manifest_method = provenance.get("sampling_method")
+        if manifest_method not in (
+            "deterministic_seeded_partition_sample",
+            "deterministic_partition_offset",
+        ):
+            raise ValueError(
+                f"Sample manifest has invalid or missing sampling_method: {manifest_method!r}"
+            )
+
+        if "sampling_seed" not in provenance and "random_seed" not in provenance:
+            raise ValueError("Sample manifest lacks sampling_seed in provenance")
+        if (
+            "sampling_seed" in provenance
+            and "random_seed" in provenance
+            and provenance["sampling_seed"] != provenance["random_seed"]
+        ):
+            raise ValueError("Sample manifest provenance sampling_seed and random_seed mismatch")
+
+        effective_manifest_seed = (
+            provenance.get("sampling_seed")
+            if "sampling_seed" in provenance
+            else provenance.get("random_seed")
+        )
+        if manifest_method == "deterministic_seeded_partition_sample":
+            if isinstance(effective_manifest_seed, bool) or not isinstance(
+                effective_manifest_seed, int
+            ):
+                raise ValueError("Seeded partition sample manifest requires integer sampling_seed")
+        else:
+            if effective_manifest_seed is not None:
+                raise ValueError(
+                    "Unseeded partition offset sample manifest requires sampling_seed to be None"
+                )
+
+        if (
+            expected_offset_in_partition is not None
+            and manifest_offset != expected_offset_in_partition
+        ):
+            raise ValueError(
+                f"Existing UNSW sample partition_offset ({manifest_offset}) differs from "
+                f"requested offset_in_partition ({expected_offset_in_partition}); "
+                "pass overwrite=True or --overwrite to regenerate"
+            )
+        if expected_sampling_method is not None and manifest_method != expected_sampling_method:
+            raise ValueError(
+                f"Existing UNSW sample sampling_method ({manifest_method!r}) differs from "
+                f"requested sampling_method ({expected_sampling_method!r}); "
+                "pass overwrite=True or --overwrite to regenerate"
+            )
+        if expected_random_seed is not _UNSET and effective_manifest_seed != expected_random_seed:
+            raise ValueError(
+                f"Existing UNSW sample random_seed ({effective_manifest_seed!r}) differs from "
+                f"requested random_seed ({expected_random_seed!r}); "
+                "pass overwrite=True or --overwrite to regenerate"
+            )
+
+        split_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+        raw_target = _load_verified_partition_indices(
+            split_data, split_manifest_path, indices_dir, expected_partition
+        )
+        assert raw_target is not None
+        target_indices = np.sort(raw_target)
+        pool = target_indices[manifest_offset:]
+        if pool.size < count:
+            raise ValueError(
+                f"Sample manifest partition_offset ({manifest_offset}) and count ({count}) "
+                f"exceed partition size ({target_indices.size})"
+            )
+        if manifest_method == "deterministic_seeded_partition_sample":
+            rng = np.random.default_rng(effective_manifest_seed)
+            expected_selected = np.sort(rng.choice(pool, size=count, replace=False)).astype(
+                np.int64
+            )
+        else:
+            expected_selected = pool[:count].astype(np.int64)
+        if not np.array_equal(source_rows, expected_selected):
+            raise ValueError(
+                "Sample manifest source_row_indices do not match deterministic selection "
+                "for recorded sampling parameters"
+            )
+    elif (
+        expected_offset_in_partition is not None
+        or expected_sampling_method is not None
+        or expected_random_seed is not _UNSET
+    ):
+        raise ValueError("Expected partition_indices sample manifest, got slice sample")
+
     resolved_source_csv = _resolve_unsw_source_csv(
         sample_path, manifest, split_manifest_path, source_csv_path=source_csv_path
     )
@@ -646,6 +763,10 @@ def verify_unsw_sample_binding(
         )
 
     expected_rows_sha = checksum.get("source_rows_sha256")
+    if slice_type == "partition_indices" and (
+        not isinstance(expected_rows_sha, str) or not expected_rows_sha
+    ):
+        raise ValueError("Sample manifest lacks source_rows_sha256")
     if expected_rows_sha is not None and not isinstance(expected_rows_sha, str):
         raise ValueError("Invalid source_rows_sha256 in sample manifest")
 
@@ -679,6 +800,10 @@ def extract_unsw_partition_sample(
         or offset_in_partition < 0
     ):
         raise ValueError("sample_rows must be >= 1 and offset_in_partition >= 0")
+    if random_seed is not None and (
+        isinstance(random_seed, bool) or not isinstance(random_seed, int)
+    ):
+        raise ValueError("random_seed must be an integer or None")
     if not source_csv_path.is_file():
         raise FileNotFoundError(f"Canonical UNSW source CSV not found: {source_csv_path}")
 
@@ -688,6 +813,12 @@ def extract_unsw_partition_sample(
     if actual_dataset_sha256 != expected_dataset_sha256:
         raise ValueError("Source CSV SHA-256 does not match split manifest dataset_sha256")
 
+    sampling_method = (
+        "deterministic_seeded_partition_sample"
+        if random_seed is not None
+        else "deterministic_partition_offset"
+    )
+
     if output_path.exists() and output_path.stat().st_size > 0 and not overwrite:
         verify_unsw_sample_binding(
             output_path,
@@ -696,6 +827,9 @@ def extract_unsw_partition_sample(
             expected_count=sample_rows,
             expected_partition=partition,
             source_csv_path=source_csv_path,
+            expected_offset_in_partition=offset_in_partition,
+            expected_random_seed=random_seed,
+            expected_sampling_method=sampling_method,
         )
         return output_path
 
@@ -715,90 +849,104 @@ def extract_unsw_partition_sample(
         rng = np.random.default_rng(random_seed)
         chosen = rng.choice(pool, size=sample_rows, replace=False)
         selected = np.sort(chosen).astype(np.int64)
-        sampling_method = "deterministic_seeded_partition_sample"
     else:
         selected = pool[:sample_rows]
-        sampling_method = "deterministic_partition_offset"
     _verify_unsw_row_indices_membership(selected, split_manifest_path, indices_dir, partition)
 
+    manifest_path = output_path.with_name(f"{output_path.name}.manifest.json")
+    if overwrite and manifest_path.exists():
+        manifest_path.unlink()
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    staging = output_path.with_name(f".{output_path.name}.staging")
+    staging_csv = output_path.with_name(f".{output_path.name}.staging")
+    staging_manifest = manifest_path.with_name(f".{manifest_path.name}.staging")
     rows_hasher = hashlib.sha256()
     attacks: Dict[str, int] = {}
 
-    with (
-        open(source_csv_path, "r", encoding="utf-8", errors="strict") as src_f,
-        open(staging, "w", encoding="utf-8", newline="\n") as out_f,
-    ):
-        header = src_f.readline()
-        if not header:
-            raise ValueError(f"Empty source CSV: {source_csv_path}")
-        header_norm = header.rstrip("\r\n")
-        out_f.write(header_norm + "\n")
-        rows_hasher.update((header_norm + "\n").encode("utf-8"))
+    try:
+        with (
+            open(source_csv_path, "r", encoding="utf-8", errors="strict") as src_f,
+            open(staging_csv, "w", encoding="utf-8", newline="\n") as out_f,
+        ):
+            header = src_f.readline()
+            if not header:
+                raise ValueError(f"Empty source CSV: {source_csv_path}")
+            header_norm = header.rstrip("\r\n")
+            out_f.write(header_norm + "\n")
+            rows_hasher.update((header_norm + "\n").encode("utf-8"))
 
-        current_src_idx = 0
-        for target_idx_raw in selected:
-            target_idx = int(target_idx_raw)
-            while current_src_idx < target_idx:
-                if not src_f.readline():
-                    raise ValueError(f"Source CSV ended before index {target_idx}")
+            current_src_idx = 0
+            for target_idx_raw in selected:
+                target_idx = int(target_idx_raw)
+                while current_src_idx < target_idx:
+                    if not src_f.readline():
+                        raise ValueError(f"Source CSV ended before index {target_idx}")
+                    current_src_idx += 1
+                line = src_f.readline()
+                if not line:
+                    raise ValueError(f"Source CSV ended at index {target_idx}")
                 current_src_idx += 1
-            line = src_f.readline()
-            if not line:
-                raise ValueError(f"Source CSV ended at index {target_idx}")
-            current_src_idx += 1
 
-            line_norm = line.rstrip("\r\n")
-            out_f.write(line_norm + "\n")
-            rows_hasher.update((line_norm + "\n").encode("utf-8"))
-            attack = line_norm.rsplit(",", 1)[-1]
-            attacks[attack] = attacks.get(attack, 0) + 1
+                line_norm = line.rstrip("\r\n")
+                out_f.write(line_norm + "\n")
+                rows_hasher.update((line_norm + "\n").encode("utf-8"))
+                attack = line_norm.rsplit(",", 1)[-1]
+                attacks[attack] = attacks.get(attack, 0) + 1
 
-    staging.replace(output_path)
-    cfg = DATASET_CONFIGS["NF-UNSW-NB15-v3"]
-    sample_sha256 = _sha256_file(output_path)
-    selected_indices_sha256 = _compute_indices_sha256(selected)
-    manifest_data = {
-        "dataset_identity": {
-            "dataset_name": "NF-UNSW-NB15-v3",
-            "doi": cfg["doi"],
-            "format": "NetFlow-v3",
-            "column_count": cfg.get("column_count", 55),
-            "feature_contract": "nf-unsw-nb15-v3-baseline-47",
-            "feature_schema": list(ML_FEATURE_COLUMNS),
-        },
-        "content_checksum": {
-            "sample_sha256": sample_sha256,
-            "sample_rows_extracted": int(selected.size),
-            "slice_type": "partition_indices",
-            "skip_rows_offset": None,
-            "partition": partition,
-            "partition_offset": offset_in_partition,
-            "source_row_indices": [int(x) for x in selected.tolist()],
-            "selected_indices_sha256": selected_indices_sha256,
-            "split_manifest_sha256": split_manifest_sha256,
-            "source_dataset_sha256": actual_dataset_sha256,
-            "source_rows_sha256": rows_hasher.hexdigest(),
-        },
-        "provenance": {
-            "source_csv_path": str(source_csv_path),
-            "source_doi": cfg["doi"],
-            "sampling_method": sampling_method,
-            "sampling_seed": random_seed,
-            "random_seed": random_seed,
-            "class_distribution": attacks,
-            "created_at_utc": datetime.now(timezone.utc).isoformat(),
-        },
-        "governance": {
-            "test_lock_status": "ENFORCED",
-            "partition_leakage_audit": (
-                f"PASSED (All rows verified strictly in canonical '{partition}' partition indices)"
-            ),
-        },
-    }
-    manifest_path = output_path.with_name(f"{output_path.name}.manifest.json")
-    manifest_path.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+        cfg = DATASET_CONFIGS["NF-UNSW-NB15-v3"]
+        sample_sha256 = _sha256_file(staging_csv)
+        selected_indices_sha256 = _compute_indices_sha256(selected)
+        manifest_data = {
+            "dataset_identity": {
+                "dataset_name": "NF-UNSW-NB15-v3",
+                "doi": cfg["doi"],
+                "format": "NetFlow-v3",
+                "column_count": cfg.get("column_count", 55),
+                "feature_contract": "nf-unsw-nb15-v3-baseline-47",
+                "feature_schema": list(ML_FEATURE_COLUMNS),
+            },
+            "content_checksum": {
+                "sample_sha256": sample_sha256,
+                "sample_rows_extracted": int(selected.size),
+                "slice_type": "partition_indices",
+                "skip_rows_offset": None,
+                "partition": partition,
+                "partition_offset": offset_in_partition,
+                "source_row_indices": [int(x) for x in selected.tolist()],
+                "selected_indices_sha256": selected_indices_sha256,
+                "split_manifest_sha256": split_manifest_sha256,
+                "source_dataset_sha256": actual_dataset_sha256,
+                "source_rows_sha256": rows_hasher.hexdigest(),
+            },
+            "provenance": {
+                "source_csv_path": str(source_csv_path),
+                "source_doi": cfg["doi"],
+                "sampling_method": sampling_method,
+                "sampling_seed": random_seed,
+                "random_seed": random_seed,
+                "class_distribution": attacks,
+                "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            },
+            "governance": {
+                "test_lock_status": "ENFORCED",
+                "partition_leakage_audit": (
+                    f"PASSED (All rows verified strictly in canonical '{partition}' partition indices)"
+                ),
+            },
+        }
+        staging_manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+        staging_csv.replace(output_path)
+        staging_manifest.replace(manifest_path)
+    except Exception:
+        if manifest_path.exists():
+            manifest_path.unlink(missing_ok=True)
+        if output_path.exists() and not manifest_path.exists():
+            output_path.unlink(missing_ok=True)
+        raise
+    finally:
+        staging_csv.unlink(missing_ok=True)
+        staging_manifest.unlink(missing_ok=True)
+
     return output_path
 
 
@@ -1030,8 +1178,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--offset-in-partition",
         type=int,
-        default=0,
-        help="Starting offset inside sorted partition indices for 'partition_indices' mode",
+        default=None,
+        help="Starting offset inside sorted partition indices for 'partition_indices' mode (default: 0)",
     )
     parser.add_argument(
         "--source-csv",
@@ -1054,8 +1202,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--random-seed",
         type=int,
-        default=42,
-        help="Random seed for stratified sampling",
+        default=None,
+        help="Random seed for sampling (default: 42)",
     )
     parser.add_argument(
         "--max-scan-lines",
@@ -1073,6 +1221,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--verify-only",
         action="store_true",
         help="Verify existing dataset file without downloading",
+    )
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Return exit code 0 with explicit SKIPPED status when --verify-only target file is absent",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite and regenerate existing sample CSV and companion manifest",
     )
 
     args = parser.parse_args(argv)
@@ -1099,19 +1257,50 @@ def main(argv: Optional[List[str]] = None) -> int:
                 else cfg["sample_name"]
             )
             target = output_dir / target_name
-            if not target.exists():
-                print(f"Target dataset file does not exist: {target} (BLOCKED / SKIPPED)")
-                return 0
+            if not target.is_file():
+                if args.allow_missing:
+                    print(f"SKIPPED: Target dataset file does not exist: {target}")
+                    return 0
+                raise FileNotFoundError(f"Target dataset file does not exist: {target}")
+
             if args.dataset == "NF-UNSW-NB15-v3":
                 verify_unsw_sample_binding(
                     target,
                     split_manifest_path,
                     indices_dir,
+                    expected_count=args.sample_rows,
                     expected_partition=args.partition,
                     source_csv_path=args.source_csv,
+                    expected_offset_in_partition=args.offset_in_partition,
+                    expected_random_seed=(
+                        args.random_seed if args.random_seed is not None else _UNSET
+                    ),
                 )
-            print(f"Verified dataset file exists: {target} ({target.stat().st_size:,} bytes)")
+            else:
+                manifest_path = target.with_name(f"{target.name}.manifest.json")
+                if not manifest_path.is_file():
+                    raise FileNotFoundError(f"Sample manifest not found: {manifest_path}")
+                try:
+                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid sample manifest JSON: {exc}") from exc
+                if (
+                    not isinstance(manifest_data, dict)
+                    or manifest_data.get("dataset_identity", {}).get("dataset_name") != args.dataset
+                ):
+                    raise ValueError("Sample manifest dataset identity mismatch")
+                expected_sha = manifest_data.get("content_checksum", {}).get("sample_sha256")
+                actual_sha = _sha256_file(target)
+                if not isinstance(expected_sha, str) or expected_sha != actual_sha:
+                    raise ValueError(f"Sample SHA-256 mismatch for {target}")
+            print(
+                f"VERIFIED: Dataset file and companion manifest verified: "
+                f"{target} ({target.stat().st_size:,} bytes)"
+            )
             return 0
+
+        effective_offset = args.offset_in_partition if args.offset_in_partition is not None else 0
+        effective_seed = args.random_seed if args.random_seed is not None else 42
 
         effective_mode = (
             args.sample_mode
@@ -1137,8 +1326,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 indices_dir=indices_dir,
                 partition=args.partition,
                 sample_rows=args.sample_rows or cfg["default_sample_take"],
-                offset_in_partition=args.offset_in_partition,
-                random_seed=args.random_seed,
+                offset_in_partition=effective_offset,
+                overwrite=args.overwrite,
+                random_seed=effective_seed,
             )
             return 0
 
@@ -1148,7 +1338,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             sample_rows=args.sample_rows,
             skip_rows=args.skip_rows,
             sample_mode=effective_mode,
-            random_seed=args.random_seed,
+            random_seed=effective_seed,
             max_scan_lines=args.max_scan_lines,
         )
         return 0
