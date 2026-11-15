@@ -597,6 +597,8 @@ class CompatibilityGateSummarySchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    source_id: str = Field(default="source:nf-v3-unverified")
+    provenance_verified: bool = Field(default=False)
     model_key: str
     model_identifier: Optional[str] = None
     eligible: bool
@@ -688,7 +690,7 @@ class CsvFlowPredictionItem(BaseModel):
 
     row_id: Union[int, str]
     row_index: int = Field(..., ge=0)
-    predicted_label: int = Field(..., ge=0, le=1)
+    predicted_label: Optional[int] = Field(default=None, ge=0, le=1)
     predicted_class: str
     attack_probability: Optional[float] = None
     raw_anomaly_score: Optional[float] = None
@@ -805,6 +807,7 @@ class CsvEvaluateResponse(BaseModel):
     labels_sha256: str
     matched_rows: int = Field(..., ge=0)
     unmatched_rows: int = Field(..., ge=0)
+    abstained_rows: int = Field(default=0, ge=0)
     accuracy: float
     precision: float
     recall: float

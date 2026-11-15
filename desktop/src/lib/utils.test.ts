@@ -52,13 +52,20 @@ describe("score semantics and OOD abstention display", () => {
     expect(fmt.thresholdText).toBe("-0.0335");
   });
 
-  it("never renders synthetic score when row is OOD abstained", () => {
+  it("never renders synthetic score or prediction when row is OOD abstained", () => {
     const oodRow = makeItem({
+      predicted_label: null,
+      predicted_class: "ABSTAINED_OOD",
+      attack_probability: null,
+      raw_anomaly_score: null,
       is_ood_flagged: true,
       risk_score: null,
       risk_level: "ABSTAINED_OOD",
     });
     expect(formatRiskDisplay(oodRow)).toBe("ABSTAINED_OOD");
+    const fmt = formatScoreSemantically(oodRow);
+    expect(fmt.probabilityText).toBe("ABSTAINED (OOD)");
+    expect(fmt.anomalyScoreText).toBe("ABSTAINED (OOD)");
   });
 });
 
@@ -67,7 +74,8 @@ describe("prediction filtering and sorting", () => {
     const items = [
       makeItem({ row_id: 10, row_index: 0, predicted_label: 0, predicted_class: "Benign", risk_score: 5, risk_level: "LOW", src_ip: "10.0.0.1" }),
       makeItem({ row_id: 20, row_index: 1, predicted_label: 1, predicted_class: "Attack", risk_score: 94, risk_level: "CRITICAL", src_ip: "172.16.0.8" }),
-      makeItem({ row_id: 30, row_index: 2, predicted_label: 1, predicted_class: "Attack", risk_score: null, risk_level: "ABSTAINED_OOD", is_ood_flagged: true, src_ip: "172.16.0.9" }),
+      makeItem({ row_id: 25, row_index: 2, predicted_label: 1, predicted_class: "Attack", risk_score: 62, risk_level: "HIGH", src_ip: "172.16.0.9" }),
+      makeItem({ row_id: 30, row_index: 3, predicted_label: null, predicted_class: "ABSTAINED_OOD", attack_probability: null, raw_anomaly_score: null, risk_score: null, risk_level: "ABSTAINED_OOD", is_ood_flagged: true, src_ip: "172.16.0.10" }),
     ];
 
     const attacks = filterAndSortPredictions(items, {
@@ -77,7 +85,16 @@ describe("prediction filtering and sorting", () => {
       sortBy: "risk_score",
       sortDir: "desc",
     });
-    expect(attacks.map((x) => x.row_id)).toEqual([20, 30]);
+    expect(attacks.map((x) => x.row_id)).toEqual([20, 25]);
+
+    const oodOnly = filterAndSortPredictions(items, {
+      search: "",
+      classFilter: "OOD",
+      riskTier: "all",
+      sortBy: "row_index",
+      sortDir: "asc",
+    });
+    expect(oodOnly.map((x) => x.row_id)).toEqual([30]);
 
     const dist = computeRiskDistribution(items);
     expect(dist.find((b) => b.label.startsWith("CRITICAL"))?.count).toBe(1);

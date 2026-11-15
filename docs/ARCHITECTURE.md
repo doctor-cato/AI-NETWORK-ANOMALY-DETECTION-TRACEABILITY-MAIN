@@ -4,17 +4,17 @@ Tài liệu này mô tả kiến trúc mục tiêu đã được thu hẹp cho s
 
 ```mermaid
 flowchart LR
-    subgraph Desktop["Windows Desktop App (PLANNED — Issue #16)"]
+    subgraph Desktop["Windows Desktop App (IMPLEMENTED v0.6.0 — Issue #16)"]
         UI["Svelte 5 UI<br/>(CSV Import, Schema/Health Check, Charts,<br/>Confusion Matrix, Provenance Export)"]
         TAURI["Rust / Tauri 2 Core<br/>(Native File Dialogs, Python Process Lifecycle,<br/>Typed HTTP Client -> 127.0.0.1)"]
         UI <--> TAURI
     end
 
-    subgraph Backend["Python Localhost Backend (IMPLEMENTED — #30 + Consolidation)"]
-        API["FastAPI Service (127.0.0.1:8000)<br/>/api/v1/health, /api/v1/analyze, /api/v1/ingest,<br/>/api/v1/incidents, /api/v1/timeline, /api/v1/keys"]
-        GATE["Schema & Eligibility Validation<br/>(47 ML Features + Optional InferenceEligibilityGate)"]
+    subgraph Backend["Python Localhost Backend (IMPLEMENTED v0.1.0 — #30 + M6 CSV API)"]
+        API["FastAPI Service (127.0.0.1:<port>)<br/>/health, /api/v1/models, /api/v1/csv/inspect,<br/>/api/v1/csv/analyze, /api/v1/csv/evaluate, /api/v1/csv/export"]
+        GATE["Provenance & Eligibility Validation<br/>(47 ML Features + Source Provenance + OOD Abstention)"]
         PRE["TrainOnlyPreprocessor<br/>(SHA-256 Verified)"]
-        MODELS["Verified Model Loaders<br/>RandomForest (READY on local train)<br/>XGBoost / IsolationForest / Autoencoder<br/>(BLOCKED / NOT READY if binary absent)"]
+        MODELS["Verified Model Loaders<br/>RandomForest & IsolationForest (READY)<br/>XGBoost & Autoencoder (BLOCKED / NOT READY)"]
         SQLITE["SQLite Persistence<br/>(Single Writer: Python FastAPI)"]
         API --> GATE --> PRE --> MODELS
         API <--> SQLITE
@@ -37,13 +37,17 @@ flowchart LR
 
 ## Ranh giới trách nhiệm giữa Rust và Python
 
-1. **Rust / Tauri 2 + Svelte 5 (`PLANNED` tại Issue #16):**
-   - Hiển thị giao diện người dùng (chọn file CSV, xem trạng thái readiness `READY` vs `BLOCKED / NOT READY`, chọn 1 trong 4 model, xem bảng kết quả `Benign`/`Attack` + xác suất/anomaly score, thống kê/biểu đồ, export CSV kèm provenance, và tính/hiển thị Confusion Matrix khi nạp riêng `demo_labels.csv`).
-   - Quản lý tiến trình con `uvicorn` / `scripts/run_api.py` (tự bật khi mở app, poll `/api/v1/health`, tắt gọn khi thoát app), mở Native File Dialog của Windows.
+1. **Rust / Tauri 2 + Svelte 5 (`IMPLEMENTED / TESTED` tại `desktop/`, phiên bản `0.6.0`):**
+   - Hiển thị giao diện người dùng (chọn file CSV, xem trạng thái readiness `READY` vs `BLOCKED / NOT READY`, chọn 1 trong 4 model, xem bảng kết quả `Benign` / `Attack` / `ABSTAINED_OOD` + xác suất/anomaly score, thống kê/biểu đồ, export CSV kèm provenance, và tính/hiển thị Confusion Matrix khi nạp riêng `demo_labels.csv`).
+   - Quản lý tiến trình con `uvicorn` / `scripts/run_api.py` (tự cấp cổng trống trên `127.0.0.1`, poll `/health`, tắt gọn cây tiến trình qua `taskkill /T /F` khi thoát app), mở Native File Dialog của Windows.
+   - **Giới hạn đóng gói (`v0.6.0`):** Gói cài đặt Windows NSIS (`NetFlow Sentinel M6_0.6.0_x64-setup.exe`) nhúng sẵn giao diện Svelte 5 vào tệp thực thi Rust, nhưng **chưa đóng gói kèm Python runtime hay `.joblib` artifacts bên trong binary** (offline-capable with external prerequisites; xem [WINDOWS_INSTALLATION.md](WINDOWS_INSTALLATION.md) và [RELEASE_PROCESS.md](RELEASE_PROCESS.md)).
    - **Quy tắc ràng buộc:** Không nhân bản `TrainOnlyPreprocessor` hay logic ML inference bằng Rust; **không** mở kết nối ghi trực tiếp vào SQLite để tránh xung đột với Python FastAPI; không mở API ra ngoài `127.0.0.1`.
-2. **Python FastAPI + ML Engine (`IMPLEMENTED / TESTED`):**
-   - **Single logical owner của SQLite (`data/network_anomaly.db`):** Lưu runs, events, incidents, timeline và key audit metadata.
-   - **Fail-closed Preprocessing & Model Loading (`src/network_anomaly/inference/predict.py`):** Kiểm tra SHA-256 giữa binary, companion manifest và `preprocessor_sha256` trước khi nạp; hỗ trợ thống nhất `RandomForest`, `XGBoost`, `IsolationForest` và `Autoencoder` (`AutoencoderModel`). Khi binary `.joblib`/`.pt` thiếu, `/api/v1/health` báo `model_ready: false` (`degraded`) và `/api/v1/analyze` từ chối suy luận theo mặc định trừ phi bật heuristic fallback tường minh (tuyệt đối không mạo danh AI model).
+2. **Python FastAPI + ML Engine (`IMPLEMENTED / TESTED`, hợp đồng API phiên bản `0.1.0`):**
+   - **Single logical owner của SQLite:** Lưu runs, events, incidents, timeline và key audit metadata.
+   - **Fail-closed Preprocessing & Model Loading (`src/network_anomaly/inference/predict.py`):** Kiểm tra SHA-256 giữa binary, companion manifest và `preprocessor_sha256` trước khi nạp; hỗ trợ thống nhất `RandomForest`, `XGBoost`, `IsolationForest` và `Autoencoder` (`AutoencoderModel`). Khi binary `.joblib`/`.pt` thiếu, `/api/v1/models` báo `BLOCKED / NOT READY` và `/api/v1/csv/analyze` từ chối suy luận fail-closed với `HTTP 503`.
+   - **Xác minh Provenance nguồn CSV & Từ chối suy luận OOD (`src/network_anomaly/api/desktop_csv.py`):**
+     - `resolve_csv_source_provenance()` kiểm tra mã băm SHA-256 và `demo_manifest.json` trước khi gán `source:nf-v3-canonical` (`MODEL_VALIDATED`). Tệp CSV bên ngoài chưa xác minh provenance được gán `source:nf-v3-unverified` (`SEMANTICALLY_COMPATIBLE` / `VALIDATION_NOT_VERIFIED`).
+     - Các dòng vi phạm bất biến OOD hoặc `MIN_TTL == 0` được từ chối suy luận lẫn tính điểm rủi ro (`predicted_label = null`, `predicted_class = "ABSTAINED_OOD"`, `risk_level = "ABSTAINED_OOD"`) và được loại trừ khỏi Confusion Matrix (`abstained_rows`).
    - **Hợp đồng dữ liệu nghiêm ngặt:** `NF-UNSW-NB15-v3` cung cấp 55 cột (`47` ML features `nf-unsw-nb15-v3-baseline-47` + `6` trace metadata `FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `L4_SRC_PORT`, `IPV4_DST_ADDR`, `L4_DST_PORT` + `2` target `Label`, `Attack`). `Label`, `Attack` và 6 trường trace metadata **tuyệt đối bị loại khỏi ma trận đặc trưng `X`**.
 
 ## Ranh giới mô-đun & Trạng thái củng cố
@@ -53,11 +57,11 @@ flowchart LR
 | Data, Split & Preprocessing | `src/network_anomaly/data/`, `preprocessing/` | Manifest, 47-feature split, `TrainOnlyPreprocessor` | **IMPLEMENTED / TESTED / REAL-DATA VERIFIED** (C1–C2) |
 | ML Models & Inference | `src/network_anomaly/models/`, `inference/` | RF, XGBoost, Isolation Forest, Autoencoder + `InferencePipeline` | RF **EXPERIMENTALLY VALIDATED**; XGBoost Validation verified; IF/AE **IMPLEMENTED / TESTED** |
 | Demo Dataset Preparation | `scripts/prepare_demo_dataset.py` | Tách `demo_flows.csv` / `demo_labels.csv` / `demo_manifest.json` từ Validation | **IMPLEMENTED / TESTED & REAL-DATA VERIFIED** (200 rows, 0 Train/Test overlap) |
-| FastAPI & SQLite | `src/network_anomaly/api/`, `scripts/run_api.py` | Localhost REST endpoints, SQLite persistence | **IMPLEMENTED / TESTED** (#30 CLOSED, #59 CLOSED); OpenAPI contract đồng bộ |
-| Multi-Source Ingestion & Gate | `src/network_anomaly/ingestion/` (PR #47) | `SourceRegistry`, `InferenceEligibilityGate`, OOD check | **PR #47 Ready for Review** (`f999930`, 6/6 CI PASS); **REDUCE** phạm vi adapter phụ |
-| Desktop UI (Tauri 2 + Svelte 5) | Chưa có (`src-tauri/` + Svelte frontend dự kiến) | Desktop GUI Windows, process lifecycle, offline demo | **PLANNED** (#16 CORE-DEMO — thay thế hoàn toàn Streamlit) |
-| Behavioral / Risk / Trace | #28, #32, #24 | Thống kê IP/port NetFlow, ranking minh bạch, evidence timeline | **REDUCED / DEFERRED** — không chặn CSV Inference MVP; không FFI/PyO3 |
-| Security / Adaptive Response | #26, #27 | Localhost bind, SHA-256 gate, SQLite key metadata audit | **DEFERRED** — hoãn full AES-256-GCM keyring & adaptive rotation |
+| FastAPI & SQLite | `src/network_anomaly/api/`, `scripts/run_api.py` | Localhost REST endpoints (`/api/v1/csv/*`), SQLite persistence | **IMPLEMENTED / TESTED** (#30 CLOSED, #59 CLOSED); OpenAPI contract đồng bộ |
+| Multi-Source Ingestion & Gate | `src/network_anomaly/ingestion/` (PR #47) | `SourceRegistry`, `InferenceEligibilityGate`, OOD check, provenance verification | **IMPLEMENTED / TESTED** (`source:nf-v3-canonical` vs `source:nf-v3-unverified`) |
+| Desktop UI (Tauri 2 + Svelte 5) | `desktop/src-tauri/`, `desktop/src/` (`v0.6.0`) | Desktop GUI Windows, process lifecycle, NSIS installer, offline-capable demo | **IMPLEMENTED / TESTED** (#16 CORE-DEMO — cần Python & artifacts bên ngoài) |
+| Behavioral / Risk / Trace | #28, #32, #24 (`desktop_csv.py`) | Thống kê IP/port NetFlow, ranking từ chối OOD, deterministic timeline | **IMPLEMENTED / TESTED (Scoped M6)** — không FFI/PyO3 |
+| Security / Adaptive Response | #26, #27 | Localhost bind, SHA-256 gate, safe CSV path validation | **SCOPED / DEFERRED** — hoãn full AES-256-GCM keyring & firewall automation |
 
 ## Kiến trúc Tiếp nhận & Cổng OOD (PR #47 / #46 — Phạm vi thu gọn)
 

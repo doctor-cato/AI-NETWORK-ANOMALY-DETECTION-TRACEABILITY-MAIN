@@ -442,12 +442,15 @@
             <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
           </div>
           <div class="kpi-box">
-            <div class="kpi-label">OOD / MIN_TTL=0</div>
+            <div class="kpi-label">OOD Abstained (MIN_TTL=0)</div>
             <div class="kpi-value mono" style="color: var(--semantic-warning)">{analysisData.ood_flagged_count}</div>
           </div>
-          <div class="kpi-box">
+          <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
             <div class="kpi-label">Eligibility Gate</div>
-            <div class="kpi-value" style="font-size: 14px;">{analysisData.compatibility_gate.eligibility_status}</div>
+            <div class="kpi-value" style="font-size: 13px;">{analysisData.compatibility_gate.eligibility_status}</div>
+            <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+              {analysisData.compatibility_gate.compatibility_status}
+            </div>
           </div>
         </div>
         <ChartsPanel analysis={analysisData} />

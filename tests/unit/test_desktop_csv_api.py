@@ -18,9 +18,11 @@ from fastapi.testclient import TestClient
 
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.desktop_csv import (
+    CANONICAL_NF_UNSW_NB15_V3_SHA256,
     build_deterministic_evidence_timeline,
     compute_deterministic_risk_score,
     compute_netflow_behavioral_summary,
+    resolve_csv_source_provenance,
     validate_safe_csv_path,
     validate_safe_export_path,
 )
@@ -272,9 +274,15 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
     assert analyze_resp.status_code == 200, analyze_resp.text
     az = analyze_resp.json()
     assert az["total_rows"] == 4
-    # row 1 had MIN_TTL=0 so OOD-flagged and risk abstained
+    # row 1 had MIN_TTL=0 so OOD-flagged and both inference & risk are abstained
     assert az["ood_flagged_count"] == 1
     assert az["abstained_risk_count"] == 1
+    assert az["attack_count"] == 2
+    assert az["benign_count"] == 1
+    assert az["results"][1]["predicted_label"] is None
+    assert az["results"][1]["predicted_class"] == "ABSTAINED_OOD"
+    assert az["results"][1]["attack_probability"] is None
+    assert az["results"][1]["raw_anomaly_score"] is None
     assert az["results"][1]["risk_score"] is None
     assert az["results"][1]["risk_level"] == "ABSTAINED_OOD"
     assert az["results"][0]["risk_score"] == 92.0
@@ -286,9 +294,12 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
     )
     assert eval_resp.status_code == 200, eval_resp.text
     ev = eval_resp.json()
-    assert ev["matched_rows"] == 4
+    # OOD-abstained row (index 1) is excluded from confusion matrix and reported in abstained_rows
+    assert ev["matched_rows"] == 3
+    assert ev["abstained_rows"] == 1
+    assert ev["unmatched_rows"] == 0
     assert ev["accuracy"] == 1.0
-    assert ev["confusion_matrix"] == {"tn": 2, "fp": 0, "fn": 0, "tp": 2}
+    assert ev["confusion_matrix"] == {"tn": 1, "fp": 0, "fn": 0, "tp": 2}
 
     export_csv = tmp_path / "exported_preds.csv"
     exp_resp = client.post(
@@ -350,7 +361,7 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
 
     demo_df = pd.read_csv(DEMO_FLOWS)
 
-    # 1. Random Forest endpoint vs InferencePipeline CLI parity
+    # 1. Random Forest endpoint vs InferencePipeline CLI parity (non-OOD rows) + OOD abstention
     rf_resp = client.post(
         "/api/v1/csv/analyze",
         json={"file_path": str(DEMO_FLOWS), "model_name": "random_forest", "batch_size": 100},
@@ -359,6 +370,14 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     rf_data = rf_resp.json()
     assert rf_data["total_rows"] == 200
     assert rf_data["ood_report"]["zero_ttl_count"] == 2
+    assert rf_data["compatibility_gate"]["source_id"] == "source:nf-v3-canonical"
+    assert rf_data["compatibility_gate"]["provenance_verified"] is True
+    assert rf_data["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED"
+    assert rf_data["compatibility_gate"]["eligibility_status"] == "PREDICTION_AVAILABLE"
+    assert (
+        rf_data["benign_count"] + rf_data["attack_count"] + rf_data["ood_flagged_count"]
+        == rf_data["total_rows"]
+    )
 
     rf_pipe = InferencePipeline.from_artifacts(
         model_artifact_path=RF_MODEL,
@@ -370,12 +389,26 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
         / "nf_unsw_nb15_v3_preprocessing_manifest.json",
     )
     rf_cli_df = rf_pipe.predict(demo_df)
-    assert [r["predicted_label"] for r in rf_data["results"]] == rf_cli_df["prediction"].astype(
-        int
-    ).tolist()
+    non_ood_rf = [r for r in rf_data["results"] if not r["is_ood_flagged"]]
+    ood_rf = [r for r in rf_data["results"] if r["is_ood_flagged"]]
+    assert len(non_ood_rf) == 198
+    assert len(ood_rf) == 2
+    assert all(
+        r["predicted_label"] is None
+        and r["predicted_class"] == "ABSTAINED_OOD"
+        and r["attack_probability"] is None
+        and r["raw_anomaly_score"] is None
+        and r["risk_score"] is None
+        and r["risk_level"] == "ABSTAINED_OOD"
+        for r in ood_rf
+    )
+    non_ood_indices = [r["row_index"] for r in non_ood_rf]
+    assert [r["predicted_label"] for r in non_ood_rf] == rf_cli_df.iloc[non_ood_indices][
+        "prediction"
+    ].astype(int).tolist()
     assert np.allclose(
-        [r["attack_probability"] for r in rf_data["results"]],
-        rf_cli_df["probability_Attack"].to_numpy(dtype=float),
+        [r["attack_probability"] for r in non_ood_rf],
+        rf_cli_df.iloc[non_ood_indices]["probability_Attack"].to_numpy(dtype=float),
         atol=1e-9,
     )
 
@@ -387,8 +420,19 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     assert if_resp.status_code == 200, if_resp.text
     if_data = if_resp.json()
     assert if_data["total_rows"] == 200
+    non_ood_if = [r for r in if_data["results"] if not r["is_ood_flagged"]]
+    ood_if = [r for r in if_data["results"] if r["is_ood_flagged"]]
+    assert len(non_ood_if) == 198
+    assert len(ood_if) == 2
     assert all(r["attack_probability"] is None for r in if_data["results"])
-    assert all(r["raw_anomaly_score"] is not None for r in if_data["results"])
+    assert all(r["raw_anomaly_score"] is not None for r in non_ood_if)
+    assert all(
+        r["predicted_label"] is None
+        and r["predicted_class"] == "ABSTAINED_OOD"
+        and r["raw_anomaly_score"] is None
+        and r["risk_score"] is None
+        for r in ood_if
+    )
 
     if_pipe = InferencePipeline.from_artifacts(
         model_artifact_path=IF_MODEL,
@@ -400,22 +444,24 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
         / "nf_unsw_nb15_v3_preprocessing_manifest.json",
     )
     if_cli_df = if_pipe.predict(demo_df)
-    assert [r["predicted_label"] for r in if_data["results"]] == if_cli_df["prediction"].astype(
-        int
-    ).tolist()
+    assert [r["predicted_label"] for r in non_ood_if] == if_cli_df.iloc[non_ood_indices][
+        "prediction"
+    ].astype(int).tolist()
     assert np.allclose(
-        [r["raw_anomaly_score"] for r in if_data["results"]],
-        if_cli_df["anomaly_score"].to_numpy(dtype=float),
+        [r["raw_anomaly_score"] for r in non_ood_if],
+        if_cli_df.iloc[non_ood_indices]["anomaly_score"].to_numpy(dtype=float),
         atol=1e-9,
     )
 
-    # 3. Ground truth evaluation on demo_labels.csv
+    # 3. Ground truth evaluation on demo_labels.csv (198 evaluated, 2 OOD abstained)
     eval_rf = client.post(
         "/api/v1/csv/evaluate",
         json={"labels_path": str(DEMO_LABELS), "predictions": rf_data["results"]},
     )
     assert eval_rf.status_code == 200
-    assert eval_rf.json()["matched_rows"] == 200
+    assert eval_rf.json()["matched_rows"] == 198
+    assert eval_rf.json()["abstained_rows"] == 2
+    assert eval_rf.json()["unmatched_rows"] == 0
     assert len(eval_rf.json()["attack_breakdown"]) >= 1
 
     # 4. Export verification
@@ -485,3 +531,234 @@ def test_desktop_csv_hardening_regressions(client: TestClient, tmp_path: Path):
         demo_ins = client.post("/api/v1/csv/inspect", json={"file_path": str(DEMO_FLOWS)})
         assert demo_ins.status_code == 200
         assert demo_ins.json()["non_finite_feature_cells"] == 68
+
+
+def test_canonical_source_provenance_vs_unverified_external_csv(client: TestClient, tmp_path: Path):
+    """P1 regression: External CSV without verified provenance MUST NOT get MODEL_VALIDATED."""
+    df = _make_synthetic_flow_df(4)
+    # Make all rows valid TTL so OOD hard violation doesn't mask provenance status
+    df["MIN_TTL"] = [64.0, 64.0, 64.0, 64.0]
+    df["MAX_TTL"] = [64.0, 64.0, 64.0, 64.0]
+    ext_csv = tmp_path / "external_unverified.csv"
+    df.to_csv(ext_csv, index=False)
+
+    from network_anomaly.inference.predict import _sha256_file
+    from network_anomaly.ingestion.compatibility import DEFAULT_BENCHMARK_REGISTRY
+
+    ext_sha = _sha256_file(ext_csv)
+    src_id, verified, reason = resolve_csv_source_provenance(ext_csv, ext_sha, len(df))
+    assert src_id == "source:nf-v3-unverified"
+    assert verified is False
+    assert "Unverified external CSV" in reason
+
+    # Tampered demo_manifest.json with wrong SHA-256 must also be rejected
+    tampered_dir = tmp_path / "tampered"
+    tampered_dir.mkdir()
+    tampered_csv = tampered_dir / "demo_flows.csv"
+    df.to_csv(tampered_csv, index=False)
+    (tampered_dir / "demo_manifest.json").write_text(
+        json.dumps(
+            {
+                "dataset_name": "NF-UNSW-NB15-v3",
+                "source_dataset_sha256": CANONICAL_NF_UNSW_NB15_V3_SHA256,
+                "outputs": {
+                    "demo_flows_csv": {
+                        "path": "data/demo/demo_flows.csv",
+                        "sha256": "0" * 64,
+                        "row_count": len(df),
+                    }
+                },
+                "sampling": {"train_overlap_count": 0, "test_overlap_count": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    t_src, t_ver, _ = resolve_csv_source_provenance(
+        tampered_csv, _sha256_file(tampered_csv), len(df)
+    )
+    assert t_src == "source:nf-v3-unverified"
+    assert t_ver is False
+
+    # Valid companion demo_manifest.json with matching SHA-256 & zero overlap is verified
+    valid_dir = tmp_path / "verified_canonical"
+    valid_dir.mkdir()
+    valid_csv = valid_dir / "demo_flows.csv"
+    df.to_csv(valid_csv, index=False)
+    valid_sha = _sha256_file(valid_csv)
+    (valid_dir / "demo_manifest.json").write_text(
+        json.dumps(
+            {
+                "dataset_name": "NF-UNSW-NB15-v3",
+                "source_dataset_sha256": CANONICAL_NF_UNSW_NB15_V3_SHA256,
+                "outputs": {
+                    "demo_flows_csv": {
+                        "path": "data/demo/demo_flows.csv",
+                        "sha256": valid_sha,
+                        "row_count": len(df),
+                    }
+                },
+                "sampling": {"train_overlap_count": 0, "test_overlap_count": 0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    v_src, v_ver, _ = resolve_csv_source_provenance(valid_csv, valid_sha, len(df))
+    assert v_src == "source:nf-v3-canonical"
+    assert v_ver is True
+
+    # Test real _evaluate_gate via /api/v1/csv/analyze with canonical model hashes
+    canonical_rec = DEFAULT_BENCHMARK_REGISTRY["source:nf-v3-canonical"]
+
+    class _IdentityPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    fake_canonical_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": canonical_rec.model_artifact_sha256,
+            "run_id": canonical_rec.model_identifier,
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": canonical_rec.preprocessor_artifact_sha256},
+        preprocessor=_IdentityPrep(),
+        predict=lambda frame: pd.DataFrame(
+            {
+                "prediction": [0] * len(frame),
+                "probability_Attack": [0.1] * len(frame),
+                "probability_Benign": [0.9] * len(frame),
+                "run_id": [canonical_rec.model_identifier] * len(frame),
+            }
+        ),
+    )
+
+    svc = client.app.state.service
+    with patch.object(svc, "_load_inference_pipeline", return_value=fake_canonical_pipe):
+        # 1. Unverified external CSV with allow_research_only=True -> VALIDATION_NOT_VERIFIED (NOT MODEL_VALIDATED)
+        unver_resp = client.post(
+            "/api/v1/csv/analyze",
+            json={
+                "file_path": str(ext_csv),
+                "model_name": "random_forest",
+                "allow_research_only": True,
+            },
+        )
+        assert unver_resp.status_code == 200, unver_resp.text
+        gate_unver = unver_resp.json()["compatibility_gate"]
+        assert gate_unver["source_id"] == "source:nf-v3-unverified"
+        assert gate_unver["provenance_verified"] is False
+        assert gate_unver["compatibility_status"] == "SEMANTICALLY_COMPATIBLE"
+        assert gate_unver["eligibility_status"] == "VALIDATION_NOT_VERIFIED"
+        assert gate_unver["compatibility_status"] != "MODEL_VALIDATED"
+
+        # 2. Unverified external CSV with allow_research_only=False -> Blocked (HTTP 503)
+        blocked_unver = client.post(
+            "/api/v1/csv/analyze",
+            json={
+                "file_path": str(ext_csv),
+                "model_name": "random_forest",
+                "allow_research_only": False,
+            },
+        )
+        assert blocked_unver.status_code == 503
+
+        # 3. Verified canonical CSV with allow_research_only=False -> PREDICTION_AVAILABLE & MODEL_VALIDATED (HTTP 200)
+        ver_resp = client.post(
+            "/api/v1/csv/analyze",
+            json={
+                "file_path": str(valid_csv),
+                "model_name": "random_forest",
+                "allow_research_only": False,
+            },
+        )
+        assert ver_resp.status_code == 200, ver_resp.text
+        gate_ver = ver_resp.json()["compatibility_gate"]
+        assert gate_ver["source_id"] == "source:nf-v3-canonical"
+        assert gate_ver["provenance_verified"] is True
+        assert gate_ver["compatibility_status"] == "MODEL_VALIDATED"
+        assert gate_ver["eligibility_status"] == "PREDICTION_AVAILABLE"
+
+
+def test_all_ood_rows_fail_closed_in_analyze_and_evaluate(client: TestClient, tmp_path: Path):
+    """P1 regression: When 100% of rows are OOD-abstained, both analyze and evaluate fail closed."""
+    df = _make_synthetic_flow_df(2)
+    df["MIN_TTL"] = [0.0, 0.0]
+    df["MAX_TTL"] = [0.0, 0.0]
+    df["Label"] = [1, 0]
+    all_ood_csv = tmp_path / "all_ood.csv"
+    df.to_csv(all_ood_csv, index=False)
+    labels_csv = tmp_path / "all_ood_labels.csv"
+    df[["row_id", "Label"]].to_csv(labels_csv, index=False)
+
+    class _IdentityPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-ood-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_IdentityPrep(),
+        predict=lambda frame: pd.DataFrame(
+            {
+                "prediction": [1] * len(frame),
+                "probability_Attack": [0.9] * len(frame),
+                "probability_Benign": [0.1] * len(frame),
+                "run_id": ["rf-ood-test"] * len(frame),
+            }
+        ),
+    )
+
+    svc = client.app.state.service
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch(
+            "network_anomaly.api.desktop_csv._evaluate_gate",
+            return_value=(
+                CompatibilityGateSummarySchema(
+                    model_key="random_forest",
+                    model_identifier="rf-ood-test",
+                    eligible=True,
+                    eligibility_status="ELIGIBLE",
+                    compatibility_status="MODEL_VALIDATED",
+                    reasons=[],
+                    warnings=[],
+                    missing_features=[],
+                ),
+                True,
+            ),
+        ),
+    ):
+        resp = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(all_ood_csv), "model_name": "random_forest"},
+        )
+        assert resp.status_code == 503
+        assert "abstained" in resp.text.lower()
+
+    eval_resp = client.post(
+        "/api/v1/csv/evaluate",
+        json={
+            "labels_path": str(labels_csv),
+            "predictions": [
+                {
+                    "row_id": int(df["row_id"].iloc[i]),
+                    "row_index": i,
+                    "predicted_label": None,
+                    "predicted_class": "ABSTAINED_OOD",
+                    "score_type": "attack_probability",
+                    "score_direction": "higher_is_more_anomalous",
+                    "risk_score": None,
+                    "risk_level": "ABSTAINED_OOD",
+                    "is_ood_flagged": True,
+                }
+                for i in range(len(df))
+            ],
+        },
+    )
+    assert eval_resp.status_code == 400
+    assert "abstained" in eval_resp.text.lower()

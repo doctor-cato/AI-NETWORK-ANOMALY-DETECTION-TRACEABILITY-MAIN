@@ -82,6 +82,8 @@ jobs:
           python-version: '3.12'
       - name: Install Python backend dependencies
         run: pip install -e .
+      - name: Verify desktop version consistency
+        run: python scripts/check_desktop_version.py --check
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

@@ -15,12 +15,16 @@
   let attackPct = $derived(
     analysis.total_rows > 0 ? (analysis.attack_count / analysis.total_rows) * 100 : 0,
   );
+  let oodPct = $derived(
+    analysis.total_rows > 0 ? (analysis.ood_flagged_count / analysis.total_rows) * 100 : 0,
+  );
   let riskBuckets = $derived(computeRiskDistribution(analysis.results));
 
   const R = 44;
   const CIRC = 2 * Math.PI * R;
   let attackStroke = $derived((attackPct / 100) * CIRC);
   let benignStroke = $derived((benignPct / 100) * CIRC);
+  let oodStroke = $derived((oodPct / 100) * CIRC);
 
   function barColor(tone: string): string {
     if (tone === "attack") return "var(--semantic-attack)";
@@ -71,6 +75,17 @@
           stroke-dashoffset={-benignStroke}
           transform="rotate(-90 60 60)"
         />
+        <circle
+          cx="60"
+          cy="60"
+          r={R}
+          fill="none"
+          stroke="var(--semantic-warning)"
+          stroke-width="16"
+          stroke-dasharray={`${oodStroke} ${CIRC}`}
+          stroke-dashoffset={-(benignStroke + attackStroke)}
+          transform="rotate(-90 60 60)"
+        />
         <text x="60" y="56" text-anchor="middle" fill="var(--text-primary)" font-size="16" font-weight="700">
           {analysis.total_rows}
         </text>
@@ -92,8 +107,8 @@
         </div>
         <div class="legend-row">
           <span class="dot" style="background: var(--semantic-warning)"></span>
-          <span>OOD Flagged / Abstained</span>
-          <strong class="mono">{analysis.ood_flagged_count}</strong>
+          <span>OOD Abstained (ABSTAINED_OOD)</span>
+          <strong class="mono">{analysis.ood_flagged_count} ({oodPct.toFixed(1)}%)</strong>
         </div>
         <div class="semantic-note">
           {#if analysis.score_type === "attack_probability"}

@@ -7,6 +7,7 @@ without reimplementing ML preprocessing or scoring logic.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import tempfile
@@ -593,6 +594,121 @@ def build_deterministic_evidence_timeline(
     return timeline
 
 
+CANONICAL_NF_UNSW_NB15_V3_SHA256 = (
+    "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+)
+
+
+def resolve_csv_source_provenance(
+    csv_path: Path,
+    file_sha256: str,
+    row_count: int,
+) -> Tuple[str, bool, str]:
+    """Verify CSV provenance before granting canonical or research benchmark source identity.
+
+    Arbitrary or external CSV files without verified provenance MUST NOT receive
+    `source:nf-v3-canonical` or `MODEL_VALIDATED` status.
+    """
+    sha_norm = file_sha256.strip().lower()
+    if sha_norm == CANONICAL_NF_UNSW_NB15_V3_SHA256:
+        return (
+            "source:nf-v3-canonical",
+            True,
+            "Verified full canonical NF-UNSW-NB15-v3 dataset SHA-256.",
+        )
+
+    parent = csv_path.parent
+    demo_manifest_path = parent / "demo_manifest.json"
+    if demo_manifest_path.is_file():
+        try:
+            manifest = json.loads(demo_manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            manifest = None
+        if isinstance(manifest, dict):
+            dataset_name = str(manifest.get("dataset_name", "")).strip()
+            src_sha = str(manifest.get("source_dataset_sha256", "")).strip().lower()
+            outputs = manifest.get("outputs")
+            demo_info = outputs.get("demo_flows_csv") if isinstance(outputs, dict) else None
+            sampling = (
+                manifest.get("sampling") if isinstance(manifest.get("sampling"), dict) else {}
+            )
+            if isinstance(demo_info, dict):
+                manifest_csv_name = Path(str(demo_info.get("path", ""))).name
+                expected_sha = str(demo_info.get("sha256", "")).strip().lower()
+                expected_rows = demo_info.get("row_count")
+                train_overlap = sampling.get("train_overlap_count", -1)
+                test_overlap = sampling.get("test_overlap_count", -1)
+                if (
+                    dataset_name == "NF-UNSW-NB15-v3"
+                    and src_sha == CANONICAL_NF_UNSW_NB15_V3_SHA256
+                    and (csv_path.name == "demo_flows.csv" or csv_path.name == manifest_csv_name)
+                    and expected_sha == sha_norm
+                    and expected_rows == row_count
+                    and train_overlap == 0
+                    and test_overlap == 0
+                ):
+                    return (
+                        "source:nf-v3-canonical",
+                        True,
+                        (
+                            "Verified canonical NF-UNSW-NB15-v3 demo subset via demo_manifest.json "
+                            "(SHA-256, row count, and zero train/test overlap confirmed)."
+                        ),
+                    )
+
+    companion_candidates = [
+        parent / f"{csv_path.name}.manifest.json",
+        parent / f"{csv_path.stem}.manifest.json",
+        parent / f"{csv_path.stem}_manifest.json",
+    ]
+    for cand in companion_candidates:
+        if not cand.is_file():
+            continue
+        try:
+            manifest = json.loads(cand.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(manifest, dict):
+            continue
+        sample_sha = (
+            str(manifest.get("sample_sha256") or manifest.get("sha256") or "").strip().lower()
+        )
+        if sample_sha != sha_norm:
+            continue
+        expected_rows = manifest.get("sample_rows", manifest.get("row_count"))
+        if expected_rows is not None and int(expected_rows) != row_count:
+            continue
+        dataset_name = str(manifest.get("dataset_name", "")).strip()
+        src_sha = str(manifest.get("source_dataset_sha256", "")).strip().lower()
+        if dataset_name == "NF-UNSW-NB15-v3" and src_sha == CANONICAL_NF_UNSW_NB15_V3_SHA256:
+            return (
+                "source:nf-v3-canonical",
+                True,
+                f"Verified canonical NF-UNSW-NB15-v3 subset via {cand.name}.",
+            )
+        if dataset_name == "NF-CSE-CIC-IDS2018-v3":
+            return (
+                "source:nf-cse-cic-ids2018-v3",
+                True,
+                f"Verified cross-domain benchmark NF-CSE-CIC-IDS2018-v3 via {cand.name}.",
+            )
+        if dataset_name in {"NF-ToN-IoT-v3", "NF-BoT-IoT-v3"}:
+            return (
+                "source:nf-v3-external",
+                True,
+                f"Verified external NetFlow v3 benchmark ({dataset_name}) via {cand.name}.",
+            )
+
+    return (
+        "source:nf-v3-unverified",
+        False,
+        (
+            "Unverified external CSV: no canonical NF-UNSW-NB15-v3 SHA-256 or verified provenance "
+            "manifest found; MODEL_VALIDATED benchmark status is not granted."
+        ),
+    )
+
+
 class _RawOodProxy(OODValidator):
     """Supplies pre-computed raw NetFlow OOD audit to InferenceEligibilityGate."""
 
@@ -612,6 +728,9 @@ def _evaluate_gate(
     X_ordered: pd.DataFrame,
     raw_ood_report: OODReport,
     allow_research_only: bool,
+    source_id: str = "source:nf-v3-unverified",
+    provenance_verified: bool = False,
+    provenance_reason: str = "",
 ) -> Tuple[CompatibilityGateSummarySchema, bool]:
     """Run FeatureCompatibilityEvaluator and InferenceEligibilityGate (#46)."""
     model_meta = pipeline.model_metadata if isinstance(pipeline.model_metadata, dict) else {}
@@ -632,18 +751,21 @@ def _evaluate_gate(
         else X_ordered
     )
 
+    is_unverified_source = source_id == "source:nf-v3-unverified" or not provenance_verified
+    compat_allow_research = False if is_unverified_source else allow_research_only
+
     evaluator = FeatureCompatibilityEvaluator(benchmark_registry=DEFAULT_BENCHMARK_REGISTRY)
     compat_report = evaluator.evaluate_dataframe(
         X_for_compat,
-        source_id="source:nf-v3-canonical",
+        source_id=source_id,
         model_identifier=model_id or None,
         model_artifact_sha256=model_sha,
         preprocessor_artifact_sha256=prep_sha,
         feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        allow_research_only=allow_research_only,
+        allow_research_only=compat_allow_research,
     )
     # Audit true physical invariant violations fail-closed, while surfacing MIN_TTL=0
-    # rows per-row with ABSTAINED_OOD risk scoring (#32) without dropping valid rows.
+    # rows per-row with ABSTAINED_OOD inference/risk abstention (#32) without dropping valid rows.
     phys_ood = OODValidator(check_shortcut_drift=True, reject_zero_ttl=False).audit_dataframe(
         df_raw
     )
@@ -671,21 +793,28 @@ def _evaluate_gate(
     )
     gate_decision = gate.evaluate(
         df=X_for_compat,
-        source_id="source:nf-v3-canonical",
+        source_id=source_id,
         model_identifier=model_id or None,
         model_artifact_sha256=model_sha,
         preprocessor_artifact_sha256=prep_sha,
         feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        allow_research_only=allow_research_only,
+        allow_unverified=allow_research_only if is_unverified_source else False,
+        allow_research_only=compat_allow_research,
     )
+    warnings = list(raw_ood_report.ood_flags)
+    if not provenance_verified and provenance_reason:
+        warnings.append(provenance_reason)
+
     summary = CompatibilityGateSummarySchema(
+        source_id=source_id,
+        provenance_verified=provenance_verified,
         model_key=canonical_model,
         model_identifier=model_id or None,
         eligible=bool(gate_decision.is_eligible),
         eligibility_status=str(gate_decision.eligibility_status.value),
         compatibility_status=str(compat_report.validation_status.value),
         reasons=list(gate_decision.abstention_reasons) or list(compat_report.rejection_reasons),
-        warnings=list(raw_ood_report.ood_flags),
+        warnings=warnings,
         missing_features=list(compat_report.missing_features),
     )
     return summary, bool(gate_decision.is_eligible)
@@ -722,6 +851,9 @@ def analyze_csv_file(
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         raise ModelNotReadyError(str(exc)) from exc
 
+    source_id, provenance_verified, provenance_reason = resolve_csv_source_provenance(
+        resolved, file_sha256, len(df)
+    )
     gate_summary, is_eligible = _evaluate_gate(
         canonical_model=canonical_model,
         pipeline=pipeline,
@@ -729,6 +861,9 @@ def analyze_csv_file(
         X_ordered=X_cleaned,
         raw_ood_report=raw_ood_report,
         allow_research_only=allow_research_only,
+        source_id=source_id,
+        provenance_verified=provenance_verified,
+        provenance_reason=provenance_reason,
     )
     if not is_eligible:
         raise ModelNotReadyError(
@@ -784,6 +919,7 @@ def analyze_csv_file(
     prediction_items: List[CsvFlowPredictionItem] = []
     abstained_risk_count = 0
     ood_flagged_count = 0
+    benign_count = 0
     attack_count = 0
 
     for idx, api_item in enumerate(all_api_results):
@@ -816,18 +952,29 @@ def analyze_csv_file(
         if risk_score is None:
             abstained_risk_count += 1
 
-        pred_label = 1 if int(api_item.prediction) == 1 else 0
-        if pred_label == 1:
-            attack_count += 1
+        if is_ood_flagged:
+            pred_label: Optional[int] = None
+            pred_class = "ABSTAINED_OOD"
+            pred_attack_prob: Optional[float] = None
+            pred_raw_score: Optional[float] = None
+        else:
+            pred_label = 1 if int(api_item.prediction) == 1 else 0
+            pred_class = "Attack" if pred_label == 1 else "Benign"
+            pred_attack_prob = api_item.attack_probability
+            pred_raw_score = api_item.raw_anomaly_score
+            if pred_label == 1:
+                attack_count += 1
+            else:
+                benign_count += 1
 
         prediction_items.append(
             CsvFlowPredictionItem(
                 row_id=row_id,
                 row_index=idx,
                 predicted_label=pred_label,
-                predicted_class="Attack" if pred_label == 1 else "Benign",
-                attack_probability=api_item.attack_probability,
-                raw_anomaly_score=api_item.raw_anomaly_score,
+                predicted_class=pred_class,
+                attack_probability=pred_attack_prob,
+                raw_anomaly_score=pred_raw_score,
                 decision_threshold=api_item.decision_threshold,
                 score_type=api_item.score_type,
                 score_direction=api_item.score_direction,
@@ -879,6 +1026,11 @@ def analyze_csv_file(
             )
         )
 
+    if len(prediction_items) > 0 and ood_flagged_count == len(prediction_items):
+        raise ModelNotReadyError(
+            f"All {len(prediction_items)} rows in CSV were abstained due to OOD invariant violations."
+        )
+
     timeline = build_deterministic_evidence_timeline(prediction_items) if include_timeline else []
     behavioral = compute_netflow_behavioral_summary(df)
     sample_item = all_api_results[0]
@@ -896,7 +1048,7 @@ def analyze_csv_file(
         preprocessor_sha256=first_batch_resp.preprocessor_sha256,
         inference_mode=first_batch_resp.inference_mode,
         total_rows=len(prediction_items),
-        benign_count=len(prediction_items) - attack_count,
+        benign_count=benign_count,
         attack_count=attack_count,
         ood_flagged_count=ood_flagged_count,
         abstained_risk_count=abstained_risk_count,
@@ -950,6 +1102,8 @@ def evaluate_predictions_with_ground_truth(
     y_pred: List[int] = []
     attack_cats: List[str] = []
     unmatched = 0
+    abstained = 0
+    matched_total = 0
 
     if "row_id" in labels_df.columns:
         lbl_map: Dict[str, Tuple[int, str]] = {}
@@ -970,13 +1124,26 @@ def evaluate_predictions_with_ground_truth(
             if key not in lbl_map:
                 unmatched += 1
                 continue
+            matched_total += 1
+            if (
+                pred.is_ood_flagged
+                or pred.predicted_label is None
+                or pred.predicted_class == "ABSTAINED_OOD"
+            ):
+                abstained += 1
+                continue
             yt, att = lbl_map[key]
             y_true.append(yt)
             y_pred.append(int(pred.predicted_label))
             attack_cats.append(att)
 
-        if not y_true:
+        if matched_total == 0:
             raise ValueError("No prediction row_id values matched the ground truth CSV.")
+        if not y_true:
+            raise ValueError(
+                "All matched prediction rows were abstained due to OOD invariant violations; "
+                "cannot compute confusion matrix."
+            )
     else:
         if len(labels_df) != len(predictions):
             raise ValueError(
@@ -984,6 +1151,14 @@ def evaluate_predictions_with_ground_truth(
                 f"({len(predictions)}) and no 'row_id' column is present for alignment."
             )
         for idx, pred in enumerate(predictions):
+            matched_total += 1
+            if (
+                pred.is_ood_flagged
+                or pred.predicted_label is None
+                or pred.predicted_class == "ABSTAINED_OOD"
+            ):
+                abstained += 1
+                continue
             lbl_val = _normalize_binary_label(labels_df["Label"].iloc[idx])
             att_val = (
                 _optional_str(labels_df["Attack"].iloc[idx])
@@ -994,6 +1169,11 @@ def evaluate_predictions_with_ground_truth(
             y_true.append(lbl_val)
             y_pred.append(int(pred.predicted_label))
             attack_cats.append(att_val)
+        if not y_true:
+            raise ValueError(
+                "All prediction rows were abstained due to OOD invariant violations; "
+                "cannot compute confusion matrix."
+            )
 
     metrics = compute_metrics(y_true, y_pred, labels=[0, 1])
     breakdown_rows: List[AttackBreakdownRow] = []
@@ -1026,6 +1206,7 @@ def evaluate_predictions_with_ground_truth(
         labels_sha256=labels_sha256,
         matched_rows=len(y_true),
         unmatched_rows=unmatched,
+        abstained_rows=abstained,
         accuracy=round(float(metrics["accuracy"]), 6),
         precision=round(float(metrics["precision"]), 6),
         recall=round(float(metrics["recall"]), 6),
@@ -1036,8 +1217,10 @@ def evaluate_predictions_with_ground_truth(
         attack_breakdown=breakdown_rows,
         scientific_notice=(
             "Evaluation computed dynamically on user-supplied Ground Truth CSV via canonical "
-            "compute_metrics(). Demo balanced subset (~50% Attack) is for UI verification only "
-            "and does not reflect production deployment prevalence or held-out Test benchmarks."
+            "compute_metrics() over non-abstained predictions (OOD-abstained rows are excluded "
+            "from the confusion matrix and reported in abstained_rows). Demo balanced subset "
+            "(~50% Attack) is for UI verification only and does not reflect production deployment "
+            "prevalence or held-out Test benchmarks."
         ),
     )
 
@@ -1072,7 +1255,6 @@ def export_predictions_csv(request: CsvExportRequest) -> CsvExportResponse:
         ),
         "security_notice": _SECURITY_NOTICE,
     }
-    import json
 
     _atomic_write_text(meta_out, json.dumps(provenance, indent=2))
     meta_sha256 = _sha256_file(meta_out)

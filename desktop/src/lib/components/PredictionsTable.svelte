@@ -182,7 +182,11 @@
             >
               <td class="mono">{item.row_id}</td>
               <td>
-                {#if item.predicted_class === "Attack"}
+                {#if item.predicted_class === "ABSTAINED_OOD" || item.predicted_label === null || item.is_ood_flagged}
+                  <span class="badge badge-blocked" title={item.ood_reason ?? "Abstained due to OOD invariant violation"}>
+                    ABSTAINED_OOD
+                  </span>
+                {:else if item.predicted_class === "Attack"}
                   <span class="badge badge-attack">
                     <Icons name="alert" size={12} />
                     Attack

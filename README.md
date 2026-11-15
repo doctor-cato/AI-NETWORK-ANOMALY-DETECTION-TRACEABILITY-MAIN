@@ -184,20 +184,21 @@ python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest
 python scripts/run_api.py --host 127.0.0.1 --port 8000
 ```
 
-File `data/demo/demo_flows.csv` tuyệt đối không chứa `Label`/`Attack`; ground truth nằm riêng tại `data/demo/demo_labels.csv` để tính Confusion Matrix trên UI/script đánh giá. Xem [hướng dẫn inference](docs/INFERENCE_PIPELINE.md), [hướng dẫn tái lập](docs/REPRODUCIBILITY.md), [API contract](reports/api/API_CONTRACT.md) và [báo cáo Test Random Forest](reports/evaluation/error_analysis_report.md).
+File `data/demo/demo_flows.csv` tuyệt đối không chứa `Label`/`Attack`; ground truth nằm riêng tại `data/demo/demo_labels.csv` để tính Confusion Matrix trên UI/script đánh giá. Xem [hướng dẫn cài đặt Windows (`v0.6.0`)](docs/WINDOWS_INSTALLATION.md), [quy trình đóng gói & phát hành](docs/RELEASE_PROCESS.md), [ghi chú phát hành `v0.6.0`](docs/releases/v0.6.0.md), [hướng dẫn inference](docs/INFERENCE_PIPELINE.md), [hướng dẫn tái lập](docs/REPRODUCIBILITY.md), [API contract](reports/api/API_CONTRACT.md) và [báo cáo Test Random Forest](reports/evaluation/error_analysis_report.md).
 
 ## Cấu trúc thư mục
 
 ```text
 .
-├── src/network_anomaly/   # data, EDA, preprocessing, models, evaluation, inference, api
-├── scripts/               # acquisition, prepare_demo_dataset, train, predict, run_api
-├── tests/                 # unit và integration (API, inference, demo prep, protocol)
-├── docs/                  # methodology, protocol, roadmap và traceability
+├── desktop/               # Ứng dụng Desktop M6 (v0.6.0): Rust Tauri 2 (src-tauri) + Svelte 5 UI (src)
+├── src/network_anomaly/   # data, EDA, preprocessing, models, evaluation, inference, ingestion, api
+├── scripts/               # acquisition, prepare_demo_dataset, train, predict, run_api, check_desktop_version
+├── tests/                 # unit, contract và integration (API, desktop CSV/E2E, inference, protocol)
+├── docs/                  # methodology, protocol, Windows installation, release process, roadmap, traceability
 ├── data/                  # manifest & demo/.gitkeep; raw CSV và demo/*.csv được Git bỏ qua
 ├── reports/               # quality, split, preprocessing, EDA, api OpenAPI và model evidence
 ├── artifacts/             # marker & preprocessor; model binary lớn được Git bỏ qua
-└── .github/workflows/     # ci.yml
+└── .github/workflows/     # ci.yml, lint-audit.yml, release.yml
 ```
 
 ## Kiểm thử và bảo đảm chất lượng
@@ -224,23 +225,23 @@ Random Forest | **EXPERIMENTALLY VALIDATED** Validation & Held-out Test `rf-held
 XGBoost | **EXPERIMENTALLY VALIDATED trên Validation**; Test `NOT VERIFIED` |
 Isolation Forest & Autoencoder | **IMPLEMENTED / TESTED** (code, tests & verified loading); real run `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
 4-Model Inference, FastAPI (`127.0.0.1`), SQLite & Demo CSV Prep | **IMPLEMENTED / TESTED** (#15, #30, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
-Desktop UI **Rust / Tauri 2 + Svelte 5** (#16) | **PLANNED** (`CORE-DEMO` chính, thay thế Streamlit) |
-Multi-Source Ingestion & Gate (#46) | **PR #47 Ready for Review** (`f999930`, 6/6 CI PASS, chờ maintainer review) |
-Behavioral (#28), Risk Ranking (#32), Trace Timeline (#24) | **REDUCED / DEFERRED** — dùng metadata NetFlow thật nếu UI cần, không chặn MVP |
-Bảo mật nâng cao & Adaptive Response (#26, #27), Cross-Dataset (#48) | **DEFERRED** khỏi MVP M6 (#48 / PR #49 nằm ở M7) |
-Tài liệu và CI | **IN PROGRESS**, đồng bộ docs theo kiến trúc consolidation & #18–#20 |
+Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, `v0.6.0`) | **IMPLEMENTED / TESTED** (Windows x64 executable + NSIS installer, `/api/v1/csv/*`, OOD abstention, provenance gate) |
+Multi-Source Ingestion & Gate (#46) | **IMPLEMENTED / TESTED** (xác minh provenance `source:nf-v3-canonical` vs `source:nf-v3-unverified`) |
+Behavioral (#28), Risk Ranking (#32), Trace Timeline (#24) | **IMPLEMENTED / TESTED (Scoped M6)** — thống kê metadata NetFlow (#28), điểm rủi ro tất định từ chối OOD (#32), timeline tất định (#24) |
+Bảo mật nâng cao & Adaptive Response (#26, #27), Cross-Dataset (#48) | **SCOPED / DEFERRED** — localhost-only `127.0.0.1`, fail-closed SHA-256 & path validation đã bật; firewall automation & AES-256-GCM keyring **DEFERRED** |
+Tài liệu và CI | **IMPLEMENTED / TESTED** ([cài đặt Windows](docs/WINDOWS_INSTALLATION.md), [quy trình release](docs/RELEASE_PROCESS.md), [`release.yml`](.github/workflows/release.yml)) |
 
 ## Hạn chế
 
 - **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ đạt Accuracy Validation `0,999849` và `49,98%` flow Validation trùng vector 47 features với Train; đánh giá cross-dataset trên PR #47 / #48 cho thấy model có thể suy giảm mạnh khi chuyển môi trường mạng (domain shift).
-- **Real-data benchmarks còn mở:** Held-out Test mới kiểm chứng trên Random Forest (`rf-heldout-ea330b9`); XGBoost Held-out Test, Isolation Forest và Autoencoder real-data experiments chưa hoàn tất (hiện báo `BLOCKED / NOT READY` nếu thiếu file `.joblib`/`.pt` cục bộ).
-- **Khả năng tái lập có điều kiện:** Raw CSV (~577 MB) và model `.joblib`/`.pt` không nằm trong Git; cần chuẩn bị dữ liệu và artifacts trước khi chạy offline đầy đủ.
-- **Desktop UI & Phạm vi thu gọn:** Backend Python FastAPI + SQLite đã sẵn sàng nhưng lớp giao diện **Rust / Tauri 2 + Svelte 5** (#16) đang ở trạng thái `PLANNED`. Các hạng mục như full AES-256-GCM key rotation (#26), adaptive response (#27) và multi-log Auth/API correlation (#28) được thu gọn/hoãn minh bạch.
+- **Real-data benchmarks còn mở:** Held-out Test mới kiểm chứng trên Random Forest (`rf-heldout-ea330b9`); XGBoost Held-out Test, Isolation Forest và Autoencoder real-data experiments chưa hoàn tất (XGBoost và Autoencoder hiện báo `BLOCKED / NOT READY` fail-closed với HTTP 503 khi thiếu artifact `.joblib`).
+- **Giới hạn đóng gói Desktop M6 (`v0.6.0`):** Bộ cài đặt Windows NSIS (`NetFlow Sentinel M6_0.6.0_x64-setup.exe`) đã nhúng giao diện Svelte 5 và nhân Rust Tauri 2, nhưng **chưa phải bản standalone đóng gói sẵn Python**. Máy đích vẫn cần Python tương thích + dependencies, thư mục gốc repository (`NETWORK_ANOMALY_REPO_ROOT`), các tệp `.joblib` khớp SHA-256, `data/demo/*.csv` và Microsoft Edge WebView2 Runtime (xem [docs/WINDOWS_INSTALLATION.md](docs/WINDOWS_INSTALLATION.md)).
+- **Phạm vi thu gọn minh bạch:** Các hạng mục tự động hóa tường lửa hệ điều hành (#27), xoay vòng khóa AES-256-GCM trong OS Keyring (#26) và tương quan đa nguồn log Auth/API ngoài NetFlow (#28) được ghi nhận trạng thái `DEFERRED`.
 
 ## Hướng phát triển
 
-1. Hợp nhất PR #47 và PR củng cố MVP sau khi hoàn tất review của maintainer.
-2. Xây dựng **Desktop UI Rust / Tauri 2 + Svelte 5** (#16) kết nối `127.0.0.1:8000` để hoàn thiện 10 năng lực demo offline trên Windows.
+1. Hoàn tất review, hợp nhất PR #67 vào `main` và xuất bản GitHub Release `v0.6.0` (hoặc `v0.6.0-beta.1` cho bản thử nghiệm).
+2. Nghiên cứu đóng gói Python runtime độc lập (embedded Python / sidecar) trong các phiên bản sau M6 nếu cần phân phối standalone không phụ thuộc môi trường Python ngoài.
 3. Chạy các thực nghiệm trọng tâm M7 (#25, #11, #48), hoàn tất báo cáo PDF, 10–12 slide và bàn giao cuối kỳ (#18–#20). Không tuyên bố zero-day hay kết quả ngoài phạm vi đã kiểm chứng.
 
 ## Thông tin học thuật và nhóm

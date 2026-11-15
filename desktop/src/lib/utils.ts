@@ -22,6 +22,23 @@ export function formatScoreSemantically(item: CsvFlowPredictionItem): {
   anomalyScoreText: string;
   thresholdText: string;
 } {
+  const thresholdText =
+    item.decision_threshold !== null && Number.isFinite(item.decision_threshold)
+      ? item.decision_threshold.toFixed(4)
+      : "N/A";
+
+  if (
+    item.is_ood_flagged ||
+    item.predicted_label === null ||
+    item.predicted_class === "ABSTAINED_OOD"
+  ) {
+    return {
+      probabilityText: "ABSTAINED (OOD)",
+      anomalyScoreText: "ABSTAINED (OOD)",
+      thresholdText,
+    };
+  }
+
   const probabilityText =
     item.attack_probability !== null && Number.isFinite(item.attack_probability)
       ? `${(item.attack_probability * 100).toFixed(2)}%`
@@ -30,11 +47,6 @@ export function formatScoreSemantically(item: CsvFlowPredictionItem): {
   const anomalyScoreText =
     item.raw_anomaly_score !== null && Number.isFinite(item.raw_anomaly_score)
       ? item.raw_anomaly_score.toFixed(4)
-      : "N/A";
-
-  const thresholdText =
-    item.decision_threshold !== null && Number.isFinite(item.decision_threshold)
-      ? item.decision_threshold.toFixed(4)
       : "N/A";
 
   return { probabilityText, anomalyScoreText, thresholdText };

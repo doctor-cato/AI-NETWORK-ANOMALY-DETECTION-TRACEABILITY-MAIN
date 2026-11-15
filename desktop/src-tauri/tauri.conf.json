@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "NetFlow Sentinel M6",
-  "version": "0.1.0",
+  "version": "0.6.0",
   "identifier": "com.networkanomaly.sentinel",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NetFlow Sentinel M6 — Giám sát bất thường lưu lượng mạng",
+        "title": "NetFlow Sentinel M6 \u2014 Gi\u00e1m s\u00e1t b\u1ea5t th\u01b0\u1eddng l\u01b0u l\u01b0\u1ee3ng m\u1ea1ng",
         "width": 1380,
         "height": 880,
         "minWidth": 1024,
@@ -26,7 +26,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

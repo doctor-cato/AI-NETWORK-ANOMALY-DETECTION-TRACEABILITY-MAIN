@@ -219,9 +219,14 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         rf = rf_resp.json()
         assert rf["total_rows"] == 200
         assert rf["abstained_risk_count"] == 2
+        assert rf["ood_flagged_count"] == 2
+        assert rf["benign_count"] + rf["attack_count"] + rf["ood_flagged_count"] == 200
+        assert rf["compatibility_gate"]["source_id"] == "source:nf-v3-canonical"
+        assert rf["compatibility_gate"]["provenance_verified"] is True
+        assert rf["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED"
         assert len(rf["timeline"]) == 200
 
-        # Step 8-9: Run Isolation Forest inference (unclamped raw scores, null probability)
+        # Step 8-9: Run Isolation Forest inference (unclamped raw scores on non-OOD, null on OOD)
         if_resp = httpx.post(
             f"{base_url}/api/v1/csv/analyze",
             json={
@@ -235,7 +240,18 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         iso = if_resp.json()
         assert iso["total_rows"] == 200
         assert all(item["attack_probability"] is None for item in iso["results"])
-        assert all(item["raw_anomaly_score"] is not None for item in iso["results"])
+        assert all(
+            item["raw_anomaly_score"] is not None
+            for item in iso["results"]
+            if not item["is_ood_flagged"]
+        )
+        assert all(
+            item["predicted_label"] is None
+            and item["predicted_class"] == "ABSTAINED_OOD"
+            and item["raw_anomaly_score"] is None
+            for item in iso["results"]
+            if item["is_ood_flagged"]
+        )
 
         # Step 10-11: Evaluate RF predictions against separate demo_labels.csv
         ev_resp = httpx.post(
@@ -245,7 +261,8 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         )
         assert ev_resp.status_code == 200
         ev = ev_resp.json()
-        assert ev["matched_rows"] == 200
+        assert ev["matched_rows"] == 198
+        assert ev["abstained_rows"] == 2
         assert ev["accuracy"] >= 0.99
 
         # Step 12-13: Export predictions CSV & metadata JSON

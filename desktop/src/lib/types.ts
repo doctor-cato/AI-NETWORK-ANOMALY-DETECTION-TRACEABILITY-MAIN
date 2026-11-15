@@ -69,6 +69,8 @@ export interface OodSummary {
 }
 
 export interface CompatibilityGateSummary {
+  source_id?: string;
+  provenance_verified?: boolean;
   model_key: string;
   model_identifier: string | null;
   eligible: boolean;
@@ -126,8 +128,8 @@ export interface CsvInspectResponse {
 export interface CsvFlowPredictionItem {
   row_id: number | string;
   row_index: number;
-  predicted_label: number;
-  predicted_class: "Benign" | "Attack";
+  predicted_label: number | null;
+  predicted_class: "Benign" | "Attack" | "ABSTAINED_OOD";
   attack_probability: number | null;
   raw_anomaly_score: number | null;
   decision_threshold: number | null;
@@ -205,6 +207,7 @@ export interface CsvEvaluateResponse {
   labels_sha256: string;
   matched_rows: number;
   unmatched_rows: number;
+  abstained_rows?: number;
   accuracy: number;
   precision: number;
   recall: number;

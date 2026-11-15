@@ -1360,6 +1360,16 @@
       },
       "CompatibilityGateSummarySchema": {
         "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id",
+            "default": "source:nf-v3-unverified"
+          },
+          "provenance_verified": {
+            "type": "boolean",
+            "title": "Provenance Verified",
+            "default": false
+          },
           "model_key": {
             "type": "string",
             "title": "Model Key"
@@ -1669,6 +1679,12 @@
             "minimum": 0.0,
             "title": "Unmatched Rows"
           },
+          "abstained_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Abstained Rows",
+            "default": 0
+          },
           "accuracy": {
             "type": "number",
             "title": "Accuracy"
@@ -1880,9 +1896,16 @@
             "title": "Row Index"
           },
           "predicted_label": {
-            "type": "integer",
-            "maximum": 1.0,
-            "minimum": 0.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Predicted Label"
           },
           "predicted_class": {
@@ -2066,7 +2089,6 @@
         "required": [
           "row_id",
           "row_index",
-          "predicted_label",
           "predicted_class",
           "score_type",
           "score_direction",

@@ -1,0 +1,202 @@
+name: Release Windows Desktop
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_label:
+        description: 'Dry-run version label for artifact naming (when triggered manually without a tag)'
+        required: false
+        default: 'v0.6.0-dryrun'
+
+permissions:
+  contents: read
+
+jobs:
+  release-windows-x64:
+    name: Build, Verify & Package Windows x64 Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository at exact ref
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify clean working tree, tag integrity, and version consistency
+        id: meta
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dirty = git status --porcelain
+          if ($dirty) {
+            Write-Error "Working tree is not clean:`n$dirty"
+            exit 1
+          }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "git diff --check failed."
+            exit 1
+          }
+
+          $isTagPush = "${{ github.ref }}".StartsWith("refs/tags/v")
+          if ($isTagPush) {
+            $tagName = "${{ github.ref_name }}"
+            $tagCommit = (git rev-list -n 1 "refs/tags/$tagName").Trim()
+            if ($tagCommit -ne "${{ github.sha }}") {
+              Write-Error "Tag $tagName commit ($tagCommit) does not match GITHUB_SHA (${{ github.sha }})."
+              exit 1
+            }
+
+            $isPrerelease = $tagName.Contains("-")
+            if (-not $isPrerelease) {
+              git fetch origin main --depth=200
+              git merge-base --is-ancestor $tagCommit origin/main
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Refusing to publish Stable release for $tagName because commit $tagCommit is not merged into origin/main."
+                exit 1
+              }
+            }
+
+            python scripts/check_desktop_version.py --check --expect-tag $tagName --allow-prerelease-tag-on-base
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } else {
+            $tagName = "${{ inputs.tag_label }}"
+            if ([string]::IsNullOrWhiteSpace($tagName)) { $tagName = "v0.6.0-dryrun" }
+            $isPrerelease = $true
+            python scripts/check_desktop_version.py --check
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+
+          "tag_name=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "is_tag_push=$($isTagPush.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "is_prerelease=$($isPrerelease.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Set up Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Run Python verification checks (Environment, OpenAPI, Pytest)
+        run: |
+          python scripts/check_environment.py
+          python scripts/export_openapi_spec.py --check
+          python -m pytest tests/unit tests/contract tests/integration -q
+
+      - name: Install and verify Svelte 5 frontend
+        run: |
+          npm --prefix desktop ci
+          npm --prefix desktop run check
+          npm --prefix desktop test
+          npm --prefix desktop run build
+
+      - name: Verify Rust formatting, Clippy lints, and unit tests
+        run: |
+          cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
+          cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path desktop/src-tauri/Cargo.toml
+
+      - name: Build Tauri Windows x64 application and NSIS installer
+        run: |
+          npx --prefix desktop tauri build --bundles nsis
+
+      - name: Verify build artifacts and generate SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tagName = "${{ steps.meta.outputs.tag_name }}"
+          $exePath = "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "Missing compiled Windows executable: $exePath"
+            exit 1
+          }
+
+          $nsisFiles = @(Get-ChildItem -Path "desktop/src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe")
+          if ($nsisFiles.Count -eq 0) {
+            Write-Error "Missing NSIS installer in desktop/src-tauri/target/release/bundle/nsis"
+            exit 1
+          }
+
+          $stageDir = "dist/release-assets"
+          New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
+
+          $setupAssetName = "NetFlow-Sentinel-$tagName-windows-x64-setup.exe"
+          $setupDest = Join-Path $stageDir $setupAssetName
+          Copy-Item -Path $nsisFiles[0].FullName -Destination $setupDest -Force
+
+          $setupHash = (python -c "import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())" $setupDest).Trim().ToLower()
+          $sumsFile = Join-Path $stageDir "SHA256SUMS.txt"
+          "$setupHash  $setupAssetName" | Out-File -FilePath $sumsFile -Encoding ascii
+
+          Write-Host "Staged release assets in ${stageDir}:"
+          Get-ChildItem $stageDir | Format-Table Name, Length
+          Write-Host "SHA256SUMS.txt contents:"
+          Get-Content $sumsFile
+
+      - name: Upload staged Windows release assets to Actions run
+        uses: actions/upload-artifact@v4
+        with:
+          name: netflow-sentinel-${{ steps.meta.outputs.tag_name }}-windows-x64
+          path: dist/release-assets/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (on tag push only)
+        if: steps.meta.outputs.is_tag_push == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tagName = "${{ steps.meta.outputs.tag_name }}"
+          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+
+          gh release view $tagName > $null 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "GitHub Release for tag $tagName already exists. Refusing to overwrite existing release."
+            exit 1
+          }
+
+          $notesPath = "docs/releases/v0.6.0.md"
+          if (-not (Test-Path $notesPath)) {
+            Write-Error "Release notes file not found: $notesPath"
+            exit 1
+          }
+
+          $releaseArgs = @(
+            "release", "create", $tagName,
+            "dist/release-assets/NetFlow-Sentinel-$tagName-windows-x64-setup.exe",
+            "dist/release-assets/SHA256SUMS.txt",
+            "--verify-tag",
+            "--title", "NetFlow Sentinel $tagName — M6 Desktop Demo",
+            "--notes-file", $notesPath
+          )
+          if ($isPrerelease) {
+            $releaseArgs += "--prerelease"
+          }
+
+          & gh @releaseArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to create GitHub Release for $tagName"
+            exit 1
+          }
