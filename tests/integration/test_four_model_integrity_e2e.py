@@ -408,3 +408,14 @@ def test_all_four_verified_models_real_demo_csv_parity_and_eval(tmp_path: Path):
             sim_body = sim_resp.json()
             assert sim_body["executed"] is False
             assert sim_body["provenance_verification"] == "server_verified_analysis"
+            ood_row_ids = {int(r["row_id"]) for r in ood_rows}
+            for rec in sim_body["recommendations"]:
+                if int(rec["row_id"]) in ood_row_ids:
+                    assert rec["containment_allowed"] is False
+                    assert rec["action"] != "ISOLATE_RECOMMENDED"
+            if az["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED":
+                assert sim_body["action_counts"]["ISOLATE_RECOMMENDED"] > 0
+            else:
+                assert sim_body["action_counts"]["ISOLATE_RECOMMENDED"] == 0
+                assert sim_body["key_rotation_simulation"]["decision"] == "HOLD_RESEARCH_ONLY_MODEL"
+                assert sim_body["key_rotation_simulation"]["recommended"] is False

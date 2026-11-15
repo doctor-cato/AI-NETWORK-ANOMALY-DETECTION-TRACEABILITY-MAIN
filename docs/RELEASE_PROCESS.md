@@ -173,7 +173,7 @@ Mọi tag phát hành (cả **Beta** lẫn **Stable**) trên `.github/workflows/
 2. Tên tag (`v<VERSION>`) phải khớp 1-1 với phiên bản trong 5 tệp cấu hình desktop, binary ứng dụng và tên tệp NSIS (`python scripts/check_desktop_version.py --check --expect-tag <TAG>`).
 3. Tag chưa từng được xuất bản GitHub Release trước đó (`gh release view <TAG>` phải báo chưa tồn tại — nghiêm cấm ghi đè hoặc di chuyển tag đã phát hành).
 
-*(Ghi chú phát hành Stable `v0.6.0`: Kế tiếp bản thử nghiệm `v0.6.0-beta.1` đã gắn tag trước đó, cả 5 tệp cấu hình desktop hiện được đồng bộ ở `0.6.0` nhằm phát hành bản Stable `v0.6.0` sau khi cả PR #69 và PR 4-model Stable được duyệt merge vào `main`.)*
+*(Ghi chú phát hành Stable `v0.6.0`: Kế tiếp bản thử nghiệm `v0.6.0-beta.1` đã gắn tag trước đó, cả 5 tệp cấu hình desktop hiện được đồng bộ ở `0.6.0` nhằm phát hành bản Stable `v0.6.0` sau khi PR #69 (đã merge vào `main` tại `ab018da`) và PR #70 (`feat/stable-four-model-demo-and-release`) đều được duyệt merge vào `main`.)*
 
 ### 6.1. Giai đoạn 1 — Bản Thử nghiệm `v0.6.0-beta.1` (GitHub Pre-release, Tùy chọn)
 
