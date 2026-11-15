@@ -37,6 +37,10 @@ pub fn run() {
             commands::evaluate_csv,
             commands::export_csv,
             commands::get_backend_timeline,
+            commands::pick_save_json_file,
+            commands::simulate_security_response,
+            commands::list_security_simulations,
+            commands::export_security_simulation,
         ])
         .build(tauri::generate_context!())
         .expect("Failed to build Tauri desktop application");

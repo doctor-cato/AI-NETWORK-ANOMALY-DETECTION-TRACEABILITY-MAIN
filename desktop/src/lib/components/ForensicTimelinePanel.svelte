@@ -1,14 +1,41 @@
 <script lang="ts">
-  import type { BehavioralSummary, CsvTimelineItem } from "../types";
+  import type {
+    BehavioralSummary,
+    CsvTimelineItem,
+    SecurityResponseSimulationResponse,
+    SecuritySimulationExportResponse,
+    SecuritySimulationHistoryItem,
+  } from "../types";
   import Icons from "./Icons.svelte";
+  import SecurityDryRunPanel from "./SecurityDryRunPanel.svelte";
 
   interface Props {
     timeline: CsvTimelineItem[];
-    behavioral: BehavioralSummary;
+    behavioral: BehavioralSummary | null;
     securityNotice: string;
+    simulation: SecurityResponseSimulationResponse | null;
+    simulationHistory: SecuritySimulationHistoryItem[];
+    simulationExportInfo: SecuritySimulationExportResponse | null;
+    simulating: boolean;
+    canSimulate: boolean;
+    onRunSimulation: () => void;
+    onRefreshHistory: () => void;
+    onExportSimulation: (simulationId: string) => void;
   }
 
-  let { timeline, behavioral, securityNotice }: Props = $props();
+  let {
+    timeline,
+    behavioral,
+    securityNotice,
+    simulation,
+    simulationHistory,
+    simulationExportInfo,
+    simulating,
+    canSimulate,
+    onRunSimulation,
+    onRefreshHistory,
+    onExportSimulation,
+  }: Props = $props();
 
   let onlyAlerts = $state(false);
   let filteredTimeline = $derived(
@@ -24,21 +51,34 @@
     <div class="card-header">
       <h2 id="security-posture-heading" class="card-title">
         <Icons name="shield" size={17} />
-        Kiến trúc Bảo mật & Phạm vi Khuyến nghị (#26 Minimal Local / #27 DEFERRED)
+        Kiến trúc Bảo mật (#26 Local-Only &amp; #27 Dry-Run Simulation / Production Keyring DEFERRED)
       </h2>
-      <span class="badge badge-info">Read-Only Advisory • No Auto-Firewall</span>
+      <span class="badge badge-info">SIMULATED / RECOMMENDED ONLY • No Auto-Firewall</span>
     </div>
     <div class="banner banner-info">
       <Icons name="lock" size={16} />
       <div>
         <div>{securityNotice}</div>
         <div style="margin-top: 4px; color: var(--text-secondary);">
-          Khuyến nghị vận hành (#27 Adaptive Response giữ ở trạng thái <strong>DEFERRED</strong>): mọi quyết định điều tra hay chặn luồng chỉ hiển thị dưới dạng cảnh báo read-only cho người vận hành xem xét.
+          Mọi quyết định phản ứng (#27) chỉ chạy ở chế độ <strong>Dry-Run Simulation (RECOMMENDED / SIMULATED, executed=false)</strong>.
+          <strong>AES-256-GCM keyring production</strong>, tự động xoay khóa thật và gọi firewall/PowerShell/OS commands vẫn giữ ở trạng thái <strong>DEFERRED</strong>.
         </div>
       </div>
     </div>
   </section>
 
+  <SecurityDryRunPanel
+    {simulation}
+    history={simulationHistory}
+    exportInfo={simulationExportInfo}
+    {simulating}
+    {canSimulate}
+    {onRunSimulation}
+    {onRefreshHistory}
+    {onExportSimulation}
+  />
+
+  {#if behavioral}
   <section class="grid-2">
     <div class="card" aria-labelledby="behavioral-heading">
       <div class="card-header">
@@ -132,6 +172,7 @@
       </div>
     </div>
   </section>
+  {/if}
 </div>
 
 <style>

@@ -17,7 +17,8 @@ Raw dataset lớn, secret và model binaries không được commit vào Git. H�
 - **Thành phần rút gọn / hoãn để bảo vệ khả năng bàn giao MVP:**
   - `C5` (#28 Behavioral): **REDUCE / DEFER** — chỉ giữ thống kê trên NetFlow metadata có thật, loại bỏ Auth/API log giả lập.
   - `C6` (#32 Risk & #24 Trace): **REDUCE** — giảm xuống deterministic scoring/ranking từ output model + evidence timeline từ NetFlow metadata (`/api/v1/timeline`); không cần FFI/PyO3 hay graph engine lớn.
-  - `C7` (#26 Encryption/Key Lifecycle) & `C8` (#27 Adaptive Response): **DEFER** — chỉ giữ localhost-only safety, SHA-256 artifact gate và SQLite key metadata audit (`algorithm` chỉ là policy metadata, không phải AES-256-GCM đang mã hóa payload).
+  - `C7` (#26 Encryption/Key Lifecycle): **DEFER** — chỉ giữ localhost-only safety, SHA-256 artifact gate và SQLite key metadata audit (`algorithm` chỉ là policy metadata, không phải AES-256-GCM đang mã hóa payload).
+  - `C8` (#27 Adaptive Security Response Simulation / Dry-run): **IMPLEMENTED / TESTED (Dry-Run)** cho Stable/M7 — deterministic policy engine (`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`), từ chối containment với `ABSTAINED_OOD`, mô phỏng quyết định adaptive key rotation (`executed=false`), lưu SQLite và xuất bằng chứng JSON từ Tab 4; **DEFERRED** đối với live firewall/OS commands và sinh/xoay khóa mật mã thật.
 
 ## GitHub, milestone và nhánh
 
@@ -39,7 +40,7 @@ Raw dataset lớn, secret và model binaries không được commit vào Git. H�
 | C5 — Behavioral Vector (REDUCED) | #28 **REDUCE / DEFER**: chỉ thống kê theo NetFlow metadata thật nếu UI cần; không dùng Auth/API log không tồn tại. |
 | C6 — Risk & Trace (REDUCED) | #32 Risk & #24 Trace **REDUCE**: deterministic priority ranking + timeline NetFlow metadata (`/api/v1/timeline`); không FFI phức tạp, không quy kết danh tính. |
 | C7 — Encryption & Key Lifecycle (DEFERRED) | #26 **DEFER**: giữ SQLite key metadata audit + SHA-256 verification + localhost-only; hoãn full AES-256-GCM & 30-min rotation. |
-| C8 — Adaptive Response (DEFERRED) | #27 **DEFER**: không triển khai response/rotation tự động trong Demo MVP M6. |
+| C8 — Adaptive Security Response Simulation / Dry-run | #27 **IMPLEMENTED / TESTED (Dry-Run)** trong M7/Stable: response policy tất định, mô phỏng adaptive key rotation không sinh/xoay khóa thật, Tab 4 + SQLite + JSON export, OOD non-containment; live OS firewall & AES-256-GCM auto-rotation **DEFERRED**. |
 | C9 — Desktop App, FastAPI, SQLite & Demo Ingestion | **Python FastAPI + SQLite** (#30 CLOSED), `/api/v1/csv/*`, provenance verification (`source:nf-v3-canonical` vs `source:nf-v3-unverified`), OOD inference/risk abstention (`ABSTAINED_OOD`), `prepare_demo_dataset.py` và `API_CONTRACT.md` **IMPLEMENTED / TESTED**. **Desktop UI Rust/Tauri 2 + Svelte 5** (#16, `v0.6.0`) đã **IMPLEMENTED / TESTED** kèm bộ cài NSIS và release workflow `.github/workflows/release.yml`. |
 | C10 — Focused Experiments & Cross-Dataset M7 | #25 **REDUCE** từ 7 xuống các thí nghiệm ML trọng tâm (Exp 1–3/4); Exp 5–7 thu gọn/hoãn theo C5–C8. #48 Cross-dataset research (PR #49 `7344994`) nằm ở M7, không chặn Demo MVP. |
 | C11 — Delivery & QA | #18–#20, #60: đồng bộ docs, kịch bản demo offline trên Windows, báo cáo PDF, 10–12 slide và kiểm tra cổng bàn giao cuối kỳ. |

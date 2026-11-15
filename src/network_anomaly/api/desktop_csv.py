@@ -71,8 +71,9 @@ _NON_ATTRIBUTION_NOTICE = (
 _SECURITY_NOTICE = (
     "Local security posture (#26): Localhost-only FastAPI (127.0.0.1), fail-closed "
     "SHA-256 artifact checks, and safe CSV path validation. "
-    "Adaptive rotation & security response (#27), OS firewall automation, "
-    "and AES-256-GCM keyring encryption remain DEFERRED (read-only advisory only)."
+    "Adaptive rotation & security response (#27) runs in DRY-RUN SIMULATION / RECOMMENDED "
+    "mode only (executed=false; never invokes firewall, PowerShell, or OS commands), while "
+    "production AES-256-GCM keyring encryption and live automatic rotation remain DEFERRED."
 )
 
 _MODEL_DISPLAY_META: Dict[str, Tuple[str, str, str]] = {
@@ -161,7 +162,12 @@ def validate_safe_csv_path(raw_path: str, *, max_bytes: int = MAX_CSV_FILE_BYTES
     return resolved
 
 
-def validate_safe_export_path(raw_path: str, source_csv_path: Optional[str] = None) -> Path:
+def validate_safe_export_path(
+    raw_path: str,
+    source_csv_path: Optional[str] = None,
+    *,
+    expected_suffix: str = ".csv",
+) -> Path:
     """Validate a destination path and companion metadata path without overwriting input (#26)."""
     if not isinstance(raw_path, str) or not raw_path.strip() or "\x00" in raw_path:
         raise ValueError("Invalid export file path.")
@@ -171,8 +177,9 @@ def validate_safe_export_path(raw_path: str, source_csv_path: Optional[str] = No
         )
 
     candidate = Path(raw_path.strip()).expanduser()
-    if candidate.suffix.lower() != ".csv":
-        raise ValueError("Export output path must end with '.csv'.")
+    req_suffix = expected_suffix.lower()
+    if candidate.suffix.lower() != req_suffix:
+        raise ValueError(f"Export output path must end with '{req_suffix}'.")
 
     resolved = candidate.resolve(strict=False)
     parent_resolved = resolved.parent.resolve(strict=False)
@@ -1120,6 +1127,9 @@ def _record_csv_analysis(service: ApiService, response: CsvAnalyzeResponse) -> N
         "run_id": response.run_id,
         "model_sha256": response.model_sha256,
         "preprocessor_sha256": response.preprocessor_sha256,
+        "inference_mode": response.inference_mode,
+        "compatibility_gate": response.compatibility_gate.model_dump(),
+        "results": [item.model_dump() for item in response.results],
         "results_sha256": _canonical_results_sha256(response.results),
     }
     with lock:

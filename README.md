@@ -40,7 +40,7 @@ False positive (FP) làm tăng công điều tra, false negative (FN) bỏ lọt
 | Autoencoder (#29) | **IMPLEMENTED / TESTED** (code, tests & verified loading); real-data benchmark `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
 | FastAPI (`127.0.0.1`), SQLite persistence, 4-model inference & Validation Demo CSV Prep | **IMPLEMENTED / TESTED** (#30, #15, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
 | Desktop UI **Rust / Tauri 2 + Svelte 5** (#16 — thay Streamlit) | **IMPLEMENTED / TESTED** (`v0.6.0` trên PR #67; giao tiếp localhost HTTP tới FastAPI, Windows NSIS installer) |
-| Behavioral Vector (#28), Risk Ranking (#32), Trace Timeline (#24), Security/Response (#26, #27) | **REDUCED / DEFERRED** — không chặn Demo CSV MVP; không có Auth/API log hoặc AES-GCM vòng đời đầy đủ |
+| Behavioral Vector (#28), Risk Ranking (#32), Trace Timeline (#24), Adaptive Response Dry-Run (#27), Bảo mật cục bộ (#26) | **IMPLEMENTED / TESTED (Scoped M6/M7)** — thống kê NetFlow, risk/timeline tất định, mô phỏng phản ứng dry-run (`executed=false`); live firewall/OS commands & AES-256-GCM keyring **DEFERRED** |
 
 ## Kiến trúc hệ thống
 
@@ -230,7 +230,8 @@ Autoencoder (#29) | **IMPLEMENTED / TESTED** (code, tests & verified loading); r
 Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, `v0.6.0`) | **IMPLEMENTED / TESTED** (Windows x64 executable + NSIS installer, `/api/v1/csv/*`, OOD abstention, provenance gate) |
 Multi-Source Ingestion & Gate (#46) | **IMPLEMENTED / TESTED** (xác minh provenance `source:nf-v3-canonical` vs `source:nf-v3-unverified`) |
 Behavioral (#28), Risk Ranking (#32), Trace Timeline (#24) | **IMPLEMENTED / TESTED (Scoped M6)** — thống kê metadata NetFlow (#28), điểm rủi ro tất định từ chối OOD (#32), timeline tất định (#24) |
-Bảo mật nâng cao & Adaptive Response (#26, #27), Cross-Dataset (#48) | **SCOPED / DEFERRED** — localhost-only `127.0.0.1`, fail-closed SHA-256 & path validation đã bật; firewall automation & AES-256-GCM keyring **DEFERRED** |
+Adaptive Security Response Dry-Run (#27) | **IMPLEMENTED / TESTED (Dry-Run)** — policy engine tất định (`NO_ACTION`/`MONITOR`/`INVESTIGATE`/`ISOLATE_RECOMMENDED`), mô phỏng adaptive key rotation (`executed=false`), Tab 4 + SQLite + JSON export, cấm containment với `ABSTAINED_OOD`; live firewall/OS execution **DEFERRED** |
+Bảo mật nâng cao (#26), Cross-Dataset (#48) | **SCOPED / DEFERRED** — localhost-only `127.0.0.1`, fail-closed SHA-256 & path validation đã bật; firewall automation & AES-256-GCM keyring **DEFERRED** |
 Tài liệu và CI | **IMPLEMENTED / TESTED** ([cài đặt Windows](docs/WINDOWS_INSTALLATION.md), [quy trình release](docs/RELEASE_PROCESS.md), [`release.yml`](.github/workflows/release.yml)) |
 
 ## Hạn chế
@@ -238,7 +239,7 @@ Tài liệu và CI | **IMPLEMENTED / TESTED** ([cài đặt Windows](docs/WINDOW
 - **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ đạt Accuracy Validation `0,999849` và `49,98%` flow Validation trùng vector 47 features với Train; đánh giá cross-dataset trên PR #47 / #48 cho thấy model có thể suy giảm mạnh khi chuyển môi trường mạng (domain shift).
 - **Real-data benchmarks còn mở:** Held-out Test mới kiểm chứng trên Random Forest (`rf-heldout-ea330b9`) và Isolation Forest (`if-c4-20261115T055359Z`); XGBoost Held-out Test và Autoencoder real-data experiments chưa hoàn tất (XGBoost và Autoencoder hiện báo `BLOCKED / NOT READY` fail-closed với HTTP 503 khi thiếu artifact `.joblib`).
 - **Giới hạn đóng gói Desktop M6 (`v0.6.0`):** Bộ cài đặt Windows NSIS (`NetFlow Sentinel M6_0.6.0_x64-setup.exe`) đã nhúng giao diện Svelte 5 và nhân Rust Tauri 2, nhưng **chưa phải bản standalone đóng gói sẵn Python**. Máy đích vẫn cần Python tương thích + dependencies, thư mục gốc repository (`NETWORK_ANOMALY_REPO_ROOT`), các tệp `.joblib` khớp SHA-256, `data/demo/*.csv` và Microsoft Edge WebView2 Runtime (xem [docs/WINDOWS_INSTALLATION.md](docs/WINDOWS_INSTALLATION.md)).
-- **Phạm vi thu gọn minh bạch:** Các hạng mục tự động hóa tường lửa hệ điều hành (#27), xoay vòng khóa AES-256-GCM trong OS Keyring (#26) và tương quan đa nguồn log Auth/API ngoài NetFlow (#28) được ghi nhận trạng thái `DEFERRED`.
+- **Phạm vi thu gọn minh bạch:** Thực thi tự động hóa tường lửa hệ điều hành/PowerShell (#27), xoay vòng khóa AES-256-GCM thực tế trong OS Keyring (#26, #27) và tương quan đa nguồn log Auth/API ngoài NetFlow (#28) được ghi nhận trạng thái `DEFERRED` (hỗ trợ mô phỏng phản ứng dry-run không tác động hệ thống).
 
 ## Hướng phát triển
 

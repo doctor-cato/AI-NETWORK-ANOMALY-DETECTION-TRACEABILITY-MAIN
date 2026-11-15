@@ -11,7 +11,7 @@
 | F05 | Thống kê/tổng hợp hành vi chỉ từ NetFlow metadata có thật (loại Auth/API log) | C5 | #28 | **REDUCED / DEFERRED** (không chặn MVP) |
 | F06 | Deterministic Risk Ranking & Evidence Timeline từ NetFlow metadata qua FastAPI | C6 | #32, #24 | **REDUCED** (thay thế graph engine & Rust FFI phức tạp) |
 | F07 | An toàn cục bộ (localhost bind, SHA-256 fail-closed, SQLite key metadata audit) | C7 | #26 | **DEFERRED / REDUCED** (hoãn full AES-256-GCM keyring & auto-rotation) |
-| F08 | Khuyến nghị/phản ứng bảo mật | C8 | #27 | **DEFERRED** (ngoài phạm vi Demo MVP) |
+| F08 | Adaptive Security Response Simulation / Dry-run (`MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`, `NO_ACTION`; mô phỏng quyết định key rotation không sinh/xoay khóa thật; tích hợp Tab 4 + SQLite + JSON export) | C8 | #27 | **IMPLEMENTED / TESTED (Dry-Run)** — live OS firewall, PowerShell/system execution & AES-256-GCM keyring/auto-rotation **DEFERRED** |
 | F09 | Python FastAPI + SQLite (single writer), Validation Demo CSV (`prepare_demo_dataset.py`), Eligibility Gate và **Desktop UI Rust / Tauri 2 + Svelte 5** (thay Streamlit) | C9 | #30, #15, #17, #46, #16 | Backend/Inference/Demo Prep **IMPLEMENTED / TESTED**; PR #47 chờ review; **Rust/Tauri 2 UI (#16) PLANNED** |
 | F10 | Thực nghiệm trọng tâm (Exp 1–3/4) có protocol/artifact/reproduction & Cross-dataset M7 | C10 | #25, #48 | **REDUCED** (Exp 5–7 thu gọn/hoãn theo C5–C8; #48 PR #49 không chặn M6) |
 | F11 | Tài liệu đồng bộ, báo cáo PDF, 10–12 slides, demo offline Windows và handoff 5 vai trò | C11 | #18–#20 | **IN PROGRESS** |

@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { CsvEvaluateResponse, CsvFlowPredictionItem } from "./types";
+import type {
+  CsvEvaluateResponse,
+  CsvFlowPredictionItem,
+  ResponseFlowRecommendationItem,
+} from "./types";
 import { isLocalhostHttpUrl } from "./api";
 import {
   computeRiskDistribution,
   filterAndSortPredictions,
+  filterResponseRecommendations,
   formatBlockedModelReason,
   formatRiskDisplay,
   formatScoreSemantically,
+  getResponseActionBadgeClass,
   summarizeEvaluationCoverage,
 } from "./utils";
 
@@ -172,5 +178,86 @@ describe("prediction filtering and sorting", () => {
     expect(formatBlockedModelReason(null)).toBe(
       "Thiếu artifact hoặc chưa kiểm chứng — không tự fallback giả lập.",
     );
+  });
+
+  it("filters Issue #27 dry-run policy recommendations and maps badge tones cleanly", () => {
+    const recs: ResponseFlowRecommendationItem[] = [
+      {
+        row_id: 1,
+        row_index: 0,
+        predicted_class: "Attack",
+        is_ood_flagged: false,
+        risk_score: 96,
+        risk_level: "CRITICAL",
+        action: "ISOLATE_RECOMMENDED",
+        severity: "CRITICAL",
+        action_status: "RECOMMENDED",
+        simulation_status: "SIMULATED",
+        executed: false,
+        execution_status: "NOT_EXECUTED",
+        containment_allowed: true,
+        reason: "CRITICAL attack simulated isolation",
+        src_ip: "10.0.0.5",
+        dst_ip: "192.168.1.20",
+        src_port: 55000,
+        dst_port: 443,
+        flow_start_ms: 1700000000000,
+        provenance: { model_key: "random_forest", provenance_verified: true },
+      },
+      {
+        row_id: 2,
+        row_index: 1,
+        predicted_class: "ABSTAINED_OOD",
+        is_ood_flagged: true,
+        risk_score: null,
+        risk_level: "ABSTAINED_OOD",
+        action: "INVESTIGATE",
+        severity: "MEDIUM",
+        action_status: "RECOMMENDED",
+        simulation_status: "SIMULATED",
+        executed: false,
+        execution_status: "NOT_EXECUTED",
+        containment_allowed: false,
+        reason: "ABSTAINED_OOD guard prevents containment",
+        src_ip: "10.0.0.6",
+        dst_ip: "192.168.1.21",
+        src_port: 55001,
+        dst_port: 80,
+        flow_start_ms: 1700000001000,
+        provenance: { model_key: "random_forest", provenance_verified: true },
+      },
+      {
+        row_id: 3,
+        row_index: 2,
+        predicted_class: "Benign",
+        is_ood_flagged: false,
+        risk_score: 5,
+        risk_level: "LOW",
+        action: "NO_ACTION",
+        severity: "INFO",
+        action_status: "RECOMMENDED",
+        simulation_status: "SIMULATED",
+        executed: false,
+        execution_status: "NOT_EXECUTED",
+        containment_allowed: false,
+        reason: "Benign flow",
+        src_ip: "10.0.0.7",
+        dst_ip: "192.168.1.22",
+        src_port: 55002,
+        dst_port: 53,
+        flow_start_ms: 1700000002000,
+        provenance: { model_key: "random_forest", provenance_verified: true },
+      },
+    ];
+
+    expect(filterResponseRecommendations(recs, "ISOLATE_RECOMMENDED").map((r) => r.row_id)).toEqual([
+      1,
+    ]);
+    expect(filterResponseRecommendations(recs, "OOD").map((r) => r.row_id)).toEqual([2]);
+    expect(filterResponseRecommendations(recs, "all", "10.0.0.7").map((r) => r.row_id)).toEqual([3]);
+    expect(getResponseActionBadgeClass("ISOLATE_RECOMMENDED")).toBe("badge-attack");
+    expect(getResponseActionBadgeClass("INVESTIGATE")).toBe("badge-warning");
+    expect(getResponseActionBadgeClass("MONITOR")).toBe("badge-info");
+    expect(getResponseActionBadgeClass("NO_ACTION")).toBe("badge-benign");
   });
 });

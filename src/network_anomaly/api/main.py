@@ -22,6 +22,11 @@ from network_anomaly.api.desktop_csv import (
 )
 from network_anomaly.api.errors import register_error_handlers
 from network_anomaly.api.repositories import IncidentRepository
+from network_anomaly.api.response_policy import (
+    export_security_simulation_evidence,
+    list_security_simulations,
+    simulate_security_response,
+)
 from network_anomaly.api.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -45,7 +50,12 @@ from network_anomaly.api.schemas import (
     ModelStatusItem,
     PaginatedIncidentsResponse,
     PaginatedRotationAuditResponse,
+    PaginatedSecuritySimulationsResponse,
     PaginatedTimelineResponse,
+    SecurityResponseSimulateRequest,
+    SecurityResponseSimulationResponse,
+    SecuritySimulationExportRequest,
+    SecuritySimulationExportResponse,
 )
 from network_anomaly.api.service import ApiService
 
@@ -389,6 +399,52 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
     ) -> CsvExportResponse:
         """Export analyzed flow predictions safely without overwriting source CSV."""
         return export_predictions_csv(request, service=svc)
+
+    @app.post(
+        "/api/v1/security/simulate-response",
+        response_model=SecurityResponseSimulationResponse,
+        tags=["Security Dry-Run"],
+        summary="Simulate deterministic adaptive security response & key rotation decision (dry-run)",
+        description=(
+            "Evaluate deterministic Issue #27 policy recommendations (NO_ACTION, MONITOR, "
+            "INVESTIGATE, ISOLATE_RECOMMENDED) and adaptive key rotation readiness in strict "
+            "dry-run simulation mode only (executed=false). ABSTAINED_OOD flows never receive "
+            "containment recommendations; OS firewall and real crypto key modifications are disabled."
+        ),
+    )
+    def run_security_response_simulation(
+        request: SecurityResponseSimulateRequest,
+        svc: ApiService = Depends(get_service),
+    ) -> SecurityResponseSimulationResponse:
+        """Run deterministic Issue #27 adaptive response dry-run simulation."""
+        return simulate_security_response(svc, request)
+
+    @app.get(
+        "/api/v1/security/simulations",
+        response_model=PaginatedSecuritySimulationsResponse,
+        tags=["Security Dry-Run"],
+        summary="List persisted Issue #27 dry-run security response simulations",
+    )
+    def get_security_simulations(
+        limit: int = Query(20, ge=1, le=200),
+        offset: int = Query(0, ge=0),
+        svc: ApiService = Depends(get_service),
+    ) -> PaginatedSecuritySimulationsResponse:
+        """List SQLite-persisted dry-run response simulations ordered newest first."""
+        return list_security_simulations(svc, limit=limit, offset=offset)
+
+    @app.post(
+        "/api/v1/security/simulations/export",
+        response_model=SecuritySimulationExportResponse,
+        tags=["Security Dry-Run"],
+        summary="Export Issue #27 dry-run simulation evidence JSON and metadata",
+    )
+    def export_security_simulation(
+        request: SecuritySimulationExportRequest,
+        svc: ApiService = Depends(get_service),
+    ) -> SecuritySimulationExportResponse:
+        """Export a persisted simulation evidence bundle safely with SHA-256 metadata."""
+        return export_security_simulation_evidence(svc, request)
 
     return app
 

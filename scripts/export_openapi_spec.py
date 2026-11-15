@@ -83,6 +83,14 @@ def render_openapi_artifacts() -> Tuple[str, str]:
                 "key policy, not active AES-GCM encryption."
             ),
             (
+                "- **Adaptive Response Dry-Run Scope (#27)**: `/api/v1/security/simulate-response` "
+                "and `/api/v1/security/simulations/*` generate deterministic policy recommendations "
+                "(`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`) and simulated "
+                "adaptive key-rotation readiness with `executed=false`. `ABSTAINED_OOD` flows "
+                "never receive containment recommendations; OS firewall commands and production "
+                "AES-256-GCM keyring operations remain disabled/DEFERRED."
+            ),
+            (
                 "- **SQLite Durability**: Ingestion, incidents, timeline, and audit logs "
                 "persist durably across restarts."
             ),

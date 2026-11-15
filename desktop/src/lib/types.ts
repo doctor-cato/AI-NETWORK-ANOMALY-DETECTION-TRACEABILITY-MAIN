@@ -240,3 +240,125 @@ export interface CsvExportResponse {
   rows_exported: number;
   exported_at_utc: string;
 }
+
+export type ResponseAction = "NO_ACTION" | "MONITOR" | "INVESTIGATE" | "ISOLATE_RECOMMENDED";
+
+export interface ResponseFlowRecommendationItem {
+  row_id: number | string;
+  row_index: number;
+  predicted_class: string;
+  is_ood_flagged: boolean;
+  risk_score: number | null;
+  risk_level: string;
+  action: ResponseAction;
+  severity: string;
+  action_status: string;
+  simulation_status: string;
+  executed: boolean;
+  execution_status: string;
+  containment_allowed: boolean;
+  reason: string;
+  src_ip: string | null;
+  dst_ip: string | null;
+  src_port: number | null;
+  dst_port: number | null;
+  flow_start_ms: number | null;
+  provenance: Record<string, unknown>;
+}
+
+export interface AdaptiveKeyRotationSimulation {
+  decision: string;
+  recommended: boolean;
+  would_rotate: boolean;
+  simulation_status: string;
+  executed: boolean;
+  key_material_generated: boolean;
+  real_key_modified: boolean;
+  keyring_status: string;
+  active_key_id: string | null;
+  active_key_version: number | null;
+  simulated_next_version: number | null;
+  cooldown_seconds: number;
+  cooldown_remaining_seconds: number;
+  trigger_metrics: Record<string, unknown>;
+  reason: string;
+}
+
+export interface SecurityResponseSimulationResponse {
+  simulation_id: string;
+  created_at_utc: string;
+  analysis_id: string | null;
+  source_csv_path: string | null;
+  source_csv_sha256: string | null;
+  model_key: string;
+  model_type: string;
+  run_id: string | null;
+  model_sha256: string | null;
+  preprocessor_sha256: string | null;
+  triggered_by: string;
+  provenance_verification: string;
+  execution_mode: string;
+  action_status: string;
+  recommendation_status: string;
+  execution_status: string;
+  executed: boolean;
+  os_firewall_touched: boolean;
+  real_key_rotated: boolean;
+  overall_recommendation: ResponseAction;
+  overall_severity: string;
+  total_flows: number;
+  evaluated_flows: number;
+  ood_abstained_flows: number;
+  action_counts: Record<string, number>;
+  key_rotation_simulation: AdaptiveKeyRotationSimulation;
+  policy_summary: string;
+  security_notice: string;
+  deferred_capabilities: string[];
+  provenance: Record<string, unknown>;
+  recommendations: ResponseFlowRecommendationItem[];
+}
+
+export interface SecuritySimulationHistoryItem {
+  simulation_id: string;
+  created_at_utc: string;
+  analysis_id: string | null;
+  source_csv_path: string | null;
+  source_csv_sha256: string | null;
+  model_key: string;
+  model_type: string;
+  run_id: string | null;
+  triggered_by: string;
+  provenance_verification: string;
+  execution_mode: string;
+  action_status: string;
+  recommendation_status: string;
+  execution_status: string;
+  executed: boolean;
+  os_firewall_touched: boolean;
+  real_key_rotated: boolean;
+  overall_recommendation: ResponseAction;
+  overall_severity: string;
+  total_flows: number;
+  evaluated_flows: number;
+  ood_abstained_flows: number;
+  action_counts: Record<string, number>;
+  key_rotation_simulation: AdaptiveKeyRotationSimulation;
+  policy_summary: string;
+}
+
+export interface PaginatedSecuritySimulationsResponse {
+  items: SecuritySimulationHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface SecuritySimulationExportResponse {
+  simulation_id: string;
+  json_path: string;
+  metadata_path: string;
+  json_sha256: string;
+  metadata_sha256: string;
+  exported_at_utc: string;
+}

@@ -855,3 +855,249 @@ class CsvExportResponse(BaseModel):
     metadata_sha256: str
     rows_exported: int = Field(..., ge=0)
     exported_at_utc: str
+
+
+# ---------------------------------------------------------------------------
+# C8 / Issue #27: Adaptive Security Response Simulation / Dry-Run Schemas
+# ---------------------------------------------------------------------------
+
+RESPONSE_ACTIONS = frozenset({"NO_ACTION", "MONITOR", "INVESTIGATE", "ISOLATE_RECOMMENDED"})
+RESPONSE_SEVERITIES = frozenset({"INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"})
+
+
+class ResponseFlowRecommendationItem(BaseModel):
+    """Deterministic dry-run response recommendation for a single analyzed network flow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row_id: Union[int, str]
+    row_index: int = Field(..., ge=0)
+    predicted_class: str
+    is_ood_flagged: bool
+    risk_score: Optional[float] = None
+    risk_level: str
+    action: str
+    severity: str
+    action_status: str = "RECOMMENDED"
+    simulation_status: str = "SIMULATED"
+    executed: bool = False
+    execution_status: str = "NOT_EXECUTED"
+    containment_allowed: bool = False
+    reason: str
+    src_ip: Optional[str] = None
+    dst_ip: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_port: Optional[int] = None
+    flow_start_ms: Optional[int] = None
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("action")
+    @classmethod
+    def _validate_action(cls, v: str) -> str:
+        norm = v.strip().upper()
+        if norm not in RESPONSE_ACTIONS:
+            raise ValueError(
+                f"Response action must be one of {sorted(RESPONSE_ACTIONS)}, got {v!r}"
+            )
+        return norm
+
+    @field_validator("severity")
+    @classmethod
+    def _validate_severity(cls, v: str) -> str:
+        norm = v.strip().upper()
+        if norm not in RESPONSE_SEVERITIES:
+            raise ValueError(
+                f"Response severity must be one of {sorted(RESPONSE_SEVERITIES)}, got {v!r}"
+            )
+        return norm
+
+    @field_validator("executed")
+    @classmethod
+    def _enforce_dry_run_not_executed(cls, v: bool) -> bool:
+        if v is not False:
+            raise ValueError("Dry-run recommendations cannot claim executed=True.")
+        return False
+
+    @model_validator(mode="after")
+    def _enforce_ood_no_containment_invariant(self) -> "ResponseFlowRecommendationItem":
+        if (
+            self.is_ood_flagged
+            or self.predicted_class == "ABSTAINED_OOD"
+            or self.risk_level == "ABSTAINED_OOD"
+        ) and (self.action == "ISOLATE_RECOMMENDED" or self.containment_allowed):
+            raise ValueError(
+                "Invariant violation: ABSTAINED_OOD flows must never receive containment recommendations."
+            )
+        return self
+
+
+class AdaptiveKeyRotationSimulation(BaseModel):
+    """Simulated adaptive key rotation evaluation without creating or modifying real keys."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: str
+    recommended: bool
+    would_rotate: bool
+    simulation_status: str = "SIMULATED"
+    executed: bool = False
+    key_material_generated: bool = False
+    real_key_modified: bool = False
+    keyring_status: str = "DEFERRED_PRODUCTION_KEYRING"
+    active_key_id: Optional[str] = None
+    active_key_version: Optional[int] = None
+    simulated_next_version: Optional[int] = None
+    cooldown_seconds: float = Field(..., ge=0.0)
+    cooldown_remaining_seconds: float = Field(default=0.0, ge=0.0)
+    trigger_metrics: Dict[str, Any] = Field(default_factory=dict)
+    reason: str
+
+    @field_validator("executed", "key_material_generated", "real_key_modified")
+    @classmethod
+    def _enforce_no_real_crypto_mutation(cls, v: bool, info: Any) -> bool:
+        if v is not False:
+            raise ValueError(
+                f"{info.field_name} must remain False in dry-run key rotation simulation."
+            )
+        return False
+
+
+class SecurityResponseSimulateRequest(BaseModel):
+    """Request to run deterministic Issue #27 adaptive response simulation / dry-run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    analysis_id: Optional[str] = None
+    triggered_by: str = Field("operator", min_length=1, max_length=100)
+    dry_run: bool = Field(
+        True,
+        description="Must remain True; automatic OS firewall/key execution is disabled in v0.6.0.",
+    )
+    source_csv_path: Optional[str] = None
+    model_key: Optional[str] = None
+    model_type: Optional[str] = None
+    run_id: Optional[str] = None
+    model_sha256: Optional[str] = None
+    preprocessor_sha256: Optional[str] = None
+    inference_mode: Optional[str] = None
+    compatibility_gate: Optional[CompatibilityGateSummarySchema] = None
+    results: Optional[List[CsvFlowPredictionItem]] = None
+
+    @field_validator("dry_run")
+    @classmethod
+    def _require_dry_run_true(cls, v: bool) -> bool:
+        if v is not True:
+            raise ValueError(
+                "Only dry_run=True is permitted in NetFlow Sentinel v0.6.0; live response execution is disabled and DEFERRED."
+            )
+        return True
+
+    @model_validator(mode="after")
+    def _require_analysis_or_results(self) -> "SecurityResponseSimulateRequest":
+        if not self.analysis_id and not self.results:
+            raise ValueError("Provide either 'analysis_id' or non-empty 'results' to simulate.")
+        return self
+
+
+class SecurityResponseSimulationResponse(BaseModel):
+    """Full Issue #27 dry-run policy simulation output with clear simulated vs executed state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    simulation_id: str
+    created_at_utc: str
+    analysis_id: Optional[str] = None
+    source_csv_path: Optional[str] = None
+    source_csv_sha256: Optional[str] = None
+    model_key: str
+    model_type: str
+    run_id: Optional[str] = None
+    model_sha256: Optional[str] = None
+    preprocessor_sha256: Optional[str] = None
+    triggered_by: str
+    provenance_verification: str
+    execution_mode: str = "DRY_RUN_SIMULATION"
+    action_status: str = "SIMULATED"
+    recommendation_status: str = "RECOMMENDED"
+    execution_status: str = "NOT_EXECUTED"
+    executed: bool = False
+    os_firewall_touched: bool = False
+    real_key_rotated: bool = False
+    overall_recommendation: str
+    overall_severity: str
+    total_flows: int = Field(..., ge=0)
+    evaluated_flows: int = Field(..., ge=0)
+    ood_abstained_flows: int = Field(..., ge=0)
+    action_counts: Dict[str, int]
+    key_rotation_simulation: AdaptiveKeyRotationSimulation
+    policy_summary: str
+    security_notice: str
+    deferred_capabilities: List[str]
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+    recommendations: List[ResponseFlowRecommendationItem]
+
+
+class SecuritySimulationHistoryItem(BaseModel):
+    """Persisted Issue #27 simulation history entry stored in SQLite."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    simulation_id: str
+    created_at_utc: str
+    analysis_id: Optional[str] = None
+    source_csv_path: Optional[str] = None
+    source_csv_sha256: Optional[str] = None
+    model_key: str
+    model_type: str
+    run_id: Optional[str] = None
+    triggered_by: str
+    provenance_verification: str
+    execution_mode: str
+    action_status: str
+    recommendation_status: str
+    execution_status: str
+    executed: bool = False
+    os_firewall_touched: bool = False
+    real_key_rotated: bool = False
+    overall_recommendation: str
+    overall_severity: str
+    total_flows: int = Field(..., ge=0)
+    evaluated_flows: int = Field(..., ge=0)
+    ood_abstained_flows: int = Field(..., ge=0)
+    action_counts: Dict[str, int]
+    key_rotation_simulation: AdaptiveKeyRotationSimulation
+    policy_summary: str
+
+
+class PaginatedSecuritySimulationsResponse(BaseModel):
+    """Paginated list of SQLite-persisted dry-run response simulations."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: List[SecuritySimulationHistoryItem]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1)
+    offset: int = Field(..., ge=0)
+    has_more: bool
+
+
+class SecuritySimulationExportRequest(BaseModel):
+    """Export an Issue #27 dry-run simulation evidence bundle as JSON + metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    output_path: str = Field(..., min_length=1)
+    simulation_id: str = Field(..., min_length=1)
+
+
+class SecuritySimulationExportResponse(BaseModel):
+    """Provenance confirmation of exported Issue #27 simulation JSON and metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    simulation_id: str
+    json_path: str
+    metadata_path: str
+    json_sha256: str
+    metadata_sha256: str
+    exported_at_utc: str
