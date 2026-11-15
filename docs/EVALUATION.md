@@ -75,16 +75,25 @@
   Isolation Forest giả định dữ liệu bình thường phân cụm khác với bất thường; không tuyên bố phát hiện
   zero-day không có chứng cứ.
 
-## Không tuyên bố benchmark chưa kiểm chứng
+## Bảng metric thực nghiệm M3 & trạng thái kiểm chứng
 
-- Repo này không tuyên bố độ chính xác, F1 cụ thể, hoặc kết quả benchmark cho đến khi thực nghiệm thật
-  hoàn thành và kết quả được ghi cùng seed/phiên bản.
-- Mọi kết quả phải ghi rõ: `PLANNED / IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED`.
-- Hiện tại protocol đánh giá là `IMPLEMENTED / TESTED` (bằng code contracts và unit tests).
-- Huấn luyện Random Forest baseline và đánh giá trên phân vùng **Validation** (`345.371` dòng) thuộc Issue #10 đã đạt trạng thái `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` trên dữ liệu thật `NF-UNSW-NB15-v3` (`reports/models/random_forest_manifest.json`, `reports/models/rf_baseline_training_report.md`):
-  - Model artifact SHA-256: `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea` (`917.227` bytes, tái lập 100% byte-for-byte).
-  - Validation metrics (`345.371` dòng): `Precision = 0.999836`, `Recall = 0.999902`, `F1 = 0.999869`, `Macro-F1 = 0.999928`, `FPR = 0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]` (`TN = 314.866`, `FP = 5`, `FN = 3`, `TP = 30.497`), cùng phân rã đầy đủ 10 lớp cột `Attack`.
-  - Kiểm toán khóa tập Test: `test_partition_accessed = false`, `test_rows_loaded = 0`, `test_indices_loaded = false`.
-- Đánh giá một lần cuối cùng (one-shot final evaluation) trên phân vùng **Test** (`345.953` dòng) thuộc phạm vi Issue #12 và vẫn giữ trạng thái `PLANNED`.
+Phân biệt rõ trạng thái: `PLANNED`, `IMPLEMENTED`, `TESTED`, `EXPERIMENTALLY VALIDATED`, `REPRODUCED`, `BLOCKED / NOT VERIFIED`.
 
-Cập nhật: 2026-11-08 (cập nhật kết quả huấn luyện RF baseline Issue #10 và bổ sung Isolation Forest C4 protocol & pipeline evaluation Issue #11; giữ khóa tập Test cho Issue #12)
+- **Random Forest (Baseline chính — #9, #10, #12, #13):** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** (Validation) + **EXPERIMENTALLY VALIDATED** (Held-out Test `rf-heldout-ea330b9`).
+  - Artifact: `artifacts/models/random_forest/random_forest_baseline.joblib` (SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`, `917.227` bytes), manifest `reports/models/random_forest_manifest.json` (`rf-baseline-1794068628`).
+  - Validation (`345.371` dòng): `Precision = 0.999836`, `Recall = 0.999902`, `F1 = 0.999869`, `Macro-F1 = 0.999928`, `FPR = 0.000016`, `CM = [[314866, 5], [3, 30497]]`. Tái lập sạch trong venv Python `3.12.10` đạt sai khác **0** trên toàn bộ metric và confusion matrix.
+  - Held-out Test (`rf-heldout-ea330b9`, `345.953` dòng): `Accuracy = 0.999974`, `Precision = 0.999771`, `Recall = 0.999935`, `F1 = 0.999853`, `Macro-F1 = 0.999919`, `FPR = 0.0000222`, `CM = [[315350, 7], [2, 30594]]` (xem `reports/evaluation/rf-heldout-ea330b9/verified_summary.json`).
+- **XGBoost (#31):** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** trên Validation (`345.371` dòng); Held-out Test **`NOT VERIFIED`** (bị khóa).
+  - Manifest lịch sử `reports/models/xgboost_manifest.json` (`xgb-baseline-1794151507` tại `7d760e0`): `Precision = 0.999967`, `Recall = 1.000000`, `F1 = 0.999984`, `Macro-F1 = 0.999991`, `FPR = 0.000003`, `CM = [[314870, 1], [0, 30500]]`.
+  - Tái lập sạch trong venv Python `3.12.10` trên canonical split `bb84c1e0...` và preprocessor `12d4360a...` cho kết quả Validation khớp **0** sai khác về metric và confusion matrix; file `.joblib` không lưu sẵn trong `artifacts/models/xgboost/` trên repo mặc định (`BLOCKED / NOT READY` cho inference nếu chưa train cục bộ).
+- **Isolation Forest (C4 — #11):** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** trên dữ liệu thật `NF-UNSW-NB15-v3` (`if-c4-20261115T055359Z`, clean commit `bf0f3ec`, `git_dirty=false`, Python `3.12.10`).
+  - Huấn luyện **benign-only** trên `1.590.608` mẫu `Label == 0` thuộc Train (loại bỏ `65.189` mẫu Attack), seed `42`, `n_estimators = 100`, `max_samples = "auto"`, `contamination = 0.1`.
+  - Hiệu chuẩn ngưỡng trên Validation (`314.871` Benign + `30.319` Known Attack; loại trừ `181` Unknown `{Backdoor, Worms}`): policy `max-F1-on-known-attacks` (quét `74.421` ngưỡng ứng viên) chọn ngưỡng đóng băng `-0.033526858092757406` (`Validation`: `Precision = 0.327973`, `Recall = 0.887892`, `F1 = 0.479008`, `FPR = 0.175183`; quan sát `Unknown` trên Validation `154/181 = 0.8508`).
+  - Held-out Test (`345.953` dòng = `315.357` Benign + `29.300` Known + `1.296` Unknown `{Backdoor: 1260, Worms: 36}`):
+    - **Tổng thể:** `TP = 27.528`, `TN = 264.755`, `FP = 50.602`, `FN = 3.068`, `Accuracy = 0.844863`, `Precision = 0.352336`, `Recall = 0.899725`, `F1 = 0.506374`, `FPR = 0.160459`, `ROC-AUC = 0.893730`, `PR-AUC = 0.288753` (`reports/experiments/isolation_forest/metrics.json`, `confusion_matrix.csv`, `confusion_matrix.png`).
+    - **Known Attacks vs Benign:** `26.406 / 29.300` (`Recall = 0.901229`, `Precision = 0.342899`, `F1 = 0.496783`, `ROC-AUC = 0.893996`).
+    - **Unknown Attacks (`Backdoor`, `Worms`) vs Benign:** `1.122 / 1.296` (`Recall = 0.865741`, `ROC-AUC = 0.887713`; riêng `Backdoor: 1093/1260 = 0.8675`, `Worms: 29/36 = 0.8056`).
+  - Cảnh báo: tỷ lệ phát hiện Unknown trên split holdout này phản ánh tổng quát hóa trong cùng testbed IXIA PerfectStorm, **không** chứng minh phát hiện zero-day ngoài thực tế; điểm bất thường cũng chịu tác động của `ml_feature_overlap` và shortcut `MIN_TTL` (`Validation benign_median = 31.0` so với `attack_median = 254.0`, `benign_zero_fraction = 0.0204` so với `attack_zero_fraction = 0.0017`).
+- **Autoencoder (#29 CLOSED):** **IMPLEMENTED / TESTED** với fixture synthetic (`scripts/train_autoencoder.py`, `src/network_anomaly/models/autoencoder.py`); real-data benchmark trên `NF-UNSW-NB15-v3` **`NOT VERIFIED`** (`BLOCKED / NOT READY` cho inference khi thiếu binary cục bộ).
+
+Cập nhật: 2026-11-15 (hoàn tất thực nghiệm Isolation Forest Issue #11 và clean reproduction M3 Issue #14 trên `NF-UNSW-NB15-v3`)

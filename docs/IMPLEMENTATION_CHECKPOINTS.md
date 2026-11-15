@@ -400,3 +400,48 @@ Tests: PASS — 33/33 unit and real-data integration tests in `tests/unit/test_r
 Issues: #9 and #10 all Acceptance Criteria verified on real data; #12 (held-out Test evaluation) remains PLANNED.
 Remaining: One-shot held-out Test partition evaluation belongs to Issue #12.
 ```
+
+```text
+Checkpoint 13 — Isolation Forest Real-Data Evaluation & M3 Clean Reproduction (Issues #11 & #14)
+Branch: feat/m3-completion-m6-kickoff
+HEAD: recorded by commit/PR readback at handoff.
+Completed: EXPERIMENTALLY VALIDATED & REPRODUCED on verified NF-UNSW-NB15-v3 bytes.
+  - Issue #11 (C4 — Isolation Forest real-data experiment & verified integration):
+      * Extended `scripts/train_isolation_forest.py` with `score_normalization` (Validation quantile grid),
+        `known_vs_unknown` split evaluation metrics, `compute_shortcut_and_overlap_audit()` (`ml_feature_overlap`
+        and Validation `MIN_TTL` shortcut audit), `confusion_matrix.csv` / `confusion_matrix.png`, and full
+        manifest provenance (`run_id`, `dataset_sha256`, `partition_indices_sha256`, `environment`, `test_lock_audit`,
+        optional `--output-dir`, `--manifest-path`, `--report-dir`).
+      * Executed benign-only Train fitting on 1,590,608 `Label == 0` Train rows (65,189 Train attack rows excluded,
+        seed=42, `n_estimators=100`, `max_samples="auto"`, `contamination=0.1`) and Validation threshold calibration
+        (`314,871` Benign + `30,319` Known attacks; `74,421` candidate thresholds; excluding `181` pre-registered
+        Unknown `{Backdoor, Worms}`) -> frozen `threshold = -0.033526858092757406` (`max-F1-on-known-attacks`).
+      * Executed one-shot Held-out Test evaluation (`345,953` flows, run `if-c4-20261115T055359Z`, Python 3.12.10,
+        clean source commit `bf0f3ec`, `git_dirty=false`, `script_sha256=bdd98556...`, `model_module_sha256=73547fb5...`):
+        `TP=27,528`, `TN=264,755`, `FP=50,602`, `FN=3,068`, `Accuracy=0.844863`, `Precision=0.352336`,
+        `Recall=0.899725`, `F1=0.506374`, `FPR=0.160459`, `ROC-AUC=0.893730`, `PR-AUC=0.288753`.
+      * Known vs Unknown breakdown on Test: Known attacks `26,406 / 29,300` (`Recall=0.901229`);
+        Unknown `{Backdoor, Worms}` `1,122 / 1,296` (`Recall=0.865741`: `Backdoor 1,093/1,260 = 0.8675`,
+        `Worms 29/36 = 0.8056`). Documented non-zero-day and `MIN_TTL` (`benign_median=31.0`, `attack_median=254.0`)
+        limitations transparently.
+      * Generated verified artifact `artifacts/models/isolation_forest/isolation_forest.joblib` (`15a69cc4...`, gitignored),
+        `reports/models/isolation_forest_manifest.json` (`cd360a73...`), and reports under
+        `reports/experiments/isolation_forest/`. Verified `READY` in `prepare_demo_dataset.py --check-only`,
+        `InferencePipeline.from_artifacts`, `scripts/predict.py --model isolation_forest`, and FastAPI
+        `/api/v1/health` + `/api/v1/analyze` (`normalized_anomaly_score = 0.829298...`, `attack_probability = null`).
+  - Issue #14 (M3 Provenance & Clean Reproduction):
+      * Verified clean reproduction in an isolated Python 3.12.10 venv (`pip install -e .`):
+        `dataset_manifest.py verify`, `validate_data.py` (`SOURCE_INTEGRITY: PASS`, exit 1 as designed),
+        `preprocess_nf_unsw_nb15_v3.py --verify-only`, `train_random_forest.py`, `train_xgboost.py`,
+        `train_isolation_forest.py --evaluate-test`, `prepare_demo_dataset.py --check-only`, `predict.py`.
+      * Cross-run metric tolerance: `0` difference on Validation CM/metrics for Random Forest (`[[314866, 5], [3, 30497]]`)
+        and XGBoost (`[[314870, 1], [0, 30500]]`; Held-out Test `NOT VERIFIED`), and `0.0` difference on threshold
+        and Test metrics for Isolation Forest; `0.0` IF anomaly_score diff and `2.22e-16` RF max probability diff
+        across Python 3.14 and Python 3.12 on `data/demo/demo_flows.csv`.
+      * Separated M3 provenance/reproduction scope (#14) from M7 final system/Tauri/slide QA (#20, #60).
+Tests: PASS — `1109 passed, 6 skipped` (`pytest tests -q --tb=short`), `ruff check src scripts tests` PASS,
+  `black --check src scripts tests` PASS (140 files), `compileall` PASS, `export_openapi_spec.py --check` PASS,
+  `git diff --check` PASS.
+Issues: PR opened from `feat/m3-completion-m6-kickoff` referencing #11 and #14; #20/#60 carry M7 system-wide gates.
+Remaining: Maintainer review/merge (`REVIEW_REQUIRED`) and CI checks on PR.
+```

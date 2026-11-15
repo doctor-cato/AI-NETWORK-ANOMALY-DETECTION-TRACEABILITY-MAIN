@@ -1,0 +1,31 @@
+{
+  "threshold": -0.033526858092757406,
+  "policy": "max-F1-on-known-attacks",
+  "selection_metric": "f1",
+  "n_candidate_thresholds": 74421,
+  "score_direction": "higher_is_more_anomalous",
+  "decision_rule": "y_pred = 1 (Attack) if (-decision_function(X)) >= threshold else 0 (Benign)",
+  "calibration_partition": "validation",
+  "threshold_frozen": true,
+  "calibration_populations": {
+    "n_benign": 314871,
+    "n_known_attack": 30319,
+    "n_unknown_attack_excluded": 181
+  },
+  "validation_stats": {
+    "tp": 26920,
+    "tn": 259711,
+    "fp": 55160,
+    "fn": 3399,
+    "precision": 0.3279727095516569,
+    "recall": 0.8878920808733797,
+    "f1": 0.4790078203542736,
+    "fpr": 0.1751828526602958
+  },
+  "unknown_validation_detection": {
+    "n_samples": 181,
+    "n_detected": 154,
+    "detection_rate": 0.850828729281768,
+    "note": "Unknown attack scores observed but NOT used to select threshold."
+  }
+}
