@@ -350,3 +350,362 @@ def test_wrong_partition_overlap_bounds_and_test_leakage_fail_closed(tmp_path: P
         validate_slice_sampling_parameters(
             "NF-UNSW-NB15-v3", skip_rows=UNSW_TEST_LOCK_START - 2, sample_rows=10
         )
+
+
+def test_cli_verify_only_fails_closed_on_missing_and_invalid_artifacts(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
+    """--verify-only must fail closed (non-zero) unless artifact+manifest verify or --allow-missing."""
+    source_csv, split_manifest, indices_dir = _write_unsw_fixture(
+        tmp_path,
+        train_rows=[0, 1, 2, 3],
+        val_rows=[5, 6, 7, 8, 9],
+        test_rows=[11, 12, 13, 14],
+        total_rows=15,
+    )
+    out_dir = tmp_path / "verify_out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    common_args = [
+        "--dataset",
+        "NF-UNSW-NB15-v3",
+        "--partition",
+        "validation",
+        "--source-csv",
+        str(source_csv),
+        "--split-manifest",
+        str(split_manifest),
+        "--indices-dir",
+        str(indices_dir),
+        "--output-dir",
+        str(out_dir),
+    ]
+
+    # 1. Missing CSV with --verify-only must fail closed (exit 1)
+    rc_missing = fetch_main([*common_args, "--verify-only"])
+    captured = capsys.readouterr()
+    assert rc_missing == 1
+    assert "does not exist" in captured.err
+
+    # 2. Missing CSV with explicit --verify-only --allow-missing returns 0 and prints SKIPPED
+    rc_allow_missing = fetch_main([*common_args, "--verify-only", "--allow-missing"])
+    captured = capsys.readouterr()
+    assert rc_allow_missing == 0
+    assert "SKIPPED:" in captured.out
+    assert "VERIFIED:" not in captured.out
+
+    # 3. Extract valid sample -> --verify-only returns 0 and prints VERIFIED
+    rc_extract = fetch_main([*common_args, "--sample-rows", "4", "--random-seed", "42"])
+    assert rc_extract == 0
+    capsys.readouterr()
+
+    rc_valid = fetch_main([*common_args, "--verify-only"])
+    captured = capsys.readouterr()
+    assert rc_valid == 0
+    assert "VERIFIED:" in captured.out
+    assert "SKIPPED:" not in captured.out
+
+    out_csv = out_dir / "NF-UNSW-NB15-v3-validation-sample50k.csv"
+    manifest_path = out_csv.with_name(f"{out_csv.name}.manifest.json")
+    orig_manifest = manifest_path.read_text(encoding="utf-8")
+    orig_csv = out_csv.read_bytes()
+    orig_split = split_manifest.read_text(encoding="utf-8")
+
+    # 4. Missing companion manifest -> --verify-only fails closed (exit 1)
+    manifest_path.unlink()
+    rc_no_manifest = fetch_main([*common_args, "--verify-only"])
+    captured = capsys.readouterr()
+    assert rc_no_manifest == 1
+    assert "Sample manifest not found" in captured.err
+    manifest_path.write_text(orig_manifest, encoding="utf-8")
+
+    # 5. Tampered CSV content -> --verify-only fails closed (exit 1)
+    out_csv.write_bytes(orig_csv + b"6,999,0,Benign\n")
+    rc_tampered_csv = fetch_main([*common_args, "--verify-only"])
+    capsys.readouterr()
+    assert rc_tampered_csv == 1
+    out_csv.write_bytes(orig_csv)
+
+    # 6. Invalid split index SHA in split_manifest -> --verify-only fails closed (exit 1)
+    bad_split = json.loads(orig_split)
+    bad_split["partitions"]["validation"]["index_sha256"] = "b" * 64
+    split_manifest.write_text(json.dumps(bad_split), encoding="utf-8")
+    rc_bad_split = fetch_main([*common_args, "--verify-only"])
+    capsys.readouterr()
+    assert rc_bad_split == 1
+    split_manifest.write_text(orig_split, encoding="utf-8")
+
+    # 7. Wrong --partition train on a validation sample -> --verify-only fails closed (exit 1)
+    rc_wrong_part = fetch_main(
+        [
+            "--dataset",
+            "NF-UNSW-NB15-v3",
+            "--verify-only",
+            "--partition",
+            "train",
+            "--source-csv",
+            str(source_csv),
+            "--split-manifest",
+            str(split_manifest),
+            "--indices-dir",
+            str(indices_dir),
+            "--output-dir",
+            str(out_dir),
+        ]
+    )
+    capsys.readouterr()
+    assert rc_wrong_part == 1
+
+
+def test_cache_reuse_and_parameter_mismatch_fail_closed(tmp_path: Path) -> None:
+    """Cache reuse requires matching sampling parameters; mismatches fail unless overwritten."""
+    source_csv, split_manifest, indices_dir = _write_unsw_fixture(
+        tmp_path,
+        train_rows=[0, 1, 2, 3],
+        val_rows=[5, 6, 7, 8, 9, 10],
+        test_rows=[11, 12, 13, 14],
+        total_rows=15,
+    )
+    out_csv = tmp_path / "cache" / "NF-UNSW-NB15-v3-validation-sample50k.csv"
+    manifest_path = out_csv.with_name(f"{out_csv.name}.manifest.json")
+
+    extract_unsw_partition_sample(
+        output_path=out_csv,
+        source_csv_path=source_csv,
+        split_manifest_path=split_manifest,
+        indices_dir=indices_dir,
+        partition="validation",
+        sample_rows=3,
+        offset_in_partition=0,
+        random_seed=42,
+    )
+    first_bytes = out_csv.read_bytes()
+    first_mtime_ns = out_csv.stat().st_mtime_ns
+    first_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    # 1. Identical parameters reuse existing cache without regenerating
+    reused = extract_unsw_partition_sample(
+        output_path=out_csv,
+        source_csv_path=source_csv,
+        split_manifest_path=split_manifest,
+        indices_dir=indices_dir,
+        partition="validation",
+        sample_rows=3,
+        offset_in_partition=0,
+        overwrite=False,
+        random_seed=42,
+    )
+    assert reused == out_csv
+    assert out_csv.stat().st_mtime_ns == first_mtime_ns
+    assert out_csv.read_bytes() == first_bytes
+
+    # 2. Changed random_seed fails closed without overwrite
+    with pytest.raises(ValueError, match="random_seed"):
+        extract_unsw_partition_sample(
+            output_path=out_csv,
+            source_csv_path=source_csv,
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+            partition="validation",
+            sample_rows=3,
+            offset_in_partition=0,
+            overwrite=False,
+            random_seed=99,
+        )
+    assert out_csv.read_bytes() == first_bytes
+
+    # 3. Changed sampling method (seeded -> unseeded offset) fails closed without overwrite
+    with pytest.raises(ValueError, match="sampling_method"):
+        extract_unsw_partition_sample(
+            output_path=out_csv,
+            source_csv_path=source_csv,
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+            partition="validation",
+            sample_rows=3,
+            offset_in_partition=0,
+            overwrite=False,
+            random_seed=None,
+        )
+    assert out_csv.read_bytes() == first_bytes
+
+    # 4. Changed offset_in_partition fails closed without overwrite
+    with pytest.raises(ValueError, match="partition_offset"):
+        extract_unsw_partition_sample(
+            output_path=out_csv,
+            source_csv_path=source_csv,
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+            partition="validation",
+            sample_rows=3,
+            offset_in_partition=1,
+            overwrite=False,
+            random_seed=42,
+        )
+
+    # 5. Changed sample_rows fails closed without overwrite
+    with pytest.raises(ValueError, match="row count differs"):
+        extract_unsw_partition_sample(
+            output_path=out_csv,
+            source_csv_path=source_csv,
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+            partition="validation",
+            sample_rows=4,
+            offset_in_partition=0,
+            overwrite=False,
+            random_seed=42,
+        )
+
+    # 6. Explicit overwrite=True regenerates deterministically with new parameters
+    extract_unsw_partition_sample(
+        output_path=out_csv,
+        source_csv_path=source_csv,
+        split_manifest_path=split_manifest,
+        indices_dir=indices_dir,
+        partition="validation",
+        sample_rows=3,
+        offset_in_partition=1,
+        overwrite=True,
+        random_seed=99,
+    )
+    second_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert second_manifest["content_checksum"]["partition_offset"] == 1
+    assert second_manifest["provenance"]["sampling_seed"] == 99
+    assert (
+        second_manifest["content_checksum"]["source_row_indices"]
+        != first_manifest["content_checksum"]["source_row_indices"]
+    )
+    assert (
+        verify_unsw_sample_binding(
+            out_csv,
+            split_manifest,
+            indices_dir,
+            expected_count=3,
+            expected_partition="validation",
+            source_csv_path=source_csv,
+            expected_offset_in_partition=1,
+            expected_random_seed=99,
+            expected_sampling_method="deterministic_seeded_partition_sample",
+        )
+        == 3
+    )
+
+    # 7. CLI changed seed fails closed without --overwrite, succeeds with --overwrite
+    cli_base = [
+        "--dataset",
+        "NF-UNSW-NB15-v3",
+        "--sample-rows",
+        "3",
+        "--offset-in-partition",
+        "1",
+        "--source-csv",
+        str(source_csv),
+        "--split-manifest",
+        str(split_manifest),
+        "--indices-dir",
+        str(indices_dir),
+        "--output-dir",
+        str(out_csv.parent),
+    ]
+    assert fetch_main([*cli_base, "--random-seed", "123"]) == 1
+    assert fetch_main([*cli_base, "--random-seed", "123", "--overwrite"]) == 0
+    third_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert third_manifest["provenance"]["sampling_seed"] == 123
+    assert fetch_main([*cli_base, "--random-seed", "123", "--verify-only"]) == 0
+
+
+def test_corrupted_manifest_and_partial_write_fail_closed(tmp_path: Path) -> None:
+    """Corrupted manifests and interrupted overwrites never leave a verifiable sample."""
+    source_csv, split_manifest, indices_dir = _write_unsw_fixture(
+        tmp_path,
+        train_rows=[0, 1, 2],
+        val_rows=[5, 6, 7, 8, 9],
+        test_rows=[11, 12, 13],
+        total_rows=15,
+    )
+    out_csv = tmp_path / "out" / "NF-UNSW-NB15-v3-validation-sample50k.csv"
+    manifest_path = out_csv.with_name(f"{out_csv.name}.manifest.json")
+
+    extract_unsw_partition_sample(
+        output_path=out_csv,
+        source_csv_path=source_csv,
+        split_manifest_path=split_manifest,
+        indices_dir=indices_dir,
+        partition="validation",
+        sample_rows=3,
+        offset_in_partition=0,
+        random_seed=42,
+    )
+    orig_manifest = manifest_path.read_text(encoding="utf-8")
+
+    # 1. Tampered sampling_seed in manifest violates deterministic index selection check
+    tampered = json.loads(orig_manifest)
+    tampered["provenance"]["sampling_seed"] = 999
+    tampered["provenance"]["random_seed"] = 999
+    manifest_path.write_text(json.dumps(tampered), encoding="utf-8")
+    with pytest.raises(ValueError, match="deterministic selection"):
+        verify_unsw_sample_binding(out_csv, split_manifest, indices_dir, source_csv_path=source_csv)
+
+    # 2. Corrupted JSON manifest fails closed on both verify and cache reuse
+    manifest_path.write_text("{corrupt json", encoding="utf-8")
+    with pytest.raises(ValueError, match="Invalid sample manifest JSON"):
+        verify_unsw_sample_binding(out_csv, split_manifest, indices_dir, source_csv_path=source_csv)
+    with pytest.raises(ValueError, match="Invalid sample manifest JSON"):
+        extract_unsw_partition_sample(
+            output_path=out_csv,
+            source_csv_path=source_csv,
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+            partition="validation",
+            sample_rows=3,
+            offset_in_partition=0,
+            overwrite=False,
+            random_seed=42,
+        )
+
+    # 3. Interrupted overwrite must clean staging files and never leave verifiable artifacts
+    manifest_path.write_text(orig_manifest, encoding="utf-8")
+    # Truncate source_csv and update split_manifest dataset_sha256 to simulate partial source failure
+    truncated_lines = source_csv.read_text(encoding="utf-8").splitlines()[:4]
+    source_csv.write_text("\n".join(truncated_lines) + "\n", encoding="utf-8")
+    sp_data = json.loads(split_manifest.read_text(encoding="utf-8"))
+    sp_data["dataset_sha256"] = hashlib.sha256(source_csv.read_bytes()).hexdigest()
+    split_manifest.write_text(json.dumps(sp_data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Source CSV ended before index"):
+        extract_unsw_partition_sample(
+            output_path=out_csv,
+            source_csv_path=source_csv,
+            split_manifest_path=split_manifest,
+            indices_dir=indices_dir,
+            partition="validation",
+            sample_rows=3,
+            offset_in_partition=0,
+            overwrite=True,
+            random_seed=77,
+        )
+
+    assert not manifest_path.exists()
+    assert not out_csv.exists()
+    assert not out_csv.with_name(f".{out_csv.name}.staging").exists()
+    assert not manifest_path.with_name(f".{manifest_path.name}.staging").exists()
+    assert (
+        fetch_main(
+            [
+                "--dataset",
+                "NF-UNSW-NB15-v3",
+                "--verify-only",
+                "--partition",
+                "validation",
+                "--source-csv",
+                str(source_csv),
+                "--split-manifest",
+                str(split_manifest),
+                "--indices-dir",
+                str(indices_dir),
+                "--output-dir",
+                str(out_csv.parent),
+            ]
+        )
+        == 1
+    )
