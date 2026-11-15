@@ -2281,6 +2281,22 @@
             "title": "Is Ood Flagged",
             "default": false
           },
+          "ood_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ZERO_TTL_DRIFT",
+                  "PHYSICAL_INVARIANT",
+                  "COMBINED_OOD"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ood Kind"
+          },
           "ood_reason": {
             "anyOf": [
               {
@@ -4069,7 +4085,8 @@
                 "items": {
                   "$ref": "#/components/schemas/CsvFlowPredictionItem"
                 },
-                "type": "array"
+                "type": "array",
+                "maxItems": 10000
               },
               {
                 "type": "null"

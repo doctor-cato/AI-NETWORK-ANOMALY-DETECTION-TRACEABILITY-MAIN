@@ -43,6 +43,7 @@ def _make_flow(
     risk_score: float | None = 5.0,
     risk_level: str = "LOW",
     is_ood_flagged: bool = False,
+    ood_kind: str | None = None,
     ood_reason: str | None = None,
 ) -> CsvFlowPredictionItem:
     return CsvFlowPredictionItem(
@@ -58,6 +59,7 @@ def _make_flow(
         risk_score=risk_score,
         risk_level=risk_level,
         is_ood_flagged=is_ood_flagged,
+        ood_kind=ood_kind,
         ood_reason=ood_reason,
         flow_start_ms=1_700_000_000_000 + row_index,
         flow_end_ms=1_700_000_001_000 + row_index,
@@ -137,6 +139,7 @@ def test_deterministic_policy_matrix_covers_all_four_actions():
         provenance_verified=True,
         provenance_verification="server_verified_analysis",
         compatibility_status="MODEL_VALIDATED",
+        eligibility_status="PREDICTION_AVAILABLE",
         eligible=True,
         inference_mode="verified_model",
     )
@@ -175,15 +178,21 @@ def _register_server_analysis(
     model_type: str = "Random Forest",
     inference_mode: str = "verified_model",
     compatibility_status: str = "MODEL_VALIDATED",
+    eligibility_status: str | None = None,
     eligible: bool = True,
 ) -> None:
+    resolved_eligibility = (
+        eligibility_status
+        if eligibility_status is not None
+        else ("PREDICTION_AVAILABLE" if eligible else "ABSTAINED")
+    )
     gate = CompatibilityGateSummarySchema(
         source_id="source:nf-v3-canonical",
         provenance_verified=True,
         model_key=model_key,
         model_identifier="rf-verified-run",
         eligible=eligible,
-        eligibility_status="PREDICTION_AVAILABLE" if eligible else "ABSTAINED",
+        eligibility_status=resolved_eligibility,
         compatibility_status=compatibility_status,
     )
     lock, store = _get_analysis_store(svc)
@@ -554,42 +563,270 @@ def test_api_contract_rejects_dry_run_false_and_persists_history_and_export(
     assert hist["total"] == 2
     assert hist["items"][0]["simulation_id"] == verified_data["simulation_id"]
 
-    export_file = Path("artifacts/exports/test_issue27_dry_run_unit.json")
-    try:
-        exp_resp = client.post(
-            "/api/v1/security/simulations/export",
-            json={
-                "output_path": str(export_file),
-                "simulation_id": verified_data["simulation_id"],
-            },
+    export_file = tmp_path / "test_issue27_dry_run_unit.json"
+    exp_resp = client.post(
+        "/api/v1/security/simulations/export",
+        json={
+            "output_path": str(export_file),
+            "simulation_id": verified_data["simulation_id"],
+        },
+    )
+    assert exp_resp.status_code == 200, exp_resp.text
+    exp_json = exp_resp.json()
+    exported = json.loads(Path(exp_json["json_path"]).read_text(encoding="utf-8"))
+    assert exported["executed"] is False
+    assert exported["os_firewall_touched"] is False
+    assert exported["real_key_rotated"] is False
+    assert exported["simulation_id"] == verified_data["simulation_id"]
+    assert Path(exp_json["metadata_path"]).is_file()
+
+
+def test_research_only_and_unverified_gate_cannot_isolate_or_escalate_rotation(tmp_path: Path):
+    """F-01 regression: RESEARCH_ONLY and non-MODEL_VALIDATED/PREDICTION_AVAILABLE gates fail closed."""
+    svc = ApiService(DatabaseManager(tmp_path / "f01_research_only.db"))
+    critical_attacks = [
+        _make_flow(
+            row_id=700 + i,
+            row_index=i,
+            predicted_label=1,
+            predicted_class="Attack",
+            attack_probability=None,
+            raw_anomaly_score=0.2,
+            risk_score=95.0,
+            risk_level="CRITICAL",
         )
-        assert exp_resp.status_code == 200, exp_resp.text
-        exp_json = exp_resp.json()
-        exported = json.loads(Path(exp_json["json_path"]).read_text(encoding="utf-8"))
-        assert exported["executed"] is False
-        assert exported["os_firewall_touched"] is False
-        assert exported["real_key_rotated"] is False
-        assert exported["simulation_id"] == verified_data["simulation_id"]
-        assert Path(exp_json["metadata_path"]).is_file()
-    finally:
-        for p in (export_file, export_file.with_suffix(".metadata.json")):
-            if p.exists():
-                p.unlink()
+        for i in range(8)
+    ]
+    _register_server_analysis(
+        svc,
+        analysis_id="csvrun_research_only_if",
+        flows=critical_attacks,
+        model_key="isolation_forest",
+        model_type="Isolation Forest",
+        inference_mode="verified_model",
+        compatibility_status="RESEARCH_ONLY",
+        eligibility_status="RESEARCH_ONLY",
+        eligible=True,
+    )
+    resp = simulate_security_response(
+        svc,
+        SecurityResponseSimulateRequest(
+            analysis_id="csvrun_research_only_if",
+            dry_run=True,
+        ),
+    )
+    assert resp.action_counts["ISOLATE_RECOMMENDED"] == 0
+    assert resp.action_counts["INVESTIGATE"] == 8
+    assert resp.overall_recommendation == "INVESTIGATE"
+    assert all(r.containment_allowed is False for r in resp.recommendations)
+    assert resp.key_rotation_simulation.decision == "HOLD_RESEARCH_ONLY_MODEL"
+    assert resp.key_rotation_simulation.recommended is False
+    assert resp.key_rotation_simulation.would_rotate is False
+
+    # External unverified CSV (SEMANTICALLY_COMPATIBLE / VALIDATION_NOT_VERIFIED) also stays downgraded
+    _register_server_analysis(
+        svc,
+        analysis_id="csvrun_semantic_unverified",
+        flows=critical_attacks,
+        compatibility_status="SEMANTICALLY_COMPATIBLE",
+        eligibility_status="VALIDATION_NOT_VERIFIED",
+        eligible=True,
+    )
+    sem_resp = simulate_security_response(
+        svc,
+        SecurityResponseSimulateRequest(
+            analysis_id="csvrun_semantic_unverified",
+            dry_run=True,
+        ),
+    )
+    assert sem_resp.action_counts["ISOLATE_RECOMMENDED"] == 0
+    assert sem_resp.key_rotation_simulation.decision == "HOLD_UNVERIFIED_GATE"
+    assert sem_resp.key_rotation_simulation.would_rotate is False
+
+
+def test_ood_structured_kind_precedence_over_reason_text():
+    """F-05 regression: structured ood_kind takes precedence over free-text ood_reason."""
+    phys_with_ttl_wording = evaluate_flow_response_policy(
+        _make_flow(
+            row_id=801,
+            predicted_label=None,
+            predicted_class="ABSTAINED_OOD",
+            attack_probability=None,
+            raw_anomaly_score=None,
+            risk_score=None,
+            risk_level="ABSTAINED_OOD",
+            is_ood_flagged=True,
+            ood_kind="PHYSICAL_INVARIANT",
+            ood_reason="Protocol anomaly mentioning min_ttl field",
+        )
+    )
+    assert phys_with_ttl_wording.action == "INVESTIGATE"
+    assert phys_with_ttl_wording.severity == "MEDIUM"
+    assert phys_with_ttl_wording.containment_allowed is False
+
+    zero_ttl_structured = evaluate_flow_response_policy(
+        _make_flow(
+            row_id=802,
+            predicted_label=None,
+            predicted_class="ABSTAINED_OOD",
+            attack_probability=None,
+            raw_anomaly_score=None,
+            risk_score=None,
+            risk_level="ABSTAINED_OOD",
+            is_ood_flagged=True,
+            ood_kind="ZERO_TTL_DRIFT",
+            ood_reason="unusual wording without ttl substring",
+        )
+    )
+    assert zero_ttl_structured.action == "MONITOR"
+    assert zero_ttl_structured.severity == "LOW"
+    assert zero_ttl_structured.containment_allowed is False
+
+
+def test_simulation_payload_limit_bounded_storage_and_memory_cache(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """F-02 & F-03 regressions: max_length on results, bounded recommendations storage, compressed cache eviction."""
+    from network_anomaly.api import desktop_csv
+    from network_anomaly.api.repositories import ResponseSimulationRepository
+    from network_anomaly.api.response_policy import MAX_PERSISTED_RECOMMENDATIONS
+    from network_anomaly.api.schemas import (
+        MAX_SECURITY_SIMULATE_RESULTS,
+        BehavioralSummarySchema,
+        CompatibilityGateSummarySchema,
+        CsvAnalyzeResponse,
+        OodSummarySchema,
+    )
+
+    # 1. Client payload exceeding MAX_SECURITY_SIMULATE_RESULTS -> HTTP 422
+    one_flow = _make_flow(row_id=1).model_dump()
+    oversized = client.post(
+        "/api/v1/security/simulate-response",
+        json={"dry_run": True, "results": [one_flow] * (MAX_SECURITY_SIMULATE_RESULTS + 1)},
+    )
+    assert oversized.status_code == 422
+
+    # 2. > MAX_PERSISTED_RECOMMENDATIONS server-verified flows -> full counts, bounded stored sample
+    svc = client.app.state.service
+    total_batch = MAX_PERSISTED_RECOMMENDATIONS + 250
+    flows = [
+        _make_flow(
+            row_id=1000 + i,
+            row_index=i,
+            predicted_label=1 if i % 5 == 0 else 0,
+            predicted_class="Attack" if i % 5 == 0 else "Benign",
+            attack_probability=0.95 if i % 5 == 0 else 0.05,
+            risk_score=95.0 if i % 5 == 0 else 5.0,
+            risk_level="CRITICAL" if i % 5 == 0 else "LOW",
+        )
+        for i in range(total_batch)
+    ]
+    _register_server_analysis(svc, analysis_id="csvrun_bounded_storage", flows=flows)
+    sim_resp = client.post(
+        "/api/v1/security/simulate-response",
+        json={"analysis_id": "csvrun_bounded_storage", "dry_run": True},
+    )
+    assert sim_resp.status_code == 200, sim_resp.text
+    sim_data = sim_resp.json()
+    assert sim_data["total_flows"] == total_batch
+    assert len(sim_data["recommendations"]) == MAX_PERSISTED_RECOMMENDATIONS
+    assert sim_data["provenance"]["recommendations_truncated"] is True
+    assert sim_data["provenance"]["recommendations_stored_count"] == MAX_PERSISTED_RECOMMENDATIONS
+    assert sim_data["action_counts"]["ISOLATE_RECOMMENDED"] == total_batch // 5
+
+    # Summary listing queries omit heavy recommendations/provenance columns
+    with svc.db.transaction() as conn:
+        listed = ResponseSimulationRepository.list_simulations(conn, limit=10, offset=0)
+    assert len(listed) == 1
+    assert "recommendations" not in listed[0]
+    assert "provenance" not in listed[0]
+
+    # 3. Compressed analysis cache evicts older results_gz under byte budget while keeping sha256
+    monkeypatch.setattr(desktop_csv, "_MAX_CACHED_RESULTS_BYTES", 2_000)
+    svc_cache = ApiService(DatabaseManager(tmp_path / "cache_evict.db"))
+    gate = CompatibilityGateSummarySchema(
+        source_id="source:nf-v3-canonical",
+        provenance_verified=True,
+        model_key="random_forest",
+        eligible=True,
+        eligibility_status="PREDICTION_AVAILABLE",
+        compatibility_status="MODEL_VALIDATED",
+    )
+    sample_batch = [_make_flow(row_id=i, row_index=i) for i in range(60)]
+    ood_summary = OodSummarySchema(
+        total_rows=len(sample_batch),
+        has_ood_warning=False,
+        hard_violation_count=0,
+        shortcut_shift_count=0,
+        zero_ttl_count=0,
+        affected_rows_count=0,
+        shortcut_drift_ratio=0.0,
+        zero_ttl_ratio=0.0,
+        abstention_rate=0.0,
+        prediction_coverage=1.0,
+    )
+    behavioral_summary = BehavioralSummarySchema(
+        total_flows=len(sample_batch),
+        unique_src_ips=1,
+        unique_dst_ips=1,
+        unique_src_ports=1,
+        unique_dst_ports=1,
+        non_attribution_notice="Metadata summary only.",
+    )
+    for run_idx in range(3):
+        fake_resp = CsvAnalyzeResponse(
+            analysis_id=f"csvrun_cache_{run_idx}",
+            analyzed_at_utc="2026-11-16T00:00:00Z",
+            file_path="data/demo/demo_flows.csv",
+            file_sha256="f" * 64,
+            model_key="random_forest",
+            model_type="Random Forest",
+            inference_mode="verified_model",
+            total_rows=len(sample_batch),
+            benign_count=len(sample_batch),
+            attack_count=0,
+            ood_flagged_count=0,
+            abstained_risk_count=0,
+            decision_threshold=0.5,
+            score_type="attack_probability",
+            score_direction="higher_is_more_anomalous",
+            compatibility_gate=gate,
+            ood_report=ood_summary,
+            behavioral_summary=behavioral_summary,
+            security_notice="dry-run",
+            results=sample_batch,
+            timeline=[],
+        )
+        desktop_csv._record_csv_analysis(svc_cache, fake_resp)
+
+    _, store = _get_analysis_store(svc_cache)
+    assert "results" not in store["csvrun_cache_0"]
+    assert store["csvrun_cache_0"]["results_gz"] is None
+    assert len(store["csvrun_cache_0"]["results_sha256"]) == 64
+    assert store["csvrun_cache_2"]["results_gz"] is not None
 
 
 def test_response_policy_module_has_zero_os_command_or_subprocess_calls():
-    """Static & runtime check: response_policy.py never imports subprocess or invokes OS shells."""
+    """Static & runtime check: response_policy.py never imports OS/subprocess shells or invokes them."""
     module_path = Path("src/network_anomaly/api/response_policy.py")
     tree = ast.parse(module_path.read_text(encoding="utf-8"))
     imported = set()
+    called_names = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0])
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                called_names.add(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                called_names.add(node.func.attr)
 
-    forbidden_modules = {"subprocess", "pty", "ctypes", "shlex"}
+    forbidden_modules = {"os", "subprocess", "pty", "ctypes", "shlex"}
     assert imported.isdisjoint(forbidden_modules), f"Forbidden modules imported: {imported}"
+    forbidden_calls = {"system", "popen", "eval", "exec", "spawn"}
+    assert called_names.isdisjoint(forbidden_calls), f"Forbidden calls found: {called_names}"
 
     svc = ApiService(DatabaseManager(":memory:"))
     with (

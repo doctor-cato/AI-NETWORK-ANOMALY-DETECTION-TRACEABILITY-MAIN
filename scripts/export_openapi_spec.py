@@ -87,10 +87,13 @@ def render_openapi_artifacts() -> Tuple[str, str]:
                 "and `/api/v1/security/simulations/*` generate deterministic policy recommendations "
                 "(`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`) and simulated "
                 "adaptive key-rotation readiness with `executed=false`. `ISOLATE_RECOMMENDED` and "
-                "adaptive key-rotation escalation are granted ONLY from server-verified `analysis_id` "
-                "provenance (`client_supplied_unverified` inputs downgrade to `INVESTIGATE` and "
-                "`HOLD_UNVERIFIED_PROVENANCE`); `ABSTAINED_OOD` flows never receive containment "
-                "recommendations; OS firewall commands and production AES-256-GCM keyring "
+                "adaptive key-rotation escalation are granted ONLY when `analysis_id` is verified "
+                "in the bounded in-memory CSV analysis registry (volatile across restarts; old IDs "
+                "fail closed with HTTP `400`) AND the gate is `MODEL_VALIDATED` + "
+                "`PREDICTION_AVAILABLE` (`client_supplied_unverified` and `RESEARCH_ONLY` inputs "
+                "downgrade to `INVESTIGATE` and `HOLD_*`); `ABSTAINED_OOD` flows never receive "
+                "containment recommendations; SQLite durably persists simulation history with "
+                "bounded recommendations; OS firewall commands and production AES-256-GCM keyring "
                 "operations remain disabled/DEFERRED."
             ),
             (
