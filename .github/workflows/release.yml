@@ -154,6 +154,8 @@ jobs:
           npm --prefix desktop run build
 
       - name: Verify Rust formatting, Clippy lints, and unit tests
+        env:
+          NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"
         run: |
           cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
           cargo clippy --release --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings

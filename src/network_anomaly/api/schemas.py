@@ -833,6 +833,7 @@ class CsvExportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     output_path: str = Field(..., min_length=1)
+    analysis_id: Optional[str] = None
     source_csv_path: Optional[str] = None
     model_key: str
     model_type: str

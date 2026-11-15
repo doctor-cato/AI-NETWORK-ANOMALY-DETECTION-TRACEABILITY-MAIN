@@ -214,6 +214,7 @@ export async function evaluateCsv(
 
 export async function exportCsv(payload: {
   output_path: string;
+  analysis_id?: string | null;
   source_csv_path: string | null;
   model_key: string;
   model_type: string;

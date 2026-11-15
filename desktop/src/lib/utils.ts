@@ -191,6 +191,11 @@ export function summarizeEvaluationCoverage(
   };
 }
 
+export function formatBlockedModelReason(reason: string | null | undefined): string {
+  const trimmed = typeof reason === "string" ? reason.trim() : "";
+  return trimmed || "Thiếu artifact hoặc chưa kiểm chứng — không tự fallback giả lập.";
+}
+
 export function shortDigest(sha: string | null | undefined): string {
   if (!sha) return "N/A";
   return sha.length > 14 ? `${sha.slice(0, 12)}...` : sha;

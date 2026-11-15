@@ -235,6 +235,10 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
     assert ins["ml_feature_count"] == 47
     assert set(ins["target_columns_excluded"]) == {"Label", "Attack"}
     assert ins["ood_report"]["zero_ttl_count"] == 1
+    assert ins["ood_report"]["hard_violation_count"] == 0
+    assert ins["ood_report"]["affected_rows_count"] == 1
+    assert ins["ood_report"]["abstention_rate"] == 0.25
+    assert ins["ood_report"]["prediction_coverage"] == 0.75
     assert len(ins["models_status"]) == 4
 
     # Synthetic verified pipeline for unit-level analyze/evaluate/export verification in CI
@@ -337,6 +341,7 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
         "/api/v1/csv/export",
         json={
             "output_path": str(export_csv),
+            "analysis_id": az["analysis_id"],
             "source_csv_path": str(flows_csv),
             "model_key": "random_forest",
             "model_type": "RandomForest",
@@ -354,6 +359,9 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
     meta_json = json.loads(Path(exp["metadata_path"]).read_text(encoding="utf-8"))
     assert meta_json["rows_exported"] == 4
     assert meta_json["evaluation_summary"]["f1"] == 1.0
+    assert meta_json["provenance_verification"] == "server_verified_analysis"
+    assert meta_json["analysis_id"] == az["analysis_id"]
+    assert len(meta_json["source_csv_sha256"]) == 64
 
 
 def test_db_path_reads_env_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -401,6 +409,12 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     rf_data = rf_resp.json()
     assert rf_data["total_rows"] == 200
     assert rf_data["ood_report"]["zero_ttl_count"] == 2
+    assert rf_data["ood_report"]["hard_violation_count"] == 0
+    assert rf_data["ood_report"]["affected_rows_count"] == 2
+    assert rf_data["ood_report"]["prediction_coverage"] == 0.99
+    assert rf_data["abstained_rows"] == 2
+    assert rf_data["evaluated_rows"] == 198
+    assert rf_data["prediction_coverage"] == 0.99
     assert rf_data["compatibility_gate"]["source_id"] == "source:nf-v3-canonical"
     assert rf_data["compatibility_gate"]["provenance_verified"] is True
     assert rf_data["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED"
@@ -501,6 +515,7 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
         "/api/v1/csv/export",
         json={
             "output_path": str(out_csv),
+            "analysis_id": rf_data["analysis_id"],
             "source_csv_path": str(DEMO_FLOWS),
             "model_key": "random_forest",
             "model_type": "RandomForest",
@@ -514,6 +529,9 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     assert exp_resp.status_code == 200
     assert Path(exp_resp.json()["csv_path"]).is_file()
     assert Path(exp_resp.json()["metadata_path"]).is_file()
+    demo_meta = json.loads(Path(exp_resp.json()["metadata_path"]).read_text(encoding="utf-8"))
+    assert demo_meta["provenance_verification"] == "server_verified_analysis"
+    assert len(demo_meta["source_csv_sha256"]) == 64
 
 
 def test_desktop_csv_hardening_regressions(client: TestClient, tmp_path: Path):
@@ -1403,3 +1421,369 @@ def test_evaluate_separates_label_match_rate_from_post_ood_coverage(
     assert b2["abstained_rows"] == 1
     assert b2["prediction_coverage"] == 0.5
     assert b2["confusion_matrix"] == {"tn": 0, "fp": 0, "fn": 0, "tp": 1}
+
+
+def test_ood_report_separates_zero_ttl_from_hard_physical_violations(
+    client: TestClient, tmp_path: Path
+):
+    """F1 regression: MIN_TTL == 0 must not inflate hard_violation_count while preserving abstention coverage."""
+    svc = client.app.state.service
+
+    class _PassthroughPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    def _predict_valid(frame: pd.DataFrame) -> pd.DataFrame:
+        assert (frame["MIN_TTL"] != 0.0).all()
+        assert (frame["FLOW_DURATION_MILLISECONDS"] >= 0.0).all()
+        return pd.DataFrame(
+            {
+                "prediction": [0] * len(frame),
+                "probability_Attack": [0.1] * len(frame),
+                "probability_Benign": [0.9] * len(frame),
+                "run_id": ["rf-f1-test"] * len(frame),
+            }
+        )
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-f1-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_PassthroughPrep(),
+        predict=_predict_valid,
+    )
+    gate_ok = (
+        CompatibilityGateSummarySchema(
+            model_key="random_forest",
+            model_identifier="rf-f1-test",
+            eligible=True,
+            eligibility_status="ELIGIBLE",
+            compatibility_status="MODEL_VALIDATED",
+            reasons=[],
+            warnings=[],
+            missing_features=[],
+        ),
+        True,
+    )
+
+    # Case 1: MIN_TTL=0 only (row 1 of 4) -> hard_violation_count == 0, affected == 1, coverage == 0.75
+    df_zero_only = _make_synthetic_flow_df(4)
+    p_zero = tmp_path / "f1_zero_only.csv"
+    df_zero_only.to_csv(p_zero, index=False)
+
+    ins_zero = client.post(
+        "/api/v1/csv/inspect", json={"file_path": str(p_zero), "preview_limit": 10}
+    )
+    assert ins_zero.status_code == 200, ins_zero.text
+    ood_ins_zero = ins_zero.json()["ood_report"]
+    assert ood_ins_zero["zero_ttl_count"] == 1
+    assert ood_ins_zero["zero_ttl_indices"] == [1]
+    assert ood_ins_zero["hard_violation_count"] == 0
+    assert ood_ins_zero["hard_violation_indices"] == []
+    assert ood_ins_zero["out_of_range_details"] == {}
+    assert ood_ins_zero["affected_rows_count"] == 1
+    assert ood_ins_zero["abstention_rate"] == 0.25
+    assert ood_ins_zero["prediction_coverage"] == 0.75
+
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch("network_anomaly.api.desktop_csv._evaluate_gate", return_value=gate_ok),
+    ):
+        ana_zero = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(p_zero), "model_name": "random_forest"},
+        )
+    assert ana_zero.status_code == 200, ana_zero.text
+    ana_zero_body = ana_zero.json()
+    assert ana_zero_body["abstained_rows"] == 1
+    assert ana_zero_body["evaluated_rows"] == 3
+    assert ana_zero_body["prediction_coverage"] == 0.75
+    assert ana_zero_body["ood_report"] == ood_ins_zero
+
+    # Case 2: Overlapping + disjoint physical violation and MIN_TTL=0 (5 rows):
+    # row 1: MIN_TTL=0 only; row 2: negative duration only; row 3: BOTH MIN_TTL=0 and negative duration.
+    df_mixed = _make_synthetic_flow_df(5)
+    df_mixed.loc[2, "FLOW_DURATION_MILLISECONDS"] = -5.0
+    df_mixed.loc[3, "MIN_TTL"] = 0.0
+    df_mixed.loc[3, "MAX_TTL"] = 0.0
+    df_mixed.loc[3, "FLOW_DURATION_MILLISECONDS"] = -1.0
+    p_mixed = tmp_path / "f1_mixed.csv"
+    df_mixed.to_csv(p_mixed, index=False)
+
+    ins_mixed = client.post(
+        "/api/v1/csv/inspect", json={"file_path": str(p_mixed), "preview_limit": 10}
+    )
+    assert ins_mixed.status_code == 200, ins_mixed.text
+    ood_ins_mixed = ins_mixed.json()["ood_report"]
+    assert ood_ins_mixed["zero_ttl_count"] == 2
+    assert ood_ins_mixed["zero_ttl_indices"] == [1, 3]
+    assert ood_ins_mixed["hard_violation_count"] == 2
+    assert ood_ins_mixed["hard_violation_indices"] == [2, 3]
+    assert ood_ins_mixed["out_of_range_details"] == {"FLOW_DURATION_MILLISECONDS_negative": 2}
+    # Union {1, 2, 3} -> 3 unique affected rows out of 5 (not double-counted as 4)
+    assert ood_ins_mixed["affected_rows_count"] == 3
+    assert ood_ins_mixed["abstention_rate"] == 0.6
+    assert ood_ins_mixed["prediction_coverage"] == 0.4
+
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch("network_anomaly.api.desktop_csv._evaluate_gate", return_value=gate_ok),
+    ):
+        ana_mixed = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(p_mixed), "model_name": "random_forest"},
+        )
+    assert ana_mixed.status_code == 200, ana_mixed.text
+    ana_mixed_body = ana_mixed.json()
+    assert ana_mixed_body["abstained_rows"] == 3
+    assert ana_mixed_body["evaluated_rows"] == 2
+    assert ana_mixed_body["prediction_coverage"] == 0.4
+    assert ana_mixed_body["ood_report"] == ood_ins_mixed
+
+
+def test_f3_export_provenance_verification_and_tamper_rejection(client: TestClient, tmp_path: Path):
+    """F3 regression: export must record source_csv_sha256 and reject tampered analysis provenance."""
+    svc = client.app.state.service
+
+    class _PassthroughPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    def _predict_clean(frame: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "prediction": [0] * len(frame),
+                "probability_Attack": [0.15] * len(frame),
+                "probability_Benign": [0.85] * len(frame),
+                "run_id": ["rf-f3-test"] * len(frame),
+            }
+        )
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-f3-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_PassthroughPrep(),
+        predict=_predict_clean,
+    )
+    gate_ok = (
+        CompatibilityGateSummarySchema(
+            model_key="random_forest",
+            model_identifier="rf-f3-test",
+            eligible=True,
+            eligibility_status="ELIGIBLE",
+            compatibility_status="MODEL_VALIDATED",
+            reasons=[],
+            warnings=[],
+            missing_features=[],
+        ),
+        True,
+    )
+
+    df = _make_synthetic_flow_df(4)
+    flows_csv = tmp_path / "f3_flows.csv"
+    df.to_csv(flows_csv, index=False)
+
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch("network_anomaly.api.desktop_csv._evaluate_gate", return_value=gate_ok),
+    ):
+        az = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(flows_csv), "model_name": "random_forest"},
+        ).json()
+
+    base_payload = {
+        "output_path": str(tmp_path / "f3_export.csv"),
+        "analysis_id": az["analysis_id"],
+        "source_csv_path": str(flows_csv),
+        "model_key": "random_forest",
+        "model_type": "RandomForest",
+        "run_id": az["run_id"],
+        "model_sha256": az["model_sha256"],
+        "preprocessor_sha256": az["preprocessor_sha256"],
+        "results": az["results"],
+        "evaluation": None,
+    }
+
+    # 1. Unknown analysis_id -> 400 fail-closed
+    bad_id = {**base_payload, "analysis_id": "csvrun_forged123456"}
+    assert client.post("/api/v1/csv/export", json=bad_id).status_code == 400
+
+    # 2. Tampered model_sha256 with real analysis_id -> 400 fail-closed
+    bad_sha = {**base_payload, "model_sha256": "0" * 64}
+    assert client.post("/api/v1/csv/export", json=bad_sha).status_code == 400
+
+    # 3. Tampered prediction results with real analysis_id -> 400 fail-closed
+    tampered_results = [dict(az["results"][0], predicted_class="Benign", predicted_label=0)] + az[
+        "results"
+    ][1:]
+    if az["results"][0]["predicted_label"] == 0:
+        tampered_results[0]["predicted_class"] = "Attack"
+        tampered_results[0]["predicted_label"] = 1
+    bad_results = {**base_payload, "results": tampered_results}
+    assert client.post("/api/v1/csv/export", json=bad_results).status_code == 400
+
+    # 4. Omitting analysis_id with spoofed metadata labels export unverified_client_supplied
+    no_id_payload = {
+        **base_payload,
+        "output_path": str(tmp_path / "f3_unverified.csv"),
+        "analysis_id": None,
+        "model_sha256": "0" * 64,
+    }
+    unv_resp = client.post("/api/v1/csv/export", json=no_id_payload)
+    assert unv_resp.status_code == 200, unv_resp.text
+    unv_meta = json.loads(Path(unv_resp.json()["metadata_path"]).read_text(encoding="utf-8"))
+    assert unv_meta["provenance_verification"] == "unverified_client_supplied"
+    assert unv_meta["source_csv_sha256"] == az["file_sha256"]
+
+
+def test_f4_path_hardening_blocks_unc_and_enforces_allowed_roots(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """F4 regression: UNC paths and outside-allowlist CSV/export paths must fail closed with 400."""
+    # UNC paths rejected for inspect and export
+    assert (
+        client.post(
+            "/api/v1/csv/inspect", json={"file_path": "\\\\fileserver\\share\\a.csv"}
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            "/api/v1/csv/export",
+            json={
+                "output_path": "//fileserver/share/out.csv",
+                "model_key": "random_forest",
+                "model_type": "RandomForest",
+                "results": [
+                    {
+                        "row_id": 1,
+                        "row_index": 0,
+                        "predicted_label": 0,
+                        "predicted_class": "Benign",
+                        "decision_threshold": 0.5,
+                        "score_type": "attack_probability",
+                        "score_direction": "higher_is_more_anomalous",
+                        "risk_score": 10.0,
+                        "risk_level": "LOW",
+                        "is_ood_flagged": False,
+                    }
+                ],
+            },
+        ).status_code
+        == 400
+    )
+
+    allowed_dir = tmp_path / "allowed"
+    blocked_dir = tmp_path / "outside"
+    allowed_dir.mkdir()
+    blocked_dir.mkdir()
+
+    ok_csv = allowed_dir / "ok.csv"
+    out_csv = blocked_dir / "outside.csv"
+    _make_synthetic_flow_df(2).to_csv(ok_csv, index=False)
+    _make_synthetic_flow_df(2).to_csv(out_csv, index=False)
+
+    monkeypatch.setenv("NETWORK_ANOMALY_ALLOWED_CSV_ROOTS", str(allowed_dir))
+    assert client.post("/api/v1/csv/inspect", json={"file_path": str(ok_csv)}).status_code == 200
+    assert client.post("/api/v1/csv/inspect", json={"file_path": str(out_csv)}).status_code == 400
+
+
+def test_f5_run_api_emits_security_warning_for_allow_non_local(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+):
+    """F5 regression: --allow-non-local must emit an explicit unauthenticated binding warning."""
+    import sys
+
+    import uvicorn
+
+    from scripts import run_api
+
+    called = {}
+    monkeypatch.setattr(
+        uvicorn, "run", lambda app, host, port, reload: called.update({"host": host, "port": port})
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["run_api.py", "--host", "0.0.0.0", "--port", "8999", "--allow-non-local"],
+    )
+    run_api.main()
+    captured = capsys.readouterr()
+    assert "[SECURITY WARNING]" in captured.err
+    assert "WITHOUT built-in authentication" in captured.err
+    assert called["host"] == "0.0.0.0"
+
+
+def test_f6_float_row_id_with_nan_normalizes_without_dot_zero_suffix(
+    client: TestClient, tmp_path: Path
+):
+    """F6 regression: CSV row_id promoted to float64 by NaN must emit integer IDs instead of '<id>.0'."""
+    svc = client.app.state.service
+
+    class _PassthroughPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    def _predict_clean(frame: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "prediction": [0] * len(frame),
+                "probability_Attack": [0.2] * len(frame),
+                "probability_Benign": [0.8] * len(frame),
+                "run_id": ["rf-f6-test"] * len(frame),
+            }
+        )
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-f6-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_PassthroughPrep(),
+        predict=_predict_clean,
+    )
+    gate_ok = (
+        CompatibilityGateSummarySchema(
+            model_key="random_forest",
+            model_identifier="rf-f6-test",
+            eligible=True,
+            eligibility_status="ELIGIBLE",
+            compatibility_status="MODEL_VALIDATED",
+            reasons=[],
+            warnings=[],
+            missing_features=[],
+        ),
+        True,
+    )
+
+    df = _make_synthetic_flow_df(4)
+    df["MIN_TTL"] = [62.0, 62.0, 62.0, 62.0]
+    df["MAX_TTL"] = [62.0, 62.0, 62.0, 62.0]
+    df["row_id"] = [101, 102, np.nan, 104]
+    csv_path = tmp_path / "float_row_id.csv"
+    df.to_csv(csv_path, index=False)
+
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch("network_anomaly.api.desktop_csv._evaluate_gate", return_value=gate_ok),
+    ):
+        resp = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(csv_path), "model_name": "random_forest"},
+        )
+    assert resp.status_code == 200, resp.text
+    row_ids = [item["row_id"] for item in resp.json()["results"]]
+    assert row_ids == [101, 102, "row_2", 104]

@@ -101,6 +101,9 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "SHA256SUMS.txt" in release_yml
     assert "*_${desktopVer}_x64-setup.exe" in release_yml
     assert "\npermissions:\n  contents: read\n" in release_yml
+    assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in release_yml
+    ci_yml = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in ci_yml
 
     # Check Python >= 3.11 and #27 DEFERRED documentation consistency (F-05/F-06)
     win_doc = (PROJECT_ROOT / "docs" / "WINDOWS_INSTALLATION.md").read_text(encoding="utf-8")

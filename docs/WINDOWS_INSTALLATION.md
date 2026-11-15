@@ -282,3 +282,11 @@ Bảng dưới đây phân biệt rõ các yêu cầu ở từng giai đoạn kh
 - **Cách xử lý an toàn:**
   1. **Tuyệt đối KHÔNG tắt Windows Defender, Microsoft Defender Antivirus hay SmartScreen** trên máy.
   2. Luôn thực hiện **Bước 2 (Kiểm chứng mã băm SHA-256)** đối chiếu với tệp `SHA256SUMS.txt` từ trang GitHub Release chính thức của repository trước khi mở tệp. Chỉ tiếp tục chạy khi mã băm SHA-256 khớp 100% hoặc tự biên dịch từ mã nguồn theo hướng dẫn tại [docs/RELEASE_PROCESS.md](RELEASE_PROCESS.md).
+
+---
+
+## 5. Ranh giới Tin cậy & Khuyến cáo Bảo mật Cục bộ (`#26`)
+
+- **Mô hình một người dùng trên Loopback (`127.0.0.1`):** Desktop app mặc định chỉ khởi chạy FastAPI trên `127.0.0.1` và không có cơ chế xác thực đa người dùng. Các tiến trình chạy dưới cùng tài khoản người dùng Windows có thể gọi tới cổng loopback cục bộ trong phạm vi quyền đọc/ghi `.csv` của người dùng đó.
+- **Phạm vi truy cập đường dẫn `.csv`:** Backend từ chối đường dẫn UNC/mạng (`\\server\share`, `//server/share`), chặn các thư mục hệ thống nhạy cảm (`C:\Windows\System32`, `C:\Program Files`, `/etc`, ...) và từ chối ghi đè tệp CSV đầu vào khi export. Khi cần thu hẹp hơn nữa trong môi trường triển khai có nhiều dữ liệu nhạy cảm cùng máy, thiết lập biến môi trường `NETWORK_ANOMALY_ALLOWED_CSV_ROOTS` (danh sách thư mục cho phép phân tách bằng dấu `;` trên Windows) để khóa chặt đọc/ghi CSV trong phạm vi chỉ định.
+- **Không dùng `--allow-non-local` trên mạng không tin cậy:** Cờ `--allow-non-local` ở `scripts/run_api.py` chỉ phục vụ kịch bản kiểm thử nội bộ (lab). Khi kích hoạt, FastAPI không có lớp xác thực (auth) hay TLS đi kèm — tuyệt đối không phơi bày cổng này ra Internet/LAN mở nếu không đặt sau reverse proxy có xác thực và firewall giới hạn IP nguồn.

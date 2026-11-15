@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ModelStatusItem } from "../types";
-  import { shortDigest } from "../utils";
+  import { formatBlockedModelReason, shortDigest } from "../utils";
   import Icons from "./Icons.svelte";
 
   interface Props {
@@ -68,8 +68,8 @@
                 <div class="mono">Ngưỡng đông băng: {model.decision_threshold.toFixed(6)}</div>
               {/if}
             {:else}
-              <div class="blocked-reason">
-                Thiếu artifact hoặc chưa kiểm chứng — không tự fallback giả lập.
+              <div class="blocked-reason" title={formatBlockedModelReason(model.reason)}>
+                {formatBlockedModelReason(model.reason)}
               </div>
             {/if}
           </div>
@@ -131,5 +131,6 @@
   .blocked-reason {
     color: var(--semantic-warning);
     font-size: 11.5px;
+    overflow-wrap: anywhere;
   }
 </style>

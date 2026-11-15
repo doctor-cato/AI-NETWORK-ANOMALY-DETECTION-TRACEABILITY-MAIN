@@ -498,8 +498,24 @@ mod tests {
     #[test]
     fn test_spawn_and_clean_shutdown_python_backend() {
         let repo_root = test_repo_root();
-        let Ok((resolved_exe, resolved_args)) = discover_python_command(&repo_root) else {
-            return;
+        let require_python = std::env::var_os("CI").is_some()
+            || std::env::var("NETWORK_ANOMALY_REQUIRE_PYTHON_TEST")
+                .ok()
+                .as_deref()
+                == Some("1");
+        let (resolved_exe, resolved_args) = match discover_python_command(&repo_root) {
+            Ok(found) => found,
+            Err(err) => {
+                if require_python {
+                    panic!(
+                        "Python backend interpreter is required when CI or NETWORK_ANOMALY_REQUIRE_PYTHON_TEST=1 is set: {err}"
+                    );
+                }
+                eprintln!(
+                    "SKIPPED test_spawn_and_clean_shutdown_python_backend (local Python deps missing): {err}"
+                );
+                return;
+            }
         };
         assert!(resolved_args.is_empty());
         assert!(Path::new(&resolved_exe).is_file());

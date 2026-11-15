@@ -42,6 +42,14 @@ def main() -> None:
         parser.error(
             f"Refusing non-loopback host {args.host!r} without --allow-non-local (#26 local-only security)"
         )
+    if args.allow_non_local and not _is_loopback_host(args.host):
+        print(
+            "[SECURITY WARNING] --allow-non-local enabled: binding FastAPI on non-loopback "
+            f"host {args.host!r} WITHOUT built-in authentication or TLS. Exposed CSV endpoints "
+            "can read/write permitted local .csv paths; restrict network access with a firewall "
+            "or authenticated reverse proxy, and consider NETWORK_ANOMALY_ALLOWED_CSV_ROOTS.",
+            file=sys.stderr,
+        )
 
     existing_pypath = os.environ.get("PYTHONPATH", "")
     if str(_SRC_DIR) not in existing_pypath.split(os.pathsep):

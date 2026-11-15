@@ -12,8 +12,9 @@ import json
 import math
 import os
 import tempfile
+import threading
 import uuid
-from collections import Counter
+from collections import Counter, OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -108,10 +109,33 @@ def _is_sensitive_system_path(resolved: Path) -> bool:
     return False
 
 
+def _is_unc_or_network_path(raw_path: str) -> bool:
+    stripped = raw_path.strip()
+    return stripped.startswith(("\\\\", "//"))
+
+
+def _enforce_allowed_csv_roots(resolved: Path) -> None:
+    """Enforce optional NETWORK_ANOMALY_ALLOWED_CSV_ROOTS allowlist when configured."""
+    raw_roots = os.environ.get("NETWORK_ANOMALY_ALLOWED_CSV_ROOTS", "").strip()
+    if not raw_roots:
+        return
+    roots = [
+        Path(entry.strip()).expanduser().resolve(strict=False)
+        for entry in raw_roots.split(os.pathsep)
+        if entry.strip()
+    ]
+    if not roots:
+        return
+    if not any(resolved == root or resolved.is_relative_to(root) for root in roots):
+        raise ValueError("CSV path is outside configured NETWORK_ANOMALY_ALLOWED_CSV_ROOTS.")
+
+
 def validate_safe_csv_path(raw_path: str, *, max_bytes: int = MAX_CSV_FILE_BYTES) -> Path:
     """Validate an existing local CSV input path fail-closed (#26)."""
     if not isinstance(raw_path, str) or not raw_path.strip() or "\x00" in raw_path:
         raise ValueError("Invalid CSV file path.")
+    if _is_unc_or_network_path(raw_path):
+        raise ValueError("UNC or network share CSV paths are blocked (offline local-only policy).")
 
     candidate = Path(raw_path.strip()).expanduser()
     if candidate.suffix.lower() != ".csv":
@@ -124,6 +148,7 @@ def validate_safe_csv_path(raw_path: str, *, max_bytes: int = MAX_CSV_FILE_BYTES
 
     if _is_sensitive_system_path(resolved):
         raise ValueError("Access to protected system directory is blocked.")
+    _enforce_allowed_csv_roots(resolved)
 
     if not resolved.is_file():
         raise ValueError(f"Path is not a regular file: '{resolved}'")
@@ -140,18 +165,25 @@ def validate_safe_export_path(raw_path: str, source_csv_path: Optional[str] = No
     """Validate a destination path and companion metadata path without overwriting input (#26)."""
     if not isinstance(raw_path, str) or not raw_path.strip() or "\x00" in raw_path:
         raise ValueError("Invalid export file path.")
+    if _is_unc_or_network_path(raw_path):
+        raise ValueError(
+            "UNC or network share export paths are blocked (offline local-only policy)."
+        )
 
     candidate = Path(raw_path.strip()).expanduser()
     if candidate.suffix.lower() != ".csv":
         raise ValueError("Export output path must end with '.csv'.")
 
     resolved = candidate.resolve(strict=False)
+    parent_resolved = resolved.parent.resolve(strict=False)
     meta_resolved = resolved.with_suffix(".metadata.json").resolve(strict=False)
-    for target in (resolved, meta_resolved):
+    for target in (resolved, meta_resolved, parent_resolved):
         if _is_sensitive_system_path(target):
             raise ValueError("Exporting into a protected system directory is blocked.")
+    for target in (resolved, meta_resolved):
         if target.exists() and target.is_dir():
             raise ValueError(f"Export path resolves to a directory: '{target}'")
+    _enforce_allowed_csv_roots(resolved)
 
     if source_csv_path:
         src_resolved = Path(source_csv_path.strip()).expanduser().resolve(strict=False)
@@ -398,22 +430,38 @@ def compute_deterministic_risk_score(
     return score, tier
 
 
-def _ood_to_schema(report: OODReport) -> OodSummarySchema:
+def _audit_desktop_ood(df_for_ood: pd.DataFrame) -> Tuple[OODReport, OODReport]:
+    """Return `(phys_ood_report, raw_ood_report)` separating physical violations from MIN_TTL == 0."""
+    phys_report = OODValidator(check_shortcut_drift=True, reject_zero_ttl=False).audit_dataframe(
+        df_for_ood
+    )
+    raw_report = OODValidator(check_shortcut_drift=True, reject_zero_ttl=True).audit_dataframe(
+        df_for_ood
+    )
+    return phys_report, raw_report
+
+
+def _ood_to_schema(
+    phys_report: OODReport,
+    abstain_report: Optional[OODReport] = None,
+) -> OodSummarySchema:
+    """Serialize OOD summary keeping physical invariant violations distinct from MIN_TTL == 0."""
+    totals = abstain_report if abstain_report is not None else phys_report
     return OodSummarySchema(
-        total_rows=report.total_rows,
-        has_ood_warning=report.has_ood_warning,
-        hard_violation_count=report.hard_violation_count,
-        shortcut_shift_count=report.shortcut_shift_count,
-        zero_ttl_count=report.zero_ttl_count,
-        affected_rows_count=report.affected_rows_count,
-        shortcut_drift_ratio=round(report.shortcut_drift_ratio, 4),
-        zero_ttl_ratio=round(report.zero_ttl_ratio, 4),
-        abstention_rate=round(report.abstention_rate, 4),
-        prediction_coverage=round(report.prediction_coverage, 4),
-        ood_flags=list(report.ood_flags),
-        hard_violation_indices=list(report.hard_violation_indices),
-        zero_ttl_indices=list(report.zero_ttl_indices),
-        out_of_range_details=dict(report.out_of_range_details),
+        total_rows=phys_report.total_rows,
+        has_ood_warning=totals.has_ood_warning,
+        hard_violation_count=phys_report.hard_violation_count,
+        shortcut_shift_count=phys_report.shortcut_shift_count,
+        zero_ttl_count=totals.zero_ttl_count,
+        affected_rows_count=totals.affected_rows_count,
+        shortcut_drift_ratio=round(phys_report.shortcut_drift_ratio, 4),
+        zero_ttl_ratio=round(totals.zero_ttl_ratio, 4),
+        abstention_rate=round(totals.abstention_rate, 4),
+        prediction_coverage=round(totals.prediction_coverage, 4),
+        ood_flags=list(totals.ood_flags),
+        hard_violation_indices=list(phys_report.hard_violation_indices),
+        zero_ttl_indices=list(totals.zero_ttl_indices),
+        out_of_range_details=dict(phys_report.out_of_range_details),
     )
 
 
@@ -505,9 +553,7 @@ def inspect_csv_file(
         ml_feature_count = int(val_summary["feature_count"])
 
     df_for_ood = df.assign(**{str(col): X_cleaned[col] for col in X_cleaned.columns})
-    ood_report = OODValidator(check_shortcut_drift=True, reject_zero_ttl=True).audit_dataframe(
-        df_for_ood
-    )
+    phys_ood_report, raw_ood_report = _audit_desktop_ood(df_for_ood)
     behavioral = compute_netflow_behavioral_summary(df)
     models_status = collect_models_status(service)
 
@@ -528,7 +574,7 @@ def inspect_csv_file(
         trace_metadata_excluded=trace_excluded,
         other_extra_columns_excluded=other_extra,
         non_finite_feature_cells=non_finite_cells,
-        ood_report=_ood_to_schema(ood_report),
+        ood_report=_ood_to_schema(phys_ood_report, abstain_report=raw_ood_report),
         behavioral_summary=behavioral,
         models_status=models_status,
         preview_columns=[str(c) for c in df.columns],
@@ -988,6 +1034,101 @@ def _evaluate_gate(
     return summary, bool(gate_decision.is_eligible)
 
 
+_MAX_RECORDED_CSV_ANALYSES = 64
+
+_TRACE_FIELD_SPEC: Tuple[Tuple[str, str, Any], ...] = (
+    ("flow_start_ms", "FLOW_START_MILLISECONDS", _optional_int),
+    ("flow_end_ms", "FLOW_END_MILLISECONDS", _optional_int),
+    ("src_ip", "IPV4_SRC_ADDR", _optional_str),
+    ("dst_ip", "IPV4_DST_ADDR", _optional_str),
+    ("src_port", "L4_SRC_PORT", _optional_int),
+    ("dst_port", "L4_DST_PORT", _optional_int),
+    ("protocol", "PROTOCOL", _optional_int),
+    ("flow_duration_ms", "FLOW_DURATION_MILLISECONDS", _optional_int),
+    ("min_ttl", "MIN_TTL", _optional_float),
+)
+
+
+def _normalize_row_id(raw_rid: Any, fallback_idx: int) -> Union[int, str]:
+    """Normalize row_id preserving ints even when pandas promotes a NaN column to float64."""
+    if raw_rid is None or (isinstance(raw_rid, bool)):
+        return f"row_{fallback_idx}"
+    if isinstance(raw_rid, (int, np.integer)):
+        return int(raw_rid)
+    if isinstance(raw_rid, (float, np.floating)):
+        fval = float(raw_rid)
+        if not math.isfinite(fval):
+            return f"row_{fallback_idx}"
+        if fval.is_integer():
+            return int(fval)
+        return str(fval)
+    if pd.isna(raw_rid):
+        return f"row_{fallback_idx}"
+    return str(raw_rid)
+
+
+def _extract_trace_metadata_rows(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """Extract normalized NetFlow trace metadata once per row across the batch."""
+    n_rows = len(df)
+    if n_rows == 0:
+        return []
+    present_cols = [
+        (field, converter, df[col].tolist())
+        for field, col, converter in _TRACE_FIELD_SPEC
+        if col in df.columns
+    ]
+    rows: List[Dict[str, Any]] = [
+        {field: None for field, _, _ in _TRACE_FIELD_SPEC} for _ in range(n_rows)
+    ]
+    for field, converter, col_vals in present_cols:
+        for idx, raw_val in enumerate(col_vals):
+            rows[idx][field] = converter(raw_val)
+    return rows
+
+
+def _canonical_results_sha256(results: Sequence[CsvFlowPredictionItem]) -> str:
+    payload = json.dumps(
+        [item.model_dump() for item in results],
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _get_analysis_store(
+    service: ApiService,
+) -> Tuple[threading.Lock, "OrderedDict[str, Dict[str, Any]]"]:
+    lock = getattr(service, "_csv_analysis_lock", None)
+    store = getattr(service, "_csv_analysis_records", None)
+    if lock is None or store is None:
+        lock = threading.Lock()
+        store = OrderedDict()
+        setattr(service, "_csv_analysis_lock", lock)
+        setattr(service, "_csv_analysis_records", store)
+    return lock, store
+
+
+def _record_csv_analysis(service: ApiService, response: CsvAnalyzeResponse) -> None:
+    lock, store = _get_analysis_store(service)
+    record = {
+        "analysis_id": response.analysis_id,
+        "source_csv_path": response.file_path,
+        "source_csv_sha256": response.file_sha256,
+        "model_key": response.model_key,
+        "model_type": response.model_type,
+        "run_id": response.run_id,
+        "model_sha256": response.model_sha256,
+        "preprocessor_sha256": response.preprocessor_sha256,
+        "results_sha256": _canonical_results_sha256(response.results),
+    }
+    with lock:
+        store[response.analysis_id] = record
+        store.move_to_end(response.analysis_id)
+        while len(store) > _MAX_RECORDED_CSV_ANALYSES:
+            store.popitem(last=False)
+
+
 def _safe_feature_value(val: Any) -> Optional[float]:
     if val is None or pd.isna(val):
         return None
@@ -1030,12 +1171,7 @@ def analyze_csv_file(
     row_ids = list(val_summary["row_ids"])
 
     # Pre-inference OOD audit separating true physical protocol violations from MIN_TTL == 0.
-    phys_ood_report = OODValidator(
-        check_shortcut_drift=True, reject_zero_ttl=False
-    ).audit_dataframe(df_for_ood)
-    raw_ood_report = OODValidator(check_shortcut_drift=True, reject_zero_ttl=True).audit_dataframe(
-        df_for_ood
-    )
+    phys_ood_report, raw_ood_report = _audit_desktop_ood(df_for_ood)
     phys_hard_set = set(phys_ood_report.hard_violation_indices)
     zero_ttl_set = set(raw_ood_report.zero_ttl_indices)
     abstained_set = phys_hard_set | zero_ttl_set
@@ -1073,31 +1209,21 @@ def analyze_csv_file(
         )
 
     # Build model input events strictly for accepted (non-OOD) rows before calling analyze_flows.
+    trace_rows = _extract_trace_metadata_rows(df)
     feature_records = X_cleaned.to_dict(orient="records")
     accepted_events: List[Dict[str, Any]] = []
     for idx in accepted_indices:
         feat_row = feature_records[idx]
         clean_feats = {col: _safe_feature_value(val) for col, val in feat_row.items()}
-        src_ip = (
-            _optional_str(df["IPV4_SRC_ADDR"].iloc[idx]) if "IPV4_SRC_ADDR" in df.columns else None
-        )
-        dst_ip = (
-            _optional_str(df["IPV4_DST_ADDR"].iloc[idx]) if "IPV4_DST_ADDR" in df.columns else None
-        )
-        src_port = (
-            _optional_int(df["L4_SRC_PORT"].iloc[idx]) if "L4_SRC_PORT" in df.columns else None
-        )
-        dst_port = (
-            _optional_int(df["L4_DST_PORT"].iloc[idx]) if "L4_DST_PORT" in df.columns else None
-        )
+        trace = trace_rows[idx]
         accepted_events.append(
             {
                 "event_id": f"csv_{file_sha256[:8]}_{idx}",
                 "features": clean_feats,
-                "source_ip": src_ip,
-                "dest_ip": dst_ip,
-                "source_port": src_port,
-                "dest_port": dst_port,
+                "source_ip": trace["src_ip"],
+                "dest_ip": trace["dst_ip"],
+                "source_port": trace["src_port"],
+                "dest_port": trace["dst_port"],
             }
         )
 
@@ -1131,12 +1257,8 @@ def analyze_csv_file(
     attack_count = 0
 
     for idx in range(len(df)):
-        raw_rid = row_ids[idx]
-        row_id: Union[int, str] = (
-            int(raw_rid)
-            if isinstance(raw_rid, (int, np.integer)) and not isinstance(raw_rid, bool)
-            else str(raw_rid)
-        )
+        row_id = _normalize_row_id(row_ids[idx], idx)
+        trace = trace_rows[idx]
         if idx in abstained_set:
             is_phys_hard = idx in phys_hard_set
             is_zero_ttl = idx in zero_ttl_set
@@ -1194,47 +1316,7 @@ def analyze_csv_file(
                 risk_level=risk_level,
                 is_ood_flagged=is_ood_flagged,
                 ood_reason=ood_reason,
-                flow_start_ms=(
-                    _optional_int(df["FLOW_START_MILLISECONDS"].iloc[idx])
-                    if "FLOW_START_MILLISECONDS" in df.columns
-                    else None
-                ),
-                flow_end_ms=(
-                    _optional_int(df["FLOW_END_MILLISECONDS"].iloc[idx])
-                    if "FLOW_END_MILLISECONDS" in df.columns
-                    else None
-                ),
-                src_ip=(
-                    _optional_str(df["IPV4_SRC_ADDR"].iloc[idx])
-                    if "IPV4_SRC_ADDR" in df.columns
-                    else None
-                ),
-                dst_ip=(
-                    _optional_str(df["IPV4_DST_ADDR"].iloc[idx])
-                    if "IPV4_DST_ADDR" in df.columns
-                    else None
-                ),
-                src_port=(
-                    _optional_int(df["L4_SRC_PORT"].iloc[idx])
-                    if "L4_SRC_PORT" in df.columns
-                    else None
-                ),
-                dst_port=(
-                    _optional_int(df["L4_DST_PORT"].iloc[idx])
-                    if "L4_DST_PORT" in df.columns
-                    else None
-                ),
-                protocol=(
-                    _optional_int(df["PROTOCOL"].iloc[idx]) if "PROTOCOL" in df.columns else None
-                ),
-                flow_duration_ms=(
-                    _optional_int(df["FLOW_DURATION_MILLISECONDS"].iloc[idx])
-                    if "FLOW_DURATION_MILLISECONDS" in df.columns
-                    else None
-                ),
-                min_ttl=(
-                    _optional_float(df["MIN_TTL"].iloc[idx]) if "MIN_TTL" in df.columns else None
-                ),
+                **trace,
             )
         )
 
@@ -1245,7 +1327,7 @@ def analyze_csv_file(
     abstained_rows = len(abstained_set)
     prediction_coverage = round(float(evaluated_rows) / float(len(prediction_items)), 4)
 
-    return CsvAnalyzeResponse(
+    response = CsvAnalyzeResponse(
         analysis_id=f"csvrun_{uuid.uuid4().hex[:12]}",
         analyzed_at_utc=_utc_now_iso(),
         file_path=str(resolved),
@@ -1268,12 +1350,14 @@ def analyze_csv_file(
         score_type=sample_item.score_type,
         score_direction=sample_item.score_direction,
         compatibility_gate=gate_summary,
-        ood_report=_ood_to_schema(raw_ood_report),
+        ood_report=_ood_to_schema(phys_ood_report, abstain_report=raw_ood_report),
         behavioral_summary=behavioral,
         security_notice=_SECURITY_NOTICE,
         results=prediction_items,
         timeline=timeline,
     )
+    _record_csv_analysis(service, response)
+    return response
 
 
 def _normalize_binary_label(raw: Any) -> int:
@@ -1481,10 +1565,117 @@ def evaluate_predictions_with_ground_truth(
     )
 
 
-def export_predictions_csv(request: CsvExportRequest) -> CsvExportResponse:
+def _resolve_export_provenance(
+    request: CsvExportRequest,
+    service: Optional[ApiService],
+) -> Dict[str, Any]:
+    """Verify export provenance against server analysis records or artifacts and hash source CSV."""
+    canonical_model = canonicalize_model_name(request.model_key)
+    source_csv_path = request.source_csv_path
+    source_csv_sha256: Optional[str] = None
+    if source_csv_path:
+        try:
+            src_resolved = validate_safe_csv_path(source_csv_path)
+            source_csv_path = str(src_resolved)
+            source_csv_sha256 = _sha256_file(src_resolved)
+        except ValueError:
+            if request.analysis_id:
+                raise
+            source_csv_sha256 = None
+
+    if request.analysis_id:
+        if service is None:
+            raise ValueError("Server service context required to verify analysis_id provenance.")
+        lock, store = _get_analysis_store(service)
+        with lock:
+            rec = store.get(request.analysis_id)
+        if rec is None:
+            raise ValueError(
+                f"Unknown or expired analysis_id {request.analysis_id!r}; re-run CSV analysis before export."
+            )
+        if canonical_model != rec["model_key"]:
+            raise ValueError(
+                f"Export model_key {canonical_model!r} does not match recorded analysis model {rec['model_key']!r}."
+            )
+        if source_csv_path and source_csv_path != rec["source_csv_path"]:
+            raise ValueError("Export source_csv_path does not match recorded analysis source CSV.")
+        if request.run_id is not None and request.run_id != rec["run_id"]:
+            raise ValueError("Export run_id does not match server-verified analysis run_id.")
+        if request.model_sha256 is not None and request.model_sha256 != rec["model_sha256"]:
+            raise ValueError(
+                "Export model_sha256 does not match server-verified model artifact digest."
+            )
+        if (
+            request.preprocessor_sha256 is not None
+            and request.preprocessor_sha256 != rec["preprocessor_sha256"]
+        ):
+            raise ValueError(
+                "Export preprocessor_sha256 does not match server-verified preprocessor digest."
+            )
+        if _canonical_results_sha256(request.results) != rec["results_sha256"]:
+            raise ValueError(
+                "Export prediction rows do not match the server-recorded analysis results."
+            )
+        return {
+            "analysis_id": rec["analysis_id"],
+            "source_csv_path": rec["source_csv_path"],
+            "source_csv_sha256": rec["source_csv_sha256"],
+            "model_key": rec["model_key"],
+            "model_type": rec["model_type"],
+            "run_id": rec["run_id"],
+            "model_artifact_sha256": rec["model_sha256"],
+            "preprocessor_artifact_sha256": rec["preprocessor_sha256"],
+            "provenance_verification": "server_verified_analysis",
+        }
+
+    verification_status = "unverified_client_supplied"
+    if service is not None:
+        try:
+            pipeline = service._load_inference_pipeline(canonical_model)
+            meta = pipeline.model_metadata if isinstance(pipeline.model_metadata, dict) else {}
+            prep_meta = (
+                pipeline.preprocessor_metadata
+                if isinstance(pipeline.preprocessor_metadata, dict)
+                else {}
+            )
+            raw_manifest = (
+                meta.get("raw_manifest") if isinstance(meta.get("raw_manifest"), dict) else {}
+            )
+            expected_model_sha = meta.get("model_artifact_sha256")
+            expected_prep_sha = prep_meta.get("artifact_sha256")
+            expected_run_id = raw_manifest.get("run_id") or meta.get("run_id")
+            if (
+                expected_model_sha
+                and request.model_sha256 == expected_model_sha
+                and expected_prep_sha
+                and request.preprocessor_sha256 == expected_prep_sha
+                and (expected_run_id is None or request.run_id == expected_run_id)
+            ):
+                verification_status = "server_verified_artifacts"
+        except (FileNotFoundError, ValueError, RuntimeError):
+            verification_status = "unverified_client_supplied"
+
+    return {
+        "analysis_id": None,
+        "source_csv_path": source_csv_path,
+        "source_csv_sha256": source_csv_sha256,
+        "model_key": canonical_model,
+        "model_type": request.model_type,
+        "run_id": request.run_id,
+        "model_artifact_sha256": request.model_sha256,
+        "preprocessor_artifact_sha256": request.preprocessor_sha256,
+        "provenance_verification": verification_status,
+    }
+
+
+def export_predictions_csv(
+    request: CsvExportRequest,
+    service: Optional[ApiService] = None,
+) -> CsvExportResponse:
     """Write predictions CSV and companion .metadata.json provenance atomically."""
+    verified_meta = _resolve_export_provenance(request, service)
     csv_out = validate_safe_export_path(
-        request.output_path, source_csv_path=request.source_csv_path
+        request.output_path, source_csv_path=verified_meta["source_csv_path"]
     )
     meta_out = csv_out.with_suffix(".metadata.json")
     exported_at = _utc_now_iso()
@@ -1500,12 +1691,7 @@ def export_predictions_csv(request: CsvExportRequest) -> CsvExportResponse:
         "output_csv_path": str(csv_out),
         "output_csv_sha256": csv_sha256,
         "rows_exported": len(rows),
-        "source_csv_path": request.source_csv_path,
-        "model_key": request.model_key,
-        "model_type": request.model_type,
-        "run_id": request.run_id,
-        "model_artifact_sha256": request.model_sha256,
-        "preprocessor_artifact_sha256": request.preprocessor_sha256,
+        **verified_meta,
         "evaluation_summary": (
             request.evaluation.model_dump() if request.evaluation is not None else None
         ),

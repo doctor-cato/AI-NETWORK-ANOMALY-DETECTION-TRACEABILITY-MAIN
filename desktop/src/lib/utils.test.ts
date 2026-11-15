@@ -4,6 +4,7 @@ import { isLocalhostHttpUrl } from "./api";
 import {
   computeRiskDistribution,
   filterAndSortPredictions,
+  formatBlockedModelReason,
   formatRiskDisplay,
   formatScoreSemantically,
   summarizeEvaluationCoverage,
@@ -159,5 +160,17 @@ describe("prediction filtering and sorting", () => {
     expect(legacySummary.labelMatchRate).toBe(0.5);
     expect(legacySummary.postOodCoverage).toBe(0.5);
     expect(legacySummary.hasPartialLabelMatch).toBe(true);
+  });
+
+  it("formats blocked model reasons with fallback when backend omits reason", () => {
+    expect(
+      formatBlockedModelReason("Model artifact missing at artifacts/models/xgboost.joblib"),
+    ).toBe("Model artifact missing at artifacts/models/xgboost.joblib");
+    expect(formatBlockedModelReason("   ")).toBe(
+      "Thiếu artifact hoặc chưa kiểm chứng — không tự fallback giả lập.",
+    );
+    expect(formatBlockedModelReason(null)).toBe(
+      "Thiếu artifact hoặc chưa kiểm chứng — không tự fallback giả lập.",
+    );
   });
 });

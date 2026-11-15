@@ -383,9 +383,12 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
         tags=["Models & CSV"],
         summary="Export predictions CSV and companion SHA-256 provenance JSON",
     )
-    def export_csv(request: CsvExportRequest) -> CsvExportResponse:
+    def export_csv(
+        request: CsvExportRequest,
+        svc: ApiService = Depends(get_service),
+    ) -> CsvExportResponse:
         """Export analyzed flow predictions safely without overwriting source CSV."""
-        return export_predictions_csv(request)
+        return export_predictions_csv(request, service=svc)
 
     return app
 

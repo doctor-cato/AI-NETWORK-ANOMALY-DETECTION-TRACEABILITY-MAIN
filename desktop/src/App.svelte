@@ -247,6 +247,7 @@
     try {
       exportData = await exportCsv({
         output_path: chosen,
+        analysis_id: analysisData.analysis_id,
         source_csv_path: analysisData.file_path,
         model_key: analysisData.model_key,
         model_type: analysisData.model_type,

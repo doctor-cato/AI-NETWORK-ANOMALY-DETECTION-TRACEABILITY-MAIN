@@ -208,6 +208,9 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         assert ins["row_count"] == 200
         assert ins["ml_features_valid"] is True
         assert ins["ood_report"]["zero_ttl_count"] == 2
+        assert ins["ood_report"]["hard_violation_count"] == 0
+        assert ins["ood_report"]["affected_rows_count"] == 2
+        assert ins["ood_report"]["prediction_coverage"] == 0.99
 
         # Step 6-7: Run Random Forest inference
         rf_resp = httpx.post(
@@ -271,6 +274,7 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
             f"{base_url}/api/v1/csv/export",
             json={
                 "output_path": str(export_path),
+                "analysis_id": rf["analysis_id"],
                 "source_csv_path": str(DEMO_FLOWS),
                 "model_key": "random_forest",
                 "model_type": "RandomForest",
@@ -288,5 +292,8 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         meta = json.loads(Path(exp["metadata_path"]).read_text(encoding="utf-8"))
         assert meta["rows_exported"] == 200
         assert meta["model_artifact_sha256"] == rf["model_sha256"]
+        assert meta["provenance_verification"] == "server_verified_analysis"
+        assert meta["analysis_id"] == rf["analysis_id"]
+        assert meta["source_csv_sha256"] == rf["file_sha256"]
     finally:
         _terminate_process(proc)

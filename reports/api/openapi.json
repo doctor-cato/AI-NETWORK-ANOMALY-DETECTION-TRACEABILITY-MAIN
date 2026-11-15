@@ -1805,6 +1805,17 @@
             "minLength": 1,
             "title": "Output Path"
           },
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
           "source_csv_path": {
             "anyOf": [
               {
