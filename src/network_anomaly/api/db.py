@@ -123,6 +123,40 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
 );
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_endpoint ON idempotency_records(endpoint);
+
+-- C8 / Issue #27: Adaptive security response simulation / dry-run audit history.
+-- Stores policy recommendations and simulated key rotation decisions only; never executes OS commands.
+CREATE TABLE IF NOT EXISTS security_response_simulations (
+    simulation_id TEXT PRIMARY KEY,
+    analysis_id TEXT,
+    source_csv_path TEXT,
+    source_csv_sha256 TEXT,
+    model_key TEXT NOT NULL,
+    model_type TEXT NOT NULL,
+    run_id TEXT,
+    triggered_by TEXT NOT NULL,
+    execution_mode TEXT NOT NULL DEFAULT 'DRY_RUN_SIMULATION',
+    action_status TEXT NOT NULL DEFAULT 'SIMULATED',
+    recommendation_status TEXT NOT NULL DEFAULT 'RECOMMENDED',
+    executed INTEGER NOT NULL DEFAULT 0,
+    overall_recommendation TEXT NOT NULL,
+    overall_severity TEXT NOT NULL,
+    total_flows INTEGER NOT NULL DEFAULT 0,
+    evaluated_flows INTEGER NOT NULL DEFAULT 0,
+    ood_abstained_flows INTEGER NOT NULL DEFAULT 0,
+    provenance_verification TEXT NOT NULL,
+    action_counts_json TEXT NOT NULL,
+    key_rotation_json TEXT NOT NULL,
+    provenance_json TEXT NOT NULL,
+    recommendations_json TEXT NOT NULL,
+    policy_summary TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sec_sim_created_at
+    ON security_response_simulations(created_at);
+CREATE INDEX IF NOT EXISTS idx_sec_sim_analysis_id
+    ON security_response_simulations(analysis_id);
 """
 
 

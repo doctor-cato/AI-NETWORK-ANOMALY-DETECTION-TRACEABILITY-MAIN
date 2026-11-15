@@ -239,6 +239,74 @@ pub async fn get_backend_timeline(
     get_json(backend.inner(), &path).await
 }
 
+#[tauri::command]
+pub async fn pick_save_json_file(
+    app: AppHandle,
+    default_name: Option<String>,
+) -> Result<Option<String>, String> {
+    let fname = default_name.unwrap_or_else(|| "security_dry_run_evidence.json".to_string());
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("Xuất bằng chứng Dry-Run (#27)")
+            .set_file_name(&fname)
+            .add_filter("JSON Evidence", &["json"])
+            .blocking_save_file()
+    })
+    .await
+    .map_err(|e| format!("Save JSON dialog task failed: {e}"))?;
+
+    match picked {
+        Some(fp) => {
+            let path = fp
+                .into_path()
+                .map_err(|e| format!("Invalid export path selected: {e}"))?;
+            Ok(Some(path.to_string_lossy().to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn simulate_security_response(
+    backend: State<'_, BackendManager>,
+    payload: Value,
+) -> Result<Value, String> {
+    post_json(
+        backend.inner(),
+        "/api/v1/security/simulate-response",
+        payload,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_security_simulations(
+    backend: State<'_, BackendManager>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<Value, String> {
+    let path = format!(
+        "/api/v1/security/simulations?limit={}&offset={}",
+        limit.unwrap_or(20),
+        offset.unwrap_or(0)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn export_security_simulation(
+    backend: State<'_, BackendManager>,
+    payload: Value,
+) -> Result<Value, String> {
+    post_json(
+        backend.inner(),
+        "/api/v1/security/simulations/export",
+        payload,
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::verify_loopback_url;

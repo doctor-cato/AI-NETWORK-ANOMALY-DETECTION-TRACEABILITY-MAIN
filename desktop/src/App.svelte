@@ -4,15 +4,19 @@
     analyzeCsv,
     evaluateCsv,
     exportCsv,
+    exportSecuritySimulation,
     fetchHealth,
     fetchModelsStatus,
     getBackendStatus,
     getDemoPaths,
     inspectCsv,
     isTauriRuntime,
+    listSecuritySimulations,
     pickCsvFile,
     pickSaveCsvFile,
+    pickSaveJsonFile,
     restartBackend,
+    simulateSecurityResponse,
   } from "./lib/api";
   import ChartsPanel from "./lib/components/ChartsPanel.svelte";
   import CsvPreviewPanel from "./lib/components/CsvPreviewPanel.svelte";
@@ -29,6 +33,9 @@
     CsvInspectResponse,
     HealthResponse,
     ModelStatusItem,
+    SecurityResponseSimulationResponse,
+    SecuritySimulationExportResponse,
+    SecuritySimulationHistoryItem,
   } from "./lib/types";
   import { shortDigest } from "./lib/utils";
 
@@ -49,11 +56,16 @@
   let analysisData = $state<CsvAnalyzeResponse | null>(null);
   let evalData = $state<CsvEvaluateResponse | null>(null);
   let exportData = $state<CsvExportResponse | null>(null);
+  let simulationData = $state<SecurityResponseSimulationResponse | null>(null);
+  let simulationHistory = $state<SecuritySimulationHistoryItem[]>([]);
+  let simulationExportData = $state<SecuritySimulationExportResponse | null>(null);
 
   let initializing = $state(true);
   let busyMessage = $state<string | null>(null);
   let errorMessage = $state<string | null>(null);
+  let simulationWarning = $state<string | null>(null);
   let evaluatedFlag = $state(false);
+  let simulatingFlag = $state(false);
 
   $effect(() => {
     if (typeof document !== "undefined") {
@@ -80,6 +92,7 @@
       if (readyKeys.length > 0 && !readyKeys.includes(selectedModel)) {
         selectedModel = readyKeys[0];
       }
+      await refreshSimulationHistory();
     } catch (err) {
       errorMessage =
         err instanceof Error
@@ -176,6 +189,30 @@
     }
   }
 
+  const MAX_SIMULATE_CLIENT_RESULTS = 10_000;
+
+  async function runDryRunSimulationForAnalysis(
+    res: CsvAnalyzeResponse,
+  ): Promise<SecurityResponseSimulationResponse> {
+    try {
+      return await simulateSecurityResponse({
+        analysis_id: res.analysis_id,
+        triggered_by: "desktop_operator",
+        dry_run: true,
+      });
+    } catch (primaryErr) {
+      if (res.results.length > 0 && res.results.length <= MAX_SIMULATE_CLIENT_RESULTS) {
+        return await simulateSecurityResponse({
+          analysis_id: res.analysis_id,
+          results: res.results,
+          triggered_by: "desktop_operator",
+          dry_run: true,
+        });
+      }
+      throw primaryErr;
+    }
+  }
+
   async function handleRunInference() {
     if (!flowsPath.trim()) {
       errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
@@ -183,6 +220,7 @@
     }
     busyMessage = `Đang chạy mô hình ${selectedModel} qua InferencePipeline...`;
     errorMessage = null;
+    simulationWarning = null;
     exportData = null;
     try {
       const trimmedFlowsPath = flowsPath.trim();
@@ -201,7 +239,16 @@
       });
       analysisData = res;
       evalData = null;
+      simulationExportData = null;
       activeTab = "predictions";
+      try {
+        simulationData = await runDryRunSimulationForAnalysis(res);
+        await refreshSimulationHistory();
+      } catch (simErr) {
+        simulationData = null;
+        const detail = simErr instanceof Error ? simErr.message : String(simErr);
+        simulationWarning = `Phân tích CSV đã hoàn tất, nhưng mô phỏng Dry-Run (#27) chưa thể chạy: ${detail}`;
+      }
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
@@ -233,6 +280,50 @@
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
       evaluatedFlag = false;
+    }
+  }
+
+  async function refreshSimulationHistory(): Promise<void> {
+    try {
+      const resp = await listSecuritySimulations(20, 0);
+      simulationHistory = resp.items;
+    } catch {
+      // Non-fatal if backend is restarting
+    }
+  }
+
+  async function handleRunSecuritySimulation() {
+    if (!analysisData) return;
+    simulatingFlag = true;
+    errorMessage = null;
+    simulationWarning = null;
+    simulationExportData = null;
+    try {
+      simulationData = await runDryRunSimulationForAnalysis(analysisData);
+      await refreshSimulationHistory();
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      simulationWarning = `Không thể chạy mô phỏng Dry-Run (#27): ${detail}`;
+    } finally {
+      simulatingFlag = false;
+    }
+  }
+
+  async function handleExportSecuritySimulation(simulationId: string) {
+    const defaultName = `dry_run_${simulationId}.json`;
+    const chosen = await pickSaveJsonFile(defaultName);
+    if (!chosen) return;
+    simulatingFlag = true;
+    errorMessage = null;
+    try {
+      simulationExportData = await exportSecuritySimulation({
+        output_path: chosen,
+        simulation_id: simulationId,
+      });
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+    } finally {
+      simulatingFlag = false;
     }
   }
 
@@ -321,6 +412,16 @@
           <strong>Lỗi hệ thống / Xác thực Fail-Closed:</strong> {errorMessage}
         </div>
         <button type="button" class="btn btn-sm" onclick={() => (errorMessage = null)}>Đóng</button>
+      </div>
+    {/if}
+
+    {#if simulationWarning}
+      <div class="banner banner-warning" role="status">
+        <Icons name="alert" size={18} />
+        <div style="flex: 1;">
+          <strong>Cảnh báo Dry-Run (#27):</strong> {simulationWarning}
+        </div>
+        <button type="button" class="btn btn-sm" onclick={() => (simulationWarning = null)}>Đóng</button>
       </div>
     {/if}
 
@@ -495,23 +596,19 @@
         onUpdateLabelsPath={(v) => (labelsPath = v)}
       />
     {:else if activeTab === "forensics"}
-      {#if analysisData}
-        <ForensicTimelinePanel
-          timeline={analysisData.timeline}
-          behavioral={analysisData.behavioral_summary}
-          securityNotice={analysisData.security_notice}
-        />
-      {:else if inspectData}
-        <ForensicTimelinePanel
-          timeline={[]}
-          behavioral={inspectData.behavioral_summary}
-          securityNotice="Localhost-only FastAPI (127.0.0.1), fail-closed SHA-256 artifact checks. Firewall automation & AES-256-GCM keyring remain DEFERRED (#26/#27)."
-        />
-      {:else}
-        <div class="empty-state">
-          Hãy kiểm tra hoặc chạy phân tích CSV để xem Evidence Timeline (#24) và Thống kê Hành vi NetFlow (#28).
-        </div>
-      {/if}
+      <ForensicTimelinePanel
+        timeline={analysisData?.timeline ?? []}
+        behavioral={analysisData?.behavioral_summary ?? inspectData?.behavioral_summary ?? null}
+        securityNotice={analysisData?.security_notice ?? "Localhost-only FastAPI (127.0.0.1), fail-closed SHA-256 artifact checks. Issue #27 Adaptive Security Response runs in DRY-RUN SIMULATION / RECOMMENDED mode (executed=false); OS firewall automation & AES-256-GCM keyring remain DEFERRED."}
+        simulation={simulationData}
+        {simulationHistory}
+        simulationExportInfo={simulationExportData}
+        simulating={simulatingFlag}
+        canSimulate={Boolean(analysisData)}
+        onRunSimulation={handleRunSecuritySimulation}
+        onRefreshHistory={refreshSimulationHistory}
+        onExportSimulation={handleExportSecuritySimulation}
+      />
     {/if}
   </main>
 </div>

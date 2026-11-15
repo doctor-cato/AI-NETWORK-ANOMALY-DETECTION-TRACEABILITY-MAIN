@@ -807,10 +807,256 @@
           }
         }
       }
+    },
+    "/api/v1/security/simulate-response": {
+      "post": {
+        "tags": [
+          "Security Dry-Run"
+        ],
+        "summary": "Simulate deterministic adaptive security response & key rotation decision (dry-run)",
+        "description": "Evaluate deterministic Issue #27 policy recommendations (NO_ACTION, MONITOR, INVESTIGATE, ISOLATE_RECOMMENDED) and adaptive key rotation readiness in strict dry-run simulation mode only (executed=false). ABSTAINED_OOD flows never receive containment recommendations; OS firewall and real crypto key modifications are disabled.",
+        "operationId": "run_security_response_simulation_api_v1_security_simulate_response_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecurityResponseSimulateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityResponseSimulationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/security/simulations": {
+      "get": {
+        "tags": [
+          "Security Dry-Run"
+        ],
+        "summary": "List persisted Issue #27 dry-run security response simulations",
+        "description": "List SQLite-persisted dry-run response simulations ordered newest first.",
+        "operationId": "get_security_simulations_api_v1_security_simulations_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedSecuritySimulationsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/security/simulations/export": {
+      "post": {
+        "tags": [
+          "Security Dry-Run"
+        ],
+        "summary": "Export Issue #27 dry-run simulation evidence JSON and metadata",
+        "description": "Export a persisted simulation evidence bundle safely with SHA-256 metadata.",
+        "operationId": "export_security_simulation_api_v1_security_simulations_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecuritySimulationExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySimulationExportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AdaptiveKeyRotationSimulation": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended"
+          },
+          "would_rotate": {
+            "type": "boolean",
+            "title": "Would Rotate"
+          },
+          "simulation_status": {
+            "type": "string",
+            "title": "Simulation Status",
+            "default": "SIMULATED"
+          },
+          "executed": {
+            "type": "boolean",
+            "title": "Executed",
+            "default": false
+          },
+          "key_material_generated": {
+            "type": "boolean",
+            "title": "Key Material Generated",
+            "default": false
+          },
+          "real_key_modified": {
+            "type": "boolean",
+            "title": "Real Key Modified",
+            "default": false
+          },
+          "keyring_status": {
+            "type": "string",
+            "title": "Keyring Status",
+            "default": "DEFERRED_PRODUCTION_KEYRING"
+          },
+          "active_key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Key Id"
+          },
+          "active_key_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Key Version"
+          },
+          "simulated_next_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Simulated Next Version"
+          },
+          "cooldown_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Cooldown Seconds"
+          },
+          "cooldown_remaining_seconds": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Cooldown Remaining Seconds",
+            "default": 0.0
+          },
+          "trigger_metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Trigger Metrics"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision",
+          "recommended",
+          "would_rotate",
+          "cooldown_seconds",
+          "reason"
+        ],
+        "title": "AdaptiveKeyRotationSimulation",
+        "description": "Simulated adaptive key rotation evaluation without creating or modifying real keys."
+      },
       "AnalyzeRequest": {
         "properties": {
           "events": {
@@ -2034,6 +2280,22 @@
             "type": "boolean",
             "title": "Is Ood Flagged",
             "default": false
+          },
+          "ood_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "ZERO_TTL_DRIFT",
+                  "PHYSICAL_INVARIANT",
+                  "COMBINED_OOD"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ood Kind"
           },
           "ood_reason": {
             "anyOf": [
@@ -3407,6 +3669,47 @@
         "title": "PaginatedRotationAuditResponse",
         "description": "Paginated collection of rotation audit records."
       },
+      "PaginatedSecuritySimulationsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SecuritySimulationHistoryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Offset"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "title": "PaginatedSecuritySimulationsResponse",
+        "description": "Paginated list of SQLite-persisted dry-run response simulations."
+      },
       "PaginatedTimelineResponse": {
         "properties": {
           "items": {
@@ -3447,6 +3750,160 @@
         ],
         "title": "PaginatedTimelineResponse",
         "description": "Paginated collection of timeline items."
+      },
+      "ResponseFlowRecommendationItem": {
+        "properties": {
+          "row_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Row Id"
+          },
+          "row_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Row Index"
+          },
+          "predicted_class": {
+            "type": "string",
+            "title": "Predicted Class"
+          },
+          "is_ood_flagged": {
+            "type": "boolean",
+            "title": "Is Ood Flagged"
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "action_status": {
+            "type": "string",
+            "title": "Action Status",
+            "default": "RECOMMENDED"
+          },
+          "simulation_status": {
+            "type": "string",
+            "title": "Simulation Status",
+            "default": "SIMULATED"
+          },
+          "executed": {
+            "type": "boolean",
+            "title": "Executed",
+            "default": false
+          },
+          "execution_status": {
+            "type": "string",
+            "title": "Execution Status",
+            "default": "NOT_EXECUTED"
+          },
+          "containment_allowed": {
+            "type": "boolean",
+            "title": "Containment Allowed",
+            "default": false
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "src_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Src Ip"
+          },
+          "dst_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dst Ip"
+          },
+          "src_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Src Port"
+          },
+          "dst_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dst Port"
+          },
+          "flow_start_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Start Ms"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provenance"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row_id",
+          "row_index",
+          "predicted_class",
+          "is_ood_flagged",
+          "risk_level",
+          "action",
+          "severity",
+          "reason"
+        ],
+        "title": "ResponseFlowRecommendationItem",
+        "description": "Deterministic dry-run response recommendation for a single analyzed network flow."
       },
       "RotationAuditItemResponse": {
         "properties": {
@@ -3508,6 +3965,578 @@
         ],
         "title": "RotationAuditItemResponse",
         "description": "Audit trail record of a key rotation."
+      },
+      "SecurityResponseSimulateRequest": {
+        "properties": {
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
+          "triggered_by": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Triggered By",
+            "default": "operator"
+          },
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "description": "Must remain True; automatic OS firewall/key execution is disabled in v0.6.0.",
+            "default": true
+          },
+          "source_csv_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Csv Path"
+          },
+          "model_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Key"
+          },
+          "model_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Type"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "model_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Sha256"
+          },
+          "preprocessor_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preprocessor Sha256"
+          },
+          "inference_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inference Mode"
+          },
+          "compatibility_gate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompatibilityGateSummarySchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CsvFlowPredictionItem"
+                },
+                "type": "array",
+                "maxItems": 10000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Results"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SecurityResponseSimulateRequest",
+        "description": "Request to run deterministic Issue #27 adaptive response simulation / dry-run."
+      },
+      "SecurityResponseSimulationResponse": {
+        "properties": {
+          "simulation_id": {
+            "type": "string",
+            "title": "Simulation Id"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "title": "Created At Utc"
+          },
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
+          "source_csv_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Csv Path"
+          },
+          "source_csv_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Csv Sha256"
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "model_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Sha256"
+          },
+          "preprocessor_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preprocessor Sha256"
+          },
+          "triggered_by": {
+            "type": "string",
+            "title": "Triggered By"
+          },
+          "provenance_verification": {
+            "type": "string",
+            "title": "Provenance Verification"
+          },
+          "execution_mode": {
+            "type": "string",
+            "title": "Execution Mode",
+            "default": "DRY_RUN_SIMULATION"
+          },
+          "action_status": {
+            "type": "string",
+            "title": "Action Status",
+            "default": "SIMULATED"
+          },
+          "recommendation_status": {
+            "type": "string",
+            "title": "Recommendation Status",
+            "default": "RECOMMENDED"
+          },
+          "execution_status": {
+            "type": "string",
+            "title": "Execution Status",
+            "default": "NOT_EXECUTED"
+          },
+          "executed": {
+            "type": "boolean",
+            "title": "Executed",
+            "default": false
+          },
+          "os_firewall_touched": {
+            "type": "boolean",
+            "title": "Os Firewall Touched",
+            "default": false
+          },
+          "real_key_rotated": {
+            "type": "boolean",
+            "title": "Real Key Rotated",
+            "default": false
+          },
+          "overall_recommendation": {
+            "type": "string",
+            "title": "Overall Recommendation"
+          },
+          "overall_severity": {
+            "type": "string",
+            "title": "Overall Severity"
+          },
+          "total_flows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Flows"
+          },
+          "evaluated_flows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated Flows"
+          },
+          "ood_abstained_flows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Ood Abstained Flows"
+          },
+          "action_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Action Counts"
+          },
+          "key_rotation_simulation": {
+            "$ref": "#/components/schemas/AdaptiveKeyRotationSimulation"
+          },
+          "policy_summary": {
+            "type": "string",
+            "title": "Policy Summary"
+          },
+          "security_notice": {
+            "type": "string",
+            "title": "Security Notice"
+          },
+          "deferred_capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Deferred Capabilities"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provenance"
+          },
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/ResponseFlowRecommendationItem"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "simulation_id",
+          "created_at_utc",
+          "model_key",
+          "model_type",
+          "triggered_by",
+          "provenance_verification",
+          "overall_recommendation",
+          "overall_severity",
+          "total_flows",
+          "evaluated_flows",
+          "ood_abstained_flows",
+          "action_counts",
+          "key_rotation_simulation",
+          "policy_summary",
+          "security_notice",
+          "deferred_capabilities",
+          "recommendations"
+        ],
+        "title": "SecurityResponseSimulationResponse",
+        "description": "Full Issue #27 dry-run policy simulation output with clear simulated vs executed state."
+      },
+      "SecuritySimulationExportRequest": {
+        "properties": {
+          "output_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Output Path"
+          },
+          "simulation_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Simulation Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "output_path",
+          "simulation_id"
+        ],
+        "title": "SecuritySimulationExportRequest",
+        "description": "Export an Issue #27 dry-run simulation evidence bundle as JSON + metadata."
+      },
+      "SecuritySimulationExportResponse": {
+        "properties": {
+          "simulation_id": {
+            "type": "string",
+            "title": "Simulation Id"
+          },
+          "json_path": {
+            "type": "string",
+            "title": "Json Path"
+          },
+          "metadata_path": {
+            "type": "string",
+            "title": "Metadata Path"
+          },
+          "json_sha256": {
+            "type": "string",
+            "title": "Json Sha256"
+          },
+          "metadata_sha256": {
+            "type": "string",
+            "title": "Metadata Sha256"
+          },
+          "exported_at_utc": {
+            "type": "string",
+            "title": "Exported At Utc"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "simulation_id",
+          "json_path",
+          "metadata_path",
+          "json_sha256",
+          "metadata_sha256",
+          "exported_at_utc"
+        ],
+        "title": "SecuritySimulationExportResponse",
+        "description": "Provenance confirmation of exported Issue #27 simulation JSON and metadata."
+      },
+      "SecuritySimulationHistoryItem": {
+        "properties": {
+          "simulation_id": {
+            "type": "string",
+            "title": "Simulation Id"
+          },
+          "created_at_utc": {
+            "type": "string",
+            "title": "Created At Utc"
+          },
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
+          "source_csv_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Csv Path"
+          },
+          "source_csv_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Csv Sha256"
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "triggered_by": {
+            "type": "string",
+            "title": "Triggered By"
+          },
+          "provenance_verification": {
+            "type": "string",
+            "title": "Provenance Verification"
+          },
+          "execution_mode": {
+            "type": "string",
+            "title": "Execution Mode"
+          },
+          "action_status": {
+            "type": "string",
+            "title": "Action Status"
+          },
+          "recommendation_status": {
+            "type": "string",
+            "title": "Recommendation Status"
+          },
+          "execution_status": {
+            "type": "string",
+            "title": "Execution Status"
+          },
+          "executed": {
+            "type": "boolean",
+            "title": "Executed",
+            "default": false
+          },
+          "os_firewall_touched": {
+            "type": "boolean",
+            "title": "Os Firewall Touched",
+            "default": false
+          },
+          "real_key_rotated": {
+            "type": "boolean",
+            "title": "Real Key Rotated",
+            "default": false
+          },
+          "overall_recommendation": {
+            "type": "string",
+            "title": "Overall Recommendation"
+          },
+          "overall_severity": {
+            "type": "string",
+            "title": "Overall Severity"
+          },
+          "total_flows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Flows"
+          },
+          "evaluated_flows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated Flows"
+          },
+          "ood_abstained_flows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Ood Abstained Flows"
+          },
+          "action_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Action Counts"
+          },
+          "key_rotation_simulation": {
+            "$ref": "#/components/schemas/AdaptiveKeyRotationSimulation"
+          },
+          "policy_summary": {
+            "type": "string",
+            "title": "Policy Summary"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "simulation_id",
+          "created_at_utc",
+          "model_key",
+          "model_type",
+          "triggered_by",
+          "provenance_verification",
+          "execution_mode",
+          "action_status",
+          "recommendation_status",
+          "execution_status",
+          "overall_recommendation",
+          "overall_severity",
+          "total_flows",
+          "evaluated_flows",
+          "ood_abstained_flows",
+          "action_counts",
+          "key_rotation_simulation",
+          "policy_summary"
+        ],
+        "title": "SecuritySimulationHistoryItem",
+        "description": "Persisted Issue #27 simulation history entry stored in SQLite."
       },
       "TimelineItemResponse": {
         "properties": {

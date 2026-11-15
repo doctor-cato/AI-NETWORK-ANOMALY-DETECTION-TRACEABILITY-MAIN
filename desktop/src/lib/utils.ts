@@ -1,4 +1,8 @@
-import type { CsvEvaluateResponse, CsvFlowPredictionItem } from "./types";
+import type {
+  CsvEvaluateResponse,
+  CsvFlowPredictionItem,
+  ResponseFlowRecommendationItem,
+} from "./types";
 
 export type PredictionClassFilter = "all" | "Attack" | "Benign" | "OOD";
 export type SortField =
@@ -206,4 +210,58 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+export type ResponseActionFilter =
+  | "all"
+  | "ISOLATE_RECOMMENDED"
+  | "INVESTIGATE"
+  | "MONITOR"
+  | "NO_ACTION"
+  | "OOD";
+
+export function filterResponseRecommendations(
+  items: ResponseFlowRecommendationItem[],
+  actionFilter: ResponseActionFilter,
+  query = "",
+): ResponseFlowRecommendationItem[] {
+  const q = query.trim().toLowerCase();
+  return items.filter((item) => {
+    if (actionFilter === "OOD" && !item.is_ood_flagged) return false;
+    if (
+      actionFilter !== "all" &&
+      actionFilter !== "OOD" &&
+      item.action !== actionFilter
+    ) {
+      return false;
+    }
+    if (!q) return true;
+    const haystack = [
+      String(item.row_id),
+      item.action,
+      item.severity,
+      item.src_ip ?? "",
+      item.dst_ip ?? "",
+      item.dst_port !== null ? String(item.dst_port) : "",
+      item.reason,
+    ]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+export function getResponseActionBadgeClass(
+  action: string,
+): "badge-attack" | "badge-warning" | "badge-info" | "badge-benign" {
+  switch (action) {
+    case "ISOLATE_RECOMMENDED":
+      return "badge-attack";
+    case "INVESTIGATE":
+      return "badge-warning";
+    case "MONITOR":
+      return "badge-info";
+    default:
+      return "badge-benign";
+  }
 }

@@ -523,3 +523,120 @@ class IdempotencyRepository:
             """,
             (idempotency_key, endpoint, status_code, response_json, now),
         )
+
+
+class ResponseSimulationRepository:
+    """Repository persisting Issue #27 dry-run policy simulation history without side effects."""
+
+    _SUMMARY_COLUMNS: str = (
+        "simulation_id, analysis_id, source_csv_path, source_csv_sha256, "
+        "model_key, model_type, run_id, triggered_by, execution_mode, "
+        "action_status, recommendation_status, executed, overall_recommendation, "
+        "overall_severity, total_flows, evaluated_flows, ood_abstained_flows, "
+        "provenance_verification, action_counts_json, key_rotation_json, "
+        "policy_summary, created_at"
+    )
+
+    @staticmethod
+    def _decode_summary_row(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
+        if row is None:
+            return None
+        d = dict(row)
+        d["executed"] = bool(d.get("executed", 0))
+        d["action_counts"] = json.loads(d.pop("action_counts_json"))
+        d["key_rotation_simulation"] = json.loads(d.pop("key_rotation_json"))
+        return d
+
+    @staticmethod
+    def _decode_row(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
+        d = ResponseSimulationRepository._decode_summary_row(row)
+        if d is None:
+            return None
+        d["provenance"] = json.loads(d.pop("provenance_json"))
+        d["recommendations"] = json.loads(d.pop("recommendations_json"))
+        return d
+
+    @staticmethod
+    def create_simulation(conn: sqlite3.Connection, sim: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist a deterministic dry-run security response simulation record."""
+        sim_id = sim.get("simulation_id") or f"sim_{uuid.uuid4().hex[:12]}"
+        created_at = sim.get("created_at") or _utc_now_str()
+        conn.execute(
+            """
+            INSERT INTO security_response_simulations (
+                simulation_id, analysis_id, source_csv_path, source_csv_sha256,
+                model_key, model_type, run_id, triggered_by, execution_mode,
+                action_status, recommendation_status, executed, overall_recommendation,
+                overall_severity, total_flows, evaluated_flows, ood_abstained_flows,
+                provenance_verification, action_counts_json, key_rotation_json,
+                provenance_json, recommendations_json, policy_summary, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sim_id,
+                sim.get("analysis_id"),
+                sim.get("source_csv_path"),
+                sim.get("source_csv_sha256"),
+                sim["model_key"],
+                sim["model_type"],
+                sim.get("run_id"),
+                sim.get("triggered_by", "operator"),
+                sim.get("execution_mode", "DRY_RUN_SIMULATION"),
+                sim.get("action_status", "SIMULATED"),
+                sim.get("recommendation_status", "RECOMMENDED"),
+                0,  # Dry-run invariant: live OS response execution is strictly disabled.
+                sim["overall_recommendation"],
+                sim["overall_severity"],
+                int(sim["total_flows"]),
+                int(sim["evaluated_flows"]),
+                int(sim["ood_abstained_flows"]),
+                sim.get("provenance_verification", "client_supplied_unverified"),
+                json.dumps(sim["action_counts"]),
+                json.dumps(sim["key_rotation_simulation"]),
+                json.dumps(sim["provenance"]),
+                json.dumps(sim["recommendations"]),
+                sim["policy_summary"],
+                created_at,
+            ),
+        )
+        stored = ResponseSimulationRepository.get_simulation(conn, sim_id)
+        return stored or {}
+
+    @staticmethod
+    def get_simulation(conn: sqlite3.Connection, simulation_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a single persisted response simulation by simulation_id."""
+        cur = conn.execute(
+            "SELECT * FROM security_response_simulations WHERE simulation_id = ?",
+            (simulation_id,),
+        )
+        return ResponseSimulationRepository._decode_row(cur.fetchone())
+
+    @staticmethod
+    def list_simulations(
+        conn: sqlite3.Connection,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List recent dry-run response simulation summaries ordered newest first."""
+        cur = conn.execute(
+            f"""
+            SELECT {ResponseSimulationRepository._SUMMARY_COLUMNS}
+            FROM security_response_simulations
+            ORDER BY created_at DESC, simulation_id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        )
+        items: List[Dict[str, Any]] = []
+        for row in cur.fetchall():
+            decoded = ResponseSimulationRepository._decode_summary_row(row)
+            if decoded is not None:
+                items.append(decoded)
+        return items
+
+    @staticmethod
+    def count(conn: sqlite3.Connection) -> int:
+        """Count total persisted response simulation records."""
+        cur = conn.execute("SELECT COUNT(*) AS total FROM security_response_simulations")
+        row = cur.fetchone()
+        return int(row["total"]) if row else 0

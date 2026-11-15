@@ -9,6 +9,9 @@ import type {
   DemoPaths,
   HealthResponse,
   ModelStatusItem,
+  PaginatedSecuritySimulationsResponse,
+  SecurityResponseSimulationResponse,
+  SecuritySimulationExportResponse,
 } from "./types";
 
 export function isTauriRuntime(): boolean {
@@ -228,6 +231,63 @@ export async function exportCsv(payload: {
     return invoke<CsvExportResponse>("export_csv", { payload });
   }
   return httpJson<CsvExportResponse>("/api/v1/csv/export", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function pickSaveJsonFile(defaultName?: string): Promise<string | null> {
+  if (isTauriRuntime()) {
+    return invoke<string | null>("pick_save_json_file", { defaultName });
+  }
+  return `artifacts/exports/${defaultName ?? "security_dry_run_evidence.json"}`;
+}
+
+export async function simulateSecurityResponse(payload: {
+  analysis_id?: string | null;
+  triggered_by?: string;
+  dry_run?: boolean;
+  source_csv_path?: string | null;
+  model_key?: string | null;
+  model_type?: string | null;
+  run_id?: string | null;
+  model_sha256?: string | null;
+  preprocessor_sha256?: string | null;
+  inference_mode?: string | null;
+  results?: CsvFlowPredictionItem[] | null;
+}): Promise<SecurityResponseSimulationResponse> {
+  if (isTauriRuntime()) {
+    return invoke<SecurityResponseSimulationResponse>("simulate_security_response", { payload });
+  }
+  return httpJson<SecurityResponseSimulationResponse>("/api/v1/security/simulate-response", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listSecuritySimulations(
+  limit = 20,
+  offset = 0,
+): Promise<PaginatedSecuritySimulationsResponse> {
+  if (isTauriRuntime()) {
+    return invoke<PaginatedSecuritySimulationsResponse>("list_security_simulations", {
+      limit,
+      offset,
+    });
+  }
+  return httpJson<PaginatedSecuritySimulationsResponse>(
+    `/api/v1/security/simulations?limit=${limit}&offset=${offset}`,
+  );
+}
+
+export async function exportSecuritySimulation(payload: {
+  output_path: string;
+  simulation_id: string;
+}): Promise<SecuritySimulationExportResponse> {
+  if (isTauriRuntime()) {
+    return invoke<SecuritySimulationExportResponse>("export_security_simulation", { payload });
+  }
+  return httpJson<SecuritySimulationExportResponse>("/api/v1/security/simulations/export", {
     method: "POST",
     body: JSON.stringify(payload),
   });
