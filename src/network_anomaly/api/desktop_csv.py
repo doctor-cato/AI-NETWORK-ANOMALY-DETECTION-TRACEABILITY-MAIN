@@ -1439,14 +1439,27 @@ def evaluate_predictions_with_ground_truth(
                     )
                 )
 
+    total_pred_rows = len(predictions)
+    label_match_rate = round(float(matched_total) / float(max(1, total_pred_rows)), 4)
+    post_ood_coverage = round(float(len(y_true)) / float(max(1, matched_total)), 4)
+    partial_match_note = (
+        f" Partial label match: {matched_total}/{total_pred_rows} prediction rows matched "
+        f"the ground truth CSV ({unmatched} unmatched rows excluded)."
+        if unmatched > 0
+        else ""
+    )
+
     return CsvEvaluateResponse(
         labels_path=str(resolved),
         labels_sha256=labels_sha256,
+        total_prediction_rows=total_pred_rows,
+        matched_label_rows=matched_total,
         matched_rows=len(y_true),
         evaluated_rows=len(y_true),
         unmatched_rows=unmatched,
         abstained_rows=abstained,
-        prediction_coverage=round(float(len(y_true)) / float(max(1, matched_total)), 4),
+        label_match_rate=label_match_rate,
+        prediction_coverage=post_ood_coverage,
         accuracy=round(float(metrics["accuracy"]), 6),
         precision=round(float(metrics["precision"]), 6),
         recall=round(float(metrics["recall"]), 6),
@@ -1457,8 +1470,11 @@ def evaluate_predictions_with_ground_truth(
         attack_breakdown=breakdown_rows,
         scientific_notice=(
             "Evaluation computed dynamically on user-supplied Ground Truth CSV via canonical "
-            "compute_metrics() over non-abstained predictions (OOD-abstained rows are excluded "
-            "from the confusion matrix and reported in abstained_rows). Demo balanced subset "
+            "compute_metrics() over label-matched, non-abstained predictions (OOD-abstained rows "
+            "and unmatched rows are excluded from the confusion matrix; label_match_rate measures "
+            "matched_label_rows/total_prediction_rows while prediction_coverage measures "
+            "evaluated_rows/matched_label_rows after OOD abstention)."
+            f"{partial_match_note} Demo balanced subset "
             "(~50% Attack) is for UI verification only and does not reflect production deployment "
             "prevalence or held-out Test benchmarks."
         ),

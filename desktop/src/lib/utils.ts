@@ -1,4 +1,4 @@
-import type { CsvFlowPredictionItem } from "./types";
+import type { CsvEvaluateResponse, CsvFlowPredictionItem } from "./types";
 
 export type PredictionClassFilter = "all" | "Attack" | "Benign" | "OOD";
 export type SortField =
@@ -147,6 +147,48 @@ export function computeRiskDistribution(items: CsvFlowPredictionItem[]): RiskBuc
       tone: "blocked",
     },
   ];
+}
+
+export interface EvaluationCoverageSummary {
+  evaluatedRows: number;
+  abstainedRows: number;
+  matchedLabelRows: number;
+  unmatchedRows: number;
+  totalPredictionRows: number;
+  labelMatchRate: number;
+  postOodCoverage: number;
+  hasPartialLabelMatch: boolean;
+}
+
+export function summarizeEvaluationCoverage(
+  evalResult: CsvEvaluateResponse,
+): EvaluationCoverageSummary {
+  const evaluatedRows = evalResult.evaluated_rows ?? evalResult.matched_rows;
+  const abstainedRows = evalResult.abstained_rows ?? 0;
+  const matchedLabelRows = evalResult.matched_label_rows ?? evaluatedRows + abstainedRows;
+  const unmatchedRows = evalResult.unmatched_rows ?? 0;
+  const totalPredictionRows =
+    evalResult.total_prediction_rows && evalResult.total_prediction_rows > 0
+      ? evalResult.total_prediction_rows
+      : matchedLabelRows + unmatchedRows;
+  const labelMatchRate =
+    evalResult.label_match_rate ??
+    (totalPredictionRows > 0 ? matchedLabelRows / totalPredictionRows : 0);
+  const postOodCoverage =
+    evalResult.prediction_coverage ??
+    (matchedLabelRows > 0 ? evaluatedRows / matchedLabelRows : 0);
+  const hasPartialLabelMatch =
+    unmatchedRows > 0 || (totalPredictionRows > 0 && matchedLabelRows < totalPredictionRows);
+  return {
+    evaluatedRows,
+    abstainedRows,
+    matchedLabelRows,
+    unmatchedRows,
+    totalPredictionRows,
+    labelMatchRate,
+    postOodCoverage,
+    hasPartialLabelMatch,
+  };
 }
 
 export function shortDigest(sha: string | null | undefined): string {

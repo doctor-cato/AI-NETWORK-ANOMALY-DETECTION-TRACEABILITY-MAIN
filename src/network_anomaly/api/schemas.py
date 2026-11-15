@@ -808,10 +808,13 @@ class CsvEvaluateResponse(BaseModel):
 
     labels_path: str
     labels_sha256: str
+    total_prediction_rows: int = Field(default=0, ge=0)
+    matched_label_rows: int = Field(default=0, ge=0)
     matched_rows: int = Field(..., ge=0)
     evaluated_rows: int = Field(default=0, ge=0)
     unmatched_rows: int = Field(..., ge=0)
     abstained_rows: int = Field(default=0, ge=0)
+    label_match_rate: float = Field(default=1.0, ge=0.0, le=1.0)
     prediction_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
     accuracy: float
     precision: float

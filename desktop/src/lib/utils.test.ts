@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { CsvFlowPredictionItem } from "./types";
+import type { CsvEvaluateResponse, CsvFlowPredictionItem } from "./types";
 import { isLocalhostHttpUrl } from "./api";
 import {
   computeRiskDistribution,
   filterAndSortPredictions,
   formatRiskDisplay,
   formatScoreSemantically,
+  summarizeEvaluationCoverage,
 } from "./utils";
 
 function makeItem(overrides: Partial<CsvFlowPredictionItem>): CsvFlowPredictionItem {
@@ -108,5 +109,55 @@ describe("prediction filtering and sorting", () => {
     expect(isLocalhostHttpUrl("http://127.0.0.1:8000@evil.com")).toBe(false);
     expect(isLocalhostHttpUrl("https://127.0.0.1:8000")).toBe(false);
     expect(isLocalhostHttpUrl("http://10.0.0.5:8000")).toBe(false);
+  });
+
+  it("separates label match rate from post-OOD prediction coverage on partial label matches", () => {
+    const partialEval: CsvEvaluateResponse = {
+      labels_path: "labels.csv",
+      labels_sha256: "a".repeat(64),
+      total_prediction_rows: 3,
+      matched_label_rows: 1,
+      matched_rows: 1,
+      evaluated_rows: 1,
+      unmatched_rows: 2,
+      abstained_rows: 0,
+      label_match_rate: 0.3333,
+      prediction_coverage: 1.0,
+      accuracy: 1.0,
+      precision: 1.0,
+      recall: 1.0,
+      f1: 1.0,
+      false_positive_rate: 0.0,
+      true_negative_rate: 1.0,
+      confusion_matrix: { tn: 0, fp: 0, fn: 0, tp: 1 },
+      attack_breakdown: [],
+      scientific_notice: "partial",
+    };
+
+    const summary = summarizeEvaluationCoverage(partialEval);
+    expect(summary.totalPredictionRows).toBe(3);
+    expect(summary.matchedLabelRows).toBe(1);
+    expect(summary.unmatchedRows).toBe(2);
+    expect(summary.evaluatedRows).toBe(1);
+    expect(summary.abstainedRows).toBe(0);
+    expect(summary.labelMatchRate).toBeCloseTo(0.3333, 4);
+    expect(summary.postOodCoverage).toBe(1.0);
+    expect(summary.hasPartialLabelMatch).toBe(true);
+
+    // Also verify legacy fallback when older payload omits total_prediction_rows/label_match_rate
+    const legacyPayload: CsvEvaluateResponse = {
+      ...partialEval,
+      total_prediction_rows: undefined,
+      matched_label_rows: undefined,
+      label_match_rate: undefined,
+      abstained_rows: 1,
+      prediction_coverage: 0.5,
+    };
+    const legacySummary = summarizeEvaluationCoverage(legacyPayload);
+    expect(legacySummary.matchedLabelRows).toBe(2);
+    expect(legacySummary.totalPredictionRows).toBe(4);
+    expect(legacySummary.labelMatchRate).toBe(0.5);
+    expect(legacySummary.postOodCoverage).toBe(0.5);
+    expect(legacySummary.hasPartialLabelMatch).toBe(true);
   });
 });

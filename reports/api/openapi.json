@@ -1688,6 +1688,18 @@
             "type": "string",
             "title": "Labels Sha256"
           },
+          "total_prediction_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Prediction Rows",
+            "default": 0
+          },
+          "matched_label_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Matched Label Rows",
+            "default": 0
+          },
           "matched_rows": {
             "type": "integer",
             "minimum": 0.0,
@@ -1709,6 +1721,13 @@
             "minimum": 0.0,
             "title": "Abstained Rows",
             "default": 0
+          },
+          "label_match_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Label Match Rate",
+            "default": 1.0
           },
           "prediction_coverage": {
             "type": "number",

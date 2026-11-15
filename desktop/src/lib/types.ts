@@ -208,10 +208,13 @@ export interface AttackBreakdownRow {
 export interface CsvEvaluateResponse {
   labels_path: string;
   labels_sha256: string;
+  total_prediction_rows?: number;
+  matched_label_rows?: number;
   matched_rows: number;
   evaluated_rows?: number;
   unmatched_rows: number;
   abstained_rows?: number;
+  label_match_rate?: number;
   prediction_coverage?: number;
   accuracy: number;
   precision: number;

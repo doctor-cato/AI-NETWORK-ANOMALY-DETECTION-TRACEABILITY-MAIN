@@ -1317,3 +1317,89 @@ def test_evaluate_handles_float_upcast_row_id_and_all_nan_attack_column(
     assert body["abstained_rows"] == 1
     assert body["prediction_coverage"] == pytest.approx(2 / 3, abs=1e-4)
     assert body["confusion_matrix"] == {"tn": 1, "fp": 0, "fn": 0, "tp": 1}
+
+
+def test_evaluate_separates_label_match_rate_from_post_ood_coverage(
+    client: TestClient, tmp_path: Path
+):
+    """Regression: partial ground-truth label match (1/3) must expose label_match_rate & unmatched_rows separately."""
+
+    def _pred(row_id: int, row_index: int, label: int | None, is_ood: bool = False) -> dict:
+        if is_ood or label is None:
+            return {
+                "row_id": row_id,
+                "row_index": row_index,
+                "predicted_label": None,
+                "predicted_class": "ABSTAINED_OOD",
+                "attack_probability": None,
+                "raw_anomaly_score": None,
+                "decision_threshold": 0.5,
+                "score_type": "attack_probability",
+                "score_direction": "higher_is_more_anomalous",
+                "risk_score": None,
+                "risk_level": "ABSTAINED_OOD",
+                "is_ood_flagged": True,
+            }
+        return {
+            "row_id": row_id,
+            "row_index": row_index,
+            "predicted_label": label,
+            "predicted_class": "Attack" if label == 1 else "Benign",
+            "attack_probability": 0.9 if label == 1 else 0.1,
+            "raw_anomaly_score": 0.9 if label == 1 else 0.1,
+            "decision_threshold": 0.5,
+            "score_type": "attack_probability",
+            "score_direction": "higher_is_more_anomalous",
+            "risk_score": 90.0 if label == 1 else 10.0,
+            "risk_level": "CRITICAL" if label == 1 else "LOW",
+            "is_ood_flagged": False,
+        }
+
+    # Case 1: 3 predictions, labels CSV matches only 1/3 rows (no OOD abstention)
+    labels_one_of_three = tmp_path / "labels_1_of_3.csv"
+    labels_one_of_three.write_text("row_id,Label,Attack\n101,1,Exploits\n", encoding="utf-8")
+    preds_three = [_pred(101, 0, 1), _pred(102, 1, 0), _pred(103, 2, 0)]
+
+    r1 = client.post(
+        "/api/v1/csv/evaluate",
+        json={"labels_path": str(labels_one_of_three), "predictions": preds_three},
+    )
+    assert r1.status_code == 200, r1.text
+    b1 = r1.json()
+    assert b1["total_prediction_rows"] == 3
+    assert b1["matched_label_rows"] == 1
+    assert b1["unmatched_rows"] == 2
+    assert b1["label_match_rate"] == pytest.approx(1 / 3, abs=1e-4)
+    assert b1["evaluated_rows"] == 1
+    assert b1["matched_rows"] == 1
+    assert b1["abstained_rows"] == 0
+    assert b1["prediction_coverage"] == 1.0
+    assert "Partial label match: 1/3" in b1["scientific_notice"]
+    assert "2 unmatched rows excluded" in b1["scientific_notice"]
+
+    # Case 2: Combined partial label match (2/4) AND OOD abstention (1/2 matched rows abstained)
+    labels_partial_with_ood = tmp_path / "labels_partial_with_ood.csv"
+    labels_partial_with_ood.write_text(
+        "row_id,Label,Attack\n101,1,Exploits\n102,0,Benign\n",
+        encoding="utf-8",
+    )
+    preds_four = [
+        _pred(101, 0, 1, is_ood=False),
+        _pred(102, 1, None, is_ood=True),
+        _pred(103, 2, 0, is_ood=False),
+        _pred(104, 3, None, is_ood=True),
+    ]
+    r2 = client.post(
+        "/api/v1/csv/evaluate",
+        json={"labels_path": str(labels_partial_with_ood), "predictions": preds_four},
+    )
+    assert r2.status_code == 200, r2.text
+    b2 = r2.json()
+    assert b2["total_prediction_rows"] == 4
+    assert b2["matched_label_rows"] == 2
+    assert b2["unmatched_rows"] == 2
+    assert b2["label_match_rate"] == 0.5
+    assert b2["evaluated_rows"] == 1
+    assert b2["abstained_rows"] == 1
+    assert b2["prediction_coverage"] == 0.5
+    assert b2["confusion_matrix"] == {"tn": 0, "fp": 0, "fn": 0, "tp": 1}

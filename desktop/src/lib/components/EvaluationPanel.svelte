@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { CsvEvaluateResponse } from "../types";
-  import { shortDigest } from "../utils";
+  import { shortDigest, summarizeEvaluationCoverage } from "../utils";
   import Icons from "./Icons.svelte";
 
   interface Props {
@@ -28,6 +28,8 @@
   function pct(val: number): string {
     return `${(val * 100).toFixed(2)}%`;
   }
+
+  let coverage = $derived(evalResult ? summarizeEvaluationCoverage(evalResult) : null);
 </script>
 
 <section class="card" aria-labelledby="eval-heading">
@@ -76,7 +78,7 @@
     <div class="empty-state">
       Đã có kết quả dự đoán. Nhấn <strong>Chạy Đánh giá Ground Truth</strong> để đối chiếu theo <span class="mono">row_id</span>.
     </div>
-  {:else}
+  {:else if evalResult && coverage}
     <div class="grid-5" style="margin-bottom: 14px;">
       <div class="kpi-box">
         <div class="kpi-label">Accuracy</div>
@@ -100,11 +102,65 @@
       </div>
     </div>
 
+    <div class="grid-4" style="margin-bottom: 14px;">
+      <div class="kpi-box">
+        <div class="kpi-label">Khớp nhãn Ground Truth</div>
+        <div class="kpi-value mono">
+          {coverage.matchedLabelRows}/{coverage.totalPredictionRows}
+        </div>
+        <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+          Tỉ lệ khớp: {pct(coverage.labelMatchRate)}
+        </div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-label">Dòng không khớp nhãn</div>
+        <div
+          class="kpi-value mono"
+          style={`color: ${coverage.unmatchedRows > 0 ? "var(--semantic-warning)" : "var(--text-primary)"}`}
+        >
+          {coverage.unmatchedRows}
+        </div>
+        <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+          {coverage.unmatchedRows > 0 ? "Loại khỏi đối chiếu nhãn" : "Không bỏ sót row_id"}
+        </div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-label">OOD từ chối (tập khớp)</div>
+        <div class="kpi-value mono" style="color: var(--semantic-warning)">
+          {coverage.abstainedRows}
+        </div>
+        <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+          Loại khỏi Confusion Matrix
+        </div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-label">Sau OOD abstention</div>
+        <div class="kpi-value mono">{pct(coverage.postOodCoverage)}</div>
+        <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+          {coverage.evaluatedRows}/{coverage.matchedLabelRows} dòng khớp được đánh giá
+        </div>
+      </div>
+    </div>
+
+    {#if coverage.hasPartialLabelMatch}
+      <div class="banner banner-warning" style="margin-bottom: 14px;">
+        <Icons name="alert" size={16} />
+        <div>
+          <strong>Cảnh báo đối chiếu một phần:</strong>
+          CSV nhãn chỉ khớp <span class="mono">{coverage.matchedLabelRows}/{coverage.totalPredictionRows}</span>
+          dự đoán (<span class="mono">{pct(coverage.labelMatchRate)}</span>); có
+          <strong class="mono">{coverage.unmatchedRows}</strong> dòng không khớp nhãn bị bỏ qua.
+          Tỉ lệ sau OOD abstention (<span class="mono">{pct(coverage.postOodCoverage)}</span>) chỉ tính trên tập
+          <span class="mono">{coverage.matchedLabelRows}</span> dòng đã khớp nhãn.
+        </div>
+      </div>
+    {/if}
+
     <div class="grid-2">
       <div class="card" style="background: var(--bg-elevated);">
         <div class="card-header">
           <h3 class="card-title">
-            Confusion Matrix ({evalResult.evaluated_rows ?? evalResult.matched_rows} dòng đánh giá{evalResult.abstained_rows ? `, ${evalResult.abstained_rows} dòng OOD từ chối` : ""}{evalResult.prediction_coverage !== undefined ? `, coverage ${pct(evalResult.prediction_coverage)}` : ""})
+            Confusion Matrix ({coverage.evaluatedRows} dòng đánh giá • khớp nhãn {coverage.matchedLabelRows}/{coverage.totalPredictionRows} ({pct(coverage.labelMatchRate)}) • không khớp {coverage.unmatchedRows} • sau OOD {pct(coverage.postOodCoverage)})
           </h3>
           <span class="badge badge-info mono">SHA-256: {shortDigest(evalResult.labels_sha256)}</span>
         </div>
