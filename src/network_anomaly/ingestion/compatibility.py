@@ -249,6 +249,25 @@ DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = {
         is_research_only=True,
         reason="Isolation Forest baseline implemented; real-data benchmark pending full dataset validation.",
     ),
+    "source:nf-v3-canonical::if-c4-20261115T055359Z": BenchmarkEvidence(
+        source_id="source:nf-v3-canonical",
+        model_identifier="if-c4-20261115T055359Z",
+        model_family="IsolationForest",
+        model_artifact_sha256="15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
+        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        dataset_name="NF-UNSW-NB15-v3",
+        dataset_version="v3",
+        split_identity="benign-train-split",
+        verification_status="RESEARCH_ONLY",
+        is_passed=True,
+        is_research_only=True,
+        reason=(
+            "Benign-only Isolation Forest trained on 1,590,608 NF-UNSW-NB15-v3 benign flows; "
+            "frozen threshold -0.03352686 calibrated on validation split (known classes only); "
+            "unsupervised baseline stays RESEARCH_ONLY for controlled demo/evaluation."
+        ),
+    ),
     "source:nf-v3-canonical::ae-baseline-canonical-v1": BenchmarkEvidence(
         source_id="source:nf-v3-canonical",
         model_identifier="ae-baseline-canonical-v1",

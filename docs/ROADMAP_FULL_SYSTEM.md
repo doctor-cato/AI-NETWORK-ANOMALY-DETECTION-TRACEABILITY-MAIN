@@ -8,7 +8,7 @@ Raw dataset lớn, secret và model binaries không được commit vào Git. H�
 
 ## Kiến trúc đã chốt (MVP Củng cố)
 
-- **Desktop UI (`CORE-DEMO`, #16):** **Rust / Tauri 2 + Svelte 5** (ứng dụng desktop cục bộ trên Windows). Rust đảm nhận native file dialogs, quản lý lifecycle (khởi chạy/giám sát health/tắt gọn) của Python backend process và typed HTTP client tới localhost; **không** dùng Streamlit, không thêm frontend thứ hai và không nhân bản ML inference trong Rust. *(Trạng thái hiện tại: `PLANNED` trên #16 — chưa có mã nguồn Rust/Svelte trong repo.)*
+- **Desktop UI (`CORE-DEMO`, #16, `v0.6.0`):** **Rust / Tauri 2 + Svelte 5** (ứng dụng desktop cục bộ trên Windows, đóng gói NSIS installer `NetFlow Sentinel M6_0.6.0_x64-setup.exe`). Rust đảm nhận native file dialogs, quản lý lifecycle (khởi chạy/giám sát health/tắt gọn) của Python backend process và typed HTTP client tới localhost; **không** dùng Streamlit, không thêm frontend thứ hai và không nhân bản ML inference trong Rust. *(Trạng thái hiện tại: `IMPLEMENTED / TESTED` trong `desktop/` tại PR #67; yêu cầu môi trường Python, repo root, `.joblib` artifacts và WebView2 Runtime bên ngoài — xem [WINDOWS_INSTALLATION.md](WINDOWS_INSTALLATION.md)).*
 - **Backend & Storage (`IMPLEMENTED`, #30):** **Python FastAPI** chạy local-only trên `127.0.0.1:8000` (`scripts/run_api.py`), **SQLite** là cơ sở dữ liệu duy nhất do Python FastAPI làm chủ ghi (single writer, tránh Rust và Python ghi tranh chấp file DB). Contract chuẩn nằm tại `reports/api/openapi.json` và `reports/api/API_CONTRACT.md`.
 - **AI / ML Pipeline (`CORE-ML`):**
   - 4 mô hình được giữ và hỗ trợ đồng nhất trong `InferencePipeline` / `ApiService` / `scripts/predict.py`: **Random Forest**, **XGBoost**, **Isolation Forest** và **Autoencoder**.
@@ -40,7 +40,7 @@ Raw dataset lớn, secret và model binaries không được commit vào Git. H�
 | C6 — Risk & Trace (REDUCED) | #32 Risk & #24 Trace **REDUCE**: deterministic priority ranking + timeline NetFlow metadata (`/api/v1/timeline`); không FFI phức tạp, không quy kết danh tính. |
 | C7 — Encryption & Key Lifecycle (DEFERRED) | #26 **DEFER**: giữ SQLite key metadata audit + SHA-256 verification + localhost-only; hoãn full AES-256-GCM & 30-min rotation. |
 | C8 — Adaptive Response (DEFERRED) | #27 **DEFER**: không triển khai response/rotation tự động trong Demo MVP M6. |
-| C9 — Desktop App, FastAPI, SQLite & Demo Ingestion | **Python FastAPI + SQLite** (#30 CLOSED), 4-model inference, `prepare_demo_dataset.py` và `API_CONTRACT.md` **IMPLEMENTED / TESTED**. **PR #47** (#46/#58) chờ maintainer merge. **Desktop UI Rust/Tauri 2 + Svelte 5** (#16) đang **PLANNED** là trọng tâm xây dựng tiếp theo. |
+| C9 — Desktop App, FastAPI, SQLite & Demo Ingestion | **Python FastAPI + SQLite** (#30 CLOSED), `/api/v1/csv/*`, provenance verification (`source:nf-v3-canonical` vs `source:nf-v3-unverified`), OOD inference/risk abstention (`ABSTAINED_OOD`), `prepare_demo_dataset.py` và `API_CONTRACT.md` **IMPLEMENTED / TESTED**. **Desktop UI Rust/Tauri 2 + Svelte 5** (#16, `v0.6.0`) đã **IMPLEMENTED / TESTED** kèm bộ cài NSIS và release workflow `.github/workflows/release.yml`. |
 | C10 — Focused Experiments & Cross-Dataset M7 | #25 **REDUCE** từ 7 xuống các thí nghiệm ML trọng tâm (Exp 1–3/4); Exp 5–7 thu gọn/hoãn theo C5–C8. #48 Cross-dataset research (PR #49 `7344994`) nằm ở M7, không chặn Demo MVP. |
 | C11 — Delivery & QA | #18–#20, #60: đồng bộ docs, kịch bản demo offline trên Windows, báo cáo PDF, 10–12 slide và kiểm tra cổng bàn giao cuối kỳ. |
 

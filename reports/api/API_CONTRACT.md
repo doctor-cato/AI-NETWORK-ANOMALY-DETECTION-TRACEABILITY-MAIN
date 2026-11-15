@@ -2,13 +2,17 @@
 
 **API Title**: AI Network Anomaly Detection & Traceability API
 **Version**: 0.1.0
-**Total Endpoints**: 10
+**Total Endpoints**: 15
 
 ## Endpoints Specification
 
 | Method | Path | Summary | Tags |
 |---|---|---|---|
 | `POST` | `/api/v1/analyze` | Run anomaly detection on network flows | Analysis |
+| `POST` | `/api/v1/csv/analyze` | Run verified batch inference on local NetFlow CSV with OOD, timeline, and risk scoring | Models & CSV |
+| `POST` | `/api/v1/csv/evaluate` | Evaluate CSV predictions against a separate Ground Truth CSV | Models & CSV |
+| `POST` | `/api/v1/csv/export` | Export predictions CSV and companion SHA-256 provenance JSON | Models & CSV |
+| `POST` | `/api/v1/csv/inspect` | Validate CSV contract, exclude leakage targets/metadata, and preview rows | Models & CSV |
 | `GET` | `/api/v1/health` | System and artifact health check (v1) | System |
 | `GET` | `/api/v1/incidents` | List detected security incidents | Incidents |
 | `POST` | `/api/v1/incidents` | Create an incident alert manually | Incidents |
@@ -16,6 +20,7 @@
 | `PATCH` | `/api/v1/incidents/{incident_id}` | Update incident status or details | Incidents |
 | `POST` | `/api/v1/ingest` | Ingest network flow telemetry events | Ingestion |
 | `GET` | `/api/v1/keys` | List cryptographic key metadata | Key Lifecycle |
+| `GET` | `/api/v1/models` | List readiness and provenance status for all 4 M6 models | Models & CSV |
 | `POST` | `/api/v1/rotation` | Trigger key metadata rotation audit lifecycle (dry-run safe) | Key Lifecycle |
 | `GET` | `/api/v1/rotation/audit` | Query key rotation audit log | Key Lifecycle |
 | `GET` | `/api/v1/timeline` | Chronological timeline of events, alerts, and key rotations | Timeline |

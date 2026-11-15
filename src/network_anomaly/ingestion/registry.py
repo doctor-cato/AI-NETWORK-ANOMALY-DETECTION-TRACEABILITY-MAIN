@@ -63,6 +63,39 @@ class SourceRegistry:
             )
         )
 
+        # 2b. NF-CSE-CIC-IDS2018-v3 (Verified Cross-Domain Research Benchmark)
+        self.register(
+            SourceDefinition(
+                source_id="source:nf-cse-cic-ids2018-v3",
+                name="NF-CSE-CIC-IDS2018-v3 Cross-Domain Benchmark",
+                physical_format="csv",
+                schema_version="1.0.0",
+                ml_supported=True,
+                trace_supported=True,
+                description="Verified NetFlow v3 55-column cross-domain benchmark dataset (CSE-CIC-IDS2018).",
+                expected_columns=list(ALL_COLUMNS),
+                adapter_name="NetFlowV3Adapter",
+            )
+        )
+
+        # 2c. Unverified NetFlow v3 CSV (Arbitrary / External CSV without verified provenance)
+        self.register(
+            SourceDefinition(
+                source_id="source:nf-v3-unverified",
+                name="Unverified NetFlow v3 CSV Input",
+                physical_format="csv",
+                schema_version="1.0.0",
+                ml_supported=True,
+                trace_supported=True,
+                description=(
+                    "NetFlow v3 47-feature CSV file without verified canonical benchmark provenance. "
+                    "Assigned VALIDATION_NOT_VERIFIED and requires explicit research/unverified opt-in."
+                ),
+                expected_columns=list(ALL_COLUMNS),
+                adapter_name="NetFlowV3Adapter",
+            )
+        )
+
         # 3. Zeek conn.log
         self.register(
             SourceDefinition(

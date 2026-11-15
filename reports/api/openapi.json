@@ -613,6 +613,200 @@
           }
         }
       }
+    },
+    "/api/v1/models": {
+      "get": {
+        "tags": [
+          "Models & CSV"
+        ],
+        "summary": "List readiness and provenance status for all 4 M6 models",
+        "description": "Return genuine readiness, artifact digest, and threshold metadata.",
+        "operationId": "list_models_status_api_v1_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelStatusItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Models Status Api V1 Models Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/csv/inspect": {
+      "post": {
+        "tags": [
+          "Models & CSV"
+        ],
+        "summary": "Validate CSV contract, exclude leakage targets/metadata, and preview rows",
+        "description": "Inspect local NetFlow CSV safely before ML inference.",
+        "operationId": "inspect_csv_api_v1_csv_inspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsvInspectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvInspectResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/csv/analyze": {
+      "post": {
+        "tags": [
+          "Models & CSV"
+        ],
+        "summary": "Run verified batch inference on local NetFlow CSV with OOD, timeline, and risk scoring",
+        "description": "Execute verified ML inference, deterministic risk scoring (#32), and timeline (#24).",
+        "operationId": "analyze_csv_api_v1_csv_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsvAnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvAnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/csv/evaluate": {
+      "post": {
+        "tags": [
+          "Models & CSV"
+        ],
+        "summary": "Evaluate CSV predictions against a separate Ground Truth CSV",
+        "description": "Compute confusion matrix and binary/per-attack metrics using Ground Truth CSV.",
+        "operationId": "evaluate_csv_api_v1_csv_evaluate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsvEvaluateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvEvaluateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/csv/export": {
+      "post": {
+        "tags": [
+          "Models & CSV"
+        ],
+        "summary": "Export predictions CSV and companion SHA-256 provenance JSON",
+        "description": "Export analyzed flow predictions safely without overwriting source CSV.",
+        "operationId": "export_csv_api_v1_csv_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CsvExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvExportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -984,6 +1178,1263 @@
         ],
         "title": "AnalyzeResultItem",
         "description": "Single inference result row preserving model-specific anomaly score semantics."
+      },
+      "AttackBreakdownRow": {
+        "properties": {
+          "attack_category": {
+            "type": "string",
+            "title": "Attack Category"
+          },
+          "total_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Count"
+          },
+          "tp_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Tp Count"
+          },
+          "fn_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Fn Count"
+          },
+          "detection_rate": {
+            "type": "number",
+            "title": "Detection Rate"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "attack_category",
+          "total_count",
+          "tp_count",
+          "fn_count",
+          "detection_rate"
+        ],
+        "title": "AttackBreakdownRow",
+        "description": "Per-attack detection breakdown when ground-truth Attack categories exist."
+      },
+      "BehavioralSummarySchema": {
+        "properties": {
+          "total_flows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Flows"
+          },
+          "unique_src_ips": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Src Ips"
+          },
+          "unique_dst_ips": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Dst Ips"
+          },
+          "unique_src_ports": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Src Ports"
+          },
+          "unique_dst_ports": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unique Dst Ports"
+          },
+          "time_window_start_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Window Start Ms"
+          },
+          "time_window_end_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Window End Ms"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "top_src_ips": {
+            "items": {
+              "$ref": "#/components/schemas/BehavioralTopItem"
+            },
+            "type": "array",
+            "title": "Top Src Ips"
+          },
+          "top_dst_ips": {
+            "items": {
+              "$ref": "#/components/schemas/BehavioralTopItem"
+            },
+            "type": "array",
+            "title": "Top Dst Ips"
+          },
+          "top_dst_ports": {
+            "items": {
+              "$ref": "#/components/schemas/BehavioralTopItem"
+            },
+            "type": "array",
+            "title": "Top Dst Ports"
+          },
+          "protocol_counts": {
+            "items": {
+              "$ref": "#/components/schemas/BehavioralTopItem"
+            },
+            "type": "array",
+            "title": "Protocol Counts"
+          },
+          "excluded_from_ml_features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Excluded From Ml Features"
+          },
+          "non_attribution_notice": {
+            "type": "string",
+            "title": "Non Attribution Notice"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_flows",
+          "unique_src_ips",
+          "unique_dst_ips",
+          "unique_src_ports",
+          "unique_dst_ports",
+          "non_attribution_notice"
+        ],
+        "title": "BehavioralSummarySchema",
+        "description": "Pure descriptive statistics derived solely from NetFlow metadata (#28)."
+      },
+      "BehavioralTopItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Count"
+          },
+          "share": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Share"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "count",
+          "share"
+        ],
+        "title": "BehavioralTopItem",
+        "description": "Descriptive frequency entry for non-ML NetFlow behavioral statistics (#28)."
+      },
+      "CompatibilityGateSummarySchema": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id",
+            "default": "source:nf-v3-unverified"
+          },
+          "provenance_verified": {
+            "type": "boolean",
+            "title": "Provenance Verified",
+            "default": false
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "model_identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Identifier"
+          },
+          "eligible": {
+            "type": "boolean",
+            "title": "Eligible"
+          },
+          "eligibility_status": {
+            "type": "string",
+            "title": "Eligibility Status"
+          },
+          "compatibility_status": {
+            "type": "string",
+            "title": "Compatibility Status"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "missing_features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Features"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model_key",
+          "eligible",
+          "eligibility_status",
+          "compatibility_status"
+        ],
+        "title": "CompatibilityGateSummarySchema",
+        "description": "Feature compatibility and inference eligibility gate decision (#46)."
+      },
+      "CsvAnalyzeRequest": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "File Path"
+          },
+          "model_name": {
+            "type": "string",
+            "title": "Model Name",
+            "default": "random_forest"
+          },
+          "create_incidents": {
+            "type": "boolean",
+            "title": "Create Incidents",
+            "default": false
+          },
+          "batch_size": {
+            "type": "integer",
+            "maximum": 5000.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "default": 500
+          },
+          "include_timeline": {
+            "type": "boolean",
+            "title": "Include Timeline",
+            "default": true
+          },
+          "allow_research_only": {
+            "type": "boolean",
+            "title": "Allow Research Only",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "CsvAnalyzeRequest",
+        "description": "Request to run verified ML batch inference on a local NetFlow CSV."
+      },
+      "CsvAnalyzeResponse": {
+        "properties": {
+          "analysis_id": {
+            "type": "string",
+            "title": "Analysis Id"
+          },
+          "analyzed_at_utc": {
+            "type": "string",
+            "title": "Analyzed At Utc"
+          },
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "file_sha256": {
+            "type": "string",
+            "title": "File Sha256"
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "model_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Sha256"
+          },
+          "preprocessor_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preprocessor Sha256"
+          },
+          "inference_mode": {
+            "type": "string",
+            "title": "Inference Mode"
+          },
+          "total_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Rows"
+          },
+          "evaluated_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated Rows",
+            "default": 0
+          },
+          "abstained_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Abstained Rows",
+            "default": 0
+          },
+          "prediction_coverage": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Prediction Coverage",
+            "default": 1.0
+          },
+          "benign_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Benign Count"
+          },
+          "attack_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Attack Count"
+          },
+          "ood_flagged_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Ood Flagged Count"
+          },
+          "abstained_risk_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Abstained Risk Count"
+          },
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold"
+          },
+          "score_type": {
+            "type": "string",
+            "title": "Score Type"
+          },
+          "score_direction": {
+            "type": "string",
+            "title": "Score Direction"
+          },
+          "compatibility_gate": {
+            "$ref": "#/components/schemas/CompatibilityGateSummarySchema"
+          },
+          "ood_report": {
+            "$ref": "#/components/schemas/OodSummarySchema"
+          },
+          "behavioral_summary": {
+            "$ref": "#/components/schemas/BehavioralSummarySchema"
+          },
+          "security_notice": {
+            "type": "string",
+            "title": "Security Notice"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CsvFlowPredictionItem"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/CsvTimelineItem"
+            },
+            "type": "array",
+            "title": "Timeline"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "analysis_id",
+          "analyzed_at_utc",
+          "file_path",
+          "file_sha256",
+          "model_key",
+          "model_type",
+          "inference_mode",
+          "total_rows",
+          "benign_count",
+          "attack_count",
+          "ood_flagged_count",
+          "abstained_risk_count",
+          "score_type",
+          "score_direction",
+          "compatibility_gate",
+          "ood_report",
+          "behavioral_summary",
+          "security_notice",
+          "results"
+        ],
+        "title": "CsvAnalyzeResponse",
+        "description": "Full verified inference, OOD, gate, behavioral summary, and timeline response."
+      },
+      "CsvEvaluateRequest": {
+        "properties": {
+          "labels_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Labels Path"
+          },
+          "predictions": {
+            "items": {
+              "$ref": "#/components/schemas/CsvFlowPredictionItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Predictions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "labels_path",
+          "predictions"
+        ],
+        "title": "CsvEvaluateRequest",
+        "description": "Evaluate model predictions against a separate Ground Truth CSV file."
+      },
+      "CsvEvaluateResponse": {
+        "properties": {
+          "labels_path": {
+            "type": "string",
+            "title": "Labels Path"
+          },
+          "labels_sha256": {
+            "type": "string",
+            "title": "Labels Sha256"
+          },
+          "total_prediction_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Prediction Rows",
+            "default": 0
+          },
+          "matched_label_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Matched Label Rows",
+            "default": 0
+          },
+          "matched_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Matched Rows"
+          },
+          "evaluated_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated Rows",
+            "default": 0
+          },
+          "unmatched_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unmatched Rows"
+          },
+          "abstained_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Abstained Rows",
+            "default": 0
+          },
+          "label_match_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Label Match Rate",
+            "default": 1.0
+          },
+          "prediction_coverage": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Prediction Coverage",
+            "default": 1.0
+          },
+          "accuracy": {
+            "type": "number",
+            "title": "Accuracy"
+          },
+          "precision": {
+            "type": "number",
+            "title": "Precision"
+          },
+          "recall": {
+            "type": "number",
+            "title": "Recall"
+          },
+          "f1": {
+            "type": "number",
+            "title": "F1"
+          },
+          "false_positive_rate": {
+            "type": "number",
+            "title": "False Positive Rate"
+          },
+          "true_negative_rate": {
+            "type": "number",
+            "title": "True Negative Rate"
+          },
+          "confusion_matrix": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Confusion Matrix"
+          },
+          "attack_breakdown": {
+            "items": {
+              "$ref": "#/components/schemas/AttackBreakdownRow"
+            },
+            "type": "array",
+            "title": "Attack Breakdown"
+          },
+          "scientific_notice": {
+            "type": "string",
+            "title": "Scientific Notice"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "labels_path",
+          "labels_sha256",
+          "matched_rows",
+          "unmatched_rows",
+          "accuracy",
+          "precision",
+          "recall",
+          "f1",
+          "false_positive_rate",
+          "true_negative_rate",
+          "confusion_matrix",
+          "scientific_notice"
+        ],
+        "title": "CsvEvaluateResponse",
+        "description": "Confusion matrix, primary metrics, and per-attack breakdown against Ground Truth."
+      },
+      "CsvExportRequest": {
+        "properties": {
+          "output_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Output Path"
+          },
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analysis Id"
+          },
+          "source_csv_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Csv Path"
+          },
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "model_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Sha256"
+          },
+          "preprocessor_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preprocessor Sha256"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CsvFlowPredictionItem"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Results"
+          },
+          "evaluation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CsvEvaluateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "output_path",
+          "model_key",
+          "model_type",
+          "results"
+        ],
+        "title": "CsvExportRequest",
+        "description": "Export row-aligned predictions CSV and companion provenance JSON."
+      },
+      "CsvExportResponse": {
+        "properties": {
+          "csv_path": {
+            "type": "string",
+            "title": "Csv Path"
+          },
+          "metadata_path": {
+            "type": "string",
+            "title": "Metadata Path"
+          },
+          "csv_sha256": {
+            "type": "string",
+            "title": "Csv Sha256"
+          },
+          "metadata_sha256": {
+            "type": "string",
+            "title": "Metadata Sha256"
+          },
+          "rows_exported": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Rows Exported"
+          },
+          "exported_at_utc": {
+            "type": "string",
+            "title": "Exported At Utc"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "csv_path",
+          "metadata_path",
+          "csv_sha256",
+          "metadata_sha256",
+          "rows_exported",
+          "exported_at_utc"
+        ],
+        "title": "CsvExportResponse",
+        "description": "Provenance confirmation of exported CSV and metadata JSON files."
+      },
+      "CsvFlowPredictionItem": {
+        "properties": {
+          "row_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Row Id"
+          },
+          "row_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Row Index"
+          },
+          "predicted_label": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Label"
+          },
+          "predicted_class": {
+            "type": "string",
+            "title": "Predicted Class"
+          },
+          "attack_probability": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Probability"
+          },
+          "raw_anomaly_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Anomaly Score"
+          },
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold"
+          },
+          "score_type": {
+            "type": "string",
+            "title": "Score Type"
+          },
+          "score_direction": {
+            "type": "string",
+            "title": "Score Direction"
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level"
+          },
+          "is_ood_flagged": {
+            "type": "boolean",
+            "title": "Is Ood Flagged",
+            "default": false
+          },
+          "ood_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ood Reason"
+          },
+          "flow_start_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Start Ms"
+          },
+          "flow_end_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow End Ms"
+          },
+          "src_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Src Ip"
+          },
+          "dst_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dst Ip"
+          },
+          "src_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Src Port"
+          },
+          "dst_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dst Port"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol"
+          },
+          "flow_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Duration Ms"
+          },
+          "min_ttl": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Ttl"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row_id",
+          "row_index",
+          "predicted_class",
+          "score_type",
+          "score_direction",
+          "risk_level"
+        ],
+        "title": "CsvFlowPredictionItem",
+        "description": "Row-aligned CSV prediction item preserving row_id, OOD flag, and deterministic risk."
+      },
+      "CsvInspectRequest": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "minLength": 1,
+            "title": "File Path"
+          },
+          "preview_limit": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Preview Limit",
+            "default": 20
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "CsvInspectRequest",
+        "description": "Request to validate and preview a local NetFlow CSV file."
+      },
+      "CsvInspectResponse": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "file_name": {
+            "type": "string",
+            "title": "File Name"
+          },
+          "file_sha256": {
+            "type": "string",
+            "title": "File Sha256"
+          },
+          "file_size_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "File Size Bytes"
+          },
+          "row_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Row Count"
+          },
+          "column_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Column Count"
+          },
+          "ml_feature_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Ml Feature Count"
+          },
+          "ml_features_valid": {
+            "type": "boolean",
+            "title": "Ml Features Valid"
+          },
+          "missing_ml_features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Ml Features"
+          },
+          "target_columns_excluded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Target Columns Excluded"
+          },
+          "trace_metadata_excluded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Trace Metadata Excluded"
+          },
+          "other_extra_columns_excluded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Other Extra Columns Excluded"
+          },
+          "non_finite_feature_cells": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Non Finite Feature Cells",
+            "default": 0
+          },
+          "ood_report": {
+            "$ref": "#/components/schemas/OodSummarySchema"
+          },
+          "behavioral_summary": {
+            "$ref": "#/components/schemas/BehavioralSummarySchema"
+          },
+          "models_status": {
+            "items": {
+              "$ref": "#/components/schemas/ModelStatusItem"
+            },
+            "type": "array",
+            "title": "Models Status"
+          },
+          "preview_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Preview Columns"
+          },
+          "preview_rows": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Preview Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "file_path",
+          "file_name",
+          "file_sha256",
+          "file_size_bytes",
+          "row_count",
+          "column_count",
+          "ml_feature_count",
+          "ml_features_valid",
+          "ood_report",
+          "behavioral_summary"
+        ],
+        "title": "CsvInspectResponse",
+        "description": "Validated CSV contract inspection and preview response."
+      },
+      "CsvTimelineItem": {
+        "properties": {
+          "sequence_index": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sequence Index"
+          },
+          "row_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Row Id"
+          },
+          "flow_start_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow Start Ms"
+          },
+          "flow_end_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flow End Ms"
+          },
+          "timestamp_iso": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp Iso"
+          },
+          "src_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Src Ip"
+          },
+          "dst_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dst Ip"
+          },
+          "src_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Src Port"
+          },
+          "dst_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dst Port"
+          },
+          "predicted_class": {
+            "type": "string",
+            "title": "Predicted Class"
+          },
+          "risk_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Score"
+          },
+          "risk_level": {
+            "type": "string",
+            "title": "Risk Level"
+          },
+          "is_ood_flagged": {
+            "type": "boolean",
+            "title": "Is Ood Flagged",
+            "default": false
+          },
+          "evidence_summary": {
+            "type": "string",
+            "title": "Evidence Summary"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "sequence_index",
+          "row_id",
+          "predicted_class",
+          "risk_level",
+          "evidence_summary"
+        ],
+        "title": "CsvTimelineItem",
+        "description": "Deterministic forensic timeline event ordered by (flow_start_ms asc, row_id asc) (#24)."
       },
       "FlowEventInput": {
         "properties": {
@@ -1660,6 +3111,219 @@
         ],
         "title": "KeyRotationResponse",
         "description": "Response returned upon key rotation action."
+      },
+      "ModelStatusItem": {
+        "properties": {
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "artifact_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Path"
+          },
+          "manifest_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Path"
+          },
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Sha256"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold"
+          },
+          "score_semantics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score Semantics"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model_key",
+          "display_name",
+          "model_type",
+          "ready",
+          "status"
+        ],
+        "title": "ModelStatusItem",
+        "description": "Readiness and provenance status for one of the 4 canonical M6 models."
+      },
+      "OodSummarySchema": {
+        "properties": {
+          "total_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Rows"
+          },
+          "has_ood_warning": {
+            "type": "boolean",
+            "title": "Has Ood Warning"
+          },
+          "hard_violation_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Hard Violation Count"
+          },
+          "shortcut_shift_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Shortcut Shift Count"
+          },
+          "zero_ttl_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Zero Ttl Count"
+          },
+          "affected_rows_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Affected Rows Count"
+          },
+          "shortcut_drift_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Shortcut Drift Ratio"
+          },
+          "zero_ttl_ratio": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Zero Ttl Ratio"
+          },
+          "abstention_rate": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Abstention Rate"
+          },
+          "prediction_coverage": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Prediction Coverage"
+          },
+          "ood_flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ood Flags"
+          },
+          "hard_violation_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Hard Violation Indices"
+          },
+          "zero_ttl_indices": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Zero Ttl Indices"
+          },
+          "out_of_range_details": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Out Of Range Details"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "total_rows",
+          "has_ood_warning",
+          "hard_violation_count",
+          "shortcut_shift_count",
+          "zero_ttl_count",
+          "affected_rows_count",
+          "shortcut_drift_ratio",
+          "zero_ttl_ratio",
+          "abstention_rate",
+          "prediction_coverage"
+        ],
+        "title": "OodSummarySchema",
+        "description": "Summary of Out-of-Distribution protocol invariants and telemetry drift."
       },
       "PaginatedIncidentsResponse": {
         "properties": {

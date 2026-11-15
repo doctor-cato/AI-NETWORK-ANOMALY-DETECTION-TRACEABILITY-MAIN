@@ -9,6 +9,7 @@ external KMS integration is required for active payload encryption).
 from __future__ import annotations
 
 import contextlib
+import os
 import sqlite3
 from pathlib import Path
 from typing import Generator, Optional, Union
@@ -138,7 +139,13 @@ class DatabaseManager:
             Defaults to DEFAULT_DB_PATH.
         """
         if db_path is None:
-            self.db_path: Union[str, Path] = DEFAULT_DB_PATH
+            env_db_path = os.environ.get("NETWORK_ANOMALY_DB_PATH", "").strip()
+            if env_db_path == ":memory:":
+                self.db_path: Union[str, Path] = ":memory:"
+            elif env_db_path:
+                self.db_path = Path(env_db_path)
+            else:
+                self.db_path = DEFAULT_DB_PATH
         elif str(db_path) == ":memory:":
             self.db_path = ":memory:"
         else:

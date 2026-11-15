@@ -536,3 +536,322 @@ class ErrorDetailResponse(BaseModel):
     error: str = Field(..., description="High-level error classification")
     detail: str = Field(..., description="Safe description of the validation or business failure")
     status_code: int = Field(..., ge=400, le=599)
+
+
+# ---------------------------------------------------------------------------
+# Desktop M6 CSV Inspection, Batch Inference, Evaluation & Export Schemas
+# ---------------------------------------------------------------------------
+
+
+class ModelStatusItem(BaseModel):
+    """Readiness and provenance status for one of the 4 canonical M6 models."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_key: str
+    display_name: str
+    model_type: str
+    ready: bool
+    status: str
+    artifact_path: Optional[str] = None
+    manifest_path: Optional[str] = None
+    artifact_sha256: Optional[str] = None
+    run_id: Optional[str] = None
+    decision_threshold: Optional[float] = None
+    score_semantics: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class CsvInspectRequest(BaseModel):
+    """Request to validate and preview a local NetFlow CSV file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    file_path: str = Field(..., min_length=1)
+    preview_limit: int = Field(default=20, ge=1, le=200)
+
+
+class OodSummarySchema(BaseModel):
+    """Summary of Out-of-Distribution protocol invariants and telemetry drift."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total_rows: int = Field(..., ge=0)
+    has_ood_warning: bool
+    hard_violation_count: int = Field(..., ge=0)
+    shortcut_shift_count: int = Field(..., ge=0)
+    zero_ttl_count: int = Field(..., ge=0)
+    affected_rows_count: int = Field(..., ge=0)
+    shortcut_drift_ratio: float = Field(..., ge=0.0, le=1.0)
+    zero_ttl_ratio: float = Field(..., ge=0.0, le=1.0)
+    abstention_rate: float = Field(..., ge=0.0, le=1.0)
+    prediction_coverage: float = Field(..., ge=0.0, le=1.0)
+    ood_flags: List[str] = Field(default_factory=list)
+    hard_violation_indices: List[int] = Field(default_factory=list)
+    zero_ttl_indices: List[int] = Field(default_factory=list)
+    out_of_range_details: Dict[str, int] = Field(default_factory=dict)
+
+
+class CompatibilityGateSummarySchema(BaseModel):
+    """Feature compatibility and inference eligibility gate decision (#46)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(default="source:nf-v3-unverified")
+    provenance_verified: bool = Field(default=False)
+    model_key: str
+    model_identifier: Optional[str] = None
+    eligible: bool
+    eligibility_status: str
+    compatibility_status: str
+    reasons: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    missing_features: List[str] = Field(default_factory=list)
+
+
+class BehavioralTopItem(BaseModel):
+    """Descriptive frequency entry for non-ML NetFlow behavioral statistics (#28)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    count: int = Field(..., ge=0)
+    share: float = Field(..., ge=0.0, le=1.0)
+
+
+class BehavioralSummarySchema(BaseModel):
+    """Pure descriptive statistics derived solely from NetFlow metadata (#28)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total_flows: int = Field(..., ge=0)
+    unique_src_ips: int = Field(..., ge=0)
+    unique_dst_ips: int = Field(..., ge=0)
+    unique_src_ports: int = Field(..., ge=0)
+    unique_dst_ports: int = Field(..., ge=0)
+    time_window_start_ms: Optional[int] = None
+    time_window_end_ms: Optional[int] = None
+    duration_ms: Optional[int] = None
+    top_src_ips: List[BehavioralTopItem] = Field(default_factory=list)
+    top_dst_ips: List[BehavioralTopItem] = Field(default_factory=list)
+    top_dst_ports: List[BehavioralTopItem] = Field(default_factory=list)
+    protocol_counts: List[BehavioralTopItem] = Field(default_factory=list)
+    excluded_from_ml_features: List[str] = Field(default_factory=list)
+    non_attribution_notice: str
+
+
+class CsvInspectResponse(BaseModel):
+    """Validated CSV contract inspection and preview response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    file_path: str
+    file_name: str
+    file_sha256: str
+    file_size_bytes: int = Field(..., ge=0)
+    row_count: int = Field(..., ge=0)
+    column_count: int = Field(..., ge=0)
+    ml_feature_count: int = Field(..., ge=0)
+    ml_features_valid: bool
+    missing_ml_features: List[str] = Field(default_factory=list)
+    target_columns_excluded: List[str] = Field(default_factory=list)
+    trace_metadata_excluded: List[str] = Field(default_factory=list)
+    other_extra_columns_excluded: List[str] = Field(default_factory=list)
+    non_finite_feature_cells: int = Field(default=0, ge=0)
+    ood_report: OodSummarySchema
+    behavioral_summary: BehavioralSummarySchema
+    models_status: List[ModelStatusItem] = Field(default_factory=list)
+    preview_columns: List[str] = Field(default_factory=list)
+    preview_rows: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class CsvAnalyzeRequest(BaseModel):
+    """Request to run verified ML batch inference on a local NetFlow CSV."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    file_path: str = Field(..., min_length=1)
+    model_name: str = Field(default="random_forest")
+    create_incidents: bool = Field(default=False)
+    batch_size: int = Field(default=500, ge=1, le=5000)
+    include_timeline: bool = Field(default=True)
+    allow_research_only: bool = Field(default=True)
+
+    @field_validator("model_name")
+    @classmethod
+    def _validate_model_name(cls, v: str) -> str:
+        return canonicalize_model_name(v)
+
+
+class CsvFlowPredictionItem(BaseModel):
+    """Row-aligned CSV prediction item preserving row_id, OOD flag, and deterministic risk."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row_id: Union[int, str]
+    row_index: int = Field(..., ge=0)
+    predicted_label: Optional[int] = Field(default=None, ge=0, le=1)
+    predicted_class: str
+    attack_probability: Optional[float] = None
+    raw_anomaly_score: Optional[float] = None
+    decision_threshold: Optional[float] = None
+    score_type: str
+    score_direction: str
+    risk_score: Optional[float] = None
+    risk_level: str
+    is_ood_flagged: bool = False
+    ood_reason: Optional[str] = None
+    flow_start_ms: Optional[int] = None
+    flow_end_ms: Optional[int] = None
+    src_ip: Optional[str] = None
+    dst_ip: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_port: Optional[int] = None
+    protocol: Optional[int] = None
+    flow_duration_ms: Optional[int] = None
+    min_ttl: Optional[float] = None
+
+    @field_validator(
+        "attack_probability",
+        "raw_anomaly_score",
+        "decision_threshold",
+        "risk_score",
+        "min_ttl",
+    )
+    @classmethod
+    def _validate_optional_finite(cls, v: Optional[float], info: Any) -> Optional[float]:
+        if v is None:
+            return None
+        return _require_finite_float(v, info.field_name)
+
+
+class CsvTimelineItem(BaseModel):
+    """Deterministic forensic timeline event ordered by (flow_start_ms asc, row_id asc) (#24)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sequence_index: int = Field(..., ge=0)
+    row_id: Union[int, str]
+    flow_start_ms: Optional[int] = None
+    flow_end_ms: Optional[int] = None
+    timestamp_iso: Optional[str] = None
+    src_ip: Optional[str] = None
+    dst_ip: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_port: Optional[int] = None
+    predicted_class: str
+    risk_score: Optional[float] = None
+    risk_level: str
+    is_ood_flagged: bool = False
+    evidence_summary: str
+
+
+class CsvAnalyzeResponse(BaseModel):
+    """Full verified inference, OOD, gate, behavioral summary, and timeline response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    analysis_id: str
+    analyzed_at_utc: str
+    file_path: str
+    file_sha256: str
+    model_key: str
+    model_type: str
+    run_id: Optional[str] = None
+    model_sha256: Optional[str] = None
+    preprocessor_sha256: Optional[str] = None
+    inference_mode: str
+    total_rows: int = Field(..., ge=0)
+    evaluated_rows: int = Field(default=0, ge=0)
+    abstained_rows: int = Field(default=0, ge=0)
+    prediction_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    benign_count: int = Field(..., ge=0)
+    attack_count: int = Field(..., ge=0)
+    ood_flagged_count: int = Field(..., ge=0)
+    abstained_risk_count: int = Field(..., ge=0)
+    decision_threshold: Optional[float] = None
+    score_type: str
+    score_direction: str
+    compatibility_gate: CompatibilityGateSummarySchema
+    ood_report: OodSummarySchema
+    behavioral_summary: BehavioralSummarySchema
+    security_notice: str
+    results: List[CsvFlowPredictionItem]
+    timeline: List[CsvTimelineItem] = Field(default_factory=list)
+
+
+class CsvEvaluateRequest(BaseModel):
+    """Evaluate model predictions against a separate Ground Truth CSV file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    labels_path: str = Field(..., min_length=1)
+    predictions: List[CsvFlowPredictionItem] = Field(..., min_length=1)
+
+
+class AttackBreakdownRow(BaseModel):
+    """Per-attack detection breakdown when ground-truth Attack categories exist."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    attack_category: str
+    total_count: int = Field(..., ge=0)
+    tp_count: int = Field(..., ge=0)
+    fn_count: int = Field(..., ge=0)
+    detection_rate: float
+
+
+class CsvEvaluateResponse(BaseModel):
+    """Confusion matrix, primary metrics, and per-attack breakdown against Ground Truth."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    labels_path: str
+    labels_sha256: str
+    total_prediction_rows: int = Field(default=0, ge=0)
+    matched_label_rows: int = Field(default=0, ge=0)
+    matched_rows: int = Field(..., ge=0)
+    evaluated_rows: int = Field(default=0, ge=0)
+    unmatched_rows: int = Field(..., ge=0)
+    abstained_rows: int = Field(default=0, ge=0)
+    label_match_rate: float = Field(default=1.0, ge=0.0, le=1.0)
+    prediction_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    accuracy: float
+    precision: float
+    recall: float
+    f1: float
+    false_positive_rate: float
+    true_negative_rate: float
+    confusion_matrix: Dict[str, int]
+    attack_breakdown: List[AttackBreakdownRow] = Field(default_factory=list)
+    scientific_notice: str
+
+
+class CsvExportRequest(BaseModel):
+    """Export row-aligned predictions CSV and companion provenance JSON."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    output_path: str = Field(..., min_length=1)
+    analysis_id: Optional[str] = None
+    source_csv_path: Optional[str] = None
+    model_key: str
+    model_type: str
+    run_id: Optional[str] = None
+    model_sha256: Optional[str] = None
+    preprocessor_sha256: Optional[str] = None
+    results: List[CsvFlowPredictionItem] = Field(..., min_length=1)
+    evaluation: Optional[CsvEvaluateResponse] = None
+
+
+class CsvExportResponse(BaseModel):
+    """Provenance confirmation of exported CSV and metadata JSON files."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    csv_path: str
+    metadata_path: str
+    csv_sha256: str
+    metadata_sha256: str
+    rows_exported: int = Field(..., ge=0)
+    exported_at_utc: str

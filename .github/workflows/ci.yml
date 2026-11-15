@@ -14,6 +14,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
       - name: Install quality tools
         run: python -m pip install ruff black
       - name: Ruff
@@ -33,10 +35,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
       - name: Install dependencies
         run: pip install -e .
       - name: Check environment
         run: python scripts/check_environment.py
+      - name: Check OpenAPI & API contract sync
+        run: python scripts/export_openapi_spec.py --check
       - name: Check syntax
         run: python -m compileall -q src scripts tests
       - name: Check imports (core modules, not just syntax)
@@ -52,3 +58,68 @@ jobs:
         run: python scripts/verify_eda_reproducibility.py
       - name: Preprocess NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
         run: python scripts/preprocess_nf_unsw_nb15_v3.py
+
+  desktop-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install frontend dependencies
+        run: npm --prefix desktop ci
+      - name: Svelte & TypeScript typecheck
+        run: npm --prefix desktop run check
+      - name: Frontend unit tests
+        run: npm --prefix desktop test
+      - name: Vite production build
+        run: npm --prefix desktop run build
+
+  desktop-tauri-windows:
+    runs-on: windows-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_TERM_COLOR: "always"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: pyproject.toml
+      - name: Install Python backend dependencies
+        run: |
+          pip install fastapi uvicorn pydantic httpx pandas numpy scikit-learn joblib
+          pip install --no-deps -e .
+      - name: Verify desktop version consistency
+        run: python scripts/check_desktop_version.py --check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+          cache-on-failure: true
+      - name: Build Svelte frontend assets for Tauri embed
+        run: |
+          npm --prefix desktop ci
+          npm --prefix desktop run build
+      - name: Rust formatting check
+        run: cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
+      - name: Rust clippy lint
+        run: cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Rust desktop unit tests
+        env:
+          NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
+      - name: Build Windows desktop executable
+        run: cargo build --manifest-path desktop/src-tauri/Cargo.toml --bins
