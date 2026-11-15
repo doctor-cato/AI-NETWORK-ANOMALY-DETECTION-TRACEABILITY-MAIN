@@ -258,7 +258,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
-          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+          $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
           $exePath = "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe"
           if (-not (Test-Path $exePath)) {
             Write-Error "Missing compiled Windows executable: $exePath"
@@ -316,7 +316,7 @@ jobs:
               exit 1
             }
           } else {
-            if (-not $isPrerelease) {
+            if ($isStableRelease) {
               Write-Error (
                 "FAIL-CLOSED: Refusing Stable release ($tagName) because live 4-model companion artifacts " +
                 "are NOT READY on this runner. Historical attestation JSON in reports/releases/ MUST NOT " +
@@ -351,7 +351,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
-          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+          $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
 
           gh release view $tagName > $null 2>&1
           if ($LASTEXITCODE -eq 0) {
@@ -366,7 +366,7 @@ jobs:
           $nsisAttestation = Join-Path $stageDir "nsis_e2e_verification.json"
           $setupHash = (python -c "import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())" $setupDest).Trim().ToLower()
 
-          if (-not $isPrerelease) {
+          if ($isStableRelease) {
             if (-not (Test-Path $releaseAttestation)) {
               Write-Error "FAIL-CLOSED: Missing mandatory live release_e2e_verification.json for Stable release $tagName."
               exit 1

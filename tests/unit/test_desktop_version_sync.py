@@ -99,6 +99,13 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "git merge-base --is-ancestor $tagCommit origin/main" in release_yml
     # Ensure merge-base ancestry check is NOT conditionally skipped for prerelease tags
     assert "if (-not $isPrerelease)" not in release_yml
+    # Ensure F-01 clean NSIS + live 4-model E2E gate is enforced fail-closed for Stable releases
+    assert "--verify-nsis-only" in release_yml
+    assert "release_e2e_verification.json" in release_yml
+    assert "--expect-commit" in release_yml
+    assert "--expect-installer-sha256" in release_yml
+    assert "--require-nsis-e2e" in release_yml
+    assert "if ($isStableRelease)" in release_yml
     assert "gh release view $tagName" in release_yml
     assert "if: steps.meta.outputs.is_tag_push == 'true'" in release_yml
     assert "SHA256SUMS.txt" in release_yml
