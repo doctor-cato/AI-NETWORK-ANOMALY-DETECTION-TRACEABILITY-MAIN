@@ -524,8 +524,13 @@ class TestScenario4OODAndAntiImputationGate:
 class TestScenario5ApiHeuristicFallbackGuard:
     """Stress-test API service and FastAPI endpoint fail-closed behavior when model is absent."""
 
-    def test_service_analyze_flows_fails_closed_when_model_absent(self, tmp_path: Path):
+    def test_service_analyze_flows_fails_closed_when_model_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """ApiService.analyze_flows must raise ModelNotReadyError (HTTP 503) when fallback is disabled."""
+        monkeypatch.setattr(
+            "network_anomaly.api.service.ARTIFACTS", tmp_path / "nonexistent_artifacts"
+        )
         db = DatabaseManager(tmp_path / "test_empty_api.db")
         svc = ApiService(db)
 
@@ -551,8 +556,15 @@ class TestScenario5ApiHeuristicFallbackGuard:
         assert excinfo.value.status_code == 503
         assert "not ready" in excinfo.value.detail.lower()
 
-    def test_fastapi_analyze_endpoint_returns_503_when_model_absent(self):
+    def test_fastapi_analyze_endpoint_returns_503_when_model_absent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
         """FastAPI POST /api/v1/analyze must return HTTP 503 when fallback is disabled and model absent."""
+        monkeypatch.setattr(
+            "network_anomaly.api.service.ARTIFACTS", tmp_path / "nonexistent_artifacts"
+        )
+        if hasattr(app, "state") and hasattr(app.state, "service"):
+            app.state.service.invalidate_pipeline_cache()
         client = TestClient(app)
 
         payload = {

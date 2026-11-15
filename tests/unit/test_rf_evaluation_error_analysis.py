@@ -617,7 +617,20 @@ def test_fail_closed_prerequisites_when_binaries_missing(tmp_path: Path) -> None
     assert limitations["class_imbalance"]["test_total_rows"] == 345953
     assert limitations["rare_attack_classes"]["rare_categories_in_test"]["Worms"] == 36
     assert limitations["feature_overlap_ambiguity"]["overlapping_unique_feature_keys"] is None
-    assert limitations["evidence_status"] == "NOT VERIFIED"
+    assert limitations["evidence_status"] == "VERIFIED"
+
+    prep_default_path = (
+        Path(__file__).resolve().parents[2]
+        / "reports"
+        / "preprocessing"
+        / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    )
+    bad_prep_data = json.loads(prep_default_path.read_text(encoding="utf-8"))
+    bad_prep_data["split_manifest_sha256"] = "0" * 64
+    bad_prep_path = tmp_path / "bad_prep_manifest.json"
+    bad_prep_path.write_text(json.dumps(bad_prep_data), encoding="utf-8")
+    bad_limitations = compile_data_limitations_summary(preprocessing_manifest_path=bad_prep_path)
+    assert bad_limitations["evidence_status"] == "NOT VERIFIED"
 
 
 def test_compute_metrics_single_label_binary_expands_confusion_matrix() -> None:

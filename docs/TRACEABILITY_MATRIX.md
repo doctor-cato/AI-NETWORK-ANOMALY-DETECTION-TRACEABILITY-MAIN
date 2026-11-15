@@ -15,6 +15,7 @@ Trạng thái kiểm chứng: `PASS`, `FAIL`, `SKIPPED`, `NOT VERIFIED`.
 | C7 | AES-GCM và key lifecycle | #26 | integrity/recovery/rotation tests | PLANNED |
 | C8 | Adaptive response | #27 | cooldown/rate/idempotency/concurrency audit | PLANNED |
 | C9 | API, persistence, dashboard | #30, #16, #17 | OpenAPI, DB recovery, E2E | PLANNED |
+| C9/M6 | Ingestion đa nguồn, Adapter tương thích & Đánh giá Cross-Dataset | #46 | `src/network_anomaly/ingestion/`, `docs/MULTI_SOURCE_INGESTION.md`, `docs/FEATURE_COMPATIBILITY_MATRIX.md`, `scripts/evaluate_cross_dataset.py`, `scripts/fetch_external_dataset.py`, `reports/evaluation/cross_dataset_generalization_report.md` | IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED (43 tests PASS; 100k-row evaluation trên NF-CSE-CIC-IDS2018-v3 đo lường sự sụp đổ của shortcut MIN_TTL và chứng minh tính cấp thiết của OOD Gate) |
 | C10 | 7 experiments | #25 | protocol, artifacts, results, limitations | PLANNED |
 | C11 | Delivery | #18–#20 | PDF, slides, demo, guides, 5-role handoff | PLANNED |
 

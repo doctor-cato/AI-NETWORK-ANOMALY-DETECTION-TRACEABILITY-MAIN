@@ -147,10 +147,16 @@ def test_verify_index_disjointness_fail_closed_when_indices_missing(tmp_path: Pa
     assert any("missing partition index file" in e for e in errors)
 
 
-def test_check_prerequisites_sets_disjoint_flag_false_when_indices_missing() -> None:
+def test_check_prerequisites_sets_disjoint_flag_false_when_indices_missing(
+    tmp_path: Path,
+) -> None:
     """Verify check_test_evaluation_prerequisites outputs disjoint_verified = False."""
-    status = check_test_evaluation_prerequisites(fail_closed=False)
-    # Binary indices are not checked in git
+    status = check_test_evaluation_prerequisites(
+        test_indices_path=tmp_path / "absent_test.csv.gz",
+        train_indices_path=tmp_path / "absent_train.csv.gz",
+        val_indices_path=tmp_path / "absent_val.csv.gz",
+        fail_closed=False,
+    )
     assert not status.ready
     assert status.train_validation_disjoint_verified is False
     assert status.to_dict()["train_validation_disjoint_verified"] is False
@@ -260,9 +266,11 @@ def test_verify_index_disjointness_passes_when_strictly_disjoint(tmp_path: Path)
 # ==============================================================================
 
 
-def test_evaluate_random_forest_cli_verify_only(capsys: pytest.CaptureFixture) -> None:
+def test_evaluate_random_forest_cli_verify_only(
+    tmp_path: Path, capsys: pytest.CaptureFixture
+) -> None:
     """Verify evaluate_random_forest CLI --verify-only executes and reports BLOCKED status."""
-    exit_code = main(["--verify-only"])
+    exit_code = main(["--verify-only", "--test-indices", str(tmp_path / "absent_test.csv.gz")])
     # Absent binary files return exit code 2
     assert exit_code == 2
 

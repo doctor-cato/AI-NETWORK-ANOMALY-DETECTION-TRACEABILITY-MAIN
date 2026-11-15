@@ -27,18 +27,27 @@ import urllib.request
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DESTINATION = PROJECT_ROOT / "data" / "raw"
+LOCAL_SOURCE = PROJECT_ROOT / "src"
+if str(LOCAL_SOURCE) not in sys.path:
+    sys.path.insert(0, str(LOCAL_SOURCE))
 
-# Official partition offsets for NF-UNSW-NB15-v3 per NF_UNSW_NB15_V3_SPLIT_MANIFEST.json
+from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.data.split import load_partition_indices  # noqa: E402
+
+# Chronological bounds are an early guard; verified partition indices decide membership.
 UNSW_CANONICAL_TRAIN_END = 1655797  # rows 0..1,655,796
 UNSW_PURGED_GAP_1_END = 1665240  # rows 1,655,797..1,665,239
 UNSW_VALIDATION_START = 1665240  # rows 1,665,240..2,010,610
 UNSW_VALIDATION_END = 2010611
 UNSW_PURGED_GAP_2_END = 2019471  # rows 2,010,611..2,019,470
 UNSW_TEST_LOCK_START = 2019471  # rows 2,019,471..2,365,423 (BLOCKED)
+_UNSET = object()
 
 DATASET_CONFIGS = {
     "NF-CSE-CIC-IDS2018-v3": {
@@ -169,6 +178,8 @@ def validate_slice_sampling_parameters(
     """Validate that sampling parameters protect Test Lock and prevent train set leakage."""
     cfg = DATASET_CONFIGS[dataset_name]
     effective_skip = skip_rows if skip_rows is not None else cfg["default_sample_skip"]
+    if sample_rows < 1:
+        raise ValueError("sample_rows must be positive")
 
     if dataset_name == "NF-UNSW-NB15-v3":
         # Check train leakage: first-50k slice is strictly rejected
@@ -189,19 +200,760 @@ def validate_slice_sampling_parameters(
             )
 
         if effective_skip + sample_rows > UNSW_VALIDATION_END:
-            effective_sample_rows = max(1, UNSW_VALIDATION_END - effective_skip)
-            print(
-                f"[INFO] Adjusting sample rows from {sample_rows:,} to {effective_sample_rows:,} "
-                "to remain strictly within official validation boundaries (before purge gap 2)."
-            )
+            raise ValueError("Validation sample crosses the purge gap or Test Lock boundary")
 
     return effective_skip
+
+
+def _sha256_file(path: Path) -> str:
+    """Compute hex SHA-256 digest of a file using streaming reads."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(65536):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _compute_indices_sha256(indices: np.ndarray) -> str:
+    """Compute canonical SHA-256 digest for ordered 0-based source row indices."""
+    payload = "\n".join(str(int(idx)) for idx in indices.tolist()) + "\n"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _load_split_manifest_sha256(split_manifest_path: Path) -> str:
+    """Load canonical source dataset SHA-256 from official split manifest."""
+    if not split_manifest_path.is_file():
+        raise FileNotFoundError(f"Split manifest not found: {split_manifest_path}")
+    split_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+    expected_sha = split_data.get("dataset_sha256")
+    if not isinstance(expected_sha, str) or not expected_sha:
+        raise ValueError("Split manifest lacks canonical dataset_sha256")
+    return expected_sha
+
+
+def _load_verified_partition_indices(
+    split_data: Dict[str, Any],
+    split_manifest_path: Path,
+    indices_dir: Path,
+    partition_name: str,
+    *,
+    allow_missing_index_file: bool = False,
+) -> Optional[np.ndarray]:
+    """Load partition indices enforcing SHA-256, uniqueness, bounds, and declared row count."""
+    partitions = split_data.get("partitions", {})
+    if partition_name not in partitions:
+        raise ValueError(f"Split manifest missing required partition {partition_name!r}")
+    part_meta = partitions[partition_name]
+    idx_name = part_meta.get("index_file") or f"{partition_name}_indices.csv.gz"
+    idx_path = indices_dir / idx_name
+    has_sha = isinstance(part_meta.get("index_sha256"), str) and bool(part_meta["index_sha256"])
+
+    if allow_missing_index_file and not idx_path.is_file() and not has_sha:
+        return None
+    if not has_sha:
+        raise ValueError(
+            f"Split manifest missing required index_sha256 for partition {partition_name!r}"
+        )
+
+    indices = load_partition_indices(split_manifest_path, indices_dir, partition_name)
+    if indices.ndim != 1 or indices.size == 0:
+        raise ValueError(f"Partition {partition_name!r} indices must be a non-empty 1D array")
+    if (indices < 0).any():
+        raise ValueError(f"Partition {partition_name!r} contains negative source row indices")
+    if np.unique(indices).size != indices.size:
+        raise ValueError(f"Partition {partition_name!r} contains duplicate source row indices")
+
+    total_rows = split_data.get("total_source_rows")
+    if isinstance(total_rows, int) and not isinstance(total_rows, bool) and total_rows > 0:
+        if (indices >= total_rows).any():
+            raise ValueError(
+                f"Partition {partition_name!r} contains source row index >= total_source_rows ({total_rows})"
+            )
+
+    declared_count = part_meta.get("row_count")
+    if isinstance(declared_count, int) and not isinstance(declared_count, bool):
+        if int(indices.size) != declared_count:
+            raise ValueError(
+                f"Partition {partition_name!r} row_count mismatch: manifest declares "
+                f"{declared_count}, loaded {indices.size}"
+            )
+    return indices
+
+
+def _verify_unsw_row_indices_membership(
+    source_rows: np.ndarray,
+    split_manifest_path: Path,
+    indices_dir: Path,
+    partition: str,
+) -> None:
+    """Require every source row index to belong strictly to the declared partition."""
+    if partition not in ("train", "validation"):
+        raise ValueError(f"Unsupported partition for slice verification: {partition!r}")
+    label = partition.capitalize()
+    if source_rows.ndim != 1 or source_rows.size < 1:
+        raise ValueError(f"{label} sample requires at least one source row index")
+    if (source_rows < 0).any():
+        raise ValueError(f"{label} sample contains negative source row indices")
+    if np.unique(source_rows).size != source_rows.size:
+        raise ValueError(f"{label} sample contains duplicate source row indices")
+
+    split_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+    total_rows = split_data.get("total_source_rows")
+    if isinstance(total_rows, int) and not isinstance(total_rows, bool) and total_rows > 0:
+        if (source_rows >= total_rows).any():
+            raise ValueError(
+                f"{label} sample contains out-of-bounds source row index (>= {total_rows})"
+            )
+
+    target_indices = _load_verified_partition_indices(
+        split_data, split_manifest_path, indices_dir, partition
+    )
+    other_partition = "train" if partition == "validation" else "validation"
+    other_indices = _load_verified_partition_indices(
+        split_data, split_manifest_path, indices_dir, other_partition
+    )
+    test_indices = _load_verified_partition_indices(
+        split_data,
+        split_manifest_path,
+        indices_dir,
+        "test",
+        allow_missing_index_file=False,
+    )
+
+    assert target_indices is not None
+    assert other_indices is not None
+    assert test_indices is not None
+
+    if np.intersect1d(target_indices, other_indices).size:
+        raise ValueError("Canonical Train and Validation split indices overlap")
+    if (
+        np.intersect1d(target_indices, test_indices).size
+        or np.intersect1d(other_indices, test_indices).size
+    ):
+        raise ValueError("Canonical split indices overlap verified Test indices")
+
+    if np.intersect1d(source_rows, other_indices).size:
+        raise ValueError(f"{label} sample overlaps verified {other_partition.capitalize()} indices")
+    if np.intersect1d(source_rows, test_indices).size:
+        raise ValueError(f"{label} sample overlaps verified Test indices")
+    if not np.isin(source_rows, target_indices).all():
+        raise ValueError(f"{label} sample contains rows outside verified {label} indices")
+
+
+def _verify_unsw_partition_membership(
+    start: int,
+    count: int,
+    split_manifest_path: Path,
+    indices_dir: Path,
+    partition: str,
+) -> None:
+    """Require every source row of a slice to belong strictly to the declared partition."""
+    if partition not in ("train", "validation"):
+        raise ValueError(f"Unsupported partition for slice verification: {partition!r}")
+    label = partition.capitalize()
+    if (
+        isinstance(start, bool)
+        or isinstance(count, bool)
+        or not isinstance(start, int)
+        or not isinstance(count, int)
+        or count < 1
+        or start < 0
+    ):
+        raise ValueError(f"{label} sample requires a positive row count and source offset")
+
+    source_rows = np.arange(start, start + count, dtype=np.int64)
+    _verify_unsw_row_indices_membership(source_rows, split_manifest_path, indices_dir, partition)
+
+
+def verify_unsw_validation_membership(
+    start: int,
+    count: int,
+    split_manifest_path: Path,
+    indices_dir: Path,
+) -> None:
+    """Require every source row of a slice to be in verified Validation indices."""
+    _verify_unsw_partition_membership(
+        start, count, split_manifest_path, indices_dir, partition="validation"
+    )
+
+
+def verify_unsw_train_membership(
+    start: int,
+    count: int,
+    split_manifest_path: Path,
+    indices_dir: Path,
+) -> None:
+    """Require every source row of a slice to be in verified Train indices."""
+    _verify_unsw_partition_membership(
+        start, count, split_manifest_path, indices_dir, partition="train"
+    )
+
+
+def _resolve_unsw_source_csv(
+    sample_path: Path,
+    manifest: Dict[str, Any],
+    split_manifest_path: Path,
+    source_csv_path: Optional[Path] = None,
+) -> Path:
+    """Locate the canonical NF-UNSW-NB15-v3 source CSV for row-binding verification."""
+    if source_csv_path is not None:
+        if not source_csv_path.is_file():
+            raise FileNotFoundError(
+                f"Canonical UNSW source CSV required for row provenance binding not found: "
+                f"{source_csv_path}"
+            )
+        return source_csv_path
+
+    candidates: List[Path] = []
+    manifest_src = manifest.get("provenance", {}).get("source_csv_path")
+    if isinstance(manifest_src, str) and manifest_src.strip():
+        cand = Path(manifest_src)
+        candidates.append(cand if cand.is_absolute() else (PROJECT_ROOT / cand))
+
+    candidates.extend(
+        [
+            sample_path.parent / "NF-UNSW-NB15-v3.csv",
+            sample_path.parent / "data" / "NF-UNSW-NB15-v3.csv",
+        ]
+    )
+
+    canonical_manifest = (PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json").resolve()
+    if split_manifest_path.resolve() == canonical_manifest:
+        candidates.extend(
+            [
+                PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv",
+                PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "NF-UNSW-NB15-v3.csv",
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    raise FileNotFoundError(
+        "Canonical NF-UNSW-NB15-v3 source CSV required to verify row provenance binding"
+    )
+
+
+def _verify_sample_rows_against_indices(
+    sample_path: Path,
+    source_csv_path: Path,
+    source_rows: np.ndarray,
+    expected_rows_sha256: Optional[str] = None,
+) -> None:
+    """Stream-verify sample header and rows match exact sorted source CSV row indices."""
+    if sample_path.resolve() == source_csv_path.resolve():
+        raise ValueError("Sample CSV cannot reuse the canonical source CSV path directly")
+
+    row_hasher = hashlib.sha256()
+    with (
+        open(source_csv_path, "r", encoding="utf-8", errors="strict") as src_f,
+        open(sample_path, "r", encoding="utf-8", errors="strict") as smp_f,
+    ):
+        src_header = src_f.readline()
+        smp_header = smp_f.readline()
+        if not src_header or not smp_header:
+            raise ValueError("Source or sample CSV is empty / missing header")
+        src_header_norm = src_header.rstrip("\r\n")
+        if src_header_norm != smp_header.rstrip("\r\n"):
+            raise ValueError("Sample CSV header does not match canonical UNSW source CSV")
+        row_hasher.update((src_header_norm + "\n").encode("utf-8"))
+
+        current_src_idx = 0
+        expected_count = int(source_rows.size)
+        for sample_pos, target_idx_raw in enumerate(source_rows):
+            target_idx = int(target_idx_raw)
+            while current_src_idx < target_idx:
+                skipped = src_f.readline()
+                if not skipped:
+                    raise ValueError(
+                        f"Source CSV ended prematurely before source row index {target_idx}"
+                    )
+                current_src_idx += 1
+
+            src_line = src_f.readline()
+            if not src_line:
+                raise ValueError(f"Source CSV ended prematurely at index {target_idx}")
+            current_src_idx += 1
+
+            smp_line = smp_f.readline()
+            if not smp_line:
+                raise ValueError(
+                    f"Sample CSV ended prematurely at row {sample_pos} (expected {expected_count})"
+                )
+            src_norm = src_line.rstrip("\r\n")
+            if src_norm != smp_line.rstrip("\r\n"):
+                raise ValueError(
+                    f"Sample row content mismatch vs canonical UNSW source CSV at slice row "
+                    f"{sample_pos} (source row {target_idx})"
+                )
+            row_hasher.update((src_norm + "\n").encode("utf-8"))
+
+        trailing = smp_f.readline()
+        if trailing:
+            raise ValueError("Sample CSV contains more rows than declared in manifest")
+
+    if expected_rows_sha256 is not None and row_hasher.hexdigest() != expected_rows_sha256:
+        raise ValueError("Sample manifest source_rows_sha256 mismatch")
+
+
+def _verify_sample_rows_against_source(
+    sample_path: Path,
+    source_csv_path: Path,
+    start: int,
+    count: int,
+    expected_rows_sha256: Optional[str] = None,
+) -> None:
+    """Stream-verify sample header and rows exactly match source CSV rows [start, start+count)."""
+    source_rows = np.arange(start, start + count, dtype=np.int64)
+    _verify_sample_rows_against_indices(
+        sample_path,
+        source_csv_path,
+        source_rows,
+        expected_rows_sha256=expected_rows_sha256,
+    )
+
+
+def _extract_verified_source_row_indices(checksum: Dict[str, Any]) -> Tuple[str, np.ndarray]:
+    """Validate and return (slice_type, sorted unique int64 source row array) from manifest."""
+    slice_type = checksum.get("slice_type")
+    if slice_type == "slice":
+        start = checksum.get("skip_rows_offset")
+        count = checksum.get("sample_rows_extracted")
+        if (
+            isinstance(start, bool)
+            or isinstance(count, bool)
+            or not isinstance(start, int)
+            or not isinstance(count, int)
+            or count < 1
+            or start < 0
+        ):
+            raise ValueError("UNSW sample lacks integer source row indices")
+        return "slice", np.arange(start, start + count, dtype=np.int64)
+
+    if slice_type == "partition_indices":
+        raw_indices = checksum.get("source_row_indices")
+        count = checksum.get("sample_rows_extracted")
+        if (
+            not isinstance(raw_indices, list)
+            or not raw_indices
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or len(raw_indices) != count
+            or any(isinstance(x, bool) or not isinstance(x, int) or x < 0 for x in raw_indices)
+        ):
+            raise ValueError("UNSW partition_indices sample lacks valid integer source_row_indices")
+        arr = np.asarray(raw_indices, dtype=np.int64)
+        if np.any(np.diff(arr) <= 0):
+            raise ValueError(
+                "UNSW partition_indices source_row_indices must be strictly increasing and unique"
+            )
+        return "partition_indices", arr
+
+    raise ValueError("UNSW sample must be a source-indexed slice or partition_indices extract")
+
+
+def verify_unsw_sample_binding(
+    sample_path: Path,
+    split_manifest_path: Path,
+    indices_dir: Path,
+    expected_start: Optional[int] = None,
+    expected_count: Optional[int] = None,
+    expected_partition: str = "validation",
+    source_csv_path: Optional[Path] = None,
+    expected_offset_in_partition: Optional[int] = None,
+    expected_random_seed: Any = _UNSET,
+    expected_sampling_method: Optional[str] = None,
+) -> int:
+    """Verify sample content, source CSV binding, recorded offset/indices, and split membership."""
+    if expected_partition not in ("train", "validation"):
+        raise ValueError(f"Unsupported UNSW partition: {expected_partition!r}")
+    if not sample_path.is_file():
+        raise FileNotFoundError(f"Sample CSV not found: {sample_path}")
+
+    manifest_path = sample_path.with_name(f"{sample_path.name}.manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Sample manifest not found: {manifest_path}")
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid sample manifest JSON: {exc}") from exc
+    if not isinstance(manifest, dict):
+        raise ValueError("Sample manifest must be a JSON object")
+
+    checksum = manifest.get("content_checksum")
+    dataset_identity = manifest.get("dataset_identity")
+    provenance = manifest.get("provenance")
+    if (
+        not isinstance(checksum, dict)
+        or not isinstance(dataset_identity, dict)
+        or not isinstance(provenance, dict)
+    ):
+        raise ValueError("Sample manifest missing required metadata sections")
+
+    if dataset_identity.get("dataset_name") != "NF-UNSW-NB15-v3":
+        raise ValueError("Sample manifest dataset identity mismatch")
+
+    slice_type, source_rows = _extract_verified_source_row_indices(checksum)
+    count = int(source_rows.size)
+
+    declared_partition = checksum.get("partition")
+    if declared_partition != expected_partition:
+        raise ValueError(
+            f"Sample manifest partition mismatch: expected {expected_partition!r}, "
+            f"got {declared_partition!r}"
+        )
+
+    declared_schema = dataset_identity.get("feature_schema")
+    if slice_type == "partition_indices" and not isinstance(declared_schema, list):
+        raise ValueError("Sample manifest lacks feature_schema")
+    if declared_schema is not None and declared_schema != list(ML_FEATURE_COLUMNS):
+        raise ValueError(
+            "Sample manifest feature_schema does not match baseline ML_FEATURE_COLUMNS"
+        )
+
+    digest = _sha256_file(sample_path)
+    if checksum.get("sample_sha256") != digest:
+        raise ValueError("UNSW sample SHA-256 mismatch")
+
+    expected_split_manifest_sha = _sha256_file(split_manifest_path)
+    sample_split_manifest_sha = checksum.get("split_manifest_sha256")
+    if slice_type == "partition_indices" and not sample_split_manifest_sha:
+        raise ValueError("Sample manifest lacks split_manifest_sha256")
+    if (
+        sample_split_manifest_sha is not None
+        and sample_split_manifest_sha != expected_split_manifest_sha
+    ):
+        raise ValueError(
+            "Sample manifest split_manifest_sha256 does not match split manifest SHA-256"
+        )
+
+    expected_indices_sha = _compute_indices_sha256(source_rows)
+    sample_indices_sha = checksum.get("selected_indices_sha256")
+    if slice_type == "partition_indices" and not sample_indices_sha:
+        raise ValueError("Sample manifest lacks selected_indices_sha256")
+    if sample_indices_sha is not None and sample_indices_sha != expected_indices_sha:
+        raise ValueError("Sample manifest selected_indices_sha256 mismatch")
+
+    if expected_start is not None:
+        if slice_type != "slice":
+            raise ValueError("Expected contiguous slice offset, got partition_indices sample")
+        if int(checksum["skip_rows_offset"]) != expected_start:
+            raise ValueError("Existing UNSW sample source offset differs from request")
+    if expected_count is not None and count != expected_count:
+        raise ValueError("Existing UNSW sample row count differs from request")
+
+    expected_dataset_sha256 = _load_split_manifest_sha256(split_manifest_path)
+    sample_source_sha256 = checksum.get("source_dataset_sha256")
+    if not isinstance(sample_source_sha256, str) or not sample_source_sha256:
+        raise ValueError("Sample manifest lacks source_dataset_sha256")
+    if sample_source_sha256 != expected_dataset_sha256:
+        raise ValueError(
+            "Sample manifest source_dataset_sha256 does not match split manifest dataset_sha256"
+        )
+
+    _verify_unsw_row_indices_membership(
+        source_rows, split_manifest_path, indices_dir, partition=expected_partition
+    )
+
+    if slice_type == "partition_indices":
+        manifest_offset = checksum.get("partition_offset")
+        if (
+            isinstance(manifest_offset, bool)
+            or not isinstance(manifest_offset, int)
+            or manifest_offset < 0
+        ):
+            raise ValueError("Sample manifest lacks valid integer partition_offset")
+
+        manifest_method = provenance.get("sampling_method")
+        if manifest_method not in (
+            "deterministic_seeded_partition_sample",
+            "deterministic_partition_offset",
+        ):
+            raise ValueError(
+                f"Sample manifest has invalid or missing sampling_method: {manifest_method!r}"
+            )
+
+        if "sampling_seed" not in provenance and "random_seed" not in provenance:
+            raise ValueError("Sample manifest lacks sampling_seed in provenance")
+        if (
+            "sampling_seed" in provenance
+            and "random_seed" in provenance
+            and provenance["sampling_seed"] != provenance["random_seed"]
+        ):
+            raise ValueError("Sample manifest provenance sampling_seed and random_seed mismatch")
+
+        effective_manifest_seed = (
+            provenance.get("sampling_seed")
+            if "sampling_seed" in provenance
+            else provenance.get("random_seed")
+        )
+        if manifest_method == "deterministic_seeded_partition_sample":
+            if isinstance(effective_manifest_seed, bool) or not isinstance(
+                effective_manifest_seed, int
+            ):
+                raise ValueError("Seeded partition sample manifest requires integer sampling_seed")
+        else:
+            if effective_manifest_seed is not None:
+                raise ValueError(
+                    "Unseeded partition offset sample manifest requires sampling_seed to be None"
+                )
+
+        if (
+            expected_offset_in_partition is not None
+            and manifest_offset != expected_offset_in_partition
+        ):
+            raise ValueError(
+                f"Existing UNSW sample partition_offset ({manifest_offset}) differs from "
+                f"requested offset_in_partition ({expected_offset_in_partition}); "
+                "pass overwrite=True or --overwrite to regenerate"
+            )
+        if expected_sampling_method is not None and manifest_method != expected_sampling_method:
+            raise ValueError(
+                f"Existing UNSW sample sampling_method ({manifest_method!r}) differs from "
+                f"requested sampling_method ({expected_sampling_method!r}); "
+                "pass overwrite=True or --overwrite to regenerate"
+            )
+        if expected_random_seed is not _UNSET and effective_manifest_seed != expected_random_seed:
+            raise ValueError(
+                f"Existing UNSW sample random_seed ({effective_manifest_seed!r}) differs from "
+                f"requested random_seed ({expected_random_seed!r}); "
+                "pass overwrite=True or --overwrite to regenerate"
+            )
+
+        split_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+        raw_target = _load_verified_partition_indices(
+            split_data, split_manifest_path, indices_dir, expected_partition
+        )
+        assert raw_target is not None
+        target_indices = np.sort(raw_target)
+        pool = target_indices[manifest_offset:]
+        if pool.size < count:
+            raise ValueError(
+                f"Sample manifest partition_offset ({manifest_offset}) and count ({count}) "
+                f"exceed partition size ({target_indices.size})"
+            )
+        if manifest_method == "deterministic_seeded_partition_sample":
+            rng = np.random.default_rng(effective_manifest_seed)
+            expected_selected = np.sort(rng.choice(pool, size=count, replace=False)).astype(
+                np.int64
+            )
+        else:
+            expected_selected = pool[:count].astype(np.int64)
+        if not np.array_equal(source_rows, expected_selected):
+            raise ValueError(
+                "Sample manifest source_row_indices do not match deterministic selection "
+                "for recorded sampling parameters"
+            )
+    elif (
+        expected_offset_in_partition is not None
+        or expected_sampling_method is not None
+        or expected_random_seed is not _UNSET
+    ):
+        raise ValueError("Expected partition_indices sample manifest, got slice sample")
+
+    resolved_source_csv = _resolve_unsw_source_csv(
+        sample_path, manifest, split_manifest_path, source_csv_path=source_csv_path
+    )
+    actual_source_sha256 = _sha256_file(resolved_source_csv)
+    if actual_source_sha256 != expected_dataset_sha256:
+        raise ValueError(
+            "Resolved UNSW source CSV SHA-256 does not match split manifest dataset_sha256"
+        )
+
+    expected_rows_sha = checksum.get("source_rows_sha256")
+    if slice_type == "partition_indices" and (
+        not isinstance(expected_rows_sha, str) or not expected_rows_sha
+    ):
+        raise ValueError("Sample manifest lacks source_rows_sha256")
+    if expected_rows_sha is not None and not isinstance(expected_rows_sha, str):
+        raise ValueError("Invalid source_rows_sha256 in sample manifest")
+
+    _verify_sample_rows_against_indices(
+        sample_path,
+        resolved_source_csv,
+        source_rows,
+        expected_rows_sha256=expected_rows_sha,
+    )
+    return count
+
+
+def extract_unsw_partition_sample(
+    output_path: Path,
+    source_csv_path: Path,
+    split_manifest_path: Path,
+    indices_dir: Path,
+    partition: str = "validation",
+    sample_rows: int = 100_000,
+    offset_in_partition: int = 0,
+    overwrite: bool = False,
+    random_seed: Optional[int] = None,
+) -> Path:
+    """Extract a partition-verified UNSW sample using canonical split indices."""
+    if partition not in ("train", "validation"):
+        raise ValueError(f"Unsupported UNSW partition: {partition!r}")
+    if (
+        isinstance(sample_rows, bool)
+        or isinstance(offset_in_partition, bool)
+        or sample_rows < 1
+        or offset_in_partition < 0
+    ):
+        raise ValueError("sample_rows must be >= 1 and offset_in_partition >= 0")
+    if random_seed is not None and (
+        isinstance(random_seed, bool) or not isinstance(random_seed, int)
+    ):
+        raise ValueError("random_seed must be an integer or None")
+    if not source_csv_path.is_file():
+        raise FileNotFoundError(f"Canonical UNSW source CSV not found: {source_csv_path}")
+
+    expected_dataset_sha256 = _load_split_manifest_sha256(split_manifest_path)
+    split_manifest_sha256 = _sha256_file(split_manifest_path)
+    actual_dataset_sha256 = _sha256_file(source_csv_path)
+    if actual_dataset_sha256 != expected_dataset_sha256:
+        raise ValueError("Source CSV SHA-256 does not match split manifest dataset_sha256")
+
+    sampling_method = (
+        "deterministic_seeded_partition_sample"
+        if random_seed is not None
+        else "deterministic_partition_offset"
+    )
+
+    if output_path.exists() and output_path.stat().st_size > 0 and not overwrite:
+        verify_unsw_sample_binding(
+            output_path,
+            split_manifest_path,
+            indices_dir,
+            expected_count=sample_rows,
+            expected_partition=partition,
+            source_csv_path=source_csv_path,
+            expected_offset_in_partition=offset_in_partition,
+            expected_random_seed=random_seed,
+            expected_sampling_method=sampling_method,
+        )
+        return output_path
+
+    split_data = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+    raw_target = _load_verified_partition_indices(
+        split_data, split_manifest_path, indices_dir, partition
+    )
+    assert raw_target is not None
+    target_indices = np.sort(raw_target)
+    pool = target_indices[offset_in_partition:]
+    if pool.size < sample_rows:
+        raise ValueError(
+            f"Requested {sample_rows} rows from {partition} partition starting at offset "
+            f"{offset_in_partition}, but only {pool.size} rows remain"
+        )
+    if random_seed is not None:
+        rng = np.random.default_rng(random_seed)
+        chosen = rng.choice(pool, size=sample_rows, replace=False)
+        selected = np.sort(chosen).astype(np.int64)
+    else:
+        selected = pool[:sample_rows]
+    _verify_unsw_row_indices_membership(selected, split_manifest_path, indices_dir, partition)
+
+    manifest_path = output_path.with_name(f"{output_path.name}.manifest.json")
+    if overwrite and manifest_path.exists():
+        manifest_path.unlink()
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    staging_csv = output_path.with_name(f".{output_path.name}.staging")
+    staging_manifest = manifest_path.with_name(f".{manifest_path.name}.staging")
+    rows_hasher = hashlib.sha256()
+    attacks: Dict[str, int] = {}
+
+    try:
+        with (
+            open(source_csv_path, "r", encoding="utf-8", errors="strict") as src_f,
+            open(staging_csv, "w", encoding="utf-8", newline="\n") as out_f,
+        ):
+            header = src_f.readline()
+            if not header:
+                raise ValueError(f"Empty source CSV: {source_csv_path}")
+            header_norm = header.rstrip("\r\n")
+            out_f.write(header_norm + "\n")
+            rows_hasher.update((header_norm + "\n").encode("utf-8"))
+
+            current_src_idx = 0
+            for target_idx_raw in selected:
+                target_idx = int(target_idx_raw)
+                while current_src_idx < target_idx:
+                    if not src_f.readline():
+                        raise ValueError(f"Source CSV ended before index {target_idx}")
+                    current_src_idx += 1
+                line = src_f.readline()
+                if not line:
+                    raise ValueError(f"Source CSV ended at index {target_idx}")
+                current_src_idx += 1
+
+                line_norm = line.rstrip("\r\n")
+                out_f.write(line_norm + "\n")
+                rows_hasher.update((line_norm + "\n").encode("utf-8"))
+                attack = line_norm.rsplit(",", 1)[-1]
+                attacks[attack] = attacks.get(attack, 0) + 1
+
+        cfg = DATASET_CONFIGS["NF-UNSW-NB15-v3"]
+        sample_sha256 = _sha256_file(staging_csv)
+        selected_indices_sha256 = _compute_indices_sha256(selected)
+        manifest_data = {
+            "dataset_identity": {
+                "dataset_name": "NF-UNSW-NB15-v3",
+                "doi": cfg["doi"],
+                "format": "NetFlow-v3",
+                "column_count": cfg.get("column_count", 55),
+                "feature_contract": "nf-unsw-nb15-v3-baseline-47",
+                "feature_schema": list(ML_FEATURE_COLUMNS),
+            },
+            "content_checksum": {
+                "sample_sha256": sample_sha256,
+                "sample_rows_extracted": int(selected.size),
+                "slice_type": "partition_indices",
+                "skip_rows_offset": None,
+                "partition": partition,
+                "partition_offset": offset_in_partition,
+                "source_row_indices": [int(x) for x in selected.tolist()],
+                "selected_indices_sha256": selected_indices_sha256,
+                "split_manifest_sha256": split_manifest_sha256,
+                "source_dataset_sha256": actual_dataset_sha256,
+                "source_rows_sha256": rows_hasher.hexdigest(),
+            },
+            "provenance": {
+                "source_csv_path": str(source_csv_path),
+                "source_doi": cfg["doi"],
+                "sampling_method": sampling_method,
+                "sampling_seed": random_seed,
+                "random_seed": random_seed,
+                "class_distribution": attacks,
+                "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            },
+            "governance": {
+                "test_lock_status": "ENFORCED",
+                "partition_leakage_audit": (
+                    f"PASSED (All rows verified strictly in canonical '{partition}' partition indices)"
+                ),
+            },
+        }
+        staging_manifest.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+        staging_csv.replace(output_path)
+        staging_manifest.replace(manifest_path)
+    except Exception:
+        if manifest_path.exists():
+            manifest_path.unlink(missing_ok=True)
+        if output_path.exists() and not manifest_path.exists():
+            output_path.unlink(missing_ok=True)
+        raise
+    finally:
+        staging_csv.unlink(missing_ok=True)
+        staging_manifest.unlink(missing_ok=True)
+
+    return output_path
 
 
 def fetch_dataset_sample(
     dataset_name: str,
     output_dir: Path,
-    sample_rows: int = 100000,
+    sample_rows: Optional[int] = None,
     skip_rows: Optional[int] = None,
     sample_mode: str = "slice",
     random_seed: int = 42,
@@ -212,6 +964,8 @@ def fetch_dataset_sample(
         raise ValueError(f"Unknown dataset: {dataset_name}. Supported: {list(DATASET_CONFIGS)}")
 
     cfg = DATASET_CONFIGS[dataset_name]
+    if sample_rows is None:
+        sample_rows = cfg["default_sample_take"]
     output_dir.mkdir(parents=True, exist_ok=True)
     filename = cfg["sample_name"] if sample_mode == "slice" else cfg["stratified_sample_name"]
     target_csv = output_dir / filename
@@ -219,8 +973,25 @@ def fetch_dataset_sample(
 
     # Validate anti-leakage and Test Lock before touching any file
     effective_skip = validate_slice_sampling_parameters(dataset_name, skip_rows, sample_rows)
+    if dataset_name == "NF-UNSW-NB15-v3" and sample_mode != "slice":
+        raise ValueError("UNSW stratified sampling lacks source row provenance; use slice mode")
+    if dataset_name == "NF-UNSW-NB15-v3":
+        verify_unsw_validation_membership(
+            effective_skip,
+            sample_rows,
+            PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+            PROJECT_ROOT / "data" / "processed" / "splits",
+        )
 
     if target_csv.exists() and target_csv.stat().st_size > 0:
+        if dataset_name == "NF-UNSW-NB15-v3":
+            verify_unsw_sample_binding(
+                target_csv,
+                PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+                PROJECT_ROOT / "data" / "processed" / "splits",
+                expected_start=effective_skip,
+                expected_count=sample_rows,
+            )
         print(f"Sample dataset already exists: {target_csv} ({target_csv.stat().st_size:,} bytes)")
         return target_csv
 
@@ -315,13 +1086,30 @@ def fetch_dataset_sample(
     temp_csv.replace(target_csv)
     dt = time.time() - t0
 
-    h = hashlib.sha256()
-    with open(target_csv, "rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
-    sha256 = h.hexdigest()
+    sha256 = _sha256_file(target_csv)
+    unsw_source_sha256 = None
+    unsw_rows_sha256 = None
+    if dataset_name == "NF-UNSW-NB15-v3":
+        unsw_source_sha256 = _load_split_manifest_sha256(
+            PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+        )
+        rows_hasher = hashlib.sha256()
+        for line in lines:
+            rows_hasher.update((line.rstrip("\r\n") + "\n").encode("utf-8"))
+        unsw_rows_sha256 = rows_hasher.hexdigest()
 
     # Generate companion sample manifest with explicit decoupling of identity and content checksum
+    content_checksum: Dict[str, object] = {
+        "sample_sha256": sha256,
+        "sample_rows_extracted": len(lines) - 1,
+        "slice_type": sample_mode,
+        "skip_rows_offset": effective_skip if sample_mode == "slice" else None,
+    }
+    if dataset_name == "NF-UNSW-NB15-v3":
+        content_checksum["partition"] = "validation"
+        content_checksum["source_dataset_sha256"] = unsw_source_sha256
+        content_checksum["source_rows_sha256"] = unsw_rows_sha256
+
     manifest_data = {
         "dataset_identity": {
             "dataset_name": dataset_name,
@@ -330,12 +1118,7 @@ def fetch_dataset_sample(
             "column_count": cfg.get("column_count", 55),
             "feature_contract": "nf-unsw-nb15-v3-baseline-47",
         },
-        "content_checksum": {
-            "sample_sha256": sha256,
-            "sample_rows_extracted": len(lines) - 1,
-            "slice_type": sample_mode,
-            "skip_rows_offset": effective_skip if sample_mode == "slice" else None,
-        },
+        "content_checksum": content_checksum,
         "provenance": {
             "source_archive_member": matched_member,
             "source_doi": cfg["doi"],
@@ -371,8 +1154,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--sample-rows",
         type=int,
-        default=100000,
-        help="Number of rows to stream extract (default: 100,000)",
+        default=None,
+        help="Number of rows to stream extract (default: dataset-specific sample size)",
     )
     parser.add_argument(
         "--skip-rows",
@@ -382,15 +1165,45 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--sample-mode",
-        choices=["slice", "stratified"],
-        default="slice",
-        help="Sampling mode: 'slice' (sequential) or 'stratified' (multi-class)",
+        choices=["slice", "stratified", "partition_indices"],
+        default=None,
+        help="Sampling mode (defaults to 'partition_indices' for NF-UNSW-NB15-v3, 'slice' otherwise)",
+    )
+    parser.add_argument(
+        "--partition",
+        choices=["train", "validation"],
+        default="validation",
+        help="Partition to extract when using 'partition_indices' mode or '--verify-only'",
+    )
+    parser.add_argument(
+        "--offset-in-partition",
+        type=int,
+        default=None,
+        help="Starting offset inside sorted partition indices for 'partition_indices' mode (default: 0)",
+    )
+    parser.add_argument(
+        "--source-csv",
+        type=Path,
+        default=None,
+        help="Local canonical NF-UNSW-NB15-v3.csv path for 'partition_indices' extraction or verification",
+    )
+    parser.add_argument(
+        "--split-manifest",
+        type=Path,
+        default=None,
+        help="Override canonical split manifest path",
+    )
+    parser.add_argument(
+        "--indices-dir",
+        type=Path,
+        default=None,
+        help="Override split indices directory (default: data/processed/splits)",
     )
     parser.add_argument(
         "--random-seed",
         type=int,
-        default=42,
-        help="Random seed for stratified sampling",
+        default=None,
+        help="Random seed for sampling (default: 42)",
     )
     parser.add_argument(
         "--max-scan-lines",
@@ -409,20 +1222,114 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="Verify existing dataset file without downloading",
     )
+    parser.add_argument(
+        "--allow-missing",
+        action="store_true",
+        help="Return exit code 0 with explicit SKIPPED status when --verify-only target file is absent",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite and regenerate existing sample CSV and companion manifest",
+    )
 
     args = parser.parse_args(argv)
     output_dir = (
         args.output_dir if args.output_dir is not None else DEFAULT_DESTINATION / args.dataset
     )
+    split_manifest_path = (
+        args.split_manifest
+        if args.split_manifest is not None
+        else PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
+    )
+    indices_dir = (
+        args.indices_dir
+        if args.indices_dir is not None
+        else PROJECT_ROOT / "data" / "processed" / "splits"
+    )
 
     try:
         if args.verify_only:
             cfg = DATASET_CONFIGS[args.dataset]
-            target = output_dir / cfg["sample_name"]
-            if not target.exists():
-                print(f"Target dataset file does not exist: {target} (BLOCKED / SKIPPED)")
-                return 0
-            print(f"Verified dataset file exists: {target} ({target.stat().st_size:,} bytes)")
+            target_name = (
+                "nf_unsw_nb15_v3_train_sample.csv"
+                if args.dataset == "NF-UNSW-NB15-v3" and args.partition == "train"
+                else cfg["sample_name"]
+            )
+            target = output_dir / target_name
+            if not target.is_file():
+                if args.allow_missing:
+                    print(f"SKIPPED: Target dataset file does not exist: {target}")
+                    return 0
+                raise FileNotFoundError(f"Target dataset file does not exist: {target}")
+
+            if args.dataset == "NF-UNSW-NB15-v3":
+                verify_unsw_sample_binding(
+                    target,
+                    split_manifest_path,
+                    indices_dir,
+                    expected_count=args.sample_rows,
+                    expected_partition=args.partition,
+                    source_csv_path=args.source_csv,
+                    expected_offset_in_partition=args.offset_in_partition,
+                    expected_random_seed=(
+                        args.random_seed if args.random_seed is not None else _UNSET
+                    ),
+                )
+            else:
+                manifest_path = target.with_name(f"{target.name}.manifest.json")
+                if not manifest_path.is_file():
+                    raise FileNotFoundError(f"Sample manifest not found: {manifest_path}")
+                try:
+                    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"Invalid sample manifest JSON: {exc}") from exc
+                if (
+                    not isinstance(manifest_data, dict)
+                    or manifest_data.get("dataset_identity", {}).get("dataset_name") != args.dataset
+                ):
+                    raise ValueError("Sample manifest dataset identity mismatch")
+                expected_sha = manifest_data.get("content_checksum", {}).get("sample_sha256")
+                actual_sha = _sha256_file(target)
+                if not isinstance(expected_sha, str) or expected_sha != actual_sha:
+                    raise ValueError(f"Sample SHA-256 mismatch for {target}")
+            print(
+                f"VERIFIED: Dataset file and companion manifest verified: "
+                f"{target} ({target.stat().st_size:,} bytes)"
+            )
+            return 0
+
+        effective_offset = args.offset_in_partition if args.offset_in_partition is not None else 0
+        effective_seed = args.random_seed if args.random_seed is not None else 42
+
+        effective_mode = (
+            args.sample_mode
+            if args.sample_mode is not None
+            else ("partition_indices" if args.dataset == "NF-UNSW-NB15-v3" else "slice")
+        )
+        if effective_mode == "partition_indices":
+            if args.dataset != "NF-UNSW-NB15-v3":
+                raise ValueError("'partition_indices' mode is only supported for NF-UNSW-NB15-v3")
+            cfg = DATASET_CONFIGS["NF-UNSW-NB15-v3"]
+            source_csv = args.source_csv or (
+                PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
+            )
+            out_name = (
+                "nf_unsw_nb15_v3_train_sample.csv"
+                if args.partition == "train"
+                else cfg["sample_name"]
+            )
+            extract_unsw_partition_sample(
+                output_path=output_dir / out_name,
+                source_csv_path=source_csv,
+                split_manifest_path=split_manifest_path,
+                indices_dir=indices_dir,
+                partition=args.partition,
+                sample_rows=args.sample_rows or cfg["default_sample_take"],
+                offset_in_partition=effective_offset,
+                overwrite=args.overwrite,
+                random_seed=effective_seed,
+            )
             return 0
 
         fetch_dataset_sample(
@@ -430,8 +1337,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             output_dir=output_dir,
             sample_rows=args.sample_rows,
             skip_rows=args.skip_rows,
-            sample_mode=args.sample_mode,
-            random_seed=args.random_seed,
+            sample_mode=effective_mode,
+            random_seed=effective_seed,
             max_scan_lines=args.max_scan_lines,
         )
         return 0
