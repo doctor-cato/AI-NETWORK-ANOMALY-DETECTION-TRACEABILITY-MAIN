@@ -603,6 +603,62 @@ def test_verify_nsis_installer_e2e_guards_and_mocked_windows_flow(
         )
 
 
+def test_verify_nsis_installer_e2e_tauri_bundle_marker_normalized(tmp_path: Path, monkeypatch):
+    installer = tmp_path / "NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe"
+    installer.write_bytes(b"MZ" + b"\x00" * 1_200_000)
+    sums_file = tmp_path / "SHA256SUMS.txt"
+    sums_file.write_text(
+        f"{hashlib.sha256(installer.read_bytes()).hexdigest()}  {installer.name}\n",
+        encoding="utf-8",
+    )
+
+    compiled_bytes = b"MZ" + b"\xab" * 600_000 + b"BUNDLE_TYPE_VAR_UNKError" + b"\xcd" * 600_000
+    installed_bytes = compiled_bytes.replace(b"BUNDLE_TYPE_VAR_UNK", b"BUNDLE_TYPE_VAR_NSS", 1)
+    compiled_exe = tmp_path / "netflow-sentinel-desktop.exe"
+    compiled_exe.write_bytes(compiled_bytes)
+
+    def _fake_subprocess_run(cmd, **_kwargs):
+        exe_arg = Path(cmd[0])
+        if exe_arg.resolve() == installer.resolve():
+            d_arg = next(a for a in cmd if a.startswith("/D="))
+            target_dir = Path(d_arg[3:])
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "netflow-sentinel-desktop.exe").write_bytes(installed_bytes)
+            (target_dir / "uninstall.exe").write_bytes(b"UNINST")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(vca, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(vca.subprocess, "run", _fake_subprocess_run)
+
+    nsis_out = verify_nsis_installer_e2e(
+        installer,
+        root=tmp_path,
+        sums_file=sums_file,
+        compiled_exe_path=compiled_exe,
+    )
+    assert nsis_out["status"] == "PASS"
+    assert nsis_out["compiled_exe_sha256_match"] is True
+    assert nsis_out["exe_parity_mode"] == "tauri_nsis_bundle_marker_normalized"
+    assert (
+        nsis_out["normalized_compiled_exe_sha256"]
+        == nsis_out["installed_exe_sha256"]
+        == hashlib.sha256(installed_bytes).hexdigest()
+    )
+
+    # Extra byte change outside the single Tauri UNK->NSS marker must fail closed
+    tampered_compiled = compiled_exe
+    tampered_bytes = bytearray(compiled_bytes)
+    tampered_bytes[10] ^= 0xFF
+    tampered_compiled.write_bytes(bytes(tampered_bytes))
+    with pytest.raises(RuntimeError, match="Installed desktop executable SHA-256 mismatch"):
+        verify_nsis_installer_e2e(
+            installer,
+            root=tmp_path,
+            sums_file=sums_file,
+            compiled_exe_path=tampered_compiled,
+        )
+
+
 def test_verify_shipped_v060_e2e_attestation_passes():
     att_path = REPO_ROOT / "reports" / "releases" / "v0.6.0_e2e_verification.json"
     result = verify_e2e_attestation(att_path, root=REPO_ROOT)

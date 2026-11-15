@@ -9,6 +9,7 @@ demo CSV bundle without copying or bundling raw NF-UNSW-NB15-v3 dataset files.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -34,6 +35,9 @@ from network_anomaly.inference.predict import (  # noqa: E402
     load_verified_model,
     load_verified_preprocessor,
 )
+
+_TAURI_BUNDLE_MARKER_UNK = b"BUNDLE_TYPE_VAR_UNK"
+_TAURI_BUNDLE_MARKER_NSS = b"BUNDLE_TYPE_VAR_NSS"
 
 MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
     "random_forest": (
@@ -538,12 +542,42 @@ def verify_nsis_installer_e2e(
                 f"NSIS clean install did not materialize expected executables within 15s in {install_dir}"
             )
 
-        installed_exe_sha256 = _sha256_file(installed_exe).lower()
+        installed_bytes = installed_exe.read_bytes()
+        installed_exe_sha256 = hashlib.sha256(installed_bytes).hexdigest().lower()
         compiled_exe_sha256: Optional[str] = None
+        normalized_compiled_exe_sha256: Optional[str] = None
         compiled_exe_sha256_match: Optional[bool] = None
+        exe_parity_mode: Optional[str] = None
         if resolved_compiled is not None:
-            compiled_exe_sha256 = _sha256_file(resolved_compiled).lower()
-            compiled_exe_sha256_match = installed_exe_sha256 == compiled_exe_sha256
+            compiled_bytes = resolved_compiled.read_bytes()
+            compiled_exe_sha256 = hashlib.sha256(compiled_bytes).hexdigest().lower()
+            if installed_exe_sha256 == compiled_exe_sha256:
+                compiled_exe_sha256_match = True
+                exe_parity_mode = "exact_sha256"
+                normalized_compiled_exe_sha256 = compiled_exe_sha256
+            elif (
+                len(compiled_bytes) == len(installed_bytes)
+                and compiled_bytes.count(_TAURI_BUNDLE_MARKER_UNK) == 1
+                and installed_bytes.count(_TAURI_BUNDLE_MARKER_NSS) == 1
+            ):
+                normalized_bytes = compiled_bytes.replace(
+                    _TAURI_BUNDLE_MARKER_UNK,
+                    _TAURI_BUNDLE_MARKER_NSS,
+                    1,
+                )
+                normalized_compiled_exe_sha256 = (
+                    hashlib.sha256(normalized_bytes).hexdigest().lower()
+                )
+                compiled_exe_sha256_match = installed_exe_sha256 == normalized_compiled_exe_sha256
+                exe_parity_mode = (
+                    "tauri_nsis_bundle_marker_normalized"
+                    if compiled_exe_sha256_match
+                    else "mismatch"
+                )
+            else:
+                compiled_exe_sha256_match = False
+                exe_parity_mode = "mismatch"
+
             if not compiled_exe_sha256_match:
                 raise RuntimeError(
                     "Installed desktop executable SHA-256 mismatch vs compiled target/release exe: "
@@ -572,7 +606,9 @@ def verify_nsis_installer_e2e(
         "sums_file_verified": sums_file_verified,
         "installed_exe_sha256": installed_exe_sha256,
         "compiled_exe_sha256": compiled_exe_sha256,
+        "normalized_compiled_exe_sha256": normalized_compiled_exe_sha256,
         "compiled_exe_sha256_match": compiled_exe_sha256_match,
+        "exe_parity_mode": exe_parity_mode,
         "uninstaller_verified": True,
         "clean_install_verified": True,
     }
