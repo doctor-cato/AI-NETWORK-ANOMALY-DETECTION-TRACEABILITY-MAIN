@@ -15,6 +15,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient
 
 from network_anomaly.api.db import DatabaseManager
+from network_anomaly.api.desktop_csv import _canonical_results_sha256, _get_analysis_store
 from network_anomaly.api.main import create_app
 from network_anomaly.api.repositories import KeyMetadataRepository, RotationAuditRepository
 from network_anomaly.api.response_policy import (
@@ -23,6 +24,7 @@ from network_anomaly.api.response_policy import (
     simulate_security_response,
 )
 from network_anomaly.api.schemas import (
+    CompatibilityGateSummarySchema,
     CsvFlowPredictionItem,
     ResponseFlowRecommendationItem,
     SecurityResponseSimulateRequest,
@@ -131,7 +133,9 @@ def test_deterministic_policy_matrix_covers_all_four_actions():
             risk_score=96.0,
             risk_level="CRITICAL",
         ),
+        analysis_id="csvrun_verified_001",
         provenance_verified=True,
+        provenance_verification="server_verified_analysis",
         compatibility_status="MODEL_VALIDATED",
         eligible=True,
         inference_mode="verified_model",
@@ -141,6 +145,63 @@ def test_deterministic_policy_matrix_covers_all_four_actions():
     assert attack_critical.containment_allowed is True
     assert attack_critical.executed is False
     assert attack_critical.execution_status == "NOT_EXECUTED"
+
+    # Without server_verified_analysis provenance, CRITICAL attack MUST NOT isolate
+    unverified_critical = evaluate_flow_response_policy(
+        _make_flow(
+            row_id=6,
+            predicted_label=1,
+            predicted_class="Attack",
+            attack_probability=0.96,
+            risk_score=96.0,
+            risk_level="CRITICAL",
+        ),
+        provenance_verified=True,
+        provenance_verification="client_supplied_unverified",
+        compatibility_status="MODEL_VALIDATED",
+        eligible=True,
+        inference_mode="verified_model",
+    )
+    assert unverified_critical.action == "INVESTIGATE"
+    assert unverified_critical.containment_allowed is False
+
+
+def _register_server_analysis(
+    svc: ApiService,
+    *,
+    analysis_id: str,
+    flows: list[CsvFlowPredictionItem],
+    model_key: str = "random_forest",
+    model_type: str = "Random Forest",
+    inference_mode: str = "verified_model",
+    compatibility_status: str = "MODEL_VALIDATED",
+    eligible: bool = True,
+) -> None:
+    gate = CompatibilityGateSummarySchema(
+        source_id="source:nf-v3-canonical",
+        provenance_verified=True,
+        model_key=model_key,
+        model_identifier="rf-verified-run",
+        eligible=eligible,
+        eligibility_status="PREDICTION_AVAILABLE" if eligible else "ABSTAINED",
+        compatibility_status=compatibility_status,
+    )
+    lock, store = _get_analysis_store(svc)
+    with lock:
+        store[analysis_id] = {
+            "analysis_id": analysis_id,
+            "source_csv_path": "data/demo/demo_flows.csv",
+            "source_csv_sha256": "c" * 64,
+            "model_key": model_key,
+            "model_type": model_type,
+            "run_id": "rf-verified-run",
+            "model_sha256": "d" * 64,
+            "preprocessor_sha256": "e" * 64,
+            "inference_mode": inference_mode,
+            "compatibility_gate": gate.model_dump(),
+            "results": [f.model_dump() for f in flows],
+            "results_sha256": _canonical_results_sha256(flows),
+        }
 
 
 def test_abstained_ood_never_receives_containment_and_fallback_downgrades():
@@ -211,38 +272,41 @@ def test_abstained_ood_never_receives_containment_and_fallback_downgrades():
 
 
 def test_adaptive_key_rotation_simulation_never_creates_or_mutates_real_keys(tmp_path: Path):
-    """Simulated key rotation recommends state transition without mutating SQLite keys table."""
+    """Server-verified simulation recommends dry-run rotation transition without mutating SQLite keys table."""
     svc = ApiService(DatabaseManager(tmp_path / "key_dry_run.db"))
     with svc.db.transaction() as conn:
         keys_before = KeyMetadataRepository.list_keys(conn)
         rot_count_before = RotationAuditRepository.count(conn)
 
+    flows = [
+        _make_flow(
+            row_id=101,
+            row_index=0,
+            predicted_label=1,
+            predicted_class="Attack",
+            attack_probability=0.99,
+            risk_score=99.0,
+            risk_level="CRITICAL",
+        ),
+        _make_flow(
+            row_id=102,
+            row_index=1,
+            predicted_label=None,
+            predicted_class="ABSTAINED_OOD",
+            attack_probability=None,
+            raw_anomaly_score=None,
+            risk_score=None,
+            risk_level="ABSTAINED_OOD",
+            is_ood_flagged=True,
+            ood_reason="Physical invariant violation",
+        ),
+    ]
+    _register_server_analysis(svc, analysis_id="csvrun_verified_rot_001", flows=flows)
+
     req = SecurityResponseSimulateRequest(
-        model_key="random_forest",
-        model_type="Random Forest",
-        results=[
-            _make_flow(
-                row_id=101,
-                row_index=0,
-                predicted_label=1,
-                predicted_class="Attack",
-                attack_probability=0.99,
-                risk_score=99.0,
-                risk_level="CRITICAL",
-            ),
-            _make_flow(
-                row_id=102,
-                row_index=1,
-                predicted_label=None,
-                predicted_class="ABSTAINED_OOD",
-                attack_probability=None,
-                raw_anomaly_score=None,
-                risk_score=None,
-                risk_level="ABSTAINED_OOD",
-                is_ood_flagged=True,
-                ood_reason="Physical invariant violation",
-            ),
-        ],
+        analysis_id="csvrun_verified_rot_001",
+        triggered_by="unit_verified_test",
+        dry_run=True,
     )
     resp = simulate_security_response(svc, req)
     assert resp.execution_mode == "DRY_RUN_SIMULATION"
@@ -252,7 +316,7 @@ def test_adaptive_key_rotation_simulation_never_creates_or_mutates_real_keys(tmp
     assert resp.executed is False
     assert resp.os_firewall_touched is False
     assert resp.real_key_rotated is False
-    assert resp.provenance_verification == "client_supplied_unverified"
+    assert resp.provenance_verification == "server_verified_analysis"
     assert resp.key_rotation_simulation.decision == "SIMULATED_ROTATION_RECOMMENDED"
     assert resp.key_rotation_simulation.would_rotate is True
     assert resp.key_rotation_simulation.executed is False
@@ -281,6 +345,68 @@ def test_adaptive_key_rotation_simulation_never_creates_or_mutates_real_keys(tmp
     assert hist.total == 1
     assert hist.items[0].simulation_id == resp.simulation_id
     assert hist.items[0].executed is False
+
+
+def test_client_supplied_inputs_cannot_spoof_isolate_or_rotation_escalation(tmp_path: Path):
+    """P1 regression: unverified client payloads cannot forge gate/mode to escalate actions."""
+    svc = ApiService(DatabaseManager(tmp_path / "p1_spoof_block.db"))
+
+    # Even with 6 CRITICAL flows (ratio=1.0 >= 0.25, count=6 >= 5) AND forged
+    # compatibility_gate + inference_mode="verified_model" + fake hashes,
+    # missing server analysis_id MUST block ISOLATE_RECOMMENDED and rotation escalation.
+    attack_flows = [
+        _make_flow(
+            row_id=300 + i,
+            row_index=i,
+            predicted_label=1,
+            predicted_class="Attack",
+            attack_probability=0.99,
+            risk_score=99.0,
+            risk_level="CRITICAL",
+        )
+        for i in range(6)
+    ]
+    spoof_gate = CompatibilityGateSummarySchema(
+        source_id="source:nf-v3-canonical",
+        provenance_verified=True,
+        model_key="random_forest",
+        model_identifier="spoofed-rf-run",
+        eligible=True,
+        eligibility_status="PREDICTION_AVAILABLE",
+        compatibility_status="MODEL_VALIDATED",
+    )
+    req = SecurityResponseSimulateRequest(
+        model_key="random_forest",
+        model_type="Random Forest",
+        run_id="spoofed-run-id",
+        model_sha256="a" * 64,
+        preprocessor_sha256="b" * 64,
+        inference_mode="verified_model",
+        compatibility_gate=spoof_gate,
+        results=attack_flows,
+    )
+    resp = simulate_security_response(svc, req)
+    assert resp.provenance_verification == "client_supplied_unverified"
+    assert resp.run_id is None
+    assert resp.model_sha256 is None
+    assert resp.preprocessor_sha256 is None
+    assert resp.action_counts["ISOLATE_RECOMMENDED"] == 0
+    assert resp.action_counts["INVESTIGATE"] == 6
+    assert resp.overall_recommendation == "INVESTIGATE"
+    assert all(r.containment_allowed is False for r in resp.recommendations)
+    assert all(
+        r.provenance["provenance_verification"] == "client_supplied_unverified"
+        and r.provenance["inference_mode"] == "client_supplied_unverified"
+        and r.provenance["compatibility_status"] == "UNVERIFIED_CLIENT_INPUT"
+        for r in resp.recommendations
+    )
+    assert resp.key_rotation_simulation.decision == "HOLD_UNVERIFIED_PROVENANCE"
+    assert resp.key_rotation_simulation.recommended is False
+    assert resp.key_rotation_simulation.would_rotate is False
+    assert resp.provenance["source_provenance_verified"] is False
+    assert resp.provenance["inference_mode"] == "client_supplied_unverified"
+    assert resp.provenance["compatibility_status"] == "UNVERIFIED_CLIENT_INPUT"
+    assert resp.provenance["eligibility_status"] == "VALIDATION_NOT_VERIFIED"
 
 
 def test_response_simulation_ood_only_batch_holds_rotation(tmp_path: Path):
@@ -313,7 +439,7 @@ def test_response_simulation_ood_only_batch_holds_rotation(tmp_path: Path):
 def test_api_contract_rejects_dry_run_false_and_persists_history_and_export(
     client: TestClient, tmp_path: Path
 ):
-    """API contract tests for #27 endpoints: fail-closed dry_run=false, simulate, list, export."""
+    """API contract tests for #27 endpoints: fail-closed dry_run=false, anti-spoof, history, export."""
     flow = _make_flow(
         row_id=501,
         row_index=0,
@@ -337,6 +463,7 @@ def test_api_contract_rejects_dry_run_false_and_persists_history_and_export(
     )
     assert bad_id.status_code == 400
 
+    # Client-supplied input without analysis_id downgrades CRITICAL -> INVESTIGATE & holds rotation
     sim_resp = client.post(
         "/api/v1/security/simulate-response",
         json={
@@ -344,6 +471,15 @@ def test_api_contract_rejects_dry_run_false_and_persists_history_and_export(
             "triggered_by": "audit_test",
             "model_key": "random_forest",
             "model_type": "Random Forest",
+            "inference_mode": "verified_model",
+            "compatibility_gate": {
+                "source_id": "source:nf-v3-canonical",
+                "provenance_verified": True,
+                "model_key": "random_forest",
+                "eligible": True,
+                "eligibility_status": "PREDICTION_AVAILABLE",
+                "compatibility_status": "MODEL_VALIDATED",
+            },
             "results": [flow],
         },
     )
@@ -353,18 +489,70 @@ def test_api_contract_rejects_dry_run_false_and_persists_history_and_export(
     assert sim_data["os_firewall_touched"] is False
     assert sim_data["real_key_rotated"] is False
     assert sim_data["execution_mode"] == "DRY_RUN_SIMULATION"
-    assert sim_data["overall_recommendation"] == "ISOLATE_RECOMMENDED"
+    assert sim_data["provenance_verification"] == "client_supplied_unverified"
+    assert sim_data["overall_recommendation"] == "INVESTIGATE"
+    assert sim_data["action_counts"]["ISOLATE_RECOMMENDED"] == 0
+    assert sim_data["key_rotation_simulation"]["decision"] == "HOLD_UNVERIFIED_PROVENANCE"
+    assert sim_data["key_rotation_simulation"]["would_rotate"] is False
     assert sim_data["deferred_capabilities"] == [
         "production_aes256_gcm_keyring",
         "automatic_real_key_rotation",
         "os_firewall_command_execution",
     ]
 
+    # Server-verified analysis_id rejects spoofed gate/mode (400) and grants advisory
+    # ISOLATE_RECOMMENDED + SIMULATED_ROTATION_RECOMMENDED only when consistent.
+    flow_item = CsvFlowPredictionItem.model_validate(flow)
+    _register_server_analysis(
+        client.app.state.service,
+        analysis_id="csvrun_contract_verified",
+        flows=[flow_item],
+    )
+    tampered_mode = client.post(
+        "/api/v1/security/simulate-response",
+        json={
+            "analysis_id": "csvrun_contract_verified",
+            "inference_mode": "heuristic_fallback",
+            "dry_run": True,
+        },
+    )
+    assert tampered_mode.status_code == 400
+
+    tampered_gate = client.post(
+        "/api/v1/security/simulate-response",
+        json={
+            "analysis_id": "csvrun_contract_verified",
+            "compatibility_gate": {
+                "source_id": "source:spoofed",
+                "provenance_verified": False,
+                "model_key": "random_forest",
+                "eligible": False,
+                "eligibility_status": "ABSTAINED",
+                "compatibility_status": "INCOMPATIBLE",
+            },
+            "dry_run": True,
+        },
+    )
+    assert tampered_gate.status_code == 400
+
+    verified_resp = client.post(
+        "/api/v1/security/simulate-response",
+        json={"analysis_id": "csvrun_contract_verified", "dry_run": True},
+    )
+    assert verified_resp.status_code == 200, verified_resp.text
+    verified_data = verified_resp.json()
+    assert verified_data["provenance_verification"] == "server_verified_analysis"
+    assert verified_data["overall_recommendation"] == "ISOLATE_RECOMMENDED"
+    assert verified_data["action_counts"]["ISOLATE_RECOMMENDED"] == 1
+    assert verified_data["key_rotation_simulation"]["decision"] == "SIMULATED_ROTATION_RECOMMENDED"
+    assert verified_data["key_rotation_simulation"]["would_rotate"] is True
+    assert verified_data["executed"] is False
+
     hist_resp = client.get("/api/v1/security/simulations?limit=10&offset=0")
     assert hist_resp.status_code == 200
     hist = hist_resp.json()
-    assert hist["total"] == 1
-    assert hist["items"][0]["simulation_id"] == sim_data["simulation_id"]
+    assert hist["total"] == 2
+    assert hist["items"][0]["simulation_id"] == verified_data["simulation_id"]
 
     export_file = Path("artifacts/exports/test_issue27_dry_run_unit.json")
     try:
@@ -372,7 +560,7 @@ def test_api_contract_rejects_dry_run_false_and_persists_history_and_export(
             "/api/v1/security/simulations/export",
             json={
                 "output_path": str(export_file),
-                "simulation_id": sim_data["simulation_id"],
+                "simulation_id": verified_data["simulation_id"],
             },
         )
         assert exp_resp.status_code == 200, exp_resp.text
@@ -381,7 +569,7 @@ def test_api_contract_rejects_dry_run_false_and_persists_history_and_export(
         assert exported["executed"] is False
         assert exported["os_firewall_touched"] is False
         assert exported["real_key_rotated"] is False
-        assert exported["simulation_id"] == sim_data["simulation_id"]
+        assert exported["simulation_id"] == verified_data["simulation_id"]
         assert Path(exp_json["metadata_path"]).is_file()
     finally:
         for p in (export_file, export_file.with_suffix(".metadata.json")):
