@@ -11,7 +11,7 @@
 > **Cập nhật Củng cố Sản phẩm Cuối kỳ (Consolidation MVP):**
 > - Trên `main`: Đã hợp nhất Random Forest Held-out Test (`rf-heldout-ea330b9`, PR #50), **Autoencoder** (#29, PR #51), **FastAPI + SQLite persistence** (#30, PR #61) và các bản vá an toàn `#53–#56, #59` (PR #52 đã đóng `SUPERSEDED`).
 > - Trên PR #47 (`f999930`, 6/6 CI PASS) & PR #49 (`7344994`): Ingestion Gate (#46/#58) và Cross-Dataset M7 (#48/#57) đã ở trạng thái **Ready for Review** chờ maintainer duyệt merge (`REVIEW_REQUIRED`).
-> - Trên nhánh củng cố `feat/final-year-demo-mvp-consolidation`: Hỗ trợ đủ 4 model đã verify artifact loading (`RandomForest`, `XGBoost`, `IsolationForest`, `Autoencoder`), chuẩn bị demo CSV chỉ từ Validation (`scripts/prepare_demo_dataset.py`) và đóng băng kiến trúc giao diện là **Rust / Tauri 2 + Svelte 5** (#16, `PLANNED`, thay thế Streamlit). Model binaries lớn không lưu trong Git; thiếu file `.joblib`/`.pt` hệ thống báo `BLOCKED / NOT READY`.
+> - Trên nhánh `feat/m6-desktop-app` (PR #67): Hỗ trợ đủ 4 model đã verify artifact loading (`RandomForest`, `XGBoost`, `IsolationForest`, `Autoencoder`), chuẩn bị demo CSV chỉ từ Validation (`scripts/prepare_demo_dataset.py`) và hoàn thiện ứng dụng desktop **Rust / Tauri 2 + Svelte 5** (#16, `IMPLEMENTED / TESTED`, thay thế Streamlit). Model binaries lớn không lưu trong Git; thiếu file `.joblib`/`.pt` hệ thống báo `BLOCKED / NOT READY`.
 
 **Đọc nhanh:** [Tổng quan](#tổng-quan-dự-án) · [Dữ liệu](#bộ-dữ-liệu) · [Mô hình](#các-mô-hình-ai) · [Kết quả](#thực-nghiệm-và-kết-quả) · [Demo & Tái lập](#cài-đặt-và-tái-lập) · [Hạn chế](#hạn-chế) · [Tài liệu](docs/REPRODUCIBILITY.md)
 
@@ -19,7 +19,7 @@
 
 Một Network Intrusion Detection System (NIDS) cần phân biệt hoạt động bình thường với lưu lượng đáng nghi, đồng thời cho người phân tích biết dự đoán xuất phát từ dữ liệu và mô hình nào. Dự án xây dựng nền tảng nghiên cứu và ứng dụng desktop offline trên **network flow**: kiểm tra nguồn dữ liệu, tạo phân vùng không rò rỉ, huấn luyện mô hình, lưu bằng chứng cấu hình/checksum/metric và cung cấp API FastAPI cho ứng dụng desktop **Rust / Tauri 2 + Svelte 5**. Người đọc có thể kiểm tra từng bước qua [traceability matrix](docs/TRACEABILITY_MATRIX.md) và các báo cáo trong `reports/`.
 
-**Đã đạt được:** Random Forest được kiểm chứng đầy đủ trên Train (1.655.797 flow), Validation (345.371 flow) và Held-out Test `rf-heldout-ea330b9` (345.953 flow); XGBoost có Validation run được kiểm chứng; Isolation Forest và Autoencoder đã triển khai code, unit tests và verified loading; Python FastAPI (`127.0.0.1:8000`) + SQLite persistence và pipeline tạo dữ liệu demo CSV từ Validation (`scripts/prepare_demo_dataset.py`) hoạt động có kiểm chứng. **Mục tiêu tiếp theo:** hoàn thiện **Desktop Application Rust / Tauri 2 + Svelte 5** (#16) gọi FastAPI localhost để đóng gói sản phẩm demo Windows offline, cùng báo cáo M7 (#18–#20, #25). Đây là đồ án prototype lab, không phải hệ thống enterprise SOC production.
+**Đã đạt được:** Random Forest được kiểm chứng đầy đủ trên Train (1.655.797 flow), Validation (345.371 flow) và Held-out Test `rf-heldout-ea330b9` (345.953 flow); Isolation Forest đã kiểm chứng trên Validation và Held-out Test (`if-c4-20261115T055359Z`); XGBoost có Validation run được kiểm chứng; Autoencoder đã triển khai code, unit tests và verified loading; Python FastAPI (`127.0.0.1`) + SQLite persistence, pipeline tạo dữ liệu demo CSV từ Validation (`scripts/prepare_demo_dataset.py`), và **Desktop Application Rust / Tauri 2 + Svelte 5** (`#16`, PR #67, `v0.6.0`) hoạt động có kiểm chứng. **Mục tiêu tiếp theo:** hoàn tất kiểm toán/merge PR #67, xuất bản bản cài đặt Windows M6 và hoàn thiện báo cáo M7 (#18–#20, #25). Đây là đồ án prototype lab, không phải hệ thống enterprise SOC production.
 
 ## Bài toán nghiên cứu
 
@@ -36,14 +36,15 @@ False positive (FP) làm tăng công điều tra, false negative (FN) bỏ lọt
 | Provenance, schema, data quality, EDA, split và preprocessing có kiểm soát | **COMPLETED / REAL-DATA VERIFIED** |
 | Random Forest baseline (#10, #12, #13) | **EXPERIMENTALLY VALIDATED** cả Validation (`345.371`) và Held-out Test `rf-heldout-ea330b9` (`345.953`) |
 | XGBoost theo giao thức binary chung (#31) | **EXPERIMENTALLY VALIDATED trên Validation**; Held-out Test `NOT VERIFIED` |
-| Isolation Forest (#11) và Autoencoder (#29) | **IMPLEMENTED / TESTED** (code, tests & verified loading); real-data benchmark `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
+| Isolation Forest (#11) | **EXPERIMENTALLY VALIDATED & REPRODUCED** trên Validation & Held-out Test (`if-c4-20261115T055359Z`, `F1=0.5064`, `Recall=0.8997`, `ROC-AUC=0.893730`) |
+| Autoencoder (#29) | **IMPLEMENTED / TESTED** (code, tests & verified loading); real-data benchmark `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
 | FastAPI (`127.0.0.1`), SQLite persistence, 4-model inference & Validation Demo CSV Prep | **IMPLEMENTED / TESTED** (#30, #15, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
-| Desktop UI **Rust / Tauri 2 + Svelte 5** (#16 — thay Streamlit) | **PLANNED** (`CORE-DEMO` còn lại; giao tiếp localhost HTTP tới FastAPI) |
+| Desktop UI **Rust / Tauri 2 + Svelte 5** (#16 — thay Streamlit) | **IMPLEMENTED / TESTED** (`v0.6.0` trên PR #67; giao tiếp localhost HTTP tới FastAPI, Windows NSIS installer) |
 | Behavioral Vector (#28), Risk Ranking (#32), Trace Timeline (#24), Security/Response (#26, #27) | **REDUCED / DEFERRED** — không chặn Demo CSV MVP; không có Auth/API log hoặc AES-GCM vòng đời đầy đủ |
 
 ## Kiến trúc hệ thống
 
-Đường liền là thành phần đã có code/test; đường nét đứt là thành phần đang `PLANNED` (#16) hoặc `REDUCED / DEFERRED`.
+Đường liền là thành phần đã có code/test (#16, #30); đường nét đứt là thành phần thu gọn/hoãn (`REDUCED / DEFERRED`).
 
 ```mermaid
 flowchart LR
@@ -52,7 +53,7 @@ flowchart LR
     C --> D["4 Verified Models<br/>RF / XGB / IF / AE"]
     D --> E["InferencePipeline + CSV Export<br/>(Probabilities / Anomaly Score)"]
     E --> F["Python FastAPI + SQLite<br/>(127.0.0.1 Localhost Owner, #30)"]
-    F -. "Localhost HTTP / Typed Contracts" .-> G["Rust / Tauri 2 + Svelte 5<br/>Desktop UI (#16 PLANNED)"]
+    F --> G["Rust / Tauri 2 + Svelte 5<br/>Desktop UI (#16 IMPLEMENTED / TESTED)"]
 ```
 
 Nguồn dữ liệu chính là NetFlow CSV (`NF-UNSW-NB15-v3`), **không** chứa log API, authentication hay application session. [Kiến trúc đầy đủ](docs/ARCHITECTURE.md) và [roadmap](docs/ROADMAP_FULL_SYSTEM.md) nêu rõ ranh giới giữa phần MVP đã đóng băng và các hạng mục thu gọn/hoãn.
@@ -65,7 +66,7 @@ Nguồn dữ liệu chính là NetFlow CSV (`NF-UNSW-NB15-v3`), **không** chứ
 | Dữ liệu & Lưu trữ | pandas, NumPy, SQLite | Streaming CSV, mảng số, persistence đơn chủ ghi trong FastAPI |
 | ML & Deep Learning | scikit-learn, XGBoost, joblib, PyTorch (`Autoencoder`) | Random Forest, XGBClassifier, Isolation Forest, Autoencoder và verified loading |
 | Backend API | FastAPI, Uvicorn | Dịch vụ REST local-only `127.0.0.1:8000` (`scripts/run_api.py`), OpenAPI contract |
-| Desktop UI (Mục tiêu) | **Rust / Tauri 2 + Svelte 5** | **PLANNED (#16)** — Native file picker, lifecycle Python process, bảng/biểu đồ/Confusion Matrix offline |
+| Desktop UI (M6) | **Rust / Tauri 2 + Svelte 5** | **IMPLEMENTED / TESTED (#16, `v0.6.0`)** — Native file picker, lifecycle Python process, bảng/biểu đồ/Confusion Matrix offline |
 | Chất lượng & Kiểm thử | pytest, Ruff, Black, GitHub Actions | Unit/integration/API tests, lint/format check và raw-data CI guard |
 
 `Streamlit` đã bị loại khỏi kiến trúc chính. PostgreSQL cluster, real-time packet capture và AES-256-GCM keyring rotation đầy đủ không nằm trong phạm vi Demo MVP M6. [Dependency khai báo](pyproject.toml) dùng phiên bản tối thiểu, chưa phải lockfile.
@@ -143,7 +144,7 @@ Precision cho biết tỷ lệ cảnh báo Attack là đúng; Recall cho biết 
 
 Nhóm đã hoàn thành kiểm định CSV nguồn `NF-UNSW-NB15-v3`, EDA có bằng chứng chạy lặp, split và kiểm toán leakage, train-only preprocessor, hai baseline supervised trên Train/Validation, Held-out Test Random Forest (`rf-heldout-ea330b9`), thực nghiệm **Isolation Forest (#11)** kèm đánh giá unknown-attack (`if-c4-20261115T055359Z`, clean commit `bf0f3ec`), Autoencoder code/tests (`#29`), tái lập sạch M3 trên Python `3.12.10` (`#14`), **FastAPI (`127.0.0.1:8000`) + SQLite persistence**, pipeline CLI 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) và luồng tạo dữ liệu demo từ Validation (`scripts/prepare_demo_dataset.py`). `reports/` chứa metadata và báo cáo nhỏ; `data/raw/`, `data/processed/`, `data/demo/*.csv` và `artifacts/` nhị phân lớn không track trong Git.
 
-Chưa có kết quả held-out Test cho XGBoost, chưa có real-data benchmark cho Autoencoder, và **Desktop Application Rust / Tauri 2 + Svelte 5 (#16)** đang ở trạng thái `PLANNED` (sẽ kết nối trực tiếp vào FastAPI localhost). [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) lưu đầy đủ chuỗi truy vết yêu cầu → code → test → bằng chứng.
+Chưa có kết quả held-out Test cho XGBoost và chưa có real-data benchmark cho Autoencoder; **Desktop Application Rust / Tauri 2 + Svelte 5 (#16, `v0.6.0`)** đã đạt trạng thái **IMPLEMENTED / TESTED** trên PR #67 (chờ review Approve & merge). [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) lưu đầy đủ chuỗi truy vết yêu cầu → code → test → bằng chứng.
 
 ## Cài đặt và tái lập
 
@@ -223,7 +224,8 @@ Acquisition, quality audit, EDA | **EXPERIMENTALLY VALIDATED** trên CSV chính 
 Split, leakage audit, preprocessing | **COMPLETED / REAL-DATA VERIFIED**; [split](reports/splits/nf_unsw_nb15_v3_split_manifest.json), [preprocessing](reports/preprocessing/REAL_DATA_SMOKE_REPORT.md) |
 Random Forest | **EXPERIMENTALLY VALIDATED** Validation & Held-out Test `rf-heldout-ea330b9` |
 XGBoost | **EXPERIMENTALLY VALIDATED trên Validation**; Test `NOT VERIFIED` |
-Isolation Forest & Autoencoder | **IMPLEMENTED / TESTED** (code, tests & verified loading); real run `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
+Isolation Forest (#11) | **EXPERIMENTALLY VALIDATED & REPRODUCED** Validation & Held-out Test (`if-c4-20261115T055359Z`) |
+Autoencoder (#29) | **IMPLEMENTED / TESTED** (code, tests & verified loading); real run `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
 4-Model Inference, FastAPI (`127.0.0.1`), SQLite & Demo CSV Prep | **IMPLEMENTED / TESTED** (#15, #30, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
 Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, `v0.6.0`) | **IMPLEMENTED / TESTED** (Windows x64 executable + NSIS installer, `/api/v1/csv/*`, OOD abstention, provenance gate) |
 Multi-Source Ingestion & Gate (#46) | **IMPLEMENTED / TESTED** (xác minh provenance `source:nf-v3-canonical` vs `source:nf-v3-unverified`) |
@@ -234,7 +236,7 @@ Tài liệu và CI | **IMPLEMENTED / TESTED** ([cài đặt Windows](docs/WINDOW
 ## Hạn chế
 
 - **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ đạt Accuracy Validation `0,999849` và `49,98%` flow Validation trùng vector 47 features với Train; đánh giá cross-dataset trên PR #47 / #48 cho thấy model có thể suy giảm mạnh khi chuyển môi trường mạng (domain shift).
-- **Real-data benchmarks còn mở:** Held-out Test mới kiểm chứng trên Random Forest (`rf-heldout-ea330b9`); XGBoost Held-out Test, Isolation Forest và Autoencoder real-data experiments chưa hoàn tất (XGBoost và Autoencoder hiện báo `BLOCKED / NOT READY` fail-closed với HTTP 503 khi thiếu artifact `.joblib`).
+- **Real-data benchmarks còn mở:** Held-out Test mới kiểm chứng trên Random Forest (`rf-heldout-ea330b9`) và Isolation Forest (`if-c4-20261115T055359Z`); XGBoost Held-out Test và Autoencoder real-data experiments chưa hoàn tất (XGBoost và Autoencoder hiện báo `BLOCKED / NOT READY` fail-closed với HTTP 503 khi thiếu artifact `.joblib`).
 - **Giới hạn đóng gói Desktop M6 (`v0.6.0`):** Bộ cài đặt Windows NSIS (`NetFlow Sentinel M6_0.6.0_x64-setup.exe`) đã nhúng giao diện Svelte 5 và nhân Rust Tauri 2, nhưng **chưa phải bản standalone đóng gói sẵn Python**. Máy đích vẫn cần Python tương thích + dependencies, thư mục gốc repository (`NETWORK_ANOMALY_REPO_ROOT`), các tệp `.joblib` khớp SHA-256, `data/demo/*.csv` và Microsoft Edge WebView2 Runtime (xem [docs/WINDOWS_INSTALLATION.md](docs/WINDOWS_INSTALLATION.md)).
 - **Phạm vi thu gọn minh bạch:** Các hạng mục tự động hóa tường lửa hệ điều hành (#27), xoay vòng khóa AES-256-GCM trong OS Keyring (#26) và tương quan đa nguồn log Auth/API ngoài NetFlow (#28) được ghi nhận trạng thái `DEFERRED`.
 

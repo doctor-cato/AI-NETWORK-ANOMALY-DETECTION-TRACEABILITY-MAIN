@@ -179,6 +179,9 @@ export interface CsvAnalyzeResponse {
   preprocessor_sha256: string | null;
   inference_mode: string;
   total_rows: number;
+  evaluated_rows?: number;
+  abstained_rows?: number;
+  prediction_coverage?: number;
   benign_count: number;
   attack_count: number;
   ood_flagged_count: number;
@@ -206,8 +209,10 @@ export interface CsvEvaluateResponse {
   labels_path: string;
   labels_sha256: string;
   matched_rows: number;
+  evaluated_rows?: number;
   unmatched_rows: number;
   abstained_rows?: number;
+  prediction_coverage?: number;
   accuracy: number;
   precision: number;
   recall: number;

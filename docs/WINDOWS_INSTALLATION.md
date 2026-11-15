@@ -15,7 +15,7 @@ Tài liệu này hướng dẫn cài đặt, chuẩn bị môi trường phụ t
 |---|---|---|
 | **Hệ điều hành** | Windows 10 (64-bit, build 1903+) hoặc Windows 11 (x64) | Kiến trúc `x86_64-pc-windows-msvc` |
 | **WebView2 Runtime** | Microsoft Edge WebView2 Evergreen Runtime (`{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`) | Có sẵn mặc định trên Windows 11 và Windows 10 đã cập nhật. Xem mục 3 nếu cài đặt trên máy không có Internet |
-| **Python Runtime** | Python `>= 3.10` (ưu tiên **Python 3.11** hoặc **Python 3.12** đã kiểm chứng CI; tương thích tới Python 3.14) | Cần có `python` trên `PATH` hoặc đặt biến môi trường `NETWORK_ANOMALY_PYTHON` |
+| **Python Runtime** | Python `>= 3.11` (ưu tiên **Python 3.11** hoặc **Python 3.12** đã kiểm chứng trong CI, khớp `requires-python = ">=3.11"` tại `pyproject.toml`) | Cần có `python` trên `PATH` hoặc đặt biến môi trường `NETWORK_ANOMALY_PYTHON` |
 | **Python Dependencies** | `numpy`, `pandas`, `scikit-learn`, `joblib`, `pyarrow`, `fastapi`, `uvicorn`, `pydantic`, `httpx` | Cài đặt qua `pip install -e .` từ `pyproject.toml` của repository |
 | **Dung lượng lưu trữ** | - Ứng dụng Desktop + Python venv: ~600 MB<br>- Model & Preprocessor artifacts (`.joblib`): ~50 MB<br>- Bộ dữ liệu gốc `NF-UNSW-NB15-v3.csv` (tùy chọn khi tự sinh demo): ~1.1 GB | Nếu chỉ chạy bộ dữ liệu mẫu `data/demo/` (~200 dòng), chỉ cần < 1 MB cho dữ liệu demo |
 | **Verified Artifacts** | 1. `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`<br>2. `artifacts/models/random_forest/random_forest_baseline.joblib`<br>3. `artifacts/models/isolation_forest/isolation_forest.joblib` | Bắt buộc khớp mã băm SHA-256 trong `reports/preprocessing/*.json` và `reports/models/*.json` (cơ chế fail-closed) |
@@ -29,8 +29,8 @@ Thực hiện các bước dưới đây trong **Windows PowerShell**:
 
 ### Bước 1: Tải gói cài đặt Windows từ GitHub Release
 
-Tải 2 tệp phát hành từ trang GitHub Releases của dự án (phiên bản `v0.6.0-beta.1` hoặc `v0.6.0`):
-- `NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe` (hoặc tên tương ứng với tag pre-release)
+Tải 2 tệp phát hành từ trang GitHub Releases của dự án (tag `v0.6.0` cho bản Stable với version nhị phân/NSIS là `0.6.0`, hoặc tag `v0.6.0-beta.1` nếu là bản Beta có version nhị phân/NSIS đồng bộ là `0.6.0-beta.1`):
+- `NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe` (hoặc `NetFlow-Sentinel-v0.6.0-beta.1-windows-x64-setup.exe` cho bản Beta)
 - `SHA256SUMS.txt`
 
 ```powershell
@@ -153,7 +153,7 @@ Get-ChildItem data\demo\
 Lệnh trên tạo ra 3 tệp trong `data/demo/`:
 1. `data/demo/demo_flows.csv` — 200 dòng NetFlow (47 cột đặc trưng ML + metadata truy vết + `row_id`, hoàn toàn không chứa cột `Label` hay `Attack`).
 2. `data/demo/demo_labels.csv` — Nhãn thực tế (`row_id`, `Label`, `Attack`) tách rời để kiểm chứng Confusion Matrix.
-3. `data/demo/demo_manifest.json` — Biên bản provenance xác nhận SHA-256 và không chồng lấn tập Train/Test (`train_overlap_count = 0`, `test_overlap_count = 0`), giúp cổng tương thích (`InferenceEligibilityGate`) xác thực nguồn `source:nf-v3-canonical` (`MODEL_VALIDATED`).
+3. `data/demo/demo_manifest.json` — Biên bản provenance xác nhận SHA-256 và không chồng lấn tập Train/Test (`train_overlap_count = 0`, `test_overlap_count = 0`), được đối chiếu với trust anchor trong repository (`data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json`) để cổng tương thích (`InferenceEligibilityGate`) xác thực nguồn `source:nf-v3-canonical` (`MODEL_VALIDATED`). Mọi tệp CSV bên ngoài tự khai báo manifest không nằm trong trust anchor vẫn giữ trạng thái `source:nf-v3-unverified` (`VALIDATION_NOT_VERIFIED`).
 
 ### Bước 8: Cấu hình biến môi trường và Khởi động Ứng dụng Desktop
 
@@ -238,8 +238,8 @@ Bảng dưới đây phân biệt rõ các yêu cầu ở từng giai đoạn kh
 - **Nguyên nhân:** Tệp `.joblib` bị hỏng trong quá trình sao chép hoặc không đúng phiên bản với manifest JSON trong `reports/models/` và `reports/preprocessing/`. Cơ chế bảo mật fail-closed từ chối nạp tệp `.joblib` không khớp SHA-256.
 - **Cách khắc phục:** Chạy đoạn mã PowerShell ở **Bước 6** để xác định tệp bị lệch SHA-256 và sao chép lại đúng bản artifact đã nghiệm thu. Không chỉnh sửa thủ công mã băm trong manifest JSON.
 
-### 4.6. FastAPI không khởi động trong thời gian chờ (`FastAPI backend did not become ready on http://127.0.0.1:<port>/health within 25s`)
-- **Nguyên nhân:** Máy có ổ cứng chậm khi nạp `scikit-learn` / `pandas` lần đầu, hoặc tiến trình Python gặp lỗi cấu hình.
+### 4.6. FastAPI không khởi động trong thời gian chờ (`Timed out waiting for FastAPI backend on http://127.0.0.1:<port>/health`)
+- **Nguyên nhân:** Máy có ổ cứng chậm khi nạp `scikit-learn` / `pandas` lần đầu vượt quá thời gian chờ mặc định (`20s` khi khởi động ứng dụng, `15s` khi nhấn khởi động lại backend), hoặc tiến trình Python gặp lỗi cấu hình.
 - **Cách khắc phục:**
   1. Nhấn nút **Làm mới Backend** trên thanh công cụ ứng dụng.
   2. Hoặc chạy thử trực tiếp lệnh sau trong PowerShell để xem thông báo lỗi chi tiết trên terminal:
@@ -263,8 +263,8 @@ Bảng dưới đây phân biệt rõ các yêu cầu ở từng giai đoạn kh
   Nếu lệnh trên không trả về phiên bản (`pv`), hãy tải và cài đặt **Microsoft Edge WebView2 Evergreen Standalone Installer (x64)** chính thức từ Microsoft trước khi chạy bộ cài NetFlow Sentinel.
 
 ### 4.9. Lỗi quyền ghi cơ sở dữ liệu SQLite (`sqlite3.OperationalError: unable to open database file` / `readonly database`)
-- **Nguyên nhân:** Mặc định ứng dụng tạo tệp SQLite tại `%LOCALAPPDATA%\NetFlowSentinel\desktop_m6.db`. Nếu thư mục này bị giới hạn quyền ghi hoặc bạn đặt `NETWORK_ANOMALY_DB_PATH` vào một thư mục hệ thống chỉ đọc.
-- **Cách khắc phục:** Đặt biến môi trường `NETWORK_ANOMALY_DB_PATH` trỏ tới một thư mục mà tài khoản người dùng hiện tại có toàn quyền đọc/ghi (ví dụ: `$HOME\NetFlowSentinelData\desktop_m6.db`).
+- **Nguyên nhân:** Mặc định ứng dụng tạo tệp SQLite tại `%LOCALAPPDATA%\NetFlowSentinelM6\network_anomaly.db` (fallback về `<repo_root>\data\network_anomaly.db` nếu không có `LOCALAPPDATA` hoặc không tạo được thư mục). Nếu thư mục này bị giới hạn quyền ghi hoặc bạn đặt `NETWORK_ANOMALY_DB_PATH` vào một thư mục hệ thống chỉ đọc.
+- **Cách khắc phục:** Đặt biến môi trường `NETWORK_ANOMALY_DB_PATH` trỏ tới một thư mục mà tài khoản người dùng hiện tại có toàn quyền đọc/ghi (ví dụ: `$HOME\NetFlowSentinelData\network_anomaly.db`).
 
 ### 4.10. Schema CSV không hợp lệ (`Missing required ML feature columns` / `ml_features_valid = false`)
 - **Nguyên nhân:** Tệp CSV đầu vào thiếu một hoặc nhiều cột trong hợp đồng 47 cột đặc trưng ML của `NF-UNSW-NB15-v3`, hoặc không phải tệp `.csv` hợp lệ (hoặc rỗng / vượt quá 100 MB).

@@ -217,7 +217,11 @@
               </td>
               <td>
                 {#if item.is_ood_flagged}
-                  <span class="badge badge-warning" title={item.ood_reason ?? ""}>MIN_TTL=0</span>
+                  <span class="badge badge-warning" title={item.ood_reason ?? "OOD abstained"}>
+                    {item.min_ttl === 0 && !(item.ood_reason ?? "").includes("Hard protocol")
+                      ? "MIN_TTL=0"
+                      : "OOD_HARD"}
+                  </span>
                 {:else}
                   <span class="badge badge-info">OK</span>
                 {/if}

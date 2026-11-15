@@ -67,23 +67,14 @@ def test_semver_validation_and_set_version_supports_beta_and_stable(tmp_path: Pa
     )
     assert ok_beta is True, msg_beta
 
-    # Set back to 0.6.0 and verify mismatch detection
+    # Set back to 0.6.0 and verify strict 1-to-1 mismatch rejection for beta tag on 0.6.0 binary (F-04)
     set_desktop_version("0.6.0", root=tmp_path)
     ok_mismatch, msg_mismatch = verify_desktop_version(
         root=tmp_path,
         expected_tag="v0.6.0-beta.1",
-        allow_prerelease_tag_on_base=False,
     )
     assert ok_mismatch is False
     assert "does not match Git tag" in msg_mismatch
-
-    # Allow prerelease tag on matching base version when flag is enabled
-    ok_base, msg_base = verify_desktop_version(
-        root=tmp_path,
-        expected_tag="v0.6.0-beta.1",
-        allow_prerelease_tag_on_base=True,
-    )
-    assert ok_base is True, msg_base
 
     # Detect drift when one file has a different version
     tauri_conf = tmp_path / "desktop" / "src-tauri" / "tauri.conf.json"
@@ -94,3 +85,33 @@ def test_semver_validation_and_set_version_supports_beta_and_stable(tmp_path: Pa
     ok_drift, msg_drift = verify_desktop_version(root=tmp_path)
     assert ok_drift is False
     assert "Desktop version mismatch" in msg_drift
+
+
+def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
+    """F-03/F-04 regression: release.yml must gate all tags (beta+stable) on main & strict version."""
+    release_yml = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "--allow-prerelease-tag-on-base" not in release_yml
+    assert "git merge-base --is-ancestor $tagCommit origin/main" in release_yml
+    # Ensure merge-base ancestry check is NOT conditionally skipped for prerelease tags
+    assert "if (-not $isPrerelease)" not in release_yml
+    assert "gh release view $tagName" in release_yml
+    assert "if: steps.meta.outputs.is_tag_push == 'true'" in release_yml
+    assert "SHA256SUMS.txt" in release_yml
+    assert "*_${desktopVer}_x64-setup.exe" in release_yml
+    assert "\npermissions:\n  contents: read\n" in release_yml
+
+    # Check Python >= 3.11 and #27 DEFERRED documentation consistency (F-05/F-06)
+    win_doc = (PROJECT_ROOT / "docs" / "WINDOWS_INSTALLATION.md").read_text(encoding="utf-8")
+    rel_notes = (PROJECT_ROOT / "docs" / "releases" / "v0.6.0.md").read_text(encoding="utf-8")
+    desktop_readme = (PROJECT_ROOT / "desktop" / "README.md").read_text(encoding="utf-8")
+    assert ">= 3.10" not in win_doc
+    assert ">= 3.10" not in rel_notes
+    assert ">=3.10" not in desktop_readme
+    assert ">= 3.11" in win_doc
+    assert ">= 3.11" in rel_notes
+    assert ">=3.11" in desktop_readme
+    assert "| **#27** | **Artifact Provenance" not in rel_notes
+    assert "Adaptive Rotation & Security Response" in rel_notes
+    assert "DEFERRED" in rel_notes

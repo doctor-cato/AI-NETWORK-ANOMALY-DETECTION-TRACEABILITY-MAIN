@@ -762,6 +762,9 @@ class CsvAnalyzeResponse(BaseModel):
     preprocessor_sha256: Optional[str] = None
     inference_mode: str
     total_rows: int = Field(..., ge=0)
+    evaluated_rows: int = Field(default=0, ge=0)
+    abstained_rows: int = Field(default=0, ge=0)
+    prediction_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
     benign_count: int = Field(..., ge=0)
     attack_count: int = Field(..., ge=0)
     ood_flagged_count: int = Field(..., ge=0)
@@ -806,8 +809,10 @@ class CsvEvaluateResponse(BaseModel):
     labels_path: str
     labels_sha256: str
     matched_rows: int = Field(..., ge=0)
+    evaluated_rows: int = Field(default=0, ge=0)
     unmatched_rows: int = Field(..., ge=0)
     abstained_rows: int = Field(default=0, ge=0)
+    prediction_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
     accuracy: float
     precision: float
     recall: float

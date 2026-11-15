@@ -17,8 +17,8 @@ Offline-capable Windows x64 desktop application for UNSW-NB15-v3 NetFlow anomaly
   - CSV schema/OOD inspection (`47/47 ML Features`, `MIN_TTL=0` drift check), batch inference table, detached Ground Truth confusion matrix evaluation (excluding `ABSTAINED_OOD` rows and reporting `abstained_rows`), deterministic Evidence Timeline (`#24`), behavioral summary (`#28`), and CSV + `.metadata.json` export.
 - **Local Backend**: Python FastAPI + SQLite (`src/network_anomaly/api/`, `scripts/run_api.py`)
   - Runs strictly on `127.0.0.1` (`--host 0.0.0.0` is refused without `--allow-non-local`).
-  - Verifies CSV source provenance (`resolve_csv_source_provenance`) before assigning `source:nf-v3-canonical` (`MODEL_VALIDATED`); external/unverified CSVs receive `source:nf-v3-unverified` (`SEMANTICALLY_COMPATIBLE` / `VALIDATION_NOT_VERIFIED`).
-  - Abstains from both inference and risk scoring on OOD-flagged rows (`predicted_label = null`, `predicted_class = "ABSTAINED_OOD"`, `risk_level = "ABSTAINED_OOD"`).
+  - Verifies CSV source provenance against controlled trust anchors (`resolve_csv_source_provenance`) before assigning `source:nf-v3-canonical` (`MODEL_VALIDATED`); untrusted external CSVs or self-declared sibling manifests receive `source:nf-v3-unverified` (`SEMANTICALLY_COMPATIBLE` / `VALIDATION_NOT_VERIFIED`).
+  - Abstains OOD-flagged rows (`MIN_TTL == 0` and physical protocol invariant violations) **before** calling ML inference (`predict`/`predict_proba` or incident creation), emitting `predicted_label = null`, `predicted_class = "ABSTAINED_OOD"`, and `risk_level = "ABSTAINED_OOD"`.
   - Persists telemetry/audit state into SQLite (`%LOCALAPPDATA%\NetFlowSentinelM6\network_anomaly.db` by default or `NETWORK_ANOMALY_DB_PATH`).
 
 ## Development & Build Commands
@@ -64,7 +64,7 @@ Run from the repository root (`AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN`):
 - The target Windows x64 machine requires:
   - **Microsoft Edge WebView2 Runtime**: Pre-installed on Windows 11 and updated Windows 10. Note that Tauri's default NSIS script (`INSTALLWEBVIEW2MODE "downloadBootstrapper"`) downloads `MicrosoftEdgeWebview2Setup.exe` from Microsoft if WebView2 Runtime is missing on the machine; therefore, on an air-gapped machine without WebView2 Runtime, the Microsoft Edge WebView2 Evergreen Standalone Offline Installer must be installed beforehand.
   - **Repository runtime directory layout** (`src/network_anomaly/`, `scripts/run_api.py`, `artifacts/`, `reports/` — resolved via `NETWORK_ANOMALY_REPO_ROOT` or working/executable ancestor search).
-  - **Python `>=3.10`** (3.11 / 3.12 recommended) with project dependencies installed (`pip install -e .`), discoverable via `NETWORK_ANOMALY_PYTHON`, `.venv\Scripts\python.exe`, `py -3.14` / `py -3.12` / `py -3`, or `python`.
+  - **Python `>=3.11`** (3.11 / 3.12 verified in CI, matching `pyproject.toml`) with project dependencies installed (`pip install -e .`), discoverable via `NETWORK_ANOMALY_PYTHON`, `.venv\Scripts\python.exe`, `py -3.14` / `py -3.12` / `py -3`, or `python`.
   - **Verified `.joblib` model & preprocessor artifacts** in `artifacts/` matching manifest SHA-256 digests in `reports/` (missing or mismatched artifacts report `BLOCKED / NOT READY` fail-closed with HTTP `503`).
   - **Demo CSV dataset** (`data/demo/demo_flows.csv`, `data/demo/demo_labels.csv`, `data/demo/demo_manifest.json`) generated via `python scripts/prepare_demo_dataset.py`.
 

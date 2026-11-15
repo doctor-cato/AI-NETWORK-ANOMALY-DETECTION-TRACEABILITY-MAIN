@@ -1541,6 +1541,25 @@
             "minimum": 0.0,
             "title": "Total Rows"
           },
+          "evaluated_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated Rows",
+            "default": 0
+          },
+          "abstained_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Abstained Rows",
+            "default": 0
+          },
+          "prediction_coverage": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Prediction Coverage",
+            "default": 1.0
+          },
           "benign_count": {
             "type": "integer",
             "minimum": 0.0,
@@ -1674,6 +1693,12 @@
             "minimum": 0.0,
             "title": "Matched Rows"
           },
+          "evaluated_rows": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated Rows",
+            "default": 0
+          },
           "unmatched_rows": {
             "type": "integer",
             "minimum": 0.0,
@@ -1684,6 +1709,13 @@
             "minimum": 0.0,
             "title": "Abstained Rows",
             "default": 0
+          },
+          "prediction_coverage": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Prediction Coverage",
+            "default": 1.0
           },
           "accuracy": {
             "type": "number",

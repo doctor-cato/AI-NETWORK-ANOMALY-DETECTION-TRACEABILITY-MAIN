@@ -11,7 +11,7 @@ Tài liệu này quy định quy trình kỹ thuật chuẩn để biên dịch,
 | Phân loại | Định nghĩa kỹ thuật | Trạng thái trong M6 (`v0.6.0`) |
 |---|---|---|
 | **1. Development Build** | Chạy Vite dev server (`http://localhost:1420`) kết hợp `cargo tauri dev` và tiến trình Python cục bộ. | Dùng trong quá trình phát triển (`npm --prefix desktop run tauri dev`). |
-| **2. Compiled Release Executable** (`netflow-sentinel-desktop.exe`) | Tệp thực thi Windows x64 biên dịch ở chế độ `--release`, đã nhúng tài nguyên giao diện Svelte 5 (`desktop/build`). | **Có tạo ra** tại `desktop/src-tauri/target/release/netflow-sentinel-desktop.exe`. **Lưu ý:** Không được gọi hay phân phối tệp `.exe` đơn lẻ này như một "Portable App hoàn chỉnh" vì nó vẫn phụ thuộc vào Python backend, thư mục gốc của repository (`NETWORK_ANOMALY_REPO_ROOT`) và các tệp `.joblib` bên ngoài. |
+| **2. Compiled Release Executable** (`netflow-sentinel-desktop.exe`) | Tệp thực thi Windows x64 biên dịch ở chế độ `--release`, đã nhúng tài nguyên giao diện Svelte 5 (`desktop/dist`). | **Có tạo ra** tại `desktop/src-tauri/target/release/netflow-sentinel-desktop.exe`. **Lưu ý:** Không được gọi hay phân phối tệp `.exe` đơn lẻ này như một "Portable App hoàn chỉnh" vì nó vẫn phụ thuộc vào Python backend, thư mục gốc của repository (`NETWORK_ANOMALY_REPO_ROOT`) và các tệp `.joblib` bên ngoài. |
 | **3. NSIS Windows Installer** (`NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`) | Bộ cài đặt Windows chuẩn NSIS giúp cài đặt `netflow-sentinel-desktop.exe`, biểu tượng, lối tắt Start Menu/Desktop và trình gỡ cài đặt (`uninst.exe`), đồng thời kiểm tra sự hiện diện của WebView2 Runtime. | **Asset phát hành chính thức** của M6 (`v0.6.0`). |
 | **4. Offline-Capable Application with External Prerequisites** | Ứng dụng hoạt động hoàn toàn cục bộ (`127.0.0.1`, không gọi dịch vụ đám mây) sau khi máy đích đã được trang bị đầy đủ các điều kiện tiên quyết bên ngoài (Python, dependencies, repo root, `.joblib` artifacts, WebView2 Runtime). | **Đúng bản chất kiến trúc của M6 (`v0.6.0`)**. |
 | **5. Standalone Self-Contained Application** | Gói cài đặt đính kèm toàn bộ trình thông dịch Python nhúng (embedded Python / PyInstaller sidecar), thư viện ML, mã nguồn backend và WebView2 offline installer trong một gói duy nhất không cần chuẩn bị môi trường bên ngoài. | **Chưa thuộc phạm vi M6 (`v0.6.0`)** — được ghi nhận là hạng mục nâng cấp đóng gói cho giai đoạn sau. |
@@ -28,21 +28,24 @@ Phiên bản của ứng dụng Desktop M6 được quản lý đồng bộ tạ
 4. `desktop/package-lock.json` (`"version"` và `packages[""]["version"]`)
 5. `desktop/src-tauri/tauri.conf.json` (`"version"`)
 
-### Lệnh kiểm tra đồng bộ phiên bản
+### Lệnh kiểm tra đồng bộ phiên bản (1-to-1 SemVer Parity)
 
 ```powershell
 # Kiểm tra cả 5 tệp desktop khớp nhau và hợp đồng Python API giữ nguyên 0.1.0
 python scripts/check_desktop_version.py --check
 
-# Kiểm tra khớp với một phiên bản hoặc Git tag cụ thể
+# Kiểm tra khớp 1-1 với một phiên bản hoặc Git tag cụ thể
 python scripts/check_desktop_version.py --check --expect-version 0.6.0
 python scripts/check_desktop_version.py --check --expect-tag v0.6.0
 ```
 
+> [!IMPORTANT]
+> Hệ thống CI/Release áp dụng quy tắc **khớp SemVer 1-1 nghiêm ngặt**: tag `v0.6.0-beta.1` bắt buộc cả 5 tệp cấu hình desktop (và tệp cài đặt NSIS sinh ra) phải mang đúng phiên bản `0.6.0-beta.1`; tag `v0.6.0` bắt buộc cả 5 tệp mang đúng phiên bản `0.6.0`. **Tuyệt đối không phát hành bản dựng `0.6.0` dưới nhãn `-beta.1`** hoặc ngược lại.
+
 ### Lệnh cập nhật phiên bản đồng loạt (khi chuyển giữa Beta và Stable)
 
 ```powershell
-# Ví dụ đặt phiên bản sang 0.6.0-beta.1 hoặc 0.6.0
+# Đặt đồng loạt cả 5 tệp cấu hình desktop sang 0.6.0-beta.1 (commit riêng cho Beta) hoặc 0.6.0 (commit nâng cấp Stable)
 python scripts/check_desktop_version.py --set-version 0.6.0
 ```
 
@@ -156,23 +159,35 @@ Get-Content (Join-Path $StageDir "SHA256SUMS.txt")
 
 ---
 
-## 6. Chiến lược Phát hành 2 Giai đoạn (Beta Pre-release vs Stable Release)
+## 6. Chiến lược Phát hành 2 Giai đoạn (Beta Pre-release → Stable Release)
 
-### 6.1. Giai đoạn 1 — Bản Thử nghiệm `v0.6.0-beta.1` (GitHub Pre-release)
+Mọi tag phát hành (cả **Beta** lẫn **Stable**) trên `.github/workflows/release.yml` đều bắt buộc thỏa mãn 3 điều kiện kiểm tra tự động:
+1. Commit được gắn tag phải đã được merge vào `origin/main` (`git merge-base --is-ancestor $tagCommit origin/main`). **Cấm gắn tag phát hành lên commit chỉ tồn tại trên feature branch.**
+2. Tên tag (`v<VERSION>`) phải khớp 1-1 với phiên bản trong 5 tệp cấu hình desktop, binary ứng dụng và tên tệp NSIS (`python scripts/check_desktop_version.py --check --expect-tag <TAG>`).
+3. Tag chưa từng được xuất bản GitHub Release trước đó (`gh release view <TAG>` phải báo chưa tồn tại — nghiêm cấm ghi đè hoặc di chuyển tag đã phát hành).
 
-Chỉ thực hiện khi cần xuất bản bản cài đặt thử nghiệm từ commit đã vượt qua toàn bộ kiểm thử:
+*(Ghi chú hiện tại trên nhánh PR #67: cả 5 tệp cấu hình desktop đang được đặt ở `0.6.0` nhằm chuẩn bị trực tiếp cho bản Stable `v0.6.0` sau khi merge vào `main`.)*
 
-1. Xác minh trạng thái Git sạch và đồng bộ phiên bản:
+### 6.1. Giai đoạn 1 — Bản Thử nghiệm `v0.6.0-beta.1` (GitHub Pre-release, Tùy chọn)
+
+Nếu cần xuất bản bản thử nghiệm Beta trước bản chính thức `v0.6.0`:
+
+1. Tạo PR/commit đặt phiên bản `0.6.0-beta.1` vào `main` và đợi CI xanh:
    ```powershell
-   git status --porcelain
-   python scripts/check_desktop_version.py --check
+   python scripts/check_desktop_version.py --set-version 0.6.0-beta.1
+   python scripts/check_desktop_version.py --check --expect-tag v0.6.0-beta.1
    ```
-2. Tạo **annotated Git tag** `v0.6.0-beta.1` trỏ vào commit đã kiểm chứng:
+   *(Sau bước này, toàn bộ metadata bên trong ứng dụng, trình cài đặt `NetFlow Sentinel M6_0.6.0-beta.1_x64-setup.exe` và release asset `NetFlow-Sentinel-v0.6.0-beta.1-windows-x64-setup.exe` đều đồng bộ `0.6.0-beta.1`.)*
+2. Sau khi commit `0.6.0-beta.1` đã được **merge vào `main`**, kiểm tra trạng thái sạch trên `main`:
+   ```powershell
+   git checkout main
+   git pull --ff-only origin main
+   git status --porcelain
+   python scripts/check_desktop_version.py --check --expect-tag v0.6.0-beta.1
+   ```
+3. Tạo **annotated Git tag** `v0.6.0-beta.1` trỏ vào commit trên `main`:
    ```powershell
    git tag -a v0.6.0-beta.1 -m "NetFlow Sentinel v0.6.0-beta.1 (M6 Desktop Pre-release)"
-   ```
-3. Kiểm tra tag trỏ đúng commit mong muốn:
-   ```powershell
    git show v0.6.0-beta.1 --stat
    ```
 4. Đẩy tag lên GitHub để kích hoạt `.github/workflows/release.yml` (workflow tự động gắn cờ `--prerelease` cho mọi tag có hậu tố `-beta.*` / `-rc.*`):
@@ -183,11 +198,11 @@ Chỉ thực hiện khi cần xuất bản bản cài đặt thử nghiệm từ
 ### 6.2. Giai đoạn 2 — Bản Chính thức `v0.6.0` (Stable Release)
 
 **Điều kiện bắt buộc trước khi tạo tag `v0.6.0`:**
-- PR #67 đã được review **Approve** và **merged vào nhánh `main`**.
+- PR #67 (hoặc PR nâng phiên bản từ `0.6.0-beta.1` → `0.6.0` bằng `python scripts/check_desktop_version.py --set-version 0.6.0` nếu trước đó đã phát hành Beta) đã được review **Approve** và **merged vào nhánh `main`**.
 - Toàn bộ các kiểm tra CI trên `main` đều **PASS**.
 - Phiên bản trong cả 5 tệp cấu hình desktop là `0.6.0`.
 
-Các bước thực hiện trên nhánh `main` sau khi PR #67 đã merge:
+Các bước thực hiện trên nhánh `main` sau khi hợp nhất:
 
 ```powershell
 git checkout main

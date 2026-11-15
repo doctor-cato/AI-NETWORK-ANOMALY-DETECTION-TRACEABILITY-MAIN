@@ -442,8 +442,18 @@
             <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
           </div>
           <div class="kpi-box">
-            <div class="kpi-label">OOD Abstained (MIN_TTL=0)</div>
-            <div class="kpi-value mono" style="color: var(--semantic-warning)">{analysisData.ood_flagged_count}</div>
+            <div class="kpi-label">OOD Abstained</div>
+            <div class="kpi-value mono" style="color: var(--semantic-warning)">
+              {analysisData.abstained_rows ?? analysisData.ood_flagged_count}
+            </div>
+            <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+              {analysisData.evaluated_rows ?? analysisData.attack_count + analysisData.benign_count}/{analysisData.total_rows}
+              ({analysisData.prediction_coverage != null
+                ? `${(analysisData.prediction_coverage * 100).toFixed(1)}%`
+                : analysisData.total_rows > 0
+                  ? `${(((analysisData.attack_count + analysisData.benign_count) / analysisData.total_rows) * 100).toFixed(1)}%`
+                  : "0.0%"})
+            </div>
           </div>
           <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
             <div class="kpi-label">Eligibility Gate</div>

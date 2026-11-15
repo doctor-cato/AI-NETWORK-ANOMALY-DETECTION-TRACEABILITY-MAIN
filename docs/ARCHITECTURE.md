@@ -46,8 +46,8 @@ flowchart LR
    - **Single logical owner của SQLite:** Lưu runs, events, incidents, timeline và key audit metadata.
    - **Fail-closed Preprocessing & Model Loading (`src/network_anomaly/inference/predict.py`):** Kiểm tra SHA-256 giữa binary, companion manifest và `preprocessor_sha256` trước khi nạp; hỗ trợ thống nhất `RandomForest`, `XGBoost`, `IsolationForest` và `Autoencoder` (`AutoencoderModel`). Khi binary `.joblib`/`.pt` thiếu, `/api/v1/models` báo `BLOCKED / NOT READY` và `/api/v1/csv/analyze` từ chối suy luận fail-closed với `HTTP 503`.
    - **Xác minh Provenance nguồn CSV & Từ chối suy luận OOD (`src/network_anomaly/api/desktop_csv.py`):**
-     - `resolve_csv_source_provenance()` kiểm tra mã băm SHA-256 và `demo_manifest.json` trước khi gán `source:nf-v3-canonical` (`MODEL_VALIDATED`). Tệp CSV bên ngoài chưa xác minh provenance được gán `source:nf-v3-unverified` (`SEMANTICALLY_COMPATIBLE` / `VALIDATION_NOT_VERIFIED`).
-     - Các dòng vi phạm bất biến OOD hoặc `MIN_TTL == 0` được từ chối suy luận lẫn tính điểm rủi ro (`predicted_label = null`, `predicted_class = "ABSTAINED_OOD"`, `risk_level = "ABSTAINED_OOD"`) và được loại trừ khỏi Confusion Matrix (`abstained_rows`).
+     - `resolve_csv_source_provenance()` kiểm tra neo tin cậy (trust anchor) SHA-256 đối chiếu allowlist bộ demo Validation đã nghiệm thu và `data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json` trước khi gán `source:nf-v3-canonical` (`MODEL_VALIDATED`); sibling manifest tự khai báo không thể tự nâng cấp tệp CSV tùy ý. Tệp CSV bên ngoài chưa xác minh provenance được gán `source:nf-v3-unverified` (`SEMANTICALLY_COMPATIBLE` / `VALIDATION_NOT_VERIFIED`).
+     - Các dòng vi phạm bất biến OOD hoặc `MIN_TTL == 0` được từ chối suy luận lẫn tính điểm rủi ro trước khi gọi `service.analyze_flows()` (`predicted_label = null`, `predicted_class = "ABSTAINED_OOD"`, `risk_level = "ABSTAINED_OOD"`) và được loại trừ khỏi Confusion Matrix (`abstained_rows`, `evaluated_rows`, `prediction_coverage`).
    - **Hợp đồng dữ liệu nghiêm ngặt:** `NF-UNSW-NB15-v3` cung cấp 55 cột (`47` ML features `nf-unsw-nb15-v3-baseline-47` + `6` trace metadata `FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `L4_SRC_PORT`, `IPV4_DST_ADDR`, `L4_DST_PORT` + `2` target `Label`, `Attack`). `Label`, `Attack` và 6 trường trace metadata **tuyệt đối bị loại khỏi ma trận đặc trưng `X`**.
 
 ## Ranh giới mô-đun & Trạng thái củng cố
@@ -55,7 +55,7 @@ flowchart LR
 | Thành phần | Vị trí / Package | Vai trò trong MVP | Trạng thái & Điều chỉnh phạm vi |
 |---|---|---|---|
 | Data, Split & Preprocessing | `src/network_anomaly/data/`, `preprocessing/` | Manifest, 47-feature split, `TrainOnlyPreprocessor` | **IMPLEMENTED / TESTED / REAL-DATA VERIFIED** (C1–C2) |
-| ML Models & Inference | `src/network_anomaly/models/`, `inference/` | RF, XGBoost, Isolation Forest, Autoencoder + `InferencePipeline` | RF **EXPERIMENTALLY VALIDATED**; XGBoost Validation verified; IF/AE **IMPLEMENTED / TESTED** |
+| ML Models & Inference | `src/network_anomaly/models/`, `inference/` | RF, XGBoost, Isolation Forest, Autoencoder + `InferencePipeline` | RF & IF **EXPERIMENTALLY VALIDATED**; XGBoost Validation verified; AE **IMPLEMENTED / TESTED** |
 | Demo Dataset Preparation | `scripts/prepare_demo_dataset.py` | Tách `demo_flows.csv` / `demo_labels.csv` / `demo_manifest.json` từ Validation | **IMPLEMENTED / TESTED & REAL-DATA VERIFIED** (200 rows, 0 Train/Test overlap) |
 | FastAPI & SQLite | `src/network_anomaly/api/`, `scripts/run_api.py` | Localhost REST endpoints (`/api/v1/csv/*`), SQLite persistence | **IMPLEMENTED / TESTED** (#30 CLOSED, #59 CLOSED); OpenAPI contract đồng bộ |
 | Multi-Source Ingestion & Gate | `src/network_anomaly/ingestion/` (PR #47) | `SourceRegistry`, `InferenceEligibilityGate`, OOD check, provenance verification | **IMPLEMENTED / TESTED** (`source:nf-v3-canonical` vs `source:nf-v3-unverified`) |

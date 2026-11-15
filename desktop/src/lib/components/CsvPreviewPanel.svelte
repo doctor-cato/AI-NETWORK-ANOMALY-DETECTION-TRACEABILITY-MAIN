@@ -52,7 +52,10 @@
       <div class="banner banner-warning">
         <Icons name="alert" size={16} />
         <div>
-          <strong>Cảnh báo OOD / Telemetry Drift ({inspectData.ood_report.zero_ttl_count} dòng MIN_TTL=0):</strong>
+          <strong>
+            Cảnh báo OOD / Telemetry Drift ({inspectData.ood_report.zero_ttl_count} MIN_TTL=0,
+            {inspectData.ood_report.hard_violation_count} vi phạm bất biến vật lý):
+          </strong>
           {#each inspectData.ood_report.ood_flags as flag}
             <div>{flag}</div>
           {/each}

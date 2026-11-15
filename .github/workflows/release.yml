@@ -44,6 +44,8 @@ jobs:
 
       - name: Verify clean working tree, tag integrity, and version consistency
         id: meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -58,9 +60,20 @@ jobs:
             exit 1
           }
 
+          $desktopVer = (python -c "from scripts.check_desktop_version import collect_desktop_versions; print(next(iter(collect_desktop_versions().values())))").Trim()
+          if ([string]::IsNullOrWhiteSpace($desktopVer)) {
+            Write-Error "Failed to read configured desktop version."
+            exit 1
+          }
+
           $isTagPush = "${{ github.ref }}".StartsWith("refs/tags/v")
           if ($isTagPush) {
             $tagName = "${{ github.ref_name }}"
+            if ($tagName -notmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
+              Write-Error "Invalid SemVer release tag format: $tagName"
+              exit 1
+            }
+
             $tagCommit = (git rev-list -n 1 "refs/tags/$tagName").Trim()
             if ($tagCommit -ne "${{ github.sha }}") {
               Write-Error "Tag $tagName commit ($tagCommit) does not match GITHUB_SHA (${{ github.sha }})."
@@ -68,26 +81,41 @@ jobs:
             }
 
             $isPrerelease = $tagName.Contains("-")
-            if (-not $isPrerelease) {
-              git fetch origin main --depth=200
-              git merge-base --is-ancestor $tagCommit origin/main
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Refusing to publish Stable release for $tagName because commit $tagCommit is not merged into origin/main."
-                exit 1
-              }
+            # Enforce origin/main ancestry for BOTH beta pre-releases and stable releases.
+            git fetch origin main
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Failed to fetch origin/main for ancestry verification."
+              exit 1
+            }
+            git merge-base --is-ancestor $tagCommit origin/main
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Refusing to publish release for $tagName because commit $tagCommit is not merged into origin/main."
+              exit 1
             }
 
-            python scripts/check_desktop_version.py --check --expect-tag $tagName --allow-prerelease-tag-on-base
+            gh release view $tagName > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              Write-Error "GitHub Release for tag $tagName already exists. Refusing to overwrite or move a published release tag."
+              exit 1
+            }
+
+            # Require strict 1-to-1 SemVer match between Git tag (vX.Y.Z[-beta.N]) and desktop configs/binary.
+            python scripts/check_desktop_version.py --check --expect-tag $tagName
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } else {
-            $tagName = "${{ inputs.tag_label }}"
-            if ([string]::IsNullOrWhiteSpace($tagName)) { $tagName = "v0.6.0-dryrun" }
-            $isPrerelease = $true
             python scripts/check_desktop_version.py --check
             if ($LASTEXITCODE -ne 0) { exit 1 }
+            $tagName = "${{ inputs.tag_label }}"
+            if ([string]::IsNullOrWhiteSpace($tagName)) { $tagName = "v$desktopVer-dryrun" }
+            if (-not $tagName.StartsWith("v$desktopVer-")) {
+              Write-Error "Dry-run tag_label '$tagName' must start with 'v$desktopVer-' to match desktop version '$desktopVer'."
+              exit 1
+            }
+            $isPrerelease = $true
           }
 
           "tag_name=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "desktop_version=$desktopVer" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "is_tag_push=$($isTagPush.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "is_prerelease=$($isPrerelease.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
@@ -110,9 +138,11 @@ jobs:
           cache-all-crates: true
           cache-on-failure: true
 
-      - name: Run Python verification checks (Environment, OpenAPI, Pytest)
+      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest)
         run: |
           python scripts/check_environment.py
+          python -m ruff check src scripts tests
+          python -m black --check src scripts tests
           python scripts/export_openapi_spec.py --check
           python -m pytest tests/unit tests/contract tests/integration -q
 
@@ -144,9 +174,10 @@ jobs:
             exit 1
           }
 
-          $nsisFiles = @(Get-ChildItem -Path "desktop/src-tauri/target/release/bundle/nsis" -Filter "*-setup.exe")
+          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
+          $nsisFiles = @(Get-ChildItem -Path "desktop/src-tauri/target/release/bundle/nsis" -Filter "*_${desktopVer}_x64-setup.exe")
           if ($nsisFiles.Count -eq 0) {
-            Write-Error "Missing NSIS installer in desktop/src-tauri/target/release/bundle/nsis"
+            Write-Error "Missing NSIS installer matching '*_${desktopVer}_x64-setup.exe' in desktop/src-tauri/target/release/bundle/nsis"
             exit 1
           }
 
@@ -189,9 +220,16 @@ jobs:
             exit 1
           }
 
-          $notesPath = "docs/releases/v0.6.0.md"
-          if (-not (Test-Path $notesPath)) {
-            Write-Error "Release notes file not found: $notesPath"
+          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
+          $baseSemVer = ($desktopVer -split '-')[0]
+          $exactNotesPath = "docs/releases/v$desktopVer.md"
+          $baseNotesPath = "docs/releases/v$baseSemVer.md"
+          if (Test-Path $exactNotesPath) {
+            $notesPath = $exactNotesPath
+          } elseif (Test-Path $baseNotesPath) {
+            $notesPath = $baseNotesPath
+          } else {
+            Write-Error "Release notes file not found: $exactNotesPath or $baseNotesPath"
             exit 1
           }
 

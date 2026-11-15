@@ -15,21 +15,29 @@ export function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+export function isLocalhostHttpUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw);
+    return (
+      parsed.protocol === "http:" &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function resolveLocalhostFallbackUrl(): string {
   if (typeof window !== "undefined") {
     const param = new URLSearchParams(window.location.search).get("api");
-    if (
-      param &&
-      (param.startsWith("http://127.0.0.1:") || param.startsWith("http://localhost:"))
-    ) {
+    if (param && isLocalhostHttpUrl(param)) {
       return param.replace(/\/+$/, "");
     }
   }
   const envUrl = import.meta.env?.VITE_API_BASE_URL;
-  if (
-    typeof envUrl === "string" &&
-    (envUrl.startsWith("http://127.0.0.1:") || envUrl.startsWith("http://localhost:"))
-  ) {
+  if (typeof envUrl === "string" && isLocalhostHttpUrl(envUrl)) {
     return envUrl.replace(/\/+$/, "");
   }
   return "http://127.0.0.1:8000";

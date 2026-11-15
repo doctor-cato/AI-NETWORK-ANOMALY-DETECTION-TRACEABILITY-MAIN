@@ -118,7 +118,8 @@
               <span
                 class="badge"
                 class:badge-attack={evt.predicted_class === "Attack"}
-                class:badge-benign={evt.predicted_class !== "Attack"}
+                class:badge-blocked={evt.predicted_class === "ABSTAINED_OOD"}
+                class:badge-benign={evt.predicted_class === "Benign"}
               >
                 {evt.predicted_class}
               </span>

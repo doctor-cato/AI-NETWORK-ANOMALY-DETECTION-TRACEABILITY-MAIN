@@ -203,7 +203,6 @@ def verify_desktop_version(
     root: Path = PROJECT_ROOT,
     expected_version: Optional[str] = None,
     expected_tag: Optional[str] = None,
-    allow_prerelease_tag_on_base: bool = False,
 ) -> Tuple[bool, str]:
     """Verify desktop version consistency and optional tag/version match."""
     try:
@@ -254,23 +253,20 @@ def verify_desktop_version(
             return False, f"Git tag {tag_clean!r} must start with 'v' (e.g. 'v0.6.0')."
         tag_ver = tag_clean[1:]
         try:
-            m_tag = validate_semver(tag_ver)
+            validate_semver(tag_ver)
         except ValueError as exc:
             return False, f"Invalid SemVer in Git tag {tag_clean!r}: {exc}"
 
-        base_tag_ver = f"{m_tag.group('major')}.{m_tag.group('minor')}.{m_tag.group('patch')}"
         if desktop_ver != tag_ver:
-            if (
-                allow_prerelease_tag_on_base
-                and m_tag.group("prerelease")
-                and desktop_ver == base_tag_ver
-            ):
-                pass
-            else:
-                return (
-                    False,
-                    f"Desktop version {desktop_ver!r} does not match Git tag {tag_clean!r} (expected {tag_ver!r}).",
-                )
+            return (
+                False,
+                (
+                    f"Desktop version {desktop_ver!r} does not match Git tag {tag_clean!r} "
+                    f"(expected {tag_ver!r}). Run "
+                    f"'python scripts/check_desktop_version.py --set-version {tag_ver}' "
+                    "before tagging so app metadata, NSIS installer, and Git tag agree."
+                ),
+            )
 
     return (
         True,
@@ -306,11 +302,6 @@ def main() -> int:
         default=None,
         help="Require desktop version to match the given Git tag (e.g. v0.6.0 or v0.6.0-beta.1).",
     )
-    parser.add_argument(
-        "--allow-prerelease-tag-on-base",
-        action="store_true",
-        help="Allow a pre-release tag (e.g. v0.6.0-beta.1) to match base binary version (0.6.0).",
-    )
     args = parser.parse_args()
 
     if args.set_version:
@@ -322,7 +313,6 @@ def main() -> int:
     ok, message = verify_desktop_version(
         expected_version=args.expect_version,
         expected_tag=args.expect_tag,
-        allow_prerelease_tag_on_base=args.allow_prerelease_tag_on_base,
     )
     if not ok:
         print(f"ERROR: {message}", file=sys.stderr)

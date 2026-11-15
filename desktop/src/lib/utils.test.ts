@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CsvFlowPredictionItem } from "./types";
+import { isLocalhostHttpUrl } from "./api";
 import {
   computeRiskDistribution,
   filterAndSortPredictions,
@@ -99,5 +100,13 @@ describe("prediction filtering and sorting", () => {
     const dist = computeRiskDistribution(items);
     expect(dist.find((b) => b.label.startsWith("CRITICAL"))?.count).toBe(1);
     expect(dist.find((b) => b.label.startsWith("ABSTAINED"))?.count).toBe(1);
+  });
+
+  it("validates strict localhost-only HTTP fallback URLs", () => {
+    expect(isLocalhostHttpUrl("http://127.0.0.1:8000")).toBe(true);
+    expect(isLocalhostHttpUrl("http://localhost:8015")).toBe(true);
+    expect(isLocalhostHttpUrl("http://127.0.0.1:8000@evil.com")).toBe(false);
+    expect(isLocalhostHttpUrl("https://127.0.0.1:8000")).toBe(false);
+    expect(isLocalhostHttpUrl("http://10.0.0.5:8000")).toBe(false);
   });
 });

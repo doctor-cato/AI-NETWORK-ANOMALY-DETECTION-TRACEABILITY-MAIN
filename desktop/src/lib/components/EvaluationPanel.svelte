@@ -104,7 +104,7 @@
       <div class="card" style="background: var(--bg-elevated);">
         <div class="card-header">
           <h3 class="card-title">
-            Confusion Matrix ({evalResult.matched_rows} dòng đánh giá{evalResult.abstained_rows ? `, ${evalResult.abstained_rows} dòng OOD từ chối` : ""})
+            Confusion Matrix ({evalResult.evaluated_rows ?? evalResult.matched_rows} dòng đánh giá{evalResult.abstained_rows ? `, ${evalResult.abstained_rows} dòng OOD từ chối` : ""}{evalResult.prediction_coverage !== undefined ? `, coverage ${pct(evalResult.prediction_coverage)}` : ""})
           </h3>
           <span class="badge badge-info mono">SHA-256: {shortDigest(evalResult.labels_sha256)}</span>
         </div>
