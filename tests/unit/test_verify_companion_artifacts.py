@@ -164,6 +164,7 @@ def _build_valid_attestation_payload(
         models_payload[key] = {
             "artifact_sha256": art_sha,
             "run_id": manifest["run_id"],
+            "inference_run_id": f"inference-20261115193743-{key[:6]}",
             "preprocessor_sha256": prep_sha,
             "source_csv_sha256": demo_sha256["data/demo/demo_flows.csv"],
             "labels_sha256": demo_sha256["data/demo/demo_labels.csv"],
@@ -388,6 +389,13 @@ def test_verify_e2e_attestation_rejects_model_manifest_and_ae_calibration_tamper
     p_run.write_text(json.dumps(bad_run), encoding="utf-8")
     with pytest.raises(RuntimeError, match="run_id mismatch"):
         verify_e2e_attestation(p_run, root=ws)
+
+    bad_inf = copy.deepcopy(payload)
+    bad_inf["models"]["xgboost"]["inference_run_id"] = "bad_run"
+    p_inf = tmp_path / "bad_inf.json"
+    p_inf.write_text(json.dumps(bad_inf), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="invalid inference_run_id"):
+        verify_e2e_attestation(p_inf, root=ws)
 
     bad_csv = copy.deepcopy(payload)
     bad_csv["models"]["isolation_forest"]["source_csv_sha256"] = "0" * 64

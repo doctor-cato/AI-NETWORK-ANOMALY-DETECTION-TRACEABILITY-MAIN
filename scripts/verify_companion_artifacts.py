@@ -696,6 +696,27 @@ def run_four_model_e2e_verification(
                 )
             gate = az.get("compatibility_gate") or {}
             expected_compat = "MODEL_VALIDATED" if key == "random_forest" else "RESEARCH_ONLY"
+            expected_manifest_run_id = summary["models"][key].get("run_id")
+            if (
+                not isinstance(expected_manifest_run_id, str)
+                or not expected_manifest_run_id.strip()
+                or models_by_key[key].get("run_id") != expected_manifest_run_id
+                or gate.get("model_identifier") != expected_manifest_run_id
+            ):
+                raise RuntimeError(
+                    f"{key}: manifest run_id mismatch across /api/v1/models and compatibility_gate "
+                    f"(expected={expected_manifest_run_id!r}, api_models={models_by_key[key].get('run_id')!r}, "
+                    f"gate={gate.get('model_identifier')!r})"
+                )
+            inference_run_id = az.get("run_id")
+            if (
+                not isinstance(inference_run_id, str)
+                or not inference_run_id.startswith("inference-")
+                or len(inference_run_id) <= len("inference-")
+            ):
+                raise RuntimeError(
+                    f"{key}: unexpected analyze inference run_id: {inference_run_id!r}"
+                )
             if (
                 gate.get("source_id") != "source:nf-v3-canonical"
                 or gate.get("provenance_verified") is not True
@@ -789,7 +810,8 @@ def run_four_model_e2e_verification(
 
             per_model_results[key] = {
                 "analysis_id": az["analysis_id"],
-                "run_id": az.get("run_id") or summary["models"][key].get("run_id"),
+                "run_id": expected_manifest_run_id,
+                "inference_run_id": inference_run_id,
                 "artifact_sha256": summary["models"][key]["sha256"],
                 "preprocessor_sha256": az.get("preprocessor_sha256") or expected_prep_sha,
                 "source_csv_sha256": az.get("file_sha256") or expected_flows_sha,
@@ -1168,6 +1190,16 @@ def verify_e2e_attestation(
                 f"E2E attestation run_id mismatch for {model_key}: "
                 f"{entry.get('run_id')!r} != {expected_run_id!r}"
             )
+        if "inference_run_id" in entry:
+            inf_run_id = entry.get("inference_run_id")
+            if (
+                not isinstance(inf_run_id, str)
+                or not inf_run_id.startswith("inference-")
+                or len(inf_run_id) <= len("inference-")
+            ):
+                raise RuntimeError(
+                    f"E2E attestation invalid inference_run_id for {model_key}: {inf_run_id!r}"
+                )
 
         manifest_prep_sha = _resolve_manifest_preprocessor_sha256(tracked_manifest)
         if (
