@@ -153,20 +153,79 @@ locked in Issue #9:
 
 ## Reproduce the Isolation Forest pipeline (scripts/train_isolation_forest.py) (Issue #11)
 
-```text
+```powershell
 # Prerequisite check (fails closed if dataset or preprocessor artifact is absent; safe for CI):
+$env:PYTHONPATH = "src"
 python scripts/train_isolation_forest.py --check-prereqs-only
 
-# Full training and evaluation (requires local NF-UNSW-NB15-v3.csv and preprocessor artifact):
+# Stage 1 — Benign-only Train fitting + Validation-only threshold calibration (Held-out Test LOCKED):
 python scripts/train_isolation_forest.py
+
+# Stage 2 — One-shot Held-out Test evaluation using frozen Validation threshold:
+python scripts/train_isolation_forest.py --evaluate-test
+
+# Optional isolated output paths for clean reproduction runs (do not overwrite canonical manifests):
+python scripts/train_isolation_forest.py --evaluate-test `
+  --output-dir <temp_dir>/art --manifest-path <temp_dir>/if_manifest.json --report-dir <temp_dir>/rep
 ```
 
-Fail-closed properties:
-- Halts execution (exit code 1) if dataset file, split manifest, or preprocessor artifact hashes mismatch.
-- Excludes unknown attack categories (`Worms`, `Backdoor`) from validation threshold calibration.
-- Enforces strict test-partition protection; frozen threshold is applied to test evaluation without retraining.
-- Streams partition loading by chunks (default 100,000 via `--chunksize`) to minimize memory usage.
-- Saves model artifacts under `artifacts/models/isolation_forest/` and metrics under `reports/experiments/isolation_forest/`.
+Protocol & fail-closed properties:
+- Halts execution (`exit 1`) if dataset SHA-256 (`4ebb97bd...`), split manifest (`bb84c1e0...`), partition index SHA-256, or preprocessor artifact (`12d4360a...`) hashes mismatch.
+- Trains `IsolationForest` strictly on Train benign-only flows (`Label == 0`: `1,590,608` rows; `65,189` Train attack rows excluded), seed `42`, `n_estimators=100`, `max_samples="auto"`, `contamination=0.1`.
+- Calibrates decision threshold strictly on Validation (`314,871` Benign + `30,319` Known attacks; `74,421` candidate thresholds), excluding pre-registered `UNKNOWN_ATTACK_CATEGORIES` (`Backdoor`, `Worms`, `181` Validation rows) from selection (`policy = max-F1-on-known-attacks`, `threshold = -0.033526858092757406`), and computes Validation-only `score_normalization` quantile grid.
+- Enforces `threshold_frozen = True` before scoring Held-out Test (`345,953` flows: `315,357` Benign, `29,300` Known attacks, `1,296` Unknown `{Backdoor: 1,260, Worms: 36}`).
+- Outputs verified binary artifacts under `artifacts/models/isolation_forest/` (excluded from Git via `.gitignore`), `reports/models/isolation_forest_manifest.json`, and experiment evidence (`metrics.json`, `threshold_calibration.json`, `per_attack_metrics.json`, `run_metadata.json`, `confusion_matrix.csv`, `confusion_matrix.png`, `evaluation_report.md`) under `reports/experiments/isolation_forest/`.
+- Verified run (`if-c4-20261115T053123Z`, Python `3.12.10`): `Test TP=27,528, TN=264,755, FP=50,602, FN=3,068` (`Accuracy=0.8449, Precision=0.3523, Recall=0.8997, F1=0.5064, FPR=0.1605, ROC-AUC=0.893730, PR-AUC=0.288753`), Known attack recall `26,406/29,300 = 0.9012`, Unknown attack recall `1,122/1,296 = 0.8657`.
+
+## Clean reproduction & M3 provenance verification (Issue #14)
+
+### Windows clean reproduction procedure
+
+Executed in a fresh Python `3.12.10` isolated virtual environment (`pip install -e .` from `pyproject.toml`, no shared site-packages) on Windows 11 with the local verified `NF-UNSW-NB15-v3.csv` package:
+
+```powershell
+# 1. Fresh environment setup (outside repo)
+py -3.12 -m venv "$env:TEMP\m3_clean_repro_venv"
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" -m pip install -e .
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/check_environment.py
+
+# 2. Source, split, preprocessor & model prerequisite verification
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/dataset_manifest.py verify
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/preprocess_nf_unsw_nb15_v3.py --verify-only
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/train_random_forest.py --verify-only
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/train_xgboost.py --verify-only
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/train_isolation_forest.py --check-prereqs-only
+
+# 3. Clean model reproduction to scratch directory ($env:TEMP\m3_repro_out)
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/train_random_forest.py `
+  --output-model "$env:TEMP\m3_repro_out\rf\rf.joblib" --output-manifest "$env:TEMP\m3_repro_out\rf\rf_manifest.json"
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/train_xgboost.py `
+  --output-model "$env:TEMP\m3_repro_out\xgb\xgb.joblib" --output-manifest "$env:TEMP\m3_repro_out\xgb\xgb_manifest.json" `
+  --report-md "$env:TEMP\m3_repro_out\xgb\xgb_report.md"
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/train_isolation_forest.py --evaluate-test `
+  --output-dir "$env:TEMP\m3_repro_out\if\art" --manifest-path "$env:TEMP\m3_repro_out\if\if_manifest.json" `
+  --report-dir "$env:TEMP\m3_repro_out\if\rep"
+
+# 4. Demo verification, CLI inference & core tests
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/prepare_demo_dataset.py --check-only
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/predict.py --input data/demo/demo_flows.csv --output "$env:TEMP\m3_repro_out\demo\rf_preds.csv" --model random_forest
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" scripts/predict.py --input data/demo/demo_flows.csv --output "$env:TEMP\m3_repro_out\demo\if_preds.csv" --model isolation_forest
+& "$env:TEMP\m3_clean_repro_venv\Scripts\python.exe" -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
+```
+
+### M3 Provenance & Reproduction Verification Matrix
+
+| Artifact / Experiment | Run ID / Identity | Provenance Chain | Clean Repro Status (Python `3.12.10` venv) | Tolerance & Limitations |
+|---|---|---|---|---|
+| **Dataset & Split** | `NF-UNSW-NB15-v3` (DOI `10.48610/6E0EDA1`) | CSV SHA-256 `4ebb97bd...` → Split `bb84c1e0...` (`train: a09ba175...`, `val: 7d41a71a...`, `test: 63e2e081...`) | **REPRODUCED / PASS** (`dataset_manifest.py verify`) | `validate_data.py` exits `1` (`SOURCE_INTEGRITY: PASS`, `ML_READY: BLOCKED`) by design |
+| **Preprocessor** | `nf-unsw-nb15-v3-preprocessing-v1` | Artifact `12d4360a...` ← Manifest `af07dc3b...` (fit only on 1,655,797 Train rows) | **REPRODUCED / PASS** (`--verify-only`) | Deterministic schema & hash gate |
+| **Random Forest (Val)** | `rf-baseline-1794068628` | `4ebb97bd...` → `bb84c1e0...` → `12d4360a...` → `801afcbb...` | **REPRODUCED / PASS** (`Precision=0.999836, Recall=0.999902, F1=0.999869`, `CM=[[314866, 5], [3, 30497]]`) | `0` difference on Validation CM/metrics; `.joblib` binary SHA-256 differs (`b0bf7d...` Py3.12 vs `801afcbb...`), demo `predict` diff `0` class flips (`2.22e-16` max prob diff) |
+| **Random Forest (Test)** | `rf-heldout-ea330b9` | Reconciled in `reports/evaluation/rf-heldout-ea330b9/` against `801afcbb...` | **HISTORICAL ARTIFACT VERIFIED (`801afcbb...` on disk)**; local Test `predictions.csv` (`3396d0f2...`) regeneration `NOT VERIFIED` here | Historical October split manifest preserved in `rf-heldout-ea330b9/split_manifest.json` (`REVIEWED_AND_JUSTIFIED` boundary) |
+| **XGBoost (Val)** | `xgb-baseline-1794151507` (orig `7d760e0`) | Canonical repro binds `4ebb97bd...` → `bb84c1e0...` → `12d4360a...` (`xgboost 3.4.1`) | **REPRODUCED / PASS on Validation** (`TN=314870, FP=1, FN=0, TP=30500`, `F1=0.999984`) | `0` difference on Validation CM/metrics vs `xgboost_manifest.json` (`canonical_reference_hashes`); default `.joblib` absent locally (`BLOCKED / NOT READY` in API/demo); **Held-out Test `NOT VERIFIED`** |
+| **Isolation Forest (Val+Test)** | `if-c4-20261115T053123Z` | `4ebb97bd...` → `bb84c1e0...` → `12d4360a...` → `c2ff6e7c...` (`a3f42644...`) | **REPRODUCED / PASS** (`threshold=-0.033526858092757406`, `Test CM=[[264755, 50602], [3068, 27528]]`, Known `0.9012`, Unknown `0.8657`) | `0.0` metric/threshold/score diff across Python 3.12 & 3.14; joblib binary bytes vary per Python/runtime while serialized `config`/`threshold` hashes (`13b320f5...`, `cd9594fb...`) are identical |
+| **Autoencoder (#29)** | `scripts/train_autoencoder.py` | Code & verified loading schema in `src/network_anomaly/models/autoencoder.py` | **NOT VERIFIED on real data** (binary `.joblib` absent locally; `BLOCKED / NOT READY` in demo) | Covered by unit/integration tests; real-data M7 comparison tracked in `#25` |
+
+> **Scope boundary M3 vs M7:** M3 (#11, #14) covers ML experimental provenance, dataset/split/model hash-chains, reproduction of verified M3 ML experiments, and M3 documentation (`REPRODUCIBILITY.md`, `INFERENCE_PIPELINE.md`, `EVALUATION.md`). Final system-wide end-to-end QA, Rust/Tauri 2 Desktop packaging (#16), and final report/slide reproduction (#18, #19) belong to M7 (`#20`, `#60`).
 
 ## Reproduce the Autoencoder anomaly detection pipeline (scripts/train_autoencoder.py) (Issue #29)
 

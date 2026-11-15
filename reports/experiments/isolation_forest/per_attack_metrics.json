@@ -1,0 +1,72 @@
+{
+  "Analysis": {
+    "n_samples": 294,
+    "n_detected": 274,
+    "detection_rate": 0.9319727891156463,
+    "is_known": true,
+    "is_unknown": false
+  },
+  "Backdoor": {
+    "n_samples": 1260,
+    "n_detected": 1093,
+    "detection_rate": 0.8674603174603175,
+    "is_known": false,
+    "is_unknown": true
+  },
+  "Benign": {
+    "n_samples": 315357,
+    "n_detected": 50602,
+    "detection_rate": 0.16045941583665496,
+    "is_known": false,
+    "is_unknown": false
+  },
+  "DoS": {
+    "n_samples": 1193,
+    "n_detected": 973,
+    "detection_rate": 0.815590947191953,
+    "is_known": true,
+    "is_unknown": false
+  },
+  "Exploits": {
+    "n_samples": 10520,
+    "n_detected": 8715,
+    "detection_rate": 0.8284220532319392,
+    "is_known": true,
+    "is_unknown": false
+  },
+  "Fuzzers": {
+    "n_samples": 7322,
+    "n_detected": 7025,
+    "detection_rate": 0.9594373122097788,
+    "is_known": true,
+    "is_unknown": false
+  },
+  "Generic": {
+    "n_samples": 5111,
+    "n_detected": 4888,
+    "detection_rate": 0.9563686167090589,
+    "is_known": true,
+    "is_unknown": false
+  },
+  "Reconnaissance": {
+    "n_samples": 4464,
+    "n_detected": 4180,
+    "detection_rate": 0.9363799283154122,
+    "is_known": true,
+    "is_unknown": false
+  },
+  "Shellcode": {
+    "n_samples": 396,
+    "n_detected": 351,
+    "detection_rate": 0.8863636363636364,
+    "is_known": true,
+    "is_unknown": false
+  },
+  "Worms": {
+    "n_samples": 36,
+    "n_detected": 29,
+    "detection_rate": 0.8055555555555556,
+    "is_known": false,
+    "is_unknown": true
+  }
+}

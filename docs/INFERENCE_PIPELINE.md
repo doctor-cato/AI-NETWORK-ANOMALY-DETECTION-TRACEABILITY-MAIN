@@ -188,8 +188,8 @@ Mỗi lần inference tạo ra file `<output>.metadata.json`:
 
 - **Preprocessing Artifact**: `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`) và manifest `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`. Endpoint `/api/v1/health` tách biệt `preprocessor_ready` khỏi `model_ready`: hệ thống chỉ đạt `status = "healthy"` khi cả `preprocessor_ready` và selected `model_ready` đều `True` (ngược lại báo `status = "degraded"`).
 - **Trained Model Artifacts (4 mô hình mục tiêu):**
-  - File trọng số nhị phân lớn không track trực tiếp trong Git (`.gitignore`). Trên môi trường đã huấn luyện Random Forest (`rf-baseline-1794068628`), `artifacts/models/random_forest/random_forest_baseline.joblib` đạt trạng thái `READY`.
-  - Đối với `xgboost`, `isolation_forest` hoặc `autoencoder`, nếu chưa huấn luyện tạo file binary cục bộ (hoặc thiếu manifest / sidecars đối với Autoencoder) thì hệ thống báo **`BLOCKED / NOT READY`** (`model_ready = False`) theo cơ chế fail-closed và không sử dụng dự đoán giả.
+  - File trọng số nhị phân lớn không track trực tiếp trong Git (`.gitignore`). Trên môi trường đã chạy thực nghiệm M3, cả **Random Forest** (`artifacts/models/random_forest/random_forest_baseline.joblib`, SHA-256 `801afcbb...`, run `rf-baseline-1794068628`) và **Isolation Forest** (`artifacts/models/isolation_forest/isolation_forest.joblib`, SHA-256 `c2ff6e7c...`, run `if-c4-20261115T053123Z`, manifest `reports/models/isolation_forest_manifest.json` kèm `score_normalization` chuẩn hóa từ Validation) đều đạt trạng thái **`READY`** cho `InferencePipeline`, CLI (`--model random_forest` / `--model isolation_forest`) và FastAPI (`/api/v1/health`, `/api/v1/analyze`).
+  - Đối với `xgboost` hoặc `autoencoder` (hoặc trên máy chưa huấn luyện/khôi phục `.joblib` cục bộ), hệ thống báo **`BLOCKED / NOT READY`** (`model_ready = False`) theo cơ chế fail-closed và không sử dụng dự đoán giả.
 
 ---
 

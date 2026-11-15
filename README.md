@@ -107,17 +107,17 @@ Gradient boosting xây tuần tự các cây để giảm loss; baseline dùng `
 
 ### Isolation Forest
 
-Mô hình unsupervised cô lập điểm khác thường bằng đường đi ngắn trong các cây phân tách ngẫu nhiên; score chỉ thành nhãn sau khi chốt threshold hợp lệ trên Validation. Có [model component](src/network_anomaly/models/isolation_forest.py), [training/evaluation script](scripts/train_isolation_forest.py), hỗ trợ verified loading trong `InferencePipeline`/`ApiService` và unit tests. [Run được lưu](reports/experiments/isolation_forest/blocked_status.json) là prerequisite check cũ; chưa có metric benchmark hay binary `.joblib` cục bộ, nên trạng thái hiện tại là **IMPLEMENTED / TESTED**, chưa **EXPERIMENTALLY VALIDATED** (`BLOCKED / NOT READY` trên demo nếu thiếu binary).
+Mô hình unsupervised cô lập điểm khác thường bằng đường đi ngắn trong các cây phân tách ngẫu nhiên (`src/network_anomaly/models/isolation_forest.py`, `scripts/train_isolation_forest.py`), đã được **EXPERIMENTALLY VALIDATED** & **REPRODUCED** trên `NF-UNSW-NB15-v3` (run `if-c4-20261115T053123Z`): huấn luyện **benign-only** trên `1.590.608` mẫu `Label == 0` thuộc Train, hiệu chuẩn ngưỡng trên Validation (`policy = max-F1-on-known-attacks`, `74.421` candidates, loại trừ `{Backdoor, Worms}`) cho ngưỡng `-0.033527`, và đánh giá Held-out Test (`345.953` flow) đạt `Recall = 0.8997`, `Precision = 0.3523`, `F1 = 0.5064`, `FPR = 0.1605`, `ROC-AUC = 0.893730`, với tỷ lệ phát hiện Unknown (`Backdoor`, `Worms`) `1.122 / 1.296 = 0.8657` (xem [báo cáo đánh giá](reports/experiments/isolation_forest/evaluation_report.md) và [manifest](reports/models/isolation_forest_manifest.json)). Binary `.joblib` (`c2ff6e7ca841205357d1923cdd96281e55ba26706ea7afbd7b7230d7b3155f84`) nằm ngoài Git; khi có cục bộ thì `InferencePipeline` / FastAPI / demo đạt trạng thái `READY`.
 
 ### Autoencoder
 
-Học tái tạo đặc trưng flow bằng mạng PyTorch Autoencoder và dùng reconstruction error làm `anomaly_score` với ngưỡng chọn trên Validation. Code huấn luyện & protocol Holdout (#29, PR #51) đã có trên `main`, cùng lớp `AutoencoderModel` và luồng nạp verified trong `InferencePipeline`/`ApiService` (`src/network_anomaly/models/autoencoder.py`, `scripts/train_autoencoder.py`). Trạng thái là **IMPLEMENTED / TESTED** với fixture synthetic; chưa có real-data benchmark hay binary cục bộ (`BLOCKED / NOT READY` nếu thiếu file `.joblib`/`.pt` và `threshold`).
+Học tái tạo đặc trưng flow bằng mạng PyTorch Autoencoder và dùng reconstruction error làm `anomaly_score` với ngưỡng chọn trên Validation. Code huấn luyện & protocol Holdout (#29 CLOSED, PR #51) đã có trên `main`, cùng lớp `AutoencoderModel` và luồng nạp verified trong `InferencePipeline`/`ApiService` (`src/network_anomaly/models/autoencoder.py`, `scripts/train_autoencoder.py`). Trạng thái là **IMPLEMENTED / TESTED** với fixture synthetic; chưa có real-data benchmark hay binary cục bộ (`BLOCKED / NOT READY` nếu thiếu file `.joblib`/`.pt` và `threshold`).
 
 | Model | Cách tiếp cận / vai trò | Code & Verified Loading | Validation thật | Held-out Test |
 |---|---|---|---|---|
 Random Forest | Supervised baseline | Có + tests + manifest | Có (`345.371` flow) | Có (`rf-heldout-ea330b9`, `345.953` flow); [báo cáo](reports/evaluation/error_analysis_report.md) |
 XGBoost | Supervised comparison | Có + tests + manifest | Có (`345.371` flow) | `NOT VERIFIED` |
-Isolation Forest | Unsupervised anomaly score | Có + tests + parity threshold | `NOT VERIFIED` | `NOT VERIFIED` |
+Isolation Forest | Unsupervised anomaly score | Có + tests + verified `READY` | Có (`345.371` flow, threshold `-0.033527`) | Có (`345.953` flow, Known `0.9012`, Unknown `0.8657`); [báo cáo](reports/experiments/isolation_forest/evaluation_report.md) |
 Autoencoder | Reconstruction error | Có (#29 + `AutoencoderModel`) | `NOT VERIFIED` | `NOT VERIFIED` |
 
 ## Thực nghiệm và kết quả
@@ -141,9 +141,9 @@ Precision cho biết tỷ lệ cảnh báo Attack là đúng; Recall cho biết 
 
 ## Kết quả đạt được
 
-Nhóm đã hoàn thành kiểm định CSV nguồn `NF-UNSW-NB15-v3`, EDA có bằng chứng chạy lặp, split và kiểm toán leakage, train-only preprocessor, hai baseline supervised trên Train/Validation, Held-out Test Random Forest (`rf-heldout-ea330b9`), Autoencoder & Isolation Forest code/tests, **FastAPI (`127.0.0.1:8000`) + SQLite persistence**, pipeline CLI 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) và luồng tạo dữ liệu demo từ Validation (`scripts/prepare_demo_dataset.py`). `reports/` chứa metadata và báo cáo nhỏ; `data/raw/`, `data/processed/`, `data/demo/*.csv` và `artifacts/` nhị phân lớn không track trong Git.
+Nhóm đã hoàn thành kiểm định CSV nguồn `NF-UNSW-NB15-v3`, EDA có bằng chứng chạy lặp, split và kiểm toán leakage, train-only preprocessor, hai baseline supervised trên Train/Validation, Held-out Test Random Forest (`rf-heldout-ea330b9`), thực nghiệm **Isolation Forest (#11)** kèm đánh giá unknown-attack (`if-c4-20261115T053123Z`), Autoencoder code/tests (`#29`), tái lập sạch M3 trên Python `3.12.10` (`#14`), **FastAPI (`127.0.0.1:8000`) + SQLite persistence**, pipeline CLI 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) và luồng tạo dữ liệu demo từ Validation (`scripts/prepare_demo_dataset.py`). `reports/` chứa metadata và báo cáo nhỏ; `data/raw/`, `data/processed/`, `data/demo/*.csv` và `artifacts/` nhị phân lớn không track trong Git.
 
-Chưa có kết quả held-out Test cho XGBoost, chưa có real-data benchmark cho Isolation Forest/Autoencoder, và **Desktop Application Rust / Tauri 2 + Svelte 5 (#16)** đang ở trạng thái `PLANNED` (sẽ kết nối trực tiếp vào FastAPI localhost). [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) lưu đầy đủ chuỗi truy vết yêu cầu → code → test → bằng chứng.
+Chưa có kết quả held-out Test cho XGBoost, chưa có real-data benchmark cho Autoencoder, và **Desktop Application Rust / Tauri 2 + Svelte 5 (#16)** đang ở trạng thái `PLANNED` (sẽ kết nối trực tiếp vào FastAPI localhost). [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) lưu đầy đủ chuỗi truy vết yêu cầu → code → test → bằng chứng.
 
 ## Cài đặt và tái lập
 

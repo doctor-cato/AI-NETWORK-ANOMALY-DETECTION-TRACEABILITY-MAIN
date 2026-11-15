@@ -46,6 +46,7 @@ from network_anomaly.models.isolation_forest import (  # noqa: E402
     build_model,
     fit_model,
 )
+from scripts import train_isolation_forest as tif  # noqa: E402
 from scripts.train_isolation_forest import (  # noqa: E402
     EXPECTED_N_FEATURES,
     EXPECTED_TEST_ROWS,
@@ -1644,3 +1645,133 @@ class TestReviewerFindingsAndE2EIntegration:
             assert len(run_meta["partition_indices_sha256"]) == 3
             assert run_meta["partition_indices_sha256"] == real_hashes
             assert train_meta["partition_indices_sha256"] == real_hashes
+
+
+class TestKnownUnknownAndCalibrationProvenance:
+    """Verify calibration metadata, known-vs-unknown split evaluation, and score normalization."""
+
+    def test_calibrate_threshold_records_candidate_count_and_metric(self) -> None:
+        benign = np.array([-0.20, -0.15, -0.10, -0.05])
+        attack = np.array([0.05, 0.10, 0.15, 0.20])
+        unknown = np.array([0.12])
+        res = tif.calibrate_threshold(benign, attack, scores_unknown_val=unknown)
+        assert res["selection_metric"] == "f1"
+        assert res["n_candidate_thresholds"] == 8
+        assert res["score_direction"] == "higher_is_more_anomalous"
+        assert "decision_function" in res["decision_rule"]
+        assert res["calibration_partition"] == "validation"
+        assert res["threshold_frozen"] is True
+        assert res["calibration_populations"] == {
+            "n_benign": 4,
+            "n_known_attack": 4,
+            "n_unknown_attack_excluded": 1,
+        }
+
+    def test_compute_score_normalization_is_monotonic_on_validation(self) -> None:
+        scores = np.linspace(-0.25, 0.35, 50)
+        norm = tif.compute_score_normalization(scores)
+        assert norm["calibration_partition"] == "validation"
+        assert norm["score_direction"] == "higher_is_more_anomalous"
+        assert len(norm["quantile_grid"]) == len(norm["score_values"])
+        assert len(norm["quantile_grid"]) == 101
+        assert norm["score_values"] == sorted(norm["score_values"])
+
+    def test_compute_known_unknown_evaluation_splits_subsets(self) -> None:
+        y_true = np.array([0, 0, 0, 1, 1, 1, 1])
+        attack_col = pd.Series(
+            ["Benign", "Benign", "Benign", "Exploits", "Generic", "Backdoor", "Worms"]
+        )
+        scores = np.array([-0.2, -0.1, 0.05, 0.1, 0.2, 0.15, -0.05])
+        y_pred = (scores >= 0.0).astype(int)
+        summary = tif.compute_known_unknown_evaluation(
+            y_true=y_true,
+            y_pred=y_pred,
+            scores=scores,
+            attack_col=attack_col,
+        )
+        assert summary["n_benign"] == 3
+        assert summary["n_known_attack"] == 2
+        assert summary["n_unknown_attack"] == 2
+        assert summary["known_vs_benign"]["tp"] == 2
+        assert summary["known_vs_benign"]["fn"] == 0
+        assert summary["unknown_vs_benign"]["tp"] == 1
+        assert summary["unknown_vs_benign"]["fn"] == 1
+        assert summary["unknown_vs_benign"]["recall"] == pytest.approx(0.5)
+
+    def test_save_artifacts_and_reports_emit_full_provenance_and_cm_csv(
+        self, tmp_path: Path
+    ) -> None:
+        from sklearn.ensemble import IsolationForest
+
+        rng = np.random.default_rng(42)
+        X = rng.normal(size=(20, 4))
+        model = IsolationForest(n_estimators=10, random_state=42).fit(X)
+        manifest_p = tmp_path / "isolation_forest_manifest.json"
+        art_dir = tmp_path / "artifacts"
+        rep_dir = tmp_path / "reports"
+        score_norm = tif.compute_score_normalization(np.linspace(-0.2, 0.2, 20))
+
+        training_meta = {
+            "run_id": "if-test-001",
+            "git_commit": "abc1234",
+            "dataset_sha256": "d" * 64,
+            "preprocessor_artifact_sha256": "e" * 64,
+            "split_manifest_sha256": "f" * 64,
+            "partition_indices_sha256": {"train": "1" * 64},
+            "environment": {"python_version": "3.12.0", "packages": {"scikit-learn": "1.5.0"}},
+            "test_lock_audit": {"test_partition_accessed": False, "test_rows_loaded": 0},
+        }
+        info = tif.save_artifacts(
+            model=model,
+            config={"n_estimators": 10, "random_state": 42},
+            threshold=0.0,
+            training_meta=training_meta,
+            output_dir=art_dir,
+            manifest_path=manifest_p,
+            evaluation_summary={"accuracy": 0.9},
+            score_normalization=score_norm,
+        )
+        manifest = json.loads(Path(info["files"]["manifest"]).read_text(encoding="utf-8"))
+        assert manifest["run_id"] == "if-test-001"
+        assert manifest["dataset_sha256"] == "d" * 64
+        assert manifest["score_normalization"]["calibration_partition"] == "validation"
+        assert len(manifest["selected_features"]) == 47
+
+        metrics = {
+            "tp": 5,
+            "tn": 10,
+            "fp": 2,
+            "fn": 1,
+            "accuracy": 0.8333,
+            "precision": 0.7143,
+            "recall": 0.8333,
+            "f1": 0.7692,
+            "fpr": 0.1667,
+            "confusion_matrix": [[10, 2], [1, 5]],
+        }
+        tif.save_reports(
+            metrics=metrics,
+            threshold_calibration={
+                "threshold": 0.0,
+                "policy": "max-F1-on-known-attacks",
+                "selection_metric": "f1",
+                "n_candidate_thresholds": 20,
+                "score_direction": "higher_is_more_anomalous",
+                "decision_rule": "scores >= threshold",
+                "validation_stats": {"tp": 5, "tn": 10, "fp": 2, "fn": 1, "f1": 0.7692},
+            },
+            per_attack_metrics={},
+            run_metadata={
+                "run_id": "test-run",
+                "timestamp_utc": "2026-01-01T00:00:00Z",
+                "git_commit": "abc",
+            },
+            training_meta={
+                "n_train_benign": 20,
+                "n_train_attack_excluded": 0,
+                "hyperparameters": {},
+            },
+            report_dir=rep_dir,
+        )
+        assert (rep_dir / "confusion_matrix.csv").is_file()
+        assert "Benign (0),10,2" in (rep_dir / "confusion_matrix.csv").read_text(encoding="utf-8")

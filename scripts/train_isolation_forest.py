@@ -606,10 +606,9 @@ def load_partitions_by_indices(
         df_p = pd.concat(chunks, ignore_index=True)
         chunks.clear()
         if len(indices) > 1 and not np.all(indices[:-1] <= indices[1:]):
-            df_p.set_index("_src_row_idx", inplace=True)
-            df_p = df_p.loc[indices].reset_index(drop=True)
+            df_p = df_p.set_index("_src_row_idx").loc[indices].reset_index(drop=True)
         elif "_src_row_idx" in df_p.columns:
-            df_p.drop(columns=["_src_row_idx"], inplace=True)
+            df_p = df_p.drop(columns=["_src_row_idx"])
         return df_p
 
     df_train = _finalize_partition(train_chunks, train_indices)
@@ -662,6 +661,8 @@ def calibrate_threshold(
     best_thresh = None
     best_stats = {}
     policy = None
+    n_candidate_thresholds = 0
+    selection_metric = "recall_at_fpr_constraint" if fpr_target is not None else "f1"
 
     if len(scores_benign_val) > 0 and len(scores_attack_val) > 0:
         all_scores = np.concatenate([scores_benign_val, scores_attack_val])
@@ -683,6 +684,7 @@ def calibrate_threshold(
         distinct_mask[:-1] = sorted_scores[1:] != sorted_scores[:-1]
         distinct_mask[-1] = True
         cand_idxs = np.where(distinct_mask)[0]
+        n_candidate_thresholds = int(len(cand_idxs))
 
         cum_tp = np.cumsum(sorted_labels == 1)
         cum_fp = np.cumsum(sorted_labels == 0)
@@ -806,6 +808,19 @@ def calibrate_threshold(
     result = {
         "threshold": float(best_thresh),
         "policy": policy,
+        "selection_metric": selection_metric,
+        "n_candidate_thresholds": n_candidate_thresholds,
+        "score_direction": "higher_is_more_anomalous",
+        "decision_rule": "y_pred = 1 (Attack) if (-decision_function(X)) >= threshold else 0 (Benign)",
+        "calibration_partition": "validation",
+        "threshold_frozen": True,
+        "calibration_populations": {
+            "n_benign": int(len(scores_benign_val)),
+            "n_known_attack": int(len(scores_attack_val)),
+            "n_unknown_attack_excluded": (
+                int(len(scores_unknown_val)) if scores_unknown_val is not None else 0
+            ),
+        },
         "validation_stats": best_stats,
     }
 
@@ -904,6 +919,121 @@ def compute_per_category_metrics(y_true, y_pred, scores, attack_col) -> dict:
     return results
 
 
+def compute_score_normalization(scores_val_cal) -> dict:
+    """Build quantile-based [0, 1] display normalization strictly from Validation scores."""
+    import numpy as np
+
+    arr = np.asarray(scores_val_cal, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return {}
+    grid = np.linspace(0.0, 1.0, 101)
+    values = np.quantile(arr, grid)
+    return {
+        "calibration_partition": "validation",
+        "score_direction": "higher_is_more_anomalous",
+        "quantile_grid": [round(float(x), 4) for x in grid],
+        "score_values": [float(v) for v in values],
+    }
+
+
+def compute_known_unknown_evaluation(y_true, y_pred, scores, attack_col) -> dict:
+    """Evaluate Known-attack vs Benign and Unknown-attack vs Benign separately on Test."""
+    import numpy as np
+
+    y_true_arr = np.asarray(y_true, dtype=int)
+    y_pred_arr = np.asarray(y_pred, dtype=int)
+    scores_arr = np.asarray(scores, dtype=np.float64)
+    attack_list = list(attack_col)
+
+    benign_mask = y_true_arr == 0
+    known_mask = np.array(
+        [
+            y_true_arr[i] == 1 and attack_list[i] not in UNKNOWN_ATTACK_CATEGORIES
+            for i in range(len(y_true_arr))
+        ],
+        dtype=bool,
+    )
+    unknown_mask = np.array(
+        [
+            y_true_arr[i] == 1 and attack_list[i] in UNKNOWN_ATTACK_CATEGORIES
+            for i in range(len(y_true_arr))
+        ],
+        dtype=bool,
+    )
+
+    out: dict[str, Any] = {
+        "known_categories": sorted(KNOWN_ATTACK_CATEGORIES),
+        "unknown_categories": sorted(UNKNOWN_ATTACK_CATEGORIES),
+        "n_benign": int(benign_mask.sum()),
+        "n_known_attack": int(known_mask.sum()),
+        "n_unknown_attack": int(unknown_mask.sum()),
+    }
+
+    if known_mask.any() and benign_mask.any():
+        idx = benign_mask | known_mask
+        out["known_vs_benign"] = compute_full_metrics(
+            y_true_arr[idx], y_pred_arr[idx], scores_arr[idx]
+        )
+    if unknown_mask.any() and benign_mask.any():
+        idx = benign_mask | unknown_mask
+        out["unknown_vs_benign"] = compute_full_metrics(
+            y_true_arr[idx], y_pred_arr[idx], scores_arr[idx]
+        )
+    return out
+
+
+def compute_shortcut_and_overlap_audit(df_val, y_val, split_manifest: dict) -> dict:
+    """Summarize partition overlap audit and MIN_TTL shortcut risk on Validation."""
+    import numpy as np
+
+    audit_summary = split_manifest.get("audit_summary", {})
+    pair_audits = audit_summary.get("pair_audits", {})
+    overlap_summary = {
+        "status": audit_summary.get("status", "UNKNOWN"),
+        "exact_full_row_overlap": audit_summary.get("exact_full_row_overlap"),
+        "source_feature_overlap": audit_summary.get("source_feature_overlap"),
+        "canonical_flow_group_overlap": audit_summary.get("canonical_flow_group_overlap"),
+        "temporal_boundary_violations": audit_summary.get("temporal_boundary_violations"),
+        "binary_label_conflicts": audit_summary.get("binary_label_conflicts"),
+        "ml_feature_overlap": {
+            pair: {
+                "distinct_fingerprints": info.get("ml_feature_overlap", {}).get(
+                    "distinct_fingerprints"
+                ),
+                "p2_affected_percent": info.get("ml_feature_overlap", {}).get(
+                    "p2_affected_percent"
+                ),
+                "status": info.get("ml_feature_overlap", {}).get("status"),
+            }
+            for pair, info in pair_audits.items()
+            if isinstance(info, dict) and "ml_feature_overlap" in info
+        },
+    }
+
+    min_ttl_obs: dict[str, Any] = {}
+    if "MIN_TTL" in df_val.columns:
+        ttl_vals = np.asarray(df_val["MIN_TTL"], dtype=np.float64)
+        benign_ttl = ttl_vals[y_val == 0]
+        attack_ttl = ttl_vals[y_val == 1]
+        min_ttl_obs = {
+            "partition": "validation",
+            "benign_zero_fraction": float(np.mean(benign_ttl == 0)) if len(benign_ttl) else None,
+            "attack_zero_fraction": float(np.mean(attack_ttl == 0)) if len(attack_ttl) else None,
+            "benign_median": float(np.median(benign_ttl)) if len(benign_ttl) else None,
+            "attack_median": float(np.median(attack_ttl)) if len(attack_ttl) else None,
+            "note": (
+                "Deterministic TTL distributions (e.g., IXIA PerfectStorm testbed artifacts) "
+                "can inflate supervised and unsupervised separation on benchmark splits."
+            ),
+        }
+
+    return {
+        "partition_overlap_audit": overlap_summary,
+        "min_ttl_shortcut_risk": min_ttl_obs,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Artifact save/load
 # ---------------------------------------------------------------------------
@@ -917,11 +1047,16 @@ def save_artifacts(
     output_dir: Path,
     manifest_path: Optional[Path] = None,
     evaluation_summary: Optional[dict] = None,
+    score_normalization: Optional[dict] = None,
 ) -> dict:
     """Save model, config, threshold and metadata; return artifact checksums."""
     import joblib
 
-    from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+    from network_anomaly.data.nf_unsw_nb15_v3 import (
+        ML_FEATURE_COLUMNS,
+        TARGET_COLUMNS,
+        TRACE_METADATA_COLUMNS,
+    )
 
     if isinstance(threshold, bool) or not math.isfinite(float(threshold)):
         raise ValueError("Calibrated threshold must be finite")
@@ -971,24 +1106,35 @@ def save_artifacts(
     target_manifest.parent.mkdir(parents=True, exist_ok=True)
     model_sha = sha256_file(model_path)
     manifest_data = {
+        "run_id": training_meta.get("run_id", "untracked"),
         "model_type": "IsolationForest",
         "task": "unsupervised_anomaly_detection",
         "target": "Label",
         "positive_class": "Attack",
-        "model_artifact_path": str(model_path.as_posix()),
+        "dataset_name": "NF-UNSW-NB15-v3",
+        "dataset_sha256": training_meta.get("dataset_sha256"),
+        "model_artifact_path": safe_relpath(model_path),
         "model_artifact_sha256": model_sha,
         "model_artifact_size_bytes": model_path.stat().st_size,
         "preprocessor_artifact_sha256": training_meta.get("preprocessor_artifact_sha256"),
         "split_manifest_sha256": training_meta.get("split_manifest_sha256"),
+        "partition_indices_sha256": training_meta.get("partition_indices_sha256", {}),
         "threshold": float(threshold),
         "calibrated_threshold": float(threshold),
         "score_direction": "higher_is_more_anomalous",
         "label_mapping": {"0": "Benign", "1": "Attack"},
         "feature_contract_version": FEATURE_CONTRACT_VERSION,
+        "selected_features": list(ML_FEATURE_COLUMNS),
+        "excluded_metadata": list(TRACE_METADATA_COLUMNS),
+        "excluded_targets": list(TARGET_COLUMNS),
         "hyperparameters": dict(config),
+        "environment": training_meta.get("environment", {}),
+        "test_lock_audit": training_meta.get("test_lock_audit", {}),
         "evaluation_summary": evaluation_summary or {},
         "training_metadata": training_meta,
     }
+    if score_normalization:
+        manifest_data["score_normalization"] = score_normalization
     with target_manifest.open("w", encoding="utf-8") as fh:
         json.dump(manifest_data, fh, indent=2, ensure_ascii=False)
 
@@ -1037,6 +1183,49 @@ def verify_saved_model(model_path: Path, original_model, X_sample) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _save_confusion_matrix_artifacts(metrics: dict, report_dir: Path) -> None:
+    """Write labeled confusion_matrix.csv and confusion_matrix.png when Test metrics exist."""
+    cm = metrics.get("confusion_matrix")
+    if not isinstance(cm, list) or len(cm) != 2:
+        return
+    import csv
+
+    csv_path = report_dir / "confusion_matrix.csv"
+    with csv_path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(["actual \\ predicted", "Benign (0)", "Attack (1)"])
+        writer.writerow(["Benign (0)", int(cm[0][0]), int(cm[0][1])])
+        writer.writerow(["Attack (1)", int(cm[1][0]), int(cm[1][1])])
+
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        arr = np.asarray(cm, dtype=int)
+        fig, ax = plt.subplots(figsize=(5.5, 4.5))
+        im = ax.imshow(arr, cmap="Blues")
+        fig.colorbar(im, ax=ax)
+        labels = ["Benign (0)", "Attack (1)"]
+        ax.set_xticks([0, 1], labels=labels)
+        ax.set_yticks([0, 1], labels=labels)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("Actual")
+        ax.set_title("Isolation Forest Confusion Matrix (Held-Out Test)")
+        thresh = arr.max() / 2.0 if arr.size else 0.0
+        for i in range(2):
+            for j in range(2):
+                color = "white" if arr[i, j] > thresh else "black"
+                ax.text(j, i, f"{arr[i, j]:,}", ha="center", va="center", color=color)
+        fig.tight_layout()
+        fig.savefig(report_dir / "confusion_matrix.png", dpi=150)
+        plt.close(fig)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def save_reports(
     metrics: dict,
     threshold_calibration: dict,
@@ -1057,6 +1246,7 @@ def save_reports(
     with (report_dir / "run_metadata.json").open("w", encoding="utf-8") as fh:
         json.dump(run_metadata, fh, indent=2, default=str)
 
+    _save_confusion_matrix_artifacts(metrics, report_dir)
     _write_evaluation_report(
         metrics, threshold_calibration, per_attack_metrics, run_metadata, training_meta, report_dir
     )
@@ -1088,6 +1278,11 @@ def _write_evaluation_report(
             if isinstance(training_meta.get("n_train_benign"), int)
             else f"- n_train_benign: {training_meta.get('n_train_benign', 'N/A')}"
         ),
+        (
+            f"- n_train_attack_excluded: {training_meta.get('n_train_attack_excluded', 'N/A'):,}"
+            if isinstance(training_meta.get("n_train_attack_excluded"), int)
+            else f"- n_train_attack_excluded: {training_meta.get('n_train_attack_excluded', 'N/A')}"
+        ),
         f"- Training duration: {training_meta.get('training_duration_seconds', 'N/A')} s",
         f"- Random seed: {training_meta.get('random_state', 'N/A')}",
         "",
@@ -1102,6 +1297,10 @@ def _write_evaluation_report(
         "## Threshold Calibration (Validation)",
         "",
         f"- Policy: {threshold_calibration.get('policy', 'N/A')}",
+        f"- Selection metric: {threshold_calibration.get('selection_metric', 'N/A')}",
+        f"- Candidate thresholds evaluated: {threshold_calibration.get('n_candidate_thresholds', 'N/A')}",
+        f"- Score direction: {threshold_calibration.get('score_direction', 'N/A')}",
+        f"- Decision rule: {threshold_calibration.get('decision_rule', 'N/A')}",
         f"- Selected threshold: {threshold_calibration.get('threshold', 'N/A')}",
         f"- Unknown attack categories (pre-registered, excluded from calibration): "
         f"{sorted(UNKNOWN_ATTACK_CATEGORIES)}",
@@ -1172,6 +1371,37 @@ def _write_evaluation_report(
             str(metrics.get("confusion_matrix", [])),
             "```",
         ]
+        known_unknown = metrics.get("known_vs_unknown", {})
+        if isinstance(known_unknown, dict) and (
+            "known_vs_benign" in known_unknown or "unknown_vs_benign" in known_unknown
+        ):
+            lines += [
+                "",
+                "### Known vs Unknown Attack Evaluation (Test vs Benign)",
+                "",
+                "| Subset | Attack Samples | Benign Samples | Precision | Recall | F1 | FPR | ROC-AUC | PR-AUC |",
+                "|---|---|---|---|---|---|---|---|---|",
+            ]
+            for label, key in (
+                ("Known Attacks", "known_vs_benign"),
+                ("Unknown Attacks (Worms, Backdoor)", "unknown_vs_benign"),
+            ):
+                sub = known_unknown.get(key)
+                if isinstance(sub, dict):
+                    n_att = (
+                        known_unknown.get("n_known_attack", 0)
+                        if key == "known_vs_benign"
+                        else known_unknown.get("n_unknown_attack", 0)
+                    )
+                    roc_s = (
+                        f"{sub['roc_auc']:.6f}" if isinstance(sub.get("roc_auc"), float) else "N/A"
+                    )
+                    pr_s = f"{sub['pr_auc']:.6f}" if isinstance(sub.get("pr_auc"), float) else "N/A"
+                    lines.append(
+                        f"| {label} | {n_att:,} | {known_unknown.get('n_benign', 0):,} | "
+                        f"{sub['precision']:.6f} | {sub['recall']:.6f} | {sub['f1']:.6f} | "
+                        f"{sub['fpr']:.6f} | {roc_s} | {pr_s} |"
+                    )
     elif metrics:
         lines += [
             "",
@@ -1198,22 +1428,58 @@ def _write_evaluation_report(
                 f"{stats['n_detected']} | {stats['detection_rate']:.4f} |"
             )
 
+    audit_obs = metrics.get("audit_observations", {}) if isinstance(metrics, dict) else {}
+    if audit_obs:
+        ov = audit_obs.get("partition_overlap_audit", {})
+        ttl = audit_obs.get("min_ttl_shortcut_risk", {})
+        lines += [
+            "",
+            "## Partition Overlap, Label Integrity & Shortcut Risk Observations",
+            "",
+            f"- Split audit status: `{ov.get('status', 'N/A')}` "
+            f"(exact_full_row_overlap={ov.get('exact_full_row_overlap')}, "
+            f"source_feature_overlap={ov.get('source_feature_overlap')}, "
+            f"canonical_flow_group_overlap={ov.get('canonical_flow_group_overlap')}, "
+            f"temporal_boundary_violations={ov.get('temporal_boundary_violations')}, "
+            f"binary_label_conflicts={ov.get('binary_label_conflicts')})",
+        ]
+        for pair, info in ov.get("ml_feature_overlap", {}).items():
+            lines.append(
+                f"- `ml_feature_overlap` ({pair}): {info.get('distinct_fingerprints')} fingerprints, "
+                f"{info.get('p2_affected_percent')}% of target partition (`{info.get('status')}`)"
+            )
+        if ttl:
+            lines.append(
+                f"- `MIN_TTL` shortcut observation (Validation): benign_zero_fraction="
+                f"{ttl.get('benign_zero_fraction'):.4f}, attack_zero_fraction="
+                f"{ttl.get('attack_zero_fraction'):.4f}, benign_median={ttl.get('benign_median')}, "
+                f"attack_median={ttl.get('attack_median')} — {ttl.get('note', '')}"
+            )
+
     lines += [
         "",
         "## Limitations",
         "",
         "- Isolation Forest is trained on benign-only traffic; unsupervised threshold "
         "calibration uses known attack categories only.",
-        "- Unknown attack detection rate reflects generalization, not a zero-day capability claim.",
+        "- Unknown attack detection rate reflects held-out attack-family generalization within the "
+        "IXIA PerfectStorm testbed capture, NOT real-world zero-day detection capability.",
+        "- Non-i.i.d. feature-space repetition (`ml_feature_overlap`) and deterministic testbed "
+        "fields such as `MIN_TTL` can affect anomaly scores without representing true network novelty.",
         "- Temporal holdout tests chronological ordering within Jan–Feb 2015 capture only.",
         "- Session grouping uses a 5-minute heuristic bucket; residual flow adjacency is possible.",
         "- Results are valid only for the exact dataset version, split, preprocessor "
         "and random seed recorded in run_metadata.json.",
         "",
-        "## Traceability",
+        "## Traceability & Reproduction",
         "",
         "Issue #11 → C4 → `src/network_anomaly/models/isolation_forest.py` "
         "→ `scripts/train_isolation_forest.py` → this report",
+        "",
+        "```powershell",
+        '$env:PYTHONPATH = "src"',
+        "python scripts/train_isolation_forest.py --evaluate-test",
+        "```",
         "",
         f"Status: {training_meta.get('experiment_status', 'IMPLEMENTED')}",
     ]
@@ -1481,6 +1747,13 @@ def run_pipeline(args) -> int:
     # ------------------------------------------------------------------
     print("\n[Step 3] Train Isolation Forest (benign-only)", flush=True)
 
+    import os
+    import platform
+
+    import joblib
+    import pandas as pd
+    import sklearn
+
     from network_anomaly.config import ISOLATION_FOREST_DEFAULTS, RANDOM_SEED
     from network_anomaly.models.isolation_forest import (
         anomaly_scores,
@@ -1493,18 +1766,15 @@ def run_pipeline(args) -> int:
     X_train_benign = X_train[benign_mask]
     n_train_benign = int(benign_mask.sum())
     n_train_total = len(y_train)
+    n_train_attack_excluded = n_train_total - n_train_benign
     print(
         f"  Training population: {n_train_benign:,} benign samples "
-        f"(of {n_train_total:,} total train rows)",
+        f"(of {n_train_total:,} total train rows; {n_train_attack_excluded:,} attack rows excluded)",
         flush=True,
     )
 
     # Build model with explicit hyperparameters (documented overrides on top of defaults)
     model_config = dict(ISOLATION_FOREST_DEFAULTS)
-    # For large datasets, limit max_samples to 10_000 for memory efficiency.
-    # The contamination parameter is used internally by scikit-learn for the
-    # offset_ attribute; threshold selection uses the validation protocol, not
-    # the contamination-based offset.
     model_config.update(
         {
             "n_estimators": args.n_estimators,
@@ -1524,22 +1794,45 @@ def run_pipeline(args) -> int:
     training_duration = time.monotonic() - t0
     print(f"  Training complete in {training_duration:.1f} s", flush=True)
 
+    env_info = {
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "cpu_count": os.cpu_count(),
+        "git_commit": run_meta.get("git_commit", "NOT_AVAILABLE"),
+        "packages": {
+            "scikit-learn": sklearn.__version__,
+            "pandas": pd.__version__,
+            "numpy": np.__version__,
+            "joblib": joblib.__version__,
+        },
+    }
+
     training_meta = {
+        "run_id": f"if-c4-{run_id}",
+        "status": "COMPLETED",
         "n_train_total": n_train_total,
         "n_train_benign": n_train_benign,
+        "n_train_attack_excluded": n_train_attack_excluded,
         "training_population": "benign-only (Label == 0)",
         "training_duration_seconds": round(training_duration, 2),
         "random_state": RANDOM_SEED,
         "hyperparameters": model_config,
         "dataset_sha256": dataset_check.get("sha256", "NOT_VERIFIED"),
-        "split_manifest": str(split_check["path"]),
+        "split_manifest": safe_relpath(Path(split_check["path"])),
         "split_manifest_sha256": split_check.get("manifest_sha256", "NOT_VERIFIED"),
         "partition_indices_sha256": split_check.get("partition_indices_sha256", {}),
-        "preprocessor_artifact": str(pp_check["path"]),
+        "preprocessor_artifact": safe_relpath(Path(pp_check["path"])),
         "preprocessor_artifact_sha256": pp_check.get("sha256", "NOT_VERIFIED"),
         "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
         "feature_columns": feature_cols,
         "n_features": len(feature_cols),
+        "environment": env_info,
+        "test_lock_audit": {
+            "test_partition_accessed": evaluate_test,
+            "test_rows_loaded": len(df_test) if evaluate_test else 0,
+            "threshold_calibrated_on": "validation (known attacks + benign only)",
+            "unknown_categories_excluded_from_calibration": sorted(UNKNOWN_ATTACK_CATEGORIES),
+        },
         "test_partition_accessed": evaluate_test,
         "test_rows_loaded": len(df_test) if evaluate_test else 0,
         "experiment_status": (
@@ -1590,8 +1883,13 @@ def run_pipeline(args) -> int:
         fpr_target=args.fpr_target,
     )
     threshold = threshold_result["threshold"]
+    score_norm = compute_score_normalization(
+        np.concatenate([scores_val_benign, scores_val_known_attack])
+    )
+    audit_obs = compute_shortcut_and_overlap_audit(df_val, y_val, split_manifest)
     print(
-        f"  Selected threshold: {threshold:.6f} (policy: {threshold_result['policy']})",
+        f"  Selected threshold: {threshold:.6f} (policy: {threshold_result['policy']}, "
+        f"candidates: {threshold_result.get('n_candidate_thresholds', 0):,})",
         flush=True,
     )
 
@@ -1609,6 +1907,10 @@ def run_pipeline(args) -> int:
         y_pred_test = (scores_test >= threshold).astype(int)
 
         test_metrics = compute_full_metrics(y_test, y_pred_test, scores_test)
+        test_metrics["known_vs_unknown"] = compute_known_unknown_evaluation(
+            y_test, y_pred_test, scores_test, attack_test
+        )
+        test_metrics["audit_observations"] = audit_obs
         print(
             f"  Test TP={test_metrics['tp']:,} TN={test_metrics['tn']:,} "
             f"FP={test_metrics['fp']:,} FN={test_metrics['fn']:,}",
@@ -1681,6 +1983,7 @@ def run_pipeline(args) -> int:
             "message": (
                 "Held-out test partition locked. Pass --evaluate-test to unlock and evaluate."
             ),
+            "audit_observations": audit_obs,
         }
         per_attack = {}
         training_meta["experiment_status"] = "IMPLEMENTED — TEST LOCKED"
@@ -1689,7 +1992,20 @@ def run_pipeline(args) -> int:
     # Step 6 — save artifacts
     # ------------------------------------------------------------------
     print("\n[Step 6] Save artifacts", flush=True)
-    MODEL_ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+    out_artifact_dir = (
+        Path(args.output_dir) if getattr(args, "output_dir", None) else MODEL_ARTIFACT_DIR
+    )
+    out_manifest_path = (
+        Path(args.manifest_path)
+        if getattr(args, "manifest_path", None)
+        else (
+            MODEL_MANIFEST_PATH
+            if out_artifact_dir == MODEL_ARTIFACT_DIR
+            else out_artifact_dir / "isolation_forest_manifest.json"
+        )
+    )
+    out_report_dir = Path(args.report_dir) if getattr(args, "report_dir", None) else REPORT_DIR
+    out_artifact_dir.mkdir(parents=True, exist_ok=True)
 
     pp_artifact_sha256 = pp_check.get("sha256") or sha256_file(Path(pp_check["path"]))
     training_meta["preprocessor_artifact_sha256"] = pp_artifact_sha256
@@ -1700,9 +2016,10 @@ def run_pipeline(args) -> int:
         config=model_config,
         threshold=threshold,
         training_meta=training_meta,
-        output_dir=MODEL_ARTIFACT_DIR,
-        manifest_path=MODEL_MANIFEST_PATH,
+        output_dir=out_artifact_dir,
+        manifest_path=out_manifest_path,
         evaluation_summary=test_metrics,
+        score_normalization=score_norm,
     )
     print(f"  Artifacts saved to: {artifacts_info['directory']}", flush=True)
     for name, path in artifacts_info["files"].items():
@@ -1743,7 +2060,17 @@ def run_pipeline(args) -> int:
     # ------------------------------------------------------------------
     print("\n[Step 8] Save reports", flush=True)
 
-    run_meta["artifacts"] = artifacts_info
+    def _portable_path(raw_path: str) -> str:
+        try:
+            return Path(raw_path).resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+        except ValueError:
+            return raw_path
+
+    run_meta["artifacts"] = {
+        "directory": _portable_path(artifacts_info["directory"]),
+        "files": {k: _portable_path(v) for k, v in artifacts_info["files"].items()},
+        "checksums": dict(artifacts_info["checksums"]),
+    }
     run_meta["dataset_sha256"] = dataset_check.get("sha256", "NOT_VERIFIED")
     run_meta["split_manifest_sha256"] = split_check.get("manifest_sha256", "NOT_VERIFIED")
     run_meta["partition_indices_sha256"] = split_check.get("partition_indices_sha256", {})
@@ -1765,9 +2092,9 @@ def run_pipeline(args) -> int:
         per_attack_metrics=per_attack,
         run_metadata=run_meta,
         training_meta=training_meta,
-        report_dir=REPORT_DIR,
+        report_dir=out_report_dir,
     )
-    print(f"  Reports saved to: {REPORT_DIR}", flush=True)
+    print(f"  Reports saved to: {out_report_dir}", flush=True)
 
     if evaluate_test:
         print("\n[COMPLETE] Isolation Forest experiment EXPERIMENTALLY VALIDATED.", flush=True)
@@ -1777,7 +2104,7 @@ def run_pipeline(args) -> int:
             flush=True,
         )
     print(
-        f"  Artifacts: {MODEL_ARTIFACT_DIR}\n  Reports  : {REPORT_DIR}",
+        f"  Artifacts: {out_artifact_dir}\n  Reports  : {out_report_dir}",
         flush=True,
     )
     return 0
@@ -1918,6 +2245,21 @@ def parse_args(argv=None):
         type=int,
         default=100_000,
         help="Chunk size for streaming partition loading to manage RAM (default: 100000).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Optional directory for model artifacts (default: artifacts/models/isolation_forest).",
+    )
+    parser.add_argument(
+        "--manifest-path",
+        default=None,
+        help="Optional path for companion model manifest (default: reports/models/isolation_forest_manifest.json).",
+    )
+    parser.add_argument(
+        "--report-dir",
+        default=None,
+        help="Optional directory for experiment reports (default: reports/experiments/isolation_forest).",
     )
     args = parser.parse_args(argv)
     if args.chunksize <= 0:

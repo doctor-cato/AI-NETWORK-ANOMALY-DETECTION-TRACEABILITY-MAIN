@@ -1,0 +1,125 @@
+{
+  "tp": 27528,
+  "tn": 264755,
+  "fp": 50602,
+  "fn": 3068,
+  "accuracy": 0.8448633195838741,
+  "precision": 0.35233585050556765,
+  "recall": 0.8997254543077526,
+  "f1": 0.5063738204293361,
+  "fpr": 0.16045941583665496,
+  "roc_auc": 0.8937301201493376,
+  "pr_auc": 0.28875282902932714,
+  "confusion_matrix": [
+    [
+      264755,
+      50602
+    ],
+    [
+      3068,
+      27528
+    ]
+  ],
+  "n_samples": 345953,
+  "known_vs_unknown": {
+    "known_categories": [
+      "Analysis",
+      "DoS",
+      "Exploits",
+      "Fuzzers",
+      "Generic",
+      "Reconnaissance",
+      "Shellcode"
+    ],
+    "unknown_categories": [
+      "Backdoor",
+      "Worms"
+    ],
+    "n_benign": 315357,
+    "n_known_attack": 29300,
+    "n_unknown_attack": 1296,
+    "known_vs_benign": {
+      "tp": 26406,
+      "tn": 264755,
+      "fp": 50602,
+      "fn": 2894,
+      "accuracy": 0.8447848150480043,
+      "precision": 0.3428994390193227,
+      "recall": 0.9012286689419795,
+      "f1": 0.49678293261090417,
+      "fpr": 0.16045941583665496,
+      "roc_auc": 0.8939962725055491,
+      "pr_auc": 0.2807230603799887,
+      "confusion_matrix": [
+        [
+          264755,
+          50602
+        ],
+        [
+          2894,
+          26406
+        ]
+      ],
+      "n_samples": 344657
+    },
+    "unknown_vs_benign": {
+      "tp": 1122,
+      "tn": 264755,
+      "fp": 50602,
+      "fn": 174,
+      "accuracy": 0.8396478163794437,
+      "precision": 0.021692057845487587,
+      "recall": 0.8657407407407407,
+      "f1": 0.04232365145228216,
+      "fpr": 0.16045941583665496,
+      "roc_auc": 0.8877129411084448,
+      "pr_auc": 0.016737931449030324,
+      "confusion_matrix": [
+        [
+          264755,
+          50602
+        ],
+        [
+          174,
+          1122
+        ]
+      ],
+      "n_samples": 316653
+    }
+  },
+  "audit_observations": {
+    "partition_overlap_audit": {
+      "status": "PASS",
+      "exact_full_row_overlap": 0,
+      "source_feature_overlap": 0,
+      "canonical_flow_group_overlap": 0,
+      "temporal_boundary_violations": 0,
+      "binary_label_conflicts": 0,
+      "ml_feature_overlap": {
+        "train_vs_validation": {
+          "distinct_fingerprints": 61007,
+          "p2_affected_percent": 49.98,
+          "status": "REVIEWED_AND_JUSTIFIED"
+        },
+        "validation_vs_test": {
+          "distinct_fingerprints": 24143,
+          "p2_affected_percent": 33.13,
+          "status": "REVIEWED_AND_JUSTIFIED"
+        },
+        "train_vs_test": {
+          "distinct_fingerprints": 59966,
+          "p2_affected_percent": 53.21,
+          "status": "REVIEWED_AND_JUSTIFIED"
+        }
+      }
+    },
+    "min_ttl_shortcut_risk": {
+      "partition": "validation",
+      "benign_zero_fraction": 0.02035754324786976,
+      "attack_zero_fraction": 0.0016721311475409836,
+      "benign_median": 31.0,
+      "attack_median": 254.0,
+      "note": "Deterministic TTL distributions (e.g., IXIA PerfectStorm testbed artifacts) can inflate supervised and unsupervised separation on benchmark splits."
+    }
+  }
+}

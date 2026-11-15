@@ -47,9 +47,18 @@ def test_evidence_recovery_renders_rf_vs_if_comparison_and_artifacts():
 def test_no_pytest_temp_isolation_forest_manifest_tracked():
     """Verify Issue #54 polluted pytest temp manifest is absent from reports/models/."""
     if_manifest = PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
+    if not if_manifest.exists():
+        return
+    raw_text = if_manifest.read_text(encoding="utf-8")
     assert (
-        not if_manifest.exists()
+        "pytest-of-" not in raw_text and "AppData\\Local\\Temp" not in raw_text
     ), "reports/models/isolation_forest_manifest.json must not point to pytest temp artifacts"
+    data = json.loads(raw_text)
+    assert (
+        data.get("model_artifact_path")
+        == "artifacts/models/isolation_forest/isolation_forest.joblib"
+    )
+    assert len(str(data.get("model_artifact_sha256", ""))) == 64
 
 
 def test_api_analyze_emits_probabilities_and_scores_per_contract(
