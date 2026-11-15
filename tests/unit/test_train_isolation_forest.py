@@ -1775,3 +1775,10 @@ class TestKnownUnknownAndCalibrationProvenance:
         )
         assert (rep_dir / "confusion_matrix.csv").is_file()
         assert "Benign (0),10,2" in (rep_dir / "confusion_matrix.csv").read_text(encoding="utf-8")
+
+    def test_collect_run_metadata_includes_git_dirty_and_script_sha256(self) -> None:
+        args = tif.parse_args([])
+        meta = tif.collect_run_metadata(args)
+        assert "git_dirty" in meta
+        assert len(str(meta.get("script_sha256", ""))) == 64
+        assert len(str(meta.get("model_module_sha256", ""))) == 64

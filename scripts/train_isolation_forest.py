@@ -1261,6 +1261,8 @@ def _write_evaluation_report(
         f"Run ID: {run_metadata.get('run_id', 'N/A')}",
         f"Timestamp: {run_metadata.get('timestamp', 'N/A')}",
         f"Git commit: {run_metadata.get('git_commit', 'N/A')}",
+        f"Git dirty: {run_metadata.get('git_dirty', 'N/A')}",
+        f"Script SHA-256: {run_metadata.get('script_sha256', 'N/A')}",
         "Issue: #11 — C4 Isolation Forest real-data experiment",
         "",
         "## Status",
@@ -1509,8 +1511,19 @@ def collect_run_metadata(args) -> dict:
             .decode()
             .strip()
         )
+        git_status_out = (
+            subprocess.check_output(
+                ["git", "status", "--porcelain", "--untracked-files=no"],
+                cwd=str(PROJECT_ROOT),
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+        git_dirty = bool(git_status_out)
     except Exception:  # noqa: BLE001
         git_commit = "NOT_AVAILABLE"
+        git_dirty = None
 
     try:
         pip_freeze = (
@@ -1529,14 +1542,21 @@ def collect_run_metadata(args) -> dict:
     except ValueError:
         script_path = str(Path(__file__).name)
 
+    script_sha256 = sha256_file(Path(__file__).resolve())
+    model_module_path = PROJECT_ROOT / "src" / "network_anomaly" / "models" / "isolation_forest.py"
+    model_module_sha256 = sha256_file(model_module_path) if model_module_path.is_file() else "N/A"
+
     return {
         "run_id": run_id,
         "timestamp": datetime.now(tz=timezone.utc).isoformat(),
         "git_commit": git_commit,
+        "git_dirty": git_dirty,
         "python_version": sys.version,
         "platform": sys.platform,
         "pip_freeze": pip_freeze,
         "script": script_path,
+        "script_sha256": script_sha256,
+        "model_module_sha256": model_module_sha256,
         "args": vars(args),
         "issue": "#11",
         "checkpoint": "C4",
@@ -1799,6 +1819,9 @@ def run_pipeline(args) -> int:
         "platform": platform.platform(),
         "cpu_count": os.cpu_count(),
         "git_commit": run_meta.get("git_commit", "NOT_AVAILABLE"),
+        "git_dirty": run_meta.get("git_dirty"),
+        "script_sha256": run_meta.get("script_sha256", "NOT_AVAILABLE"),
+        "model_module_sha256": run_meta.get("model_module_sha256", "NOT_AVAILABLE"),
         "packages": {
             "scikit-learn": sklearn.__version__,
             "pandas": pd.__version__,
