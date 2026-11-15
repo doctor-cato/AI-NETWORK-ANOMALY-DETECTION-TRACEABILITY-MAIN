@@ -18,6 +18,11 @@ jobs:
   release-windows-x64:
     name: Build, Verify & Package Windows x64 Release
     runs-on: windows-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_TERM_COLOR: "always"
     permissions:
       contents: write
     steps:
@@ -98,6 +103,13 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Cache Rust and Tauri build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+          cache-all-crates: true
+          cache-on-failure: true
+
       - name: Run Python verification checks (Environment, OpenAPI, Pytest)
         run: |
           python scripts/check_environment.py
@@ -114,8 +126,8 @@ jobs:
       - name: Verify Rust formatting, Clippy lints, and unit tests
         run: |
           cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
-          cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
-          cargo test --manifest-path desktop/src-tauri/Cargo.toml
+          cargo clippy --release --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+          cargo test --release --manifest-path desktop/src-tauri/Cargo.toml --lib
 
       - name: Build Tauri Windows x64 application and NSIS installer
         run: |
