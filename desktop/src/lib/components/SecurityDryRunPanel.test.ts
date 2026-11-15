@@ -163,4 +163,35 @@ describe("Issue #27 SecurityDryRunPanel and Tab 4 ForensicTimelinePanel UI rende
     expect(out.body).toContain("DEFERRED");
     expect(out.body).toContain("Adaptive Security Response Simulation");
   });
+
+  it("shows bounded sample truncation notice when recommendations_truncated is true", () => {
+    const truncatedSim: SecurityResponseSimulationResponse = {
+      ...sampleSimulation,
+      total_flows: 9000,
+      evaluated_flows: 8999,
+      ood_abstained_flows: 1,
+      provenance: {
+        ...sampleSimulation.provenance,
+        recommendations_truncated: true,
+        recommendations_stored_count: 2000,
+        recommendations_total_count: 9000,
+      },
+      recommendations: [sampleSimulation.recommendations[0]],
+    };
+    const out = render(SecurityDryRunPanel, {
+      props: {
+        simulation: truncatedSim,
+        history: [],
+        exportInfo: null,
+        simulating: false,
+        canSimulate: true,
+        onRunSimulation: () => {},
+        onRefreshHistory: () => {},
+        onExportSimulation: () => {},
+      },
+    });
+    expect(out.body).toContain("Hiển thị 1/9000");
+    expect(out.body).toContain("Tất cả (1/9000)");
+    expect(out.body).toContain("action_counts");
+  });
 });

@@ -63,6 +63,7 @@
   let initializing = $state(true);
   let busyMessage = $state<string | null>(null);
   let errorMessage = $state<string | null>(null);
+  let simulationWarning = $state<string | null>(null);
   let evaluatedFlag = $state(false);
   let simulatingFlag = $state(false);
 
@@ -188,6 +189,30 @@
     }
   }
 
+  const MAX_SIMULATE_CLIENT_RESULTS = 10_000;
+
+  async function runDryRunSimulationForAnalysis(
+    res: CsvAnalyzeResponse,
+  ): Promise<SecurityResponseSimulationResponse> {
+    try {
+      return await simulateSecurityResponse({
+        analysis_id: res.analysis_id,
+        triggered_by: "desktop_operator",
+        dry_run: true,
+      });
+    } catch (primaryErr) {
+      if (res.results.length > 0 && res.results.length <= MAX_SIMULATE_CLIENT_RESULTS) {
+        return await simulateSecurityResponse({
+          analysis_id: res.analysis_id,
+          results: res.results,
+          triggered_by: "desktop_operator",
+          dry_run: true,
+        });
+      }
+      throw primaryErr;
+    }
+  }
+
   async function handleRunInference() {
     if (!flowsPath.trim()) {
       errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
@@ -195,6 +220,7 @@
     }
     busyMessage = `Đang chạy mô hình ${selectedModel} qua InferencePipeline...`;
     errorMessage = null;
+    simulationWarning = null;
     exportData = null;
     try {
       const trimmedFlowsPath = flowsPath.trim();
@@ -214,13 +240,15 @@
       analysisData = res;
       evalData = null;
       simulationExportData = null;
-      simulationData = await simulateSecurityResponse({
-        analysis_id: res.analysis_id,
-        triggered_by: "desktop_operator",
-        dry_run: true,
-      });
-      await refreshSimulationHistory();
       activeTab = "predictions";
+      try {
+        simulationData = await runDryRunSimulationForAnalysis(res);
+        await refreshSimulationHistory();
+      } catch (simErr) {
+        simulationData = null;
+        const detail = simErr instanceof Error ? simErr.message : String(simErr);
+        simulationWarning = `Phân tích CSV đã hoàn tất, nhưng mô phỏng Dry-Run (#27) chưa thể chạy: ${detail}`;
+      }
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
@@ -268,16 +296,14 @@
     if (!analysisData) return;
     simulatingFlag = true;
     errorMessage = null;
+    simulationWarning = null;
     simulationExportData = null;
     try {
-      simulationData = await simulateSecurityResponse({
-        analysis_id: analysisData.analysis_id,
-        triggered_by: "desktop_operator",
-        dry_run: true,
-      });
+      simulationData = await runDryRunSimulationForAnalysis(analysisData);
       await refreshSimulationHistory();
     } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      const detail = err instanceof Error ? err.message : String(err);
+      simulationWarning = `Không thể chạy mô phỏng Dry-Run (#27): ${detail}`;
     } finally {
       simulatingFlag = false;
     }
@@ -386,6 +412,16 @@
           <strong>Lỗi hệ thống / Xác thực Fail-Closed:</strong> {errorMessage}
         </div>
         <button type="button" class="btn btn-sm" onclick={() => (errorMessage = null)}>Đóng</button>
+      </div>
+    {/if}
+
+    {#if simulationWarning}
+      <div class="banner banner-warning" role="status">
+        <Icons name="alert" size={18} />
+        <div style="flex: 1;">
+          <strong>Cảnh báo Dry-Run (#27):</strong> {simulationWarning}
+        </div>
+        <button type="button" class="btn btn-sm" onclick={() => (simulationWarning = null)}>Đóng</button>
       </div>
     {/if}
 
