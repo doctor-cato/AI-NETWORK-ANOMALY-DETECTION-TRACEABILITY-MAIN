@@ -247,19 +247,30 @@ def load_verified_preprocessor(
 
 def _canonical_model_family(model_type: str) -> str:
     """Map model class and manifest type aliases to canonical model family identifiers."""
-    normalized = model_type.strip()
+    if not isinstance(model_type, str) or not model_type.strip():
+        return ""
+    normalized = re.sub(r"[\s\-]+", "_", model_type.strip().lower())
     aliases = {
-        "RandomForest": "random_forest",
-        "RandomForestClassifier": "random_forest",
-        "RandomForestModel": "random_forest",
-        "IsolationForest": "isolation_forest",
-        "IsolationForestModel": "isolation_forest",
-        "XGBoost": "xgboost",
-        "XGBClassifier": "xgboost",
-        "XGBoostModel": "xgboost",
-        "HistGradientBoostingClassifier": "hist_gradient_boosting",
+        "random_forest": "random_forest",
+        "randomforest": "random_forest",
+        "randomforestclassifier": "random_forest",
+        "randomforestmodel": "random_forest",
+        "random_forest_baseline": "random_forest",
+        "isolation_forest": "isolation_forest",
+        "isolationforest": "isolation_forest",
+        "isolationforestmodel": "isolation_forest",
+        "xgboost": "xgboost",
+        "xgbclassifier": "xgboost",
+        "xgboostmodel": "xgboost",
+        "xgboost_baseline": "xgboost",
+        "autoencoder": "autoencoder",
+        "autoencodermodel": "autoencoder",
+        "mlpregressor": "autoencoder",
+        "autoencoder_anomaly_detector": "autoencoder",
+        "histgradientboostingclassifier": "hist_gradient_boosting",
+        "hist_gradient_boosting": "hist_gradient_boosting",
     }
-    return aliases.get(normalized, normalized)
+    return aliases.get(normalized, model_type.strip())
 
 
 def load_verified_model(
@@ -321,6 +332,9 @@ def load_verified_model(
         elif "xgboost" in stem_lower:
             candidates.insert(2, PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json")
             candidates.insert(3, model_path.parent / "xgboost_manifest.json")
+        elif "autoencoder" in stem_lower:
+            candidates.insert(2, model_path.parent / "autoencoder_manifest.json")
+            candidates.insert(3, PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json")
         for c in candidates:
             if c.is_file():
                 manifest_path = c
@@ -342,6 +356,19 @@ def load_verified_model(
         raise ValueError(
             f"Model manifest JSON must be a dict/object at '{man_p}', "
             f"got {type(manifest_data).__name__}"
+        )
+
+    is_ae_artifact = manifest_data.get("artifact_type") == "autoencoder-anomaly-detector" or (
+        isinstance(manifest_data.get("model_type"), str)
+        and _canonical_model_family(manifest_data["model_type"]) == "autoencoder"
+    )
+    if is_ae_artifact:
+        from network_anomaly.models.autoencoder import load_verified_autoencoder_bundle
+
+        return load_verified_autoencoder_bundle(
+            model_artifact_path=model_path,
+            manifest_path=man_p,
+            expected_preprocessor_sha256=expected_preprocessor_sha256,
         )
 
     # Verify model artifact sha256 (mandatory byte-by-byte check)
@@ -400,6 +427,8 @@ def load_verified_model(
         "feature_contract_version": feat_contract,
         "class_mapping": manifest_data.get("class_mapping"),
         "hyperparameters": manifest_data.get("hyperparameters", {}),
+        "threshold": manifest_data.get("threshold"),
+        "score_direction": manifest_data.get("score_direction"),
         "raw_manifest": manifest_data,
     }
 
@@ -612,35 +641,49 @@ class InferencePipeline:
         # 3. Collect probability columns if available
         proba_cols: Dict[str, np.ndarray] = {}
         if hasattr(self.model, "predict_proba"):
-            try:
-                probas = self.model.predict_proba(X_trans)
-                classes = getattr(self.model, "classes_", None)
-                if classes is None and hasattr(self.model, "estimator"):
-                    classes = getattr(self.model.estimator, "classes_", None)
-                class_map = self.model_metadata.get("class_mapping") or {}
-                if classes is not None and len(classes) == probas.shape[1]:
-                    for i, c in enumerate(classes):
-                        c_str = str(c)
-                        label = class_map.get(c_str, f"class_{c_str}")
-                        proba_cols[f"probability_{label}"] = probas[:, i]
-                else:
-                    for i in range(probas.shape[1]):
-                        proba_cols[f"probability_{i}"] = probas[:, i]
-            except Exception:
-                pass
+            probas = np.asarray(self.model.predict_proba(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(probas)):
+                raise ValueError("Verified model predict_proba() produced non-finite values")
+            classes = getattr(self.model, "classes_", None)
+            if classes is None and hasattr(self.model, "estimator"):
+                classes = getattr(self.model.estimator, "classes_", None)
+            class_map = self.model_metadata.get("class_mapping") or {}
+            if classes is not None and len(classes) == probas.shape[1]:
+                for i, c in enumerate(classes):
+                    c_str = str(c)
+                    label = class_map.get(c_str, f"class_{c_str}")
+                    proba_cols[f"probability_{label}"] = probas[:, i]
+            else:
+                for i in range(probas.shape[1]):
+                    proba_cols[f"probability_{i}"] = probas[:, i]
 
-        # 4. Collect anomaly score / decision score columns if available
+        # 4. Collect raw anomaly score / decision score columns without clamping
+        from sklearn.ensemble import IsolationForest
+
         score_cols: Dict[str, np.ndarray] = {}
-        if hasattr(self.model, "decision_function"):
-            try:
-                score_cols["decision_score"] = self.model.decision_function(X_trans)
-            except Exception:
-                pass
+        if isinstance(self.model, IsolationForest):
+            scores_arr = -np.asarray(self.model.decision_function(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("IsolationForest decision_function() produced non-finite values")
+            score_cols["anomaly_score"] = scores_arr
+            score_cols["decision_score"] = scores_arr
+        elif hasattr(self.model, "anomaly_scores"):
+            scores_arr = np.asarray(self.model.anomaly_scores(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("Verified model anomaly_scores() produced non-finite values")
+            score_cols["anomaly_score"] = scores_arr
+            if hasattr(self.model, "decision_function"):
+                score_cols["decision_score"] = scores_arr
+        elif hasattr(self.model, "decision_function"):
+            scores_arr = np.asarray(self.model.decision_function(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("Verified model decision_function() produced non-finite values")
+            score_cols["decision_score"] = scores_arr
         elif hasattr(self.model, "score_samples"):
-            try:
-                score_cols["anomaly_score"] = self.model.score_samples(X_trans)
-            except Exception:
-                pass
+            scores_arr = np.asarray(self.model.score_samples(X_trans), dtype=np.float64)
+            if not np.all(np.isfinite(scores_arr)):
+                raise ValueError("Verified model score_samples() produced non-finite values")
+            score_cols["anomaly_score"] = scores_arr
 
         # 5. Build output DataFrame preserving row identity
         out_dict: Dict[str, Any] = {

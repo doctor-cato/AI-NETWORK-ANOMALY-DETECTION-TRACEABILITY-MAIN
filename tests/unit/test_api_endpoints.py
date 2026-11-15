@@ -352,3 +352,73 @@ def test_thin_client_sdk_integration(tmp_path: Path, monkeypatch):
 
         keys = client.list_keys()
         assert len(keys) >= 1
+
+
+def test_analyze_rejects_invalid_model_selector_with_422(client: TestClient):
+    """F1 HTTP contract: Unsupported or blank model_name must return HTTP 422 without RF fallback."""
+    for bad_model in ("lightgbm", "", "   ", "random_forest_v2"):
+        res = client.post(
+            "/api/v1/analyze",
+            json={
+                "model_name": bad_model,
+                "events": [{"features": {"IN_BYTES": 100}}],
+            },
+        )
+        assert res.status_code == 422
+
+
+def test_analyze_normalizes_alias_and_preserves_unclamped_raw_scores(tmp_path: Path, monkeypatch):
+    """F1 + F3 HTTP contract: Alias resolves cleanly and negative / >1 raw scores serialize unclamped."""
+    app = create_app(db_path=tmp_path / "f1_f3_http.db")
+    mock_pipeline = MagicMock()
+    mock_pipeline.model_metadata = {
+        "model_type": "IsolationForest",
+        "model_artifact_sha256": "if_http_sha",
+        "threshold": 0.0,
+        "raw_manifest": {"threshold": 0.0},
+    }
+    mock_pipeline.preprocessor_metadata = {"artifact_sha256": "prep_http_sha"}
+    mock_pipeline.predict.return_value = pd.DataFrame(
+        {
+            "row_id": [0, 1],
+            "prediction": [0, 1],
+            "anomaly_score": [-0.42, 2.75],
+            "run_id": ["run_http_if", "run_http_if"],
+        }
+    )
+
+    svc = app.state.service
+    monkeypatch.setattr(svc, "_load_inference_pipeline", lambda m: mock_pipeline)
+
+    with TestClient(app) as http_client:
+        res = http_client.post(
+            "/api/v1/analyze",
+            json={
+                "model_name": "if",
+                "create_incidents": False,
+                "events": [
+                    {"event_id": "row_neg", "features": {"IN_BYTES": 50}},
+                    {"event_id": "row_gt1", "features": {"IN_BYTES": 9000}},
+                ],
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["count"] == 2
+        assert body["anomalies_detected"] == 1
+        assert body["anomaly_scores"] == pytest.approx([-0.42, 2.75])
+        assert body["probabilities"] is None
+
+        first, second = body["results"]
+        assert first["model_used"] == "isolation_forest"
+        assert second["model_used"] == "isolation_forest"
+        assert first["raw_anomaly_score"] == pytest.approx(-0.42)
+        assert first["anomaly_score"] == pytest.approx(-0.42)
+        assert second["raw_anomaly_score"] == pytest.approx(2.75)
+        assert second["anomaly_score"] == pytest.approx(2.75)
+        assert first["normalized_anomaly_score"] is None
+        assert second["normalized_anomaly_score"] is None
+        assert first["attack_probability"] is None
+        assert second["attack_probability"] is None
+        assert first["score_direction"] == "higher_is_more_anomalous"
+        assert first["decision_threshold"] == pytest.approx(0.0)

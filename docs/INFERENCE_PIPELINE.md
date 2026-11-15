@@ -5,7 +5,7 @@
 Pipeline inference phục vụ phát hiện bất thường trên các luồng mạng mới (`NF-UNSW-NB15-v3`) với các nguyên tắc cốt lõi:
 - **Zero-leakage / Zero-refit**: Tuyệt đối không fit lại preprocessor hay model trên tập dữ liệu inference; chỉ sử dụng trạng thái đã fit sẵn từ tập Train (Issue #8).
 - **Strict Contract Enforcement**: Yêu cầu đầy đủ 47 baseline ML features theo đúng hợp đồng `nf-unsw-nb15-v3-baseline-47`. Tự động sắp xếp lại thứ tự cột về chuẩn canonical. Loại bỏ hoàn toàn nhãn (`Label`, `Attack`) và trace-only metadata (IPs, Ports, Timestamps) khỏi ma trận đầu vào mô hình.
-- **Fail-closed Artifact Verification**: Sử dụng `TrainOnlyPreprocessor.load_verified()` để kiểm tra toàn vẹn mã băm SHA-256 của preprocessor và companion manifest trước khi deserialize. Kiểm tra mã băm và hợp đồng của model artifact.
+- **Fail-closed Artifact Verification**: Sử dụng `TrainOnlyPreprocessor.load_verified()` để kiểm tra toàn vẹn mã băm SHA-256 của preprocessor và companion manifest trước khi deserialize. Hỗ trợ thống nhất 4 mô hình (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder` qua `AutoencoderModel`); nếu file `.joblib`/`.pt` cục bộ bị thiếu hoặc sai checksum, pipeline dừng ở trạng thái `BLOCKED / NOT READY`, tuyệt đối không sinh model giả.
 - **Traceability & Provenance**: Mỗi lần chạy inference ghi nhận mối quan hệ `Input Row -> Prediction` và xuất metadata JSON chứa đầy đủ thông tin: run ID, hash input/output, hash model/preprocessor, git commit, môi trường thực thi, số lượng mẫu và trạng thái.
 
 ```mermaid
@@ -94,7 +94,7 @@ python scripts/predict.py `
 |---|---|---|---|
 | `--input`, `-i` | Có | — | Đường dẫn file CSV đầu vào chứa các network flows |
 | `--output`, `-o` | Có | — | Đường dẫn xuất kết quả dự đoán CSV |
-| `--model`, `-m` | Không | `random_forest` | Chọn loại mô hình (`random_forest`, `isolation_forest`) hoặc đường dẫn file `.joblib` |
+| `--model`, `-m` | Không | `random_forest` | Chọn loại mô hình (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) hoặc đường dẫn file artifact |
 | `--model-artifact` | Không | None | Đường dẫn trực tiếp file model `.joblib` |
 | `--model-manifest` | Không | None | Đường dẫn trực tiếp file companion manifest `.json` của model |
 | `--preprocessor-artifact`, `-p` | Không | `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` | Đường dẫn preprocessor `.joblib` |
@@ -114,14 +114,14 @@ flow_001,0,RandomForestClassifier,inference-20261108-abc123,801afcbb71f04de8f671
 ```
 
 Các trường:
-- `row_id`: Định danh dòng từ input (hoặc chỉ số 0..N-1).
-- `prediction`: Kết quả dự đoán nhị phân (0 = Benign, 1 = Attack) hoặc nhãn cụ thể từ model.
-- `model_type`: Loại mô hình (ví dụ `RandomForestClassifier` hoặc `IsolationForest`).
+- `row_id`: Định danh dòng từ input (giữ nguyên thứ tự và chỉ số `0..N-1` hoặc `row_id` nguồn).
+- `prediction`: Kết quả dự đoán nhị phân (`0` = Benign, `1` = Attack) dựa trực tiếp trên mô hình hoặc threshold đã đóng băng của mô hình (không dựa trên display score).
+- `model_type`: Loại mô hình thuộc strict allowlist 4 mô hình (`RandomForestClassifier`, `XGBClassifier`, `IsolationForest`, `AutoencoderModel`, chuẩn hóa sang `random_forest`, `xgboost`, `isolation_forest`, `autoencoder`). Giá trị selector ngoài allowlist bị từ chối (HTTP `422` trên API hoặc fail-closed trên CLI), không có silent fallback.
 - `run_id`: Định danh duy nhất của lượt inference.
 - `model_artifact_sha256`: Mã băm SHA-256 của file mô hình đã dùng.
 - `preprocessor_artifact_sha256`: Mã băm SHA-256 của preprocessor đã dùng.
-- `probability_<class>`: Xác suất theo từng lớp nếu mô hình hỗ trợ `predict_proba`.
-- `decision_score` / `anomaly_score`: Điểm bất thường nếu sử dụng Isolation Forest.
+- `probability_<class>` / `attack_probability`: Xác suất theo từng lớp (`[0, 1]`) **chỉ** khi mô hình hỗ trợ xác suất có giám sát (`random_forest`, `xgboost`). Với mô hình không giám sát (`isolation_forest`, `autoencoder`), API trả `attack_probability = null` và `probabilities = null` (không suy diễn sigmoid/pseudo-probability từ anomaly score).
+- `decision_score` / `anomaly_score` / `raw_anomaly_score`: Điểm bất thường thô không kẹp về `[0, 1]` (`higher_is_more_anomalous` đối với `isolation_forest` và `autoencoder`, bao gồm cả giá trị âm hoặc `> 1.0`). API bổ sung `normalized_anomaly_score` (`[0, 1]` khi manifest có `score_normalization` hợp lệ từ Train/Validation, ngược lại là `null`) và `decision_threshold`.
 
 ---
 
@@ -174,19 +174,46 @@ Mỗi lần inference tạo ra file `<output>.metadata.json`:
 ## 6. Các lỗi thường gặp và cơ chế Fail-Closed
 
 1. **Thiếu feature bắt buộc**: Báo lỗi `ValueError: Input data is missing X required baseline ML feature(s): [...]`.
-2. **Giá trị không hợp lệ**: Chuỗi văn bản không thể ép kiểu sang số (ví dụ `"malicious_packet"`) sẽ báo lỗi kèm vị trí dòng và mẫu giá trị lỗi.
+2. **Giá trị không hợp lệ hoặc score không hữu hạn**: Chuỗi văn bản không thể ép kiểu sang số (ví dụ `"malicious_packet"`) hoặc điểm `NaN`/`Inf` sẽ bị từ chối fail-closed thay vì thay thế im lặng.
 3. **File CSV rỗng**: Báo lỗi `ValueError: Input CSV file is empty (0 bytes)` hoặc `contains 0 data rows`.
-4. **Không tìm thấy artifact hoặc companion manifest**: Báo lỗi `FileNotFoundError`. Không tự tạo model giả lập.
-5. **Sai lệch mã băm SHA-256**: Báo lỗi `ValueError: Artifact SHA-256 mismatch`. Ngăn chặn hoàn toàn việc nạp artifact bị sửa đổi hoặc suy đồi.
-6. **Không tương thích Preprocessor - Model**: Nếu manifest của model ghi nhận được huấn luyện với preprocessor SHA-256 khác với preprocessor đang nạp, pipeline sẽ báo lỗi `ValueError: Model was trained with preprocessor SHA-256 ...`.
-7. **Ghi đè file đầu vào**: Báo lỗi nếu `--output` trùng với `--input`.
+4. **Model selector không hợp lệ**: Selector không thuộc 4 mô hình canonical (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder` và alias hợp lệ) bị từ chối (`HTTP 422` trên API, exit error trên CLI); không silent fallback sang model khác.
+5. **Không tìm thấy artifact, companion manifest hoặc sidecar bắt buộc**: Báo lỗi `FileNotFoundError`. Riêng Autoencoder bắt buộc đầy đủ canonical manifest + `model_config.json` + `threshold.json` (`threshold_frozen=True`, đồng bộ kiến trúc `47 -> 47` `MLPRegressor` và `hyperparameters`), kiểm tra SHA-256 trước khi deserialize `joblib`. Không refit/recalibrate trong inference.
+6. **Sai lệch mã băm SHA-256**: Báo lỗi `ValueError: Artifact SHA-256 mismatch`. Ngăn chặn hoàn toàn việc nạp artifact/sidecar bị sửa đổi hoặc suy đồi.
+7. **Không tương thích Preprocessor - Model hoặc sai model family**: Nếu manifest ghi nhận được huấn luyện với `preprocessor_sha256` khác với preprocessor đang nạp hoặc khác loại model được yêu cầu, pipeline sẽ từ chối fail-closed.
+8. **Ghi đè file đầu vào**: Báo lỗi nếu `--output` trùng với `--input`.
 
 ---
 
 ## 7. Điều kiện cần có để chạy inference với model thật
 
-- **Preprocessing Artifact**: Đã sẵn sàng trong repository (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` và manifest `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`), đã qua xác minh (`PASS`).
-- **Trained Model Artifact**:
-  - Trạng thái hiện tại: Kiến trúc, giao thức huấn luyện và companion manifest của Random Forest baseline (Issue #10) đã được hoàn thành và tích hợp vào `main` tại PR #43 (`reports/models/random_forest_manifest.json`).
-  - Do quy chuẩn repository không lưu trữ file trọng số nhị phân lớn vào Git, file `artifacts/models/random_forest/random_forest_baseline.joblib` được quản lý ngoài Git (qua `.gitignore`).
-  - Để chạy inference với mô hình thật: cần có file trọng số `artifacts/models/random_forest/random_forest_baseline.joblib` (tạo cục bộ bằng `python scripts/train_random_forest.py` hoặc cung cấp qua `--model-artifact <path>`). Nếu thiếu file binary cục bộ, CLI sẽ kích hoạt cơ chế fail-closed và dừng lại an toàn với exit code 1.
+- **Preprocessing Artifact**: `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`) và manifest `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`. Endpoint `/api/v1/health` tách biệt `preprocessor_ready` khỏi `model_ready`: hệ thống chỉ đạt `status = "healthy"` khi cả `preprocessor_ready` và selected `model_ready` đều `True` (ngược lại báo `status = "degraded"`).
+- **Trained Model Artifacts (4 mô hình mục tiêu):**
+  - File trọng số nhị phân lớn không track trực tiếp trong Git (`.gitignore`). Trên môi trường đã huấn luyện Random Forest (`rf-baseline-1794068628`), `artifacts/models/random_forest/random_forest_baseline.joblib` đạt trạng thái `READY`.
+  - Đối với `xgboost`, `isolation_forest` hoặc `autoencoder`, nếu chưa huấn luyện tạo file binary cục bộ (hoặc thiếu manifest / sidecars đối với Autoencoder) thì hệ thống báo **`BLOCKED / NOT READY`** (`model_ready = False`) theo cơ chế fail-closed và không sử dụng dự đoán giả.
+
+---
+
+## 8. Chuẩn bị Dữ liệu Demo CSV từ Validation & Tích hợp FastAPI
+
+Để chạy demo offline mà **không** rò rỉ dữ liệu Train hay vi phạm Test Lock:
+
+```powershell
+# Tách 200 dòng cân bằng (100 Benign / 100 Attack) chỉ từ Validation partition
+$env:PYTHONPATH = "src"
+python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
+```
+
+- Xuất `data/demo/demo_flows.csv` (tuyệt đối không có `Label`/`Attack`, bảo toàn `row_id`), `data/demo/demo_labels.csv` (dùng đánh giá riêng Confusion Matrix/Metrics), và `data/demo/demo_manifest.json` (SHA-256, kiểm chứng `0` Train/Test overlap, khuyến cáo không đại diện phân bố thực tế và trạng thái `READY` / `BLOCKED / NOT READY` từng model).
+- Chạy thử CLI trên mẫu demo:
+
+```powershell
+python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest --output data/demo/demo_predictions.csv --metadata-output data/demo/demo_predictions_meta.json
+```
+
+- Hoặc khởi động FastAPI local-only (`127.0.0.1:8000`) cho **Desktop App Rust / Tauri 2 + Svelte 5** (#16):
+
+```powershell
+python scripts/run_api.py --host 127.0.0.1 --port 8000
+```
+
+Các endpoint chính xem tại `reports/api/API_CONTRACT.md` và `reports/api/openapi.json` (`GET /api/v1/health`, `POST /api/v1/analyze`, `POST /api/v1/ingest`, `GET /api/v1/incidents`, `GET /api/v1/timeline`).

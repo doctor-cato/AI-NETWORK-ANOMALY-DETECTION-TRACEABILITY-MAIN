@@ -630,16 +630,9 @@
             "description": "List of flow records to analyze"
           },
           "model_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Model Name",
-            "description": "Model family: 'random_forest' or 'isolation_forest'",
+            "description": "Canonical model family ('random_forest', 'xgboost', 'isolation_forest', or 'autoencoder') or supported alias",
             "default": "random_forest"
           },
           "threshold": {
@@ -710,7 +703,7 @@
             },
             "type": "array",
             "title": "Anomaly Scores",
-            "description": "Batch-level anomaly scores aligned with results order"
+            "description": "Batch-level unclamped anomaly scores aligned with results order"
           },
           "probabilities": {
             "anyOf": [
@@ -815,10 +808,48 @@
           },
           "anomaly_score": {
             "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
             "title": "Anomaly Score",
-            "description": "Display anomaly score or attack probability [0, 1]"
+            "description": "Unclamped raw model anomaly score or supervised attack probability (matching raw_anomaly_score; never clamped into [0, 1] for unsupervised models)"
+          },
+          "raw_anomaly_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Anomaly Score",
+            "description": "Exact finite raw model anomaly/reconstruction score or supervised attack probability without clamping or heuristic scaling"
+          },
+          "normalized_anomaly_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Anomaly Score",
+            "description": "Calibrated UI-friendly [0, 1] anomaly score when a valid Train/Validation calibration contract exists (or attack probability for supervised classifiers); null otherwise"
+          },
+          "attack_probability": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attack Probability",
+            "description": "Attack class probability emitted by supervised probabilistic models; null for unsupervised or heuristic models"
           },
           "probabilities": {
             "anyOf": [
@@ -834,6 +865,30 @@
             ],
             "title": "Probabilities",
             "description": "Per-class probabilities (e.g. {'Benign': p0, 'Attack': p1}) when emitted by the model"
+          },
+          "score_type": {
+            "type": "string",
+            "title": "Score Type",
+            "description": "Semantic score type: 'attack_probability', 'isolation_forest_anomaly_score', 'reconstruction_error_mse', or 'heuristic_rule_score'",
+            "default": "anomaly_score"
+          },
+          "score_direction": {
+            "type": "string",
+            "title": "Score Direction",
+            "description": "Ordering direction of anomaly_score and raw_anomaly_score",
+            "default": "higher_is_more_anomalous"
+          },
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold",
+            "description": "Frozen Validation-calibrated or classifier decision threshold used for prediction"
           },
           "prediction": {
             "type": "integer",
@@ -855,7 +910,7 @@
           "model_used": {
             "type": "string",
             "title": "Model Used",
-            "description": "Model identifier used for analysis"
+            "description": "Canonical model identifier used for analysis"
           },
           "incident_created": {
             "type": "boolean",
@@ -928,7 +983,7 @@
           "model_used"
         ],
         "title": "AnalyzeResultItem",
-        "description": "Single inference result row."
+        "description": "Single inference result row preserving model-specific anomaly score semantics."
       },
       "FlowEventInput": {
         "properties": {

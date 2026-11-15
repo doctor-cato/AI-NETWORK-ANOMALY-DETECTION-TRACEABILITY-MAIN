@@ -2,74 +2,73 @@
 
 **Nghiên cứu phát hiện lưu lượng mạng bất thường từ NetFlow, với bằng chứng dữ liệu và thí nghiệm có thể truy vết.**
 
-Đồ án nghiên cứu cấp đại học · Prototype Python · Trọng tâm hiện tại: phân loại nhị phân `Benign`/`Attack` trên **NF-UNSW-NB15-v3**.
+Đồ án nghiên cứu & ứng dụng cuối kỳ · Python ML + FastAPI/SQLite + Desktop UI mục tiêu **Rust / Tauri 2 + Svelte 5** · Trọng tâm: phân loại & phát hiện bất thường trên **NF-UNSW-NB15-v3**.
 
 [![CI](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/workflows/ci.yml/badge.svg)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/Python-%3E%3D3.11-3776AB)](pyproject.toml)
 [![License: Apache-2.0](https://img.shields.io/badge/code-Apache--2.0-blue)](LICENSE)
 
-> **Cập nhật PR #50 (13/11/2026):** Run Random Forest `rf-heldout-ea330b9` trên held-out Test đã được đối chiếu từ predictions, dữ liệu nguồn và artifact lịch sử; xem [báo cáo lỗi](reports/evaluation/error_analysis_report.md) và [hướng dẫn tái lập](docs/REPRODUCIBILITY.md). XGBoost chưa có Test run được kiểm chứng. Model binaries và predictions lớn không nằm trong Git. Các nhận xét về `main` ở phần dưới là snapshot lịch sử ngày 10/11 và cần đọc cùng cập nhật này và PR #61.
+> **Cập nhật Củng cố Sản phẩm Cuối kỳ (Consolidation MVP):**
+> - Trên `main`: Đã hợp nhất Random Forest Held-out Test (`rf-heldout-ea330b9`, PR #50), **Autoencoder** (#29, PR #51), **FastAPI + SQLite persistence** (#30, PR #61) và các bản vá an toàn `#53–#56, #59` (PR #52 đã đóng `SUPERSEDED`).
+> - Trên PR #47 (`f999930`, 6/6 CI PASS) & PR #49 (`7344994`): Ingestion Gate (#46/#58) và Cross-Dataset M7 (#48/#57) đã ở trạng thái **Ready for Review** chờ maintainer duyệt merge (`REVIEW_REQUIRED`).
+> - Trên nhánh củng cố `feat/final-year-demo-mvp-consolidation`: Hỗ trợ đủ 4 model đã verify artifact loading (`RandomForest`, `XGBoost`, `IsolationForest`, `Autoencoder`), chuẩn bị demo CSV chỉ từ Validation (`scripts/prepare_demo_dataset.py`) và đóng băng kiến trúc giao diện là **Rust / Tauri 2 + Svelte 5** (#16, `PLANNED`, thay thế Streamlit). Model binaries lớn không lưu trong Git; thiếu file `.joblib`/`.pt` hệ thống báo `BLOCKED / NOT READY`.
 
-**Đọc nhanh:** [Tổng quan](#tổng-quan-dự-án) · [Dữ liệu](#bộ-dữ-liệu) · [Mô hình](#các-mô-hình-ai) · [Kết quả](#thực-nghiệm-và-kết-quả) · [Tái lập](#cài-đặt-và-tái-lập) · [Hạn chế](#hạn-chế) · [Tài liệu](docs/REPRODUCIBILITY.md)
+**Đọc nhanh:** [Tổng quan](#tổng-quan-dự-án) · [Dữ liệu](#bộ-dữ-liệu) · [Mô hình](#các-mô-hình-ai) · [Kết quả](#thực-nghiệm-và-kết-quả) · [Demo & Tái lập](#cài-đặt-và-tái-lập) · [Hạn chế](#hạn-chế) · [Tài liệu](docs/REPRODUCIBILITY.md)
 
 ## Tổng quan dự án
 
-Một Network Intrusion Detection System (NIDS) cần phân biệt hoạt động bình thường với lưu lượng đáng nghi, đồng thời cho người phân tích biết dự đoán xuất phát từ dữ liệu và mô hình nào. Dự án xây dựng nền tảng nghiên cứu cho mục tiêu đó trên **network flow**: kiểm tra nguồn dữ liệu, tạo phân vùng có kiểm soát, huấn luyện mô hình và lưu bằng chứng cấu hình, checksum, metric. Người đọc có thể kiểm tra từng bước qua [traceability matrix](docs/TRACEABILITY_MATRIX.md) và các báo cáo trong `reports/`.
+Một Network Intrusion Detection System (NIDS) cần phân biệt hoạt động bình thường với lưu lượng đáng nghi, đồng thời cho người phân tích biết dự đoán xuất phát từ dữ liệu và mô hình nào. Dự án xây dựng nền tảng nghiên cứu và ứng dụng desktop offline trên **network flow**: kiểm tra nguồn dữ liệu, tạo phân vùng không rò rỉ, huấn luyện mô hình, lưu bằng chứng cấu hình/checksum/metric và cung cấp API FastAPI cho ứng dụng desktop **Rust / Tauri 2 + Svelte 5**. Người đọc có thể kiểm tra từng bước qua [traceability matrix](docs/TRACEABILITY_MATRIX.md) và các báo cáo trong `reports/`.
 
-**Đã đạt được:** hai baseline supervised được huấn luyện trên 1.655.797 flow Train và chấm trên 345.371 flow Validation; Random Forest có thêm một run held-out Test được đối chiếu; pipeline inference CSV có kiểm tra hợp đồng đặc trưng và artifact. **Mục tiêu tiếp theo:** đánh giá khả năng tổng quát hóa ngoài benchmark, hoàn thiện unsupervised models, Behavioral Vector, Risk/Trace Engine và dashboard. Đây là prototype nghiên cứu, chưa phải NIDS triển khai trên mạng thật.
+**Đã đạt được:** Random Forest được kiểm chứng đầy đủ trên Train (1.655.797 flow), Validation (345.371 flow) và Held-out Test `rf-heldout-ea330b9` (345.953 flow); XGBoost có Validation run được kiểm chứng; Isolation Forest và Autoencoder đã triển khai code, unit tests và verified loading; Python FastAPI (`127.0.0.1:8000`) + SQLite persistence và pipeline tạo dữ liệu demo CSV từ Validation (`scripts/prepare_demo_dataset.py`) hoạt động có kiểm chứng. **Mục tiêu tiếp theo:** hoàn thiện **Desktop Application Rust / Tauri 2 + Svelte 5** (#16) gọi FastAPI localhost để đóng gói sản phẩm demo Windows offline, cùng báo cáo M7 (#18–#20, #25). Đây là đồ án prototype lab, không phải hệ thống enterprise SOC production.
 
 ## Bài toán nghiên cứu
 
-Lưu lượng lớn và biến đổi khiến quy tắc nhận diện tĩnh khó bao phủ mọi mẫu tấn công. Học máy có thể học quan hệ giữa các thống kê flow (gói, byte, thời lượng, TCP flags, TTL, inter-arrival time) và nhãn, nhưng một flow không chứa toàn bộ packet payload hay ngữ cảnh phiên ứng dụng. Bài toán hiện được thực hiện là **binary supervised classification** (`Label=0` Benign, `Label=1` Attack); phát hiện bất thường chưa biết là mục tiêu nghiên cứu khác, chưa được chứng minh bằng hai baseline này.
+Lưu lượng lớn và biến đổi khiến quy tắc nhận diện tĩnh khó bao phủ mọi mẫu tấn công. Học máy có thể học quan hệ giữa các thống kê flow (gói, byte, thời lượng, TCP flags, TTL, inter-arrival time) và nhãn, nhưng một flow không chứa toàn bộ packet payload hay ngữ cảnh phiên ứng dụng. Trọng tâm kiểm chứng hiện tại là **binary supervised classification** (`Label=0` Benign, `Label=1` Attack) cùng hướng mở rộng unsupervised (**Isolation Forest**, **Autoencoder**); phát hiện bất thường chưa biết trên thực tế cần đánh giá unknown-attack holdout độc lập trên dữ liệu thật.
 
-False positive (FP) làm tăng công điều tra, false negative (FN) bỏ lọt tấn công. Vì lớp Attack chỉ khoảng 5,4% dữ liệu, Accuracy một mình dễ che giấu lỗi; dự án báo Precision, Recall, F1, FPR và confusion matrix. Kết quả còn cần kiểm tra khả năng tổng quát hóa: đặc trưng của testbed, vector trùng lặp và sự thay đổi giữa các mạng có thể khiến điểm Validation rất cao nhưng hiệu năng ngoài dataset giảm. Truy vết provenance, feature contract và artifact là điều kiện để giải thích *mô hình đã được đánh giá như thế nào*, không đồng nghĩa với giải thích nhân quả cho từng cảnh báo.
+False positive (FP) làm tăng công điều tra, false negative (FN) bỏ lọt tấn công. Vì lớp Attack chỉ khoảng 5,4% dữ liệu, Accuracy một mình dễ che giấu lỗi; dự án báo Precision, Recall, F1, FPR và confusion matrix. Kết quả còn cần kiểm tra khả năng tổng quát hóa: đặc trưng của testbed, vector trùng lặp và sự thay đổi giữa các mạng có thể khiến điểm in-domain rất cao nhưng hiệu năng ngoài dataset giảm (xem [Issue #48](docs/ARCHITECTURE.md)). Truy vết provenance, feature contract và artifact là điều kiện để giải thích *mô hình đã được đánh giá như thế nào*, không đồng nghĩa với giải thích nhân quả cho từng cảnh báo.
 
 ## Mục tiêu đề tài
 
-**Mục tiêu chính:** xây dựng prototype có thể kiểm chứng để phân tích network flow, so sánh mô hình phát hiện và tiến tới liên kết cảnh báo thành bằng chứng điều tra.
+**Mục tiêu chính:** đóng gói ứng dụng desktop Windows cục bộ phân tích NetFlow CSV bằng mô hình AI đã kiểm chứng, bảo toàn tính liêm chính khoa học và provenance.
 
-| Nhóm mục tiêu | Trạng thái trên `main` |
+| Nhóm mục tiêu | Trạng thái hiện tại (Consolidation MVP) |
 |---|---|
-Provenance, schema, data quality, EDA, split và preprocessing có kiểm soát | **IMPLEMENTED / TESTED**; có báo cáo trên CSV chính thức |
-Random Forest baseline và XGBoost theo giao thức binary chung | **EXPERIMENTALLY VALIDATED trên Validation**; Test chưa có kết quả |
-CSV inference từ artifact có manifest | **IMPLEMENTED / TESTED** bằng fixture; chạy thật cần artifact cục bộ |
-Isolation Forest, Autoencoder và unknown-attack protocol | Isolation Forest **IMPLEMENTED / TESTED** bằng fixture, chạy dữ liệu thật bị chặn; Autoencoder **PLANNED** trên `main` |
-Behavioral correlation, Risk/Trace Engine, mã hóa, storage, FastAPI, Streamlit | **PLANNED** theo [roadmap](docs/ROADMAP_FULL_SYSTEM.md); PR chưa merge không được tính là chức năng của `main` |
+| Provenance, schema, data quality, EDA, split và preprocessing có kiểm soát | **COMPLETED / REAL-DATA VERIFIED** |
+| Random Forest baseline (#10, #12, #13) | **EXPERIMENTALLY VALIDATED** cả Validation (`345.371`) và Held-out Test `rf-heldout-ea330b9` (`345.953`) |
+| XGBoost theo giao thức binary chung (#31) | **EXPERIMENTALLY VALIDATED trên Validation**; Held-out Test `NOT VERIFIED` |
+| Isolation Forest (#11) và Autoencoder (#29) | **IMPLEMENTED / TESTED** (code, tests & verified loading); real-data benchmark `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
+| FastAPI (`127.0.0.1`), SQLite persistence, 4-model inference & Validation Demo CSV Prep | **IMPLEMENTED / TESTED** (#30, #15, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
+| Desktop UI **Rust / Tauri 2 + Svelte 5** (#16 — thay Streamlit) | **PLANNED** (`CORE-DEMO` còn lại; giao tiếp localhost HTTP tới FastAPI) |
+| Behavioral Vector (#28), Risk Ranking (#32), Trace Timeline (#24), Security/Response (#26, #27) | **REDUCED / DEFERRED** — không chặn Demo CSV MVP; không có Auth/API log hoặc AES-GCM vòng đời đầy đủ |
 
 ## Kiến trúc hệ thống
 
-Đường liền là thành phần đã có code trong `main`; đường nét đứt là quan hệ kiến trúc dự kiến. `Inference metadata` hiện ghi quan hệ input–prediction–artifact, chưa phải incident timeline hay Trace Engine.
+Đường liền là thành phần đã có code/test; đường nét đứt là thành phần đang `PLANNED` (#16) hoặc `REDUCED / DEFERRED`.
 
 ```mermaid
 flowchart LR
-    A["NF-UNSW-NB15-v3 CSV"] --> B["Acquisition + schema/quality audit"]
-    B --> C["Chronological split + purge audit"]
-    C --> D["Train-only preprocessing"]
-    D --> E["Random Forest / XGBoost"]
-    D --> F["Isolation Forest (code; chưa có real run)"]
-    D -.-> G["Autoencoder (kế hoạch)"]
-    E --> H["Validation report + manifest"]
-    E --> I["CSV inference + metadata"]
-    F -.-> J["Risk scoring (kế hoạch)"]
-    G -.-> J
-    I -.-> J
-    J -.-> K["Behavioral correlation + Trace Engine (kế hoạch)"]
-    K -.-> L["Storage / API / UI (kế hoạch)"]
+    A["NF-UNSW-NB15-v3 CSV<br/>(Validation Demo: prepare_demo_dataset.py)"] --> B["47-Feature Schema &<br/>Eligibility Check"]
+    B --> C["TrainOnlyPreprocessor<br/>(SHA-256 Verified)"]
+    C --> D["4 Verified Models<br/>RF / XGB / IF / AE"]
+    D --> E["InferencePipeline + CSV Export<br/>(Probabilities / Anomaly Score)"]
+    E --> F["Python FastAPI + SQLite<br/>(127.0.0.1 Localhost Owner, #30)"]
+    F -. "Localhost HTTP / Typed Contracts" .-> G["Rust / Tauri 2 + Svelte 5<br/>Desktop UI (#16 PLANNED)"]
 ```
 
-Nguồn hiện tại là NetFlow CSV; nó **không** chứa log API, authentication hay application session. [Kiến trúc đầy đủ](docs/ARCHITECTURE.md) và [roadmap](docs/ROADMAP_FULL_SYSTEM.md) mô tả đích nghiên cứu, không phải sơ đồ deployment đã vận hành.
+Nguồn dữ liệu chính là NetFlow CSV (`NF-UNSW-NB15-v3`), **không** chứa log API, authentication hay application session. [Kiến trúc đầy đủ](docs/ARCHITECTURE.md) và [roadmap](docs/ROADMAP_FULL_SYSTEM.md) nêu rõ ranh giới giữa phần MVP đã đóng băng và các hạng mục thu gọn/hoãn.
 
 ## Công nghệ sử dụng
 
-| Lớp | Công nghệ có trong source/dependencies | Vai trò thực tế |
+| Lớp | Công nghệ | Vai trò & Trạng thái |
 |---|---|---|
-Ngôn ngữ | Python `>=3.11` (CI: 3.11, 3.12) | Script acquisition, pipeline và package `src/network_anomaly/` |
-Dữ liệu | pandas, NumPy, SQLite trong validator | CSV streaming/chunking, mảng số và kiểm toán duplicate trên đĩa |
-ML | scikit-learn, XGBoost, joblib | Random Forest/Isolation Forest, XGBClassifier, lưu và kiểm tra artifact |
-Phân tích | matplotlib, seaborn | Tạo hình EDA cục bộ; hình lớn không nằm trong Git |
-Chất lượng | pytest; GitHub Actions | Unit/integration tests, import/syntax và kiểm tra không có raw data trong CI |
+| Ngôn ngữ ML/Backend | Python `>=3.11` (CI: 3.11, 3.12) | Pipeline dữ liệu, training, inference và `src/network_anomaly/` |
+| Dữ liệu & Lưu trữ | pandas, NumPy, SQLite | Streaming CSV, mảng số, persistence đơn chủ ghi trong FastAPI |
+| ML & Deep Learning | scikit-learn, XGBoost, joblib, PyTorch (`Autoencoder`) | Random Forest, XGBClassifier, Isolation Forest, Autoencoder và verified loading |
+| Backend API | FastAPI, Uvicorn | Dịch vụ REST local-only `127.0.0.1:8000` (`scripts/run_api.py`), OpenAPI contract |
+| Desktop UI (Mục tiêu) | **Rust / Tauri 2 + Svelte 5** | **PLANNED (#16)** — Native file picker, lifecycle Python process, bảng/biểu đồ/Confusion Matrix offline |
+| Chất lượng & Kiểm thử | pytest, Ruff, Black, GitHub Actions | Unit/integration/API tests, lint/format check và raw-data CI guard |
 
-`FastAPI`, `Streamlit`, `PostgreSQL` và `AES-GCM` có trong roadmap, **chưa** là stack chạy được trên `main`. [Dependency khai báo](pyproject.toml) dùng phiên bản tối thiểu, chưa phải lockfile.
+`Streamlit` đã bị loại khỏi kiến trúc chính. PostgreSQL cluster, real-time packet capture và AES-256-GCM keyring rotation đầy đủ không nằm trong phạm vi Demo MVP M6. [Dependency khai báo](pyproject.toml) dùng phiên bản tối thiểu, chưa phải lockfile.
 
 ## Bộ dữ liệu
 
@@ -100,26 +99,26 @@ Dataset có điều kiện **“Permitted Re-Use with Commercial Use Restriction
 
 ### Random Forest
 
-Ensemble các decision tree huấn luyện trên mẫu bootstrap và tập con đặc trưng, làm baseline supervised cho `Label`. Code, training entrypoint và test tồn tại; run đã ghi **200 cây**, `max_depth=16`, seed 42, 47 features. [Run manifest](reports/models/random_forest_manifest.json), [training report](reports/models/rf_baseline_training_report.md) và [validation diagnostic audit](reports/models/rf_baseline_validation_audit.json) hỗ trợ trạng thái **EXPERIMENTALLY VALIDATED trên Validation**. Audit ghi huấn luyện lại cùng môi trường cho checksum model trùng; binary model không nằm trong Git. Chưa có kết quả Test.
+Ensemble các decision tree huấn luyện trên mẫu bootstrap và tập con đặc trưng, làm baseline supervised cho `Label`. Code, training entrypoint và test tồn tại; run đã ghi **200 cây**, `max_depth=16`, seed 42, 47 features. [Run manifest](reports/models/random_forest_manifest.json), [training report](reports/models/rf_baseline_training_report.md), [validation diagnostic audit](reports/models/rf_baseline_validation_audit.json) và [Held-out Test evaluation (`rf-heldout-ea330b9`)](reports/evaluation/rf-heldout-ea330b9/metrics.json) chứng minh trạng thái **EXPERIMENTALLY VALIDATED** trên cả Validation và Held-out Test (`345.953` flow). Binary `.joblib` (`801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`) nằm ngoài Git; khi có trên máy cục bộ thì sẵn sàng inference (`READY`).
 
 ### XGBoost
 
-Gradient boosting xây tuần tự các cây để giảm loss; baseline dùng `XGBClassifier`, `binary:logistic`, 200 cây, `max_depth=6`, learning rate 0,1, seed 42. [Run manifest](reports/models/xgboost_manifest.json) và [training report](reports/models/xgboost_training_report.md) ghi train/Validation thật, reload verification và confusion matrix. Trạng thái **EXPERIMENTALLY VALIDATED trên Validation**, chưa có Test. So sánh với RF là **cùng dataset definition/protocol**, nhưng không chứng minh hai lần chạy dùng index artifact giống từng byte; xem [membership parity audit](reports/splits/split_membership_audit_report.md).
+Gradient boosting xây tuần tự các cây để giảm loss; baseline dùng `XGBClassifier`, `binary:logistic`, 200 cây, `max_depth=6`, learning rate 0,1, seed 42. [Run manifest](reports/models/xgboost_manifest.json) và [training report](reports/models/xgboost_training_report.md) ghi train/Validation thật, reload verification và confusion matrix. Trạng thái **EXPERIMENTALLY VALIDATED trên Validation**, Held-out Test `NOT VERIFIED`; `InferencePipeline` / FastAPI đã hỗ trợ nạp artifact XGBoost và báo `BLOCKED / NOT READY` nếu thiếu binary cục bộ. So sánh với RF dùng cùng dataset definition/protocol (xem [membership parity audit](reports/splits/split_membership_audit_report.md)).
 
 ### Isolation Forest
 
-Mô hình unsupervised cô lập điểm khác thường bằng đường đi ngắn trong các cây phân tách ngẫu nhiên; score chỉ thành nhãn sau khi chốt threshold hợp lệ trên Validation. Có [model component](src/network_anomaly/models/isolation_forest.py), [training/evaluation script](scripts/train_isolation_forest.py) và unit tests. [Run được lưu](reports/experiments/isolation_forest/blocked_status.json) chỉ là prerequisite check **BLOCKED vì thiếu CSV tại máy chạy**; không có metric benchmark hay artifact model trong Git. Trạng thái **IMPLEMENTED / TESTED bằng fixture**, **chưa EXPERIMENTALLY VALIDATED**.
+Mô hình unsupervised cô lập điểm khác thường bằng đường đi ngắn trong các cây phân tách ngẫu nhiên; score chỉ thành nhãn sau khi chốt threshold hợp lệ trên Validation. Có [model component](src/network_anomaly/models/isolation_forest.py), [training/evaluation script](scripts/train_isolation_forest.py), hỗ trợ verified loading trong `InferencePipeline`/`ApiService` và unit tests. [Run được lưu](reports/experiments/isolation_forest/blocked_status.json) là prerequisite check cũ; chưa có metric benchmark hay binary `.joblib` cục bộ, nên trạng thái hiện tại là **IMPLEMENTED / TESTED**, chưa **EXPERIMENTALLY VALIDATED** (`BLOCKED / NOT READY` trên demo nếu thiếu binary).
 
 ### Autoencoder
 
-Hướng nghiên cứu là học tái tạo flow và dùng reconstruction error làm anomaly score; cần ngưỡng chọn trên Validation và đánh giá riêng cho unknown-attack holdout. Trên `main` chưa có module, artifact hay báo cáo thực nghiệm Autoencoder. [Issue #29](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues/29) và PR đang review là công việc **PLANNED / IN PROGRESS ngoài `main`**.
+Học tái tạo đặc trưng flow bằng mạng PyTorch Autoencoder và dùng reconstruction error làm `anomaly_score` với ngưỡng chọn trên Validation. Code huấn luyện & protocol Holdout (#29, PR #51) đã có trên `main`, cùng lớp `AutoencoderModel` và luồng nạp verified trong `InferencePipeline`/`ApiService` (`src/network_anomaly/models/autoencoder.py`, `scripts/train_autoencoder.py`). Trạng thái là **IMPLEMENTED / TESTED** với fixture synthetic; chưa có real-data benchmark hay binary cục bộ (`BLOCKED / NOT READY` nếu thiếu file `.joblib`/`.pt` và `threshold`).
 
-| Model | Cách tiếp cận / vai trò | Implementation trên `main` | Validation thật | Held-out Test |
+| Model | Cách tiếp cận / vai trò | Code & Verified Loading | Validation thật | Held-out Test |
 |---|---|---|---|---|
-Random Forest | Supervised baseline | Code + tests + run manifest | Có, 345.371 flow | Có, 345.953 flow; [báo cáo](reports/evaluation/error_analysis_report.md) |
-XGBoost | Supervised comparison | Code + tests + run manifest | Có, 345.371 flow | Chưa có báo cáo |
-Isolation Forest | Unsupervised anomaly score | Code + tests; real run bị chặn | Chưa có | Chưa có |
-Autoencoder | Reconstruction error | Chưa merge | Chưa có | Chưa có |
+Random Forest | Supervised baseline | Có + tests + manifest | Có (`345.371` flow) | Có (`rf-heldout-ea330b9`, `345.953` flow); [báo cáo](reports/evaluation/error_analysis_report.md) |
+XGBoost | Supervised comparison | Có + tests + manifest | Có (`345.371` flow) | `NOT VERIFIED` |
+Isolation Forest | Unsupervised anomaly score | Có + tests + parity threshold | `NOT VERIFIED` | `NOT VERIFIED` |
+Autoencoder | Reconstruction error | Có (#29 + `AutoencoderModel`) | `NOT VERIFIED` | `NOT VERIFIED` |
 
 ## Thực nghiệm và kết quả
 
@@ -142,9 +141,9 @@ Precision cho biết tỷ lệ cảnh báo Attack là đúng; Recall cho biết 
 
 ## Kết quả đạt được
 
-Nhóm đã tạo manifest nguồn và kiểm định CSV thật, EDA có bằng chứng chạy lặp, split và kiểm toán leakage, train-only preprocessor, hai baseline supervised đã chạy trên Train/Validation, model manifests và báo cáo metric, cùng CLI inference CSV và unit/integration tests. `reports/` chứa metadata và báo cáo nhỏ; `data/raw/`, `data/processed/` và `artifacts/` chỉ có marker trong Git. Vì vậy người kiểm tra có thể đọc bằng chứng đã ghi, nhưng để **chạy lại** cần tải dataset chính thức và tái tạo artifact cục bộ.
+Nhóm đã hoàn thành kiểm định CSV nguồn `NF-UNSW-NB15-v3`, EDA có bằng chứng chạy lặp, split và kiểm toán leakage, train-only preprocessor, hai baseline supervised trên Train/Validation, Held-out Test Random Forest (`rf-heldout-ea330b9`), Autoencoder & Isolation Forest code/tests, **FastAPI (`127.0.0.1:8000`) + SQLite persistence**, pipeline CLI 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) và luồng tạo dữ liệu demo từ Validation (`scripts/prepare_demo_dataset.py`). `reports/` chứa metadata và báo cáo nhỏ; `data/raw/`, `data/processed/`, `data/demo/*.csv` và `artifacts/` nhị phân lớn không track trong Git.
 
-Chưa có kết quả held-out Test cho XGBoost, đánh giá độc lập trên dataset ngoài, hoặc bằng chứng triển khai hệ thống end-to-end. Random Forest Test run dùng bộ artifact lịch sử khác bộ manifest tái sinh hiện được theo dõi tại `main`; không coi các hash khác nhau là cùng một artifact. [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) cung cấp lịch sử yêu cầu → code → test → bằng chứng; trạng thái cũ trong tài liệu phải đối chiếu với HEAD và báo cáo mới hơn.
+Chưa có kết quả held-out Test cho XGBoost, chưa có real-data benchmark cho Isolation Forest/Autoencoder, và **Desktop Application Rust / Tauri 2 + Svelte 5 (#16)** đang ở trạng thái `PLANNED` (sẽ kết nối trực tiếp vào FastAPI localhost). [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) lưu đầy đủ chuỗi truy vết yêu cầu → code → test → bằng chứng.
 
 ## Cài đặt và tái lập
 
@@ -170,25 +169,34 @@ python -m pytest tests -q
 
 Chạy các lệnh từ root theo thứ tự. `validate_data.py` có thể trả exit **1** dù source integrity PASS, vì báo cáo raw `ML_READY: BLOCKED` trước policy fit; đọc JSON thay vì coi exit 1 là lỗi tải dữ liệu. Nếu thiếu raw CSV, một số bước audit báo **SKIPPED** với exit 0; training/verification thiếu dataset hoặc artifact sẽ dừng. Không dùng Test để chọn model, feature, threshold hay hyperparameter. Tái tạo split có thể sinh index nén với SHA khác run lịch sử; đối chiếu [parity audit](reports/splits/split_membership_audit_report.md) trước khi gọi hai run là byte-identical.
 
-Sau khi có artifact hợp lệ, có thể kiểm tra prerequisite mà không train bằng `python scripts/train_random_forest.py --verify-only`, `python scripts/train_xgboost.py --verify-only`, `python scripts/preprocess_nf_unsw_nb15_v3.py --verify-only`; `python scripts/train_isolation_forest.py --check-prereqs-only` chỉ kiểm tra điều kiện đầu vào. Để thử inference, cung cấp CSV đúng [47-feature contract](docs/INFERENCE_PIPELINE.md) và **đường dẫn artifact tường minh**:
+Sau khi có dataset và artifact hợp lệ, có thể tạo mẫu demo Validation-only, kiểm tra prerequisite và chạy CLI hoặc FastAPI local:
 
 ```powershell
-python scripts/predict.py --input data/new_flows.csv --output results/predictions.csv --model-artifact artifacts/models/random_forest/random_forest_baseline.joblib --model-manifest reports/models/random_forest_manifest.json --preprocessor-artifact artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib --preprocessor-manifest reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json
+$env:PYTHONPATH = "src"
+
+# 1. Tạo dữ liệu demo 200 dòng cân bằng chỉ từ Validation partition (0 overlap Train/Test)
+python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
+
+# 2. Chạy inference CLI trên demo_flows.csv (hỗ trợ random_forest, xgboost, isolation_forest, autoencoder)
+python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest --output data/demo/demo_predictions.csv --metadata-output data/demo/demo_predictions_meta.json
+
+# 3. Khởi động FastAPI server cục bộ cho Desktop UI (http://127.0.0.1:8000)
+python scripts/run_api.py --host 127.0.0.1 --port 8000
 ```
 
-Lệnh inference cần `data/new_flows.csv` do người dùng cung cấp, không có sẵn trong Git. Mặc định đường dẫn preprocessor của CLI hiện có thể chứa đường dẫn checkout tại môi trường build, nên ví dụ dùng flag tường minh. Xem [hướng dẫn tái lập](docs/REPRODUCIBILITY.md), [testing](docs/TESTING.md) và [báo cáo Test Random Forest](reports/evaluation/error_analysis_report.md). Không suy ra Test score từ Validation.
+File `data/demo/demo_flows.csv` tuyệt đối không chứa `Label`/`Attack`; ground truth nằm riêng tại `data/demo/demo_labels.csv` để tính Confusion Matrix trên UI/script đánh giá. Xem [hướng dẫn inference](docs/INFERENCE_PIPELINE.md), [hướng dẫn tái lập](docs/REPRODUCIBILITY.md), [API contract](reports/api/API_CONTRACT.md) và [báo cáo Test Random Forest](reports/evaluation/error_analysis_report.md).
 
 ## Cấu trúc thư mục
 
 ```text
 .
-├── src/network_anomaly/   # data, EDA, preprocessing, models, evaluation, inference
-├── scripts/               # acquisition, audit, split, training và CLI
-├── tests/                 # unit và integration
+├── src/network_anomaly/   # data, EDA, preprocessing, models, evaluation, inference, api
+├── scripts/               # acquisition, prepare_demo_dataset, train, predict, run_api
+├── tests/                 # unit và integration (API, inference, demo prep, protocol)
 ├── docs/                  # methodology, protocol, roadmap và traceability
-├── data/                  # manifest; raw/interim/processed được Git bỏ qua
-├── reports/               # quality, split, preprocessing, EDA và model evidence
-├── artifacts/             # marker; model/preprocessor binary được Git bỏ qua
+├── data/                  # manifest & demo/.gitkeep; raw CSV và demo/*.csv được Git bỏ qua
+├── reports/               # quality, split, preprocessing, EDA, api OpenAPI và model evidence
+├── artifacts/             # marker & preprocessor; model binary lớn được Git bỏ qua
 └── .github/workflows/     # ci.yml
 ```
 
@@ -208,29 +216,32 @@ git diff --check
 
 ## Tiến độ dự án
 
-| Hạng mục | Trạng thái dựa trên `main` và bằng chứng |
+| Hạng mục | Trạng thái cập nhật |
 |---|---|
 Acquisition, quality audit, EDA | **EXPERIMENTALLY VALIDATED** trên CSV chính thức; [quality](reports/data_quality/nf_unsw_nb15_v3_validation.json), [EDA](reports/eda/nf_unsw_nb15_v3_eda_summary.json) |
-Split, leakage audit, preprocessing | **IMPLEMENTED / TESTED** trên dữ liệu thật; [split](reports/splits/nf_unsw_nb15_v3_split_manifest.json), [preprocessing](reports/preprocessing/REAL_DATA_SMOKE_REPORT.md) |
-Random Forest, XGBoost | **EXPERIMENTALLY VALIDATED trên Validation**; Test **NOT VERIFIED** |
-Isolation Forest | **IMPLEMENTED / TESTED** bằng fixture; real run **BLOCKED** |
-Autoencoder | **PLANNED** trên `main`; PR phát triển chưa merge |
-CSV inference và metadata | **IMPLEMENTED / TESTED**; binary artifacts không phân phối trong Git |
-Risk scoring, Behavioral Vector, Trace Engine | **PLANNED** |
-Backend, storage, frontend, deployment | **PLANNED** trên `main` |
-Tài liệu và CI | **IMPLEMENTED**, đang tiếp tục đối chiếu provenance/đánh giá cuối |
+Split, leakage audit, preprocessing | **COMPLETED / REAL-DATA VERIFIED**; [split](reports/splits/nf_unsw_nb15_v3_split_manifest.json), [preprocessing](reports/preprocessing/REAL_DATA_SMOKE_REPORT.md) |
+Random Forest | **EXPERIMENTALLY VALIDATED** Validation & Held-out Test `rf-heldout-ea330b9` |
+XGBoost | **EXPERIMENTALLY VALIDATED trên Validation**; Test `NOT VERIFIED` |
+Isolation Forest & Autoencoder | **IMPLEMENTED / TESTED** (code, tests & verified loading); real run `NOT VERIFIED` (`BLOCKED / NOT READY` nếu thiếu binary) |
+4-Model Inference, FastAPI (`127.0.0.1`), SQLite & Demo CSV Prep | **IMPLEMENTED / TESTED** (#15, #30, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
+Desktop UI **Rust / Tauri 2 + Svelte 5** (#16) | **PLANNED** (`CORE-DEMO` chính, thay thế Streamlit) |
+Multi-Source Ingestion & Gate (#46) | **PR #47 Ready for Review** (`f999930`, 6/6 CI PASS, chờ maintainer review) |
+Behavioral (#28), Risk Ranking (#32), Trace Timeline (#24) | **REDUCED / DEFERRED** — dùng metadata NetFlow thật nếu UI cần, không chặn MVP |
+Bảo mật nâng cao & Adaptive Response (#26, #27), Cross-Dataset (#48) | **DEFERRED** khỏi MVP M6 (#48 / PR #49 nằm ở M7) |
+Tài liệu và CI | **IN PROGRESS**, đồng bộ docs theo kiến trúc consolidation & #18–#20 |
 
 ## Hạn chế
 
-- **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ gần như phân tách lớp trên Validation; model có thể học topology/traffic generator thay vì hành vi tấn công bền vững.
-- **Trùng vector và ranh giới nhóm:** 49,98% flow Validation trùng vector ML với Train. Zero overlap theo full-row, source-feature và canonical group chỉ đúng dưới fingerprint/group contract đã định; session dài hoặc quan hệ ứng dụng khác chưa được loại trừ.
-- **Đánh giá còn thiếu:** Test được giữ riêng trong run supervised nhưng chưa có final Test report trên `main`; chưa có cross-dataset hoặc traffic vận hành để đo drift, false alarm và robustness. So sánh RF–XGBoost thiếu chứng minh identity từng dòng của index artifact lịch sử.
-- **Khả năng tái lập có điều kiện:** Raw CSV, index nén và `.joblib` không nằm trong Git. Manifest/hash lưu bằng chứng run, nhưng thiếu binary gốc cho mọi reviewer; phiên bản dependency chỉ có ngưỡng tối thiểu. Provenance hash-chain đang được rà soát.
-- **Hệ thống chưa tích hợp:** Risk/Trace, storage, API/UI và bảo vệ dữ liệu trong roadmap chưa thành hệ thống chạy được trên `main`. CSV inference là chức năng hẹp, không phải giám sát thời gian thực hoặc phản ứng bảo mật tự động.
+- **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ đạt Accuracy Validation `0,999849` và `49,98%` flow Validation trùng vector 47 features với Train; đánh giá cross-dataset trên PR #47 / #48 cho thấy model có thể suy giảm mạnh khi chuyển môi trường mạng (domain shift).
+- **Real-data benchmarks còn mở:** Held-out Test mới kiểm chứng trên Random Forest (`rf-heldout-ea330b9`); XGBoost Held-out Test, Isolation Forest và Autoencoder real-data experiments chưa hoàn tất (hiện báo `BLOCKED / NOT READY` nếu thiếu file `.joblib`/`.pt` cục bộ).
+- **Khả năng tái lập có điều kiện:** Raw CSV (~577 MB) và model `.joblib`/`.pt` không nằm trong Git; cần chuẩn bị dữ liệu và artifacts trước khi chạy offline đầy đủ.
+- **Desktop UI & Phạm vi thu gọn:** Backend Python FastAPI + SQLite đã sẵn sàng nhưng lớp giao diện **Rust / Tauri 2 + Svelte 5** (#16) đang ở trạng thái `PLANNED`. Các hạng mục như full AES-256-GCM key rotation (#26), adaptive response (#27) và multi-log Auth/API correlation (#28) được thu gọn/hoãn minh bạch.
 
 ## Hướng phát triển
 
-Ưu tiên đối chiếu provenance và split membership, sau đó khóa protocol để chạy held-out Test một lần; bổ sung đánh giá external dataset, ablation `MIN_TTL`/feature groups, kiểm tra duplicate và drift. Tiếp theo hoàn thiện Isolation Forest, Autoencoder và unknown-attack holdout với threshold chọn trên Validation. Khi có bằng chứng mô hình đáng tin cậy, triển khai Behavioral Vector, correlation confidence, Risk/Trace Engine, storage, FastAPI và Streamlit theo [roadmap C0–C11](docs/ROADMAP_FULL_SYSTEM.md); mọi phản ứng chỉ ở chế độ lab/dry-run. Không gọi unknown-attack benchmark là chứng minh zero-day.
+1. Hợp nhất PR #47 và PR củng cố MVP sau khi hoàn tất review của maintainer.
+2. Xây dựng **Desktop UI Rust / Tauri 2 + Svelte 5** (#16) kết nối `127.0.0.1:8000` để hoàn thiện 10 năng lực demo offline trên Windows.
+3. Chạy các thực nghiệm trọng tâm M7 (#25, #11, #48), hoàn tất báo cáo PDF, 10–12 slide và bàn giao cuối kỳ (#18–#20). Không tuyên bố zero-day hay kết quả ngoài phạm vi đã kiểm chứng.
 
 ## Thông tin học thuật và nhóm
 

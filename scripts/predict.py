@@ -34,6 +34,7 @@ _LOCAL_SOURCE = Path(__file__).resolve().parents[1] / "src"
 if str(_LOCAL_SOURCE) not in sys.path:
     sys.path.insert(0, str(_LOCAL_SOURCE))
 
+from network_anomaly.api.schemas import canonicalize_model_name  # noqa: E402
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT  # noqa: E402
 from network_anomaly.inference import run_inference  # noqa: E402
 
@@ -43,7 +44,7 @@ def _resolve_model_paths(
     model_artifact_arg: Optional[str],
     model_manifest_arg: Optional[str],
 ) -> Tuple[Path, Optional[Path]]:
-    """Resolve model artifact and manifest paths based on CLI arguments."""
+    """Resolve model artifact and manifest paths based on strict CLI arguments."""
     # 1. Explicit --model-artifact takes highest priority
     if model_artifact_arg:
         model_artifact_path = Path(model_artifact_arg)
@@ -51,27 +52,53 @@ def _resolve_model_paths(
         return model_artifact_path, model_manifest_path
 
     # 2. Inspect --model argument
-    if model_arg:
-        norm = model_arg.strip().lower()
-        if norm in {"random_forest", "rf", "random-forest"}:
-            artifact = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
-            manifest = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
-            return artifact, manifest
-        elif norm in {"isolation_forest", "if", "isolation-forest"}:
-            artifact = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
-            manifest = PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
-            return artifact, manifest
-        elif Path(model_arg).suffix in {".joblib", ".pkl"}:
-            artifact = Path(model_arg)
-            manifest = Path(model_manifest_arg) if model_manifest_arg else None
-            return artifact, manifest
-        else:
-            # Treat as path or custom model identifier
-            artifact = Path(model_arg)
+    if model_arg is not None:
+        stripped = model_arg.strip()
+        if not stripped:
+            raise ValueError(
+                "Model selector '--model' cannot be empty. Allowed models: "
+                "random_forest, xgboost, isolation_forest, autoencoder."
+            )
+
+        looks_like_path = (
+            Path(stripped).suffix.lower() in {".joblib", ".pkl"}
+            or "/" in stripped
+            or "\\" in stripped
+            or Path(stripped).is_file()
+        )
+        if looks_like_path:
+            artifact = Path(stripped)
             manifest = Path(model_manifest_arg) if model_manifest_arg else None
             return artifact, manifest
 
-    # 3. Default fallback is canonical Random Forest baseline
+        canonical_key = canonicalize_model_name(stripped)
+        if canonical_key == "random_forest":
+            artifact = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
+            manifest = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
+            return artifact, manifest
+        if canonical_key == "xgboost":
+            xgb_baseline = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
+            artifact = (
+                xgb_baseline
+                if xgb_baseline.is_file()
+                else ARTIFACTS / "models" / "xgboost" / "xgboost.joblib"
+            )
+            xgb_sidecar = artifact.parent / "xgboost_manifest.json"
+            xgb_report = PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json"
+            manifest = xgb_sidecar if xgb_sidecar.is_file() else xgb_report
+            return artifact, manifest
+        if canonical_key == "isolation_forest":
+            artifact = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
+            manifest = PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
+            return artifact, manifest
+        if canonical_key == "autoencoder":
+            artifact = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
+            ae_sidecar = artifact.parent / "autoencoder_manifest.json"
+            ae_report = PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json"
+            manifest = ae_sidecar if ae_sidecar.is_file() else ae_report
+            return artifact, manifest
+
+    # 3. Default fallback is canonical Random Forest baseline when --model was omitted
     default_artifact = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
     default_manifest = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
     return default_artifact, default_manifest
@@ -102,7 +129,10 @@ def build_parser() -> argparse.ArgumentParser:
         "-m",
         type=str,
         default="random_forest",
-        help="Model selector ('random_forest', 'isolation_forest', or path to model .joblib)",
+        help=(
+            "Model selector ('random_forest', 'xgboost', 'isolation_forest', 'autoencoder', "
+            "or path to model .joblib)"
+        ),
     )
     parser.add_argument(
         "--model-artifact",
@@ -172,11 +202,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     # 2. Resolve model artifact and manifest
-    model_artifact_path, model_manifest_path = _resolve_model_paths(
-        model_arg=args.model,
-        model_artifact_arg=args.model_artifact,
-        model_manifest_arg=args.model_manifest,
-    )
+    try:
+        model_artifact_path, model_manifest_path = _resolve_model_paths(
+            model_arg=args.model,
+            model_artifact_arg=args.model_artifact,
+            model_manifest_arg=args.model_manifest,
+        )
+    except ValueError as e:
+        sys.stderr.write(f"Error: {e}\n")
+        return 1
 
     if not model_artifact_path.is_file():
         sys.stderr.write(

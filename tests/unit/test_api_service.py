@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -400,6 +401,8 @@ def _setup_synthetic_artifact_tree(
     *,
     include_rf: bool = True,
     include_if: bool = False,
+    include_xgb: bool = False,
+    include_ae: bool = False,
 ) -> dict[str, Path]:
     """Create isolated preprocessor + model artifact tree for ApiService F4/F6 tests."""
     from network_anomaly.models.isolation_forest import IsolationForestModel
@@ -413,6 +416,10 @@ def _setup_synthetic_artifact_tree(
     rf_manifest = root / "reports" / "models" / "random_forest_manifest.json"
     if_path = art_root / "models" / "isolation_forest" / "isolation_forest.joblib"
     if_manifest = root / "reports" / "models" / "isolation_forest_manifest.json"
+    xgb_path = art_root / "models" / "xgboost" / "xgboost_baseline.joblib"
+    xgb_manifest = root / "reports" / "models" / "xgboost_manifest.json"
+    ae_path = art_root / "models" / "autoencoder" / "autoencoder_model.joblib"
+    ae_manifest = art_root / "models" / "autoencoder" / "autoencoder_manifest.json"
 
     prep_path.parent.mkdir(parents=True, exist_ok=True)
     prep_manifest.parent.mkdir(parents=True, exist_ok=True)
@@ -460,12 +467,90 @@ def _setup_synthetic_artifact_tree(
         iso.fit(X_trans)
         iso.save(if_path, if_manifest, preprocessor_artifact_sha256=prep_sha)
 
+    if include_xgb:
+        from xgboost import XGBClassifier
+
+        xgb_path.parent.mkdir(parents=True, exist_ok=True)
+        xgb = XGBClassifier(n_estimators=5, max_depth=3, random_state=42, eval_metric="logloss")
+        xgb.fit(X_trans, np.arange(12) % 2)
+        joblib.dump(
+            {"estimator": xgb, "model_type": "XGBoost", "classes": [0, 1]},
+            xgb_path,
+        )
+        xgb_manifest.write_text(
+            json.dumps(
+                {
+                    "run_id": "test-xgb-service-run",
+                    "model_type": "XGBoost",
+                    "model_artifact_sha256": _sha256_file(xgb_path),
+                    "preprocessor_artifact_sha256": prep_sha,
+                    "feature_contract_version": FEATURE_CONTRACT_VERSION,
+                    "class_mapping": {"0": "Benign", "1": "Attack"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    if include_ae:
+        from network_anomaly.models.autoencoder import build_model as build_ae_model
+        from network_anomaly.models.autoencoder import fit_model as fit_ae_model
+
+        ae_path.parent.mkdir(parents=True, exist_ok=True)
+        ae_hparams = {
+            "hidden_layer_sizes": [8, 4, 8],
+            "max_iter": 10,
+            "random_state": 42,
+        }
+        ae = build_ae_model({"hidden_layer_sizes": (8, 4, 8), "max_iter": 10, "random_state": 42})
+        fit_ae_model(ae, X_trans)
+        joblib.dump(ae, ae_path)
+        cfg_path = ae_path.parent / "model_config.json"
+        cfg_path.write_text(json.dumps(ae_hparams), encoding="utf-8")
+        th_payload = {
+            "threshold": 0.5,
+            "threshold_frozen": True,
+            "calibration_split": "validation_benign",
+        }
+        th_path = ae_path.parent / "threshold.json"
+        th_path.write_text(json.dumps(th_payload), encoding="utf-8")
+        ae_manifest.write_text(
+            json.dumps(
+                {
+                    "artifact_type": "autoencoder-anomaly-detector",
+                    "schema_version": "1.0",
+                    "run_id": "test-ae-service-run",
+                    "model_file": ae_path.name,
+                    "model_sha256": _sha256_file(ae_path),
+                    "config_file": cfg_path.name,
+                    "config_sha256": _sha256_file(cfg_path),
+                    "threshold_file": th_path.name,
+                    "threshold_sha256": _sha256_file(th_path),
+                    "preprocessor_sha256": prep_sha,
+                    "feature_contract_version": FEATURE_CONTRACT_VERSION,
+                    "hyperparameters": ae_hparams,
+                    "model_architecture": {
+                        "class": "MLPRegressor",
+                        "hidden_layer_sizes": [8, 4, 8],
+                        "input_dimension": len(ML_FEATURE_COLUMNS),
+                        "output_dimension": len(ML_FEATURE_COLUMNS),
+                    },
+                    "threshold": 0.5,
+                    "threshold_calibration": th_payload,
+                }
+            ),
+            encoding="utf-8",
+        )
+
     return {
         "artifacts": art_root,
         "rf_path": rf_path,
         "rf_manifest": rf_manifest,
         "if_path": if_path,
         "if_manifest": if_manifest,
+        "xgb_path": xgb_path,
+        "xgb_manifest": xgb_manifest,
+        "ae_path": ae_path,
+        "ae_manifest": ae_manifest,
     }
 
 
@@ -483,12 +568,14 @@ def test_health_check_does_not_mask_missing_default_rf_with_if_ready(
         health_default = api_service.check_health()
         assert health_default.status == "degraded"
         assert health_default.model_ready is False
-        assert health_default.preprocessor_ready is False
+        assert health_default.preprocessor_ready is True
         assert health_default.details["default_model"] == "random_forest"
         assert health_default.details["default_analysis_ready"] is False
         assert health_default.details["models_ready"] == {
             "random_forest": False,
+            "xgboost": False,
             "isolation_forest": True,
+            "autoencoder": False,
         }
 
         with pytest.raises(ModelNotReadyError):
@@ -556,3 +643,301 @@ def test_pipeline_caching_avoids_redundant_loads_and_invalidates_on_change(
         paths["rf_path"].write_bytes(paths["rf_path"].read_bytes() + b"\x00tamper")
         with pytest.raises(ModelNotReadyError):
             api_service.analyze_flows(sample_flow, model_name="random_forest")
+
+
+def test_four_model_families_health_and_verified_inference(api_service: ApiService, tmp_path: Path):
+    """Verify check_health and analyze_flows across RF, XGBoost, Isolation Forest, and Autoencoder."""
+    paths = _setup_synthetic_artifact_tree(
+        tmp_path, include_rf=True, include_if=True, include_xgb=True, include_ae=True
+    )
+    sample_flow = [{"features": {col: 1.0 for col in ML_FEATURE_COLUMNS}}]
+
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        health = api_service.check_health()
+        assert health.status == "healthy"
+        assert health.details["models_ready"] == {
+            "random_forest": True,
+            "xgboost": True,
+            "isolation_forest": True,
+            "autoencoder": True,
+        }
+
+        for model_key, expect_proba in (
+            ("random_forest", True),
+            ("xgboost", True),
+            ("isolation_forest", False),
+            ("autoencoder", False),
+        ):
+            res = api_service.analyze_flows(sample_flow, model_name=model_key)
+            assert res.model_ready is True
+            assert res.inference_mode == "verified_model"
+            item = res.results[0]
+            assert item.model_used == model_key
+            assert item.inference_mode == "verified_model"
+            assert item.prediction in (0, 1)
+            assert math.isfinite(item.anomaly_score)
+            assert item.raw_anomaly_score == item.anomaly_score
+            if expect_proba:
+                assert item.score_type == "attack_probability"
+                assert item.attack_probability is not None
+                assert 0.0 <= item.attack_probability <= 1.0
+                assert item.probabilities is not None
+                assert set(item.probabilities) == {"Benign", "Attack"}
+                assert item.normalized_anomaly_score == item.attack_probability
+            else:
+                assert item.attack_probability is None
+                assert item.probabilities is None
+                assert item.normalized_anomaly_score is None
+                assert item.score_direction == "higher_is_more_anomalous"
+                assert item.decision_threshold is not None
+                if model_key == "autoencoder":
+                    assert item.score_type == "reconstruction_error_mse"
+                else:
+                    assert item.score_type in {
+                        "isolation_forest_anomaly_score",
+                        "isolation_forest_decision_score",
+                    }
+
+
+def test_f1_strict_model_allowlist_aliases_and_rejects_unsupported_names(
+    tmp_path: Path, api_service: ApiService
+):
+    """F1: Canonical aliases normalize deterministically; unsupported names fail closed without RF fallback."""
+    paths = _setup_synthetic_artifact_tree(tmp_path)
+
+    for raw_alias, expected_canonical in (
+        (None, "random_forest"),
+        ("rf", "random_forest"),
+        ("Random Forest", "random_forest"),
+        ("xgb", "xgboost"),
+        ("XGBoost", "xgboost"),
+        ("if", "isolation_forest"),
+        ("Isolation-Forest", "isolation_forest"),
+        ("ae", "autoencoder"),
+        ("AutoEncoder", "autoencoder"),
+    ):
+        assert api_service._canonical_model_key(raw_alias) == expected_canonical
+
+    for bad_name in ("lightgbm", "catboost", "random_forest_v2", "my_custom_rf", "", "   "):
+        with pytest.raises(ValueError, match=r"(Unsupported model|cannot be empty)"):
+            api_service._canonical_model_key(bad_name)
+
+        with (
+            patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+            patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+        ):
+            with pytest.raises(ValueError, match=r"(Unsupported model|cannot be empty)"):
+                api_service.analyze_flows([{"features": {"IN_BYTES": 100}}], model_name=bad_name)
+
+
+def test_f1_rejects_manifest_model_type_mismatch_on_load_and_health(
+    tmp_path: Path, api_service: ApiService
+):
+    """F1: Health check and loader refuse a manifest whose declared model_type mismatches requested model."""
+    paths = _setup_synthetic_artifact_tree(tmp_path, include_xgb=True)
+    xgb_manifest_path = paths["xgb_manifest"]
+    xgb_manifest = json.loads(xgb_manifest_path.read_text(encoding="utf-8"))
+    xgb_manifest["model_type"] = "RandomForestClassifier"
+    xgb_manifest_path.write_text(json.dumps(xgb_manifest), encoding="utf-8")
+
+    sample_flow = [
+        {
+            "features": {
+                col: ("6" if col in CATEGORICAL_CODED_COLUMNS else 1.0)
+                for col in ML_FEATURE_COLUMNS
+            }
+        }
+    ]
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        health = api_service.check_health("xgb")
+        assert health.preprocessor_ready is True
+        assert health.model_ready is False
+        assert health.status == "degraded"
+        assert health.details["models_ready"]["xgboost"] is False
+        assert health.details["artifact_verification_error"] == "artifact verification failed"
+
+        with pytest.raises(ValueError, match="mismatch"):
+            api_service._load_inference_pipeline("xgb")
+
+        with pytest.raises(ModelNotReadyError):
+            api_service.analyze_flows(
+                sample_flow,
+                model_name="xgb",
+                allow_heuristic_fallback=False,
+            )
+
+        # Even if heuristic fallback is explicitly allowed, provenance stays heuristic, never 'xgboost'
+        fb = api_service.analyze_flows(
+            sample_flow,
+            model_name="xgb",
+            allow_heuristic_fallback=True,
+        )
+        assert fb.results[0].model_used == "heuristic_baseline_artifact_missing"
+        assert fb.model_ready is False
+
+
+def test_f2_ae_sidecar_tamper_invalidates_service_cache_and_fails_closed(
+    tmp_path: Path, api_service: ApiService
+):
+    """F2: Tampering AE threshold.json sidecar invalidates cache and drops AE health to blocked."""
+    paths = _setup_synthetic_artifact_tree(tmp_path, include_ae=True)
+    sample_flow = [
+        {
+            "event_id": "evt_ae_cache",
+            "features": {
+                col: ("6" if col in CATEGORICAL_CODED_COLUMNS else 10.0)
+                for col in ML_FEATURE_COLUMNS
+            },
+        }
+    ]
+    th_path = paths["ae_path"].parent / "threshold.json"
+
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        res_ok = api_service.analyze_flows(sample_flow, model_name="ae")
+        assert res_ok.model_ready is True
+        assert res_ok.results[0].model_used == "autoencoder"
+
+        # Tamper threshold.json on disk -> cache key includes sidecar digest, so cached entry is invalidated
+        tampered = json.loads(th_path.read_text(encoding="utf-8"))
+        tampered["threshold"] = 99.0
+        th_path.write_text(json.dumps(tampered), encoding="utf-8")
+
+        health_tampered = api_service.check_health("autoencoder")
+        assert health_tampered.preprocessor_ready is True
+        assert health_tampered.model_ready is False
+        assert health_tampered.status == "degraded"
+        assert health_tampered.details["models_ready"]["autoencoder"] is False
+
+        with pytest.raises(ValueError, match="SHA-256 mismatch"):
+            api_service._load_inference_pipeline("autoencoder")
+
+        with pytest.raises(ModelNotReadyError):
+            api_service.analyze_flows(
+                sample_flow,
+                model_name="autoencoder",
+                allow_heuristic_fallback=False,
+            )
+
+
+def test_f3_preserves_unclamped_negative_and_gt_one_scores_with_calibrated_and_null_normalization(
+    api_service: ApiService,
+):
+    """F3: Unsupervised raw scores <0 and >1 remain unclamped; probability stays null; threshold drives prediction."""
+    mock_pipeline = MagicMock()
+    mock_pipeline.model_metadata = {
+        "model_type": "IsolationForest",
+        "model_artifact_sha256": "if_sha_123",
+        "threshold": 0.0,
+        "raw_manifest": {"threshold": 0.0},
+    }
+    mock_pipeline.preprocessor_metadata = {"artifact_sha256": "prep_sha_123"}
+    # Rows preserve order; row 0 negative (<0 -> benign), rows 1 & 2 positive (>1 -> attack)
+    mock_pipeline.predict.return_value = pd.DataFrame(
+        {
+            "row_id": [0, 1, 2],
+            "prediction": [0, 1, 1],
+            "anomaly_score": [-0.35, 1.85, 4.75],
+            "run_id": ["run_if_raw"] * 3,
+        }
+    )
+
+    events = [
+        {"event_id": "e0", "features": {"IN_BYTES": 10}},
+        {"event_id": "e1", "features": {"IN_BYTES": 20}},
+        {"event_id": "e2", "features": {"IN_BYTES": 30}},
+    ]
+
+    with patch.object(api_service, "_load_inference_pipeline", return_value=mock_pipeline):
+        res_uncal = api_service.analyze_flows(events, model_name="if", create_incidents=False)
+
+    assert [r.model_used for r in res_uncal.results] == ["isolation_forest"] * 3
+    assert [r.index for r in res_uncal.results] == [0, 1, 2]
+    assert [r.event_id for r in res_uncal.results] == ["e0", "e1", "e2"]
+    assert [r.raw_anomaly_score for r in res_uncal.results] == [-0.35, 1.85, 4.75]
+    assert [r.anomaly_score for r in res_uncal.results] == [-0.35, 1.85, 4.75]
+    assert [r.prediction for r in res_uncal.results] == [0, 1, 1]
+    for r in res_uncal.results:
+        assert r.normalized_anomaly_score is None
+        assert r.attack_probability is None
+        assert r.probabilities is None
+        assert r.score_type == "isolation_forest_anomaly_score"
+        assert r.score_direction == "higher_is_more_anomalous"
+        assert r.decision_threshold == 0.0
+
+    # With valid validation score_normalization calibration: display score maps to [0, 1], raw stays unclamped
+    mock_pipeline.model_metadata["raw_manifest"]["score_normalization"] = {
+        "calibration_partition": "validation",
+        "score_direction": "higher_is_more_anomalous",
+        "quantile_grid": [0.0, 0.5, 1.0],
+        "score_values": [-0.5, 1.0, 4.0],
+    }
+    with patch.object(api_service, "_load_inference_pipeline", return_value=mock_pipeline):
+        res_cal = api_service.analyze_flows(
+            events, model_name="isolation_forest", create_incidents=False
+        )
+
+    assert [r.raw_anomaly_score for r in res_cal.results] == [-0.35, 1.85, 4.75]
+    assert res_cal.results[0].normalized_anomaly_score == pytest.approx(0.05)
+    assert 0.5 < res_cal.results[1].normalized_anomaly_score < 1.0
+    assert res_cal.results[2].normalized_anomaly_score == 1.0
+    assert all(r.attack_probability is None for r in res_cal.results)
+
+
+def test_f3_rejects_non_finite_raw_anomaly_scores_fail_closed(api_service: ApiService):
+    """F3: Non-finite (NaN / Inf) model scores raise ValueError instead of silent sanitization."""
+    mock_pipeline = MagicMock()
+    mock_pipeline.model_metadata = {"model_type": "AutoencoderModel", "threshold": 0.5}
+    mock_pipeline.preprocessor_metadata = {"artifact_sha256": "prep_sha"}
+    mock_pipeline.predict.return_value = pd.DataFrame(
+        {
+            "row_id": [0],
+            "prediction": [1],
+            "anomaly_score": [float("nan")],
+            "run_id": ["run_nan"],
+        }
+    )
+
+    with patch.object(api_service, "_load_inference_pipeline", return_value=mock_pipeline):
+        with pytest.raises(ValueError, match="non-finite"):
+            api_service._analyze_with_verified_pipeline(
+                [{"features": {"IN_BYTES": 10}}],
+                model_name="autoencoder",
+                threshold=0.5,
+                pipeline=mock_pipeline,
+            )
+        with pytest.raises(ModelNotReadyError, match="non-finite"):
+            api_service.analyze_flows(
+                [{"features": {"IN_BYTES": 10}}],
+                model_name="autoencoder",
+                allow_heuristic_fallback=False,
+                create_incidents=False,
+            )
+
+
+def test_p2_health_reports_preprocessor_ready_true_when_all_models_missing(
+    tmp_path: Path, api_service: ApiService
+):
+    """P2: Preprocessor READY is surfaced independently even when all 4 model binaries are absent."""
+    paths = _setup_synthetic_artifact_tree(
+        tmp_path, include_rf=False, include_xgb=False, include_if=False, include_ae=False
+    )
+    with (
+        patch("network_anomaly.api.service.ARTIFACTS", paths["artifacts"]),
+        patch("network_anomaly.api.service.PROJECT_ROOT", tmp_path),
+    ):
+        health = api_service.check_health("random_forest")
+        assert health.preprocessor_ready is True
+        assert health.model_ready is False
+        assert health.status == "degraded"
+        assert health.details["preprocessor_status"] == "READY"
+        for k in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
+            assert health.details["models_ready"][k] is False

@@ -907,3 +907,316 @@ def test_inference_pipeline_rejects_non_binary_raw_predictions(
         )
         with pytest.raises(ValueError, match="non-binary labels"):
             pipeline.predict(synthetic_features.iloc[:2])
+
+
+def test_inference_pipeline_supports_verified_xgboost_and_autoencoder(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+    tmp_path: Path,
+):
+    """InferencePipeline loads verified XGBoost and Autoencoder artifacts fail-closed."""
+    from xgboost import XGBClassifier
+
+    from network_anomaly.models.autoencoder import (
+        AutoencoderModel,
+    )
+    from network_anomaly.models.autoencoder import (
+        build_model as build_ae_model,
+    )
+    from network_anomaly.models.autoencoder import (
+        fit_model as fit_ae_model,
+    )
+
+    prep_art_path, prep_man_path, _, _ = synthetic_preprocessor_and_model
+    prep, prep_meta = load_verified_preprocessor(prep_art_path, prep_man_path)
+    prep_sha = prep_meta["artifact_sha256"]
+    X_trans = prep.transform(synthetic_features)
+
+    # 1. XGBoost verified round-trip
+    xgb = XGBClassifier(n_estimators=4, max_depth=3, random_state=42, eval_metric="logloss")
+    xgb.fit(X_trans, np.array([i % 2 for i in range(len(X_trans))]))
+    xgb_path = tmp_path / "xgboost_baseline.joblib"
+    joblib.dump({"estimator": xgb, "model_type": "XGBoost", "classes": [0, 1]}, xgb_path)
+    xgb_man = tmp_path / "xgboost_manifest.json"
+    xgb_man.write_text(
+        json.dumps(
+            {
+                "run_id": "test-xgb-pipe",
+                "model_type": "XGBoost",
+                "model_artifact_sha256": _sha256_file(xgb_path),
+                "preprocessor_artifact_sha256": prep_sha,
+                "feature_contract_version": FEATURE_CONTRACT_VERSION,
+                "class_mapping": {"0": "Benign", "1": "Attack"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    xgb_pipe = InferencePipeline.from_artifacts(
+        model_artifact_path=xgb_path,
+        preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=xgb_man,
+        preprocessor_manifest_path=prep_man_path,
+    )
+    xgb_df = xgb_pipe.predict(synthetic_features)
+    assert len(xgb_df) == len(synthetic_features)
+    assert set(xgb_df["prediction"].tolist()).issubset({0, 1})
+    assert "probability_Attack" in xgb_df.columns
+    assert "probability_Benign" in xgb_df.columns
+
+    # 2. Autoencoder verified round-trip with sidecar threshold verification
+    ae_hparams = {"hidden_layer_sizes": [8, 4, 8], "max_iter": 10, "random_state": 42}
+    ae = build_ae_model({"hidden_layer_sizes": (8, 4, 8), "max_iter": 10, "random_state": 42})
+    fit_ae_model(ae, X_trans)
+    ae_path = tmp_path / "autoencoder_model.joblib"
+    joblib.dump(ae, ae_path)
+    cfg_path = tmp_path / "model_config.json"
+    cfg_path.write_text(json.dumps(ae_hparams), encoding="utf-8")
+    th_payload = {
+        "threshold": 0.25,
+        "threshold_frozen": True,
+        "calibration_split": "validation_benign",
+    }
+    th_path = tmp_path / "threshold.json"
+    th_path.write_text(json.dumps(th_payload), encoding="utf-8")
+    ae_man = tmp_path / "autoencoder_manifest.json"
+    ae_manifest_payload = {
+        "artifact_type": "autoencoder-anomaly-detector",
+        "schema_version": "1.0",
+        "run_id": "test-ae-pipe",
+        "model_file": ae_path.name,
+        "model_sha256": _sha256_file(ae_path),
+        "config_file": cfg_path.name,
+        "config_sha256": _sha256_file(cfg_path),
+        "threshold_file": th_path.name,
+        "threshold_sha256": _sha256_file(th_path),
+        "hyperparameters": ae_hparams,
+        "model_architecture": {
+            "class": "MLPRegressor",
+            "hidden_layer_sizes": [8, 4, 8],
+            "input_dimension": len(ML_FEATURE_COLUMNS),
+            "output_dimension": len(ML_FEATURE_COLUMNS),
+        },
+        "threshold": 0.25,
+        "threshold_calibration": th_payload,
+        "preprocessor_sha256": prep_sha,
+        "feature_contract_version": FEATURE_CONTRACT_VERSION,
+    }
+    ae_man.write_text(json.dumps(ae_manifest_payload), encoding="utf-8")
+
+    ae_pipe = InferencePipeline.from_artifacts(
+        model_artifact_path=ae_path,
+        preprocessor_artifact_path=prep_art_path,
+        model_manifest_path=ae_man,
+        preprocessor_manifest_path=prep_man_path,
+    )
+    assert isinstance(ae_pipe.model, AutoencoderModel)
+    ae_df = ae_pipe.predict(synthetic_features)
+    assert len(ae_df) == len(synthetic_features)
+    assert set(ae_df["prediction"].tolist()).issubset({0, 1})
+    assert "anomaly_score" in ae_df.columns
+    assert np.all(np.isfinite(ae_df["anomaly_score"]))
+
+    # Fail closed if Autoencoder sidecar threshold JSON is tampered or threshold missing
+    th_path.write_text(json.dumps({"threshold": 999.0}), encoding="utf-8")
+    with pytest.raises(ValueError, match="sidecar SHA-256 mismatch"):
+        load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
+
+
+def _create_canonical_ae_bundle(
+    tmp_path: Path, prep_sha: str
+) -> Tuple[Path, Path, Path, Path, dict]:
+    """Create a canonical Autoencoder bundle with matching sidecars and manifest hashes."""
+    from network_anomaly.models.autoencoder import build_model as build_ae_model
+    from network_anomaly.models.autoencoder import fit_model as fit_ae_model
+    from network_anomaly.preprocessing import FEATURE_CONTRACT_VERSION
+
+    sub = tmp_path / "ae_bundle"
+    sub.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(7)
+    X_trans = rng.normal(size=(24, len(ML_FEATURE_COLUMNS)))
+    ae_hparams = {"hidden_layer_sizes": [8, 4, 8], "max_iter": 10, "random_state": 42}
+    ae = build_ae_model({"hidden_layer_sizes": (8, 4, 8), "max_iter": 10, "random_state": 42})
+    fit_ae_model(ae, X_trans)
+
+    ae_path = sub / "autoencoder_model.joblib"
+    joblib.dump(ae, ae_path)
+    cfg_path = sub / "model_config.json"
+    cfg_path.write_text(json.dumps(ae_hparams), encoding="utf-8")
+    th_payload = {
+        "threshold": 0.25,
+        "threshold_frozen": True,
+        "calibration_split": "validation_benign",
+    }
+    th_path = sub / "threshold.json"
+    th_path.write_text(json.dumps(th_payload), encoding="utf-8")
+    ae_man = sub / "autoencoder_manifest.json"
+    manifest_payload = {
+        "artifact_type": "autoencoder-anomaly-detector",
+        "schema_version": "1.0",
+        "run_id": "test-ae-security",
+        "model_file": ae_path.name,
+        "model_sha256": _sha256_file(ae_path),
+        "config_file": cfg_path.name,
+        "config_sha256": _sha256_file(cfg_path),
+        "threshold_file": th_path.name,
+        "threshold_sha256": _sha256_file(th_path),
+        "hyperparameters": ae_hparams,
+        "model_architecture": {
+            "class": "MLPRegressor",
+            "hidden_layer_sizes": [8, 4, 8],
+            "input_dimension": len(ML_FEATURE_COLUMNS),
+            "output_dimension": len(ML_FEATURE_COLUMNS),
+        },
+        "threshold": 0.25,
+        "threshold_calibration": th_payload,
+        "preprocessor_sha256": prep_sha,
+        "feature_contract_version": FEATURE_CONTRACT_VERSION,
+    }
+    ae_man.write_text(json.dumps(manifest_payload), encoding="utf-8")
+    return ae_path, ae_man, cfg_path, th_path, manifest_payload
+
+
+def test_f2_autoencoder_missing_sidecars_fail_closed(tmp_path: Path):
+    """F2: Missing model_config.json or threshold.json sidecar fails closed."""
+    prep_sha = "a" * 64
+    ae_path, ae_man, cfg_path, th_path, _ = _create_canonical_ae_bundle(tmp_path, prep_sha)
+
+    cfg_path.unlink()
+    with pytest.raises(FileNotFoundError, match="config"):
+        load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
+
+    ae_path2, ae_man2, _, th_path2, _ = _create_canonical_ae_bundle(tmp_path / "t2", prep_sha)
+    th_path2.unlink()
+    with pytest.raises(FileNotFoundError, match="threshold"):
+        load_verified_model(ae_path2, manifest_path=ae_man2, expected_preprocessor_sha256=prep_sha)
+
+
+def test_f2_autoencoder_unfrozen_and_mismatched_threshold_rejected(tmp_path: Path):
+    """F2: Unfrozen threshold.json or threshold value disagreement with manifest fails closed."""
+    prep_sha = "b" * 64
+    ae_path, ae_man, _, th_path, payload = _create_canonical_ae_bundle(tmp_path, prep_sha)
+
+    # Case 1: threshold_frozen missing / False (even if SHA-256 updated)
+    unfrozen = {"threshold": 0.25, "threshold_frozen": False}
+    th_path.write_text(json.dumps(unfrozen), encoding="utf-8")
+    payload["threshold_sha256"] = _sha256_file(th_path)
+    payload["threshold_calibration"] = unfrozen
+    ae_man.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="threshold_frozen=True"):
+        load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
+
+    # Case 2: threshold.json agrees on frozen=True but value disagrees with manifest["threshold"]
+    mismatched = {"threshold": 0.99, "threshold_frozen": True}
+    th_path.write_text(json.dumps(mismatched), encoding="utf-8")
+    payload["threshold_sha256"] = _sha256_file(th_path)
+    payload["threshold_calibration"] = mismatched
+    ae_man.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="disagrees with"):
+        load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
+
+
+def test_f2_autoencoder_config_architecture_and_preprocessor_mismatch_rejected(tmp_path: Path):
+    """F2: Hyperparameter disagreement, bad input_dimension, or preprocessor hash mismatch rejected."""
+    prep_sha = "c" * 64
+    ae_path, ae_man, _, _, payload = _create_canonical_ae_bundle(tmp_path, prep_sha)
+
+    # 1. Hyperparameters mismatch against verified model_config.json
+    bad_hp = json.loads(json.dumps(payload))
+    bad_hp["hyperparameters"]["max_iter"] = 999
+    ae_man.write_text(json.dumps(bad_hp), encoding="utf-8")
+    with pytest.raises(ValueError, match="hyperparameters"):
+        load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
+
+    # 2. Invalid input_dimension (!= 47)
+    bad_dim = json.loads(json.dumps(payload))
+    bad_dim["model_architecture"]["input_dimension"] = 46
+    ae_man.write_text(json.dumps(bad_dim), encoding="utf-8")
+    with pytest.raises(ValueError, match="dimensions"):
+        load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
+
+    # 3. Preprocessor SHA-256 mismatch
+    ae_man.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="preprocessor SHA-256"):
+        load_verified_model(
+            ae_path,
+            manifest_path=ae_man,
+            expected_preprocessor_sha256="d" * 64,
+        )
+
+
+def test_f2_autoencoder_sha256_checked_before_joblib_deserialization(tmp_path: Path):
+    """F2 Security: SHA-256 tampering of .joblib or sidecar must fail BEFORE joblib.load() is called."""
+    from unittest.mock import patch
+
+    prep_sha = "e" * 64
+    ae_path, ae_man, _, th_path, _ = _create_canonical_ae_bundle(tmp_path, prep_sha)
+
+    # Tamper sidecar -> fail before joblib.load
+    th_path.write_text(json.dumps({"threshold": 0.1, "threshold_frozen": True}), encoding="utf-8")
+    with patch("network_anomaly.models.autoencoder.joblib.load") as mock_load:
+        with pytest.raises(ValueError, match="SHA-256 mismatch"):
+            load_verified_model(
+                ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha
+            )
+        mock_load.assert_not_called()
+
+    # Restore valid bundle and tamper .joblib bytes -> fail before joblib.load
+    ae_path2, ae_man2, _, _, _ = _create_canonical_ae_bundle(tmp_path / "binary_tamper", prep_sha)
+    ae_path2.write_bytes(ae_path2.read_bytes() + b"tampered")
+    with patch("network_anomaly.models.autoencoder.joblib.load") as mock_load:
+        with pytest.raises(ValueError, match="SHA-256 mismatch"):
+            load_verified_model(
+                ae_path2, manifest_path=ae_man2, expected_preprocessor_sha256=prep_sha
+            )
+        mock_load.assert_not_called()
+
+
+def test_f3_inference_pipeline_rejects_non_finite_scores(
+    synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
+    synthetic_features: pd.DataFrame,
+):
+    """F3: InferencePipeline.predict fails closed when model anomaly_scores returns NaN/Inf."""
+    from unittest.mock import MagicMock
+
+    from network_anomaly.preprocessing import TrainOnlyPreprocessor
+
+    prep_art_path, prep_man_path, _, _ = synthetic_preprocessor_and_model
+    prep = TrainOnlyPreprocessor.load_verified(prep_art_path, manifest_path=prep_man_path)
+
+    bad_model = MagicMock()
+    bad_model.predict.return_value = np.zeros(len(synthetic_features), dtype=np.int64)
+    bad_model.anomaly_scores.return_value = np.full(len(synthetic_features), np.inf)
+    del bad_model.predict_proba
+
+    pipeline = InferencePipeline(
+        model=bad_model,
+        preprocessor=prep,
+        model_metadata={"model_type": "IsolationForestModel", "model_artifact_sha256": "x" * 64},
+        preprocessor_metadata={"artifact_sha256": _sha256_file(prep_art_path)},
+    )
+    with pytest.raises(ValueError, match="non-finite"):
+        pipeline.predict(synthetic_features)
+
+
+def test_f1_cli_resolve_model_paths_strict_allowlist():
+    """F1 CLI: scripts/predict.py normalizes valid model aliases and rejects unknown selectors."""
+    import importlib.util
+
+    script_path = PROJECT_ROOT / "scripts" / "predict.py"
+    spec = importlib.util.spec_from_file_location("cli_predict_module", script_path)
+    assert spec is not None and spec.loader is not None
+    cli_predict = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli_predict)
+
+    rf_art, _ = cli_predict._resolve_model_paths("rf", None, None)
+    assert rf_art.name == "random_forest_baseline.joblib"
+    if_art, _ = cli_predict._resolve_model_paths("if", None, None)
+    assert if_art.name == "isolation_forest.joblib"
+    ae_art, _ = cli_predict._resolve_model_paths("ae", None, None)
+    assert ae_art.name == "autoencoder_model.joblib"
+    xgb_art, _ = cli_predict._resolve_model_paths("xgb", None, None)
+    assert "xgboost" in xgb_art.name
+
+    for invalid_cli_model in ("lightgbm", "random_forest_v2", "", "   "):
+        with pytest.raises(ValueError):
+            cli_predict._resolve_model_paths(invalid_cli_model, None, None)

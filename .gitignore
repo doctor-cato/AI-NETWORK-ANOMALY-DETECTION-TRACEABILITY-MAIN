@@ -4,9 +4,11 @@
 data/raw/*
 data/interim/*
 data/processed/*
+data/demo/*
 !data/raw/.gitkeep
 !data/interim/.gitkeep
 !data/processed/.gitkeep
+!data/demo/.gitkeep
 
 # Artifacts / models / outputs — ignore everything, keep only the directory markers
 artifacts/**
