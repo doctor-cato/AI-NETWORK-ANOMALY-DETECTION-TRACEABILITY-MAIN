@@ -1,8 +1,11 @@
 {
   "e2e_status": "PASS",
   "host": "127.0.0.1",
-  "port": 55825,
-  "verify_script_sha256": "f025b7292872437a3e1cc02e5694a52bf6503730d668bb673ebdc78a86a0107e",
+  "port": 50277,
+  "source_commit": "136c08ec0f4785513740ac711b31a514942ece0c",
+  "desktop_version": "0.6.0",
+  "verify_script_sha256": "669b0c4bebee21c604b00d87bf55a16c06e5bc60f04797ad3c32c53202093e90",
+  "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
   "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
   "demo_sha256": {
     "data/demo/demo_flows.csv": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -18,10 +21,16 @@
   ],
   "models": {
     "random_forest": {
-      "analysis_id": "csvrun_592574f1b2f8",
+      "analysis_id": "csvrun_be39221af808",
+      "run_id": "rf-baseline-1794068628",
+      "inference_run_id": "inference-20261115193952-99393e",
       "artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+      "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+      "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
+      "labels_sha256": "fdf635808f9672631289c554c6238e90089bf2fea29b79a467517bec42a85b4d",
       "compatibility_status": "MODEL_VALIDATED",
       "inference_mode": "verified_model",
+      "total_rows": 200,
       "evaluated_rows": 198,
       "abstained_rows": 2,
       "confusion_matrix": {
@@ -30,12 +39,13 @@
         "fn": 0,
         "tp": 100
       },
+      "accuracy": 1.0,
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_9ece489d718a",
+      "dry_run_simulation_id": "sim_4fce0dec2782",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -46,10 +56,16 @@
       "dry_run_rotation_decision": "SIMULATED_ROTATION_RECOMMENDED"
     },
     "xgboost": {
-      "analysis_id": "csvrun_7af2c358772e",
+      "analysis_id": "csvrun_bc7df582f623",
+      "run_id": "xgb-baseline-1794755807",
+      "inference_run_id": "inference-20261115193953-0a3aa6",
       "artifact_sha256": "3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e",
+      "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+      "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
+      "labels_sha256": "fdf635808f9672631289c554c6238e90089bf2fea29b79a467517bec42a85b4d",
       "compatibility_status": "RESEARCH_ONLY",
       "inference_mode": "verified_model",
+      "total_rows": 200,
       "evaluated_rows": 198,
       "abstained_rows": 2,
       "confusion_matrix": {
@@ -58,12 +74,13 @@
         "fn": 0,
         "tp": 100
       },
+      "accuracy": 1.0,
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_69064109006f",
+      "dry_run_simulation_id": "sim_7fad55ae6b73",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -74,10 +91,16 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "isolation_forest": {
-      "analysis_id": "csvrun_74673e19fdee",
+      "analysis_id": "csvrun_e10212f49119",
+      "run_id": "if-c4-20261115T055359Z",
+      "inference_run_id": "inference-20261115193953-60ebd6",
       "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
+      "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+      "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
+      "labels_sha256": "fdf635808f9672631289c554c6238e90089bf2fea29b79a467517bec42a85b4d",
       "compatibility_status": "RESEARCH_ONLY",
       "inference_mode": "verified_model",
+      "total_rows": 200,
       "evaluated_rows": 198,
       "abstained_rows": 2,
       "confusion_matrix": {
@@ -86,12 +109,13 @@
         "fn": 12,
         "tp": 88
       },
+      "accuracy": 0.893939,
       "precision": 0.907216,
       "recall": 0.88,
       "f1": 0.893401,
       "fpr": 0.091837,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_76d388d0b49b",
+      "dry_run_simulation_id": "sim_b7119b583d1c",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 13,
@@ -102,10 +126,16 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "autoencoder": {
-      "analysis_id": "csvrun_4946aa11056d",
+      "analysis_id": "csvrun_913caa850b7f",
+      "run_id": "ae_fpr_constrained_20261115T163000Z",
+      "inference_run_id": "inference-20261115193953-87af27",
       "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
+      "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+      "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
+      "labels_sha256": "fdf635808f9672631289c554c6238e90089bf2fea29b79a467517bec42a85b4d",
       "compatibility_status": "RESEARCH_ONLY",
       "inference_mode": "verified_model",
+      "total_rows": 200,
       "evaluated_rows": 198,
       "abstained_rows": 2,
       "confusion_matrix": {
@@ -114,12 +144,13 @@
         "fn": 87,
         "tp": 13
       },
+      "accuracy": 0.535354,
       "precision": 0.722222,
       "recall": 0.13,
       "f1": 0.220339,
       "fpr": 0.05102,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_58329326795d",
+      "dry_run_simulation_id": "sim_329b77996395",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 180,
@@ -134,5 +165,19 @@
     "provenance_verification": "client_supplied_unverified",
     "critical_downgraded_action": "INVESTIGATE",
     "rotation_decision": "HOLD_UNVERIFIED_PROVENANCE"
+  },
+  "nsis_e2e": {
+    "status": "PASS",
+    "installer_filename": "NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe",
+    "installer_sha256": "47c835030203ecb9b58912c8335c0d59e9a2037e09a4dd5ec2fa7a5c1c9be46b",
+    "installer_size_bytes": 2394611,
+    "sums_file_verified": true,
+    "installed_exe_sha256": "11b137da484f1894f01610550e47da67b5f1b0d1b73679c0c814d6f35c50367e",
+    "compiled_exe_sha256": "bca39128d06805cb5f20f5b38b8fe3926f910bca6e952cecd5c45e29f4bcfd9d",
+    "normalized_compiled_exe_sha256": "11b137da484f1894f01610550e47da67b5f1b0d1b73679c0c814d6f35c50367e",
+    "compiled_exe_sha256_match": true,
+    "exe_parity_mode": "tauri_nsis_bundle_marker_normalized",
+    "uninstaller_verified": true,
+    "clean_install_verified": true
   }
 }
