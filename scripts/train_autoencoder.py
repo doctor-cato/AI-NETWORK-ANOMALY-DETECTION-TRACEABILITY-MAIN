@@ -118,6 +118,21 @@ def safe_relpath(path: Path) -> str:
         return str(path)
 
 
+def serialize_cli_args(args: argparse.Namespace) -> dict[str, object]:
+    """Serialize CLI arguments with repo-relative POSIX paths where applicable."""
+    return {
+        key: safe_relpath(value) if isinstance(value, Path) else value
+        for key, value in vars(args).items()
+    }
+
+
+def write_json_file(path: Path, payload: object, *, default=None) -> None:
+    """Write formatted JSON with LF line endings and a trailing newline."""
+    with path.open("w", encoding="utf-8", newline="\n") as fh:
+        json.dump(payload, fh, indent=2, default=default)
+        fh.write("\n")
+
+
 def sha256_file(path: Path) -> str:
     """Compute SHA-256 digest of a file in streaming chunks."""
     h = hashlib.sha256()
@@ -1232,12 +1247,10 @@ def save_artifacts(
     joblib.dump(model, model_file)
     model_sha256 = sha256_file(model_file)
 
-    with config_file.open("w", encoding="utf-8") as fh:
-        json.dump(config, fh, indent=2)
+    write_json_file(config_file, config)
     config_sha256 = sha256_file(config_file)
 
-    with threshold_file.open("w", encoding="utf-8") as fh:
-        json.dump(threshold_meta, fh, indent=2)
+    write_json_file(threshold_file, threshold_meta)
     threshold_sha256 = sha256_file(threshold_file)
 
     resolved_unknown = _resolve_unknown_categories(
@@ -1354,8 +1367,7 @@ def save_artifacts(
         if evaluation_summary.get("test") is not None:
             manifest_data["experiment_status"] = "EXPERIMENTALLY VALIDATED"
 
-    with manifest_file.open("w", encoding="utf-8") as fh:
-        json.dump(manifest_data, fh, indent=2)
+    write_json_file(manifest_file, manifest_data)
 
     return {
         "directory": str(output_dir),
@@ -1966,8 +1978,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
 
     if output_dir.resolve() == DEFAULT_OUTPUT_DIR.resolve():
         DEFAULT_REPORT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with DEFAULT_REPORT_MANIFEST_PATH.open("w", encoding="utf-8") as fh:
-            json.dump(art_res["manifest"], fh, indent=2)
+        write_json_file(DEFAULT_REPORT_MANIFEST_PATH, art_res["manifest"])
         print(f"  OK Report manifest mirrored to: {DEFAULT_REPORT_MANIFEST_PATH}")
 
     sample_eval = val_data["X"][: min(100, len(val_data["X"]))]
@@ -1988,39 +1999,32 @@ def run_pipeline(args: argparse.Namespace) -> int:
     print("  OK Saved artifact, companion manifest, and provenance verified.")
 
     report_dir.mkdir(parents=True, exist_ok=True)
-    with (report_dir / "metrics.json").open("w", encoding="utf-8") as fh:
-        json.dump(
-            {
-                "run_id": run_id,
-                "validation": metrics_val,
-                "test": metrics_test,
-                "threshold_calibration": threshold_meta,
-            },
-            fh,
-            indent=2,
-        )
-        fh.write("\n")
+    write_json_file(
+        report_dir / "metrics.json",
+        {
+            "run_id": run_id,
+            "validation": metrics_val,
+            "test": metrics_test,
+            "threshold_calibration": threshold_meta,
+        },
+    )
 
-    with (report_dir / "threshold_calibration.json").open("w", encoding="utf-8") as fh:
-        json.dump(threshold_meta, fh, indent=2)
+    write_json_file(report_dir / "threshold_calibration.json", threshold_meta)
 
-    with (report_dir / "training_metadata.json").open("w", encoding="utf-8") as fh:
-        json.dump(training_meta, fh, indent=2)
+    write_json_file(report_dir / "training_metadata.json", training_meta)
 
-    with (report_dir / "run_metadata.json").open("w", encoding="utf-8") as fh:
-        json.dump(
-            {
-                "arguments": vars(args),
-                "platform": platform.platform(),
-                "python_version": sys.version,
-                "execution_time_seconds": training_meta["elapsed_seconds"],
-                "git_commit": git_commit,
-                "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
-            },
-            fh,
-            indent=2,
-            default=str,
-        )
+    write_json_file(
+        report_dir / "run_metadata.json",
+        {
+            "arguments": serialize_cli_args(args),
+            "platform": platform.platform(),
+            "python_version": sys.version,
+            "execution_time_seconds": training_meta["elapsed_seconds"],
+            "git_commit": git_commit,
+            "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
+        },
+        default=str,
+    )
 
     report_md_path = report_dir / "evaluation_report.md"
     generate_markdown_report(
@@ -2047,8 +2051,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "evaluation_report.md",
     ):
         (run_snapshot_dir / fname).write_bytes((report_dir / fname).read_bytes())
-    with (run_snapshot_dir / "autoencoder_manifest.json").open("w", encoding="utf-8") as fh:
-        json.dump(art_res["manifest"], fh, indent=2)
+    write_json_file(run_snapshot_dir / "autoencoder_manifest.json", art_res["manifest"])
     print(f"  OK Run snapshot archived to: {run_snapshot_dir}")
     print("=" * 70)
     print(f"Pipeline completed successfully in {training_meta['elapsed_seconds']:.2f}s!")

@@ -10,6 +10,10 @@ on:
         description: 'Dry-run version label for artifact naming (when triggered manually without a tag)'
         required: false
         default: 'v0.6.0-dryrun'
+      companion_bundle_dir:
+        description: 'Optional external directory containing staged companion artifacts (artifacts/, data/demo/, COMPANION_SHA256SUMS.txt)'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -119,6 +123,73 @@ jobs:
           "is_tag_push=$($isTagPush.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "is_prerelease=$($isPrerelease.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
+      - name: Stage and verify external companion bundle (workflow_dispatch optional)
+        if: github.event_name == 'workflow_dispatch' && inputs.companion_bundle_dir != ''
+        env:
+          COMPANION_BUNDLE_DIR: ${{ inputs.companion_bundle_dir }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -c @'
+          import hashlib, os, re, shutil
+          from pathlib import Path
+
+          repo_root = Path.cwd().resolve()
+          bundle_dir = Path(os.environ["COMPANION_BUNDLE_DIR"]).resolve()
+          if not bundle_dir.is_dir():
+              raise SystemExit(f"companion_bundle_dir is not a directory: {bundle_dir}")
+
+          allowed_prefixes = ("artifacts/", "data/demo/", "reports/")
+          sums_file = bundle_dir / "COMPANION_SHA256SUMS.txt"
+
+          def safe_copy(rel_posix: str, expected_sha: str | None = None) -> None:
+              if not rel_posix or rel_posix.startswith("/") or ".." in Path(rel_posix).parts:
+                  raise SystemExit(f"Unsafe companion path rejected: {rel_posix!r}")
+              if not any(rel_posix.startswith(p) for p in allowed_prefixes):
+                  raise SystemExit(f"Disallowed companion destination prefix: {rel_posix!r}")
+              raw_src = bundle_dir / rel_posix
+              if raw_src.is_symlink():
+                  raise SystemExit(f"Symlink companion source rejected: {raw_src}")
+              src = raw_src.resolve()
+              if not src.is_relative_to(bundle_dir) or not src.is_file():
+                  raise SystemExit(f"Invalid companion source file: {src}")
+              actual = hashlib.sha256(src.read_bytes()).hexdigest().lower()
+              if expected_sha is not None and actual != expected_sha.lower():
+                  raise SystemExit(f"Checksum mismatch for {rel_posix}: {actual} != {expected_sha}")
+              dst = (repo_root / rel_posix).resolve()
+              if not dst.is_relative_to(repo_root):
+                  raise SystemExit(f"Destination escapes repository root: {dst}")
+              if rel_posix.startswith(("reports/", "data/demo/")) and dst.is_file():
+                  tracked_sha = hashlib.sha256(dst.read_bytes()).hexdigest().lower()
+                  if actual != tracked_sha:
+                      raise SystemExit(
+                          f"Companion bundle {rel_posix} does not match tracked file at HEAD ({actual} != {tracked_sha})"
+                      )
+                  return
+              dst.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copy2(src, dst)
+
+          if sums_file.is_file():
+              lines = [ln.strip() for ln in sums_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+              if not lines:
+                  raise SystemExit("COMPANION_SHA256SUMS.txt is empty")
+              for ln in lines:
+                  m = re.fullmatch(r"([0-9a-fA-F]{64})\s+\*?(.+)", ln)
+                  if not m:
+                      raise SystemExit(f"Malformed line in COMPANION_SHA256SUMS.txt: {ln!r}")
+                  safe_copy(m.group(2).strip().replace("\\", "/"), m.group(1))
+          else:
+              for sub in ("artifacts", "data/demo"):
+                  sub_dir = bundle_dir / sub
+                  if sub_dir.is_dir():
+                      for p in sub_dir.rglob("*"):
+                          if p.is_file():
+                              safe_copy(p.relative_to(bundle_dir).as_posix())
+          '@
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python scripts/verify_companion_artifacts.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -138,32 +209,30 @@ jobs:
           cache-all-crates: true
           cache-on-failure: true
 
-      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest, 4-Model E2E Gate)
-        run: |
-          python scripts/check_environment.py
-          python -m ruff check src scripts tests
-          python -m black --check src scripts tests
-          python scripts/export_openapi_spec.py --check
-          python -m pytest tests/unit tests/contract tests/integration -q
-        shell: pwsh
-      - name: Enforce 4-model E2E release gate (live if binaries present, or verified attestation)
+      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest, Committed Attestation)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          python scripts/check_environment.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m ruff check src scripts tests
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m black --check src scripts tests
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python scripts/export_openapi_spec.py --check
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -m pytest tests/unit tests/contract tests/integration -q
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
           $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
           $baseSemVer = ($desktopVer -split '-')[0]
           $attestation = "reports/releases/v${baseSemVer}_e2e_verification.json"
-          if ((Test-Path "artifacts/models/random_forest/random_forest_baseline.joblib") -and (Test-Path "data/demo/demo_flows.csv")) {
-            python scripts/verify_companion_artifacts.py --verify-e2e
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          } elseif ("${{ steps.meta.outputs.is_prerelease }}" -ne "true" -or (Test-Path $attestation)) {
-            if (-not (Test-Path $attestation)) {
-              Write-Error "Refusing stable release: missing required 4-model E2E attestation $attestation and live companion binaries are absent."
-              exit 1
-            }
-            python scripts/verify_companion_artifacts.py --verify-attestation $attestation
-            if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path $attestation)) {
+            Write-Error "Missing committed baseline attestation $attestation for pre-build consistency check."
+            exit 1
           }
+          python scripts/verify_companion_artifacts.py --verify-attestation $attestation
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Install and verify Svelte 5 frontend
         run: |
@@ -184,11 +253,12 @@ jobs:
         run: |
           npx --prefix desktop tauri build --bundles nsis
 
-      - name: Verify build artifacts and generate SHA256SUMS.txt
+      - name: Verify build artifacts, generate SHA256SUMS.txt, and enforce NSIS + Live 4-Model E2E Gate
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
+          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
           $exePath = "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe"
           if (-not (Test-Path $exePath)) {
             Write-Error "Missing compiled Windows executable: $exePath"
@@ -212,6 +282,54 @@ jobs:
           $setupHash = (python -c "import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())" $setupDest).Trim().ToLower()
           $sumsFile = Join-Path $stageDir "SHA256SUMS.txt"
           "$setupHash  $setupAssetName" | Out-File -FilePath $sumsFile -Encoding ascii
+
+          $nsisReport = Join-Path $stageDir "nsis_e2e_verification.json"
+          python scripts/verify_companion_artifacts.py --verify-nsis-only `
+            --installer-path $setupDest `
+            --sums-file $sumsFile `
+            --compiled-exe $exePath `
+            --output-json $nsisReport
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Clean Windows NSIS E2E verification failed."
+            exit 1
+          }
+
+          python scripts/verify_companion_artifacts.py > $null
+          if ($LASTEXITCODE -eq 0) {
+            $releaseAttestation = Join-Path $stageDir "release_e2e_verification.json"
+            python scripts/verify_companion_artifacts.py --verify-e2e `
+              --installer-path $setupDest `
+              --sums-file $sumsFile `
+              --compiled-exe $exePath `
+              --output-json $releaseAttestation
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Live 4-model + NSIS E2E verification failed."
+              exit 1
+            }
+
+            python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
+              --expect-commit "${{ github.sha }}" `
+              --expect-installer-sha256 $setupHash `
+              --require-nsis-e2e
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Generated release E2E attestation failed strict verification."
+              exit 1
+            }
+          } else {
+            if (-not $isPrerelease) {
+              Write-Error (
+                "FAIL-CLOSED: Refusing Stable release ($tagName) because live 4-model companion artifacts " +
+                "are NOT READY on this runner. Historical attestation JSON in reports/releases/ MUST NOT " +
+                "substitute for live 4-model + clean Windows NSIS E2E verification bound to commit " +
+                "${{ github.sha }} and installer SHA-256 $setupHash."
+              )
+              exit 1
+            }
+            Write-Warning (
+              "Prerelease/dry-run build ($tagName): clean Windows NSIS install/uninstall E2E PASSED " +
+              "(recorded in nsis_e2e_verification.json), but live 4-model companion binaries are absent on this runner."
+            )
+          }
 
           Write-Host "Staged release assets in ${stageDir}:"
           Get-ChildItem $stageDir | Format-Table Name, Length
@@ -241,6 +359,28 @@ jobs:
             exit 1
           }
 
+          $stageDir = "dist/release-assets"
+          $setupDest = Join-Path $stageDir "NetFlow-Sentinel-$tagName-windows-x64-setup.exe"
+          $sumsFile = Join-Path $stageDir "SHA256SUMS.txt"
+          $releaseAttestation = Join-Path $stageDir "release_e2e_verification.json"
+          $nsisAttestation = Join-Path $stageDir "nsis_e2e_verification.json"
+          $setupHash = (python -c "import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())" $setupDest).Trim().ToLower()
+
+          if (-not $isPrerelease) {
+            if (-not (Test-Path $releaseAttestation)) {
+              Write-Error "FAIL-CLOSED: Missing mandatory live release_e2e_verification.json for Stable release $tagName."
+              exit 1
+            }
+            python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
+              --expect-commit "${{ github.sha }}" `
+              --expect-installer-sha256 $setupHash `
+              --require-nsis-e2e
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "FAIL-CLOSED: Stable release attestation verification failed before gh release create."
+              exit 1
+            }
+          }
+
           $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
           $baseSemVer = ($desktopVer -split '-')[0]
           $exactNotesPath = "docs/releases/v$desktopVer.md"
@@ -256,8 +396,15 @@ jobs:
 
           $releaseArgs = @(
             "release", "create", $tagName,
-            "dist/release-assets/NetFlow-Sentinel-$tagName-windows-x64-setup.exe",
-            "dist/release-assets/SHA256SUMS.txt",
+            $setupDest,
+            $sumsFile
+          )
+          if (Test-Path $releaseAttestation) {
+            $releaseArgs += $releaseAttestation
+          } elseif (Test-Path $nsisAttestation) {
+            $releaseArgs += $nsisAttestation
+          }
+          $releaseArgs += @(
             "--verify-tag",
             "--title", "NetFlow Sentinel $tagName — M6 Desktop Demo",
             "--notes-file", $notesPath

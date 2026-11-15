@@ -2011,3 +2011,66 @@ def test_shipped_autoencoder_manifest_satisfies_val_fpr_constraint():
     assert man_cal["threshold"] == pytest.approx(cal["threshold"], rel=0.0, abs=1e-9)
     assert metrics["run_id"] == manifest["run_id"]
     assert metrics["validation"]["fpr"] <= cal["target_fpr"]
+
+
+def test_serialize_cli_args_uses_repo_relative_posix_paths_and_write_json_has_newline(
+    tmp_path: Path,
+):
+    from scripts.train_autoencoder import PROJECT_ROOT, serialize_cli_args, write_json_file
+
+    ns = argparse.Namespace(
+        raw_data=PROJECT_ROOT / "data" / "demo" / "demo_flows.csv",
+        report_dir=PROJECT_ROOT / "reports" / "evaluation" / "autoencoder",
+        external_dir=tmp_path / "external_out",
+        hidden_layers="32,16,32",
+    )
+    serialized = serialize_cli_args(ns)
+    assert serialized["raw_data"] == "data/demo/demo_flows.csv"
+    assert serialized["report_dir"] == "reports/evaluation/autoencoder"
+    assert serialized["external_dir"] == str(tmp_path / "external_out")
+    assert serialized["hidden_layers"] == "32,16,32"
+
+    out_json = tmp_path / "run_metadata.json"
+    write_json_file(out_json, {"arguments": serialized})
+    raw = out_json.read_bytes()
+    assert raw.endswith(b"\n")
+    assert b"\r\n" not in raw
+    assert json.loads(raw.decode("utf-8"))["arguments"]["raw_data"] == "data/demo/demo_flows.csv"
+
+
+def test_shipped_pr70_evaluation_jsons_have_clean_paths_and_trailing_newlines():
+    repo_root = Path(__file__).resolve().parents[2]
+    eval_dirs = [
+        repo_root / "reports" / "evaluation" / "autoencoder",
+        repo_root / "reports" / "evaluation" / "xgboost",
+    ]
+    json_files = sorted(p for d in eval_dirs for p in d.rglob("*.json"))
+    assert len(json_files) >= 16
+
+    path_keys = {
+        "raw_data",
+        "data_manifest",
+        "split_manifest",
+        "indices_dir",
+        "preprocessor_artifact",
+        "preprocessor_manifest",
+        "output_dir",
+        "report_dir",
+    }
+    for json_path in json_files:
+        raw = json_path.read_bytes()
+        assert raw.endswith(b"\n"), f"Missing trailing newline in {json_path}"
+        assert b"\r\n" not in raw, f"CRLF detected in {json_path}"
+        text = raw.decode("utf-8")
+        assert (
+            "C:\\Users\\" not in text and "/Users/" not in text
+        ), f"Local path leaked in {json_path}"
+        if json_path.name == "run_metadata.json":
+            args = json.loads(text)["arguments"]
+            for key in path_keys:
+                val = args[key]
+                assert isinstance(val, str)
+                assert "\\" not in val, f"Backslash path in {json_path}:{key}={val}"
+                assert (
+                    not val.startswith("/") and ":/" not in val
+                ), f"Absolute path in {json_path}:{key}={val}"

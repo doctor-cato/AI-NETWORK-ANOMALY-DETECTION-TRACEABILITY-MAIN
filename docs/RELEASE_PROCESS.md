@@ -65,11 +65,20 @@ python -m pytest tests -q -rs
 ```
 
 > [!IMPORTANT]
-> **Không coi bài test bị `SKIPPED` trên CI là `PASS` cho release:** Trên GitHub Actions runner không có raw dataset hoặc `.joblib` companion artifacts ngoài Git, các test real-data sẽ hiển thị `SKIPPED`. Trước khi đề xuất phát hành `v0.6.0` Stable, maintainer **bắt buộc chạy** kiểm chứng E2E dữ liệu thật cho đủ 4 model trên máy phát hành có companion artifacts:
+> **Không coi bài test bị `SKIPPED` hoặc attestation lịch sử là `PASS` cho Stable release:** Trên GitHub Actions runner mặc định không có raw dataset hoặc `.joblib` companion artifacts ngoài Git, các test real-data sẽ hiển thị `SKIPPED`. Tệp `reports/releases/v0.6.0_e2e_verification.json` chỉ dùng trong bước pre-build để đối chiếu tính nhất quán với manifest hiện hành, **tuyệt đối không được dùng thay thế cho kiểm chứng live trên bản phát hành Stable**. Trước khi xuất bản `v0.6.0` Stable, pipeline phát hành bắt buộc chạy kiểm chứng live đủ 4 model kết hợp cài đặt sạch NSIS trên Windows gắn chặt với commit phát hành và SHA-256 của bộ cài đặt:
 > ```powershell
-> python scripts/verify_companion_artifacts.py --verify-e2e
+> python scripts/verify_companion_artifacts.py --verify-e2e `
+>   --installer-path dist/release-assets/NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe `
+>   --sums-file dist/release-assets/SHA256SUMS.txt `
+>   --compiled-exe desktop/src-tauri/target/release/netflow-sentinel-desktop.exe `
+>   --output-json dist/release-assets/release_e2e_verification.json
+>
+> python scripts/verify_companion_artifacts.py --verify-attestation dist/release-assets/release_e2e_verification.json `
+>   --expect-commit <COMMIT_SHA> `
+>   --expect-installer-sha256 <SETUP_SHA256> `
+>   --require-nsis-e2e
 > ```
-> Lệnh này chỉ `PASS` (exit code `0`) khi cả 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) đạt `READY`, chạy thực tế `POST /api/v1/csv/analyze` + `/evaluate` trên `data/demo/demo_flows.csv`, bảo toàn `ABSTAINED_OOD` và xác minh Issue #27 dry-run provenance mà không fallback ngầm.
+> Lệnh `--verify-e2e` chỉ `PASS` (exit code `0`) khi cả 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) đạt `READY`, chạy thực tế `POST /api/v1/csv/analyze` + `/evaluate` trên `data/demo/demo_flows.csv`, bảo toàn `ABSTAINED_OOD`, xác minh Issue #27 dry-run provenance mà không fallback ngầm, đồng thời vượt qua clean Windows NSIS silent install/uninstall và đối chiếu SHA-256 của `netflow-sentinel-desktop.exe`.
 
 ### 3.2. Kiểm chứng Hợp đồng OpenAPI (`reports/api/openapi.json` & `API_CONTRACT.md`)
 
@@ -128,9 +137,17 @@ Sau khi lệnh `tauri build` hoàn tất:
    ```powershell
    Get-Item "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe", "desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object FullName, Length, LastWriteTime
    ```
-2. Chạy thử bộ cài đặt NSIS trên máy Windows x64, khởi động ứng dụng cùng biến môi trường `NETWORK_ANOMALY_REPO_ROOT`, xác nhận:
+2. Chạy kiểm chứng tự động cài đặt sạch NSIS trên Windows (silent install `/S /NS /D=...`, đối chiếu SHA-256 của `netflow-sentinel-desktop.exe` cài ra với binary `--release`, và silent uninstall `uninstall.exe /S _?=...`):
+   ```powershell
+   python scripts/verify_companion_artifacts.py --verify-nsis-only `
+     --installer-path "dist/release-assets/NetFlow-Sentinel-<TAG>-windows-x64-setup.exe" `
+     --sums-file "dist/release-assets/SHA256SUMS.txt" `
+     --compiled-exe "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe" `
+     --output-json "dist/release-assets/nsis_e2e_verification.json"
+   ```
+3. Khởi động ứng dụng đã cài đặt cùng biến môi trường `NETWORK_ANOMALY_REPO_ROOT`, xác nhận:
    - Tiến trình `run_api.py` khởi chạy trên `127.0.0.1:<port>` và `/health` trả về `200 OK`.
-   - Phân tích `data/demo/demo_flows.csv` với Random Forest và Isolation Forest hoạt động chính xác.
+   - Phân tích `data/demo/demo_flows.csv` với cả 4 model hoạt động chính xác.
    - Các dòng OOD (`MIN_TTL == 0`) nhận trạng thái `ABSTAINED_OOD` và được loại trừ khỏi Confusion Matrix (`abstained_rows = 2`).
    - Khi đóng cửa sổ ứng dụng, tiến trình con Python FastAPI được dọn dẹp sạch sẽ, không để lại tiến trình mồ côi (orphan process).
 
@@ -168,10 +185,15 @@ Get-Content (Join-Path $StageDir "SHA256SUMS.txt")
 
 ## 6. Chiến lược Phát hành 2 Giai đoạn (Beta Pre-release → Stable Release)
 
-Mọi tag phát hành (cả **Beta** lẫn **Stable**) trên `.github/workflows/release.yml` đều bắt buộc thỏa mãn 3 điều kiện kiểm tra tự động:
+Mọi tag phát hành (cả **Beta** lẫn **Stable**) trên `.github/workflows/release.yml` đều bắt buộc thỏa mãn 4 điều kiện kiểm tra tự động:
 1. Commit được gắn tag phải đã được merge vào `origin/main` (`git merge-base --is-ancestor $tagCommit origin/main`). **Cấm gắn tag phát hành lên commit chỉ tồn tại trên feature branch.**
 2. Tên tag (`v<VERSION>`) phải khớp 1-1 với phiên bản trong 5 tệp cấu hình desktop, binary ứng dụng và tên tệp NSIS (`python scripts/check_desktop_version.py --check --expect-tag <TAG>`).
 3. Tag chưa từng được xuất bản GitHub Release trước đó (`gh release view <TAG>` phải báo chưa tồn tại — nghiêm cấm ghi đè hoặc di chuyển tag đã phát hành).
+4. **Cổng kiểm chứng NSIS + Live 4-Model E2E fail-closed:**
+   - Sau khi `tauri build --bundles nsis` tạo ra bộ cài đặt và `SHA256SUMS.txt`, workflow luôn chạy `python scripts/verify_companion_artifacts.py --verify-nsis-only` để cài đặt im lặng vào thư mục sạch, đối chiếu SHA-256 giữa `netflow-sentinel-desktop.exe` cài ra và bản biên dịch `--release`, rồi gỡ cài đặt im lặng (`nsis_e2e_verification.json`).
+   - Sau đó workflow kiểm tra tình trạng companion artifacts (`python scripts/verify_companion_artifacts.py`):
+     - Nếu **READY** (ví dụ trên runner có sẵn companion bundle hoặc khi chạy `workflow_dispatch` truyền input `companion_bundle_dir` đã qua kiểm chứng checksum): workflow chạy `--verify-e2e --installer-path ... --sums-file ... --compiled-exe ... --output-json .../release_e2e_verification.json` và xác minh bằng `--verify-attestation ... --expect-commit <GITHUB_SHA> --expect-installer-sha256 <SETUP_SHA256> --require-nsis-e2e`.
+     - Nếu **KHÔNG READY**: với **Stable release** (`is_prerelease != 'true'`), workflow **FAIL-CLOSED (`exit 1`)** ngay lập tức và từ chối phát hành — không bao giờ dùng attestation JSON lịch sử trong `reports/releases/` để thay thế cho kiểm chứng live 4-model + NSIS E2E. Chỉ bản **Pre-release / dry-run** (`is_prerelease == 'true'`) mới được tiếp tục khi thiếu companion binaries trên runner, kèm cảnh báo rõ đây mới chỉ là bản kiểm tra đóng gói + NSIS clean install (`nsis_e2e_verification.json`).
 
 *(Ghi chú phát hành Stable `v0.6.0`: Kế tiếp bản thử nghiệm `v0.6.0-beta.1` đã gắn tag trước đó, cả 5 tệp cấu hình desktop hiện được đồng bộ ở `0.6.0` nhằm phát hành bản Stable `v0.6.0` sau khi PR #69 (đã merge vào `main` tại `ab018da`) và PR #70 (`feat/stable-four-model-demo-and-release`) đều được duyệt merge vào `main`.)*
 
@@ -206,7 +228,8 @@ Nếu cần xuất bản bản thử nghiệm Beta trước bản chính thức 
 
 **Điều kiện bắt buộc trước khi tạo tag `v0.6.0`:**
 - PR #69 (**Issue #27 Security Response Dry-Run**) và PR **#70** (`feat/stable-four-model-demo-and-release`) đã được review **Approve** và **merged vào nhánh `main`**, không di chuyển hoặc ghi đè tag `v0.6.0-beta.1`.
-- Bộ companion artifacts cho đủ 4 model và kiểm chứng E2E thực tế (`python scripts/verify_companion_artifacts.py --verify-e2e`) đã **PASS** trên Windows sạch (NSIS install -> 4-model E2E -> clean shutdown) với **0 test bị skip ở nhóm 4-model/demo**, không đưa file `.joblib` nhị phân lớn hay raw CSV vào Git.
+- Đã kiểm chứng trước khi gắn tag bằng `python scripts/verify_companion_artifacts.py --verify-e2e` trên Windows sạch với đủ 4 model và `reports/releases/v0.6.0_e2e_verification.json` khớp commit/manifest hiện hành.
+- Khi chạy `.github/workflows/release.yml` cho tag Stable `v0.6.0`, runner **bắt buộc phải có bộ companion artifacts READY** (không đưa file `.joblib` nhị phân lớn hay raw CSV vào Git; nếu chưa chạy `workflow_dispatch` thử trước với `companion_bundle_dir`, tag push trên runner không có companion artifacts sẽ tự động **FAIL-CLOSED** đúng thiết kế). Trước khi xuất bản Stable Release, workflow phải sinh và xác minh thành công `release_e2e_verification.json` gắn đúng `github.sha`, `installer_sha256` và `nsis_e2e.status == "PASS"`.
 - Toàn bộ các kiểm tra CI trên `main` đều **PASS**.
 - Phiên bản trong cả 5 tệp cấu hình desktop là `0.6.0`.
 
@@ -247,9 +270,10 @@ gh release view v0.6.0
 
 Xác nhận bản phát hành trên GitHub có:
 1. Đúng trạng thái (`Pre-release` đối với `v0.6.0-beta.1`, hoặc `Latest` / `Stable` đối với `v0.6.0`).
-2. Đính kèm đúng 2 tệp:
+2. Đính kèm đầy đủ các tệp:
    - `NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`
    - `SHA256SUMS.txt`
+   - `release_e2e_verification.json` (bắt buộc cho bản Stable, chứng thực live 4-model + NSIS E2E gắn với `github.sha` và `installer_sha256`; hoặc `nsis_e2e_verification.json` đối với Pre-release khi runner không có companion artifacts).
 3. Nội dung Release Notes hiển thị đầy đủ các yêu cầu môi trường runtime (Python, `.joblib` artifacts, `demo_flows.csv`, WebView2 Runtime).
 
 ### 7.2. Xử lý khi Build hoặc Release thất bại
@@ -264,7 +288,7 @@ Xác nhận bản phát hành trên GitHub có:
 ### 7.3. Những trường hợp TUYỆT ĐỐI KHÔNG được phát hành Stable (`v0.6.0`)
 
 1. PR #69 hoặc PR #70 chưa được review Approve hoặc chưa được merge vào nhánh `main`.
-2. Bất kỳ job nào trong `.github/workflows/ci.yml` hoặc `.github/workflows/release.yml` bị `FAIL`, hoặc bước real-data E2E (`python scripts/verify_companion_artifacts.py --verify-e2e`) chưa chạy/bị `SKIPPED`/bị `BLOCKED`.
+2. Bất kỳ job nào trong `.github/workflows/ci.yml` hoặc `.github/workflows/release.yml` bị `FAIL`, hoặc thiếu kiểm chứng live 4-model + clean Windows NSIS E2E (`release_e2e_verification.json` gắn `github.sha`, `installer_sha256`, `--require-nsis-e2e`) — tuyệt đối không dùng attestation JSON lịch sử để thay thế.
 3. Phiên bản giữa `Cargo.toml`, `Cargo.lock`, `package.json`, `package-lock.json` và `tauri.conf.json` không đồng nhất.
 4. Hợp đồng OpenAPI (`reports/api/openapi.json`) bị lệch so với mã nguồn (`export_openapi_spec.py --check` báo lỗi).
 5. Tệp CSV bên ngoài chưa xác minh provenance vẫn bị gán nhầm trạng thái `MODEL_VALIDATED`, hoặc dòng OOD (`ABSTAINED_OOD`) vẫn bị tính gộp vào Confusion Matrix.

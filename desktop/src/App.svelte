@@ -26,10 +26,27 @@
   import ModelComparisonPanel from "./lib/components/ModelComparisonPanel.svelte";
   import ModelReadinessPanel from "./lib/components/ModelReadinessPanel.svelte";
   import PredictionsTable from "./lib/components/PredictionsTable.svelte";
+  import {
+    createInitialComparisonState,
+    evaluateAllModelsWorkflow,
+    evaluateSingleModelWorkflow,
+    getBatchCoherentAnalyses,
+    getBatchCoherentEvaluations,
+    getBatchCoherentSimulations,
+    invalidateForBackendRestart,
+    invalidateForFlowsChange,
+    invalidateForInspectResult,
+    invalidateForLabelsChange,
+    reconcileModelsReadiness,
+    recordModelSimulation,
+    runAllModelsComparisonWorkflow,
+    runSingleModelAnalysisWorkflow,
+    type ComparisonBatchState,
+    type ComparisonWorkflowDeps,
+  } from "./lib/comparisonState";
   import type {
     BackendStatus,
     CsvAnalyzeResponse,
-    CsvEvaluateResponse,
     CsvExportResponse,
     CsvInspectResponse,
     HealthResponse,
@@ -52,15 +69,15 @@
 
   let flowsPath = $state("");
   let labelsPath = $state("");
-  let lastInspectedInputPath = $state("");
   let inspectData = $state<CsvInspectResponse | null>(null);
-  let analysesByModel = $state<Record<string, CsvAnalyzeResponse>>({});
-  let evaluationsByModel = $state<Record<string, CsvEvaluateResponse>>({});
-  let simulationsByModel = $state<Record<string, SecurityResponseSimulationResponse>>({});
-  let analysisData = $derived(analysesByModel[selectedModel] ?? null);
-  let evalData = $derived(evaluationsByModel[selectedModel] ?? null);
+  let comparisonState = $state<ComparisonBatchState>(createInitialComparisonState());
+  let coherentAnalyses = $derived(getBatchCoherentAnalyses(comparisonState));
+  let coherentEvaluations = $derived(getBatchCoherentEvaluations(comparisonState));
+  let coherentSimulations = $derived(getBatchCoherentSimulations(comparisonState));
+  let analysisData = $derived(coherentAnalyses[selectedModel] ?? null);
+  let evalData = $derived(coherentEvaluations[selectedModel] ?? null);
   let exportData = $state<CsvExportResponse | null>(null);
-  let simulationData = $derived(simulationsByModel[selectedModel] ?? null);
+  let simulationData = $derived(coherentSimulations[selectedModel] ?? null);
   let simulationHistory = $state<SecuritySimulationHistoryItem[]>([]);
   let simulationExportData = $state<SecuritySimulationExportResponse | null>(null);
 
@@ -70,6 +87,30 @@
   let simulationWarning = $state<string | null>(null);
   let evaluatedFlag = $state(false);
   let simulatingFlag = $state(false);
+
+  function handleFlowsPathChange(nextPath: string) {
+    flowsPath = nextPath;
+    const nextState = invalidateForFlowsChange(comparisonState, nextPath);
+    if (nextState !== comparisonState) {
+      comparisonState = nextState;
+      inspectData = null;
+      exportData = null;
+      simulationExportData = null;
+      simulationWarning = null;
+    }
+  }
+
+  function handleLabelsPathChange(nextPath: string) {
+    labelsPath = nextPath;
+    comparisonState = invalidateForLabelsChange(comparisonState, nextPath);
+  }
+
+  function ensureReadySelectedModel(modelList: ModelStatusItem[]) {
+    const readyKeys = modelList.filter((m) => m.ready).map((m) => m.model_key);
+    if (readyKeys.length > 0 && !readyKeys.includes(selectedModel)) {
+      selectedModel = readyKeys[0];
+    }
+  }
 
   $effect(() => {
     if (typeof document !== "undefined") {
@@ -92,10 +133,8 @@
       backendStatus = bStatus;
       healthData = health;
       models = modelList;
-      const readyKeys = modelList.filter((m) => m.ready).map((m) => m.model_key);
-      if (readyKeys.length > 0 && !readyKeys.includes(selectedModel)) {
-        selectedModel = readyKeys[0];
-      }
+      comparisonState = reconcileModelsReadiness(comparisonState, modelList);
+      ensureReadySelectedModel(modelList);
       await refreshSimulationHistory();
     } catch (err) {
       errorMessage =
@@ -123,11 +162,11 @@
       }
       await refreshStatus();
       const demo = await getDemoPaths();
-      if (demo.flows_exists) {
-        flowsPath = demo.flows_path;
+      if (demo.flows_exists && !flowsPath.trim()) {
+        handleFlowsPathChange(demo.flows_path);
       }
-      if (demo.labels_exists) {
-        labelsPath = demo.labels_path;
+      if (demo.labels_exists && !labelsPath.trim()) {
+        handleLabelsPathChange(demo.labels_path);
       }
     } finally {
       initializing = false;
@@ -137,6 +176,11 @@
   async function handleRestartBackend() {
     busyMessage = "Đang khởi động lại tiến trình Python FastAPI...";
     errorMessage = null;
+    comparisonState = invalidateForBackendRestart(comparisonState);
+    inspectData = null;
+    exportData = null;
+    simulationExportData = null;
+    simulationWarning = null;
     try {
       backendStatus = await restartBackend();
       await refreshStatus();
@@ -148,19 +192,30 @@
   }
 
   async function runInspectPath(path: string) {
-    if (!path.trim()) return;
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    handleFlowsPathChange(path);
+    const preInspectEpoch = comparisonState.sessionEpoch;
     busyMessage = "Đang kiểm tra schema 47 ML features & OOD...";
     errorMessage = null;
     try {
-      const inspected = await inspectCsv(path, 20);
-      lastInspectedInputPath = path.trim();
+      const inspected = await inspectCsv(trimmed, 20);
+      if (comparisonState.sessionEpoch !== preInspectEpoch) return;
+      let nextState = invalidateForInspectResult(comparisonState, inspected, trimmed);
+      if (inspected.models_status.length > 0) {
+        models = inspected.models_status;
+        nextState = reconcileModelsReadiness(nextState, inspected.models_status);
+        ensureReadySelectedModel(inspected.models_status);
+      }
+      comparisonState = nextState;
       inspectData = inspected;
-      analysesByModel = {};
-      evaluationsByModel = {};
-      simulationsByModel = {};
       exportData = null;
+      simulationExportData = null;
+      simulationWarning = null;
     } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      if (comparisonState.sessionEpoch === preInspectEpoch) {
+        errorMessage = err instanceof Error ? err.message : String(err);
+      }
     } finally {
       busyMessage = null;
     }
@@ -170,7 +225,7 @@
     if (isTauriRuntime()) {
       const chosen = await pickCsvFile("Chọn tệp NetFlow CSV để phân tích");
       if (chosen) {
-        flowsPath = chosen;
+        handleFlowsPathChange(chosen);
         await runInspectPath(chosen);
       }
     } else if (flowsPath.trim()) {
@@ -183,9 +238,9 @@
     errorMessage = null;
     try {
       const demo = await getDemoPaths();
-      flowsPath = demo.flows_path;
+      handleFlowsPathChange(demo.flows_path);
       if (demo.labels_exists) {
-        labelsPath = demo.labels_path;
+        handleLabelsPathChange(demo.labels_path);
       }
       await runInspectPath(demo.flows_path);
     } catch (err) {
@@ -198,25 +253,49 @@
 
   async function runDryRunSimulationForAnalysis(
     res: CsvAnalyzeResponse,
+    requestSessionEpoch = comparisonState.sessionEpoch,
   ): Promise<SecurityResponseSimulationResponse> {
+    let simRes: SecurityResponseSimulationResponse;
     try {
-      return await simulateSecurityResponse({
+      simRes = await simulateSecurityResponse({
         analysis_id: res.analysis_id,
         triggered_by: "desktop_operator",
         dry_run: true,
       });
     } catch (primaryErr) {
+      if (comparisonState.sessionEpoch !== requestSessionEpoch) {
+        throw primaryErr;
+      }
       if (res.results.length > 0 && res.results.length <= MAX_SIMULATE_CLIENT_RESULTS) {
-        return await simulateSecurityResponse({
+        simRes = await simulateSecurityResponse({
           analysis_id: res.analysis_id,
           results: res.results,
           triggered_by: "desktop_operator",
           dry_run: true,
         });
+      } else {
+        throw primaryErr;
       }
-      throw primaryErr;
     }
+    const recorded = recordModelSimulation(
+      comparisonState,
+      res.model_key,
+      res.analysis_id,
+      simRes,
+      requestSessionEpoch,
+    );
+    if (recorded.accepted) {
+      comparisonState = recorded.state;
+    }
+    return simRes;
   }
+
+  const workflowDeps: ComparisonWorkflowDeps = {
+    inspectCsv,
+    analyzeCsv,
+    evaluateCsv,
+    simulateDryRun: (res) => runDryRunSimulationForAnalysis(res, comparisonState.sessionEpoch),
+  };
 
   async function handleRunInference() {
     if (!flowsPath.trim()) {
@@ -224,42 +303,43 @@
       return;
     }
     const targetModel = selectedModel;
-    busyMessage = `Đang chạy mô hình ${targetModel} qua InferencePipeline...`;
     errorMessage = null;
     simulationWarning = null;
     exportData = null;
+    simulationExportData = null;
     try {
-      const trimmedFlowsPath = flowsPath.trim();
-      if (
-        !inspectData ||
-        (inspectData.file_path !== trimmedFlowsPath && lastInspectedInputPath !== trimmedFlowsPath)
-      ) {
-        inspectData = await inspectCsv(trimmedFlowsPath, 20);
-        lastInspectedInputPath = trimmedFlowsPath;
-      }
-      const res = await analyzeCsv({
-        filePath: flowsPath,
-        modelName: targetModel,
-        createIncidents: false,
-        batchSize: 500,
+      const result = await runSingleModelAnalysisWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        onProgress: (msg) => {
+          busyMessage = msg;
+        },
+        onInspectData: (inspected) => {
+          inspectData = inspected;
+          if (inspected && inspected.models_status.length > 0) {
+            models = inspected.models_status;
+            ensureReadySelectedModel(inspected.models_status);
+          }
+        },
+        onAnalysisRecorded: () => {
+          activeTab = "predictions";
+        },
+        flowsPath,
+        modelKey: targetModel,
+        inspectData,
       });
-      analysesByModel = { ...analysesByModel, [targetModel]: res };
-      const { [targetModel]: _droppedEval, ...restEvals } = evaluationsByModel;
-      evaluationsByModel = restEvals;
-      simulationExportData = null;
-      activeTab = "predictions";
-      try {
-        const simRes = await runDryRunSimulationForAnalysis(res);
-        simulationsByModel = { ...simulationsByModel, [targetModel]: simRes };
-        await refreshSimulationHistory();
-      } catch (simErr) {
-        const { [targetModel]: _droppedSim, ...restSims } = simulationsByModel;
-        simulationsByModel = restSims;
-        const detail = simErr instanceof Error ? simErr.message : String(simErr);
-        simulationWarning = `Phân tích CSV đã hoàn tất, nhưng mô phỏng Dry-Run (#27) chưa thể chạy: ${detail}`;
+      if (result.aborted) return;
+      if (result.error) {
+        errorMessage = result.error;
+        return;
       }
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      simulationWarning = result.simulationWarning;
+      if (result.simulation) {
+        await refreshSimulationHistory();
+      }
     } finally {
       busyMessage = null;
     }
@@ -278,56 +358,40 @@
     errorMessage = null;
     simulationWarning = null;
     exportData = null;
+    simulationExportData = null;
     try {
-      const trimmedFlowsPath = flowsPath.trim();
-      if (
-        !inspectData ||
-        (inspectData.file_path !== trimmedFlowsPath && lastInspectedInputPath !== trimmedFlowsPath)
-      ) {
-        busyMessage = "Đang kiểm tra schema 47 ML features & OOD...";
-        inspectData = await inspectCsv(trimmedFlowsPath, 20);
-        lastInspectedInputPath = trimmedFlowsPath;
-      }
-
-      const nextAnalyses: Record<string, CsvAnalyzeResponse> = { ...analysesByModel };
-      const nextEvaluations: Record<string, CsvEvaluateResponse> = { ...evaluationsByModel };
-      const nextSimulations: Record<string, SecurityResponseSimulationResponse> = { ...simulationsByModel };
-
-      for (const m of readyList) {
-        busyMessage = `Đang chạy suy luận ${m.display_name} (${m.model_key})...`;
-        const res = await analyzeCsv({
-          filePath: flowsPath,
-          modelName: m.model_key,
-          createIncidents: false,
-          batchSize: 500,
-        });
-        nextAnalyses[m.model_key] = res;
-        analysesByModel = { ...nextAnalyses };
-
-        if (labelsPath.trim()) {
-          busyMessage = `Đang đối chiếu Ground Truth cho ${m.display_name}...`;
-          nextEvaluations[m.model_key] = await evaluateCsv(labelsPath, res.results);
-          evaluationsByModel = { ...nextEvaluations };
-        }
-      }
-
-      const activeRes = nextAnalyses[selectedModel] ?? nextAnalyses[readyList[0].model_key];
+      const result = await runAllModelsComparisonWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        onProgress: (msg) => {
+          busyMessage = msg;
+        },
+        onInspectData: (inspected) => {
+          inspectData = inspected;
+          if (inspected && inspected.models_status.length > 0) {
+            models = inspected.models_status;
+            ensureReadySelectedModel(inspected.models_status);
+          }
+        },
+        flowsPath,
+        labelsPath,
+        models,
+        selectedModel,
+        inspectData,
+      });
+      if (result.aborted) return;
       activeTab = "overview";
-      if (activeRes) {
-        if (!nextAnalyses[selectedModel]) {
-          selectedModel = activeRes.model_key;
-        }
-        try {
-          nextSimulations[activeRes.model_key] = await runDryRunSimulationForAnalysis(activeRes);
-          simulationsByModel = nextSimulations;
-          await refreshSimulationHistory();
-        } catch (simErr) {
-          const detail = simErr instanceof Error ? simErr.message : String(simErr);
-          simulationWarning = `So sánh 4 model đã hoàn tất, nhưng mô phỏng Dry-Run (#27) chưa thể chạy: ${detail}`;
-        }
+      if (result.activeAnalysis && !coherentAnalyses[selectedModel]) {
+        selectedModel = result.activeAnalysis.model_key;
       }
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      if (result.simulation) {
+        await refreshSimulationHistory();
+      }
+      simulationWarning = result.simulationWarning;
+      errorMessage = result.errorSummary;
     } finally {
       busyMessage = null;
     }
@@ -337,45 +401,63 @@
     if (!isTauriRuntime()) return;
     const chosen = await pickCsvFile("Chọn tệp Ground Truth Labels CSV");
     if (chosen) {
-      labelsPath = chosen;
+      handleLabelsPathChange(chosen);
     }
   }
 
   async function handleUseDemoLabels() {
     const demo = await getDemoPaths();
-    labelsPath = demo.labels_path;
+    handleLabelsPathChange(demo.labels_path);
   }
 
   async function handleRunEvaluate() {
     if (!analysisData || !labelsPath.trim()) return;
     const targetModel = selectedModel;
+    const targetAnalysis = analysisData;
     evaluatedFlag = true;
     errorMessage = null;
     try {
-      const ev = await evaluateCsv(labelsPath, analysisData.results);
-      evaluationsByModel = { ...evaluationsByModel, [targetModel]: ev };
-      activeTab = "evaluation";
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      const result = await evaluateSingleModelWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        labelsPath,
+        modelKey: targetModel,
+        analysis: targetAnalysis,
+      });
+      if (result.aborted) return;
+      if (result.error) {
+        errorMessage = result.error;
+        return;
+      }
+      if (result.evaluation) {
+        activeTab = "evaluation";
+      }
     } finally {
       evaluatedFlag = false;
     }
   }
 
   async function handleEvaluateAllAnalyzed() {
-    const analyzedEntries = Object.entries(analysesByModel);
-    if (analyzedEntries.length === 0 || !labelsPath.trim()) return;
+    if (Object.keys(coherentAnalyses).length === 0 || !labelsPath.trim()) return;
     evaluatedFlag = true;
     errorMessage = null;
     try {
-      const nextEvals: Record<string, CsvEvaluateResponse> = { ...evaluationsByModel };
-      for (const [key, res] of analyzedEntries) {
-        busyMessage = `Đang đối chiếu Ground Truth cho ${key}...`;
-        nextEvals[key] = await evaluateCsv(labelsPath, res.results);
-      }
-      evaluationsByModel = nextEvals;
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      const result = await evaluateAllModelsWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        onProgress: (msg) => {
+          busyMessage = msg;
+        },
+        labelsPath,
+      });
+      if (result.aborted) return;
+      errorMessage = result.errorSummary;
     } finally {
       busyMessage = null;
       evaluatedFlag = false;
@@ -393,16 +475,18 @@
 
   async function handleRunSecuritySimulation() {
     if (!analysisData) return;
-    const targetModel = selectedModel;
+    const targetAnalysis = analysisData;
+    const startEpoch = comparisonState.sessionEpoch;
     simulatingFlag = true;
     errorMessage = null;
     simulationWarning = null;
     simulationExportData = null;
     try {
-      const simRes = await runDryRunSimulationForAnalysis(analysisData);
-      simulationsByModel = { ...simulationsByModel, [targetModel]: simRes };
+      await runDryRunSimulationForAnalysis(targetAnalysis, startEpoch);
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       await refreshSimulationHistory();
     } catch (err) {
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       const detail = err instanceof Error ? err.message : String(err);
       simulationWarning = `Không thể chạy mô phỏng Dry-Run (#27): ${detail}`;
     } finally {
@@ -414,14 +498,18 @@
     const defaultName = `dry_run_${simulationId}.json`;
     const chosen = await pickSaveJsonFile(defaultName);
     if (!chosen) return;
+    const startEpoch = comparisonState.sessionEpoch;
     simulatingFlag = true;
     errorMessage = null;
     try {
-      simulationExportData = await exportSecuritySimulation({
+      const exported = await exportSecuritySimulation({
         output_path: chosen,
         simulation_id: simulationId,
       });
+      if (comparisonState.sessionEpoch !== startEpoch) return;
+      simulationExportData = exported;
     } catch (err) {
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
       simulatingFlag = false;
@@ -430,26 +518,32 @@
 
   async function handleExportResults() {
     if (!analysisData) return;
-    const defaultName = `predictions_${analysisData.model_key}.csv`;
+    const targetAnalysis = analysisData;
+    const targetEval = evalData;
+    const defaultName = `predictions_${targetAnalysis.model_key}.csv`;
     const chosen = await pickSaveCsvFile(defaultName);
     if (!chosen) return;
 
+    const startEpoch = comparisonState.sessionEpoch;
     busyMessage = "Đang xuất file predictions CSV và metadata SHA-256...";
     errorMessage = null;
     try {
-      exportData = await exportCsv({
+      const exported = await exportCsv({
         output_path: chosen,
-        analysis_id: analysisData.analysis_id,
-        source_csv_path: analysisData.file_path,
-        model_key: analysisData.model_key,
-        model_type: analysisData.model_type,
-        run_id: analysisData.run_id,
-        model_sha256: analysisData.model_sha256,
-        preprocessor_sha256: analysisData.preprocessor_sha256,
-        results: analysisData.results,
-        evaluation: evalData,
+        analysis_id: targetAnalysis.analysis_id,
+        source_csv_path: targetAnalysis.file_path,
+        model_key: targetAnalysis.model_key,
+        model_type: targetAnalysis.model_type,
+        run_id: targetAnalysis.run_id,
+        model_sha256: targetAnalysis.model_sha256,
+        preprocessor_sha256: targetAnalysis.preprocessor_sha256,
+        results: targetAnalysis.results,
+        evaluation: targetEval,
       });
+      if (comparisonState.sessionEpoch !== startEpoch) return;
+      exportData = exported;
     } catch (err) {
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
       busyMessage = null;
@@ -540,7 +634,8 @@
           class="input mono"
           style="flex: 1; min-width: 260px;"
           placeholder="Đường dẫn tới tệp NetFlow CSV..."
-          bind:value={flowsPath}
+          value={flowsPath}
+          oninput={(e) => handleFlowsPathChange((e.currentTarget as HTMLInputElement).value)}
           aria-label="Đường dẫn tệp NetFlow CSV"
         />
         <button type="button" class="btn" onclick={handleBrowseFlowsCsv} disabled={Boolean(busyMessage)}>
@@ -643,8 +738,11 @@
       <ModelComparisonPanel
         {models}
         {selectedModel}
-        {analysesByModel}
-        {evaluationsByModel}
+        analysesByModel={coherentAnalyses}
+        evaluationsByModel={coherentEvaluations}
+        errorsByModel={comparisonState.errorsByModel}
+        batchFileSha256={comparisonState.activeFileSha256}
+        batchLabelsSha256={comparisonState.activeLabelsSha256}
         canRunComparison={Boolean(flowsPath.trim())}
         hasLabelsPath={Boolean(labelsPath.trim())}
         busy={Boolean(busyMessage)}
@@ -717,7 +815,7 @@
         onPickLabels={handlePickLabelsFile}
         onUseDemoLabels={handleUseDemoLabels}
         onRunEvaluate={handleRunEvaluate}
-        onUpdateLabelsPath={(v) => (labelsPath = v)}
+        onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
       />
     {:else if activeTab === "forensics"}
       <ForensicTimelinePanel

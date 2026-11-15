@@ -4,6 +4,7 @@
     CsvEvaluateResponse,
     ModelStatusItem,
   } from "../types";
+  import { shortDigest } from "../utils";
   import Icons from "./Icons.svelte";
 
   interface Props {
@@ -11,6 +12,9 @@
     selectedModel: string;
     analysesByModel: Record<string, CsvAnalyzeResponse>;
     evaluationsByModel: Record<string, CsvEvaluateResponse>;
+    errorsByModel?: Record<string, string>;
+    batchFileSha256?: string | null;
+    batchLabelsSha256?: string | null;
     canRunComparison: boolean;
     hasLabelsPath: boolean;
     busy: boolean;
@@ -24,6 +28,9 @@
     selectedModel,
     analysesByModel,
     evaluationsByModel,
+    errorsByModel = {},
+    batchFileSha256 = null,
+    batchLabelsSha256 = null,
     canRunComparison,
     hasLabelsPath,
     busy,
@@ -34,7 +41,7 @@
 
   let readyModelsCount = $derived(models.filter((m) => m.ready).length);
   let analyzedCount = $derived(
-    models.filter((m) => Boolean(analysesByModel[m.model_key])).length,
+    models.filter((m) => m.ready && Boolean(analysesByModel[m.model_key])).length,
   );
 
   function fmtPct(v: number | undefined): string {
@@ -51,10 +58,26 @@
 
 <section class="card" aria-labelledby="compare-heading" style="margin-bottom: 14px;">
   <div class="card-header">
-    <h2 id="compare-heading" class="card-title">
-      <Icons name="target" size={17} />
-      So sánh 4 Mô hình Trên Cùng Batch CSV (Coverage / OOD / Metrics)
-    </h2>
+    <div>
+      <h2 id="compare-heading" class="card-title">
+        <Icons name="target" size={17} />
+        So sánh 4 Mô hình Trên Cùng Batch CSV (Coverage / OOD / Metrics)
+      </h2>
+      {#if batchFileSha256 || batchLabelsSha256}
+        <div class="batch-digests">
+          {#if batchFileSha256}
+            <span class="badge badge-info mono" title={batchFileSha256}>
+              CSV SHA-256: {shortDigest(batchFileSha256)}
+            </span>
+          {/if}
+          {#if batchLabelsSha256}
+            <span class="badge badge-info mono" title={batchLabelsSha256}>
+              Labels SHA-256: {shortDigest(batchLabelsSha256)}
+            </span>
+          {/if}
+        </div>
+      {/if}
+    </div>
     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
       <button
         type="button"
@@ -98,6 +121,7 @@
         {#each models as m (m.model_key)}
           {@const az = analysesByModel[m.model_key]}
           {@const ev = evaluationsByModel[m.model_key]}
+          {@const err = errorsByModel[m.model_key]}
           {@const isSelected = selectedModel === m.model_key}
           <tr
             class="clickable-row"
@@ -117,6 +141,9 @@
               {:else}
                 <span class="badge badge-blocked" title={m.reason ?? "Blocked"}>BLOCKED</span>
               {/if}
+              {#if err}
+                <span class="badge badge-attack" title={err} style="margin-left: 6px;">LỖI API</span>
+              {/if}
             </td>
             <td class="mono" style="font-size: 12px;">
               {m.score_semantics === "attack_probability"
@@ -129,6 +156,8 @@
                 <span style="color: var(--semantic-attack)">{az.attack_count}</span>
                 /
                 <span style="color: var(--semantic-benign)">{az.benign_count}</span>
+              {:else if err}
+                <span class="model-error-text" title={err}>{err}</span>
               {:else}
                 Chưa chạy
               {/if}
@@ -152,6 +181,8 @@
             <td class="mono">
               {#if ev}
                 {ev.confusion_matrix.tp} / {ev.confusion_matrix.fp} / {ev.confusion_matrix.tn} / {ev.confusion_matrix.fn}
+              {:else if az && err}
+                <span class="model-error-text" title={err}>{err}</span>
               {:else}
                 —
               {/if}
@@ -164,6 +195,22 @@
 </section>
 
 <style>
+  .batch-digests {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .model-error-text {
+    display: inline-block;
+    max-width: 240px;
+    white-space: normal;
+    color: var(--semantic-attack);
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+
   .clickable-row {
     cursor: pointer;
   }
