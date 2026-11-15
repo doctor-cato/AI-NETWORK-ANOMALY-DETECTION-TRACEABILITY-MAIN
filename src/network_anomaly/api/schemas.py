@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -701,6 +701,7 @@ class CsvFlowPredictionItem(BaseModel):
     risk_score: Optional[float] = None
     risk_level: str
     is_ood_flagged: bool = False
+    ood_kind: Optional[Literal["ZERO_TTL_DRIFT", "PHYSICAL_INVARIANT", "COMBINED_OOD"]] = None
     ood_reason: Optional[str] = None
     flow_start_ms: Optional[int] = None
     flow_end_ms: Optional[int] = None
@@ -964,6 +965,9 @@ class AdaptiveKeyRotationSimulation(BaseModel):
         return False
 
 
+MAX_SECURITY_SIMULATE_RESULTS: int = 10_000
+
+
 class SecurityResponseSimulateRequest(BaseModel):
     """Request to run deterministic Issue #27 adaptive response simulation / dry-run."""
 
@@ -983,7 +987,10 @@ class SecurityResponseSimulateRequest(BaseModel):
     preprocessor_sha256: Optional[str] = None
     inference_mode: Optional[str] = None
     compatibility_gate: Optional[CompatibilityGateSummarySchema] = None
-    results: Optional[List[CsvFlowPredictionItem]] = None
+    results: Optional[List[CsvFlowPredictionItem]] = Field(
+        default=None,
+        max_length=MAX_SECURITY_SIMULATE_RESULTS,
+    )
 
     @field_validator("dry_run")
     @classmethod

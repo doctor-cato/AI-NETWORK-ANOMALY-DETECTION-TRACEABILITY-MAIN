@@ -528,14 +528,30 @@ class IdempotencyRepository:
 class ResponseSimulationRepository:
     """Repository persisting Issue #27 dry-run policy simulation history without side effects."""
 
+    _SUMMARY_COLUMNS: str = (
+        "simulation_id, analysis_id, source_csv_path, source_csv_sha256, "
+        "model_key, model_type, run_id, triggered_by, execution_mode, "
+        "action_status, recommendation_status, executed, overall_recommendation, "
+        "overall_severity, total_flows, evaluated_flows, ood_abstained_flows, "
+        "provenance_verification, action_counts_json, key_rotation_json, "
+        "policy_summary, created_at"
+    )
+
     @staticmethod
-    def _decode_row(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
+    def _decode_summary_row(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
         if row is None:
             return None
         d = dict(row)
         d["executed"] = bool(d.get("executed", 0))
         d["action_counts"] = json.loads(d.pop("action_counts_json"))
         d["key_rotation_simulation"] = json.loads(d.pop("key_rotation_json"))
+        return d
+
+    @staticmethod
+    def _decode_row(row: Optional[sqlite3.Row]) -> Optional[Dict[str, Any]]:
+        d = ResponseSimulationRepository._decode_summary_row(row)
+        if d is None:
+            return None
         d["provenance"] = json.loads(d.pop("provenance_json"))
         d["recommendations"] = json.loads(d.pop("recommendations_json"))
         return d
@@ -603,8 +619,9 @@ class ResponseSimulationRepository:
     ) -> List[Dict[str, Any]]:
         """List recent dry-run response simulation summaries ordered newest first."""
         cur = conn.execute(
-            """
-            SELECT * FROM security_response_simulations
+            f"""
+            SELECT {ResponseSimulationRepository._SUMMARY_COLUMNS}
+            FROM security_response_simulations
             ORDER BY created_at DESC, simulation_id DESC
             LIMIT ? OFFSET ?
             """,
@@ -612,7 +629,7 @@ class ResponseSimulationRepository:
         )
         items: List[Dict[str, Any]] = []
         for row in cur.fetchall():
-            decoded = ResponseSimulationRepository._decode_row(row)
+            decoded = ResponseSimulationRepository._decode_summary_row(row)
             if decoded is not None:
                 items.append(decoded)
         return items

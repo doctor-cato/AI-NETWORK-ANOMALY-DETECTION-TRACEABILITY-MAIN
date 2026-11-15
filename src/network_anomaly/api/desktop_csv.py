@@ -14,6 +14,7 @@ import os
 import tempfile
 import threading
 import uuid
+import zlib
 from collections import Counter, OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1044,6 +1045,8 @@ def _evaluate_gate(
 
 
 _MAX_RECORDED_CSV_ANALYSES = 64
+_MAX_CACHED_RESULTS_BYTES = 16 * 1024 * 1024
+_MAX_SINGLE_RECORD_RESULTS_GZ_BYTES = 8 * 1024 * 1024
 
 _TRACE_FIELD_SPEC: Tuple[Tuple[str, str, Any], ...] = (
     ("flow_start_ms", "FLOW_START_MILLISECONDS", _optional_int),
@@ -1118,8 +1121,27 @@ def _get_analysis_store(
     return lock, store
 
 
+def _load_recorded_analysis_results(rec: Dict[str, Any]) -> Optional[List[CsvFlowPredictionItem]]:
+    """Decode cached prediction rows from a server-recorded analysis entry if still retained."""
+    raw_gz = rec.get("results_gz")
+    if isinstance(raw_gz, (bytes, bytearray)) and raw_gz:
+        decoded = json.loads(zlib.decompress(raw_gz).decode("utf-8"))
+        return [CsvFlowPredictionItem.model_validate(item) for item in decoded]
+    raw_items = rec.get("results")
+    if isinstance(raw_items, list):
+        return [CsvFlowPredictionItem.model_validate(item) for item in raw_items]
+    return None
+
+
 def _record_csv_analysis(service: ApiService, response: CsvAnalyzeResponse) -> None:
     lock, store = _get_analysis_store(service)
+    serialized_results = json.dumps(
+        [item.model_dump() for item in response.results],
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    compressed_results = zlib.compress(serialized_results, level=1)
+    keep_results_gz = len(compressed_results) <= _MAX_SINGLE_RECORD_RESULTS_GZ_BYTES
     record = {
         "analysis_id": response.analysis_id,
         "source_csv_path": response.file_path,
@@ -1131,7 +1153,8 @@ def _record_csv_analysis(service: ApiService, response: CsvAnalyzeResponse) -> N
         "preprocessor_sha256": response.preprocessor_sha256,
         "inference_mode": response.inference_mode,
         "compatibility_gate": response.compatibility_gate.model_dump(),
-        "results": [item.model_dump() for item in response.results],
+        "results_gz": compressed_results if keep_results_gz else None,
+        "results_gz_bytes": len(compressed_results) if keep_results_gz else 0,
         "results_sha256": _canonical_results_sha256(response.results),
     }
     with lock:
@@ -1139,6 +1162,20 @@ def _record_csv_analysis(service: ApiService, response: CsvAnalyzeResponse) -> N
         store.move_to_end(response.analysis_id)
         while len(store) > _MAX_RECORDED_CSV_ANALYSES:
             store.popitem(last=False)
+        total_cached_bytes = sum(
+            int(entry.get("results_gz_bytes") or 0) for entry in store.values()
+        )
+        if total_cached_bytes > _MAX_CACHED_RESULTS_BYTES:
+            for existing_id, entry in store.items():
+                if existing_id == response.analysis_id:
+                    continue
+                freed = int(entry.get("results_gz_bytes") or 0)
+                if freed > 0:
+                    entry["results_gz"] = None
+                    entry["results_gz_bytes"] = 0
+                    total_cached_bytes -= freed
+                if total_cached_bytes <= _MAX_CACHED_RESULTS_BYTES:
+                    break
 
 
 def _safe_feature_value(val: Any) -> Optional[float]:
@@ -1148,15 +1185,25 @@ def _safe_feature_value(val: Any) -> Optional[float]:
     return fval if math.isfinite(fval) else None
 
 
-def _build_abstained_ood_reason(is_phys_hard: bool, is_zero_ttl: bool) -> str:
+def _classify_abstained_ood(is_phys_hard: bool, is_zero_ttl: bool) -> Tuple[str, str]:
+    """Return structured OOD classification (`ood_kind`) and human-readable reason."""
     if is_phys_hard and is_zero_ttl:
         return (
+            "COMBINED_OOD",
             "Hard protocol invariant violation; MIN_TTL == 0 unobserved telemetry "
-            "(anti-imputation abstention)"
+            "(anti-imputation abstention)",
         )
     if is_phys_hard:
-        return "Hard protocol invariant violation"
-    return "MIN_TTL == 0 unobserved telemetry (anti-imputation abstention)"
+        return ("PHYSICAL_INVARIANT", "Hard protocol invariant violation")
+    return (
+        "ZERO_TTL_DRIFT",
+        "MIN_TTL == 0 unobserved telemetry (anti-imputation abstention)",
+    )
+
+
+def _build_abstained_ood_reason(is_phys_hard: bool, is_zero_ttl: bool) -> str:
+    _, reason = _classify_abstained_ood(is_phys_hard, is_zero_ttl)
+    return reason
 
 
 def analyze_csv_file(
@@ -1284,13 +1331,16 @@ def analyze_csv_file(
             risk_score: Optional[float] = None
             risk_level = "ABSTAINED_OOD"
             is_ood_flagged = True
-            ood_reason: Optional[str] = _build_abstained_ood_reason(is_phys_hard, is_zero_ttl)
+            ood_kind: Optional[str]
+            ood_reason: Optional[str]
+            ood_kind, ood_reason = _classify_abstained_ood(is_phys_hard, is_zero_ttl)
             decision_threshold = sample_item.decision_threshold
             score_type = sample_item.score_type
             score_direction = sample_item.score_direction
         else:
             api_item = accepted_result_by_idx[idx]
             is_ood_flagged = False
+            ood_kind = None
             ood_reason = None
             risk_score, risk_level = compute_deterministic_risk_score(
                 is_ood_flagged=False,
@@ -1330,6 +1380,7 @@ def analyze_csv_file(
                 risk_score=risk_score,
                 risk_level=risk_level,
                 is_ood_flagged=is_ood_flagged,
+                ood_kind=ood_kind,
                 ood_reason=ood_reason,
                 **trace,
             )

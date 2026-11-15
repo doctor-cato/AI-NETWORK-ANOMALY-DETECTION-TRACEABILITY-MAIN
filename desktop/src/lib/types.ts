@@ -139,6 +139,7 @@ export interface CsvFlowPredictionItem {
   risk_score: number | null;
   risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "ABSTAINED_OOD" | "UNAVAILABLE";
   is_ood_flagged: boolean;
+  ood_kind?: "ZERO_TTL_DRIFT" | "PHYSICAL_INVARIANT" | "COMBINED_OOD" | null;
   ood_reason: string | null;
   flow_start_ms: number | null;
   flow_end_ms: number | null;
