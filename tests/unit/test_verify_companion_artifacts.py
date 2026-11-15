@@ -74,9 +74,6 @@ def _copy_attestation_workspace(tmp_path: Path) -> Path:
         "scripts/verify_companion_artifacts.py",
         "desktop/package.json",
         "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-        "data/demo/demo_flows.csv",
-        "data/demo/demo_labels.csv",
-        "data/demo/demo_manifest.json",
         "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
         "reports/models/random_forest_manifest.json",
         "reports/models/xgboost_manifest.json",
@@ -88,6 +85,31 @@ def _copy_attestation_workspace(tmp_path: Path) -> Path:
         dst = ws / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
+
+    demo_dir = ws / "data/demo"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+    flows_path = demo_dir / "demo_flows.csv"
+    labels_path = demo_dir / "demo_labels.csv"
+    flows_path.write_text(
+        "L4_SRC_PORT,L4_DST_PORT\n80,443\n443,51234\n", encoding="utf-8", newline="\n"
+    )
+    labels_path.write_text("row_index,Label\n0,0\n1,1\n", encoding="utf-8", newline="\n")
+    split_sha = _sha256_path(ws / "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+    demo_manifest_payload = {
+        "split_manifest_sha256": split_sha,
+        "sampling": {
+            "partition": "validation",
+            "train_overlap_count": 0,
+            "test_overlap_count": 0,
+        },
+        "outputs": {
+            "demo_flows_csv": {"sha256": _sha256_path(flows_path)},
+            "demo_labels_csv": {"sha256": _sha256_path(labels_path)},
+        },
+    }
+    (demo_dir / "demo_manifest.json").write_text(
+        json.dumps(demo_manifest_payload, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
     return ws
 
 
@@ -110,7 +132,14 @@ def _build_valid_attestation_payload(
         "data/demo/demo_labels.csv",
         "data/demo/demo_manifest.json",
     ]
-    demo_sha256 = {rel: _sha256_path(root / rel) for rel in demo_rels}
+    if all((root / rel).is_file() for rel in demo_rels):
+        demo_sha256 = {rel: _sha256_path(root / rel) for rel in demo_rels}
+    else:
+        tracked_att_path = root / "reports/releases/v0.6.0_e2e_verification.json"
+        if not tracked_att_path.is_file():
+            tracked_att_path = REPO_ROOT / "reports/releases/v0.6.0_e2e_verification.json"
+        tracked_att = json.loads(tracked_att_path.read_text(encoding="utf-8"))
+        demo_sha256 = dict(tracked_att["demo_sha256"])
 
     cm_specs = {
         "random_forest": (98, 0, 0, 100),
@@ -397,6 +426,13 @@ def test_verify_e2e_attestation_rejects_model_manifest_and_ae_calibration_tamper
     with pytest.raises(RuntimeError, match="invalid inference_run_id"):
         verify_e2e_attestation(p_inf, root=ws)
 
+    missing_inf = copy.deepcopy(payload)
+    del missing_inf["models"]["xgboost"]["inference_run_id"]
+    p_missing_inf = tmp_path / "missing_inf.json"
+    p_missing_inf.write_text(json.dumps(missing_inf), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="invalid inference_run_id"):
+        verify_e2e_attestation(p_missing_inf, root=ws)
+
     bad_csv = copy.deepcopy(payload)
     bad_csv["models"]["isolation_forest"]["source_csv_sha256"] = "0" * 64
     p_csv = tmp_path / "bad_csv.json"
@@ -672,3 +708,51 @@ def test_verify_shipped_v060_e2e_attestation_passes():
     result = verify_e2e_attestation(att_path, root=REPO_ROOT)
     assert result["attestation_status"] == "PASS"
     assert len(result["verified_models"]) == 4
+
+
+def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_demo_flag(
+    tmp_path: Path,
+):
+    ws = _copy_attestation_workspace(tmp_path)
+    payload = _build_valid_attestation_payload(ws, include_nsis=True, commit="a" * 40)
+    att = tmp_path / "att.json"
+    att.write_text(json.dumps(payload), encoding="utf-8")
+
+    # Simulate a clean Git checkout where .gitignore-d data/demo/* files are absent
+    shutil.rmtree(ws / "data/demo")
+
+    res_clean = verify_e2e_attestation(att, root=ws, require_nsis_e2e=True)
+    assert res_clean["attestation_status"] == "PASS"
+    assert res_clean["demo_files_verified_on_disk"] is False
+
+    # Cross-model demo hash consistency still fails closed even without demo files on disk
+    bad_cross = copy.deepcopy(payload)
+    bad_cross["models"]["xgboost"]["source_csv_sha256"] = "0" * 64
+    p_bad_cross = tmp_path / "bad_cross.json"
+    p_bad_cross.write_text(json.dumps(bad_cross), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="source_csv_sha256 mismatch"):
+        verify_e2e_attestation(p_bad_cross, root=ws)
+
+    # Release gate (--require-demo-files) must fail closed when data/demo/* is absent
+    with pytest.raises(RuntimeError, match="Missing required demo files"):
+        verify_e2e_attestation(att, root=ws, require_nsis_e2e=True, require_demo_files=True)
+    assert (
+        verify_companion_main(
+            [
+                "--root",
+                str(ws),
+                "--verify-attestation",
+                str(att),
+                "--require-nsis-e2e",
+                "--require-demo-files",
+            ]
+        )
+        == 1
+    )
+
+    # Partial data/demo/* on disk must always fail closed
+    partial_dir = ws / "data/demo"
+    partial_dir.mkdir(parents=True, exist_ok=True)
+    (partial_dir / "demo_flows.csv").write_text("L4_SRC_PORT\n80\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Incomplete tracked demo files"):
+        verify_e2e_attestation(att, root=ws)

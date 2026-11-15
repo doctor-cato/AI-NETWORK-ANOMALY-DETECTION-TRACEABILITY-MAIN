@@ -159,6 +159,10 @@ jobs:
               dst = (repo_root / rel_posix).resolve()
               if not dst.is_relative_to(repo_root):
                   raise SystemExit(f"Destination escapes repository root: {dst}")
+              if rel_posix.startswith("reports/") and not dst.is_file():
+                  raise SystemExit(
+                      f"Untracked reports/ path rejected from companion bundle: {rel_posix!r}"
+                  )
               if rel_posix.startswith(("reports/", "data/demo/")) and dst.is_file():
                   tracked_sha = hashlib.sha256(dst.read_bytes()).hexdigest().lower()
                   if actual != tracked_sha:
@@ -259,6 +263,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
           $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
+          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
           $exePath = "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe"
           if (-not (Test-Path $exePath)) {
             Write-Error "Missing compiled Windows executable: $exePath"
@@ -310,7 +315,8 @@ jobs:
             python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
               --expect-commit "${{ github.sha }}" `
               --expect-installer-sha256 $setupHash `
-              --require-nsis-e2e
+              --require-nsis-e2e `
+              --require-demo-files
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Generated release E2E attestation failed strict verification."
               exit 1
@@ -352,6 +358,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
           $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
+          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
 
           gh release view $tagName > $null 2>&1
           if ($LASTEXITCODE -eq 0) {
@@ -374,7 +381,8 @@ jobs:
             python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
               --expect-commit "${{ github.sha }}" `
               --expect-installer-sha256 $setupHash `
-              --require-nsis-e2e
+              --require-nsis-e2e `
+              --require-demo-files
             if ($LASTEXITCODE -ne 0) {
               Write-Error "FAIL-CLOSED: Stable release attestation verification failed before gh release create."
               exit 1

@@ -105,7 +105,9 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "--expect-commit" in release_yml
     assert "--expect-installer-sha256" in release_yml
     assert "--require-nsis-e2e" in release_yml
+    assert "--require-demo-files" in release_yml
     assert "if ($isStableRelease)" in release_yml
+    assert '$isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"' in release_yml
     assert "gh release view $tagName" in release_yml
     assert "if: steps.meta.outputs.is_tag_push == 'true'" in release_yml
     assert "SHA256SUMS.txt" in release_yml

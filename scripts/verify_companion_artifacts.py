@@ -1033,6 +1033,7 @@ def verify_e2e_attestation(
     expect_commit: Optional[str] = None,
     expect_installer_sha256: Optional[str] = None,
     require_nsis_e2e: bool = False,
+    require_demo_files: bool = False,
 ) -> Dict[str, Any]:
     """Verify a 4-model E2E attestation JSON against tracked manifests, commit, demo, and NSIS E2E."""
     resolved_root = Path(root).resolve()
@@ -1112,39 +1113,55 @@ def verify_e2e_attestation(
         recorded_sha = demo_sha256.get(rel_str)
         if not _is_hex_sha256(recorded_sha):
             raise RuntimeError(f"E2E attestation invalid SHA-256 for {rel_str}: {recorded_sha!r}")
-        file_abs = resolved_root / rel_str
-        if not file_abs.is_file():
-            raise RuntimeError(f"Missing tracked demo file: {file_abs}")
-        actual_demo_sha = _sha256_file(file_abs).lower()
-        if recorded_sha != actual_demo_sha:
-            raise RuntimeError(
-                f"E2E attestation demo_sha256 mismatch for {rel_str}: {recorded_sha} != {actual_demo_sha}"
-            )
 
-    demo_manifest = _read_json_dict(
-        resolved_root / "data/demo/demo_manifest.json", "data/demo/demo_manifest.json"
-    )
-    sampling = demo_manifest.get("sampling") or {}
-    if sampling.get("partition") != "validation":
-        raise RuntimeError(
-            f"demo_manifest sampling.partition must be 'validation', got {sampling.get('partition')!r}"
+    sorted_demo_keys = sorted(expected_demo_keys)
+    present_demo_files = [
+        rel_str for rel_str in sorted_demo_keys if (resolved_root / rel_str).is_file()
+    ]
+    if 0 < len(present_demo_files) < len(expected_demo_keys):
+        missing_demo = sorted(expected_demo_keys - set(present_demo_files))
+        raise RuntimeError(f"Incomplete tracked demo files on disk (missing {missing_demo})")
+
+    demo_files_verified_on_disk = False
+    if len(present_demo_files) == len(expected_demo_keys):
+        for rel_str in sorted_demo_keys:
+            recorded_sha = demo_sha256[rel_str]
+            actual_demo_sha = _sha256_file(resolved_root / rel_str).lower()
+            if recorded_sha != actual_demo_sha:
+                raise RuntimeError(
+                    f"E2E attestation demo_sha256 mismatch for {rel_str}: {recorded_sha} != {actual_demo_sha}"
+                )
+
+        demo_manifest = _read_json_dict(
+            resolved_root / "data/demo/demo_manifest.json", "data/demo/demo_manifest.json"
         )
-    if (
-        int(sampling.get("train_overlap_count", -1)) != 0
-        or int(sampling.get("test_overlap_count", -1)) != 0
-    ):
-        raise RuntimeError("demo_manifest records non-zero train/test overlap")
-    outputs = demo_manifest.get("outputs") or {}
-    if (outputs.get("demo_flows_csv") or {}).get("sha256") != demo_sha256[
-        "data/demo/demo_flows.csv"
-    ]:
-        raise RuntimeError("demo_manifest demo_flows_csv.sha256 mismatch with demo_sha256")
-    if (outputs.get("demo_labels_csv") or {}).get("sha256") != demo_sha256[
-        "data/demo/demo_labels.csv"
-    ]:
-        raise RuntimeError("demo_manifest demo_labels_csv.sha256 mismatch with demo_sha256")
-    if demo_manifest.get("split_manifest_sha256") != actual_split_sha:
-        raise RuntimeError("demo_manifest split_manifest_sha256 mismatch with split manifest")
+        sampling = demo_manifest.get("sampling") or {}
+        if sampling.get("partition") != "validation":
+            raise RuntimeError(
+                f"demo_manifest sampling.partition must be 'validation', got {sampling.get('partition')!r}"
+            )
+        if (
+            int(sampling.get("train_overlap_count", -1)) != 0
+            or int(sampling.get("test_overlap_count", -1)) != 0
+        ):
+            raise RuntimeError("demo_manifest records non-zero train/test overlap")
+        outputs = demo_manifest.get("outputs") or {}
+        if (outputs.get("demo_flows_csv") or {}).get("sha256") != demo_sha256[
+            "data/demo/demo_flows.csv"
+        ]:
+            raise RuntimeError("demo_manifest demo_flows_csv.sha256 mismatch with demo_sha256")
+        if (outputs.get("demo_labels_csv") or {}).get("sha256") != demo_sha256[
+            "data/demo/demo_labels.csv"
+        ]:
+            raise RuntimeError("demo_manifest demo_labels_csv.sha256 mismatch with demo_sha256")
+        if demo_manifest.get("split_manifest_sha256") != actual_split_sha:
+            raise RuntimeError("demo_manifest split_manifest_sha256 mismatch with split manifest")
+        demo_files_verified_on_disk = True
+    elif require_demo_files:
+        missing_demo = [str(resolved_root / rel_str) for rel_str in sorted_demo_keys]
+        raise RuntimeError(
+            f"Missing required demo files for attestation verification: {missing_demo}"
+        )
 
     prep_manifest = _read_json_dict(
         resolved_root / PREPROCESSOR_MANIFEST_REL, str(PREPROCESSOR_MANIFEST_REL)
@@ -1190,16 +1207,15 @@ def verify_e2e_attestation(
                 f"E2E attestation run_id mismatch for {model_key}: "
                 f"{entry.get('run_id')!r} != {expected_run_id!r}"
             )
-        if "inference_run_id" in entry:
-            inf_run_id = entry.get("inference_run_id")
-            if (
-                not isinstance(inf_run_id, str)
-                or not inf_run_id.startswith("inference-")
-                or len(inf_run_id) <= len("inference-")
-            ):
-                raise RuntimeError(
-                    f"E2E attestation invalid inference_run_id for {model_key}: {inf_run_id!r}"
-                )
+        inf_run_id = entry.get("inference_run_id")
+        if (
+            not isinstance(inf_run_id, str)
+            or not inf_run_id.startswith("inference-")
+            or len(inf_run_id) <= len("inference-")
+        ):
+            raise RuntimeError(
+                f"E2E attestation invalid inference_run_id for {model_key}: {inf_run_id!r}"
+            )
 
         manifest_prep_sha = _resolve_manifest_preprocessor_sha256(tracked_manifest)
         if (
@@ -1313,6 +1329,7 @@ def verify_e2e_attestation(
         "desktop_version": desktop_version,
         "split_manifest_sha256": actual_split_sha,
         "nsis_e2e_verified": isinstance(report.get("nsis_e2e"), dict),
+        "demo_files_verified_on_disk": demo_files_verified_on_disk,
     }
 
 
@@ -1392,6 +1409,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require a valid nsis_e2e verification block when verifying an E2E attestation.",
     )
     parser.add_argument(
+        "--require-demo-files",
+        action="store_true",
+        help="Require real data/demo/* files on disk when verifying an E2E attestation.",
+    )
+    parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
@@ -1420,6 +1442,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 expect_commit=args.expect_commit,
                 expect_installer_sha256=args.expect_installer_sha256,
                 require_nsis_e2e=args.require_nsis_e2e,
+                require_demo_files=args.require_demo_files,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E ATTESTATION VERIFICATION FAILED] {exc}\n")
