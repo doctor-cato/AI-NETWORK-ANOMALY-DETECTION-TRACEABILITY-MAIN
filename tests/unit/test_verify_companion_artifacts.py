@@ -141,9 +141,9 @@ def _build_valid_attestation_payload(
     if all((root / rel).is_file() for rel in demo_rels):
         demo_sha256 = {rel: _sha256_path(root / rel) for rel in demo_rels}
     else:
-        tracked_att_path = root / "reports/releases/v0.6.0_e2e_verification.json"
+        tracked_att_path = root / "reports/releases/v1.0.0_e2e_verification.json"
         if not tracked_att_path.is_file():
-            tracked_att_path = REPO_ROOT / "reports/releases/v0.6.0_e2e_verification.json"
+            tracked_att_path = REPO_ROOT / "reports/releases/v1.0.0_e2e_verification.json"
         tracked_att = json.loads(tracked_att_path.read_text(encoding="utf-8"))
         demo_sha256 = dict(tracked_att["demo_sha256"])
 
@@ -878,7 +878,7 @@ def test_verify_nsis_installer_e2e_rejects_orphan_backend_and_uninstall_leftover
     bad_origin["e2e_backend_origin"] = "api_only_run_api"
     p_bad_origin = tmp_path / "bad_origin_att.json"
     p_bad_origin.write_text(json.dumps(bad_origin), encoding="utf-8")
-    with pytest.raises(RuntimeError, match="e2e_backend_origin='installed_nsis_desktop'"):
+    with pytest.raises(RuntimeError, match="must record e2e_backend_origin in"):
         verify_e2e_attestation(p_bad_origin, root=ws, require_nsis_e2e=True)
 
 
@@ -990,10 +990,17 @@ def test_package_and_install_companion_bundle_security_and_provenance(
     assert (target_ws / "artifacts/models/autoencoder/autoencoder_model.joblib").is_file()
 
 
-def test_verify_shipped_v060_e2e_attestation_passes():
-    att_path = REPO_ROOT / "reports" / "releases" / "v0.6.0_e2e_verification.json"
-    result = verify_e2e_attestation(att_path, root=REPO_ROOT)
+def test_verify_shipped_v100_e2e_attestation_passes():
+    att_path = REPO_ROOT / "reports" / "releases" / "v1.0.0_e2e_verification.json"
+    result = verify_e2e_attestation(
+        att_path,
+        root=REPO_ROOT,
+        require_nsis_e2e=True,
+        require_bundled_resources=True,
+        require_standalone_embedded=True,
+    )
     assert result["attestation_status"] == "PASS"
+    assert result["standalone_embedded_verified"] is True
     assert len(result["verified_models"]) == 4
 
 
@@ -1604,7 +1611,7 @@ def test_extract_safe_companion_zip_rejects_zip_bomb_entry_and_byte_limits(
 def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mode(tmp_path: Path):
     import scripts.verify_companion_artifacts as vca
 
-    att_path = Path(__file__).resolve().parents[2] / "reports/releases/v0.6.0_e2e_verification.json"
+    att_path = Path(__file__).resolve().parents[2] / "reports/releases/v1.0.0_e2e_verification.json"
     base = json.loads(att_path.read_text(encoding="utf-8"))
     base["verify_script_sha256"] = vca._sha256_file(Path(vca.__file__)).lower()
 
@@ -1636,3 +1643,165 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
         require_bundled_resources=True,
     )
     assert res["bundled_resources_verified"] is True
+
+
+def test_verify_distribution_permission_enforces_uq_noncommercial_gate(tmp_path: Path):
+    import scripts.verify_companion_artifacts as vca
+
+    for name in ("NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSE"):
+        (tmp_path / name).write_text(f"{name}\n", encoding="utf-8")
+
+    res_private = vca.verify_distribution_permission(
+        "private-build-only", is_public_release=False, root=tmp_path
+    )
+    assert res_private["status"] == "APPROVED"
+
+    # Public release must fail closed unless scope is non-commercial-academic-approved
+    with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
+        vca.verify_distribution_permission(
+            "private-build-only", is_public_release=True, root=tmp_path
+        )
+
+    res_public = vca.verify_distribution_permission(
+        "non-commercial-academic-approved", is_public_release=True, root=tmp_path
+    )
+    assert res_public["citation_doi"] == "10.48610/6E0EDA1"
+
+    (tmp_path / "NOTICE").unlink()
+    with pytest.raises(RuntimeError, match="NOTICE"):
+        vca.verify_distribution_permission(
+            "non-commercial-academic-approved", is_public_release=True, root=tmp_path
+        )
+
+
+def test_tauri_standalone_config_covers_all_required_embedded_resources():
+    base_cfg = json.loads(
+        (REPO_ROOT / "desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+    )
+    standalone_cfg = json.loads(
+        (REPO_ROOT / "desktop/src-tauri/tauri.standalone.conf.json").read_text(encoding="utf-8")
+    )
+    assert standalone_cfg["bundle"]["externalBin"] == ["binaries/netflow-sentinel-backend"]
+    base_res = base_cfg["bundle"]["resources"]
+    standalone_res = standalone_cfg["bundle"]["resources"]
+    destinations = set(standalone_res.values())
+    # Must explicitly include sidecar-supporting artifacts for all 4 models, preprocessor, demo, and manifests
+    required_standalone_dests = {
+        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+        "artifacts/models/random_forest/random_forest_baseline.joblib",
+        "artifacts/models/random_forest/random_forest_manifest.json",
+        "artifacts/models/xgboost/xgboost_baseline.joblib",
+        "artifacts/models/xgboost/xgboost_manifest.json",
+        "artifacts/models/isolation_forest/isolation_forest.joblib",
+        "artifacts/models/isolation_forest/model_config.json",
+        "artifacts/models/isolation_forest/threshold.json",
+        "artifacts/models/isolation_forest/training_metadata.json",
+        "artifacts/models/autoencoder/autoencoder_model.joblib",
+        "artifacts/models/autoencoder/autoencoder_manifest.json",
+        "artifacts/models/autoencoder/model_config.json",
+        "artifacts/models/autoencoder/threshold.json",
+        "data/demo/demo_flows.csv",
+        "data/demo/demo_labels.csv",
+        "data/demo/demo_manifest.json",
+        "EMBEDDED_ARTIFACTS_MANIFEST.json",
+        "EMBEDDED_SHA256SUMS.txt",
+    }
+    assert required_standalone_dests.issubset(destinations)
+    for notice_key in ("../../NOTICE", "../../THIRD_PARTY_NOTICES.md", "../../LICENSE"):
+        assert notice_key in base_res
+
+
+def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
+    import hashlib
+
+    import scripts.verify_companion_artifacts as vca
+
+    if not (REPO_ROOT / "artifacts/models/random_forest/random_forest_baseline.joblib").is_file():
+        pytest.skip("Local ML model binaries absent on runner")
+
+    stage_dir = tmp_path / "staged"
+    staged = vca.stage_embedded_bundle(
+        stage_dir,
+        root=REPO_ROOT,
+        runtime_dir=REPO_ROOT,
+        distribution_scope="non-commercial-academic-approved",
+    )
+    assert staged["stage_status"] == "READY"
+    assert (stage_dir / "EMBEDDED_SHA256SUMS.txt").is_file()
+    assert (stage_dir / "EMBEDDED_ARTIFACTS_MANIFEST.json").is_file()
+    assert not (stage_dir / "COMPANION_SHA256SUMS.txt").exists()
+
+    # Build a synthetic installed standalone directory matching staged files + sidecar
+    install_dir = tmp_path / "install_dir"
+    shutil.copytree(stage_dir, install_dir)
+    (install_dir / "netflow-sentinel-desktop.exe").write_bytes(b"DESKTOP-STUB")
+    sidecar_bytes = b"PYINSTALLER-SIDECAR-STUB"
+    (install_dir / "netflow-sentinel-backend.exe").write_bytes(sidecar_bytes)
+    (install_dir / "uninstall.exe").write_bytes(b"NSIS-UNINSTALL-STUB")
+    expected_sidecar_sha = hashlib.sha256(sidecar_bytes).hexdigest()
+
+    layout = vca.verify_installed_standalone_layout(
+        install_dir, expected_sidecar_sha256=expected_sidecar_sha
+    )
+    assert layout["status"] == "READY"
+    assert layout["sidecar_sha256"] == expected_sidecar_sha
+
+    # Tamper sidecar or embedded file must fail closed
+    with pytest.raises(RuntimeError, match="sidecar SHA-256 mismatch"):
+        vca.verify_installed_standalone_layout(install_dir, expected_sidecar_sha256="0" * 64)
+
+    (install_dir / "data/demo/demo_flows.csv").write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        vca.verify_installed_standalone_layout(
+            install_dir, expected_sidecar_sha256=expected_sidecar_sha
+        )
+
+
+def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
+    import scripts.verify_companion_artifacts as vca
+
+    att_path = Path(__file__).resolve().parents[2] / "reports/releases/v1.0.0_e2e_verification.json"
+    base = json.loads(att_path.read_text(encoding="utf-8"))
+    base["verify_script_sha256"] = vca._sha256_file(Path(vca.__file__)).lower()
+
+    # Non-standalone attestation must fail --require-standalone-embedded
+    legacy_payload = json.loads(json.dumps(base))
+    legacy_payload["e2e_backend_origin"] = "installed_nsis_desktop"
+    legacy_payload["nsis_e2e"]["standalone_embedded_mode"] = False
+    legacy_payload["nsis_e2e"]["system_python_used"] = True
+    legacy_path = tmp_path / "legacy_att.json"
+    legacy_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="standalone embedded NSIS"):
+        vca.verify_e2e_attestation(
+            legacy_path,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+
+    standalone_att = json.loads(json.dumps(base))
+    standalone_att["desktop_version"] = vca._read_desktop_version(REPO_ROOT)
+    standalone_att["e2e_backend_origin"] = "installed_standalone_nsis"
+    standalone_att["nsis_e2e"].update(
+        {
+            "bundled_resources_mode": True,
+            "repo_root_env_passed": False,
+            "runtime_dir_isolated": True,
+            "standalone_embedded_mode": True,
+            "sidecar_exe_verified": True,
+            "sidecar_sha256": "a" * 64,
+            "system_python_used": False,
+            "external_companion_used": False,
+            "restart_persistence_verified": True,
+            "export_verified": True,
+        }
+    )
+    standalone_path = tmp_path / "standalone_att.json"
+    standalone_path.write_text(json.dumps(standalone_att), encoding="utf-8")
+
+    res = vca.verify_e2e_attestation(
+        standalone_path,
+        require_nsis_e2e=True,
+        require_bundled_resources=True,
+        require_standalone_embedded=True,
+    )
+    assert res["standalone_embedded_verified"] is True
