@@ -171,6 +171,7 @@
     border: 1px solid var(--border-subtle);
     background: var(--bg-elevated);
     font-size: 12.5px;
+    transition: border-color 160ms ease, background-color 160ms ease, transform 150ms ease;
   }
 
   .step-pill.step-done {
@@ -190,6 +191,7 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
   }
 
   .step-done .step-num {
@@ -220,6 +222,7 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
+    animation: nf-fade-slide-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   @media (max-width: 820px) {

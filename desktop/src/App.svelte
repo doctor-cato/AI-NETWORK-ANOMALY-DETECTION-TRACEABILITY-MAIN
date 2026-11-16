@@ -632,6 +632,7 @@
 
       <span
         class="badge badge-info mono"
+        class:badge-pulsing={!backendStatus?.running}
         title={runtimeDiagnostics?.sidecar_executable
           ? `Embedded Sidecar (${backendStatus?.port ?? "..."})`
           : `Localhost :${backendStatus?.port ?? "..."}`}
@@ -679,7 +680,7 @@
 
     {#if busyMessage || initializing}
       <div class="banner banner-info" role="status">
-        <Icons name="refresh" size={16} />
+        <Icons name="refresh" size={16} spin={true} />
         <div>{busyMessage ?? "Đang khởi tạo hệ thống phân tích AI cục bộ, vui lòng đợi..."}</div>
       </div>
     {/if}
@@ -803,104 +804,108 @@
       </button>
     </div>
 
-    {#if activeTab === "overview"}
-      <ModelComparisonPanel
-        {models}
-        {selectedModel}
-        analysesByModel={coherentAnalyses}
-        evaluationsByModel={coherentEvaluations}
-        errorsByModel={comparisonState.errorsByModel}
-        batchFileSha256={comparisonState.activeFileSha256}
-        batchLabelsSha256={comparisonState.activeLabelsSha256}
-        canRunComparison={Boolean(flowsPath.trim())}
-        hasLabelsPath={Boolean(labelsPath.trim())}
-        busy={Boolean(busyMessage)}
-        onSelectModel={(k) => (selectedModel = k)}
-        onRunAllComparison={handleRunAllComparison}
-        onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
-      />
+    {#key activeTab}
+      <div class="tab-panel">
+        {#if activeTab === "overview"}
+          <ModelComparisonPanel
+            {models}
+            {selectedModel}
+            analysesByModel={coherentAnalyses}
+            evaluationsByModel={coherentEvaluations}
+            errorsByModel={comparisonState.errorsByModel}
+            batchFileSha256={comparisonState.activeFileSha256}
+            batchLabelsSha256={comparisonState.activeLabelsSha256}
+            canRunComparison={Boolean(flowsPath.trim())}
+            hasLabelsPath={Boolean(labelsPath.trim())}
+            busy={Boolean(busyMessage)}
+            onSelectModel={(k) => (selectedModel = k)}
+            onRunAllComparison={handleRunAllComparison}
+            onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
+          />
 
-      {#if analysisData}
-        <div class="grid-5">
-          <div class="kpi-box">
-            <div class="kpi-label">Tổng số Flow</div>
-            <div class="kpi-value mono">{analysisData.total_rows}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Dự đoán Attack</div>
-            <div class="kpi-value mono" style="color: var(--semantic-attack)">{analysisData.attack_count}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Dự đoán Benign</div>
-            <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">OOD Abstained</div>
-            <div class="kpi-value mono" style="color: var(--semantic-warning)">
-              {analysisData.abstained_rows ?? analysisData.ood_flagged_count}
+          {#if analysisData}
+            <div class="grid-5">
+              <div class="kpi-box">
+                <div class="kpi-label">Tổng số Flow</div>
+                <div class="kpi-value mono">{analysisData.total_rows}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">Dự đoán Attack</div>
+                <div class="kpi-value mono" style="color: var(--semantic-attack)">{analysisData.attack_count}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">Dự đoán Benign</div>
+                <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">OOD Abstained</div>
+                <div class="kpi-value mono" style="color: var(--semantic-warning)">
+                  {analysisData.abstained_rows ?? analysisData.ood_flagged_count}
+                </div>
+                <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+                  {analysisData.evaluated_rows ?? analysisData.attack_count + analysisData.benign_count}/{analysisData.total_rows}
+                  ({analysisData.prediction_coverage != null
+                    ? `${(analysisData.prediction_coverage * 100).toFixed(1)}%`
+                    : analysisData.total_rows > 0
+                      ? `${(((analysisData.attack_count + analysisData.benign_count) / analysisData.total_rows) * 100).toFixed(1)}%`
+                      : "0.0%"})
+                </div>
+              </div>
+              <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
+                <div class="kpi-label">Eligibility Gate</div>
+                <div class="kpi-value" style="font-size: 13px;">{analysisData.compatibility_gate.eligibility_status}</div>
+                <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+                  {analysisData.compatibility_gate.compatibility_status}
+                </div>
+              </div>
             </div>
-            <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
-              {analysisData.evaluated_rows ?? analysisData.attack_count + analysisData.benign_count}/{analysisData.total_rows}
-              ({analysisData.prediction_coverage != null
-                ? `${(analysisData.prediction_coverage * 100).toFixed(1)}%`
-                : analysisData.total_rows > 0
-                  ? `${(((analysisData.attack_count + analysisData.benign_count) / analysisData.total_rows) * 100).toFixed(1)}%`
-                  : "0.0%"})
-            </div>
-          </div>
-          <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
-            <div class="kpi-label">Eligibility Gate</div>
-            <div class="kpi-value" style="font-size: 13px;">{analysisData.compatibility_gate.eligibility_status}</div>
-            <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
-              {analysisData.compatibility_gate.compatibility_status}
-            </div>
-          </div>
-        </div>
-        <ChartsPanel analysis={analysisData} />
-      {/if}
+            <ChartsPanel analysis={analysisData} />
+          {/if}
 
-      {#if inspectData}
-        <CsvPreviewPanel {inspectData} />
-      {:else}
-        <div class="empty-state">
-          Nhấn <strong>Mở Demo Validation (200 flows)</strong> hoặc chọn tệp NetFlow CSV từ máy cục bộ để kiểm tra 47 ML features và bắt đầu phân tích.
-        </div>
-      {/if}
-    {:else if activeTab === "predictions"}
-      {#if analysisData}
-        <ChartsPanel analysis={analysisData} />
-        <PredictionsTable analysis={analysisData} />
-      {:else}
-        <div class="empty-state">
-          Chưa có kết quả dự đoán. Hãy chọn mô hình READY và nhấn <strong>Chạy Phân tích AI</strong>.
-        </div>
-      {/if}
-    {:else if activeTab === "evaluation"}
-      <EvaluationPanel
-        {labelsPath}
-        evaluating={evaluatedFlag}
-        evalResult={evalData}
-        canEvaluate={Boolean(analysisData)}
-        onPickLabels={handlePickLabelsFile}
-        onUseDemoLabels={handleUseDemoLabels}
-        onRunEvaluate={handleRunEvaluate}
-        onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
-      />
-    {:else if activeTab === "forensics"}
-      <ForensicTimelinePanel
-        timeline={analysisData?.timeline ?? []}
-        behavioral={analysisData?.behavioral_summary ?? inspectData?.behavioral_summary ?? null}
-        securityNotice={analysisData?.security_notice ?? "Localhost-only FastAPI (127.0.0.1), fail-closed SHA-256 artifact checks. Issue #27 Adaptive Security Response runs in DRY-RUN SIMULATION / RECOMMENDED mode (executed=false); OS firewall automation & AES-256-GCM keyring remain DEFERRED."}
-        simulation={simulationData}
-        {simulationHistory}
-        simulationExportInfo={simulationExportData}
-        simulating={simulatingFlag}
-        canSimulate={Boolean(analysisData)}
-        onRunSimulation={handleRunSecuritySimulation}
-        onRefreshHistory={refreshSimulationHistory}
-        onExportSimulation={handleExportSecuritySimulation}
-      />
-    {/if}
+          {#if inspectData}
+            <CsvPreviewPanel {inspectData} />
+          {:else}
+            <div class="empty-state">
+              Nhấn <strong>Mở Demo Validation (200 flows)</strong> hoặc chọn tệp NetFlow CSV từ máy cục bộ để kiểm tra 47 ML features và bắt đầu phân tích.
+            </div>
+          {/if}
+        {:else if activeTab === "predictions"}
+          {#if analysisData}
+            <ChartsPanel analysis={analysisData} />
+            <PredictionsTable analysis={analysisData} />
+          {:else}
+            <div class="empty-state">
+              Chưa có kết quả dự đoán. Hãy chọn mô hình READY và nhấn <strong>Chạy Phân tích AI</strong>.
+            </div>
+          {/if}
+        {:else if activeTab === "evaluation"}
+          <EvaluationPanel
+            {labelsPath}
+            evaluating={evaluatedFlag}
+            evalResult={evalData}
+            canEvaluate={Boolean(analysisData)}
+            onPickLabels={handlePickLabelsFile}
+            onUseDemoLabels={handleUseDemoLabels}
+            onRunEvaluate={handleRunEvaluate}
+            onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
+          />
+        {:else if activeTab === "forensics"}
+          <ForensicTimelinePanel
+            timeline={analysisData?.timeline ?? []}
+            behavioral={analysisData?.behavioral_summary ?? inspectData?.behavioral_summary ?? null}
+            securityNotice={analysisData?.security_notice ?? "Localhost-only FastAPI (127.0.0.1), fail-closed SHA-256 artifact checks. Issue #27 Adaptive Security Response runs in DRY-RUN SIMULATION / RECOMMENDED mode (executed=false); OS firewall automation & AES-256-GCM keyring remain DEFERRED."}
+            simulation={simulationData}
+            {simulationHistory}
+            simulationExportInfo={simulationExportData}
+            simulating={simulatingFlag}
+            canSimulate={Boolean(analysisData)}
+            onRunSimulation={handleRunSecuritySimulation}
+            onRefreshHistory={refreshSimulationHistory}
+            onExportSimulation={handleExportSecuritySimulation}
+          />
+        {/if}
+      </div>
+    {/key}
   </main>
 </div>
 

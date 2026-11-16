@@ -108,11 +108,12 @@
     flex-direction: column;
     gap: 8px;
     cursor: pointer;
-    transition: border-color 140ms ease, background-color 140ms ease;
+    transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
   }
 
   .model-card:hover:not(:disabled) {
     border-color: var(--accent-primary);
+    transform: translateY(-1px);
   }
 
   .model-card.selected {
