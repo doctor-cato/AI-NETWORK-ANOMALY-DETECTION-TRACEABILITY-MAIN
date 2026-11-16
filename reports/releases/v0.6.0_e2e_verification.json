@@ -1,10 +1,11 @@
 {
   "e2e_status": "PASS",
+  "e2e_backend_origin": "installed_nsis_desktop",
   "host": "127.0.0.1",
-  "port": 56476,
-  "source_commit": "14b49d7e136dbaaf4fb0bf045859238adc62c895",
+  "port": 60541,
+  "source_commit": "10174abd7eaebc1ffff139d93614cd3392bd6752",
   "desktop_version": "0.6.0",
-  "verify_script_sha256": "f3946d2e8c96be7ebe96766998d209277e7d739447b1aabf0074bf865f7d3eee",
+  "verify_script_sha256": "48f397c2fa661306e89612a5a6f1b0aa2cad4c7509491bf84bf53ce742486625",
   "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
   "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
   "demo_sha256": {
@@ -21,9 +22,9 @@
   ],
   "models": {
     "random_forest": {
-      "analysis_id": "csvrun_1dc11d2f8a3e",
+      "analysis_id": "csvrun_d0c2ed8bc226",
       "run_id": "rf-baseline-1794068628",
-      "inference_run_id": "inference-20261115200414-e6caa5",
+      "inference_run_id": "inference-20261116013119-2a467b",
       "artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -45,7 +46,7 @@
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_d31ea44e42b0",
+      "dry_run_simulation_id": "sim_0463d4d99d43",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -56,9 +57,9 @@
       "dry_run_rotation_decision": "SIMULATED_ROTATION_RECOMMENDED"
     },
     "xgboost": {
-      "analysis_id": "csvrun_be3361c05e10",
+      "analysis_id": "csvrun_fb9d2ae47a4d",
       "run_id": "xgb-baseline-1794755807",
-      "inference_run_id": "inference-20261115200414-191029",
+      "inference_run_id": "inference-20261116013120-f40c22",
       "artifact_sha256": "3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -80,7 +81,7 @@
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_eb238bd731df",
+      "dry_run_simulation_id": "sim_ca4d96ce0076",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -91,9 +92,9 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "isolation_forest": {
-      "analysis_id": "csvrun_7c0d939fcc0c",
+      "analysis_id": "csvrun_00c68cb32616",
       "run_id": "if-c4-20261115T055359Z",
-      "inference_run_id": "inference-20261115200415-9221e6",
+      "inference_run_id": "inference-20261116013120-0e6aff",
       "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -115,7 +116,7 @@
       "f1": 0.893401,
       "fpr": 0.091837,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_56b4c4ef1a37",
+      "dry_run_simulation_id": "sim_a4a5c94315b2",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 13,
@@ -126,9 +127,9 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "autoencoder": {
-      "analysis_id": "csvrun_172e2ffb03fc",
+      "analysis_id": "csvrun_f628b0f6b72f",
       "run_id": "ae_fpr_constrained_20261115T163000Z",
-      "inference_run_id": "inference-20261115200415-57250f",
+      "inference_run_id": "inference-20261116013120-02b65d",
       "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -150,7 +151,7 @@
       "f1": 0.220339,
       "fpr": 0.05102,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_673d28a34a71",
+      "dry_run_simulation_id": "sim_73676f014f97",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 180,
@@ -169,15 +170,31 @@
   "nsis_e2e": {
     "status": "PASS",
     "installer_filename": "NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe",
-    "installer_sha256": "47c835030203ecb9b58912c8335c0d59e9a2037e09a4dd5ec2fa7a5c1c9be46b",
-    "installer_size_bytes": 2394611,
+    "installer_sha256": "a2929db366fe6a82a7ee6d9079dfdab0445c5e0477abe59db7049aeef337826c",
+    "installer_size_bytes": 2401685,
     "sums_file_verified": true,
-    "installed_exe_sha256": "11b137da484f1894f01610550e47da67b5f1b0d1b73679c0c814d6f35c50367e",
-    "compiled_exe_sha256": "bca39128d06805cb5f20f5b38b8fe3926f910bca6e952cecd5c45e29f4bcfd9d",
-    "normalized_compiled_exe_sha256": "11b137da484f1894f01610550e47da67b5f1b0d1b73679c0c814d6f35c50367e",
+    "installed_exe_sha256": "049b2226117bfd09e8419e7473b81ac3f23b1e0f1290cf8303d694f658db7ac4",
+    "compiled_exe_sha256": "20ef77448b9f6a1d84b53b2ed8ccd2ae2cdab7c767d95ca644eed7d6e06e9823",
+    "normalized_compiled_exe_sha256": "049b2226117bfd09e8419e7473b81ac3f23b1e0f1290cf8303d694f658db7ac4",
     "compiled_exe_sha256_match": true,
     "exe_parity_mode": "tauri_nsis_bundle_marker_normalized",
     "uninstaller_verified": true,
-    "clean_install_verified": true
+    "clean_install_verified": true,
+    "installed_app_launched": true,
+    "installed_exe_path_verified": true,
+    "frontend_webview_connected": true,
+    "frontend_ready_models": [
+      "random_forest",
+      "xgboost",
+      "isolation_forest",
+      "autoencoder"
+    ],
+    "backend_spawned_on_loopback": true,
+    "backend_port": 60541,
+    "graceful_close_verified": true,
+    "graceful_close_method": "wm_close",
+    "zero_orphan_processes_verified": true,
+    "uninstall_cleanup_verified": true,
+    "frontend_interactive_gui_clicks": "NOT VERIFIED (WebView2 mounted and Svelte onMount IPC handshake verified; manual/UIA button clicks across UI tabs not automated)"
   }
 }
