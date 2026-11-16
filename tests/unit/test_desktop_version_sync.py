@@ -118,6 +118,7 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "if: steps.meta.outputs.is_tag_push == 'true'" in release_yml
     assert "SHA256SUMS.txt" in release_yml
     assert "*_${desktopVer}_x64-setup.exe" in release_yml
+    assert release_yml.count("$global:LASTEXITCODE = 0") >= 4
     assert "\npermissions:\n  contents: read\n" in release_yml
     assert "    permissions:\n      contents: write\n      actions: read\n" in release_yml
     assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in release_yml

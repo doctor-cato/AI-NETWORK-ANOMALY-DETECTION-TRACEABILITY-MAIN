@@ -115,6 +115,7 @@ jobs:
               Write-Error "GitHub Release for tag $tagName already exists. Refusing to overwrite or move a published release tag."
               exit 1
             }
+            $global:LASTEXITCODE = 0
 
             # Require strict 1-to-1 SemVer match between Git tag (vX.Y.Z[-beta.N]) and desktop configs/binary.
             python scripts/check_desktop_version.py --check --expect-tag $tagName
@@ -213,6 +214,7 @@ jobs:
                 "Prerelease/dry-run ($tagName): no companion bundle configured; proceeding with build and " +
                 "clean NSIS installed-desktop startup/shutdown E2E only (4-model live E2E skipped for prerelease)."
               )
+              $global:LASTEXITCODE = 0
             }
           }
 
@@ -357,6 +359,7 @@ jobs:
               "Prerelease/dry-run build ($tagName): clean Windows NSIS install/uninstall E2E PASSED " +
               "(recorded in nsis_e2e_verification.json), but live 4-model companion binaries are absent on this runner."
             )
+            $global:LASTEXITCODE = 0
           }
 
           Write-Host "Staged release assets in ${stageDir}:"
@@ -387,6 +390,7 @@ jobs:
             Write-Error "GitHub Release for tag $tagName already exists. Refusing to overwrite existing release."
             exit 1
           }
+          $global:LASTEXITCODE = 0
 
           $stageDir = "dist/release-assets"
           $setupDest = Join-Path $stageDir "NetFlow-Sentinel-$tagName-windows-x64-setup.exe"
