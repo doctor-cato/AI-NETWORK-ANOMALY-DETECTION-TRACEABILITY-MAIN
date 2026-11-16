@@ -1,6 +1,6 @@
 ---
 title: Kiểm thử & xác minh E2E
-description: Kiểm thử tự động, xác minh Companion E2E và cách đọc trạng thái SKIPPED.
+description: Kiểm thử đa tầng (Python, Vitest/svelte-check, Cargo/clippy), Standalone Sidecar E2E và cách đọc trạng thái SKIPPED.
 order: 7
 ---
 
@@ -8,15 +8,15 @@ order: 7
 
 ```powershell
 python scripts/check_environment.py
-python -m pytest tests -q
+python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
 python scripts/export_openapi_spec.py --check
 python scripts/check_desktop_version.py --check
 ```
 
-Workflow CI Python chạy trên Windows và Ubuntu (Python 3.11 và 3.12), kiểm tra import, cú pháp, unit, API và integration tests. CI không tự tải dataset có điều khoản hạn chế; các test tổng hợp kiểm chứng logic phần mềm chứ không thay thế hiệu năng thật trên NF-UNSW-NB15-v3.
+Workflow CI chạy Python trên Windows và Ubuntu, kiểm tra Svelte (`npm --prefix desktop run check` và `test`), và Rust (`cargo clippy`, `cargo test`). CI không tự tải dataset có điều khoản hạn chế; các test tổng hợp kiểm chứng logic phần mềm chứ không thay thế hiệu năng thật trên NF-UNSW-NB15-v3.
 
-## Xác minh Companion E2E & nghiên cứu
+## Xác minh Standalone & Clean VM E2E
 
-Một bản phát hành Stable bắt buộc chạy `python scripts/verify_companion_artifacts.py --verify-e2e` trên môi trường có đủ 4 tệp `.joblib` và bộ `data/demo/`. Một bước dữ liệu báo `SKIPPED`, dù mã thoát bằng 0, vẫn phải ghi nhận là `SKIPPED` trong mọi báo cáo.
+Một bản phát hành bộ cài Windows công khai (`Issue #73`) yêu cầu chạy `verify_companion_artifacts.py --verify-e2e --standalone-embedded` trên máy build và `scripts/vm_target_e2e.ps1` trên Clean Windows 10/11 VM. Một bước dữ liệu báo `SKIPPED`, dù mã thoát bằng 0, vẫn phải ghi nhận là `SKIPPED` trong mọi báo cáo.
 
-Xem [hướng dẫn kiểm thử](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/.github/workflows/ci.yml) và [biên bản E2E v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+Xem [hướng dẫn kiểm thử](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/.github/workflows/ci.yml) và [ghi chú phát hành v1.0.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/releases/v1.0.0.md).

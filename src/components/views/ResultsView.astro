@@ -466,8 +466,8 @@ const isVi = lang === "vi";
           >{" "}
           {
             isVi
-              ? ") đã vượt qua kiểm thử E2E trên bộ cài Windows NSIS và FastAPI cho cả 4 mô hình; khi thiếu file "
-              : "flows) passed end-to-end through the installed Windows NSIS desktop app and FastAPI for all four models, while missing local "
+              ? ") đã vượt qua kiểm thử E2E trên FastAPI và bộ cài Windows cho cả 4 mô hình (biên bản v0.6.0); kiến trúc v1.0.0 nhúng PyInstaller Sidecar và 4 .joblib lúc build nhưng phân phối .exe công khai đang hoãn dưới Issue #73. Khi thiếu file "
+              : "flows) passed end-to-end checks on FastAPI and the Windows desktop app across all four models (v0.6.0 record); v1.0.0 embeds the PyInstaller Sidecar and 4 .joblib binaries at build time while public .exe release stays deferred under Issue #73. Missing local "
           }<code>.joblib</code>{" "}
           {
             isVi
@@ -477,18 +477,28 @@ const isVi = lang === "vi";
         </p>
       </div><div class="surface empty-state">
         <strong>
-          {isVi ? "Biên bản E2E v0.6.0" : "v0.6.0 E2E Attestation"}
+          {
+            isVi
+              ? "Phát hành v1.0.0 & Hồ sơ E2E"
+              : "v1.0.0 Release & E2E Record"
+          }
         </strong><span
           >{
             isVi
-              ? "4 mô hình READY với Companion Bundle · đã xác minh Dry-Run #27 (executed = false)"
-              : "4 models READY with companion bundle · dry-run Issue #27 verified (executed = false)"
+              ? "Source Release v1.0.0 · Binary công khai BLOCKED (#73) · Dry-Run #27 (executed = false)"
+              : "v1.0.0 Source Release · Public binary BLOCKED (#73) · Dry-Run #27 (executed = false)"
           }</span
+        ><a href={source("docs/releases/v1.0.0.md")}
+          >{
+            isVi
+              ? "Xem ghi chú phát hành v1.0.0 ↗"
+              : "Inspect v1.0.0 release notes ↗"
+          }</a
         ><a href={source("reports/releases/v0.6.0_e2e_verification.json")}
           >{
             isVi
-              ? "Xem biên bản kiểm chứng E2E ↗"
-              : "Inspect E2E verification ↗"
+              ? "Xem biên bản E2E lịch sử (v0.6.0) ↗"
+              : "Inspect historical v0.6.0 E2E record ↗"
           }</a
         >
       </div>

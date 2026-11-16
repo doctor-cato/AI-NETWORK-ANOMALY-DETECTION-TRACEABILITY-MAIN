@@ -6,7 +6,7 @@ order: 5
 
 ## Contract
 
-The verified file has 55 columns: 47 baseline ML features, six trace metadata fields (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`), `Label` and `Attack`. The [schema document](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) lists the exact ordered fields and observed class counts.
+The verified file has 55 columns: 47 baseline ML features, six trace metadata fields (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`), `Label` and `Attack`. The [schema document](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) lists the exact ordered fields and observed class counts.
 
 ## Run the checks
 
@@ -15,6 +15,6 @@ python scripts/validate_data.py
 python scripts/eda_nf_unsw_nb15_v3.py
 ```
 
-The [quality report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/data_quality/nf_unsw_nb15_v3_validation.json) records 122,493 rows with missing or `+Inf` rate tokens, 14,815 exact duplicates and 1,134,553 repeated 47-feature vectors. Source integrity, raw quality and ML readiness are separate states. If the raw package is absent, `validate_data.py` can exit 0 while reporting `SKIPPED`; that is not a real-data PASS.
+The [quality report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/data_quality/nf_unsw_nb15_v3_validation.json) records 122,493 rows with missing or `+Inf` rate tokens, 14,815 exact duplicates and 1,134,553 repeated 47-feature vectors. Source integrity, raw quality and ML readiness are separate states. If the raw package is absent, `validate_data.py` can exit 0 while reporting `SKIPPED`; that is not a real-data PASS.
 
-At inference time, [multi-source ingestion](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) and the [feature compatibility matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md) enforce 4-tier validation and `ABSTAINED_OOD` abstention for `MIN_TTL == 0` or network-invariant violations.
+At inference time, [multi-source ingestion](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/MULTI_SOURCE_INGESTION.md) and the [feature compatibility matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/FEATURE_COMPATIBILITY_MATRIX.md) enforce 4-tier validation and `ABSTAINED_OOD` abstention for `MIN_TTL == 0` or network-invariant violations.

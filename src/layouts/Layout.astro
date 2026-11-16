@@ -24,6 +24,7 @@ const nav = isVi
       ["Mô hình", "models/", "Models"],
       ["Kết quả", "results/", "Results"],
       ["Kiến trúc", "architecture/", "Architecture"],
+      ["Phản biện", "academic-defense/", "Academic"],
       ["Tài liệu", "docs/", "Docs"],
       ["Lộ trình", "roadmap/", "Roadmap"],
     ]
@@ -33,6 +34,7 @@ const nav = isVi
       ["Models", "models/", "Models"],
       ["Results", "results/", "Results"],
       ["Architecture", "architecture/", "Architecture"],
+      ["Defense", "academic-defense/", "Academic"],
       ["Docs", "docs/", "Docs"],
       ["Roadmap", "roadmap/", "Roadmap"],
     ];
@@ -104,10 +106,12 @@ const copyLabels = isVi
     <header class="site-header">
       <div class="container header-inner">
         <a class="brand" href={href("", lang)}>
-          <span class="brand-mark" aria-hidden="true">N<span>∕</span>A</span>
+          <span class="brand-mark" aria-hidden="true">N<span>∕</span>S</span>
           <span class="brand-name"
-            >NETWORK ANOMALY<br /><b
-              >{isVi ? "CỔNG NGHIÊN CỨU" : "RESEARCH PORTAL"}</b
+            >NETFLOW SENTINEL<br /><b
+              >{
+                isVi ? "v1.0.0 · CỔNG NGHIÊN CỨU" : "v1.0.0 · RESEARCH PORTAL"
+              }</b
             ></span
           >
         </a>
@@ -200,6 +204,10 @@ const copyLabels = isVi
           <strong>{isVi ? "Khám phá" : "Explore"}</strong><a
             href={href("results/", lang)}
             >{isVi ? "Thực nghiệm & kết quả" : "Experiments & results"}</a
+          ><a href={href("academic-defense/", lang)}
+            >{
+              isVi ? "Phản biện học thuật (AI/ML)" : "Academic defense (AI/ML)"
+            }</a
           ><a href={href("docs/", lang)}
             >{isVi ? "Tài liệu kỹ thuật" : "Technical documentation"}</a
           ><a href={href("roadmap/", lang)}
@@ -224,7 +232,7 @@ const copyLabels = isVi
           >{isVi ? "Ảnh chụp bằng chứng: main @" : "Evidence snapshot: main @"}
           <a href={`${repository}/tree/${evidenceCommit}`}
             >{evidenceCommit.slice(0, 7)}</a
-          > · 16 Nov 2026</span
+          > · 17 Nov 2026</span
         ><span
           >{
             isVi

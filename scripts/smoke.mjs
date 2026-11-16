@@ -92,12 +92,14 @@ try {
       "models/",
       "results/",
       "architecture/",
+      "academic-defense/",
       "docs/",
       "docs/installation/",
       "roadmap/",
       "en/",
       "en/models/",
       "en/results/",
+      "en/academic-defense/",
       "en/docs/installation/",
     ]) {
       await page.goto(url(path), { waitUntil: "networkidle" });
@@ -135,7 +137,13 @@ try {
       document.documentElement.dataset.theme = value;
       localStorage.setItem("research-theme", value);
     }, theme);
-    for (const path of ["", "dataset/", "results/", "docs/installation/"]) {
+    for (const path of [
+      "",
+      "dataset/",
+      "results/",
+      "academic-defense/",
+      "docs/installation/",
+    ]) {
       await page.goto(url(path), { waitUntil: "networkidle" });
       const result = await new AxeBuilder({ page })
         .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])

@@ -1,23 +1,27 @@
 ---
 title: Project overview
-description: Research scope, current v0.6.0 capabilities and where to start.
+description: NetFlow Sentinel v1.0.0 scope, End User / Developer / Academic separation and release boundaries.
 order: 1
 ---
 
 ## Purpose
 
-This repository studies network-flow anomaly detection and an evidence-linked traceability architecture. The public website is a static research portal. It does not run a detector or monitor traffic.
+**NetFlow Sentinel v1.0.0** (Final-Year AI Project) investigates NetFlow network-anomaly detection paired with an evidence-linked traceability architecture on **NF-UNSW-NB15-v3**. This public website is a static documentation portal; it does not run models or monitor live traffic.
 
-The current `main` branch contains the NF-UNSW-NB15-v3 data contract, quality and EDA records, chronological split and train-only preprocessing code, **real-data Validation and Held-out Test evidence for all four models** (Random Forest, XGBoost, Isolation Forest and Autoencoder), a cross-dataset audit on `NF-CSE-CIC-IDS2018-v3`, an OOD abstention and provenance gate, a localhost FastAPI + SQLite service, and the **Rust / Tauri 2 + Svelte 5 desktop prototype (`v0.6.0`)**. Live OS firewall actions and production AES-256-GCM OS keyring storage remain deferred.
+The `main` branch (`PR #72` merged) delivers:
+
+- **Standalone Desktop Application (`v1.0.0`)**: `Rust / Tauri 2 + Svelte 5 -> Python FastAPI / PyInstaller Sidecar -> SQLite + 4 ML Models`. When built from source in standalone mode, the sidecar embeds all four `.joblib` models, `nf_unsw_nb15_v3_preprocessor.joblib`, and the 200-row `demo_flows.csv` slice — **end users require zero external Python, venv or Companion Bundle**.
+- **Real-Data ML Evidence on NF-UNSW-NB15-v3**: Random Forest (`MODEL_VALIDATED`, Held-out Test `F1 = 0.999853`), XGBoost (`RESEARCH_ONLY`, `F1 = 0.999984`), Isolation Forest (`RESEARCH_ONLY`, `F1 = 0.5064`), and Autoencoder (`sklearn.neural_network.MLPRegressor (32,16,32)`, `RESEARCH_ONLY`, `F1 = 0.1361`).
+- **Release & Operational Boundaries**: GitHub Release `v1.0.0` is currently published as a **Source Release**. Public Windows `.exe` binary distribution stays **DEFERRED / BLOCKED** under Issue #73 and `DISTRIBUTION_AUTHORIZATION.json` (awaiting Clean Windows 10/11 VM E2E sign-off and UQ `454104` license review). Live OS firewall actions and AES-256-GCM OS keyring rotation remain `DEFERRED` (Dry-Run #27 only, `executed = false`).
 
 ## Start here
 
-- [README and current project summary](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md)
-- [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md)
-- [Project charter](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/PROJECT_CHARTER.md)
-- [Implementation checkpoints](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/IMPLEMENTATION_CHECKPOINTS.md)
-- [Traceability matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TRACEABILITY_MATRIX.md)
+- [README — End User, Developer & Academic Guides](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/README.md)
+- [NetFlow Sentinel v1.0.0 Release Notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/releases/v1.0.0.md)
+- [Distribution Authorization Matrix (DISTRIBUTION_AUTHORIZATION.json)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/governance/DISTRIBUTION_AUTHORIZATION.json)
+- [System Architecture](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/ARCHITECTURE.md)
+- [Traceability Matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/TRACEABILITY_MATRIX.md)
 
 ## Evidence levels
 
-**Implemented** means code exists on `main`; **Tested** means behavior has an automated check; **Experimentally validated** requires a real-data run with provenance and metrics; **Deferred** means an operational capability (such as live firewall automation or OS keyring rotation) is intentionally excluded from runtime execution. A synthetic fixture or a closed Issue alone does not establish experimental validation.
+**Implemented** means code exists on `main`; **Tested** means automated tests pass; **Experimentally validated** requires a provenance-bound real-data evaluation; **Deferred / Blocked** marks operational or distribution capabilities intentionally disabled or gated on sign-off (#73).

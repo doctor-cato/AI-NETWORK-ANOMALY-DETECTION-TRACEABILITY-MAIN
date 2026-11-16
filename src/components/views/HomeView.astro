@@ -1,6 +1,6 @@
 ---
 import Layout from "../../layouts/Layout.astro";
-import { href, repository, source, type Lang } from "../../lib/links";
+import { href, source, type Lang } from "../../lib/links";
 
 interface Props {
   lang?: Lang;
@@ -13,16 +13,16 @@ const copy = isVi
       title: "Trang chủ",
       description:
         "Nghiên cứu phát hiện bất thường lưu lượng mạng dựa trên bằng chứng, đánh giá tổng quát hóa và kiến trúc truy vết.",
-      eyebrow: "Nghiên cứu mở · NF-UNSW-NB15-v3",
+      eyebrow: "NetFlow Sentinel v1.0.0 · NF-UNSW-NB15-v3",
       h1a: "Phát hiện bất thường.",
       h1b: "Truy vết bằng chứng.",
-      lede: "Prototype nghiên cứu cách các mô hình phân loại lưu lượng mạng, phát hiện bất thường và bằng chứng truy vết hỗ trợ phân tích an ninh. Cổng thông tin này tách bạch rõ kết quả đã đo đạc với các hạng mục còn đang hoãn.",
+      lede: "Hệ thống nghiên cứu phát hiện bất thường lưu lượng mạng (NetFlow) và truy vết chứng cứ cho đồ án AI cuối kỳ. Phiên bản v1.0.0 hợp nhất kiến trúc Tauri 2 + Svelte 5 -> PyInstaller FastAPI Sidecar -> SQLite + 4 mô hình ML; cổng thông tin này tách bạch kết quả đo đạc với trạng thái phát hành nhị phân (#73) và tính năng đang hoãn.",
       ctaPrimary: "Xem bằng chứng thực nghiệm",
-      ctaSecondary: "Xem repository",
-      badge: "Đang phát triển (v0.6.0)",
+      ctaSecondary: "Xem phản biện học thuật",
+      badge: "v1.0.0 Source Release (Binary #73 hoãn)",
       portalNote:
         "Cổng tài liệu tĩnh · không xử lý lưu lượng hay suy luận trực tiếp",
-      panelTitle: "PIPELINE NGHIÊN CỨU / 002",
+      panelTitle: "PIPELINE NGHIÊN CỨU & V1.0.0",
       steps: [
         [
           "01",
@@ -34,22 +34,22 @@ const copy = isVi
         [
           "02",
           "Chia tập, cổng OOD & tiền xử lý",
-          "Hợp đồng 47 đặc trưng · fit chỉ trên Train",
+          "47 đặc trưng baseline · Train-only (scaler=none)",
           "ĐÃ TRIỂN KHAI",
           false,
         ],
         [
           "03",
           "Bốn mô hình đã đánh giá Test",
-          "RF · XGBoost · Isolation Forest · Autoencoder",
+          "RF · XGBoost · Isolation Forest · Autoencoder (MLP)",
           "ĐÃ KIỂM CHỨNG",
           false,
         ],
         [
           "04",
-          "Desktop UI, truy vết & Dry-Run (v0.6.0)",
-          "Tauri 2 + FastAPI · chặn firewall thật & AES keyring hoãn",
-          "PHẠM VI M6",
+          "Tauri 2 + Sidecar PyInstaller (v1.0.0)",
+          "Không cần Python/venv người dùng cuối · Firewall/Binary #73 hoãn",
+          "SOURCE v1.0.0",
           true,
         ],
       ] as const,
@@ -57,8 +57,8 @@ const copy = isVi
       metrics: [
         ["2,36M", "dòng flow đã xác minh"],
         ["47", "đặc trưng ML baseline"],
-        ["4", "mô hình đã đánh giá Train / Val / Test"],
-        ["18", "endpoint FastAPI (ứng dụng cục bộ v0.6.0)"],
+        ["4", "mô hình nhúng (Train / Val / Test)"],
+        ["18", "endpoint FastAPI + PyInstaller Sidecar"],
       ] as const,
       qEyebrow: "Câu hỏi nghiên cứu",
       qTitle: "Mô hình thực sự học được gì?",
@@ -103,7 +103,7 @@ const copy = isVi
       eTitle1: "Tiến độ rõ ràng.",
       eTitle2: "Giới hạn cũng minh bạch.",
       eLede:
-        "Cả bốn mô hình đều đã hoàn tất Train, Validation và Held-out Test trên NF-UNSW-NB15-v3 cùng prototype Desktop v0.6.0. Tuy nhiên kiểm thử cross-dataset vẫn ghi nhận suy giảm nghiêm trọng.",
+        "Cả bốn mô hình đều đã hoàn tất Train, Validation và Held-out Test trên NF-UNSW-NB15-v3 cùng NetFlow Sentinel v1.0.0 (Source Release). Tuy nhiên kiểm thử cross-dataset vẫn ghi nhận suy giảm nghiêm trọng và bộ cài công khai đang chờ Issue #73.",
       eButton: "Xem trạng thái các mốc",
       evidences: [
         [
@@ -118,8 +118,8 @@ const copy = isVi
         ],
         [
           "03",
-          "Ranh giới Desktop & Dry-Run rõ ràng",
-          "Tauri 2 + Svelte 5 + FastAPI (127.0.0.1) chạy cổng OOD và mô phỏng chính sách dry-run; firewall thật và AES-GCM keyring đang hoãn.",
+          "Kiến trúc Standalone & ranh giới phát hành",
+          "Tauri 2 + Svelte 5 gọi FastAPI/PyInstaller Sidecar nhúng 4 model; không cần venv ở máy người dùng, firewall thật & binary công khai (#73) đang hoãn.",
         ],
       ] as const,
       cEyebrow: "Bắt đầu từ hồ sơ gốc",
@@ -133,15 +133,15 @@ const copy = isVi
       title: "Home",
       description:
         "Evidence-led research into network-flow anomaly detection, model validity and traceability.",
-      eyebrow: "Open research · NF-UNSW-NB15-v3",
+      eyebrow: "NetFlow Sentinel v1.0.0 · NF-UNSW-NB15-v3",
       h1a: "Detect the anomaly.",
       h1b: "Trace the evidence.",
-      lede: "A research prototype studying how network-flow classifiers, anomaly detectors and traceable evidence can support security analysis. This portal separates measured results from deferred system capabilities.",
+      lede: "Final-year AI research system investigating NetFlow anomaly detection and traceable decision evidence. NetFlow Sentinel v1.0.0 unifies Tauri 2 + Svelte 5 -> PyInstaller FastAPI Sidecar -> SQLite + 4 ML Models while separating measured metrics from deferred binary distribution (#73).",
       ctaPrimary: "Explore the evidence",
-      ctaSecondary: "View repository",
-      badge: "Research prototype (v0.6.0)",
+      ctaSecondary: "Academic defense guide",
+      badge: "v1.0.0 Source Release (Binary #73 deferred)",
       portalNote: "Static documentation portal · no live traffic or inference",
-      panelTitle: "RESEARCH PIPELINE / 002",
+      panelTitle: "RESEARCH & V1.0.0 PIPELINE",
       steps: [
         [
           "01",
@@ -153,22 +153,22 @@ const copy = isVi
         [
           "02",
           "Split, OOD gate & preprocessing",
-          "47-feature baseline contract · train-only fit",
+          "47 baseline features · train-only (scaler=none)",
           "IMPLEMENTED",
           false,
         ],
         [
           "03",
           "Four validated model families",
-          "RF · XGBoost · Isolation Forest · Autoencoder",
+          "RF · XGBoost · Isolation Forest · Autoencoder (MLP)",
           "VALIDATED",
           false,
         ],
         [
           "04",
-          "Desktop UI, trace & dry-run (v0.6.0)",
-          "Tauri 2 + FastAPI · live firewall & AES keyring deferred",
-          "SCOPED M6",
+          "Tauri 2 + PyInstaller Sidecar (v1.0.0)",
+          "Zero end-user Python/venv · Firewall & #73 binary deferred",
+          "SOURCE v1.0.0",
           true,
         ],
       ] as const,
@@ -176,8 +176,8 @@ const copy = isVi
       metrics: [
         ["2.36M", "verified flow rows"],
         ["47", "baseline ML features"],
-        ["4", "validated models (Train / Val / Test)"],
-        ["18", "FastAPI endpoints (v0.6.0 local UI)"],
+        ["4", "embedded models (Train / Val / Test)"],
+        ["18", "FastAPI endpoints + PyInstaller Sidecar"],
       ] as const,
       qEyebrow: "Research question",
       qTitle: "What does the model learn?",
@@ -222,7 +222,7 @@ const copy = isVi
       eTitle1: "Progress is visible.",
       eTitle2: "So are the limits.",
       eLede:
-        "All four models now have recorded Train, Validation and Held-out Test evidence on NF-UNSW-NB15-v3, alongside a Tauri 2 + FastAPI desktop prototype (v0.6.0). Cross-dataset testing still exposes severe domain collapse.",
+        "All four models now have recorded Train, Validation and Held-out Test evidence on NF-UNSW-NB15-v3 alongside NetFlow Sentinel v1.0.0 (Source Release). Cross-dataset testing still exposes severe collapse and public binary distribution awaits Issue #73.",
       eButton: "View milestone status",
       evidences: [
         [
@@ -237,8 +237,8 @@ const copy = isVi
         ],
         [
           "03",
-          "Scoped desktop & dry-run boundaries",
-          "Tauri 2 + Svelte 5 + FastAPI (127.0.0.1) runs OOD gating and dry-run policy checks; live firewall actions and AES-GCM keyring remain deferred.",
+          "Standalone sidecar & release boundaries",
+          "Tauri 2 + Svelte 5 spawns a PyInstaller FastAPI Sidecar with 4 embedded models (zero end-user Python/venv); live firewall & public binary (#73) remain deferred.",
         ],
       ] as const,
       cEyebrow: "Start with the record",
@@ -265,7 +265,7 @@ const copy = isVi
         <div class="hero-actions">
           <a class="button button-primary" href={href("results/", lang)}
             >{copy.ctaPrimary} <span aria-hidden="true">↗</span></a
-          ><a class="button" href={repository}
+          ><a class="button" href={href("academic-defense/", lang)}
             >{copy.ctaSecondary} <span aria-hidden="true">↗</span></a
           >
         </div>

@@ -1,6 +1,6 @@
 ---
-title: Testing
-description: Automated checks, companion E2E verification and how to read skipped real-data steps.
+title: Testing & E2E verification
+description: Multi-layer tests (Python, Vitest/svelte-check, Cargo/clippy), standalone sidecar E2E and SKIPPED reporting.
 order: 7
 ---
 
@@ -8,15 +8,15 @@ order: 7
 
 ```powershell
 python scripts/check_environment.py
-python -m pytest tests -q
+python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
 python scripts/export_openapi_spec.py --check
 python scripts/check_desktop_version.py --check
 ```
 
-The Python CI workflow runs on Windows and Ubuntu (Python 3.11 and 3.12) and checks imports, syntax, unit, API and integration behavior. It does not download the restricted raw dataset in CI. Synthetic tests verify code behavior, not model performance on NF-UNSW-NB15-v3.
+CI checks Python across Windows and Ubuntu, Svelte (`npm --prefix desktop run check` & `test`), and Rust (`cargo clippy`, `cargo test`). Restricted dataset files are never downloaded in CI; synthetic tests verify software logic rather than NF-UNSW-NB15-v3 performance.
 
-## Companion E2E & research verification
+## Standalone & Clean VM E2E verification
 
-A stable release requires running `python scripts/verify_companion_artifacts.py --verify-e2e` on a host with the four verified `.joblib` binaries and `data/demo/` slice present. A `SKIPPED` dataset step, even with exit code 0, must stay `SKIPPED` in any report.
+Public Windows binary distribution (`Issue #73`) requires `verify_companion_artifacts.py --verify-e2e --standalone-embedded` on the build host plus `scripts/vm_target_e2e.ps1` on a Clean Windows 10/11 VM. Any `SKIPPED` dataset step, even with exit code 0, must remain labeled `SKIPPED` in all reports.
 
-See the [testing guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/.github/workflows/ci.yml) and [v0.6.0 E2E attestation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+See the [testing guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/.github/workflows/ci.yml) and [v1.0.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/releases/v1.0.0.md).

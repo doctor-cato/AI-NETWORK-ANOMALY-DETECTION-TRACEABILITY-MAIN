@@ -49,15 +49,15 @@ const layers = isVi
       ],
       [
         "Desktop UI (Tauri 2 + Svelte 5)",
-        "Đã triển khai (v0.6.0)",
-        "Bộ cài Windows x64 NSIS, quản lý tiến trình Python và nạp Companion Bundle; cần Python >= 3.12 + WebView2 bên ngoài.",
+        "Đã triển khai (v1.0.0 Source)",
+        "Bộ cài Windows x64 NSIS nhúng PyInstaller FastAPI Sidecar, 4 .joblib và demo_flows.csv lúc build; máy người dùng cuối không cần Python/venv. Bộ cài công khai đang chờ Issue #73.",
         source("docs/WINDOWS_INSTALLATION.md"),
       ],
       [
-        "Chặn OS thật & Python nhúng",
-        "Đang hoãn (Deferred)",
-        "Tự động hóa firewall hệ điều hành, xoay khóa AES-256-GCM trong OS keyring, bắt gói PCAP trực tiếp và Python nhúng standalone đang hoãn.",
-        source("docs/releases/v0.6.0.md"),
+        "Chặn OS thật & phân phối nhị phân",
+        "Đang hoãn / Chờ (#73)",
+        "Tự động hóa firewall hệ điều hành, xoay khóa AES-256-GCM trong OS keyring (#26/#27), bắt gói PCAP trực tiếp đang hoãn; phát hành .exe công khai chờ Clean VM E2E & rà soát UQ 454104 (#73).",
+        source("docs/releases/v1.0.0.md"),
       ],
     ]
   : [
@@ -99,15 +99,15 @@ const layers = isVi
       ],
       [
         "Desktop UI (Tauri 2 + Svelte 5)",
-        "Implemented (v0.6.0)",
-        "Windows x64 NSIS installer, Python process lifecycle and Companion Bundle onboarding; requires external Python >= 3.12 + WebView2.",
+        "Implemented (v1.0.0 Source)",
+        "Windows x64 NSIS installer embeds PyInstaller FastAPI Sidecar, 4 .joblib models and demo_flows.csv at build time; zero end-user Python/venv. Public installer awaits Issue #73.",
         source("docs/WINDOWS_INSTALLATION.md"),
       ],
       [
-        "Live OS blocking & embedded Python",
-        "Deferred",
-        "Live firewall automation, production AES-256-GCM OS keyring rotation, live PCAP capture and embedded Python runtime remain deferred.",
-        source("docs/releases/v0.6.0.md"),
+        "Live OS blocking & public installer",
+        "Deferred / Blocked (#73)",
+        "Live firewall automation, AES-256-GCM OS keyring rotation (#26/#27) and live PCAP remain deferred; public .exe binary awaits Clean VM E2E & UQ 454104 review (#73).",
+        source("docs/releases/v1.0.0.md"),
       ],
     ];
 ---
@@ -115,8 +115,8 @@ const layers = isVi
 <Layout
   title={isVi ? "Kiến trúc hệ thống" : "System Architecture"}
   description={isVi
-    ? "Kiến trúc M6 hợp nhất (Tauri 2 + Svelte 5 + FastAPI + SQLite) và ranh giới từng tầng."
-    : "Consolidated M6 architecture (Tauri 2 + Svelte 5 + FastAPI + SQLite) and layer boundaries."}
+    ? "Kiến trúc NetFlow Sentinel v1.0.0 (Tauri 2 + Svelte 5 -> PyInstaller FastAPI Sidecar -> SQLite + 4 ML Models)."
+    : "NetFlow Sentinel v1.0.0 architecture (Tauri 2 + Svelte 5 -> PyInstaller FastAPI Sidecar -> SQLite + 4 ML Models)."}
   section="Architecture"
   lang={lang}
   routePath="architecture/"
@@ -125,11 +125,11 @@ const layers = isVi
     eyebrow={isVi ? "05 / Kiến trúc" : "05 / Architecture"}
     current={isVi ? "Kiến trúc" : "Architecture"}
     title={isVi
-      ? "Hệ thống desktop cục bộ với ranh giới rõ ràng."
-      : "A local desktop system with explicit boundaries."}
+      ? "Hệ thống desktop standalone với ranh giới rõ ràng."
+      : "A standalone desktop architecture with explicit boundaries."}
     description={isVi
-      ? "Kiến trúc v0.6.0 kết nối dữ liệu NetFlow đã xác minh qua cổng OOD, bốn mô hình đã kiểm chứng, FastAPI + SQLite cục bộ và giao diện Tauri 2 + Svelte 5. Khối nét liền đã có trên main; khối nét đứt đang hoãn."
-      : "The consolidated v0.6.0 architecture connects verified NetFlow data through OOD gating, four validated models, localhost FastAPI + SQLite and a Tauri 2 + Svelte 5 desktop UI. Solid nodes are implemented on main; dashed nodes are deferred."}
+      ? "Kiến trúc v1.0.0 kết nối giao diện Tauri 2 + Svelte 5 với PyInstaller FastAPI Sidecar nhúng 4 mô hình, SQLite cục bộ và cổng từ chối OOD. Khối nét liền đã có trên main; khối nét đứt đang hoãn hoặc chờ nghiệm thu (#73)."
+      : "The v1.0.0 architecture connects Tauri 2 + Svelte 5 with a build-time embedded PyInstaller FastAPI Sidecar, SQLite persistence, OOD gating and 4 validated ML models. Solid nodes are implemented on main; dashed nodes are deferred or awaiting #73."}
     lang={lang}
   />
   <section class="section">
@@ -138,7 +138,9 @@ const layers = isVi
         <div>
           <span class="eyebrow"
             >{
-              isVi ? "MVP Hợp nhất (v0.6.0)" : "Consolidated MVP (v0.6.0)"
+              isVi
+                ? "NetFlow Sentinel v1.0.0 (Standalone Sidecar)"
+                : "NetFlow Sentinel v1.0.0 (Standalone Sidecar)"
             }</span
           ><h2>
             {
@@ -167,8 +169,8 @@ const layers = isVi
           </title><desc id="diagram-desc"
             >{
               isVi
-                ? "Tải dữ liệu và cổng OOD nối vào tiền xử lý train-only, bốn mô hình, thống kê hành vi, rủi ro và timeline, mô phỏng dry-run, FastAPI + SQLite trên 127.0.0.1 và ứng dụng Tauri 2 + Svelte 5. Python 3.12+ ngoài gói và hành động firewall/AES keyring thật nằm ở nhánh hoãn."
-                : "Verified NetFlow acquisition and OOD gating feed train-only preprocessing, four validated models, NetFlow behavioral summary, deterministic risk/timeline, dry-run simulation, SQLite-backed FastAPI on 127.0.0.1 and the Tauri 2 + Svelte 5 desktop app. External Python 3.12+ and live firewall/AES-256-GCM keyring remain deferred."
+                ? "Tải dữ liệu và cổng OOD nối vào tiền xử lý train-only, bốn mô hình, thống kê hành vi, rủi ro và timeline, mô phỏng dry-run, FastAPI/SQLite trong PyInstaller Sidecar và ứng dụng Tauri 2 + Svelte 5. Chặn firewall thật, AES keyring và phân phối nhị phân công khai (#73) nằm ở nhánh hoãn."
+                : "Verified NetFlow acquisition and OOD gating feed train-only preprocessing, four validated models, NetFlow behavioral summary, deterministic risk/timeline, dry-run simulation, the bundled PyInstaller FastAPI/SQLite Sidecar and the Tauri 2 + Svelte 5 desktop app. Live firewall/AES-256-GCM keyring and public #73 installer release remain deferred."
             }</desc
           ><defs
             ><marker
@@ -197,7 +199,8 @@ const layers = isVi
             ><path d="M235 100H305"></path><path d="M495 100H565"></path><path
               d="M755 100H825"></path><path d="M920 145V230"></path><path
               d="M825 272H755"></path><path d="M565 272H495"></path><path
-              d="M305 272H235"></path><path d="M130 315V390"></path></g
+              d="M305 272H235"></path><path d="M130 315V390"></path><path
+              d="M235 435H305"></path></g
           >
           <g
             fill="none"
@@ -205,8 +208,7 @@ const layers = isVi
             stroke-width="2"
             stroke-dasharray="5 5"
             marker-end="url(#arrow-muted)"
-            ><path d="M235 435H305"></path><path d="M400 315V352H685V390"
-            ></path></g
+            ><path d="M400 315V352H685V390"></path></g
           >
           <g fill="#132b3d" stroke="#66e1e8" stroke-width="2"
             ><rect x="25" y="55" width="210" height="90" rx="5"></rect><rect
@@ -221,6 +223,7 @@ const layers = isVi
             ></rect><rect x="305" y="230" width="190" height="85" rx="5"
             ></rect><rect x="25" y="230" width="210" height="85" rx="5"
             ></rect><rect x="25" y="390" width="210" height="90" rx="5"
+            ></rect><rect x="305" y="390" width="230" height="90" rx="5"
             ></rect></g
           >
           <g
@@ -228,12 +231,7 @@ const layers = isVi
             stroke="#778ca0"
             stroke-width="2"
             stroke-dasharray="7 6"
-            ><rect x="305" y="390" width="230" height="90" rx="5"></rect><rect
-              x="565"
-              y="390"
-              width="240"
-              height="90"
-              rx="5"></rect></g
+            ><rect x="565" y="390" width="240" height="90" rx="5"></rect></g
           >
           <g
             font-family="ui-sans-serif,system-ui"
@@ -254,9 +252,9 @@ const layers = isVi
             ><text x="43" y="264">FastAPI + SQLite</text><text x="43" y="425"
               >Tauri 2 + Svelte 5</text
             ><text x="323" y="425"
-              >{isVi ? "Python 3.12+ ngoài" : "External Python 3.12+"}</text
+              >{isVi ? "Sidecar PyInstaller" : "PyInstaller Sidecar"}</text
             ><text x="583" y="425"
-              >{isVi ? "Chặn OS thật (Hoãn)" : "Live OS Actions"}</text
+              >{isVi ? "Hoãn & Chờ (#73)" : "Deferred / #73"}</text
             ></g
           >
           <g font-family="ui-sans-serif,system-ui" fill="#9fb3c4" font-size="12"
@@ -271,10 +269,10 @@ const layers = isVi
               y="290">#32 & #24 deterministic</text
             ><text x="323" y="290">executed = false</text><text x="43" y="290"
               >127.0.0.1 + token auth</text
-            ><text x="43" y="452">Windows NSIS v0.6.0</text><text
+            ><text x="43" y="452">Windows NSIS v1.0.0</text><text
               x="323"
-              y="452">Companion Bundle .joblib</text
-            ><text x="583" y="452">firewall & AES keyring deferred</text></g
+              y="452">Embedded 4 .joblib + demo CSV</text
+            ><text x="583" y="452">firewall, keyring & public .exe</text></g
           ></svg
         >
       </div><p class="diagram-note">

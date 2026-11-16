@@ -1,0 +1,24 @@
+---
+title: Tài liệu Phản biện Học thuật
+description: Toàn bộ bộ hồ sơ kỹ thuật chuyên sâu 01–09 (55 cột, TrainOnlyPreprocessor, 4 model & Q&A bảo vệ đồ án).
+order: 15
+---
+
+## Mục đích
+
+Thư mục [`docs/academic-defense/`](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/tree/main/docs/academic-defense) được biên soạn riêng cho giảng viên và hội đồng bảo vệ đồ án AI cuối kỳ để kiểm chứng dữ liệu, tiền xử lý, chia tập, code huấn luyện, thông số thật và giới hạn khoa học của **NetFlow Sentinel v1.0.0**.
+
+## Cấu trúc 11 tệp bằng chứng
+
+1. `01_DATASET_ORIGIN_AND_STRUCTURE.md` — Bản chất NF-UNSW-NB15-v3 (2.365.424 NetFlow vs PCAP, 1 flow != thiết bị bị xâm nhập).
+2. `02_COMPLETE_FEATURE_DICTIONARY.md` — Giải thích **100% cả 55 cột** (Min, Median p50, Max, Train imputed, vocab size).
+3. `03_DATA_PREPROCESSING_PIPELINE.md` — Chính xác code `TrainOnlyPreprocessor` (`47` chiều, median/mode Train-only, không OHE, `scaler_type="none"`, `passthrough`) kèm ví dụ trước/sau thật từ `demo_flows.csv`.
+4. `04_TRAIN_VALIDATION_TEST_DESIGN.md` — Chronological split + 5-phút purge gap (`1.655.797` / `345.371` / `345.953`), lọc benign-only cho IF/AE, và kiểm toán leakage.
+5. `05_FOUR_MODELS_EXPLAINED.md` — Cơ chế, siêu tham số và ngữ nghĩa đầu ra của Random Forest, XGBoost, Isolation Forest và Autoencoder (`sklearn.neural_network.MLPRegressor (32,16,32)`).
+6. `06_TRAINING_CODE_WALKTHROUGH.md` — Đọc từng hàm từ `scripts/train_*.py` → `artifacts/*.joblib` → SHA-256 → `InferencePipeline`.
+7. `07_MODEL_RESULTS_AND_LIMITATIONS.md` — Đối chiếu 4 mô hình trên Validation/Test, lý do Autoencoder yếu với MSE chưa scale, sụp đổ cross-dataset và OOD Gate (`MIN_TTL == 0`).
+8. `08_TEACHER_QUESTIONS_AND_ANSWERS.md` — 20 câu hỏi phản biện trực diện của giảng viên và câu trả lời dựa trên bằng chứng code.
+9. `09_PRESENTATION_AND_DEMO_DEFENSE_GUIDE.md` — Kịch bản trình bày 10–15 phút và live demo an toàn với 200 dòng Validation.
+10. `README.md` & `EVIDENCE_INDEX.md` — Bản đồ đọc nhanh và chỉ mục kiểm toán bằng chứng.
+
+Xem trang tổng hợp tương tác tại [Phản biện Học thuật (AI/ML)](../../academic-defense/) hoặc bộ tài liệu gốc tại [`docs/academic-defense/`](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/tree/main/docs/academic-defense).

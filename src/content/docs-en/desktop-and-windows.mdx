@@ -1,24 +1,26 @@
 ---
-title: Windows desktop & release
-description: Tauri 2 + Svelte 5 desktop installer, Python 3.12+ runtime and Companion Bundle setup.
+title: Windows desktop & v1.0.0 release
+description: Standalone Tauri 2 + Svelte 5 -> PyInstaller FastAPI Sidecar architecture and Issue #73 boundaries.
 order: 13
 ---
 
-## Packaging architecture (v0.6.0)
+## Standalone packaging architecture (v1.0.0)
 
-The Windows x64 NSIS installer (`NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`) bundles the **Svelte 5** frontend, **Rust / Tauri 2** host, **Python backend source** (`src/network_anomaly/`, `scripts/run_api.py`, `requirements-runtime.txt`) and tracked **SHA-256 manifests** (`reports/`). Users do not need `git clone` or `NETWORK_ANOMALY_REPO_ROOT`. User state (`.venv`, model `.joblib` files, `data/demo/`, `network_anomaly.db`) lives under `%LOCALAPPDATA%\NetFlowSentinelM6` for standard-user compatibility.
+In **NetFlow Sentinel v1.0.0**, the Tauri 2 + Svelte 5 process launches a **PyInstaller FastAPI Sidecar** (`scripts/build_backend_sidecar.py`, `desktop/src-tauri/tauri.standalone.conf.json`) on `127.0.0.1` with a 256-bit session token and local SQLite persistence.
 
-Because `NF-UNSW-NB15-v3` carries non-commercial reuse terms and `.joblib` binaries stay outside Git, target Windows machines require:
+When built on a developer/CI host with verified artifacts present:
 
-- **Windows 10/11 (x64)** with **Microsoft Edge WebView2 Runtime**.
-- **Python `>= 3.12` (x64)** for `requirements-runtime.txt` compatibility.
-- **Companion Bundle ZIP** (4 models + preprocessor + 200-row Validation demo CSVs), verified fail-closed via `COMPANION_SHA256SUMS.txt` and tracked manifests.
+- The Windows x64 NSIS installer embeds the sidecar, all four `.joblib` models, `nf_unsw_nb15_v3_preprocessor.joblib`, and 200-row `demo_flows.csv`.
+- **End users** do not install Python, create a `.venv`, download an external Companion Bundle ZIP, or run `git clone`. App data is stored under `%LOCALAPPDATA%\NetFlowSentinel\`.
+- **Developers** can still build/run in `DEVELOPMENT` mode from the `v1.0.0` Source Release.
 
-## Verification & release attestation
+## Distribution status & verification
+
+GitHub Release `v1.0.0` is currently published as a **Source Release**. Public `.exe` installer release stays **BLOCKED / DEFERRED** under [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/governance/DISTRIBUTION_AUTHORIZATION.json) and [Issue #73](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues/73) pending Clean Windows 10/11 VM E2E (`scripts/vm_target_e2e.ps1`) and UQ `454104` license sign-off.
 
 ```powershell
-python scripts/check_desktop_version.py --check --expect-version 0.6.0
-python scripts/verify_companion_artifacts.py --verify-attestation .\release_e2e_verification.json --expect-installer-sha256 <SHA256> --require-nsis-e2e --require-demo-files
+python scripts/check_desktop_version.py --check
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
 ```
 
-See the [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md), [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md), [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md) and [E2E verification record](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+See the [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/WINDOWS_INSTALLATION.md), [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/RELEASE_PROCESS.md) and [v1.0.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/releases/v1.0.0.md).

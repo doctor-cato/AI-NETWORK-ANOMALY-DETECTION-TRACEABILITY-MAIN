@@ -80,16 +80,16 @@ const models = isVi
         status: "Đã đánh giá Held-out Test",
         statusClass: "validated",
         principle:
-          "Mạng mã hóa-giải mã đối xứng (47 → 32 → 16 → 32 → 47) học tái tạo flow lành tính; sai số tái tạo MSE lớn báo hiệu bất thường.",
-        role: "Đối chiếu phương pháp lỗi tái tạo với Isolation Forest dưới ngân sách FPR chặt chẽ trên Validation.",
+          "Bộ tái tạo đối xứng (47 → 32 → 16 → 32 → 47) cài đặt bằng sklearn.neural_network.MLPRegressor (không dùng PyTorch) học tái tạo flow lành tính theo MSE.",
+        role: "Đối chiếu phương pháp lỗi tái tạo với Isolation Forest dưới ngân sách FPR chặt chẽ trên Validation (trạng thái vận hành Desktop: RESEARCH_ONLY).",
         input:
-          "Đầu vào: 1.590.608 flow lành tính (Benign) của tập Train sau biến đổi train-only.",
+          "Đầu vào: 1.590.608 flow lành tính (Benign) của tập Train sau biến đổi train-only (47 chiều float64, scaler_type='none').",
         method:
           "Run active ae_fpr_constrained_20261115T163000Z: ReLU + Adam, ngưỡng 17234985,792476 đóng băng trên Validation theo fpr_constrained (FPR mục tiêu ≤ 0,05; thực đo Val FPR 0,0500), tách Backdoor & Worms.",
         evaluation:
           "Held-out Test (345.953 dòng): F1 0,1361, Precision 0,1804, Recall 0,1093, FPR 0,0482, ROC-AUC 0,6303, PR-AUC 0,1615. Họ tấn công chưa biết {Backdoor, Worms}: Recall 0,0625 (81 / 1.296).",
         limit:
-          "Recall thấp dưới ràng buộc FPR ≤ 0,05; run cũ ae_benign_quantile lưu riêng tại runs/. Tệp .joblib nằm ngoài Git (thiếu sẽ báo HTTP 503 fail-closed).",
+          "Recall thấp dưới ràng buộc FPR ≤ 0,05 và do đầu vào không scale khiến cột byte/pkt lớn chi phối MSE (ngưỡng 17,2 triệu); run cũ ae_benign_quantile lưu riêng tại runs/. Tệp .joblib nằm ngoài Git.",
         link: source("reports/evaluation/autoencoder/evaluation_report.md"),
       },
     ]
@@ -163,16 +163,16 @@ const models = isVi
         status: "Held-out Test verified",
         statusClass: "validated",
         principle:
-          "A symmetric neural encoder-decoder (47 → 32 → 16 → 32 → 47) reconstructs benign inputs; larger MSE reconstruction error flags anomalous flows.",
-        role: "Compare reconstruction-error anomaly detection against Isolation Forest under a strict Validation false-positive budget.",
+          "Symmetric reconstruction autoencoder (47 → 32 → 16 → 32 → 47) implemented via sklearn.neural_network.MLPRegressor (not PyTorch) on benign inputs; larger MSE flags anomalies.",
+        role: "Compare reconstruction-error anomaly detection against Isolation Forest under a strict Validation false-positive budget (Desktop registry tier: RESEARCH_ONLY).",
         input:
-          "Inputs: 1,590,608 benign-only Train flows after frozen train-only preprocessing.",
+          "Inputs: 1,590,608 benign-only Train flows after frozen train-only preprocessing (47 float64 dimensions, scaler_type='none').",
         method:
           "Active run ae_fpr_constrained_20261115T163000Z: ReLU + Adam, threshold 17234985.792476 frozen on Validation via fpr_constrained (target FPR ≤ 0.05; empirical Val FPR 0.0500), isolating Backdoor & Worms.",
         evaluation:
           "Held-out Test (345,953 rows): F1 0.1361, Precision 0.1804, Recall 0.1093, FPR 0.0482, ROC-AUC 0.6303, PR-AUC 0.1615. Unknown holdout {Backdoor, Worms}: Recall 0.0625 (81 / 1,296).",
         limit:
-          "Low recall under the FPR ≤ 0.05 constraint; earlier ae_benign_quantile run archived separately in runs/. Binary .joblib stays outside Git (fail-closed HTTP 503 if missing).",
+          "Low recall under FPR ≤ 0.05 and unscaled byte/packet magnitudes dominating MSE (threshold 17.2M); earlier ae_benign_quantile run archived separately in runs/. Binary .joblib stays outside Git.",
         link: source("reports/evaluation/autoencoder/evaluation_report.md"),
       },
     ];

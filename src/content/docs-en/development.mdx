@@ -1,12 +1,12 @@
 ---
 title: Development environment
-description: Repository layout, local checks and the separation of website and research code.
+description: v1.0.0 repository layout, PyInstaller sidecar packaging and portal separation.
 order: 3
 ---
 
 ## Repository boundaries
 
-On `main`, `src/network_anomaly/` holds research, ingestion, inference and FastAPI code; `desktop/` holds the Rust Tauri 2 + Svelte 5 desktop application (`v0.6.0`); `scripts/` holds CLI entry points; `data/` holds manifests and ignored dataset/demo CSV locations; `reports/` holds versioned quality, evaluation, OpenAPI and E2E evidence; and `artifacts/` stores local `.joblib` binaries excluded from Git. This portal lives on the dedicated `site-source` branch and builds to static HTML.
+On `main`, `src/network_anomaly/` holds research, ingestion, inference and FastAPI code; `desktop/` holds the **Rust / Tauri 2 + Svelte 5 (`v1.0.0`)** desktop app; `scripts/` holds CLI entry points and `build_backend_sidecar.py`; `data/` holds manifests and ignored CSV paths; `reports/` stores quality, evaluation, OpenAPI and governance manifests; `artifacts/` stores local `.joblib` binaries outside Git. This portal lives on the dedicated `site-source` branch.
 
 ## Basic checks
 
@@ -14,9 +14,9 @@ On `main`, `src/network_anomaly/` holds research, ingestion, inference and FastA
 python scripts/check_environment.py
 python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
 python scripts/check_desktop_version.py --check
-python -m ruff check .
-python -m black --check .
+python -m ruff check src scripts tests
+python -m black --check src scripts tests
 git diff --check
 ```
 
-These checks do not stand in for real-data evaluation. CI runs tests with synthetic fixtures; dataset-dependent and companion-artifact steps report `SKIPPED` when raw bytes or `.joblib` files are absent. See [testing guidance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md) and [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md).
+These checks do not replace real-data benchmarks. CI runs pytest against synthetic fixtures; dataset-dependent checks report `SKIPPED` when raw bytes or `.joblib` files are absent. See [testing guidance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/TESTING.md) and [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/RELEASE_PROCESS.md).

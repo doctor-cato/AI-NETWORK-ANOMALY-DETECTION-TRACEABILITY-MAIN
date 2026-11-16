@@ -1,0 +1,342 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import { href, repoTree, source, type Lang } from "../../lib/links";
+
+interface Props {
+  lang?: Lang;
+}
+const { lang = "vi" } = Astro.props;
+const isVi = lang === "vi";
+
+const dossierFiles = isVi
+  ? [
+      [
+        "01",
+        "01_DATASET_ORIGIN_AND_STRUCTURE.md",
+        "Nguồn gốc NF-UNSW-NB15-v3, khác biệt NetFlow vs PCAP và vì sao 1 flow Attack không đồng nghĩa máy bị chiếm quyền.",
+      ],
+      [
+        "02",
+        "02_COMPLETE_FEATURE_DICTIONARY.md",
+        "Từ điển 100% cả 55 cột kèm kiểu dữ liệu, Min / Median (p50) / Max, giá trị impute từ Train và vocab size.",
+      ],
+      [
+        "03",
+        "03_DATA_PREPROCESSING_PIPELINE.md",
+        "Chi tiết TrainOnlyPreprocessor (47 chiều float64, median/mode Train-only, không OHE, scaler_type='none') + ví dụ trước/sau thật.",
+      ],
+      [
+        "04",
+        "04_TRAIN_VALIDATION_TEST_DESIGN.md",
+        "Chronological group-aware split + purge gap 5 phút (1.655.797 / 345.371 / 345.953), lọc benign-only cho IF/AE và audit leakage.",
+      ],
+      [
+        "05",
+        "05_FOUR_MODELS_EXPLAINED.md",
+        "Cơ chế, siêu tham số và hợp đồng đầu ra của RF, XGBoost, Isolation Forest và Autoencoder (MLPRegressor).",
+      ],
+      [
+        "06",
+        "06_TRAINING_CODE_WALKTHROUGH.md",
+        "Theo dõi từng hàm từ scripts/train_*.py đến .joblib, SHA-256 manifest và InferencePipeline.",
+      ],
+      [
+        "07",
+        "07_MODEL_RESULTS_AND_LIMITATIONS.md",
+        "Đối chiếu 4 mô hình trên Held-out Test, phân tích điểm yếu Autoencoder MSE chưa scale, sụp đổ cross-dataset và OOD Gate.",
+      ],
+      [
+        "08",
+        "08_TEACHER_QUESTIONS_AND_ANSWERS.md",
+        "20 câu hỏi phản biện trực diện của giảng viên kèm câu trả lời đối chiếu trực tiếp từ code và manifest.",
+      ],
+      [
+        "09",
+        "09_PRESENTATION_AND_DEMO_DEFENSE_GUIDE.md",
+        "Kịch bản bảo vệ đồ án 10–15 phút, phân ranh giới Demo Live 200 dòng Validation và ứng xử khi gặp câu hỏi khó.",
+      ],
+      [
+        "10",
+        "README.md & EVIDENCE_INDEX.md",
+        "Bản đồ đọc theo thời gian rảnh (5 phút / 30 phút / chuyên sâu) và chỉ mục truy vết toàn bộ tuyên bố.",
+      ],
+    ]
+  : [
+      [
+        "01",
+        "01_DATASET_ORIGIN_AND_STRUCTURE.md",
+        "NF-UNSW-NB15-v3 provenance, NetFlow v9 vs PCAP differences, and why an Attack flow != compromised endpoint.",
+      ],
+      [
+        "02",
+        "02_COMPLETE_FEATURE_DICTIONARY.md",
+        "Complete 55-column dictionary with role, Min / Median (p50) / Max, Train-imputed values, and categorical vocabulary sizes.",
+      ],
+      [
+        "03",
+        "03_DATA_PREPROCESSING_PIPELINE.md",
+        "Exact TrainOnlyPreprocessor steps (47 float64 dims, Train-only median/mode, no OHE, scaler_type='none') + real before/after flow examples.",
+      ],
+      [
+        "04",
+        "04_TRAIN_VALIDATION_TEST_DESIGN.md",
+        "Chronological group-aware split + 5-min purge gaps (1,655,797 / 345,371 / 345,953), benign-only filtering, and leakage audit.",
+      ],
+      [
+        "05",
+        "05_FOUR_MODELS_EXPLAINED.md",
+        "Hyperparameters, training populations, threshold selection policies, and output contracts for RF, XGB, IF, and MLPRegressor AE.",
+      ],
+      [
+        "06",
+        "06_TRAINING_CODE_WALKTHROUGH.md",
+        "Line-by-line code trace from scripts/train_*.py to serialized .joblib, SHA-256 verification, and InferencePipeline.",
+      ],
+      [
+        "07",
+        "07_MODEL_RESULTS_AND_LIMITATIONS.md",
+        "Four-model Held-out Test benchmark, why unscaled MSE limits AE (F1 0.1361), cross-dataset collapse, and OOD gating.",
+      ],
+      [
+        "08",
+        "08_TEACHER_QUESTIONS_AND_ANSWERS.md",
+        "20 direct committee questions answered strictly from verified source code, manifests, and evaluation reports.",
+      ],
+      [
+        "09",
+        "09_PRESENTATION_AND_DEMO_DEFENSE_GUIDE.md",
+        "10–15 minute thesis defense script and safe live demo protocol on the 200-row Validation-only slice.",
+      ],
+      [
+        "10",
+        "README.md & EVIDENCE_INDEX.md",
+        "Quick reading guide (5-min / 30-min / full audit) and full claim-to-evidence verification table.",
+      ],
+    ];
+
+const pipelineFacts = isVi
+  ? [
+      [
+        "55 → 47 cột đầu vào",
+        "Loại 6 trường metadata truy vết (IPV4_*, L4_*_PORT, FLOW_*_MILLISECONDS) và 2 cột nhãn (Label, Attack) trước ma trận X.",
+        source("src/network_anomaly/data/nf_unsw_nb15_v3.py"),
+      ],
+      [
+        "37 định lượng + 10 rời rạc",
+        "37 cột định lượng impute bằng median Train (SRC_TO_DST_SECOND_BYTES=162.0); 10 cột rời rạc mã hóa số impute bằng mode Train (PROTOCOL=6.0, L7_PROTO=37.0, TCP_FLAGS=27.0) + np.round.",
+        source(
+          "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+        ),
+      ],
+      [
+        "Không OHE & scaler='none'",
+        "Tránh nổ chiều từ DNS_QUERY_ID (63.003 giá trị trong Train); giữ đúng 47 chiều float64 và dùng passthrough cho giá trị rời rạc chưa thấy.",
+        source("src/network_anomaly/preprocessing/pipeline.py"),
+      ],
+      [
+        "Autoencoder = MLPRegressor",
+        "Cài đặt bằng sklearn.neural_network.MLPRegressor(32, 16, 32) với ReLU + Adam — không dùng PyTorch. Ngưỡng MSE 17.234.985,79 phản ánh việc không scale đặc trưng byte/pkt lớn.",
+        source("src/network_anomaly/models/autoencoder.py"),
+      ],
+    ]
+  : [
+      [
+        "55 → 47 model features",
+        "Excludes 6 trace metadata fields (IPV4_*, L4_*_PORT, FLOW_*_MILLISECONDS) and 2 targets (Label, Attack) prior to matrix X.",
+        source("src/network_anomaly/data/nf_unsw_nb15_v3.py"),
+      ],
+      [
+        "37 quantitative + 10 coded",
+        "37 quantitative fields receive Train medians (SRC_TO_DST_SECOND_BYTES=162.0); 10 coded-discrete fields receive Train modes (PROTOCOL=6.0, L7_PROTO=37.0, TCP_FLAGS=27.0) + np.round.",
+        source(
+          "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+        ),
+      ],
+      [
+        "No OHE & scaler='none'",
+        "Avoids dimension explosion from DNS_QUERY_ID (63,003 Train values); preserves 47 float64 dims with passthrough on unseen discrete codes.",
+        source("src/network_anomaly/preprocessing/pipeline.py"),
+      ],
+      [
+        "Autoencoder = MLPRegressor",
+        "Implemented with sklearn.neural_network.MLPRegressor(32, 16, 32), ReLU + Adam — not PyTorch. Its 17,234,985.79 MSE threshold reflects unscaled raw byte/packet columns.",
+        source("src/network_anomaly/models/autoencoder.py"),
+      ],
+    ];
+---
+
+<Layout
+  title={isVi ? "Phản biện học thuật" : "Academic Defense"}
+  description={isVi
+    ? "Bộ tài liệu phản biện học thuật chuyên sâu cho NetFlow Sentinel v1.0.0: 55 cột, TrainOnlyPreprocessor, 4 mô hình ML và 20 câu hỏi hội đồng."
+    : "In-depth academic defense dossier for NetFlow Sentinel v1.0.0: all 55 columns, TrainOnlyPreprocessor, 4 ML models and committee Q&A."}
+  section="Academic"
+  lang={lang}
+  routePath="academic-defense/"
+>
+  <PageIntro
+    eyebrow={isVi ? "08 / Phản biện học thuật" : "08 / Academic Defense"}
+    current={isVi ? "Phản biện AI/ML" : "Academic Defense"}
+    title={isVi
+      ? "Minh bạch từ từng cột dữ liệu tới quyết định của mô hình."
+      : "Full transparency from raw flow schema to model decisions."}
+    description={isVi
+      ? "Trang này tóm tắt bộ tài liệu kỹ thuật docs/academic-defense/ phục vụ giảng viên và hội đồng bảo vệ đồ án AI cuối kỳ NetFlow Sentinel v1.0.0 — đối chiếu trực tiếp từ code nguồn, manifest SHA-256 và kết quả Held-out Test."
+      : "Summarizes the docs/academic-defense/ suite prepared for faculty review of NetFlow Sentinel v1.0.0 — traced directly to source code, SHA-256 manifests and Held-out Test reports."}
+    lang={lang}
+  />
+
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow"
+            >{
+              isVi ? "Điểm chốt tiền xử lý & AI" : "Verified Pipeline Mechanics"
+            }</span
+          >
+          <h2>
+            {
+              isVi
+                ? "Bốn sự thật kỹ thuật cốt lõi trong codebase"
+                : "Four core engineering facts verified from code"
+            }
+          </h2>
+        </div>
+        <a class="text-link" href={repoTree("docs/academic-defense")}
+          >{
+            isVi
+              ? "Mở thư mục docs/academic-defense trên GitHub ↗"
+              : "Browse docs/academic-defense on GitHub ↗"
+          }</a
+        >
+      </div>
+
+      <div class="cards-grid">
+        {
+          pipelineFacts.map(([heading, detail, link]) => (
+            <article class="surface defense-card">
+              <h3>{heading}</h3>
+              <p>{detail}</p>
+              <a href={link}>
+                {isVi ? "Đối chiếu mã/manifest ↗" : "Inspect source/manifest ↗"}
+              </a>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="section rule tinted">
+    <div class="container">
+      <span class="eyebrow"
+        >{isVi ? "Cấu trúc bộ hồ sơ bảo vệ" : "Defense Dossier Inventory"}</span
+      >
+      <h2>
+        {
+          isVi
+            ? "Toàn bộ 10 mục trong docs/academic-defense/"
+            : "All 10 sections inside docs/academic-defense/"
+        }
+      </h2>
+      <p class="lede">
+        {
+          isVi
+            ? "Mỗi tài liệu chỉ nêu thông số đã xác minh từ repository và phân tách rõ IMPLEMENTED, TESTED, EXPERIMENTALLY VALIDATED và NOT VERIFIED."
+            : "Every document reports only repository-verified figures and explicitly separates IMPLEMENTED, TESTED, EXPERIMENTALLY VALIDATED and NOT VERIFIED."
+        }
+      </p>
+
+      <div class="table-wrap surface">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{isVi ? "Mục" : "ID"}</th>
+              <th>{isVi ? "Tài liệu" : "Document"}</th>
+              <th
+                >{
+                  isVi ? "Nội dung & bằng chứng chính" : "Scope & Core Evidence"
+                }</th
+              >
+            </tr>
+          </thead>
+          <tbody>
+            {
+              dossierFiles.map(([idx, filename, summary]) => (
+                <tr>
+                  <td>
+                    <code>{idx}</code>
+                  </td>
+                  <td>
+                    <code>{filename}</code>
+                  </td>
+                  <td>{summary}</td>
+                </tr>
+              ))
+            }
+          </tbody>
+        </table>
+      </div>
+
+      <div class="defense-actions">
+        <a
+          class="button button-primary"
+          href={repoTree("docs/academic-defense")}
+        >
+          {
+            isVi
+              ? "Đọc bộ docs/academic-defense trên GitHub ↗"
+              : "Read docs/academic-defense on GitHub ↗"
+          }
+        </a>
+        <a class="button" href={href("models/", lang)}>
+          {isVi ? "Xem thông số 4 mô hình" : "View 4-model breakdown"}
+        </a>
+        <a class="button" href={source("src/network_anomaly/ingestion/ood.py")}>
+          {isVi ? "Xem mã cổng OOD Gate ↗" : "Inspect OOD Gate code ↗"}
+        </a>
+      </div>
+    </div>
+  </section>
+</Layout>
+
+<style>
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1.25rem;
+    margin-top: 2rem;
+  }
+  .defense-card {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .defense-card h3 {
+    margin: 0;
+    font-size: 1.12rem;
+  }
+  .defense-card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.94rem;
+    flex: 1;
+  }
+  .defense-card a {
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+  .table-wrap {
+    margin-top: 2rem;
+    overflow-x: auto;
+  }
+  .defense-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    margin-top: 2rem;
+  }
+</style>

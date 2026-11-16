@@ -1,17 +1,17 @@
 ---
 title: Limitations
-description: Known scientific, cross-dataset, packaging and security boundaries.
+description: Scientific bounds, cross-dataset collapse, v1.0.0 distribution status and deferred capabilities.
 order: 11
 ---
 
 ## Benchmark validity & cross-dataset collapse
 
-The verified package contains flows observed in early 2015 in a controlled IXIA PerfectStorm testbed. `49.98%` of Validation rows and `53.21%` of Test rows share identical 47-feature vectors with Train, and a single `MIN_TTL` tree reaches `0.999849` Validation accuracy. On a 100,000-row external sample of `NF-CSE-CIC-IDS2018-v3`, `99.99%` of rows exhibit TTL shortcut drift and canonical Random Forest drops to **`0.0000` Recall** and **`0.3802` FPR**. Meanwhile, under a strict `Val FPR <= 0.05` constraint, the Autoencoder achieves only `0.1361` Held-out Test F1 and `0.1093` Recall.
+The verified package contains flows observed in early 2015 in an IXIA PerfectStorm testbed. `49.98%` of Validation rows and `53.21%` of Test rows share identical 47-feature vectors with Train, and a single `MIN_TTL` tree reaches `0.999849` Validation accuracy. On a 100,000-row external sample of `NF-CSE-CIC-IDS2018-v3`, `99.99%` of rows exhibit TTL shortcut drift and canonical Random Forest collapses to **`0.0000` Recall** and **`0.3802` FPR**. Meanwhile, under `Val FPR <= 0.05` and unscaled features (`scaler_type="none"`), the `MLPRegressor` Autoencoder achieves `0.1361` Held-out Test F1 and `0.1093` Recall.
 
-## Packaging & external prerequisites (v0.6.0)
+## Packaging & distribution boundaries (v1.0.0)
 
-The static research portal does not run inference. On Windows, the `v0.6.0` NSIS installer bundles the Svelte 5 UI, Rust Tauri 2 host, Python backend source and tracked manifests, **not** an embedded Python interpreter or `.joblib` model binaries (due to dataset licensing and binary size). Target machines need Python `>= 3.12` (x64), WebView2 Runtime and the Companion Bundle (`BLOCKED / NOT READY` if missing).
+This static research portal does not execute models. On `main` (`PR #72`), `v1.0.0` replaced external Python + Companion Bundle prerequisites with a build-time embedded **PyInstaller Sidecar**. However, public Windows `.exe` distribution remains **BLOCKED / DEFERRED** under [Issue #73](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues/73) and `DISTRIBUTION_AUTHORIZATION.json` (awaiting Clean Windows VM E2E & UQ `454104` license review); GitHub Release `v1.0.0` is currently a **Source Release**.
 
 ## Deferred operational capabilities
 
-Live packet capture (PCAP), authentication/API log correlation, live OS firewall automation and production AES-256-GCM OS keyring key rotation remain **DEFERRED**. Security response simulation (#27) runs strictly in deterministic dry-run mode (`executed = false`). See [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md).
+Live packet capture (PCAP), authentication/API log correlation, live OS firewall automation and production AES-256-GCM OS keyring key rotation remain **DEFERRED**. Security response simulation (#27) runs strictly in deterministic dry-run mode (`executed = false`). See [v1.0.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/releases/v1.0.0.md).

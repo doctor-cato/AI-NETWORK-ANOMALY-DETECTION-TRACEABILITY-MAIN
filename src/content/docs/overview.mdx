@@ -1,23 +1,27 @@
 ---
 title: Tổng quan dự án
-description: Phạm vi nghiên cứu, năng lực v0.6.0 hiện tại và điểm bắt đầu.
+description: Phạm vi NetFlow Sentinel v1.0.0, tách bạch Người dùng cuối / Developer / Học thuật và ranh giới phát hành.
 order: 1
 ---
 
 ## Mục tiêu
 
-Repository này nghiên cứu bài toán phát hiện bất thường trên lưu lượng mạng (NetFlow) gắn với kiến trúc truy vết có bằng chứng. Cổng thông tin công khai này là website tài liệu tĩnh; nó không chạy mô hình phát hiện hay giám sát lưu lượng trực tiếp.
+**NetFlow Sentinel v1.0.0** (đồ án AI cuối kỳ) nghiên cứu bài toán phát hiện bất thường trên lưu lượng mạng (NetFlow) gắn với kiến trúc truy vết có bằng chứng trên **NF-UNSW-NB15-v3**. Cổng thông tin công khai này là website tài liệu tĩnh; nó không chạy mô hình phát hiện hay giám sát lưu lượng trực tiếp.
 
-Nhánh `main` hiện tại bao gồm hợp đồng dữ liệu NF-UNSW-NB15-v3, báo cáo chất lượng và EDA, mã chia tập theo thời gian và tiền xử lý chỉ trên Train, **bằng chứng Validation và Held-out Test trên dữ liệu thật cho cả bốn mô hình** (Random Forest, XGBoost, Isolation Forest và Autoencoder), kiểm toán tổng quát hóa cross-dataset trên `NF-CSE-CIC-IDS2018-v3`, cổng kiểm chứng provenance và từ chối OOD, dịch vụ FastAPI + SQLite chạy cục bộ và **ứng dụng Desktop Rust / Tauri 2 + Svelte 5 (`v0.6.0`)**. Các thao tác chặn firewall thật trên hệ điều hành và lưu khóa AES-256-GCM trong OS keyring vẫn ở trạng thái hoãn (`DEFERRED`).
+Nhánh `main` hiện tại (`PR #72` đã merge) bao gồm:
+
+- **Ứng dụng Desktop Standalone (`v1.0.0`)**: `Rust / Tauri 2 + Svelte 5 -> Python FastAPI / PyInstaller Sidecar -> SQLite + 4 ML Models`. Khi build từ nguồn theo cấu hình standalone, sidecar đóng gói sẵn 4 `.joblib`, `nf_unsw_nb15_v3_preprocessor.joblib` và lát cắt `demo_flows.csv` — **người dùng cuối không cần cài Python, venv hay Companion Bundle ngoài**.
+- **Bằng chứng ML thực nghiệm trên NF-UNSW-NB15-v3**: Random Forest (`MODEL_VALIDATED`, Held-out Test `F1 = 0,999853`), XGBoost (`RESEARCH_ONLY`, `F1 = 0,999984`), Isolation Forest (`RESEARCH_ONLY`, `F1 = 0,5064`) và Autoencoder (`sklearn.neural_network.MLPRegressor (32,16,32)`, `RESEARCH_ONLY`, `F1 = 0,1361`).
+- **Ranh giới phát hành & vận hành**: GitHub Release `v1.0.0` hiện là **Source Release**. Bộ cài Windows `.exe` công khai đang ở trạng thái **DEFERRED / BLOCKED** theo Issue #73 và `DISTRIBUTION_AUTHORIZATION.json` (chờ nghiệm thu Clean Windows 10/11 VM E2E và rà soát điều khoản UQ `454104`). Chặn firewall OS thật và AES-256-GCM OS keyring giữ trạng thái `DEFERRED` (chỉ có Dry-Run #27 với `executed = false`).
 
 ## Điểm bắt đầu
 
-- [README và tóm tắt dự án hiện tại](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md)
-- [Ghi chú phát hành v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md)
-- [Tài liệu phạm vi đề tài (Project charter)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/PROJECT_CHARTER.md)
-- [Sổ checkpoint triển khai](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/IMPLEMENTATION_CHECKPOINTS.md)
-- [Ma trận truy vết (Traceability matrix)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TRACEABILITY_MATRIX.md)
+- [README — Hướng dẫn Người dùng cuối, Developer & Học thuật](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/README.md)
+- [Ghi chú phát hành NetFlow Sentinel v1.0.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/releases/v1.0.0.md)
+- [Ma trận ủy quyền phân phối (DISTRIBUTION_AUTHORIZATION.json)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/governance/DISTRIBUTION_AUTHORIZATION.json)
+- [Kiến trúc hệ thống](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/ARCHITECTURE.md)
+- [Ma trận truy vết (Traceability matrix)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/TRACEABILITY_MATRIX.md)
 
 ## Quy ước mức độ bằng chứng
 
-**Implemented** nghĩa là mã nguồn đã có trên `main`; **Tested** nghĩa là hành vi đã có kiểm thử tự động; **Experimentally validated** yêu cầu lượt chạy trên dữ liệu thật có provenance và metric đầy đủ; **Deferred** nghĩa là tính năng vận hành (như tự động hóa firewall hay xoay khóa OS keyring) chủ đích không thực thi ở runtime. Một fixture tổng hợp hay Issue đã đóng không tự chứng minh mức xác thực thực nghiệm.
+**Implemented** nghĩa là mã nguồn đã có trên `main`; **Tested** nghĩa là hành vi đã có kiểm thử tự động; **Experimentally validated** yêu cầu lượt chạy trên dữ liệu thật có provenance và metric đầy đủ; **Deferred / Blocked** nghĩa là tính năng hoặc phân phối công khai chủ đích chưa kích hoạt hoặc đang chờ điều kiện nghiệm thu (#73).

@@ -57,23 +57,23 @@ const milestones = isVi
         "Đã triển khai / kiểm thử",
         "tested",
         "Policy engine tất định và mô phỏng xoay khóa (#27, executed=false) khóa theo phân tích xác minh trên server, tích hợp Tab 4 + SQLite + JSON export; chặn firewall thật đang hoãn.",
-        source("docs/releases/v0.6.0.md"),
+        source("docs/releases/v1.0.0.md"),
       ],
       [
         "C9",
-        "FastAPI, SQLite, cổng tiếp nhận & Desktop UI",
+        "FastAPI, SQLite, cổng OOD & Sidecar v1.0.0",
         "Đã triển khai / kiểm thử",
         "tested",
-        "18 endpoint FastAPI, SQLite persistence, cổng OOD đa nguồn (#46) và Desktop App Tauri 2 + Svelte 5 (Windows NSIS v0.6.0) đã xác minh E2E 4 mô hình.",
-        source("reports/releases/v0.6.0_e2e_verification.json"),
+        "18 endpoint FastAPI, PyInstaller Sidecar (nhúng 4 .joblib khi build, không cần venv người dùng cuối), cổng OOD đa nguồn (#46) và Desktop Tauri 2 + Svelte 5 (PR #72).",
+        source("docs/releases/v1.0.0.md"),
       ],
       [
         "C10–C11",
-        "Nghiên cứu cross-dataset & bàn giao cuối kỳ",
-        "Đang thực hiện",
+        "Cross-dataset, M7 & phát hành v1.0.0",
+        "Đang hoàn thiện (#18 / #73)",
         "progress",
-        "Đã ghi nhận kiểm định cross-dataset RF trên NF-CSE-CIC-IDS2018-v3 (Recall 0,0, FPR 0,3802); báo cáo học thuật, slide (#18–#20) và phát hành GitHub Release đang hoàn thiện.",
-        issue(25),
+        "Đã phát hành Source Release v1.0.0, tài liệu phản biện học thuật (#18) và đo sụp đổ cross-dataset (RF Recall 0,0); bộ cài .exe công khai đang hoãn/khóa chờ Clean VM E2E & UQ 454104 (#73).",
+        issue(73),
       ],
     ]
   : [
@@ -123,23 +123,23 @@ const milestones = isVi
         "Implemented / tested",
         "tested",
         "Deterministic policy engine & key-rotation dry-run (#27, executed=false) gated on server-verified analysis with Tab 4 + SQLite + JSON export; live firewall actions deferred.",
-        source("docs/releases/v0.6.0.md"),
+        source("docs/releases/v1.0.0.md"),
       ],
       [
         "C9",
-        "FastAPI, SQLite, ingestion gate & Desktop UI",
+        "FastAPI, SQLite, OOD gate & v1.0.0 Sidecar",
         "Implemented / tested",
         "tested",
-        "18 FastAPI endpoints, SQLite persistence, multi-source OOD gate (#46) and Tauri 2 + Svelte 5 desktop app (v0.6.0 Windows NSIS) verified with 4-model E2E attestation.",
-        source("reports/releases/v0.6.0_e2e_verification.json"),
+        "18 FastAPI endpoints, PyInstaller Sidecar (build-time embedded models, zero end-user venv), multi-source OOD gate (#46) and Tauri 2 + Svelte 5 app (PR #72).",
+        source("docs/releases/v1.0.0.md"),
       ],
       [
         "C10–C11",
-        "Cross-dataset research & final delivery",
-        "In progress",
+        "Cross-dataset research, M7 & v1.0.0 delivery",
+        "In progress (#18 / #73)",
         "progress",
-        "Cross-dataset RF evaluation on NF-CSE-CIC-IDS2018-v3 documented (Recall 0.0, FPR 0.3802); final academic report, slides (#18–#20) and GitHub Release publication remaining.",
-        issue(25),
+        "Published v1.0.0 Source Release, academic defense suite (#18) and cross-dataset collapse audit (RF Recall 0.0); public Windows installer stays BLOCKED/DEFERRED pending Clean VM E2E & UQ 454104 (#73).",
+        issue(73),
       ],
     ];
 ---
@@ -147,8 +147,8 @@ const milestones = isVi
 <Layout
   title={isVi ? "Lộ trình dự án" : "Roadmap"}
   description={isVi
-    ? "Trạng thái các checkpoint M0–M7 dựa trên bằng chứng và bản phát hành v0.6.0."
-    : "Evidence-driven checkpoint status for M0–M7 and consolidated v0.6.0 delivery."}
+    ? "Trạng thái các checkpoint M0–M7 dựa trên bằng chứng và NetFlow Sentinel v1.0.0."
+    : "Evidence-driven checkpoint status for M0–M7 and NetFlow Sentinel v1.0.0."}
   section="Roadmap"
   lang={lang}
   routePath="roadmap/"

@@ -6,7 +6,7 @@ order: 4
 
 ## Nguồn gốc dữ liệu
 
-NF-UNSW-NB15-v3 được Đại học Queensland (UQ) công bố tại [DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1). Repository ghi nhận gói UQRDM và mã băm SHA-256 do dự án tính (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`) trong [báo cáo provenance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md).
+NF-UNSW-NB15-v3 được Đại học Queensland (UQ) công bố tại [DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1). Repository ghi nhận gói UQRDM và mã băm SHA-256 do dự án tính (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`) trong [báo cáo provenance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md).
 
 ## Lệnh tải dữ liệu & tạo mẫu demo Validation
 
@@ -16,6 +16,6 @@ python scripts/dataset_manifest.py verify
 python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
 ```
 
-Script tải tự động lấy URL tải tạm thời từ nguồn chính thức, xác minh toàn vẹn archive/CSV và giữ file raw nằm ngoài Git. `prepare_demo_dataset.py` tạo bộ demo 200 dòng lấy hoàn toàn từ Validation (`demo_flows.csv` không chứa nhãn, `demo_labels.csv` và `demo_manifest.json` đảm bảo 0 chồng lấn với Train/Test). Provenance của mẫu kiểm tra ngoại vi `NF-CSE-CIC-IDS2018-v3` (100.000 dòng) được ghi riêng tại [tệp provenance ngoại vi](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/data/EXTERNAL_DATASETS_PROVENANCE.json).
+Script tải tự động lấy URL tải tạm thời từ nguồn chính thức, xác minh toàn vẹn archive/CSV và giữ file raw nằm ngoài Git. `prepare_demo_dataset.py` tạo bộ demo 200 dòng lấy hoàn toàn từ Validation (`demo_flows.csv` không chứa nhãn, `demo_labels.csv` và `demo_manifest.json` đảm bảo 0 chồng lấn với Train/Test). Provenance của mẫu kiểm tra ngoại vi `NF-CSE-CIC-IDS2018-v3` (100.000 dòng) được ghi riêng tại [tệp provenance ngoại vi](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/data/EXTERNAL_DATASETS_PROVENANCE.json).
 
 Tuyệt đối không commit file CSV đã tải lên Git. Điều khoản sử dụng phi thương mại và trích dẫn của dữ liệu UQ độc lập với giấy phép mã nguồn Apache-2.0.

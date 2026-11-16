@@ -1,21 +1,21 @@
 ---
 title: Model training
-description: Baseline input contract and all four trained and Test-evaluated models.
+description: 47-feature unscaled input contract (scaler=none) and all four Test-evaluated models.
 order: 6
 ---
 
-## Input boundary
+## Input & preprocessing boundary
 
-The canonical baseline uses 47 ordered NetFlow features (`nf-unsw-nb15-v3-baseline-47`). `Label`, `Attack`, timestamps, IP addresses and L4 ports are excluded from model input. Split membership is assigned before imputation or other learned transformations. Training data and `.joblib` artifacts are not shipped in Git or on this website.
+The canonical baseline uses 47 ordered NetFlow features (`nf-unsw-nb15-v3-baseline-47`), excluding `Label`, `Attack` and six trace metadata columns from matrix `X`. `TrainOnlyPreprocessor` fits strictly on Train (`1,655,797` rows): **no One-Hot Encoding** (`DNS_QUERY_ID` has `63,003` categories) and **no scaling** (`scaler_type = "none"`), applying median imputation (37 quantitative columns) and mode imputation + `np.round` `passthrough` (10 categorical-coded columns).
 
 ## Protocols and real-data runs
 
-- [Random Forest baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RF_BASELINE_PROTOCOL.md) — Held-out Test run `rf-heldout-ea330b9` (`F1 = 0.999853`).
-- [XGBoost baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/XGB_BASELINE_PROTOCOL.md) — Held-out Test run `xgb-baseline-1794755807` (`F1 = 0.999984`).
-- [Isolation Forest evaluation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) — Benign-only Train (`1,590,608` rows), Validation `max-F1-on-known-attacks` threshold `-0.033527`, Held-out Test `F1 = 0.5064`, Unknown `{Backdoor, Worms}` `Recall = 0.8657`.
-- [Autoencoder evaluation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md) — Benign-only Train, `fpr_constrained` Validation threshold `17234985.79` (`Val FPR = 0.0500 <= 0.05`), Held-out Test `F1 = 0.1361`, `Recall = 0.1093`, Unknown `Recall = 0.0625`.
-- [Train-only preprocessing policy](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md).
+- [Random Forest baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/RF_BASELINE_PROTOCOL.md) — Held-out Test `rf-heldout-ea330b9` (`F1 = 0.999853`, Desktop tier: `MODEL_VALIDATED`).
+- [XGBoost baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/XGB_BASELINE_PROTOCOL.md) — Held-out Test `xgb-baseline-1794755807` (`F1 = 0.999984`, Desktop tier: `RESEARCH_ONLY`).
+- [Isolation Forest evaluation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/experiments/isolation_forest/evaluation_report.md) — Benign-only Train (`1,590,608` rows), Validation `max-F1-on-known-attacks` threshold `-0.033527`, Held-out Test `F1 = 0.5064`, Unknown `{Backdoor, Worms}` `Recall = 0.8657` (`RESEARCH_ONLY`).
+- [Autoencoder evaluation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/evaluation/autoencoder/evaluation_report.md) — `sklearn.neural_network.MLPRegressor (32, 16, 32)`, Benign-only Train, `fpr_constrained` threshold `17234985.79` (`Val FPR = 0.0500 <= 0.05`), Held-out Test `F1 = 0.1361`, `Recall = 0.1093`, Unknown `Recall = 0.0625` (`RESEARCH_ONLY`).
+- [Train-only preprocessing policy](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md).
 
 ## Reproduction boundary
 
-Large `.joblib` artifacts are excluded from Git. On a fresh checkout without the Companion Bundle or locally reproduced artifacts, `InferencePipeline` and `/api/v1/models` enforce fail-closed SHA-256 verification and report `BLOCKED / NOT READY` (`HTTP 503`). Note also that `xgb-baseline-1794755807` was trained at commit `7f51390` with `git_dirty=True`, and historical RF vs newer split index parity remains `MEMBERSHIP_EQUIVALENCE: NOT_VERIFIED` in the [split membership audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/split_membership_audit_report.md).
+Large `.joblib` binaries remain outside Git (they are embedded into the PyInstaller sidecar only when building standalone bundles with local artifacts present). In development checkouts lacking local `.joblib` files, `InferencePipeline` and `/api/v1/models` enforce fail-closed SHA-256 verification and report `BLOCKED / NOT READY` (`HTTP 503`). Also note `xgb-baseline-1794755807` trained with `git_dirty=True` at `7f51390`, and historical RF vs canonical split index parity stays `MEMBERSHIP_EQUIVALENCE: NOT_VERIFIED` in the [split membership audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/splits/split_membership_audit_report.md).

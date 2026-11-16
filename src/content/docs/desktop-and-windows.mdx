@@ -1,24 +1,26 @@
 ---
-title: Desktop Windows & Phát hành
-description: Bộ cài Tauri 2 + Svelte 5, Python 3.12+ runtime và nạp Companion Bundle.
+title: Desktop Windows & Phát hành v1.0.0
+description: Kiến trúc standalone Tauri 2 + Svelte 5 -> PyInstaller FastAPI Sidecar và ranh giới Issue #73.
 order: 13
 ---
 
-## Kiến trúc đóng gói (v0.6.0)
+## Kiến trúc đóng gói Standalone (v1.0.0)
 
-Bộ cài đặt Windows x64 NSIS (`NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`) đóng gói giao diện **Svelte 5**, nhân điều phối **Rust / Tauri 2**, mã nguồn **Python backend** (`src/network_anomaly/`, `scripts/run_api.py`, `requirements-runtime.txt`) và các **manifest SHA-256** (`reports/`). Người dùng không cần `git clone` hay khai báo `NETWORK_ANOMALY_REPO_ROOT`. Dữ liệu người dùng (`.venv`, `.joblib`, `data/demo/`, `network_anomaly.db`) được lưu tại `%LOCALAPPDATA%\NetFlowSentinelM6` (chạy được với tài khoản Standard User).
+Trong kiến trúc **NetFlow Sentinel v1.0.0**, tiến trình Tauri 2 + Svelte 5 khởi chạy **PyInstaller FastAPI Sidecar** (`scripts/build_backend_sidecar.py`, `desktop/src-tauri/tauri.standalone.conf.json`) trên `127.0.0.1` với token phiên 256-bit và SQLite cục bộ.
 
-Do `NF-UNSW-NB15-v3` có điều khoản phi thương mại và tệp `.joblib` không lưu trong Git, máy Windows đích cần:
+Khi build bản standalone hoàn chỉnh trên máy Developer/CI có sẵn artifact:
 
-- **Windows 10/11 (x64)** kèm **Microsoft Edge WebView2 Runtime**.
-- **Python `>= 3.12` (x64)** phù hợp `requirements-runtime.txt`.
-- **Gói Companion Bundle ZIP** (4 mô hình + preprocessor + 200 dòng demo Validation), được kiểm chứng SHA-256 fail-closed với `COMPANION_SHA256SUMS.txt` và tracked manifests.
+- Bộ cài Windows x64 NSIS nhúng sẵn Sidecar + 4 tệp `.joblib` + `nf_unsw_nb15_v3_preprocessor.joblib` + 200 dòng `demo_flows.csv`.
+- **Người dùng cuối** không cần cài Python, không tạo `.venv`, không tải Companion Bundle ngoài và không dùng `git clone`. Dữ liệu phiên lưu tại `%LOCALAPPDATA%\NetFlowSentinel\`.
+- **Developer** vẫn có thể chạy hoặc build trực tiếp từ Source Release `v1.0.0` (chế độ `DEVELOPMENT` với `.venv`, `npm run tauri dev` hoặc build sidecar cục bộ).
 
-## Kiểm chứng & attestation phát hành
+## Trạng thái phân phối & kiểm chứng phát hành
+
+GitHub Release `v1.0.0` hiện phát hành dưới dạng **Source Release**. Việc phát hành công khai bộ cài Windows `.exe` đang ở trạng thái **BLOCKED / DEFERRED** theo [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/governance/DISTRIBUTION_AUTHORIZATION.json) và [Issue #73](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues/73) cho đến khi hoàn tất Clean Windows 10/11 VM E2E (`scripts/vm_target_e2e.ps1`) và rà soát điều khoản UQ `454104`.
 
 ```powershell
-python scripts/check_desktop_version.py --check --expect-version 0.6.0
-python scripts/verify_companion_artifacts.py --verify-attestation .\release_e2e_verification.json --expect-installer-sha256 <SHA256> --require-nsis-e2e --require-demo-files
+python scripts/check_desktop_version.py --check
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
 ```
 
-Xem chi tiết [hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md), [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md), [ghi chú v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md) và [biên bản E2E](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+Xem chi tiết [hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/WINDOWS_INSTALLATION.md), [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/RELEASE_PROCESS.md) và [ghi chú v1.0.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/releases/v1.0.0.md).

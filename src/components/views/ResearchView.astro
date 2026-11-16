@@ -61,7 +61,7 @@ const isVi = lang === "vi";
             <li>
               Cung cấp pipeline suy luận fail-closed có từ chối OOD, chấm điểm
               ưu tiên tất định, timeline NetFlow, mô phỏng dry-run và ứng dụng
-              desktop cục bộ (<code>v0.6.0</code>).
+              desktop standalone (<code>v1.0.0</code>, PyInstaller Sidecar).
             </li>
           </ol>
           <h2 id="method">Phương pháp thực hiện</h2>
@@ -83,11 +83,13 @@ const isVi = lang === "vi";
             Repository hiện có hợp đồng dữ liệu đã xác minh, pipeline chia tập
             và tiền xử lý, kết quả Held-out Test cho cả 4 mô hình, kiểm toán
             cross-dataset trên <code>NF-CSE-CIC-IDS2018-v3</code>, cổng từ chối
-            OOD và xác minh provenance, dịch vụ FastAPI + SQLite cục bộ và ứng
-            dụng Windows Desktop (<code>Rust / Tauri 2 + Svelte 5</code>,{" "}
-            <code>v0.6.0</code>). Tự động hóa firewall trên hệ điều hành và lưu
-            trữ khóa AES-256-GCM trong OS keyring đang ở trạng thái hoãn (chỉ có
-            mô phỏng dry-run với <code>executed=false</code>).
+            cổng OOD và xác minh provenance, dịch vụ FastAPI/PyInstaller Sidecar
+            + SQLite cục bộ và ứng dụng Windows Desktop (
+            <code>Rust / Tauri 2 + Svelte 5</code>,{" "}
+            <code>v1.0.0 Source Release</code>). Tự động hóa firewall trên hệ
+            điều hành, lưu khóa AES-256-GCM trong OS keyring và phân phối bộ cài
+            Windows công khai đang ở trạng thái hoãn (chỉ có mô phỏng dry-run
+            với <code>executed=false</code> và rà soát Issue #73).
           </p>
           <h2 id="limitations">Giới hạn &amp; hướng tiếp theo</h2>
           <p>
@@ -96,9 +98,11 @@ const isVi = lang === "vi";
             sụp đổ hoàn toàn trên <code>NF-CSE-CIC-IDS2018-v3</code> (Random
             Forest tụt xuống <code>0,0000</code> Recall và <code>0,3802</code>{" "}
             FPR với <code>99,99%</code> dòng trôi <code>MIN_TTL</code>). Trong
-            khi đó Autoencoder chỉ đạt <code>0,1361</code> F1 dưới ràng buộc{" "}
-            <code>Val FPR &lt;= 0,05</code>. Đóng gói Python nhúng độc lập và
-            bài toán bền vững cross-dataset là hướng phát triển tiếp theo.
+            khi đó Autoencoder (<code>MLPRegressor</code> không chuẩn hóa đặc
+            trưng) chỉ đạt <code>0,1361</code> F1 dưới ràng buộc{" "}
+            <code>Val FPR &lt;= 0,05</code>. Nghiệm thu Clean Windows VM E2E /
+            giấy phép tái phân phối (#73) và bài toán bền vững cross-dataset là
+            hướng tiếp theo.
           </p>
           <div class="callout">
             <strong>Quy tắc diễn giải</strong>
@@ -138,8 +142,8 @@ const isVi = lang === "vi";
             <li>
               Deliver a fail-closed inference pipeline with OOD abstention,
               deterministic priority scoring, NetFlow evidence timelines,
-              dry-run response simulation and a local desktop prototype (
-              <code>v0.6.0</code>).
+              dry-run response simulation and a standalone desktop application (
+              <code>v1.0.0</code>, PyInstaller Sidecar).
             </li>
           </ol>
           <h2 id="method">Method</h2>
@@ -162,11 +166,12 @@ const isVi = lang === "vi";
             preprocessing pipelines, Held-out Test evidence for all four models,
             an external cross-dataset audit on{" "}
             <code>NF-CSE-CIC-IDS2018-v3</code>, an OOD abstention and provenance
-            gate, a localhost FastAPI + SQLite service, and a Windows desktop
+            gate, a PyInstaller FastAPI + SQLite sidecar, and a Windows desktop
             application (<code>Rust / Tauri 2 + Svelte 5</code>,{" "}
-            <code>v0.6.0</code>). Live firewall automation and production
-            AES-256-GCM OS keyring storage remain deferred (
-            <code>executed=false</code> dry-run simulation only).
+            <code>v1.0.0 Source Release</code>). Live firewall automation,
+            production AES-256-GCM OS keyring storage and public Windows
+            installer distribution remain deferred (<code>executed=false</code>{" "}
+            dry-run and Issue #73 review).
           </p>
           <h2 id="limitations">Limits and next work</h2>
           <p>
@@ -175,10 +180,11 @@ const isVi = lang === "vi";
             for supervised trees fail catastrophically on{" "}
             <code>NF-CSE-CIC-IDS2018-v3</code> (RF drops to <code>0.0000</code>{" "}
             Recall and <code>0.3802</code> FPR with <code>99.99%</code>{" "}
-            <code>MIN_TTL</code> drift). Meanwhile, Autoencoder reaches only{" "}
-            <code>0.1361</code> F1 under the strict{" "}
-            <code>Val FPR &lt;= 0.05</code> constraint. Standalone embedded
-            Python packaging and cross-dataset robustness remain future work.
+            <code>MIN_TTL</code> drift). Meanwhile, Autoencoder (
+            <code>MLPRegressor</code> on unscaled features) reaches only{" "}
+            <code>0.1361</code> F1 under <code>Val FPR &lt;= 0.05</code>. Clean
+            Windows VM E2E sign-off / UQ 454104 redistribution authorization
+            (#73) and cross-dataset robustness remain next steps.
           </p>
           <div class="callout">
             <strong>Interpretation rule</strong>

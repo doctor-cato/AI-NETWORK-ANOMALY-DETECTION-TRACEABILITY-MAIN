@@ -1,12 +1,20 @@
 ---
-title: Installation
-description: Python environment, desktop runtime setup and local portal preview.
+title: Installation & Setup
+description: Separating the End User offline NSIS workflow (zero Python/venv) from Developer source builds on v1.0.0.
 order: 2
 ---
 
-## Python research environment
+## For End Users (Windows Standalone v1.0.0)
 
-The Python source package declares `>=3.11` in `pyproject.toml` (CI tests 3.11 and 3.12). For the Windows Desktop `v0.6.0` runtime (`requirements-runtime.txt`), Python `>=3.12` (x64) is required to match the serialized `.joblib` artifacts (`numpy 2.5.x`, `pandas 3.0–3.1`, `scikit-learn 1.9.x`, `xgboost 3.4.x`, `joblib 1.6.x`).
+In **NetFlow Sentinel v1.0.0**, the Windows NSIS standalone installer (`NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`) embeds the **PyInstaller FastAPI Sidecar**, **4 ML `.joblib` models**, **train-only preprocessor**, and **200-row Validation demo slice** at build time:
+
+- **No** system Python, `.venv`, or external Companion Bundle ZIP is required on end-user machines.
+- Runs **offline** under a Standard Windows user (`%LOCALAPPDATA%\NetFlowSentinel\`).
+- **Distribution status notice**: GitHub Release `v1.0.0` currently ships as a **Source Release**. Public `.exe` binary downloads remain **BLOCKED / DEFERRED** under [Issue #73](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues/73) and `DISTRIBUTION_AUTHORIZATION.json` until Clean Windows 10/11 VM E2E and UQ `454104` license review conclude.
+
+## For Developers (Source Release v1.0.0)
+
+Developers use Python `>=3.12` (CI verifies `3.11`–`3.14`), Node.js, and Rust/Cargo to develop, run FastAPI directly, or build the standalone sidecar/installer locally:
 
 ```powershell
 python -m venv .venv
@@ -15,11 +23,11 @@ python -m pip install -e .
 python scripts/check_environment.py
 ```
 
-The repository's [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md), [reproducibility guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) and [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md) are the canonical setup references.
+Canonical references: [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/README.md), [reproducibility guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/REPRODUCIBILITY.md) and [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/WINDOWS_INSTALLATION.md).
 
-## Local demo & FastAPI startup
+## Developer demo & FastAPI startup
 
-Once dataset artifacts are present, you can generate the 200-row Validation-only demo slice and run the localhost API:
+Once dataset and model artifacts exist locally, generate the 200-row Validation-only demo CSV and launch FastAPI on loopback `127.0.0.1`:
 
 ```powershell
 $env:PYTHONPATH = "src"
@@ -27,11 +35,11 @@ python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 
 python scripts/run_api.py --host 127.0.0.1 --port 8000
 ```
 
-## Website preview
+## Static website preview
 
 ```powershell
 npm ci
 npm run dev
 ```
 
-The website on `site-source` is static documentation only; it does not need Python, a dataset or a backend service.
+The `site-source` website is static documentation only; it needs no Python, dataset, or backend runtime.

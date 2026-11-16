@@ -6,7 +6,7 @@ order: 5
 
 ## Hợp đồng dữ liệu (Schema)
 
-Tệp CSV đã xác minh gồm 55 cột: 47 đặc trưng ML baseline, 6 trường metadata truy vết (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`), `Label` và `Attack`. [Tài liệu schema](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) liệt kê đúng thứ tự trường và phân bố lớp thực tế.
+Tệp CSV đã xác minh gồm 55 cột: 47 đặc trưng ML baseline, 6 trường metadata truy vết (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`), `Label` và `Attack`. [Tài liệu schema](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) liệt kê đúng thứ tự trường và phân bố lớp thực tế.
 
 ## Chạy kiểm định chất lượng và EDA
 
@@ -15,6 +15,6 @@ python scripts/validate_data.py
 python scripts/eda_nf_unsw_nb15_v3.py
 ```
 
-[Báo cáo chất lượng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/data_quality/nf_unsw_nb15_v3_validation.json) ghi nhận 122.493 dòng có giá trị thiếu hoặc `+Inf`, 14.815 dòng trùng hệt và 1.134.553 dòng lặp vector 47 đặc trưng. Tính toàn vẹn nguồn, chất lượng dữ liệu thô và trạng thái sẵn sàng ML là ba trạng thái độc lập. Nếu thiếu CSV gốc, `validate_data.py` có thể thoát với mã 0 và ghi `SKIPPED` — không phải kết quả PASS trên dữ liệu thật.
+[Báo cáo chất lượng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/reports/data_quality/nf_unsw_nb15_v3_validation.json) ghi nhận 122.493 dòng có giá trị thiếu hoặc `+Inf`, 14.815 dòng trùng hệt và 1.134.553 dòng lặp vector 47 đặc trưng. Tính toàn vẹn nguồn, chất lượng dữ liệu thô và trạng thái sẵn sàng ML là ba trạng thái độc lập. Nếu thiếu CSV gốc, `validate_data.py` có thể thoát với mã 0 và ghi `SKIPPED` — không phải kết quả PASS trên dữ liệu thật.
 
-Ở pha suy luận, [kiến trúc tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) và [ma trận tương thích đặc trưng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md) áp dụng kiểm tra 4 tầng và từ chối `ABSTAINED_OOD` cho dòng `MIN_TTL == 0` hoặc vi phạm bất biến mạng.
+Ở pha suy luận, [kiến trúc tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/MULTI_SOURCE_INGESTION.md) và [ma trận tương thích đặc trưng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/FEATURE_COMPATIBILITY_MATRIX.md) áp dụng kiểm tra 4 tầng và từ chối `ABSTAINED_OOD` cho dòng `MIN_TTL == 0` hoặc vi phạm bất biến mạng.

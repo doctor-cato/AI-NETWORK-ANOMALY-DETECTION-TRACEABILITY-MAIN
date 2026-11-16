@@ -1,12 +1,20 @@
 ---
-title: Cài đặt môi trường
-description: Thiết lập Python nghiên cứu, chạy API/demo cục bộ và xem trước cổng thông tin.
+title: Cài đặt & Sử dụng
+description: Tách bạch trải nghiệm Người dùng cuối (NSIS standalone không cần Python/venv) và Developer Setup từ Source Release v1.0.0.
 order: 2
 ---
 
-## Môi trường Python nghiên cứu
+## Dành cho Người dùng cuối (Windows Standalone v1.0.0)
 
-Gói nguồn Python khai báo yêu cầu tối thiểu `>=3.11` trong `pyproject.toml` (CI chạy trên Python 3.11 và 3.12). Riêng runtime của ứng dụng Desktop Windows `v0.6.0` (`requirements-runtime.txt`) yêu cầu **Python `>=3.12` (x64)** để tương thích các tệp `.joblib` đã huấn luyện (`numpy 2.5.x`, `pandas 3.0–3.1`, `scikit-learn 1.9.x`, `xgboost 3.4.x`, `joblib 1.6.x`).
+Trong kiến trúc **NetFlow Sentinel v1.0.0**, bản cài đặt Windows NSIS (`NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`) nhúng sẵn **PyInstaller FastAPI Sidecar**, **4 mô hình ML**, **preprocessor** và **200 dòng demo Validation** ngay lúc đóng gói:
+
+- **Không cần** cài Python hệ thống, tạo `.venv`, hay tải/nạp Companion Bundle riêng.
+- Người dùng chuẩn (Standard User) cài đặt và chạy hoàn toàn **offline** (trạng thái lưu tại `%LOCALAPPDATA%\NetFlowSentinel\`).
+- **Lưu ý phân phối công khai**: GitHub Release `v1.0.0` hiện phát hành dưới dạng **Source Release**; file cài `.exe` công khai đang **BLOCKED / DEFERRED** theo [Issue #73](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/issues/73) và `DISTRIBUTION_AUTHORIZATION.json` cho tới khi hoàn tất nghiệm thu Clean Windows 10/11 VM và rà soát điều khoản UQ `454104`.
+
+## Dành cho Developer (Build & chạy từ Source Release v1.0.0)
+
+Developer sử dụng Python `>=3.12` (CI kiểm thử `3.11`–`3.14`), Node.js và Rust/Cargo để chạy phát triển hoặc đóng gói lại sidecar/installer cục bộ:
 
 ```powershell
 python -m venv .venv
@@ -15,11 +23,11 @@ python -m pip install -e .
 python scripts/check_environment.py
 ```
 
-Các tài liệu chuẩn về cài đặt gồm [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md), [hướng dẫn tái lập](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) và [hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md).
+Các tài liệu chuẩn về cài đặt gồm [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/README.md), [hướng dẫn tái lập](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/REPRODUCIBILITY.md) và [hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/e5a1f896effc1981792d0e9c44232ae29cf4ffd4/docs/WINDOWS_INSTALLATION.md).
 
-## Tạo dữ liệu demo & khởi chạy FastAPI cục bộ
+## Tạo dữ liệu demo & khởi chạy API ở chế độ Developer
 
-Khi đã có sẵn artifact dữ liệu và mô hình, bạn có thể trích xuất 200 dòng demo chỉ từ tập Validation và chạy API trên loopback `127.0.0.1`:
+Khi đã có artifact dữ liệu và mô hình cục bộ, bạn có thể trích xuất 200 dòng demo chỉ từ tập Validation và chạy API trên loopback `127.0.0.1`:
 
 ```powershell
 $env:PYTHONPATH = "src"

@@ -1,0 +1,24 @@
+---
+title: Academic Defense Documentation
+description: Deep-dive defense dossier 01–09 (all 55 columns, TrainOnlyPreprocessor internals, 4 ML models & defense Q&A).
+order: 15
+---
+
+## Purpose
+
+The [`docs/academic-defense/`](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/tree/main/docs/academic-defense) suite gives faculty reviewers an evidence-backed, implementation-exact walkthrough of dataset provenance, preprocessing, splitting, model training, inference, and limits for **NetFlow Sentinel v1.0.0**.
+
+## Contents (11 files)
+
+1. `01_DATASET_ORIGIN_AND_STRUCTURE.md` — What NF-UNSW-NB15-v3 is (2,365,424 NetFlow v9 records vs raw PCAP; 1 flow != hacked host).
+2. `02_COMPLETE_FEATURE_DICTIONARY.md` — Every single one of all **55 columns** (role, Min, Median p50, Max, Train-imputed value, vocab size).
+3. `03_DATA_PREPROCESSING_PIPELINE.md` — Exact `TrainOnlyPreprocessor` code (`47` output dims, Train-only median/mode imputation, no OHE, `scaler_type="none"`, `passthrough`) with verified before/after examples from `demo_flows.csv`.
+4. `04_TRAIN_VALIDATION_TEST_DESIGN.md` — Chronological split + 5-min purge gaps (`1,655,797` / `345,371` / `345,953`), benign-only filtering for IF/AE, and leakage checks.
+5. `05_FOUR_MODELS_EXPLAINED.md` — Hyperparameters, training populations, threshold policies, and output contracts for Random Forest, XGBoost, Isolation Forest, and Autoencoder (`sklearn.neural_network.MLPRegressor (32,16,32)`).
+6. `06_TRAINING_CODE_WALKTHROUGH.md` — File-by-file trace from `scripts/train_*.py` to `.joblib`, SHA-256 verification, and `InferencePipeline`.
+7. `07_MODEL_RESULTS_AND_LIMITATIONS.md` — Full 4-model Validation/Test comparison, why unscaled MSE limits the Autoencoder (`F1 = 0.1361`), cross-dataset collapse, and OOD gating (`MIN_TTL == 0`).
+8. `08_TEACHER_QUESTIONS_AND_ANSWERS.md` — 20 realistic committee questions grounded strictly in repository code/manifests.
+9. `09_PRESENTATION_AND_DEMO_DEFENSE_GUIDE.md` — 10–15 minute thesis presentation script and safe live demo protocol on the 200-row Validation slice.
+10. `README.md` & `EVIDENCE_INDEX.md` — Reading roadmap and full claim-to-evidence index.
+
+See the interactive summary at [Academic Defense (AI/ML)](../../academic-defense/) or browse [`docs/academic-defense/`](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/tree/main/docs/academic-defense).

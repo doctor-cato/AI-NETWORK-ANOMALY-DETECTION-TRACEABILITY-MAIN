@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          ref: d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48
+          ref: e5a1f896effc1981792d0e9c44232ae29cf4ffd4
           path: repository-evidence
           persist-credentials: false
       - uses: actions/setup-node@v4
