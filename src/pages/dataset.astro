@@ -206,11 +206,19 @@ const categories = [
           >Dataset guide ↗</a
         >
       </div><div class="surface license-note">
-        <h3>Attribution and licensing</h3><p>
+        <h3>Attribution, licensing & external checks</h3><p>
           The dataset is under UQ's “Permitted Re-Use with Commercial Use
           Restriction” terms, requiring full citation and non-commercial use.
           The repository's Apache-2.0 source license does not relicense the
-          data.
+          data. A separate 100,000-row sample of <code
+            >NF-CSE-CIC-IDS2018-v3</code
+          > is also recorded in the <a
+            href={source("data/EXTERNAL_DATASETS_PROVENANCE.json")}
+            >external provenance manifest ↗</a
+          > for cross-dataset generalization testing, and <code
+            >prepare_demo_dataset.py</code
+          > generates a 200-row Validation-only demo slice without leaking Train or
+          Test rows.
         </p><a href="https://doi.org/10.48610/6E0EDA1">Publisher record ↗</a>
       </div>
     </div>

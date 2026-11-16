@@ -13,7 +13,7 @@ import { href, source } from "../lib/links";
     eyebrow="01 / Research"
     current="Research"
     title="Research with a clear boundary."
-    description="The project investigates network-flow detection and the evidence needed to explain a security finding. Its target architecture extends beyond the capabilities currently present on main."
+    description="The project investigates network-flow detection, cross-dataset validity and traceable decision evidence. All four models now have Held-out Test evaluations on main alongside a scoped Tauri 2 + FastAPI desktop prototype."
   />
   <div class="container section research-grid">
     <article class="prose">
@@ -28,51 +28,66 @@ import { href, source } from "../lib/links";
         <li>
           Establish a reproducible baseline on verified NF-UNSW-NB15-v3 bytes.
         </li><li>
-          Compare supervised classification with unsupervised anomaly scores
-          under explicit split and threshold rules.
+          Compare supervised classification (Random Forest, XGBoost) with
+          unsupervised anomaly scores (Isolation Forest, Autoencoder) under
+          explicit split, benign-only training and threshold rules.
         </li><li>
-          Audit shortcuts, equivalent feature vectors, false positives and false
-          negatives.
+          Audit shortcuts, equivalent feature vectors, false positives, false
+          negatives and cross-dataset degradation (`NF-CSE-CIC-IDS2018-v3`).
         </li><li>
-          Design behavioral correlation, explainable risk scoring and
-          evidence-linked incident timelines for a later system layer.
+          Deliver a fail-closed inference pipeline with OOD abstention,
+          deterministic priority scoring, NetFlow evidence timelines, dry-run
+          response simulation and a local desktop prototype (`v0.6.0`).
         </li>
       </ol>
       <h2 id="method">Method</h2><p>
         The published v3 CSV is verified by manifest and quality checks. A
-        chronological, group-aware split with purge gaps assigns Train,
+        chronological, group-aware split with 5-minute purge gaps assigns Train,
         Validation and Test before learned preprocessing. The baseline model
         contract keeps 47 ordered flow features and separates six trace metadata
         fields and the two targets. Train-only statistics are frozen for later
-        partitions. Validation is used for model and threshold work; held-out
-        Test claims require a separate, auditable evaluation.
+        partitions. Validation selects thresholds (`max-F1-on-known-attacks` for
+        Isolation Forest; `fpr_constrained` at `FPR <= 0.05` for Autoencoder
+        with `Backdoor` and `Worms` held out as unknown categories); Held-out
+        Test (`345,953` flows) evaluates all four frozen models.
       </p>
-      <h2 id="contributions">Expected contributions</h2><p>
-        The intended contribution is a transparent research pipeline: provenance
-        and schema, reproducible preprocessing, comparable model protocols,
-        diagnostic evaluation and a future traceable decision path. Only the
-        first parts have repository evidence today. Risk scoring, incident
-        correlation, secure storage and a user interface remain roadmap work.
+      <h2 id="contributions">Current contributions</h2><p>
+        The repository now contains the verified data contract, split and
+        preprocessing pipelines, Held-out Test evidence for all four models, an
+        external cross-dataset audit on `NF-CSE-CIC-IDS2018-v3`, an OOD
+        abstention and provenance gate, a localhost FastAPI + SQLite service,
+        and a Windows desktop application (`Rust / Tauri 2 + Svelte 5`,
+        `v0.6.0`). Live firewall automation and production AES-256-GCM OS
+        keyring storage remain deferred (`executed=false` dry-run simulation
+        only).
       </p>
       <h2 id="limitations">Limits and next work</h2><p>
         The v3 package was published in 2025, while its observed flows are from
-        early 2015. Near-perfect Validation scores cannot establish performance
-        on current or external networks. The current record identifies TTL
-        shortcuts and extensive feature-vector equivalence. Cross-dataset
-        testing, Test-partition evaluation and operational security review are
-        still needed.
+        early 2015. Near-perfect in-domain Validation and Test scores for
+        supervised trees fail catastrophically on `NF-CSE-CIC-IDS2018-v3` (RF
+        drops to `0.0000` Recall and `0.3802` FPR with `99.99%` `MIN_TTL`
+        drift). Meanwhile, Autoencoder reaches only `0.1361` F1 under the strict
+        `Val FPR <= 0.05` constraint. Standalone embedded Python packaging and
+        full cross-dataset robustness remain future work.
       </p>
       <div class="callout">
-        <strong>Interpretation rule</strong><br />Unknown-attack holdouts would
-        test a defined experimental protocol; they would not prove zero-day
-        detection in the real world.
+        <strong>Interpretation rule</strong><br />Unknown-attack holdouts
+        (`Backdoor`, `Worms`) test a defined experimental protocol inside the
+        2015 testbed; they do not prove zero-day detection in production
+        networks.
       </div>
     </article>
     <aside class="source-rail" aria-label="Research sources">
       <span class="eyebrow">Source trail</span><a
         href={source("docs/PROBLEM_STATEMENT.md")}>Problem statement ↗</a
       ><a href={source("docs/METHODOLOGY.md")}>Methodology ↗</a><a
-        href={source("docs/ROADMAP_FULL_SYSTEM.md")}>Full-system roadmap ↗</a
+        href={source("docs/MULTI_SOURCE_INGESTION.md")}
+        >Multi-source ingestion & OOD gate ↗</a
+      ><a
+        href={source(
+          "reports/evaluation/cross_dataset_generalization_report.md",
+        )}>Cross-dataset report ↗</a
+      ><a href={source("docs/ROADMAP_FULL_SYSTEM.md")}>Full-system roadmap ↗</a
       ><a href={source("docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md")}
         >Split protocol ↗</a
       ><a href={href("docs/limitations/")}>Read limitations →</a>

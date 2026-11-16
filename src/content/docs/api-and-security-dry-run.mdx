@@ -1,0 +1,17 @@
+---
+title: FastAPI & security dry-run
+description: Localhost 18-endpoint contract, session token auth, deterministic risk/timeline and dry-run #27.
+order: 15
+---
+
+## Localhost REST contract
+
+`scripts/run_api.py` binds strictly to loopback (`127.0.0.1`, rejecting `0.0.0.0`) with single-writer SQLite persistence and 18 documented endpoints (`/health`, `/api/v1/models`, `/api/v1/csv/*`, `/api/v1/incidents/*`, `/api/v1/timeline`, `/api/v1/keys`, `/api/v1/rotation*`, `/api/v1/security/simulate-response`, `/api/v1/security/simulations*`). When launched from Tauri, a 256-bit `NETWORK_ANOMALY_API_TOKEN` is required via `X-Sentinel-Session-Token`.
+
+## Deterministic trace, risk & Dry-Run (#27)
+
+- **Behavioral summary (#28)** and **deterministic timeline (#24)** aggregate NetFlow metadata (`FLOW_START_MILLISECONDS`, IPs, ports, protocols) with explicit non-attribution notices and `[OOD ABSTAINED]` tags.
+- **Deterministic priority scoring (#32)** maps probabilities or threshold margins to `[0, 100]` and returns `ABSTAINED_OOD` for OOD rows.
+- **Adaptive security response dry-run (#27)** emits deterministic policy actions (`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`) and simulated key-rotation readiness with **`executed = false`**. Containment escalation is granted only for server-verified `MODEL_VALIDATED` + `PREDICTION_AVAILABLE` analyses and is blocked on `ABSTAINED_OOD` rows. Live OS firewall automation and AES-256-GCM keyring operations remain **DEFERRED**.
+
+Inspect the [API contract](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/api/API_CONTRACT.md) and [OpenAPI specification](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/api/openapi.json).

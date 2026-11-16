@@ -1,6 +1,6 @@
 # Research portal
 
-Static Astro + MDX website on the dedicated `site-source` branch. It contains no inference runtime, traffic ingestion or backend. The [claim matrix](CLAIMS.md) is pinned to the `main` evidence snapshot `b14dfeed9e7cbb07201cfb0ac8ce69c951434be1` (10 November 2026).
+Static Astro + MDX website on the dedicated `site-source` branch. It contains no inference runtime, traffic ingestion or backend. The [claim matrix](CLAIMS.md) is pinned to the `main` evidence snapshot `d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48` (16 November 2026, PR #70 / `v0.6.0` stable release preparation).
 
 ## Local development
 

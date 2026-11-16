@@ -1,13 +1,13 @@
 ---
 title: Architecture
-description: The intended flow from data quality to traceable incidents.
+description: Consolidated Tauri 2 + Svelte 5 + FastAPI + SQLite architecture and boundaries.
 order: 9
 ---
 
-## Data and model layer
+## Data, OOD gate and model layer
 
-The target pipeline takes verified NetFlow data through split and train-only preprocessing to supervised and unsupervised model components. Current code and reports cover data work and some model methods. The [migration architecture](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/NF_UNSW_NB15_V3_MIGRATION_ARCHITECTURE.md) defines the 47-feature model boundary.
+The implemented pipeline validates NetFlow CSV files against the 47-feature contract, verifies source provenance (`source:nf-v3-canonical` vs `source:nf-v3-unverified`), filters out-of-distribution (`ABSTAINED_OOD`) flows before ML inference, transforms features with `TrainOnlyPreprocessor` and executes SHA-256-verified inference across Random Forest, XGBoost, Isolation Forest and Autoencoder. See the [migration architecture](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/NF_UNSW_NB15_V3_MIGRATION_ARCHITECTURE.md) and [multi-source ingestion design](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md).
 
-## Future system layer
+## Desktop MVP & deferred capabilities
 
-The [full-system architecture](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/ARCHITECTURE.md) proposes behavioral correlation, risk scoring, incident trace, encrypted storage, FastAPI and a Streamlit interface. API/session events would be separate sources; NF-UNSW-NB15-v3 does not contain them. Planned correlation confidence must never be presented as verified real identity attribution.
+The [consolidated system architecture](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/ARCHITECTURE.md) replaces the earlier Streamlit plan with a **Rust / Tauri 2 + Svelte 5** Windows desktop app (`v0.6.0`) backed by a local-only **Python FastAPI (`127.0.0.1`) + SQLite** service (`18` endpoints in [API contract](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/api/API_CONTRACT.md)). NetFlow behavioral stats (`#28`), deterministic priority (`#32`), deterministic timeline (`#24`) and dry-run response (`#27`, `executed=false`) are implemented within NetFlow boundaries; live OS firewall commands and AES-256-GCM keyring rotation remain deferred.

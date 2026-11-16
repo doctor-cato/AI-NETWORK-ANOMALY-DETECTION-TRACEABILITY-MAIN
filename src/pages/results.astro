@@ -1,31 +1,38 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import PageIntro from "../components/PageIntro.astro";
-import { source, issue } from "../lib/links";
+import { source } from "../lib/links";
 ---
 
 <Layout
   title="Experiments & Results"
-  description="Reported Validation metrics, absent Test results and methodological limitations."
+  description="Held-out Test metrics across four models, cross-dataset failure and methodological limitations."
   section="Results"
 >
   <PageIntro
     eyebrow="04 / Experiment record"
     current="Results"
-    title="Validation is a waypoint, not a verdict."
-    description="The repository reports very high scores on a Validation partition. This page shows their provenance and the methodological limits that keep them from being claims of field performance."
+    title="In-domain Test is complete. Cross-dataset shifts still fail."
+    description="All four model families now have recorded Validation and Held-out Test evaluations on NF-UNSW-NB15-v3. External evaluation on NF-CSE-CIC-IDS2018-v3 exposes how testbed shortcuts collapse outside the training domain."
   />
   <section class="section">
     <div class="container">
       <div class="result-banner">
         <div>
           <span class="eyebrow">Evidence boundary</span><h2>
-            Held-out Test: Not yet verified
+            4-model Held-out Test verified · External generalization failed
           </h2><p>
-            No published final Test metric is established on main for the four
-            model families. Open evaluation work is tracked separately.
+            Supervised trees achieve ~0.9999 F1 on the 345,953-row
+            NF-UNSW-NB15-v3 Held-out Test partition, but Random Forest collapses
+            to 0.0000 Recall (0.3802 FPR) on a 100,000-row NF-CSE-CIC-IDS2018-v3
+            sample.
           </p>
-        </div><a class="button" href={issue(12)}>Follow Test evaluation ↗</a>
+        </div><a
+          class="button"
+          href={source(
+            "reports/evaluation/cross_dataset_generalization_report.md",
+          )}>Inspect cross-dataset report ↗</a
+        >
       </div>
       <div class="split-summary" aria-label="Recorded split sizes">
         <div><small>TRAIN</small><strong>1,655,797</strong></div>
@@ -43,72 +50,83 @@ import { source, issue } from "../lib/links";
   </section>
   <section class="section rule">
     <div class="container">
-      <span class="eyebrow">Reported binary Validation · 345,371 rows</span><h2>
-        Supervised baseline comparison
+      <span class="eyebrow">Held-out Test comparison · 345,953 rows</span><h2>
+        Four-model benchmark on NF-UNSW-NB15-v3
       </h2><p class="lede">
-        Both reports use the chronological split and 47-feature baseline. Random
-        Forest has a versioned diagnostic audit; XGBoost values are from its
-        training report, while its model artifact is outside Git.
+        Supervised baselines use canonical threshold 0.5; Isolation Forest and
+        Autoencoder are fitted on benign-only Train (1,590,608 rows) with
+        thresholds frozen on Validation while holding out Backdoor and Worms as
+        unknown attack families.
       </p><div class="table-wrap surface">
         <table class="data-table">
           <caption
-            >Repository-reported Validation results. Positive class: Attack (1).
-            FPR = FP / (FP + TN).</caption
+            >Held-out Test (345,953 rows: 315,357 Benign, 30,596 Attack).
+            Positive class: Attack (1). FPR = FP / (FP + TN).</caption
           ><thead
             ><tr
               ><th scope="col">Metric</th><th scope="col">Random Forest</th><th
                 scope="col">XGBoost</th
-              ><th scope="col">Held-out Test</th></tr
+              ><th scope="col">Isolation Forest</th><th scope="col"
+                >Autoencoder</th
+              ></tr
             ></thead
           ><tbody
             ><tr
-              ><th scope="row">Accuracy</th><td>0.999977</td><td
-                >Not yet verified</td
-              ><td>Not yet verified</td></tr
+              ><th scope="row">Accuracy</th><td>0.999974</td><td>0.999997</td
+              ><td>0.844863</td><td>0.877321</td></tr
             ><tr
-              ><th scope="row">Precision</th><td>0.999836</td><td>0.999967</td
-              ><td>Not yet verified</td></tr
+              ><th scope="row">Precision</th><td>0.999771</td><td>0.999967</td
+              ><td>0.352336</td><td>0.180400</td></tr
             ><tr
-              ><th scope="row">Recall</th><td>0.999902</td><td>1.000000</td><td
-                >Not yet verified</td
-              ></tr
+              ><th scope="row">Recall</th><td>0.999935</td><td>1.000000</td><td
+                >0.899725</td
+              ><td>0.109263</td></tr
             ><tr
-              ><th scope="row">F1-score</th><td>0.999869</td><td>0.999984</td
-              ><td>Not yet verified</td></tr
+              ><th scope="row">F1-score</th><td>0.999853</td><td>0.999984</td
+              ><td>0.506374</td><td>0.136096</td></tr
             ><tr
-              ><th scope="row">Macro-F1</th><td>0.999928</td><td>0.999991</td
-              ><td>Not yet verified</td></tr
-            ><tr
-              ><th scope="row">False positive rate</th><td>0.000016</td><td
+              ><th scope="row">False positive rate</th><td>0.000022</td><td
                 >0.000003</td
-              ><td>Not yet verified</td></tr
+              ><td>0.160459</td><td>0.048161</td></tr
+            ><tr
+              ><th scope="row">ROC-AUC</th><td>Not computed</td><td>1.000000</td
+              ><td>0.893730</td><td>0.630310</td></tr
+            ><tr
+              ><th scope="row">Unknown holdout Recall</th><td
+                >1.0000 (supervised)</td
+              ><td>1.0000 (supervised)</td><td>0.8657 (1,122 / 1,296)</td><td
+                >0.0625 (81 / 1,296)</td
+              ></tr
             ></tbody
           >
         </table>
       </div><p class="source-line">
         Sources: <a
-          href={source("reports/models/rf_baseline_training_report.md")}
-          >RF training report ↗</a
-        > · <a href={source("reports/models/rf_baseline_validation_audit.json")}
-          >RF diagnostic audit ↗</a
-        > · <a href={source("reports/models/xgboost_training_report.md")}
-          >XGBoost training report ↗</a
+          href={source("reports/evaluation/rf-heldout-ea330b9/metrics.json")}
+          >RF Test metrics ↗</a
+        > · <a href={source("reports/evaluation/xgboost/metrics.json")}
+          >XGBoost Test metrics ↗</a
+        > · <a
+          href={source("reports/experiments/isolation_forest/metrics.json")}
+          >Isolation Forest Test metrics ↗</a
+        > · <a href={source("reports/evaluation/autoencoder/metrics.json")}
+          >Autoencoder Test metrics ↗</a
         >
       </p>
     </div>
   </section>
   <section class="section tinted rule">
     <div class="container">
-      <span class="eyebrow">Label order [0, 1]</span><h2>
-        Validation confusion matrices
+      <span class="eyebrow">Label order [0, 1] · Held-out Test</span><h2>
+        Test confusion matrices
       </h2><div class="matrix-grid">
         <div class="surface matrix">
-          <h3>Random Forest</h3><p>Actual rows × predicted columns</p><div
-            class="table-wrap"
-          >
+          <h3>Random Forest</h3><p>
+            Run rf-heldout-ea330b9 (Validation F1: 0.999869)
+          </p><div class="table-wrap">
             <table class="data-table">
               <caption class="sr-only"
-                >Random Forest Validation confusion matrix</caption
+                >Random Forest Held-out Test confusion matrix</caption
               ><thead
                 ><tr
                   ><th scope="col">Actual \ Predicted</th><th scope="col"
@@ -117,23 +135,23 @@ import { source, issue } from "../lib/links";
                 ></thead
               ><tbody
                 ><tr
-                  ><th scope="row">Benign (0)</th><td>314,866 TN</td><td
-                    >5 FP</td
+                  ><th scope="row">Benign (0)</th><td>315,350 TN</td><td
+                    >7 FP</td
                   ></tr
                 ><tr
-                  ><th scope="row">Attack (1)</th><td>3 FN</td><td>30,497 TP</td
+                  ><th scope="row">Attack (1)</th><td>2 FN</td><td>30,594 TP</td
                   ></tr
                 ></tbody
               >
             </table>
           </div>
         </div><div class="surface matrix">
-          <h3>XGBoost</h3><p>Values from repository training report</p><div
-            class="table-wrap"
-          >
+          <h3>XGBoost</h3><p>
+            Run xgb-baseline-1794755807 (Validation F1: 0.999984)
+          </p><div class="table-wrap">
             <table class="data-table">
               <caption class="sr-only"
-                >XGBoost reported Validation confusion matrix</caption
+                >XGBoost Held-out Test confusion matrix</caption
               ><thead
                 ><tr
                   ><th scope="col">Actual \ Predicted</th><th scope="col"
@@ -142,11 +160,63 @@ import { source, issue } from "../lib/links";
                 ></thead
               ><tbody
                 ><tr
-                  ><th scope="row">Benign (0)</th><td>314,870 TN</td><td
+                  ><th scope="row">Benign (0)</th><td>315,356 TN</td><td
                     >1 FP</td
                   ></tr
                 ><tr
-                  ><th scope="row">Attack (1)</th><td>0 FN</td><td>30,500 TP</td
+                  ><th scope="row">Attack (1)</th><td>0 FN</td><td>30,596 TP</td
+                  ></tr
+                ></tbody
+              >
+            </table>
+          </div>
+        </div><div class="surface matrix">
+          <h3>Isolation Forest</h3><p>
+            Run if-c4-20261115T055359Z (Threshold: -0.033527)
+          </p><div class="table-wrap">
+            <table class="data-table">
+              <caption class="sr-only"
+                >Isolation Forest Held-out Test confusion matrix</caption
+              ><thead
+                ><tr
+                  ><th scope="col">Actual \ Predicted</th><th scope="col"
+                    >Benign (0)</th
+                  ><th scope="col">Attack (1)</th></tr
+                ></thead
+              ><tbody
+                ><tr
+                  ><th scope="row">Benign (0)</th><td>264,755 TN</td><td
+                    >50,602 FP</td
+                  ></tr
+                ><tr
+                  ><th scope="row">Attack (1)</th><td>3,068 FN</td><td
+                    >27,528 TP</td
+                  ></tr
+                ></tbody
+              >
+            </table>
+          </div>
+        </div><div class="surface matrix">
+          <h3>Autoencoder</h3><p>
+            Run ae_fpr_constrained_20261115T163000Z (Val FPR 0.0500)
+          </p><div class="table-wrap">
+            <table class="data-table">
+              <caption class="sr-only"
+                >Autoencoder Held-out Test confusion matrix</caption
+              ><thead
+                ><tr
+                  ><th scope="col">Actual \ Predicted</th><th scope="col"
+                    >Benign (0)</th
+                  ><th scope="col">Attack (1)</th></tr
+                ></thead
+              ><tbody
+                ><tr
+                  ><th scope="row">Benign (0)</th><td>300,169 TN</td><td
+                    >15,188 FP</td
+                  ></tr
+                ><tr
+                  ><th scope="row">Attack (1)</th><td>27,253 FN</td><td
+                    >3,343 TP</td
                   ></tr
                 ></tbody
               >
@@ -158,34 +228,75 @@ import { source, issue } from "../lib/links";
   </section>
   <section class="section">
     <div class="container">
-      <span class="eyebrow">Interpretation</span><h2>
-        Why these scores need further tests.
-      </h2><div class="risk-grid">
+      <span class="eyebrow">Cross-dataset reality check · 100,000 rows</span><h2
+      >
+        Why high benchmark scores fail outside the lab.
+      </h2><p class="lede">
+        Evaluating the frozen canonical Random Forest model on a 100,000-row
+        sample of <code>NF-CSE-CIC-IDS2018-v3</code> (70,020 Benign, 29,980 FTP-BruteForce)
+        demonstrates complete collapse under domain shift.
+      </p><div class="table-wrap surface">
+        <table class="data-table">
+          <caption
+            >Canonical Random Forest: NF-UNSW-NB15-v3 Validation vs
+            NF-CSE-CIC-IDS2018-v3 External Sample.</caption
+          ><thead
+            ><tr
+              ><th scope="col">Metric</th><th scope="col"
+                >NF-UNSW-NB15-v3 (Val)</th
+              ><th scope="col">NF-CSE-CIC-IDS2018-v3 (100k)</th><th scope="col"
+                >Delta</th
+              ></tr
+            ></thead
+          ><tbody
+            ><tr
+              ><th scope="row">Accuracy</th><td>0.999977</td><td>0.433990</td
+              ><td>-0.565987</td></tr
+            ><tr
+              ><th scope="row">Precision</th><td>0.999836</td><td>0.000000</td
+              ><td>-0.999836</td></tr
+            ><tr
+              ><th scope="row">Recall</th><td>0.999902</td><td>0.000000</td><td
+                >-0.999902</td
+              ></tr
+            ><tr
+              ><th scope="row">F1-score</th><td>0.999869</td><td>0.000000</td
+              ><td>-0.999869</td></tr
+            ><tr
+              ><th scope="row">False positive rate</th><td>0.000016</td><td
+                >0.380191</td
+              ><td>+0.380175</td></tr
+            ></tbody
+          >
+        </table>
+      </div><div class="risk-grid">
         <article>
-          <span>01</span><h3>TTL shortcut</h3><p>
-            The RF diagnostic audit reports that <code>MIN_TTL</code> and <code
-              >MAX_TTL</code
-            > account for 45.48% of feature importance; a shallow single-feature tree
-            using <code>MIN_TTL</code> reached about 0.99985 Validation accuracy.
-            This suggests a testbed-specific separation.
+          <span>01</span><h3>TTL shortcut collapse</h3><p>
+            In NF-UNSW-NB15-v3, <code>MIN_TTL</code> and <code>MAX_TTL</code>
+            carry 45.48% of RF importance; a single-feature tree on <code
+              >MIN_TTL</code
+            > reaches 0.99985 Validation accuracy. On NF-CSE-CIC-IDS2018-v3, 99,990
+            of 100,000 rows fall outside those lab TTL values.
           </p>
         </article><article>
           <span>02</span><h3>Equivalent vectors</h3><p>
-            The split audit records substantial overlap of equivalent 47-feature
-            vectors across partitions. Group and time separation alone cannot
-            remove every repeated traffic pattern.
+            The split audit records 49.98% of Validation rows (172,621 /
+            345,371) and 53.21% of Test rows sharing identical 47-feature
+            vectors with Train, inflating in-domain scores.
           </p>
         </article><article>
-          <span>03</span><h3>Distribution shift</h3><p>
-            The traffic was generated in a controlled testbed and captured in
-            2015. Performance on a different network, time period or attack mix
-            remains unverified.
+          <span>03</span><h3>OOD abstention gate</h3><p>
+            Because external traffic breaks testbed assumptions, the runtime
+            pipeline rejects <code>MIN_TTL == 0</code> and invariant-violating rows
+            as <code>ABSTAINED_OOD</code> before model inference or risk scoring.
           </p>
         </article>
       </div><div class="callout">
-        <strong>No production inference:</strong> A high Validation score is evidence
-        about this benchmark and protocol only. Cross-dataset generalization and unknown-attack
-        behavior require separate results.
+        <strong>No production guarantee:</strong> Even with all four models evaluated
+        on Held-out Test, high NF-UNSW-NB15-v3 scores apply only to this 2015 testbed
+        protocol. External and unverified CSV inputs are explicitly gated as <code
+          >source:nf-v3-unverified</code
+        >.
       </div><p class="source-line">
         <a href={source("reports/models/rf_baseline_validation_audit.json")}
           >TTL diagnostics ↗</a
@@ -193,6 +304,10 @@ import { source, issue } from "../lib/links";
           href={source(
             "reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md",
           )}>Split and equivalence audit ↗</a
+        > · <a
+          href={source(
+            "reports/evaluation/cross_dataset_evaluation_results.json",
+          )}>Cross-dataset JSON ↗</a
         > · <a href={source("docs/EVALUATION.md")}>Evaluation methodology ↗</a>
       </p>
     </div>
@@ -200,21 +315,22 @@ import { source, issue } from "../lib/links";
   <section class="section rule">
     <div class="container two-column">
       <div>
-        <span class="eyebrow">Other model families</span><h2>
-          Empty results are explicit.
+        <span class="eyebrow">Packaging & local runtime</span><h2>
+          Desktop E2E verified; binaries stay outside Git.
         </h2><p>
-          Isolation Forest has a blocked prerequisite run; Autoencoder remains
-          in an open PR. Neither has a published real-data comparison against
-          the supervised baselines on main.
+          A 200-row Validation demo slice (<code>demo_flows.csv</code>: 198
+          eligible flows + 2 <code>ABSTAINED_OOD</code> flows) passed end-to-end through
+          the installed Windows NSIS desktop app and FastAPI for all four models,
+          while missing local <code>.joblib</code> files fail closed as <code
+            >BLOCKED / NOT READY</code
+          >.
         </p>
       </div><div class="surface empty-state">
-        <strong>Not yet verified</strong><span
-          >Isolation Forest · Autoencoder · external dataset comparison · final
-          Test metrics</span
-        ><a
-          href={source(
-            "reports/experiments/isolation_forest/blocked_status.json",
-          )}>Inspect blocked run ↗</a
+        <strong>v0.6.0 E2E Attestation</strong><span
+          >4 models READY with companion bundle · dry-run Issue #27 verified
+          (executed = false)</span
+        ><a href={source("reports/releases/v0.6.0_e2e_verification.json")}
+          >Inspect E2E verification ↗</a
         >
       </div>
     </div>

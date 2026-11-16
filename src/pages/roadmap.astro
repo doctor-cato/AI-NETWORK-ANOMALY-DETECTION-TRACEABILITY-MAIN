@@ -1,78 +1,70 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import PageIntro from "../components/PageIntro.astro";
-import { issue, pull, source } from "../lib/links";
+import { issue, source } from "../lib/links";
 const milestones = [
   [
-    "C1",
-    "Data quality & EDA",
+    "C0–C2",
+    "Governance, data quality, split & preprocessing",
     "Experimentally validated",
     "validated",
-    "Verified package, schema, quality record and descriptive EDA on real bytes.",
-    source("reports/eda/nf_unsw_nb15_v3_eda_summary.json"),
-  ],
-  [
-    "C2",
-    "Split & preprocessing",
-    "Implemented / tested",
-    "tested",
-    "Chronological split and train-only preprocessor exist; reproducibility and hash-chain concerns remain.",
+    "Verified 2,365,424-row package, EDA, chronological split with purge gaps and train-only preprocessor; historical vs newer split index parity remains unverified.",
     source("reports/splits/nf_unsw_nb15_v3_split_manifest.json"),
   ],
   [
     "C3",
-    "Supervised models",
-    "In progress",
-    "progress",
-    "RF and XGBoost Validation reported. Final Test evaluation and artifact reconciliation remain.",
-    issue(12),
+    "Supervised models (RF & XGBoost)",
+    "Experimentally validated",
+    "validated",
+    "Random Forest (rf-heldout-ea330b9, F1 0.999853) and XGBoost (xgb-baseline-1794755807, F1 0.999984) validated on both Validation and Held-out Test.",
+    source("reports/evaluation/error_analysis_report.md"),
   ],
   [
     "C4",
-    "Unsupervised models",
-    "In progress",
+    "Unsupervised models (IF & Autoencoder)",
+    "Experimentally validated",
+    "validated",
+    "Isolation Forest (if-c4-20261115T055359Z, Test F1 0.5064, Unknown 0.8657) and Autoencoder (ae_fpr_constrained_20261115T163000Z, Val FPR 0.0500, Test F1 0.1361) verified.",
+    source("reports/evaluation/autoencoder/evaluation_report.md"),
+  ],
+  [
+    "C5–C6",
+    "Behavioral summary, risk & timeline (Scoped M6)",
+    "Implemented / tested",
+    "tested",
+    "Reduced from full auth/API correlation to NetFlow metadata summaries (#28), deterministic priority scoring (#32) and deterministic timelines (#24) with OOD abstention.",
+    source("docs/ARCHITECTURE.md"),
+  ],
+  [
+    "C7",
+    "Security posture & key lifecycle",
+    "Scoped / deferred",
     "progress",
-    "Isolation Forest code is on main; real run blocked. Autoencoder is proposed in open PR #51.",
-    pull(51),
+    "Loopback 127.0.0.1 binding, 256-bit session token, SHA-256 artifact gate and SQLite audit metadata implemented; production AES-256-GCM OS keyring rotation deferred (#26).",
+    source("reports/api/API_CONTRACT.md"),
   ],
   [
-    "C5",
-    "Behavioral vector",
-    "Planned",
-    "planned",
-    "Versioned network/API/session correlation protocol is specified, with no implementation on main.",
-    issue(28),
-  ],
-  [
-    "C6",
-    "Risk & Trace",
-    "Planned",
-    "planned",
-    "Calibrated risk score and evidence-linked incidents are target capabilities.",
-    issue(32),
-  ],
-  [
-    "C7–C8",
-    "Secure storage & response",
-    "Planned",
-    "planned",
-    "AES-GCM key lifecycle and dry-run response remain roadmap work.",
-    issue(26),
+    "C8",
+    "Adaptive security response dry-run",
+    "Implemented / tested",
+    "tested",
+    "Deterministic policy engine & key-rotation dry-run (#27, executed=false) gated on server-verified analysis with Tab 4 + SQLite + JSON export; live firewall actions deferred.",
+    source("docs/releases/v0.6.0.md"),
   ],
   [
     "C9",
-    "API & interface",
-    "In progress",
-    "progress",
-    "FastAPI/SQLite is in open PR #52; the user interface remains planned.",
-    pull(52),
+    "FastAPI, SQLite, ingestion gate & Desktop UI",
+    "Implemented / tested",
+    "tested",
+    "18 FastAPI endpoints, SQLite persistence, multi-source OOD gate (#46) and Tauri 2 + Svelte 5 desktop app (v0.6.0 Windows NSIS) verified with 4-model E2E attestation.",
+    source("reports/releases/v0.6.0_e2e_verification.json"),
   ],
   [
     "C10–C11",
-    "Experiments & delivery",
-    "Planned",
-    "planned",
-    "Seven-experiment matrix and research delivery package are not complete.",
+    "Cross-dataset research & final delivery",
+    "In progress",
+    "progress",
+    "Cross-dataset RF evaluation on NF-CSE-CIC-IDS2018-v3 documented (Recall 0.0, FPR 0.3802); final academic report, slides (#18–#20) and GitHub Release publication remaining.",
     issue(25),
   ],
 ];
@@ -80,14 +72,14 @@ const milestones = [
 
 <Layout
   title="Roadmap"
-  description="Evidence-driven checkpoint status and linked issues and pull requests."
+  description="Evidence-driven checkpoint status for M0–M7 and consolidated v0.6.0 delivery."
   section="Roadmap"
 >
   <PageIntro
     eyebrow="07 / Roadmap"
     current="Roadmap"
     title="Milestones, without the gloss."
-    description="A checkpoint name is a research target, not proof of completion. These statuses reflect the current main branch and versioned reports; open PRs are called out separately."
+    description="A checkpoint name is a research target, not proof of completion. Statuses below distinguish experimentally validated models from scoped or deferred system layers on main."
   />
   <section class="section">
     <div class="container">

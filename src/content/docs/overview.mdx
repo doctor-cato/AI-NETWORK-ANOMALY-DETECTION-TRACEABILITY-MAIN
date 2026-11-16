@@ -1,6 +1,6 @@
 ---
 title: Project overview
-description: Research scope, current capabilities and where to start.
+description: Research scope, current v0.6.0 capabilities and where to start.
 order: 1
 ---
 
@@ -8,14 +8,16 @@ order: 1
 
 This repository studies network-flow anomaly detection and an evidence-linked traceability architecture. The public website is a static research portal. It does not run a detector or monitor traffic.
 
-The current `main` branch contains the NF-UNSW-NB15-v3 data contract, quality and EDA records, split and preprocessing code, supervised baseline code and reports, and an Isolation Forest component. Behavioral correlation, risk and trace engines, encryption, API and user interface are target system layers or open PR work.
+The current `main` branch contains the NF-UNSW-NB15-v3 data contract, quality and EDA records, chronological split and train-only preprocessing code, **real-data Validation and Held-out Test evidence for all four models** (Random Forest, XGBoost, Isolation Forest and Autoencoder), a cross-dataset audit on `NF-CSE-CIC-IDS2018-v3`, an OOD abstention and provenance gate, a localhost FastAPI + SQLite service, and the **Rust / Tauri 2 + Svelte 5 desktop prototype (`v0.6.0`)**. Live OS firewall actions and production AES-256-GCM OS keyring storage remain deferred.
 
 ## Start here
 
-- [README and current project summary](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/README.md)
-- [Project charter](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/PROJECT_CHARTER.md)
-- [Implementation checkpoints](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/IMPLEMENTATION_CHECKPOINTS.md)
+- [README and current project summary](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md)
+- [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md)
+- [Project charter](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/PROJECT_CHARTER.md)
+- [Implementation checkpoints](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/IMPLEMENTATION_CHECKPOINTS.md)
+- [Traceability matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TRACEABILITY_MATRIX.md)
 
 ## Evidence levels
 
-**Implemented** means code exists on `main`; **Tested** means behavior has an automated check; **Experimentally validated** requires a real-data run with provenance and metrics. A synthetic fixture or a closed Issue alone does not meet the latter standard.
+**Implemented** means code exists on `main`; **Tested** means behavior has an automated check; **Experimentally validated** requires a real-data run with provenance and metrics; **Deferred** means an operational capability (such as live firewall automation or OS keyring rotation) is intentionally excluded from runtime execution. A synthetic fixture or a closed Issue alone does not establish experimental validation.

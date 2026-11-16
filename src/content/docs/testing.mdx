@@ -1,6 +1,6 @@
 ---
 title: Testing
-description: Automated checks, their scope and how to read skipped real-data steps.
+description: Automated checks, companion E2E verification and how to read skipped real-data steps.
 order: 7
 ---
 
@@ -9,12 +9,14 @@ order: 7
 ```powershell
 python scripts/check_environment.py
 python -m pytest tests -q
+python scripts/export_openapi_spec.py --check
+python scripts/check_desktop_version.py --check
 ```
 
-The Python CI workflow runs on Windows and Ubuntu and checks imports, syntax, unit and integration behavior. It does not download the restricted raw dataset in CI. Synthetic tests verify code behavior, not model performance on NF-UNSW-NB15-v3.
+The Python CI workflow runs on Windows and Ubuntu (Python 3.11 and 3.12) and checks imports, syntax, unit, API and integration behavior. It does not download the restricted raw dataset in CI. Synthetic tests verify code behavior, not model performance on NF-UNSW-NB15-v3.
 
-## Research verification
+## Companion E2E & research verification
 
-A result needs dataset and split identifiers, feature and preprocessing contracts, model configuration, label order, metrics and artifact references. A `SKIPPED` dataset step, even with exit code 0, must stay `SKIPPED` in any report.
+A stable release requires running `python scripts/verify_companion_artifacts.py --verify-e2e` on a host with the four verified `.joblib` binaries and `data/demo/` slice present. A `SKIPPED` dataset step, even with exit code 0, must stay `SKIPPED` in any report.
 
-See the [testing guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/TESTING.md) and [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/.github/workflows/ci.yml).
+See the [testing guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/.github/workflows/ci.yml) and [v0.6.0 E2E attestation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).

@@ -1,79 +1,81 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import PageIntro from "../components/PageIntro.astro";
-import { source, issue, pull } from "../lib/links";
+import { source } from "../lib/links";
 const layers = [
   [
     "Data acquisition & validation",
-    "Tested",
-    "Official-source fetcher, manifest, streaming quality checks and EDA are in main.",
+    "Tested & verified",
+    "Official-source fetcher, manifest, streaming quality checks, EDA and Validation-only demo prep are on main.",
     source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md"),
   ],
   [
-    "Split & preprocessing",
-    "Implemented",
-    "Chronological split manifest and train-only preprocessing code exist; artifact hash-chain review remains.",
-    source("docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md"),
+    "Split, preprocessing & OOD gate",
+    "Implemented & tested",
+    "Chronological split, TrainOnlyPreprocessor, 4-tier compatibility evaluator, provenance trust anchor and ABSTAINED_OOD gate.",
+    source("docs/MULTI_SOURCE_INGESTION.md"),
   ],
   [
-    "RF & XGBoost",
-    "Validation reported",
-    "Supervised model code and Validation reports are present. Final Test metrics are not published.",
-    source("reports/models/rf_baseline_training_report.md"),
+    "Four verified ML models",
+    "Held-out Test verified",
+    "Random Forest, XGBoost, Isolation Forest and Autoencoder all evaluated on Train/Val/Test; .joblib binaries stay outside Git.",
+    source("reports/evaluation/error_analysis_report.md"),
   ],
   [
-    "Isolation Forest",
-    "Implemented",
-    "Model and training script exist; recorded real-data run was blocked.",
-    issue(11),
+    "Behavioral, risk & timeline",
+    "Implemented (scoped M6)",
+    "NetFlow metadata stats (#28), deterministic 0–100 priority (#32) and deterministic timeline (#24); no Auth/API logs.",
+    source("docs/ARCHITECTURE.md"),
   ],
   [
-    "Autoencoder",
-    "In progress",
-    "Proposed in PR #51; not merged into main.",
-    pull(51),
+    "Adaptive response dry-run (#27)",
+    "Implemented (Dry-Run)",
+    "Deterministic policy engine and rotation simulation (executed=false) gated on server-verified analysis; live OS firewall & AES keyring deferred.",
+    source("reports/api/API_CONTRACT.md"),
   ],
   [
-    "Behavioral correlation & risk",
-    "Planned",
-    "Versioned behavioral vector, confidence and calibrated 0–100 risk are roadmap goals.",
-    issue(32),
+    "FastAPI (127.0.0.1) & SQLite",
+    "Implemented & tested",
+    "18 localhost REST endpoints, 256-bit X-Sentinel-Session-Token auth, single-writer SQLite persistence and SHA-256 export metadata.",
+    source("reports/api/openapi.json"),
   ],
   [
-    "Traceability & secure storage",
-    "Planned",
-    "Evidence-linked incidents, AES-GCM and key lifecycle remain roadmap goals.",
-    issue(24),
+    "Desktop UI (Tauri 2 + Svelte 5)",
+    "Implemented (v0.6.0)",
+    "Windows x64 NSIS installer, Python process lifecycle and Companion Bundle onboarding; requires external Python >= 3.12 + WebView2.",
+    source("docs/WINDOWS_INSTALLATION.md"),
   ],
   [
-    "API & user interface",
-    "In progress",
-    "FastAPI/SQLite is proposed in PR #52; Streamlit remains planned.",
-    pull(52),
+    "Live OS blocking & embedded Python",
+    "Deferred",
+    "Live firewall automation, production AES-256-GCM OS keyring rotation, live PCAP capture and embedded Python runtime remain deferred.",
+    source("docs/releases/v0.6.0.md"),
   ],
 ];
 ---
 
 <Layout
   title="System Architecture"
-  description="Intended architecture and the implementation state of every layer."
+  description="Consolidated M6 architecture (Tauri 2 + Svelte 5 + FastAPI + SQLite) and layer boundaries."
   section="Architecture"
 >
   <PageIntro
     eyebrow="05 / Architecture"
     current="Architecture"
-    title="A system design with visible seams."
-    description="The architecture connects verified flow data to possible model, correlation and trace layers. Solid nodes show work on main; dashed nodes mark target capabilities or code in open PRs."
+    title="A local desktop system with explicit boundaries."
+    description="The consolidated v0.6.0 architecture connects verified NetFlow data through OOD gating, four validated models, localhost FastAPI + SQLite and a Tauri 2 + Svelte 5 desktop UI. Solid nodes are implemented on main; dashed nodes are deferred."
   />
   <section class="section">
     <div class="container">
       <div class="diagram-head">
         <div>
-          <span class="eyebrow">Target system</span><h2>
-            From flow record to evidence trail.
+          <span class="eyebrow">Consolidated MVP (v0.6.0)</span><h2>
+            From flow record to desktop evidence trail.
           </h2>
         </div><div class="diagram-legend">
-          <span><i></i> On main</span><span><i></i> Planned / open PR</span>
+          <span><i></i> Implemented on main</span><span
+            ><i></i> Deferred / external</span
+          >
         </div>
       </div><div class="diagram-wrap surface">
         <svg
@@ -82,11 +84,13 @@ const layers = [
           viewBox="0 0 1040 610"
           xmlns="http://www.w3.org/2000/svg"
           ><title id="diagram-title">
-            Intended network anomaly detection architecture
+            Consolidated network anomaly detection desktop architecture
           </title><desc id="diagram-desc"
-            >Data acquisition and validation lead to preprocessing, models, risk
-            scoring and traceability, then secure storage, API and user
-            interface. Only the initial data and model code is on main.</desc
+            >Verified NetFlow acquisition and OOD gating feed train-only
+            preprocessing, four validated models, deterministic
+            risk/timeline/dry-run layers, SQLite-backed FastAPI on 127.0.0.1 and
+            the Tauri 2 + Svelte 5 desktop app. Live firewall automation and
+            AES-256-GCM OS keyring remain deferred.</desc
           ><defs
             ><marker
               id="arrow"
@@ -104,9 +108,9 @@ const layers = [
             stroke-width="2"
             marker-end="url(#arrow)"
             ><path d="M235 100H305"></path><path d="M495 100H565"></path><path
-              d="M755 100H825"></path><path d="M660 144V230"></path><path
-              d="M660 310V390"></path><path d="M565 435H495"></path><path
-              d="M305 435H235"></path><path d="M400 480V555"></path></g
+              d="M755 100H825"></path><path d="M920 145V230"></path><path
+              d="M825 270H755"></path><path d="M565 270H495"></path><path
+              d="M400 310V390"></path><path d="M495 435H565"></path></g
           >
           <g fill="#132b3d" stroke="#66e1e8" stroke-width="2"
             ><rect x="25" y="55" width="210" height="90" rx="5"></rect><rect
@@ -116,6 +120,9 @@ const layers = [
               height="90"
               rx="5"></rect><rect x="565" y="55" width="190" height="90" rx="5"
             ></rect><rect x="825" y="55" width="190" height="90" rx="5"
+            ></rect><rect x="565" y="230" width="190" height="80" rx="5"
+            ></rect><rect x="305" y="230" width="190" height="80" rx="5"
+            ></rect><rect x="305" y="390" width="190" height="90" rx="5"
             ></rect></g
           >
           <g
@@ -123,49 +130,49 @@ const layers = [
             stroke="#778ca0"
             stroke-width="2"
             stroke-dasharray="7 6"
-            ><rect x="565" y="230" width="190" height="80" rx="5"></rect><rect
-              x="565"
+            ><rect x="565" y="390" width="240" height="90" rx="5"></rect><rect
+              x="25"
               y="390"
-              width="190"
+              width="210"
               height="90"
-              rx="5"></rect><rect x="305" y="390" width="190" height="90" rx="5"
-            ></rect><rect x="25" y="390" width="210" height="90" rx="5"
-            ></rect><rect x="305" y="555" width="190" height="45" rx="5"
-            ></rect></g
+              rx="5"></rect></g
           >
           <g
             font-family="ui-sans-serif,system-ui"
             fill="#e8f6f8"
             font-size="17"
             font-weight="700"
-            ><text x="45" y="91">Acquire + validate</text><text x="325" y="91"
+            ><text x="45" y="91">Acquire + OOD gate</text><text x="325" y="91"
               >Preprocess</text
             ><text x="585" y="91">RF / XGBoost</text><text x="845" y="91"
-              >Isolation Forest</text
-            ><text x="585" y="265">Autoencoder</text><text x="585" y="425"
-              >Risk + correlation</text
-            ><text x="325" y="425">Trace Engine</text><text x="45" y="425"
-              >Secure storage</text
-            ><text x="365" y="585">API + UI</text></g
+              >IF / Autoencoder</text
+            ><text x="585" y="265">Risk + Timeline</text><text x="325" y="265"
+              >FastAPI + SQLite</text
+            ><text x="325" y="425">Tauri 2 + Svelte 5</text><text
+              x="585"
+              y="425">Live OS Actions</text
+            ><text x="45" y="425">Embedded Python</text></g
           >
           <g font-family="ui-sans-serif,system-ui" fill="#9fb3c4" font-size="12"
-            ><text x="45" y="119">verified source</text><text x="325" y="119"
-              >train-only contract</text
-            ><text x="585" y="119">Validation reports</text><text
+            ><text x="45" y="119">provenance & ABSTAINED_OOD</text><text
+              x="325"
+              y="119">train-only SHA-256</text
+            ><text x="585" y="119">Test F1 0.9999 / 1.0000</text><text
               x="845"
-              y="119">code; run blocked</text
-            ><text x="585" y="290">open PR #51</text><text x="585" y="452"
-              >planned scoring</text
-            ><text x="325" y="452">planned incident trail</text><text
-              x="45"
-              y="452">planned AES-GCM</text
-            ></g
+              y="119">Test F1 0.5064 / 0.1361</text
+            ><text x="585" y="290">Dry-run #27 (executed=false)</text><text
+              x="325"
+              y="290">127.0.0.1 + token auth</text
+            ><text x="325" y="452">Windows NSIS v0.6.0</text><text
+              x="585"
+              y="452">firewall & AES keyring deferred</text
+            ><text x="45" y="452">external Python 3.12+ & bundle</text></g
           ></svg
         >
       </div><p class="diagram-note">
         NF-UNSW-NB15-v3 contains NetFlow fields, not API, authentication or
-        application-session events. Those would require separate future sources.
-        An IP address is metadata, not identity proof.
+        application-session events. Behavioral summaries (#28) use NetFlow
+        metadata only and include an explicit non-attribution notice.
       </p>
     </div>
   </section>

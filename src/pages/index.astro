@@ -33,10 +33,10 @@ import { href, repository, source } from "../lib/links";
       <div
         class="signal-panel"
         role="img"
-        aria-label="Research pipeline: verified dataset and preprocessing feed reported model validation; risk and traceability are planned"
+        aria-label="Research pipeline: verified dataset and preprocessing feed four validated models, localhost FastAPI, Tauri desktop UI and dry-run response"
       >
         <div class="panel-top">
-          <span>RESEARCH PIPELINE / 001</span><span
+          <span>RESEARCH PIPELINE / 002</span><span
             class="panel-dots"
             aria-hidden="true">● ● ●</span
           >
@@ -51,29 +51,29 @@ import { href, repository, source } from "../lib/links";
         <div class="flow-connector" aria-hidden="true"></div>
         <div class="flow-step">
           <span class="flow-index">02</span><div>
-            <strong>Validation & train-only preprocessing</strong><small
-              >47-feature baseline contract</small
+            <strong>Split, OOD gate & preprocessing</strong><small
+              >47-feature baseline contract · train-only fit</small
             >
           </div><span class="flow-state">IMPLEMENTED</span>
         </div>
         <div class="flow-connector" aria-hidden="true"></div>
         <div class="flow-step">
           <span class="flow-index">03</span><div>
-            <strong>Model investigation</strong><small
-              >RF / XGBoost · IF / Autoencoder</small
+            <strong>Four validated model families</strong><small
+              >RF · XGBoost · Isolation Forest · Autoencoder</small
             >
-          </div><span class="flow-state">PARTIAL</span>
+          </div><span class="flow-state">VALIDATED</span>
         </div>
         <div class="flow-connector muted-connector" aria-hidden="true"></div>
         <div class="flow-step planned">
           <span class="flow-index">04</span><div>
-            <strong>Risk, correlation & trace</strong><small
-              >Target architecture · not available on main</small
+            <strong>Desktop UI, trace & dry-run (v0.6.0)</strong><small
+              >Tauri 2 + FastAPI · live firewall & AES keyring deferred</small
             >
-          </div><span class="flow-state">PLANNED</span>
+          </div><span class="flow-state">SCOPED M6</span>
         </div>
         <div class="panel-foot">
-          <span>VALIDATION ≠ REAL-WORLD GENERALIZATION</span><span>↗</span>
+          <span>IN-DOMAIN TEST ≠ EXTERNAL GENERALIZATION</span><span>↗</span>
         </div>
       </div>
     </div>
@@ -84,9 +84,9 @@ import { href, repository, source } from "../lib/links";
       <div><strong>2.36M</strong><span>verified flow rows</span></div><div>
         <strong>47</strong><span>baseline ML features</span>
       </div><div>
-        <strong>4</strong><span>model families in scope</span>
+        <strong>4</strong><span>validated models (Train / Val / Test)</span>
       </div><div>
-        <strong>0</strong><span>held-out Test results published on main</span>
+        <strong>18</strong><span>FastAPI endpoints (v0.6.0 local UI)</span>
       </div>
     </div>
   </section>
@@ -124,32 +124,35 @@ import { href, repository, source } from "../lib/links";
           ><span class="model-number">01 / SUPERVISED</span><h3>
             Random Forest
           </h3><p>
-            Primary binary baseline, with a reported real-data Validation run
-            and diagnostic audit.
-          </p><span class="status status-validated">Validation reported</span
+            Primary binary baseline. Held-out Test F1 0.999853, diagnostic TTL
+            audit and cross-dataset collapse documented.
+          </p><span class="status status-validated">Held-out Test verified</span
           ></a
         >
         <a class="model-card" href={href("models/#xgboost")}
           ><span class="model-number">02 / SUPERVISED</span><h3>XGBoost</h3><p>
-            Comparison baseline with reported Validation metrics. Artifact
-            availability and provenance remain review points.
-          </p><span class="status status-progress">Evidence incomplete</span></a
+            Comparison baseline. Validation and Held-out Test both reach F1
+            0.999984; `.joblib` binary stays outside Git.
+          </p><span class="status status-validated">Held-out Test verified</span
+          ></a
         >
         <a class="model-card" href={href("models/#isolation-forest")}
           ><span class="model-number">03 / UNSUPERVISED</span><h3>
             Isolation Forest
           </h3><p>
-            Model and training code exist; the recorded real-data experiment was
-            blocked by missing inputs.
-          </p><span class="status status-implemented">Implemented code</span></a
+            Benign-only training and Validation calibration (-0.033527). Test F1
+            0.5064, Recall 0.8997, Unknown Recall 0.8657.
+          </p><span class="status status-validated">Held-out Test verified</span
+          ></a
         >
         <a class="model-card" href={href("models/#autoencoder")}
           ><span class="model-number">04 / UNSUPERVISED</span><h3>
             Autoencoder
           </h3><p>
-            Reconstruction-error approach is scoped in the roadmap and proposed
-            in an open PR.
-          </p><span class="status status-planned">Proposed on PR</span></a
+            Benign-only reconstruction error under Validation FPR ≤ 0.05.
+            Held-out Test F1 0.1361, Recall 0.1093, Unknown 0.0625.
+          </p><span class="status status-validated">Held-out Test verified</span
+          ></a
         >
       </div>
     </div>
@@ -161,28 +164,30 @@ import { href, repository, source } from "../lib/links";
         <span class="eyebrow">Current evidence</span><h2>
           Progress is visible.<br />So are the limits.
         </h2><p class="lede">
-          The data record, split manifest and model reports are public. High
-          Validation scores require further scrutiny before any claim about
-          unseen networks.
+          All four models now have recorded Train, Validation and Held-out Test
+          evidence on NF-UNSW-NB15-v3, alongside a Tauri 2 + FastAPI desktop
+          prototype (`v0.6.0`). Cross-dataset testing still exposes severe
+          domain collapse.
         </p><a class="button" href={href("roadmap/")}>View milestone status ↗</a
         >
       </div><div class="evidence-list">
         <div>
           <span>01</span><p>
-            <strong>Dataset provenance documented</strong><br />UQ DOI,
-            checksums, schema, class distribution and raw-data quality findings.
+            <strong>Held-out Test completed across 4 models</strong><br />Random
+            Forest, XGBoost, Isolation Forest and Autoencoder are all evaluated
+            on the 345,953-row Test partition.
           </p>
         </div><div>
           <span>02</span><p>
-            <strong>Validation is reported</strong><br />RF and XGBoost reports
-            cover a 345,371-row Validation partition, not a published Test
-            evaluation.
+            <strong>Cross-dataset failure is measured</strong><br />On a
+            100,000-row `NF-CSE-CIC-IDS2018-v3` sample, RF drops to 0.0000
+            Recall and 0.3802 FPR due to `MIN_TTL` drift.
           </p>
         </div><div>
           <span>03</span><p>
-            <strong>Generalization is open</strong><br />TTL shortcuts,
-            equivalent feature vectors and dataset shift limit the meaning of
-            benchmark scores.
+            <strong>Scoped desktop & dry-run boundaries</strong><br />Tauri 2 +
+            Svelte 5 + FastAPI (`127.0.0.1`) runs OOD gating and dry-run policy
+            checks; live firewall actions and AES-GCM keyring remain deferred.
           </p>
         </div>
       </div>
@@ -194,15 +199,15 @@ import { href, repository, source } from "../lib/links";
       <span class="eyebrow">Start with the record</span><h2>
         Follow each claim to its source.
       </h2><p>
-        Read the methods, inspect the reported results, then examine the
-        underlying repository artifacts.
+        Read the methods, inspect the four-model Held-out Test results, then
+        examine the underlying repository artifacts.
       </p><div class="hero-actions">
         <a class="button button-primary" href={href("docs/")}
           >Browse documentation ↗</a
         ><a
           class="button"
-          href={source("reports/models/rf_baseline_validation_audit.json")}
-          >Inspect validation audit ↗</a
+          href={source("reports/evaluation/error_analysis_report.md")}
+          >Inspect Test error analysis ↗</a
         >
       </div>
     </div>

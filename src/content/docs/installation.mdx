@@ -1,12 +1,12 @@
 ---
 title: Installation
-description: Python environment and local setup for repository research work.
+description: Python environment, desktop runtime setup and local portal preview.
 order: 2
 ---
 
-## Prerequisites
+## Python research environment
 
-Use a supported Python environment as described in the repository. The source package and website have separate dependencies; the website needs Node.js and does not load model artifacts.
+The Python source package declares `>=3.11` in `pyproject.toml` (CI tests 3.11 and 3.12). For the Windows Desktop `v0.6.0` runtime (`requirements-runtime.txt`), Python `>=3.12` (x64) is required to match the serialized `.joblib` artifacts (`numpy 2.5.x`, `pandas 3.0–3.1`, `scikit-learn 1.9.x`, `xgboost 3.4.x`, `joblib 1.6.x`).
 
 ```powershell
 python -m venv .venv
@@ -15,14 +15,23 @@ python -m pip install -e .
 python scripts/check_environment.py
 ```
 
-The repository's [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/README.md) and [reproducibility guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/b14dfeed9e7cbb07201cfb0ac8ce69c951434be1/docs/REPRODUCIBILITY.md) are the canonical references for Python setup and experiment prerequisites.
+The repository's [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md), [reproducibility guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) and [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md) are the canonical setup references.
+
+## Local demo & FastAPI startup
+
+Once dataset artifacts are present, you can generate the 200-row Validation-only demo slice and run the localhost API:
+
+```powershell
+$env:PYTHONPATH = "src"
+python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
+python scripts/run_api.py --host 127.0.0.1 --port 8000
+```
 
 ## Website preview
 
 ```powershell
-cd website
 npm ci
 npm run dev
 ```
 
-The website is static. Its local preview is documentation only; it does not need Python, a dataset or a backend service.
+The website on `site-source` is static documentation only; it does not need Python, a dataset or a backend service.
