@@ -261,6 +261,7 @@ jobs:
 
           $acquiredDir = Join-Path $PWD "build/acquired_models"
           if (-not [string]::IsNullOrWhiteSpace($bundleUrl)) {
+            Write-Host "::add-mask::$bundleUrl"
             $tokenEnv = if (-not [string]::IsNullOrWhiteSpace($env:MODEL_BUNDLE_TOKEN)) {
               "MODEL_BUNDLE_TOKEN"
             } elseif (-not [string]::IsNullOrWhiteSpace($env:COMPANION_BUNDLE_TOKEN)) {
@@ -414,6 +415,8 @@ jobs:
           }
 
       - name: Embedded Artifacts Verification Gate & Clean-Runner Standalone E2E
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -451,6 +454,9 @@ jobs:
             --clean-machine-e2e `
             --require-clean-git `
             --no-repo-root-env `
+            --github-repo "${{ github.repository }}" `
+            --github-run-id "${{ github.run_id }}" `
+            --token-env GH_TOKEN `
             --installer-path $setupDest `
             --sums-file $sumsFile `
             --compiled-exe $exePath `
@@ -469,7 +475,11 @@ jobs:
             --require-demo-files `
             --require-bundled-resources `
             --require-standalone-embedded `
-            --require-clean-machine-e2e
+            --require-clean-machine-e2e `
+            --verify-github-run `
+            --token-env GH_TOKEN `
+            --verify-github-run `
+            --token-env GH_TOKEN
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Generated HEAD-bound standalone release E2E attestation failed strict verification."
             exit 1
@@ -536,7 +546,9 @@ jobs:
             --require-demo-files `
             --require-bundled-resources `
             --require-standalone-embedded `
-            --require-clean-machine-e2e
+            --require-clean-machine-e2e `
+            --verify-github-run `
+            --token-env GH_TOKEN
           if ($LASTEXITCODE -ne 0) {
             Write-Error "FAIL-CLOSED: Release attestation verification failed before gh release create."
             exit 1

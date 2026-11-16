@@ -122,6 +122,20 @@ APPROVED_PUBLIC_LEGAL_BASES = frozenset(
         "verified-open-redistribution-license",
     }
 )
+ENVIRONMENT_TIERS = frozenset(
+    {
+        "local_developer_machine",
+        "github_hosted_windows_runner",
+        "independent_windows_vm",
+    }
+)
+CLEAN_MACHINE_ENVIRONMENT_TIERS = frozenset(
+    {
+        "github_hosted_windows_runner",
+        "independent_windows_vm",
+    }
+)
+_REQUIRED_NOTICE_MARKERS: Tuple[str, ...] = ("NF-UNSW-NB15-v3", "454104", "10.48610/6E0EDA1")
 SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
     "artifacts/models/xgboost/xgboost_manifest.json": "reports/models/xgboost_manifest.json",
     "artifacts/models/autoencoder/autoencoder_manifest.json": "reports/models/autoencoder_manifest.json",
@@ -420,6 +434,17 @@ def verify_distribution_permission(
             f"{missing_notices}"
         )
 
+    for rel in (Path("NOTICE"), Path("THIRD_PARTY_NOTICES.md")):
+        notice_text = (resolved_root / rel).read_text(encoding="utf-8", errors="replace")
+        missing_markers = [m for m in _REQUIRED_NOTICE_MARKERS if m not in notice_text]
+        if not notice_text.strip() or missing_markers:
+            raise RuntimeError(
+                f"BLOCKED — DISTRIBUTION PERMISSION: {rel.as_posix()} is missing required "
+                f"UQ dataset attribution markers {missing_markers}."
+            )
+    if not (resolved_root / "LICENSE").read_text(encoding="utf-8", errors="replace").strip():
+        raise RuntimeError("BLOCKED — DISTRIBUTION PERMISSION: LICENSE file must not be empty.")
+
     auth_manifest_path = resolved_root / DISTRIBUTION_AUTH_MANIFEST_REL
     if not auth_manifest_path.is_file():
         raise RuntimeError(
@@ -427,7 +452,12 @@ def verify_distribution_permission(
             f"{DISTRIBUTION_AUTH_MANIFEST_REL.as_posix()}."
         )
     auth_doc = _read_json_dict(auth_manifest_path, "DISTRIBUTION_AUTHORIZATION.json")
-    if auth_doc.get("schema_version") != 1 or auth_doc.get("dataset") != "NF-UNSW-NB15-v3":
+    if (
+        auth_doc.get("schema_version") != 1
+        or auth_doc.get("dataset") != "NF-UNSW-NB15-v3"
+        or str(auth_doc.get("dataset_license_id", "")).strip() != "454104"
+        or str(auth_doc.get("dataset_doi", "")).strip() != "10.48610/6E0EDA1"
+    ):
         raise RuntimeError(
             "BLOCKED — DISTRIBUTION PERMISSION: Invalid DISTRIBUTION_AUTHORIZATION.json header."
         )
@@ -2659,6 +2689,269 @@ def _execute_four_model_api_suite(
     }
 
 
+def _verify_github_runner_provenance(
+    *,
+    github_repo: str,
+    github_run_id: str,
+    source_commit: str,
+    token_env_var: Optional[str] = None,
+    require_in_progress: bool = True,
+) -> Dict[str, Any]:
+    """Query GitHub REST API to independently verify GitHub-hosted Windows runner identity."""
+    repo_norm = (github_repo or "").strip()
+    run_id_norm = str(github_run_id or "").strip()
+    commit_norm = (source_commit or "").strip().lower()
+    if not _GITHUB_REPO_RE.fullmatch(repo_norm):
+        raise RuntimeError(
+            f"REFUSED --clean-machine-e2e: Invalid GitHub repository slug {github_repo!r}."
+        )
+    if not run_id_norm.isdigit():
+        raise RuntimeError(
+            f"REFUSED --clean-machine-e2e: Invalid numeric GitHub workflow run ID {github_run_id!r}."
+        )
+    if not _GIT_COMMIT_RE.fullmatch(commit_norm):
+        raise RuntimeError(
+            f"REFUSED --clean-machine-e2e: Invalid 40-char source commit {source_commit!r}."
+        )
+
+    if require_in_progress:
+        if os.environ.get("GITHUB_ACTIONS", "").strip().lower() != "true":
+            raise RuntimeError(
+                "REFUSED --clean-machine-e2e: Current process is not executing inside a verified "
+                "GitHub Actions runner context."
+            )
+        env_run_id = os.environ.get("GITHUB_RUN_ID", "").strip()
+        if env_run_id and env_run_id != run_id_norm:
+            raise RuntimeError(
+                "REFUSED --clean-machine-e2e: Environment GITHUB_RUN_ID mismatch against "
+                f"--github-run-id ({env_run_id!r} != {run_id_norm!r})."
+            )
+
+    run_url = f"https://api.github.com/repos/{repo_norm}/actions/runs/{run_id_norm}"
+    token = _resolve_token_for_url(
+        run_url,
+        github_repo=repo_norm,
+        token_env_var=token_env_var,
+        require_token_if_github_api=True,
+    )
+    run_raw = _download_allowlisted_bytes(
+        run_url,
+        github_repo=repo_norm,
+        token=token,
+        token_source_is_github=True,
+        accept="application/vnd.github+json",
+    )
+    run_data = json.loads(run_raw.decode("utf-8"))
+    if not isinstance(run_data, dict):
+        raise RuntimeError("GitHub Actions run API returned non-object payload.")
+    if str(run_data.get("id", "")).strip() != run_id_norm:
+        raise RuntimeError(
+            f"GitHub Actions run ID mismatch: API={run_data.get('id')!r}, expected={run_id_norm!r}."
+        )
+    api_commit = str(run_data.get("head_sha") or "").strip().lower()
+    if api_commit != commit_norm:
+        raise RuntimeError(
+            f"GitHub Actions run head_sha mismatch: API={api_commit!r} != HEAD={commit_norm!r}."
+        )
+    api_repo = str((run_data.get("repository") or {}).get("full_name") or "").strip().lower()
+    if api_repo and api_repo != repo_norm.lower():
+        raise RuntimeError(
+            f"GitHub Actions repository mismatch: API={api_repo!r} != {repo_norm.lower()!r}."
+        )
+    if require_in_progress and str(run_data.get("status") or "").strip().lower() != "in_progress":
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: GitHub Actions run status must be 'in_progress' "
+            f"(cannot reuse completed/historical workflow runs, got {run_data.get('status')!r})."
+        )
+
+    jobs_url = (
+        f"https://api.github.com/repos/{repo_norm}/actions/runs/{run_id_norm}/jobs?per_page=100"
+    )
+    jobs_raw = _download_allowlisted_bytes(
+        jobs_url,
+        github_repo=repo_norm,
+        token=token,
+        token_source_is_github=True,
+        accept="application/vnd.github+json",
+    )
+    jobs_payload = json.loads(jobs_raw.decode("utf-8"))
+    jobs_list = jobs_payload.get("jobs") if isinstance(jobs_payload, dict) else None
+    if not isinstance(jobs_list, list) or not jobs_list:
+        raise RuntimeError(
+            "GitHub Actions jobs API returned no jobs for clean-runner verification."
+        )
+
+    env_runner_name = os.environ.get("RUNNER_NAME", "").strip()
+    matched_job: Optional[Dict[str, Any]] = None
+    for job in jobs_list:
+        if not isinstance(job, dict):
+            continue
+        job_status = str(job.get("status") or "").strip().lower()
+        if require_in_progress and job_status != "in_progress":
+            continue
+        runner_name = str(job.get("runner_name") or "").strip()
+        if not runner_name:
+            continue
+        if require_in_progress and env_runner_name and runner_name != env_runner_name:
+            continue
+        labels = [str(lbl).strip() for lbl in (job.get("labels") or []) if str(lbl).strip()]
+        lower_labels = [lbl.lower() for lbl in labels]
+        has_windows_label = any(lbl.startswith("windows") for lbl in lower_labels)
+        is_hosted_runner = "self-hosted" not in lower_labels and (
+            runner_name.startswith("Hosted Agent")
+            or runner_name.startswith("GitHub Actions")
+            or has_windows_label
+        )
+        if has_windows_label and is_hosted_runner:
+            matched_job = job
+            break
+
+    if matched_job is None:
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: GitHub Actions API did not confirm an active "
+            "GitHub-hosted Windows runner job for this run."
+        )
+
+    matched_labels = [
+        str(lbl).strip() for lbl in (matched_job.get("labels") or []) if str(lbl).strip()
+    ]
+    return {
+        "environment_tier": "github_hosted_windows_runner",
+        "provenance_source": "github_actions_api",
+        "workflow_run_id": run_id_norm,
+        "run_attempt": run_data.get("run_attempt"),
+        "github_repository": repo_norm,
+        "workflow_path": run_data.get("path"),
+        "runner_name": str(matched_job["runner_name"]).strip(),
+        "runner_labels": matched_labels,
+        "vm_provenance_ref": None,
+        "vm_evidence_sha256": None,
+    }
+
+
+def _verify_independent_vm_provenance(
+    *,
+    vm_evidence_path: Path,
+    expected_vm_evidence_sha256: Optional[str],
+    source_commit: str,
+    resolved_root: Path,
+) -> Dict[str, Any]:
+    """Verify out-of-band attested independent Windows VM clean-machine provenance."""
+    ev_path = Path(vm_evidence_path).resolve()
+    if not ev_path.is_file():
+        raise RuntimeError(
+            f"REFUSED --clean-machine-e2e: Independent VM evidence file not found: {ev_path}"
+        )
+    norm_expected = (expected_vm_evidence_sha256 or "").strip().lower()
+    if not _is_hex_sha256(norm_expected):
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: Independent VM provenance requires a 64-hex "
+            "--expect-vm-evidence-sha256 digest from an external verifier."
+        )
+    actual_sha = _sha256_file(ev_path).lower()
+    if not hmac.compare_digest(actual_sha, norm_expected):
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: Independent VM evidence SHA-256 verification failed."
+        )
+
+    vm_doc = _read_json_dict(ev_path, "independent VM evidence JSON")
+    if vm_doc.get("environment_tier") != "independent_windows_vm":
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: VM evidence must declare environment_tier='independent_windows_vm'."
+        )
+    if str(vm_doc.get("source_commit") or "").strip().lower() != source_commit.lower():
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: VM evidence source_commit mismatch against HEAD."
+        )
+    for req_flag in (
+        "python_absent",
+        "rust_absent",
+        "git_absent",
+        "node_absent",
+        "companion_bundle_absent",
+    ):
+        if vm_doc.get(req_flag) is not True:
+            raise RuntimeError(
+                f"REFUSED --clean-machine-e2e: Independent VM evidence missing {req_flag}=True."
+            )
+    vm_ref = str(vm_doc.get("vm_provenance_ref") or "").strip()
+    if not vm_ref:
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: Independent VM evidence missing non-empty vm_provenance_ref."
+        )
+
+    dev_model_path = resolved_root / MODEL_SPECS["random_forest"][0]
+    if (resolved_root / ".git").exists() and dev_model_path.is_file():
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: Cannot claim independent_windows_vm inside a local "
+            "developer git checkout containing dev model artifacts."
+        )
+
+    return {
+        "environment_tier": "independent_windows_vm",
+        "provenance_source": "independent_vm_verified_attestation",
+        "workflow_run_id": None,
+        "run_attempt": None,
+        "github_repository": None,
+        "workflow_path": None,
+        "runner_name": str(vm_doc.get("vm_name") or vm_ref).strip(),
+        "runner_labels": ["independent-windows-vm"],
+        "vm_provenance_ref": vm_ref,
+        "vm_evidence_sha256": actual_sha,
+    }
+
+
+def _resolve_clean_machine_provenance(
+    *,
+    clean_machine_e2e: bool,
+    standalone_embedded: bool,
+    pass_repo_root_env: bool,
+    source_tree_clean: Optional[bool],
+    source_commit: str,
+    resolved_root: Path,
+    github_repo: Optional[str],
+    github_run_id: Optional[str],
+    token_env_var: Optional[str],
+    independent_vm_evidence: Optional[Path],
+    expect_vm_evidence_sha256: Optional[str],
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Enforce fail-closed runner/VM provenance; never trust --clean-machine-e2e CLI flag alone."""
+    if not clean_machine_e2e:
+        return "local_developer_machine", None
+
+    if not standalone_embedded or pass_repo_root_env or source_tree_clean is not True:
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: Clean-machine verification strictly requires "
+            "--standalone-embedded, --no-repo-root-env, and a clean git HEAD."
+        )
+
+    if independent_vm_evidence is not None:
+        identity = _verify_independent_vm_provenance(
+            vm_evidence_path=independent_vm_evidence,
+            expected_vm_evidence_sha256=expect_vm_evidence_sha256,
+            source_commit=source_commit,
+            resolved_root=resolved_root,
+        )
+        return "independent_windows_vm", identity
+
+    if github_repo and github_run_id:
+        identity = _verify_github_runner_provenance(
+            github_repo=github_repo,
+            github_run_id=github_run_id,
+            source_commit=source_commit,
+            token_env_var=token_env_var,
+            require_in_progress=True,
+        )
+        return "github_hosted_windows_runner", identity
+
+    raise RuntimeError(
+        "REFUSED --clean-machine-e2e: Refusing to mark clean_machine_verified=True on a local "
+        "developer machine or unverified runner. Provide authoritative GitHub Actions API run "
+        "provenance (--github-repo + --github-run-id + GitHub token) or out-of-band hash-bound "
+        "--independent-vm-evidence."
+    )
+
+
 def run_four_model_e2e_verification(
     root: Path = PROJECT_ROOT,
     *,
@@ -2671,6 +2964,11 @@ def run_four_model_e2e_verification(
     expected_sidecar_sha256: Optional[str] = None,
     clean_machine_e2e: bool = False,
     require_clean_git: bool = False,
+    github_repo: Optional[str] = None,
+    github_run_id: Optional[str] = None,
+    token_env_var: Optional[str] = None,
+    independent_vm_evidence: Optional[Path] = None,
+    expect_vm_evidence_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fail-closed live loopback E2E verification across all 4 models on demo_flows.csv."""
     resolved_root = Path(root).resolve()
@@ -2693,6 +2991,19 @@ def run_four_model_e2e_verification(
             "E2E attestation BLOCKED: git working tree is dirty or unavailable; "
             "attestation requires clean committed HEAD."
         )
+    env_tier, verified_identity = _resolve_clean_machine_provenance(
+        clean_machine_e2e=clean_machine_e2e,
+        standalone_embedded=standalone_embedded,
+        pass_repo_root_env=pass_repo_root_env,
+        source_tree_clean=source_tree_clean,
+        source_commit=source_commit,
+        resolved_root=resolved_root,
+        github_repo=github_repo,
+        github_run_id=github_run_id,
+        token_env_var=token_env_var,
+        independent_vm_evidence=independent_vm_evidence,
+        expect_vm_evidence_sha256=expect_vm_evidence_sha256,
+    )
     desktop_version = _read_desktop_version(resolved_root)
     split_manifest_path = resolved_root / SPLIT_MANIFEST_REL
     if not split_manifest_path.is_file():
@@ -2802,7 +3113,43 @@ def run_four_model_e2e_verification(
             tmp_dir.cleanup()
         backend_origin = "api_only_run_api"
 
-    is_clean_runner = bool(clean_machine_e2e)
+    is_clean_runner = env_tier in CLEAN_MACHINE_ENVIRONMENT_TIERS and verified_identity is not None
+    installer_sha_bound = (
+        str(nsis_report.get("installer_sha256")).lower()
+        if isinstance(nsis_report, dict) and _is_hex_sha256(nsis_report.get("installer_sha256"))
+        else None
+    )
+    sidecar_sha_bound = (
+        str(nsis_report.get("sidecar_sha256")).lower()
+        if isinstance(nsis_report, dict) and _is_hex_sha256(nsis_report.get("sidecar_sha256"))
+        else None
+    )
+    runner_identity = (
+        {
+            "provenance_source": verified_identity["provenance_source"],
+            "workflow_run_id": verified_identity.get("workflow_run_id"),
+            "run_attempt": verified_identity.get("run_attempt"),
+            "github_repository": verified_identity.get("github_repository"),
+            "workflow_path": verified_identity.get("workflow_path"),
+            "runner_name": verified_identity.get("runner_name"),
+            "runner_labels": verified_identity.get("runner_labels") or [],
+            "vm_provenance_ref": verified_identity.get("vm_provenance_ref"),
+            "vm_evidence_sha256": verified_identity.get("vm_evidence_sha256"),
+        }
+        if verified_identity is not None
+        else {
+            "provenance_source": "none_local_developer_machine",
+            "workflow_run_id": None,
+            "run_attempt": None,
+            "github_repository": None,
+            "workflow_path": None,
+            "runner_name": None,
+            "runner_labels": [],
+            "vm_provenance_ref": None,
+            "vm_evidence_sha256": None,
+        }
+    )
+
     report: Dict[str, Any] = {
         "e2e_status": "PASS",
         "e2e_backend_origin": backend_origin,
@@ -2820,14 +3167,21 @@ def run_four_model_e2e_verification(
         "session_auth_fail_closed": bool(suite_result.get("session_auth_fail_closed")),
         "client_spoof_fail_closed": suite_result["client_spoof_fail_closed"],
         "attestation_environment": {
-            "execution_context": (
-                "clean_ci_runner" if is_clean_runner else "local_developer_machine"
-            ),
+            "environment_tier": env_tier,
+            "execution_context": env_tier,
+            "clean_machine_status": "VERIFIED" if is_clean_runner else "NOT VERIFIED",
             "source_tree_clean": source_tree_clean,
             "system_python_used": not standalone_embedded,
             "clean_machine_verified": is_clean_runner,
+            "runner_provenance_verified": verified_identity is not None,
+            "runner_identity": runner_identity,
+            "bindings": {
+                "source_commit": source_commit,
+                "installer_sha256": installer_sha_bound,
+                "sidecar_sha256": sidecar_sha_bound,
+            },
             "standalone_verified": bool(
-                standalone_embedded and is_clean_runner and source_tree_clean is not False
+                standalone_embedded and is_clean_runner and source_tree_clean is True
             ),
         },
     }
@@ -2957,6 +3311,8 @@ def verify_e2e_attestation(
     require_bundled_resources: bool = False,
     require_standalone_embedded: bool = False,
     require_clean_machine_e2e: bool = False,
+    verify_github_run: bool = False,
+    token_env_var: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Verify a 4-model E2E attestation JSON against tracked manifests, commit, demo, and NSIS E2E."""
     resolved_root = Path(root).resolve()
@@ -3326,16 +3682,105 @@ def verify_e2e_attestation(
         )
 
     att_env = report.get("attestation_environment")
-    clean_machine_verified = isinstance(att_env, dict) and (
-        att_env.get("clean_machine_verified") is True
-        and att_env.get("execution_context") == "clean_ci_runner"
-        and att_env.get("source_tree_clean") is True
-        and att_env.get("standalone_verified") is True
-    )
+    clean_machine_verified = False
+    if isinstance(att_env, dict):
+        env_tier_val = att_env.get("environment_tier") or att_env.get("execution_context")
+        runner_id_val = att_env.get("runner_identity")
+        bindings_val = att_env.get("bindings")
+        nsis_block = report.get("nsis_e2e") if isinstance(report.get("nsis_e2e"), dict) else None
+
+        if isinstance(bindings_val, dict):
+            if (
+                bindings_val.get("source_commit") is not None
+                and str(bindings_val.get("source_commit")).lower() != source_commit.lower()
+            ):
+                raise RuntimeError(
+                    "E2E attestation attestation_environment.bindings.source_commit mismatch."
+                )
+            if nsis_block is not None:
+                if (
+                    bindings_val.get("installer_sha256") is not None
+                    and str(bindings_val.get("installer_sha256")).lower()
+                    != str(nsis_block.get("installer_sha256", "")).lower()
+                ):
+                    raise RuntimeError(
+                        "E2E attestation attestation_environment.bindings.installer_sha256 mismatch."
+                    )
+                if (
+                    bindings_val.get("sidecar_sha256") is not None
+                    and str(bindings_val.get("sidecar_sha256")).lower()
+                    != str(nsis_block.get("sidecar_sha256", "")).lower()
+                ):
+                    raise RuntimeError(
+                        "E2E attestation attestation_environment.bindings.sidecar_sha256 mismatch."
+                    )
+
+        identity_ok = False
+        if (
+            isinstance(runner_id_val, dict)
+            and nsis_block is not None
+            and isinstance(bindings_val, dict)
+        ):
+            bindings_complete = (
+                str(bindings_val.get("source_commit") or "").lower() == source_commit.lower()
+                and _is_hex_sha256(bindings_val.get("installer_sha256"))
+                and str(bindings_val["installer_sha256"]).lower()
+                == str(nsis_block.get("installer_sha256", "")).lower()
+                and _is_hex_sha256(bindings_val.get("sidecar_sha256"))
+                and str(bindings_val["sidecar_sha256"]).lower()
+                == str(nsis_block.get("sidecar_sha256", "")).lower()
+            )
+            if bindings_complete:
+                if env_tier_val == "github_hosted_windows_runner":
+                    labels = runner_id_val.get("runner_labels")
+                    has_win_label = isinstance(labels, list) and any(
+                        str(lbl).strip().lower().startswith("windows") for lbl in labels
+                    )
+                    run_id_str = str(runner_id_val.get("workflow_run_id") or "").strip()
+                    gh_repo_str = str(runner_id_val.get("github_repository") or "").strip()
+                    runner_name_str = str(runner_id_val.get("runner_name") or "").strip()
+                    identity_ok = (
+                        runner_id_val.get("provenance_source") == "github_actions_api"
+                        and run_id_str.isdigit()
+                        and bool(_GITHUB_REPO_RE.fullmatch(gh_repo_str))
+                        and bool(runner_name_str)
+                        and has_win_label
+                    )
+                    if identity_ok and verify_github_run:
+                        _verify_github_runner_provenance(
+                            github_repo=gh_repo_str,
+                            github_run_id=run_id_str,
+                            source_commit=source_commit,
+                            token_env_var=token_env_var,
+                            require_in_progress=False,
+                        )
+                elif env_tier_val == "independent_windows_vm":
+                    vm_ref = str(runner_id_val.get("vm_provenance_ref") or "").strip()
+                    identity_ok = (
+                        runner_id_val.get("provenance_source")
+                        == "independent_vm_verified_attestation"
+                        and bool(vm_ref)
+                        and _is_hex_sha256(runner_id_val.get("vm_evidence_sha256"))
+                        and bool(str(runner_id_val.get("runner_name") or "").strip())
+                    )
+
+        clean_machine_verified = bool(
+            env_tier_val in CLEAN_MACHINE_ENVIRONMENT_TIERS
+            and att_env.get("execution_context") == env_tier_val
+            and att_env.get("clean_machine_status") == "VERIFIED"
+            and att_env.get("clean_machine_verified") is True
+            and att_env.get("runner_provenance_verified") is True
+            and att_env.get("source_tree_clean") is True
+            and att_env.get("system_python_used") is False
+            and att_env.get("standalone_verified") is True
+            and identity_ok
+        )
+
     if require_clean_machine_e2e and not clean_machine_verified:
         raise RuntimeError(
             "E2E attestation failed strict --require-clean-machine-e2e gate: "
-            f"attestation_environment={att_env!r} (local developer E2E cannot assert clean-machine STANDALONE VERIFIED)."
+            f"attestation_environment={att_env!r} (local developer or unverified runner provenance "
+            "cannot assert clean-machine STANDALONE VERIFIED)."
         )
 
     return {
@@ -3352,6 +3797,12 @@ def verify_e2e_attestation(
         "bundled_resources_verified": bundled_resources_verified,
         "standalone_embedded_verified": standalone_embedded_verified,
         "clean_machine_verified": clean_machine_verified,
+        "clean_machine_status": "VERIFIED" if clean_machine_verified else "NOT VERIFIED",
+        "environment_tier": (
+            att_env.get("environment_tier") or att_env.get("execution_context")
+            if isinstance(att_env, dict)
+            else None
+        ),
         "demo_files_verified_on_disk": demo_files_verified_on_disk,
     }
 
@@ -3438,9 +3889,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enforce public release distribution permission checks.",
     )
     parser.add_argument(
+        "--github-run-id",
+        type=str,
+        default=None,
+        help="GitHub Actions workflow run ID used with --clean-machine-e2e for API provenance verification.",
+    )
+    parser.add_argument(
+        "--independent-vm-evidence",
+        type=Path,
+        default=None,
+        help="Out-of-band attested independent Windows VM evidence JSON path for --clean-machine-e2e.",
+    )
+    parser.add_argument(
+        "--expect-vm-evidence-sha256",
+        type=str,
+        default=None,
+        help="Expected 64-char SHA-256 of --independent-vm-evidence JSON.",
+    )
+    parser.add_argument(
+        "--verify-github-run",
+        action="store_true",
+        help="Re-verify runner_identity.workflow_run_id against live GitHub REST API in --verify-attestation.",
+    )
+    parser.add_argument(
         "--clean-machine-e2e",
         action="store_true",
-        help="Mark E2E execution context as clean CI runner (only set by clean CI runner workflows).",
+        help="Assert clean-machine E2E (fails closed unless backed by GitHub Actions API run proof or verified VM evidence).",
     )
     parser.add_argument(
         "--require-clean-git",
@@ -3721,6 +4195,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 require_bundled_resources=args.require_bundled_resources,
                 require_standalone_embedded=args.require_standalone_embedded,
                 require_clean_machine_e2e=args.require_clean_machine_e2e,
+                verify_github_run=args.verify_github_run,
+                token_env_var=args.token_env,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E ATTESTATION VERIFICATION FAILED] {exc}\n")
@@ -3762,6 +4238,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 expected_sidecar_sha256=args.expect_sidecar_sha256,
                 clean_machine_e2e=args.clean_machine_e2e,
                 require_clean_git=args.require_clean_git,
+                github_repo=args.github_repo,
+                github_run_id=args.github_run_id,
+                token_env_var=args.token_env,
+                independent_vm_evidence=args.independent_vm_evidence,
+                expect_vm_evidence_sha256=args.expect_vm_evidence_sha256,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E VERIFICATION BLOCKED/FAILED] {exc}\n")

@@ -1668,8 +1668,15 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
 
 
 def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: Path):
-    for name in ("NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSE"):
-        (tmp_path / name).write_text(f"{name}\n", encoding="utf-8")
+    (tmp_path / "NOTICE").write_text(
+        "Dataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | UQ License ID 454104\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "THIRD_PARTY_NOTICES.md").write_text(
+        "# Notices\nDataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | License ID 454104\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "LICENSE").write_text("Apache License 2.0\n", encoding="utf-8")
 
     gov_dir = tmp_path / "reports" / "governance"
     gov_dir.mkdir(parents=True, exist_ok=True)
@@ -1688,6 +1695,36 @@ def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: 
             target_channel="public_github_release",
             root=tmp_path,
         )
+
+    # Private build on public or unknown repository privacy must fail closed
+    for non_private_flag in (False, None):
+        with pytest.raises(RuntimeError, match="not verified private"):
+            vca.verify_distribution_permission(
+                "private-build-only",
+                target_channel="private_ci_artifact",
+                repo_is_private=non_private_flag,
+                root=tmp_path,
+            )
+
+    # Private build on public_ci_artifact must fail closed even if caller passes private-build-only
+    with pytest.raises(RuntimeError, match="forbids public channel"):
+        vca.verify_distribution_permission(
+            "private-build-only",
+            target_channel="public_ci_artifact",
+            repo_is_private=False,
+            root=tmp_path,
+        )
+
+    # Corrupted attribution markers in NOTICE fail closed
+    saved_notice = (tmp_path / "NOTICE").read_text(encoding="utf-8")
+    (tmp_path / "NOTICE").write_text("NOTICE without license id\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="attribution markers"):
+        vca.verify_distribution_permission(
+            "research-only",
+            target_channel="local_offline",
+            root=tmp_path,
+        )
+    (tmp_path / "NOTICE").write_text(saved_notice, encoding="utf-8")
 
     # Private build on verified private repo/runner is approved for private_ci_artifact (but never public release)
     res_priv_ci = vca.verify_distribution_permission(
@@ -1902,10 +1939,29 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
         }
     )
     standalone_att["attestation_environment"] = {
+        "environment_tier": "local_developer_machine",
         "execution_context": "local_developer_machine",
+        "clean_machine_status": "NOT VERIFIED",
         "source_tree_clean": True,
         "system_python_used": False,
         "clean_machine_verified": False,
+        "runner_provenance_verified": False,
+        "runner_identity": {
+            "provenance_source": "none_local_developer_machine",
+            "workflow_run_id": None,
+            "run_attempt": None,
+            "github_repository": None,
+            "workflow_path": None,
+            "runner_name": None,
+            "runner_labels": [],
+            "vm_provenance_ref": None,
+            "vm_evidence_sha256": None,
+        },
+        "bindings": {
+            "source_commit": head_commit,
+            "installer_sha256": standalone_att["nsis_e2e"]["installer_sha256"],
+            "sidecar_sha256": "f" * 64,
+        },
         "standalone_verified": False,
     }
     standalone_path = tmp_path / "standalone_att.json"
@@ -1955,6 +2011,7 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
     )
     assert res_local["standalone_embedded_verified"] is True
     assert res_local["clean_machine_verified"] is False
+    assert res_local["clean_machine_status"] == "NOT VERIFIED"
 
     with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
         vca.verify_e2e_attestation(
@@ -1967,15 +2024,57 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
             require_clean_machine_e2e=True,
         )
 
-    # Clean CI runner attestation passes all strict gates
-    standalone_att["attestation_environment"] = {
+    # F-04: Self-declared bare 'clean_ci_runner' without runner identity & provenance MUST fail
+    spoofed_clean = copy.deepcopy(standalone_att)
+    spoofed_clean["attestation_environment"] = {
         "execution_context": "clean_ci_runner",
         "source_tree_clean": True,
         "system_python_used": False,
         "clean_machine_verified": True,
         "standalone_verified": True,
     }
-    standalone_path.write_text(json.dumps(standalone_att), encoding="utf-8")
+    standalone_path.write_text(json.dumps(spoofed_clean), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_bundled_resources=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+    # F-04: GitHub-hosted Windows runner attestation with full bindings passes
+    gh_clean = copy.deepcopy(standalone_att)
+    gh_clean["attestation_environment"] = {
+        "environment_tier": "github_hosted_windows_runner",
+        "execution_context": "github_hosted_windows_runner",
+        "clean_machine_status": "VERIFIED",
+        "source_tree_clean": True,
+        "system_python_used": False,
+        "clean_machine_verified": True,
+        "runner_provenance_verified": True,
+        "runner_identity": {
+            "provenance_source": "github_actions_api",
+            "workflow_run_id": "123456789",
+            "run_attempt": 1,
+            "github_repository": "owner/repo",
+            "workflow_path": ".github/workflows/release.yml",
+            "runner_name": "Hosted Agent",
+            "runner_labels": ["windows-latest"],
+            "vm_provenance_ref": None,
+            "vm_evidence_sha256": None,
+        },
+        "bindings": {
+            "source_commit": head_commit,
+            "installer_sha256": standalone_att["nsis_e2e"]["installer_sha256"],
+            "sidecar_sha256": "f" * 64,
+        },
+        "standalone_verified": True,
+    }
+    standalone_path.write_text(json.dumps(gh_clean), encoding="utf-8")
     res_clean = vca.verify_e2e_attestation(
         standalone_path,
         root=ws,
@@ -1987,3 +2086,221 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
         require_clean_machine_e2e=True,
     )
     assert res_clean["clean_machine_verified"] is True
+    assert res_clean["clean_machine_status"] == "VERIFIED"
+    assert res_clean["environment_tier"] == "github_hosted_windows_runner"
+
+    # F-04: Independent Windows VM attestation with matching bindings also passes
+    vm_clean = copy.deepcopy(gh_clean)
+    vm_clean["attestation_environment"]["environment_tier"] = "independent_windows_vm"
+    vm_clean["attestation_environment"]["execution_context"] = "independent_windows_vm"
+    vm_clean["attestation_environment"]["runner_identity"] = {
+        "provenance_source": "independent_vm_verified_attestation",
+        "workflow_run_id": None,
+        "run_attempt": None,
+        "github_repository": None,
+        "workflow_path": None,
+        "runner_name": "win11-clean-vm-01",
+        "runner_labels": ["independent-windows-vm"],
+        "vm_provenance_ref": "hyperv-snapshot-clean-2026-11-16",
+        "vm_evidence_sha256": "c" * 64,
+    }
+    standalone_path.write_text(json.dumps(vm_clean), encoding="utf-8")
+    res_vm = vca.verify_e2e_attestation(
+        standalone_path,
+        root=ws,
+        expect_commit=head_commit,
+        expect_sidecar_sha256="f" * 64,
+        require_nsis_e2e=True,
+        require_bundled_resources=True,
+        require_standalone_embedded=True,
+        require_clean_machine_e2e=True,
+    )
+    assert res_vm["clean_machine_verified"] is True
+    assert res_vm["environment_tier"] == "independent_windows_vm"
+
+    # F-04: Mismatched bindings (source_commit / sidecar_sha256 / installer_sha256) must fail
+    bad_bind = copy.deepcopy(gh_clean)
+    bad_bind["attestation_environment"]["bindings"]["installer_sha256"] = "1" * 64
+    standalone_path.write_text(json.dumps(bad_bind), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="bindings.installer_sha256 mismatch"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+
+def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_provenance(
+    tmp_path: Path, monkeypatch
+):
+    commit = "a" * 40
+    # 1) Local developer machine passing clean_machine_e2e=True must fail closed
+    with pytest.raises(RuntimeError, match="REFUSED --clean-machine-e2e"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            resolved_root=REPO_ROOT,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=None,
+            expect_vm_evidence_sha256=None,
+        )
+
+    # 2) Spoofed env vars without API provenance or VM evidence still fail closed
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("RUNNER_NAME", "Hosted Agent")
+    monkeypatch.setenv("GITHUB_RUN_ID", "999999")
+    with pytest.raises(RuntimeError, match="REFUSED --clean-machine-e2e"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            resolved_root=REPO_ROOT,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=None,
+            expect_vm_evidence_sha256=None,
+        )
+
+    # 3) Historical completed workflow run MUST be refused when asserting live clean-machine E2E
+    monkeypatch.setenv("GH_TOKEN", "dummy-ci-token")
+
+    def _mock_completed_api(url: str, **_kwargs) -> bytes:
+        if url.endswith("/actions/runs/999999"):
+            return json.dumps(
+                {
+                    "id": 999999,
+                    "head_sha": commit,
+                    "status": "completed",
+                    "run_attempt": 1,
+                    "path": ".github/workflows/release.yml",
+                    "repository": {"full_name": "owner/repo"},
+                }
+            ).encode("utf-8")
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(vca, "_download_allowlisted_bytes", _mock_completed_api)
+    with pytest.raises(RuntimeError, match="status must be 'in_progress'"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            resolved_root=REPO_ROOT,
+            github_repo="owner/repo",
+            github_run_id="999999",
+            token_env_var="GH_TOKEN",
+            independent_vm_evidence=None,
+            expect_vm_evidence_sha256=None,
+        )
+
+    # 4) Active live in_progress GitHub-hosted Windows runner passes and captures runner_identity
+    def _mock_live_windows_api(url: str, **_kwargs) -> bytes:
+        if url.endswith("/actions/runs/999999"):
+            return json.dumps(
+                {
+                    "id": 999999,
+                    "head_sha": commit,
+                    "status": "in_progress",
+                    "run_attempt": 2,
+                    "path": ".github/workflows/release.yml",
+                    "repository": {"full_name": "owner/repo"},
+                }
+            ).encode("utf-8")
+        if "/jobs" in url:
+            return json.dumps(
+                {
+                    "jobs": [
+                        {
+                            "status": "in_progress",
+                            "runner_name": "Hosted Agent",
+                            "labels": ["windows-latest"],
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(vca, "_download_allowlisted_bytes", _mock_live_windows_api)
+    tier, ident = vca._resolve_clean_machine_provenance(
+        clean_machine_e2e=True,
+        standalone_embedded=True,
+        pass_repo_root_env=False,
+        source_tree_clean=True,
+        source_commit=commit,
+        resolved_root=REPO_ROOT,
+        github_repo="owner/repo",
+        github_run_id="999999",
+        token_env_var="GH_TOKEN",
+        independent_vm_evidence=None,
+        expect_vm_evidence_sha256=None,
+    )
+    assert tier == "github_hosted_windows_runner"
+    assert ident is not None
+    assert ident["workflow_run_id"] == "999999"
+    assert ident["runner_name"] == "Hosted Agent"
+    assert ident["runner_labels"] == ["windows-latest"]
+
+    # 5) Independent Windows VM evidence rejects wrong digest and local git dev tree, passes on clean workspace
+    vm_json = tmp_path / "vm_evidence.json"
+    vm_json.write_text(
+        json.dumps(
+            {
+                "environment_tier": "independent_windows_vm",
+                "source_commit": commit,
+                "vm_provenance_ref": "hyperv-clean-win11-v1",
+                "vm_name": "win11-sandbox",
+                "python_absent": True,
+                "rust_absent": True,
+                "git_absent": True,
+                "node_absent": True,
+                "companion_bundle_absent": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    vm_sha = _sha256_path(vm_json)
+    with pytest.raises(RuntimeError, match="SHA-256 verification failed"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            resolved_root=tmp_path,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=vm_json,
+            expect_vm_evidence_sha256="0" * 64,
+        )
+
+    vm_tier, vm_ident = vca._resolve_clean_machine_provenance(
+        clean_machine_e2e=True,
+        standalone_embedded=True,
+        pass_repo_root_env=False,
+        source_tree_clean=True,
+        source_commit=commit,
+        resolved_root=tmp_path,
+        github_repo=None,
+        github_run_id=None,
+        token_env_var=None,
+        independent_vm_evidence=vm_json,
+        expect_vm_evidence_sha256=vm_sha,
+    )
+    assert vm_tier == "independent_windows_vm"
+    assert vm_ident is not None
+    assert vm_ident["vm_provenance_ref"] == "hyperv-clean-win11-v1"
+    assert vm_ident["vm_evidence_sha256"] == vm_sha

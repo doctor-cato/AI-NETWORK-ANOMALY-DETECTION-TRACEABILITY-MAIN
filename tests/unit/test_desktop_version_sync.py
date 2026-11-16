@@ -107,6 +107,9 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "--require-standalone-embedded" in release_yml
     assert "--clean-machine-e2e" in release_yml
     assert "--require-clean-machine-e2e" in release_yml
+    assert "--github-run-id" in release_yml
+    assert "--verify-github-run" in release_yml
+    assert "::add-mask::$bundleUrl" in release_yml
     assert "--require-clean-git" in release_yml
     assert "--expect-sidecar-sha256" in release_yml
     assert "--stage-embedded-dir" in release_yml
