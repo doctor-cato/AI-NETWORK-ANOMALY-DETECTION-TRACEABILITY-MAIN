@@ -32,7 +32,7 @@
 ## 2. Chi tiết từng bước trong `TrainOnlyPreprocessor`
 
 ### Bước 1 — Đọc CSV với `keep_default_na=False` và Kiểm tra Schema
-- Hàm `load_and_preprocess_split()` (`src/network_anomaly/preprocessing/pipeline.py:981`) đọc CSV với `keep_default_na=False` để **không gộp ngầm ô trống `""` với chuỗi `"NaN"`**.
+- Hàm `load_and_preprocess_split()` (`src/network_anomaly/preprocessing/pipeline.py:895`) đọc CSV với `keep_default_na=False` để **không gộp ngầm ô trống `""` với chuỗi `"NaN"`**.
 - Tại inference (`validate_inference_input()` tại `src/network_anomaly/inference/predict.py:83`), kiểm tra đủ 47 cột `ML_FEATURE_COLUMNS`, tự động sắp xếp lại theo đúng thứ tự canonical và tách riêng `row_id`, `TARGET_COLUMNS`, `TRACE_METADATA_COLUMNS`. Thiếu dù 1 cột sẽ ném `ValueError` fail-closed.
 
 ### Bước 2 — Phát hiện Missing, NaN, `±Infinity` và Token không hợp lệ
@@ -72,7 +72,9 @@
 
 ## 3. Ví dụ thực tế từng bước (Lấy từ `data/demo/demo_flows.csv`)
 
-### Ví dụ A — Dòng bình thường hoàn chỉnh (`row_id = 7946`, `Label = 1`, `Attack = "Reconnaissance"`)
+### Ví dụ A — Dòng tấn công hữu hạn hoàn chỉnh (`row_id = 7946`, `Label = 1`, `Attack = "Reconnaissance"`)
+
+> **Lưu ý:** Đây là một **dòng tấn công (`Label = 1`, họ `Reconnaissance`)** có đầy đủ 47 giá trị hữu hạn (`0` ô trống, `0` `inf`), minh họa luồng đi chuẩn của một Attack flow qua `TrainOnlyPreprocessor.transform()` mà không cần bù giá trị thiếu (trái ngược với Ví dụ B bên dưới là dòng Benign bị thiếu/`+Inf` và `MIN_TTL = 0`).
 
 | Giai đoạn | Dữ liệu cụ thể | Shape / Kiểu |
 |---|---|---|

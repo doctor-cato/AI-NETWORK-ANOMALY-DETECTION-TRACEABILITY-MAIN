@@ -111,3 +111,78 @@ Quy ước ký hiệu trong bảng:
 | 55 | `Attack` | Tên họ tấn công hoặc `"Benign"` | Category String (Text, 10 lớp) | `"Benign"`, `"Fuzzers"` | Category | Target (Loại khỏi `X`) | Chỉ dùng phân tích lỗi & tách Unknown | Loại tuyệt đối khỏi `X` | Không vào `X` |
 
 > **Lưu ý về derived features:** Ngoài 53 trường NetFlow v3 gốc, baseline contract **không tạo thêm feature dẫn xuất mới** (mô hình chỉ nhận đúng 47 cột gốc sau khi làm sạch và điền thiếu). Một cột phụ tùy chọn là `row_id` trong `demo_flows.csv` cũng chỉ dùng để giữ định danh dòng đầu vào và **bị loại khỏi `X`**.
+
+---
+
+## 4. Phân biệt Thống kê Toàn Dataset (EDA) vs Tham số Học CHỈ trên Train
+
+Để chống rò rỉ dữ liệu (`data leakage`), **tuyệt đối không** dùng thống kê mô tả của toàn bộ `2.365.424` dòng để điền giá trị thiếu hoặc xây dựng từ điển trước khi chia tập:
+
+| Nguồn | Tập dữ liệu áp dụng | Dùng cho mục đích gì? | Giá trị đại diện khác nhau thực tế |
+|---|---|---|---|
+| **Thống kê mô tả Toàn Dataset** ([nf_unsw_nb15_v3_eda_summary.json](../../reports/eda/nf_unsw_nb15_v3_eda_summary.json), [nf_unsw_nb15_v3_validation.json](../../reports/data_quality/nf_unsw_nb15_v3_validation.json)) | Toàn bộ CSV (`2.365.424` dòng) | Kiểm định chất lượng dữ liệu thô, tính `Min`, `p50` (trên 37 cột định lượng), `Max` và số lượng missing/`+Inf`; **KHÔNG dùng lúc train hoặc inference** | `IN_BYTES` Full p50 = **`1.580`**, `LONGEST_FLOW_PKT` Full p50 = **`433`**, `DST_TO_SRC_SECOND_BYTES` Full p50 = **`75.3333`**, `SRC_TO_DST_AVG_THROUGHPUT` Full p50 = **`536.585`**, `DST_TO_SRC_IAT_MAX` Full p50 = **`6`** |
+| **Tham số học Train-Only** ([nf_unsw_nb15_v3_preprocessing_manifest.json](../../reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json), artifact SHA-256 `12d4360a...`, [REAL_DATA_SMOKE_REPORT.md](../../reports/preprocessing/REAL_DATA_SMOKE_REPORT.md)) | **Chỉ Train split (`1.655.797` dòng)** | Đóng băng median (37 cột định lượng), mode + `category_vocabularies_` (10 cột phân loại mã hóa số) bên trong `TrainOnlyPreprocessor` để biến đổi Val, Test và Inference | `IN_BYTES` Train median = **`1.684`**, `LONGEST_FLOW_PKT` Train median = **`485`**, `DST_TO_SRC_SECOND_BYTES` Train median = **`78.2815`**, `SRC_TO_DST_AVG_THROUGHPUT` Train median = **`540.222`**, `DST_TO_SRC_IAT_MAX` Train median = **`5`** |
+
+> **Lưu ý về nguồn dữ liệu bảng bên dưới:** Cột *Full CSV* trích xuất trực tiếp từ hai tệp báo cáo đã commit (`nf_unsw_nb15_v3_eda_summary.json` và `nf_unsw_nb15_v3_validation.json`). Cột *Train-only* trích xuất từ `nf_unsw_nb15_v3_preprocessing_manifest.json` và đối chiếu trực tiếp qua `TrainOnlyPreprocessor.load_verified()` trên artifact cục bộ `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (SHA-256 `12d4360a...`, ngoài Git) bằng [`scripts/export_academic_schema_summary.py`](../../scripts/export_academic_schema_summary.py). Trong EDA của dự án, `quantiles` (`p50`) chỉ được tính cho **37 `QUANTITATIVE_ML_COLUMNS`**, không tính cho metadata, target hay 10 cột `CATEGORICAL_CODED_COLUMNS`.
+
+---
+
+## 5. Bảng Thống kê & Tham số Tiền xử lý Đầy đủ cho 55/55 Cột
+
+| # | Tên cột | Vai trò | Min (Full CSV) | p50 / Median (Full CSV) | Max (Full CSV) | Thiếu / Non-finite (Full CSV) | Thiếu / Non-finite (Train) | Giá trị Impute (Train-only) | Vocab Size (Train-only) |
+|---:|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | `FLOW_START_MILLISECONDS` | `metadata_timestamp` | 1.421.927.376.907 | — *(metadata)* | 1.424.262.564.927 | 0 | — *(loại khỏi `X`)* | — *(loại)* | — *(loại)* |
+| 2 | `FLOW_END_MILLISECONDS` | `metadata_timestamp` | 1.421.927.414.036 | — *(metadata)* | 1.424.262.565.011 | 0 | — *(loại khỏi `X`)* | — *(loại)* | — *(loại)* |
+| 3 | `IPV4_SRC_ADDR` | `metadata_ip` | — *(IPv4 text)* | — *(IPv4 text)* | — *(IPv4 text)* | — *(chuỗi IPv4)* | — *(loại khỏi `X`)* | — *(loại)* | — *(loại)* |
+| 4 | `L4_SRC_PORT` | `metadata_port` | 0 | — *(metadata)* | 65.535 | 0 | — *(loại khỏi `X`)* | — *(loại)* | — *(loại)* |
+| 5 | `IPV4_DST_ADDR` | `metadata_ip` | — *(IPv4 text)* | — *(IPv4 text)* | — *(IPv4 text)* | — *(chuỗi IPv4)* | — *(loại khỏi `X`)* | — *(loại)* | — *(loại)* |
+| 6 | `L4_DST_PORT` | `metadata_port` | 0 | — *(metadata)* | 65.535 | 0 | — *(loại khỏi `X`)* | — *(loại)* | — *(loại)* |
+| 7 | `PROTOCOL` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 255 | 0 | 0 | **6** *(mode)* | **255** |
+| 8 | `L7_PROTO` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 421 | 0 | 0 | **37** *(mode)* | **124** |
+| 9 | `IN_BYTES` | `ml_quantitative` | 1 | 1.580 | 27.020.934 | 0 | 0 | **1.684** *(median)* | — *(quant)* |
+| 10 | `IN_PKTS` | `ml_quantitative` | 1 | 16 | 20.166 | 0 | 0 | **18** *(median)* | — *(quant)* |
+| 11 | `OUT_BYTES` | `ml_quantitative` | 0 | 2.456 | 14.656.752 | 0 | 0 | **2.456** *(median)* | — *(quant)* |
+| 12 | `OUT_PKTS` | `ml_quantitative` | 0 | 18 | 11.024 | 0 | 0 | **18** *(median)* | — *(quant)* |
+| 13 | `TCP_FLAGS` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 31 | 0 | 0 | **27** *(mode)* | **12** |
+| 14 | `CLIENT_TCP_FLAGS` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 31 | 0 | 0 | **27** *(mode)* | **11** |
+| 15 | `SERVER_TCP_FLAGS` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 31 | 0 | 0 | **27** *(mode)* | **12** |
+| 16 | `FLOW_DURATION_MILLISECONDS` | `ml_quantitative` | 0 | 31 | 120.948 | 0 | 0 | **31** *(median)* | — *(quant)* |
+| 17 | `DURATION_IN` | `ml_quantitative` | 0 | 28 | 120.948 | 0 | 0 | **28** *(median)* | — *(quant)* |
+| 18 | `DURATION_OUT` | `ml_quantitative` | 0 | 28 | 120.922 | 0 | 0 | **28** *(median)* | — *(quant)* |
+| 19 | `MIN_TTL` | `ml_quantitative` | 0 | 31 | 255 | 0 | 0 | **31** *(median)* | — *(quant)* |
+| 20 | `MAX_TTL` | `ml_quantitative` | 0 | 32 | 255 | 0 | 0 | **32** *(median)* | — *(quant)* |
+| 21 | `LONGEST_FLOW_PKT` | `ml_quantitative` | 28 | 433 | 1.508 | 0 | 0 | **485** *(median)* | — *(quant)* |
+| 22 | `SHORTEST_FLOW_PKT` | `ml_quantitative` | 28 | 52 | 1.508 | 0 | 0 | **52** *(median)* | — *(quant)* |
+| 23 | `MIN_IP_PKT_LEN` | `ml_quantitative` | 0 | 52 | 680 | 0 | 0 | **52** *(median)* | — *(quant)* |
+| 24 | `MAX_IP_PKT_LEN` | `ml_quantitative` | 28 | 433 | 1.508 | 0 | 0 | **485** *(median)* | — *(quant)* |
+| 25 | `SRC_TO_DST_SECOND_BYTES` | `ml_quantitative` | 0 | 162 | 4.412 | **122.493** *(63.425 trống + 59.068 +Inf)* | **69.717** *(30.973 trống + 38.744 +Inf)* | **162** *(median)* | — *(quant)* |
+| 26 | `DST_TO_SRC_SECOND_BYTES` | `ml_quantitative` | 0.00141665 | 75.3333 | 8.712 | **122.493** *(122.493 +Inf)* | **69.717** *(69.717 +Inf)* | **78.28151260504201** *(median)* | — *(quant)* |
+| 27 | `RETRANSMITTED_IN_BYTES` | `ml_quantitative` | 0 | 505 | 13.510.379 | 0 | 0 | **562** *(median)* | — *(quant)* |
+| 28 | `RETRANSMITTED_IN_PKTS` | `ml_quantitative` | 0 | 4 | 10.081 | 0 | 0 | **4** *(median)* | — *(quant)* |
+| 29 | `RETRANSMITTED_OUT_BYTES` | `ml_quantitative` | 0 | 828 | 7.328.208 | 0 | 0 | **871** *(median)* | — *(quant)* |
+| 30 | `RETRANSMITTED_OUT_PKTS` | `ml_quantitative` | 0 | 4 | 5.508 | 0 | 0 | **4** *(median)* | — *(quant)* |
+| 31 | `SRC_TO_DST_AVG_THROUGHPUT` | `ml_quantitative` | 11 | 536.585 | 36.000.000 | 0 | 0 | **540.222** *(median)* | — *(quant)* |
+| 32 | `DST_TO_SRC_AVG_THROUGHPUT` | `ml_quantitative` | 0 | 712.000 | 23.530.666 | 0 | 0 | **712.000** *(median)* | — *(quant)* |
+| 33 | `NUM_PKTS_UP_TO_128_BYTES` | `ml_quantitative` | 0 | 31 | 3.840 | 0 | 0 | **32** *(median)* | — *(quant)* |
+| 34 | `NUM_PKTS_128_TO_256_BYTES` | `ml_quantitative` | 0 | 0 | 298 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 35 | `NUM_PKTS_256_TO_512_BYTES` | `ml_quantitative` | 0 | 0 | 2.564 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 36 | `NUM_PKTS_512_TO_1024_BYTES` | `ml_quantitative` | 0 | 0 | 642 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 37 | `NUM_PKTS_1024_TO_1514_BYTES` | `ml_quantitative` | 0 | 0 | 17.500 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 38 | `TCP_WIN_MAX_IN` | `ml_quantitative` | 0 | 14.480 | 65.533 | 0 | 0 | **14.480** *(median)* | — *(quant)* |
+| 39 | `TCP_WIN_MAX_OUT` | `ml_quantitative` | 0 | 13.032 | 65.531 | 0 | 0 | **13.032** *(median)* | — *(quant)* |
+| 40 | `ICMP_TYPE` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 65.285 | 0 | 0 | **0** *(mode)* | **910** |
+| 41 | `ICMP_IPV4_TYPE` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 255 | 0 | 0 | **0** *(mode)* | **256** |
+| 42 | `DNS_QUERY_ID` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 65.535 | 0 | 0 | **0** *(mode)* | **63.003** |
+| 43 | `DNS_QUERY_TYPE` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 55.937 | 0 | 0 | **0** *(mode)* | **18** |
+| 44 | `DNS_TTL_ANSWER` | `ml_quantitative` | 0 | 0 | 4.283.358.309 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 45 | `FTP_COMMAND_RET_CODE` | `ml_categorical_coded` | 0 | — *(cat-coded)* | 501 | 0 | 0 | **0** *(mode)* | **16** |
+| 46 | `SRC_TO_DST_IAT_MIN` | `ml_quantitative` | 0 | 0 | 60.598 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 47 | `SRC_TO_DST_IAT_MAX` | `ml_quantitative` | 0 | 5 | 60.598 | 0 | 0 | **5** *(median)* | — *(quant)* |
+| 48 | `SRC_TO_DST_IAT_AVG` | `ml_quantitative` | 0 | 0 | 30.299 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 49 | `SRC_TO_DST_IAT_STDDEV` | `ml_quantitative` | 0 | 1 | 30.299 | 0 | 0 | **1** *(median)* | — *(quant)* |
+| 50 | `DST_TO_SRC_IAT_MIN` | `ml_quantitative` | 0 | 0 | 1.490 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 51 | `DST_TO_SRC_IAT_MAX` | `ml_quantitative` | 0 | 6 | 60.598 | 0 | 0 | **5** *(median)* | — *(quant)* |
+| 52 | `DST_TO_SRC_IAT_AVG` | `ml_quantitative` | 0 | 0 | 20.199 | 0 | 0 | **0** *(median)* | — *(quant)* |
+| 53 | `DST_TO_SRC_IAT_STDDEV` | `ml_quantitative` | 0 | 1 | 28.566 | 0 | 0 | **1** *(median)* | — *(quant)* |
+| 54 | `Label` | `target` | 0 | — *(binary)* | 1 | 0 | — *(loại khỏi `X`)* | — *(loại)* | 2 (`0/1`) |
+| 55 | `Attack` | `target` | — *(10 chuỗi)* | — *(cat text)* | — *(10 chuỗi)* | 0 | — *(loại khỏi `X`)* | — *(loại)* | 10 lớp |

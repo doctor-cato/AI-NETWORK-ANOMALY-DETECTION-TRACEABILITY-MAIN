@@ -57,7 +57,7 @@
 - **Trả lời ngắn:** Ma trận 2 chiều shape **`(N, 47)`**, kiểu `float64`, hoàn toàn hữu hạn (`0 NaN`, `0 Inf`), giống nhau cho **cả 4 mô hình**.
 - **Giải thích kỹ thuật:** Cụ thể khi huấn luyện: RF & XGBoost nhận `X_train` shape `(1.655.797, 47)`; Isolation Forest & Autoencoder nhận `X_train_benign` shape `(1.590.608, 47)`; khi đánh giá Held-out Test: `(345.953, 47)`; khi chạy demo 200 dòng (trừ 2 dòng OOD): `(198, 47)`.
 - **Ví dụ thực tế:** `train_random_forest.py:727` ép assertion `X_train_trans.shape == (len(train_indices), 47)` trước khi cho phép gọi `model.fit()`.
-- **Dẫn chứng:** `reports/preprocessing/REAL_DATA_SMOKE_REPORT.md:39-43`, `scripts/train_random_forest.py:727-732`, `src/network_anomaly/models/autoencoder.py:21,234`.
+- **Dẫn chứng:** `reports/preprocessing/REAL_DATA_SMOKE_REPORT.md:39-43`, `scripts/train_random_forest.py:727-732`, `src/network_anomaly/models/autoencoder.py:27,234,302`.
 - **Giới hạn / Chưa kiểm chứng:** Nếu một file CSV thiếu dù chỉ 1 trong 47 cột, pipeline từ chối fail-closed ngay trước tiền xử lý.
 
 ### Câu 9: `Label = 1` đại diện cho điều gì?
@@ -141,5 +141,5 @@
 - **Trả lời ngắn:** Toàn bộ chuỗi SHA-256 và báo cáo JSON/Markdown lưu trong `reports/` (`random_forest_manifest.json`, `rf-heldout-ea330b9/`, `xgboost_manifest.json`, `evaluation/xgboost/`, `isolation_forest_manifest.json`, `experiments/isolation_forest/`, `autoencoder_manifest.json`, `evaluation/autoencoder/`) cùng bộ test `pytest` + kiểm chứng E2E trong PR #70 và PR #72.
 - **Giải thích kỹ thuật:** Mỗi báo cáo ghi rõ `dataset_sha256`, `split_manifest_sha256`, `train/val/test_indices_sha256`, `preprocessor_artifact_sha256`, `model_artifact_sha256`, `git_commit`, phiên bản Python/thư viện, confusion matrix từng lớp và kết quả reload verification (`atol=1e-7`).
 - **Ví dụ thực tế:** Trên máy cục bộ có `.joblib`, chạy `python scripts/verify_companion_artifacts.py --verify-e2e` kiểm chứng 4/4 model nạp đúng SHA-256 và chạy inference 200 dòng (`198` đánh giá + `2` OOD).
-- **Dẫn chứng:** `reports/models/*.json`, `reports/evaluation/**`, `reports/experiments/isolation_forest/**`, `scripts/verify_companion_artifacts.py`, PR #72 (`e6be2ea`).
+- **Dẫn chứng:** `reports/models/*.json`, `reports/evaluation/**`, `reports/experiments/isolation_forest/**`, `scripts/verify_companion_artifacts.py`, PR #72 (merge commit `e5a1f89`, gồm commit `e6be2ea`).
 - **Giới hạn / Chưa kiểm chứng:** Các tệp `.joblib` và `demo_*.csv` không lưu trực tiếp trong public Git repo do kích thước lớn và giới hạn UQ `454104`; trên máy mới chưa có `.joblib` hoặc trên CI GitHub Actions, test real-data báo `SKIPPED` và API báo `BLOCKED / NOT READY` fail-closed.

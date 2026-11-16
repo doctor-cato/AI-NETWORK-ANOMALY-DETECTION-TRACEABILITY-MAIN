@@ -14,8 +14,8 @@
 | **Train Random Forest ở đâu?** | `scripts/train_random_forest.py` & `src/network_anomaly/models/random_forest.py` | `execute_training()` (L660), `RandomForestModel.fit()` (L283) → gọi tại `train_random_forest.py:802` |
 | **Đánh giá Held-out Test RF ở đâu?** | `scripts/evaluate_random_forest.py` & `src/network_anomaly/evaluation/test_evaluation.py` | `main()` |
 | **Train & Test XGBoost ở đâu?** | `scripts/train_xgboost.py` & `src/network_anomaly/models/xgboost_model.py` | `execute_training()` (L410), `XGBoostModel.fit()` (L231) → gọi tại `train_xgboost.py:544`; `_evaluate_xgb_test_partition()` (L947) |
-| **Train & Test Isolation Forest ở đâu?** | `scripts/train_isolation_forest.py` & `src/network_anomaly/models/isolation_forest.py` | `run_pipeline()` (L1571), `fit_model()` → gọi tại `train_isolation_forest.py:1813` trên `X_train_benign`; `calibrate_threshold()` (L633) |
-| **Train & Test Autoencoder ở đâu?** | `scripts/train_autoencoder.py` & `src/network_anomaly/models/autoencoder.py` | `run_pipeline()` (L1661), `fit_model()` (L302) → gọi tại `train_autoencoder.py:1797` trên `X_train_benign`; `calibrate_threshold()` (L764) |
+| **Train & Test Isolation Forest ở đâu?** | `scripts/train_isolation_forest.py` & `src/network_anomaly/models/isolation_forest.py` | `run_pipeline()` (`train_isolation_forest.py:1571`), `fit_model()` (`isolation_forest.py:314` → gọi tại `train_isolation_forest.py:1813` trên `X_train_benign`), `calibrate_threshold()` (`train_isolation_forest.py:633`) |
+| **Train & Test Autoencoder ở đâu?** | `scripts/train_autoencoder.py` & `src/network_anomaly/models/autoencoder.py` | `run_pipeline()` (`train_autoencoder.py:1661`), `fit_model()` (`autoencoder.py:302` → gọi tại `train_autoencoder.py:1797` trên `X_train_benign`), `calibrate_threshold()` (`train_autoencoder.py:764`) |
 | **Tính metrics chung ở đâu?** | `src/network_anomaly/evaluation/metrics.py` | `compute_metrics()`, `compute_attack_category_breakdown()` (RF/XGB dùng chung; IF/AE có hàm `compute_full_metrics` / `compute_metrics` kèm known-vs-unknown holdout) |
 | **Inference CLI & Backend ở đâu?** | `scripts/predict.py`, `src/network_anomaly/inference/predict.py`, `src/network_anomaly/api/service.py`, `src/network_anomaly/api/desktop_csv.py` | `InferencePipeline.from_artifacts()` (L534), `InferencePipeline.predict()` (L582), `ApiService.analyze_flows()` (L482), `analyze_csv_file()` (L1222) |
 | **Tạo dữ liệu Demo 200 dòng ở đâu?** | `scripts/prepare_demo_dataset.py` | Lấy mẫu từ `validation_indices.csv.gz` (0 overlap Train/Test) |
@@ -70,7 +70,7 @@ flowchart TD
 **TRẢ LỜI DỨT KHOÁT: KHÔNG.**
 
 Chứng minh trực tiếp từ code thực thi khi người dùng bấm **Phân tích** trên NetFlow Sentinel Desktop:
-1. Svelte UI gọi `analyzeCsv` → Rust Tauri command → HTTP `POST /api/v1/csv/analyze` (`src/network_anomaly/api/main.py:384`) → `analyze_csv_file()` (`src/network_anomaly/api/desktop_csv.py:1222`).
+1. Svelte UI gọi `analyzeCsv` → Rust Tauri command → HTTP `POST /api/v1/csv/analyze` (`src/network_anomaly/api/main.py:379–384`) → `analyze_csv_file()` (`src/network_anomaly/api/desktop_csv.py:1222`).
 2. `analyze_csv_file()` kiểm tra OOD trước inference (`_audit_desktop_ood`), gắn `ABSTAINED_OOD` cho dòng `MIN_TTL == 0` hoặc lỗi vật lý.
 3. Với các dòng hợp lệ, `service._load_inference_pipeline(canonical_model)` (`src/network_anomaly/api/service.py:387`) gọi `InferencePipeline.from_artifacts()`, bên trong chỉ gọi:
    - `load_verified_preprocessor()` → `TrainOnlyPreprocessor.load_verified()`
