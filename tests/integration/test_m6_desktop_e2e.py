@@ -20,7 +20,9 @@ from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
 RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
+XGB_MODEL = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
 IF_MODEL = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
+AE_MODEL = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
 PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
 
 
@@ -30,26 +32,33 @@ def _find_free_loopback_port() -> int:
         return int(s.getsockname()[1])
 
 
-def _spawn_localhost_api(db_file: Path) -> tuple[subprocess.Popen[bytes], str]:
+def _spawn_localhost_api(
+    db_file: Path, log_path: Path | None = None
+) -> tuple[subprocess.Popen[bytes], str]:
     port = _find_free_loopback_port()
     env = dict(os.environ)
     env["PYTHONPATH"] = str(PROJECT_ROOT / "src")
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            str(PROJECT_ROOT / "scripts" / "run_api.py"),
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--db-path",
-            str(db_file),
-        ],
-        cwd=str(PROJECT_ROOT),
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    sink = log_path.open("w", encoding="utf-8") if log_path is not None else subprocess.DEVNULL
+    try:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                str(PROJECT_ROOT / "scripts" / "run_api.py"),
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--db-path",
+                str(db_file),
+            ],
+            cwd=str(PROJECT_ROOT),
+            env=env,
+            stdout=sink,
+            stderr=subprocess.STDOUT if log_path is not None else subprocess.DEVNULL,
+        )
+    finally:
+        if log_path is not None and not isinstance(sink, int):
+            sink.close()
     return proc, f"http://127.0.0.1:{port}"
 
 
@@ -120,7 +129,7 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
     synth_csv = tmp_path / "synthetic_47_features.csv"
     pd.DataFrame(synth).to_csv(synth_csv, index=False)
 
-    proc, base_url = _spawn_localhost_api(tmp_path / "ci_synthetic.db")
+    proc, base_url = _spawn_localhost_api(tmp_path / "ci_synthetic.db", tmp_path / "ci_api.log")
     try:
         health_json = _wait_for_health(proc, base_url)
         assert health_json["db_ready"] is True
@@ -135,9 +144,6 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
             "isolation_forest",
             "autoencoder",
         }
-        assert model_map["autoencoder"]["ready"] is False
-        assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
-
         ins_resp = httpx.post(
             f"{base_url}/api/v1/csv/inspect",
             json={"file_path": str(synth_csv), "preview_limit": 10},
@@ -152,12 +158,28 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
         assert ins["ood_report"]["zero_ttl_count"] == 1
         assert len(ins["models_status"]) == 4
 
-        blocked_resp = httpx.post(
-            f"{base_url}/api/v1/csv/analyze",
-            json={"file_path": str(synth_csv), "model_name": "autoencoder"},
-            timeout=10.0,
-        )
-        assert blocked_resp.status_code == 503
+        if AE_MODEL.is_file():
+            assert model_map["autoencoder"]["ready"] is True
+            assert model_map["autoencoder"]["status"] == "READY"
+            ae_resp = httpx.post(
+                f"{base_url}/api/v1/csv/analyze",
+                json={"file_path": str(synth_csv), "model_name": "autoencoder"},
+                timeout=15.0,
+            )
+            assert ae_resp.status_code == 200
+            ae_data = ae_resp.json()
+            assert ae_data["abstained_rows"] == 1
+            assert ae_data["evaluated_rows"] == n_rows - 1
+        else:
+            assert model_map["autoencoder"]["ready"] is False
+            assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
+
+            blocked_resp = httpx.post(
+                f"{base_url}/api/v1/csv/analyze",
+                json={"file_path": str(synth_csv), "model_name": "autoencoder"},
+                timeout=10.0,
+            )
+            assert blocked_resp.status_code == 503
     finally:
         _terminate_process(proc)
 
@@ -186,16 +208,21 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         model_map = {m["model_key"]: m for m in models}
         assert model_map["random_forest"]["status"] == "READY"
         assert model_map["isolation_forest"]["status"] == "READY"
-        assert model_map["xgboost"]["status"] == "BLOCKED / NOT READY"
-        assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
-
-        # Step 4: Blocked model must fail closed with 503
-        blocked_resp = httpx.post(
-            f"{base_url}/api/v1/csv/analyze",
-            json={"file_path": str(DEMO_FLOWS), "model_name": "autoencoder"},
-            timeout=10.0,
-        )
-        assert blocked_resp.status_code == 503
+        if XGB_MODEL.is_file():
+            assert model_map["xgboost"]["status"] == "READY"
+        else:
+            assert model_map["xgboost"]["status"] == "BLOCKED / NOT READY"
+        if AE_MODEL.is_file():
+            assert model_map["autoencoder"]["status"] == "READY"
+        else:
+            assert model_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
+            # Step 4: Blocked model must fail closed with 503
+            blocked_resp = httpx.post(
+                f"{base_url}/api/v1/csv/analyze",
+                json={"file_path": str(DEMO_FLOWS), "model_name": "autoencoder"},
+                timeout=10.0,
+            )
+            assert blocked_resp.status_code == 503
 
         # Step 5: Inspect demo_flows.csv (47 features valid, OOD MIN_TTL=0 surfaced)
         ins_resp = httpx.post(

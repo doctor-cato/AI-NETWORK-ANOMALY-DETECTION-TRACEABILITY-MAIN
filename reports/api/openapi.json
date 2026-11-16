@@ -2242,6 +2242,19 @@
             ],
             "title": "Raw Anomaly Score"
           },
+          "normalized_anomaly_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Anomaly Score"
+          },
           "decision_threshold": {
             "anyOf": [
               {

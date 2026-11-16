@@ -22,7 +22,6 @@ import io
 import json
 import os
 import platform
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -54,6 +53,7 @@ from network_anomaly.evaluation.metrics import (  # noqa: E402
     compute_attack_category_breakdown,
     compute_metrics,
 )
+from network_anomaly.models.provenance import collect_git_provenance  # noqa: E402
 from network_anomaly.models.random_forest import (  # noqa: E402
     FEATURE_CONTRACT_VERSION,
     PREPROCESSING_CONTRACT_ID,
@@ -222,6 +222,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--verify-only",
         action="store_true",
         help="Verify all prerequisite artifacts and exit without training",
+    )
+    parser.add_argument(
+        "--require-clean-git",
+        action="store_true",
+        default=False,
+        help="Fail closed if git worktree has uncommitted or untracked changes",
     )
     return parser.parse_args(argv)
 
@@ -487,6 +493,70 @@ def load_partition(
     return load_partition_indices(split_manifest_path, indices_dir, partition_name)
 
 
+def _flush_csv_lines(
+    header_line: str,
+    line_buffer: List[str],
+    row_offsets: List[int],
+    usecols: List[str],
+    chunks: List[pd.DataFrame],
+) -> None:
+    """Parse accumulated raw CSV lines into an indexed DataFrame chunk."""
+    if not line_buffer:
+        return
+    content = header_line + "".join(line_buffer)
+    df = pd.read_csv(
+        io.StringIO(content),
+        usecols=usecols,
+        keep_default_na=False,
+        low_memory=False,
+    )
+    df.index = row_offsets[-len(line_buffer) :]
+    chunks.append(df)
+    line_buffer.clear()
+
+
+def stream_single_partition_csv(
+    dataset_path: Path,
+    partition_indices: np.ndarray,
+    usecols: List[str],
+    chunksize: int = 100_000,
+    partition_label: str = "partition",
+) -> pd.DataFrame:
+    """Stream raw CSV and extract strictly the requested partition rows."""
+    target_idx_set = set(int(x) for x in partition_indices)
+    chunks: List[pd.DataFrame] = []
+    line_buffer: List[str] = []
+    row_offsets: List[int] = []
+
+    with dataset_path.open("r", encoding="utf-8", errors="replace") as f:
+        header_line = f.readline()
+        if not header_line:
+            raise ValueError(f"Empty dataset file at {dataset_path}")
+        row_idx = 0
+        for line in f:
+            if row_idx in target_idx_set:
+                line_buffer.append(line)
+                row_offsets.append(row_idx)
+                if len(line_buffer) >= chunksize:
+                    _flush_csv_lines(header_line, line_buffer, row_offsets, usecols, chunks)
+            row_idx += 1
+        _flush_csv_lines(header_line, line_buffer, row_offsets, usecols, chunks)
+
+    if not chunks:
+        raise ValueError(f"No {partition_label} rows loaded from {dataset_path}")
+
+    df_raw = pd.concat(chunks)
+    chunks.clear()
+    df_out = df_raw.loc[partition_indices].copy()
+    del df_raw
+    if len(df_out) != len(partition_indices):
+        raise ValueError(
+            f"Row count mismatch for {partition_label}: expected {len(partition_indices)}, "
+            f"got {len(df_out)}"
+        )
+    return df_out
+
+
 def stream_partition_data(
     dataset_path: Path,
     train_indices: np.ndarray,
@@ -527,36 +597,6 @@ def stream_partition_data(
     train_row_offsets: List[int] = []
     val_row_offsets: List[int] = []
 
-    def flush_train() -> None:
-        if not train_line_buffer:
-            return
-        content = header_line + "".join(train_line_buffer)
-        df = pd.read_csv(
-            io.StringIO(content),
-            usecols=usecols,
-            keep_default_na=False,
-            low_memory=False,
-        )
-        target_indices = train_row_offsets[-len(train_line_buffer) :]
-        df.index = target_indices
-        train_chunks.append(df)
-        train_line_buffer.clear()
-
-    def flush_val() -> None:
-        if not val_line_buffer:
-            return
-        content = header_line + "".join(val_line_buffer)
-        df = pd.read_csv(
-            io.StringIO(content),
-            usecols=usecols,
-            keep_default_na=False,
-            low_memory=False,
-        )
-        target_indices = val_row_offsets[-len(val_line_buffer) :]
-        df.index = target_indices
-        val_chunks.append(df)
-        val_line_buffer.clear()
-
     with dataset_path.open("r", encoding="utf-8", errors="replace") as f:
         header_line = f.readline()
         if not header_line:
@@ -570,21 +610,25 @@ def stream_partition_data(
                 if tracker:
                     tracker.train_rows_loaded += 1
                 if len(train_line_buffer) >= chunksize:
-                    flush_train()
+                    _flush_csv_lines(
+                        header_line, train_line_buffer, train_row_offsets, usecols, train_chunks
+                    )
             elif row_idx in val_idx_set:
                 val_line_buffer.append(line)
                 val_row_offsets.append(row_idx)
                 if tracker:
                     tracker.val_rows_loaded += 1
                 if len(val_line_buffer) >= chunksize:
-                    flush_val()
+                    _flush_csv_lines(
+                        header_line, val_line_buffer, val_row_offsets, usecols, val_chunks
+                    )
             else:
                 # Strictly discarded at raw text boundary: zero DataFrame rows materialized
                 pass
             row_idx += 1
 
-        flush_train()
-        flush_val()
+        _flush_csv_lines(header_line, train_line_buffer, train_row_offsets, usecols, train_chunks)
+        _flush_csv_lines(header_line, val_line_buffer, val_row_offsets, usecols, val_chunks)
 
     if not train_chunks:
         raise ValueError(f"No train rows loaded from {dataset_path}")
@@ -621,8 +665,11 @@ def execute_training(
     preprocessor_manifest_path: Path,
     output_model_path: Path,
     output_manifest_path: Path,
+    *,
+    require_clean_git: bool = False,
 ) -> Dict[str, Any]:
     """Execute real Random Forest baseline training using verified prerequisites."""
+    git_provenance = collect_git_provenance(PROJECT_ROOT, require_clean_git=require_clean_git)
     tracker = PartitionAccessTracker()
 
     # 1. Load verified preprocessor artifact
@@ -812,24 +859,10 @@ def execute_training(
 
     # 8. Create run manifest with unified schema and runtime provenance
     run_id = f"rf-baseline-{int(time.time())}"
-    try:
-        git_commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=str(PROJECT_ROOT), text=True
-        ).strip()
-    except Exception:
-        git_commit = "UNKNOWN"
-
-    git_dirty = False
-    try:
-        git_status = subprocess.check_output(
-            ["git", "status", "--porcelain"], cwd=str(PROJECT_ROOT), text=True
-        ).strip()
-        git_dirty = bool(git_status)
-    except Exception:
-        pass
-
-    provenance_complete = git_commit != "UNKNOWN" and len(git_commit) == 40
-    provenance_status = "VERIFIED" if provenance_complete else "INCOMPLETE"
+    git_commit = git_provenance["git_commit"]
+    git_dirty = git_provenance["git_dirty"]
+    provenance_complete = git_provenance["provenance_complete"]
+    provenance_status = git_provenance["provenance_status"]
 
     manifest: Dict[str, Any] = {
         "run_id": run_id,
@@ -857,6 +890,7 @@ def execute_training(
         "preprocessor_manifest_sha256": actual_pm_sha,
         "provenance_complete": provenance_complete,
         "provenance_status": provenance_status,
+        "worktree_provenance": git_provenance["worktree_provenance"],
         "split_provenance": {
             "split_protocol_id": SPLIT_PROTOCOL_VERSION,
             "split_manifest_path": _safe_relpath(split_manifest_path),
@@ -889,6 +923,9 @@ def execute_training(
             "cpu_count": os.cpu_count(),
             "git_commit": git_commit,
             "git_dirty": git_dirty,
+            "git_clean": git_provenance["git_clean"],
+            "git_dirty_paths": git_provenance["git_dirty_paths"],
+            "git_dirty_disclosure": git_provenance["git_dirty_disclosure"],
             "provenance_complete": provenance_complete,
             "packages": {
                 "pandas": pd.__version__,
@@ -1042,6 +1079,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             preprocessor_manifest_path=args.preprocessor_manifest,
             output_model_path=args.output_model,
             output_manifest_path=args.output_manifest,
+            require_clean_git=args.require_clean_git,
         )
         return 0
     except Exception as exc:

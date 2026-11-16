@@ -471,12 +471,33 @@ def audit_split_membership_parity(
                         "Contract B (Index Exclude)",
                     ],
                 }
+            elif (
+                accessed is True
+                and t_lock_audit.get("test_evaluated_post_fit") is True
+                and t_lock_audit.get("test_accessed_strictly_after_fit_and_reload") is True
+            ):
+                measured_runtime_evidence = {
+                    "status": "UNVERIFIED_SELF_REPORTED_POST_FIT",
+                    "self_reported_only": True,
+                    "verification_note": (
+                        "Post-fit held-out evaluation order is declared by self-reported "
+                        "boolean flags in the training manifest without independent execution "
+                        "log or hash proof."
+                    ),
+                    "training_run_id": t_manifest.get("run_id"),
+                    "manifest_path": str(target_training_manifest),
+                    "test_partition_accessed": True,
+                    "test_rows_loaded": rows_loaded,
+                    "test_indices_loaded": t_lock_audit.get("test_indices_loaded", True),
+                    "test_evaluated_post_fit": True,
+                }
             else:
                 measured_runtime_evidence = {
                     "status": "VIOLATION_DETECTED",
                     "training_run_id": t_manifest.get("run_id"),
                     "test_partition_accessed": accessed,
                     "test_rows_loaded": rows_loaded,
+                    "test_indices_loaded": t_lock_audit.get("test_indices_loaded", False),
                 }
         except Exception as exc:
             measured_runtime_evidence = {
@@ -632,7 +653,9 @@ def render_split_membership_report_md(evidence: Dict[str, Any]) -> str:
             f"- **Recorded test_partition_accessed:** `{m_evidence['test_partition_accessed']}`"
         )
         lines.append(f"- **Recorded test_rows_loaded:** `{m_evidence['test_rows_loaded']}`")
-        lines.append(f"- **Recorded test_indices_loaded:** `{m_evidence['test_indices_loaded']}`")
+        lines.append(
+            f"- **Recorded test_indices_loaded:** `{m_evidence.get('test_indices_loaded')}`"
+        )
     elif m_evidence.get("details"):
         lines.append(f"- **Audit Note:** {m_evidence['details']}")
 

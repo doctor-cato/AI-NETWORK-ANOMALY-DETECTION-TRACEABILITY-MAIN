@@ -1,0 +1,222 @@
+{
+  "run_id": "xgb-baseline-1794755807",
+  "model_type": "XGBoost",
+  "validation": {
+    "rows_evaluated": 345371,
+    "class_support": {
+      "benign_rows_total": 314871,
+      "attack_rows_total": 30500
+    },
+    "prediction_distribution": {
+      "0": 314870,
+      "1": 30501
+    },
+    "precision": 0.9999672141896987,
+    "recall": 1.0,
+    "f1": 0.9999836068261176,
+    "macro_f1": 0.9999910094358524,
+    "false_positive_rate": 3.1759037828189956e-06,
+    "confusion_matrix": [
+      [
+        314870,
+        1
+      ],
+      [
+        0,
+        30500
+      ]
+    ],
+    "confusion_matrix_labeled": {
+      "tn": 314870,
+      "fp": 1,
+      "fn": 0,
+      "tp": 30500
+    },
+    "per_category_breakdown": {
+      "Analysis": {
+        "total": 285,
+        "detected": 285,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Backdoor": {
+        "total": 144,
+        "detected": 144,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Benign": {
+        "total": 314871,
+        "false_positive": 1,
+        "true_negative": 314870,
+        "false_positive_rate": 3.1759037828189956e-06
+      },
+      "DoS": {
+        "total": 1445,
+        "detected": 1445,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Exploits": {
+        "total": 10294,
+        "detected": 10294,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Fuzzers": {
+        "total": 8495,
+        "detected": 8495,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Generic": {
+        "total": 5137,
+        "detected": 5137,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Reconnaissance": {
+        "total": 4107,
+        "detected": 4107,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Shellcode": {
+        "total": 556,
+        "detected": 556,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Worms": {
+        "total": 37,
+        "detected": 37,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      }
+    }
+  },
+  "test": {
+    "partition": "test",
+    "rows_evaluated": 345953,
+    "decision_threshold": 0.5,
+    "evaluated_at_utc": "2026-11-15T15:16:52.950502+00:00",
+    "class_support": {
+      "benign_rows_total": 315357,
+      "attack_rows_total": 30596
+    },
+    "prediction_distribution": {
+      "0": 315356,
+      "1": 30597
+    },
+    "accuracy": 0.9999971094339405,
+    "precision": 0.9999673170572279,
+    "recall": 1.0,
+    "f1": 0.9999836582615659,
+    "macro_f1": 0.999991036377185,
+    "false_positive_rate": 3.171009363990652e-06,
+    "roc_auc": 0.9999999991708696,
+    "pr_auc": 0.9999999914534498,
+    "confusion_matrix": [
+      [
+        315356,
+        1
+      ],
+      [
+        0,
+        30596
+      ]
+    ],
+    "confusion_matrix_labeled": {
+      "tn": 315356,
+      "fp": 1,
+      "fn": 0,
+      "tp": 30596
+    },
+    "per_category_breakdown": {
+      "Analysis": {
+        "total": 294,
+        "detected": 294,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Backdoor": {
+        "total": 1260,
+        "detected": 1260,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Benign": {
+        "total": 315357,
+        "false_positive": 1,
+        "true_negative": 315356,
+        "false_positive_rate": 3.171009363990652e-06
+      },
+      "DoS": {
+        "total": 1193,
+        "detected": 1193,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Exploits": {
+        "total": 10520,
+        "detected": 10520,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Fuzzers": {
+        "total": 7322,
+        "detected": 7322,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Generic": {
+        "total": 5111,
+        "detected": 5111,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Reconnaissance": {
+        "total": 4464,
+        "detected": 4464,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Shellcode": {
+        "total": 396,
+        "detected": 396,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      },
+      "Worms": {
+        "total": 36,
+        "detected": 36,
+        "missed": 0,
+        "detection_rate": 1.0,
+        "false_negative_rate": 0.0
+      }
+    },
+    "evaluation_artifacts": {
+      "metrics_json": "reports/evaluation/xgboost/metrics.json",
+      "confusion_matrix_csv": "reports/evaluation/xgboost/confusion_matrix.csv",
+      "evaluation_metadata_json": "reports/evaluation/xgboost/evaluation_metadata.json",
+      "evaluation_report_md": "reports/evaluation/xgboost/evaluation_report.md"
+    }
+  }
+}

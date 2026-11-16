@@ -39,7 +39,9 @@ from network_anomaly.inference.predict import InferencePipeline
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
 RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
+XGB_MODEL = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
 IF_MODEL = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
+AE_MODEL = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
 PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
 
 
@@ -389,15 +391,24 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     models_map = {m["model_key"]: m for m in models_resp.json()}
     assert models_map["random_forest"]["status"] == "READY"
     assert models_map["isolation_forest"]["status"] == "READY"
-    assert models_map["xgboost"]["status"] == "BLOCKED / NOT READY"
-    assert models_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
-
-    # Unready model must fail closed with HTTP 503
-    blocked_resp = client.post(
-        "/api/v1/csv/analyze",
-        json={"file_path": str(DEMO_FLOWS), "model_name": "xgboost"},
-    )
-    assert blocked_resp.status_code == 503
+    if XGB_MODEL.is_file():
+        assert models_map["xgboost"]["status"] == "READY"
+    else:
+        assert models_map["xgboost"]["status"] == "BLOCKED / NOT READY"
+        blocked_resp = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(DEMO_FLOWS), "model_name": "xgboost"},
+        )
+        assert blocked_resp.status_code == 503
+    if AE_MODEL.is_file():
+        assert models_map["autoencoder"]["status"] == "READY"
+    else:
+        assert models_map["autoencoder"]["status"] == "BLOCKED / NOT READY"
+        blocked_ae = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(DEMO_FLOWS), "model_name": "autoencoder"},
+        )
+        assert blocked_ae.status_code == 503
 
     demo_df = pd.read_csv(DEMO_FLOWS)
 
@@ -2077,3 +2088,106 @@ def test_f6_float_row_id_with_nan_normalizes_without_dot_zero_suffix(
     assert resp.status_code == 200, resp.text
     row_ids = [item["row_id"] for item in resp.json()["results"]]
     assert row_ids == [101, 102, "row_2", 104]
+
+
+def test_session_token_middleware_enforces_header_when_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from network_anomaly.api.main import create_app
+
+    token = "test-session-token-0123456789abcdef"
+    monkeypatch.setenv("NETWORK_ANOMALY_API_TOKEN", token)
+    secured_app = create_app(db_path=":memory:")
+    secured_client = TestClient(secured_app)
+
+    # /health stays available for lightweight liveness check
+    health_resp = secured_client.get("/health")
+    assert health_resp.status_code == 200
+
+    # /api/v1/* rejects missing or wrong token fail-closed with 401
+    unauth_resp = secured_client.get("/api/v1/models")
+    assert unauth_resp.status_code == 401
+    wrong_resp = secured_client.get(
+        "/api/v1/models",
+        headers={"X-Sentinel-Session-Token": "wrong-token"},
+    )
+    assert wrong_resp.status_code == 401
+
+    # Valid session token succeeds
+    ok_resp = secured_client.get(
+        "/api/v1/models",
+        headers={"X-Sentinel-Session-Token": token},
+    )
+    assert ok_resp.status_code == 200
+    assert len(ok_resp.json()) == 4
+
+
+def test_sensitive_system_path_blocks_program_files_x86_and_programdata():
+    from pathlib import PurePosixPath, PureWindowsPath
+
+    from network_anomaly.api.desktop_csv import _is_sensitive_system_path
+
+    assert _is_sensitive_system_path(Path(r"C:\Program Files (x86)\Evil\test.csv")) is True
+    assert _is_sensitive_system_path(Path(r"C:\ProgramData\Evil\test.csv")) is True
+    assert (
+        _is_sensitive_system_path(PureWindowsPath(r"C:\Program Files (x86)\Evil\test.csv")) is True
+    )
+    assert _is_sensitive_system_path(PurePosixPath(r"C:\Program Files (x86)\Evil\test.csv")) is True
+    assert _is_sensitive_system_path(PurePosixPath("/etc/passwd")) is True
+    assert (
+        _is_sensitive_system_path(Path(r"C:\Users\Alice\AppData\Local\NetFlowSentinelM6\demo.csv"))
+        is False
+    )
+
+
+def test_collect_models_status_does_not_mask_missing_manifest_threshold(
+    client: TestClient, tmp_path: Path
+):
+    from unittest.mock import patch
+
+    from network_anomaly.api.desktop_csv import collect_models_status
+
+    svc = client.app.state.service
+
+    class _FakePipe:
+        def __init__(self, meta):
+            self.model_metadata = meta
+
+    def _fake_load(key: str):
+        if key == "random_forest":
+            return _FakePipe(
+                {
+                    "model_type": "RandomForest",
+                    "model_artifact_sha256": "a" * 64,
+                    "threshold": None,
+                    "raw_manifest": {"run_id": "rf-no-thresh"},
+                }
+            )
+        if key == "xgboost":
+            return _FakePipe(
+                {
+                    "model_type": "XGBoost",
+                    "model_artifact_sha256": "b" * 64,
+                    "threshold": None,
+                    "raw_manifest": {
+                        "run_id": "xgb-test-thresh",
+                        "test_summary": {"decision_threshold": 0.5},
+                    },
+                }
+            )
+        raise FileNotFoundError(f"Missing {key}")
+
+    with (
+        patch.object(
+            svc,
+            "_resolve_artifact_paths",
+            side_effect=lambda k: (tmp_path / f"{k}.joblib", None, None, None),
+        ),
+        patch.object(svc, "_load_inference_pipeline", side_effect=_fake_load),
+    ):
+        items = {item.model_key: item for item in collect_models_status(svc)}
+
+    assert items["random_forest"].ready is True
+    assert items["random_forest"].decision_threshold is None
+    assert items["xgboost"].ready is True
+    assert items["xgboost"].decision_threshold == 0.5

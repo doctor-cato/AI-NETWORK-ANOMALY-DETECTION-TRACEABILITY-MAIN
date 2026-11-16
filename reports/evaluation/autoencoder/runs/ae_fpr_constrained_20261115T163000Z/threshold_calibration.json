@@ -1,0 +1,14 @@
+{
+  "threshold": 17234985.792475585,
+  "calibration_method": "fpr_constrained",
+  "target_fpr": 0.05,
+  "empirical_val_fpr": 0.04999825325291945,
+  "n_benign_used": 314871,
+  "n_known_attack_used": 30319,
+  "n_unknown_excluded": 181,
+  "unknown_categories_excluded": [
+    "Backdoor",
+    "Worms"
+  ],
+  "threshold_frozen": true
+}

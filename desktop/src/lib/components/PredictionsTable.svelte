@@ -156,6 +156,7 @@
               Raw Anomaly Score {sortBy === "raw_anomaly_score" ? (sortDir === "asc" ? "↑" : "↓") : ""}
             </button>
           </th>
+          <th>Norm. Score (Val Rank)</th>
           <th>Ngưỡng (Frozen)</th>
           <th>
             <button type="button" class="sort-btn" onclick={() => toggleSort("risk_score")}>
@@ -168,7 +169,7 @@
       <tbody>
         {#if pagedItems.length === 0}
           <tr>
-            <td colspan="8" style="text-align: center; padding: 20px; color: var(--text-secondary);">
+            <td colspan="9" style="text-align: center; padding: 20px; color: var(--text-secondary);">
               Không có dòng nào khớp bộ lọc hiện tại.
             </td>
           </tr>
@@ -203,6 +204,7 @@
               </td>
               <td class="mono">{scores.probabilityText}</td>
               <td class="mono">{scores.anomalyScoreText}</td>
+              <td class="mono">{scores.normalizedScoreText}</td>
               <td class="mono">{scores.thresholdText}</td>
               <td>
                 {#if item.is_ood_flagged || item.risk_score === null}
@@ -267,6 +269,7 @@
       </div>
       <div class="detail-grid mono">
         <div>Score Type: {selectedItem.score_type} ({selectedItem.score_direction})</div>
+        <div>Norm. Score: {formatScoreSemantically(selectedItem).normalizedScoreText}</div>
         <div>Duration: {selectedItem.flow_duration_ms ?? "N/A"} ms</div>
         <div>MIN_TTL: {selectedItem.min_ttl ?? "N/A"}</div>
         <div>Protocol: {selectedItem.protocol ?? "N/A"}</div>

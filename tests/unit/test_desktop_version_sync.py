@@ -99,11 +99,32 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "git merge-base --is-ancestor $tagCommit origin/main" in release_yml
     # Ensure merge-base ancestry check is NOT conditionally skipped for prerelease tags
     assert "if (-not $isPrerelease)" not in release_yml
+    # Ensure F-01 clean NSIS + live 4-model E2E gate is enforced fail-closed for Stable releases
+    assert "--verify-nsis-only" in release_yml
+    assert "--no-repo-root-env" in release_yml
+    assert "requirements-runtime.txt" in release_yml
+    assert "scripts/windows_setup_runtime.ps1" in release_yml
+    assert "COMPANION_BUNDLE_SHA256.txt" in release_yml
+    assert "release_e2e_verification.json" in release_yml
+    assert "--expect-commit" in release_yml
+    assert "--expect-installer-sha256" in release_yml
+    assert "--require-nsis-e2e" in release_yml
+    assert "--require-demo-files" in release_yml
+    assert "--install-bundle-url" in release_yml
+    assert "--install-bundle-run-id" in release_yml
+    assert "--expect-bundle-sha256" in release_yml
+    assert "vars.COMPANION_BUNDLE_URL" in release_yml
+    assert "vars.COMPANION_BUNDLE_SHA256" in release_yml
+    assert "vars.COMPANION_ARTIFACT_RUN_ID" in release_yml
+    assert "if ($isStableRelease)" in release_yml
+    assert '$isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"' in release_yml
     assert "gh release view $tagName" in release_yml
     assert "if: steps.meta.outputs.is_tag_push == 'true'" in release_yml
     assert "SHA256SUMS.txt" in release_yml
     assert "*_${desktopVer}_x64-setup.exe" in release_yml
+    assert release_yml.count("$global:LASTEXITCODE = 0") >= 4
     assert "\npermissions:\n  contents: read\n" in release_yml
+    assert "    permissions:\n      contents: write\n      actions: read\n" in release_yml
     assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in release_yml
     ci_yml = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in ci_yml

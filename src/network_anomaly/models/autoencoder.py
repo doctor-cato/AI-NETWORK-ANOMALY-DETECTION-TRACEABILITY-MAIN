@@ -466,11 +466,11 @@ def _resolve_manifest_path(model_path: Path, manifest_path: str | Path | None) -
         return man_p
 
     candidates = [
+        PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json",
         model_path.parent / "autoencoder_manifest.json",
         model_path.with_suffix(".json"),
         model_path.parent / f"{model_path.stem}_manifest.json",
         model_path.parent / "manifest.json",
-        PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json",
     ]
     for candidate in candidates:
         if candidate.is_file():

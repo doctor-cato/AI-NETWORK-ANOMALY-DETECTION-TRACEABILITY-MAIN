@@ -9,13 +9,19 @@
     fetchModelsStatus,
     getBackendStatus,
     getDemoPaths,
+    getRuntimeDiagnostics,
+    importCompanionBundle,
     inspectCsv,
     isTauriRuntime,
     listSecuritySimulations,
+    pickCompanionFolder,
     pickCsvFile,
     pickSaveCsvFile,
     pickSaveJsonFile,
+    pickZipFile,
+    reportFrontendReady,
     restartBackend,
+    setupPythonRuntime,
     simulateSecurityResponse,
   } from "./lib/api";
   import ChartsPanel from "./lib/components/ChartsPanel.svelte";
@@ -23,16 +29,36 @@
   import EvaluationPanel from "./lib/components/EvaluationPanel.svelte";
   import ForensicTimelinePanel from "./lib/components/ForensicTimelinePanel.svelte";
   import Icons from "./lib/components/Icons.svelte";
+  import ModelComparisonPanel from "./lib/components/ModelComparisonPanel.svelte";
   import ModelReadinessPanel from "./lib/components/ModelReadinessPanel.svelte";
   import PredictionsTable from "./lib/components/PredictionsTable.svelte";
+  import RuntimeSetupPanel from "./lib/components/RuntimeSetupPanel.svelte";
+  import {
+    createInitialComparisonState,
+    evaluateAllModelsWorkflow,
+    evaluateSingleModelWorkflow,
+    getBatchCoherentAnalyses,
+    getBatchCoherentEvaluations,
+    getBatchCoherentSimulations,
+    invalidateForBackendRestart,
+    invalidateForFlowsChange,
+    invalidateForInspectResult,
+    invalidateForLabelsChange,
+    reconcileModelsReadiness,
+    recordModelSimulation,
+    runAllModelsComparisonWorkflow,
+    runSingleModelAnalysisWorkflow,
+    type ComparisonBatchState,
+    type ComparisonWorkflowDeps,
+  } from "./lib/comparisonState";
   import type {
     BackendStatus,
     CsvAnalyzeResponse,
-    CsvEvaluateResponse,
     CsvExportResponse,
     CsvInspectResponse,
     HealthResponse,
     ModelStatusItem,
+    RuntimeDiagnostics,
     SecurityResponseSimulationResponse,
     SecuritySimulationExportResponse,
     SecuritySimulationHistoryItem,
@@ -45,18 +71,22 @@
   let activeTab = $state<TabId>("overview");
 
   let backendStatus = $state<BackendStatus | null>(null);
+  let runtimeDiagnostics = $state<RuntimeDiagnostics | null>(null);
   let healthData = $state<HealthResponse | null>(null);
   let models = $state<ModelStatusItem[]>([]);
   let selectedModel = $state("random_forest");
 
   let flowsPath = $state("");
   let labelsPath = $state("");
-  let lastInspectedInputPath = $state("");
   let inspectData = $state<CsvInspectResponse | null>(null);
-  let analysisData = $state<CsvAnalyzeResponse | null>(null);
-  let evalData = $state<CsvEvaluateResponse | null>(null);
+  let comparisonState = $state<ComparisonBatchState>(createInitialComparisonState());
+  let coherentAnalyses = $derived(getBatchCoherentAnalyses(comparisonState));
+  let coherentEvaluations = $derived(getBatchCoherentEvaluations(comparisonState));
+  let coherentSimulations = $derived(getBatchCoherentSimulations(comparisonState));
+  let analysisData = $derived(coherentAnalyses[selectedModel] ?? null);
+  let evalData = $derived(coherentEvaluations[selectedModel] ?? null);
   let exportData = $state<CsvExportResponse | null>(null);
-  let simulationData = $state<SecurityResponseSimulationResponse | null>(null);
+  let simulationData = $derived(coherentSimulations[selectedModel] ?? null);
   let simulationHistory = $state<SecuritySimulationHistoryItem[]>([]);
   let simulationExportData = $state<SecuritySimulationExportResponse | null>(null);
 
@@ -67,6 +97,30 @@
   let evaluatedFlag = $state(false);
   let simulatingFlag = $state(false);
 
+  function handleFlowsPathChange(nextPath: string) {
+    flowsPath = nextPath;
+    const nextState = invalidateForFlowsChange(comparisonState, nextPath);
+    if (nextState !== comparisonState) {
+      comparisonState = nextState;
+      inspectData = null;
+      exportData = null;
+      simulationExportData = null;
+      simulationWarning = null;
+    }
+  }
+
+  function handleLabelsPathChange(nextPath: string) {
+    labelsPath = nextPath;
+    comparisonState = invalidateForLabelsChange(comparisonState, nextPath);
+  }
+
+  function ensureReadySelectedModel(modelList: ModelStatusItem[]) {
+    const readyKeys = modelList.filter((m) => m.ready).map((m) => m.model_key);
+    if (readyKeys.length > 0 && !readyKeys.includes(selectedModel)) {
+      selectedModel = readyKeys[0];
+    }
+  }
+
   $effect(() => {
     if (typeof document !== "undefined") {
       document.documentElement.setAttribute("data-theme", theme);
@@ -75,6 +129,21 @@
 
   function toggleTheme() {
     theme = theme === "dark" ? "light" : "dark";
+  }
+
+  async function refreshDiagnosticsAndDemoPaths(): Promise<void> {
+    try {
+      const [diag, demo] = await Promise.all([getRuntimeDiagnostics(), getDemoPaths()]);
+      runtimeDiagnostics = diag;
+      if (demo.flows_exists && !flowsPath.trim()) {
+        handleFlowsPathChange(demo.flows_path);
+      }
+      if (demo.labels_exists && !labelsPath.trim()) {
+        handleLabelsPathChange(demo.labels_path);
+      }
+    } catch {
+      // Ignore secondary diagnostics error
+    }
   }
 
   async function refreshStatus(): Promise<void> {
@@ -88,18 +157,20 @@
       backendStatus = bStatus;
       healthData = health;
       models = modelList;
-      const readyKeys = modelList.filter((m) => m.ready).map((m) => m.model_key);
-      if (readyKeys.length > 0 && !readyKeys.includes(selectedModel)) {
-        selectedModel = readyKeys[0];
-      }
-      await refreshSimulationHistory();
+      comparisonState = reconcileModelsReadiness(comparisonState, modelList);
+      ensureReadySelectedModel(modelList);
+      await Promise.all([refreshSimulationHistory(), refreshDiagnosticsAndDemoPaths()]);
     } catch (err) {
       errorMessage =
         err instanceof Error
           ? `Không thể kết nối Python FastAPI localhost: ${err.message}`
           : String(err);
       try {
-        backendStatus = await getBackendStatus();
+        const [bStatus] = await Promise.all([
+          getBackendStatus(),
+          refreshDiagnosticsAndDemoPaths(),
+        ]);
+        backendStatus = bStatus;
       } catch {
         // Ignore secondary probe failure
       }
@@ -108,31 +179,112 @@
 
   onMount(async () => {
     try {
-      // Poll up to 20s while Tauri child backend comes online (matches Rust startup budget)
+      // Poll up to 20s while Tauri child backend comes online, but exit early if backend startup already errored.
       for (let attempt = 0; attempt < 50; attempt += 1) {
         try {
           await fetchHealth();
           break;
         } catch {
+          if (attempt >= 2 && isTauriRuntime()) {
+            try {
+              const probe = await getBackendStatus();
+              backendStatus = probe;
+              if (!probe.running && probe.last_error) {
+                break;
+              }
+            } catch {
+              // Ignore probe error
+            }
+          }
           await new Promise((r) => setTimeout(r, 400));
         }
       }
       await refreshStatus();
       const demo = await getDemoPaths();
-      if (demo.flows_exists) {
-        flowsPath = demo.flows_path;
+      if (demo.flows_exists && !flowsPath.trim()) {
+        handleFlowsPathChange(demo.flows_path);
       }
-      if (demo.labels_exists) {
-        labelsPath = demo.labels_path;
+      if (demo.labels_exists && !labelsPath.trim()) {
+        handleLabelsPathChange(demo.labels_path);
       }
+      await reportFrontendReady({
+        connected: !errorMessage && Boolean(healthData) && Boolean(backendStatus?.running),
+        health_status: healthData?.status ?? null,
+        ready_models: models.filter((m) => m.ready).map((m) => m.model_key),
+        flows_exists: demo.flows_exists,
+        labels_exists: demo.labels_exists,
+        error_message: errorMessage,
+      });
     } finally {
       initializing = false;
     }
   });
 
+  async function handleSetupPythonRuntime(wheelhouseDir?: string) {
+    busyMessage = "Đang tạo môi trường ảo .venv và cài đặt Python dependencies...";
+    errorMessage = null;
+    try {
+      backendStatus = await setupPythonRuntime(wheelhouseDir);
+      await refreshStatus();
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      await refreshDiagnosticsAndDemoPaths();
+    } finally {
+      busyMessage = null;
+    }
+  }
+
+  async function handleImportCompanionZip(expectedSha256?: string) {
+    const chosen = await pickZipFile("Chọn gói Companion Bundle (.zip)");
+    if (!chosen) return;
+    busyMessage = "Đang xác minh SHA-256 & provenance gói Companion Bundle (.zip)...";
+    errorMessage = null;
+    try {
+      await importCompanionBundle({
+        archivePath: chosen,
+        expectedSha256: expectedSha256?.trim() || null,
+      });
+      if (!backendStatus?.running) {
+        backendStatus = await restartBackend();
+      }
+      await refreshStatus();
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      await refreshDiagnosticsAndDemoPaths();
+    } finally {
+      busyMessage = null;
+    }
+  }
+
+  async function handleImportCompanionFolder() {
+    const chosen = await pickCompanionFolder("Chọn thư mục Companion Artifacts");
+    if (!chosen) return;
+    busyMessage = "Đang xác minh SHA-256 & provenance thư mục Companion Artifacts...";
+    errorMessage = null;
+    try {
+      await importCompanionBundle({
+        bundleDir: chosen,
+      });
+      if (!backendStatus?.running) {
+        backendStatus = await restartBackend();
+      }
+      await refreshStatus();
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      await refreshDiagnosticsAndDemoPaths();
+    } finally {
+      busyMessage = null;
+    }
+  }
+
   async function handleRestartBackend() {
     busyMessage = "Đang khởi động lại tiến trình Python FastAPI...";
     errorMessage = null;
+    comparisonState = invalidateForBackendRestart(comparisonState);
+    inspectData = null;
+    exportData = null;
+    simulationExportData = null;
+    simulationWarning = null;
     try {
       backendStatus = await restartBackend();
       await refreshStatus();
@@ -144,18 +296,30 @@
   }
 
   async function runInspectPath(path: string) {
-    if (!path.trim()) return;
+    const trimmed = path.trim();
+    if (!trimmed) return;
+    handleFlowsPathChange(path);
+    const preInspectEpoch = comparisonState.sessionEpoch;
     busyMessage = "Đang kiểm tra schema 47 ML features & OOD...";
     errorMessage = null;
     try {
-      const inspected = await inspectCsv(path, 20);
-      lastInspectedInputPath = path.trim();
+      const inspected = await inspectCsv(trimmed, 20);
+      if (comparisonState.sessionEpoch !== preInspectEpoch) return;
+      let nextState = invalidateForInspectResult(comparisonState, inspected, trimmed);
+      if (inspected.models_status.length > 0) {
+        models = inspected.models_status;
+        nextState = reconcileModelsReadiness(nextState, inspected.models_status);
+        ensureReadySelectedModel(inspected.models_status);
+      }
+      comparisonState = nextState;
       inspectData = inspected;
-      analysisData = null;
-      evalData = null;
       exportData = null;
+      simulationExportData = null;
+      simulationWarning = null;
     } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      if (comparisonState.sessionEpoch === preInspectEpoch) {
+        errorMessage = err instanceof Error ? err.message : String(err);
+      }
     } finally {
       busyMessage = null;
     }
@@ -165,7 +329,7 @@
     if (isTauriRuntime()) {
       const chosen = await pickCsvFile("Chọn tệp NetFlow CSV để phân tích");
       if (chosen) {
-        flowsPath = chosen;
+        handleFlowsPathChange(chosen);
         await runInspectPath(chosen);
       }
     } else if (flowsPath.trim()) {
@@ -178,9 +342,9 @@
     errorMessage = null;
     try {
       const demo = await getDemoPaths();
-      flowsPath = demo.flows_path;
+      handleFlowsPathChange(demo.flows_path);
       if (demo.labels_exists) {
-        labelsPath = demo.labels_path;
+        handleLabelsPathChange(demo.labels_path);
       }
       await runInspectPath(demo.flows_path);
     } catch (err) {
@@ -193,64 +357,145 @@
 
   async function runDryRunSimulationForAnalysis(
     res: CsvAnalyzeResponse,
+    requestSessionEpoch = comparisonState.sessionEpoch,
   ): Promise<SecurityResponseSimulationResponse> {
+    let simRes: SecurityResponseSimulationResponse;
     try {
-      return await simulateSecurityResponse({
+      simRes = await simulateSecurityResponse({
         analysis_id: res.analysis_id,
         triggered_by: "desktop_operator",
         dry_run: true,
       });
     } catch (primaryErr) {
+      if (comparisonState.sessionEpoch !== requestSessionEpoch) {
+        throw primaryErr;
+      }
       if (res.results.length > 0 && res.results.length <= MAX_SIMULATE_CLIENT_RESULTS) {
-        return await simulateSecurityResponse({
+        simRes = await simulateSecurityResponse({
           analysis_id: res.analysis_id,
           results: res.results,
           triggered_by: "desktop_operator",
           dry_run: true,
         });
+      } else {
+        throw primaryErr;
       }
-      throw primaryErr;
     }
+    const recorded = recordModelSimulation(
+      comparisonState,
+      res.model_key,
+      res.analysis_id,
+      simRes,
+      requestSessionEpoch,
+    );
+    if (recorded.accepted) {
+      comparisonState = recorded.state;
+    }
+    return simRes;
   }
+
+  const workflowDeps: ComparisonWorkflowDeps = {
+    inspectCsv,
+    analyzeCsv,
+    evaluateCsv,
+    simulateDryRun: (res) => runDryRunSimulationForAnalysis(res, comparisonState.sessionEpoch),
+  };
 
   async function handleRunInference() {
     if (!flowsPath.trim()) {
       errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
       return;
     }
-    busyMessage = `Đang chạy mô hình ${selectedModel} qua InferencePipeline...`;
+    const targetModel = selectedModel;
     errorMessage = null;
     simulationWarning = null;
     exportData = null;
+    simulationExportData = null;
     try {
-      const trimmedFlowsPath = flowsPath.trim();
-      if (
-        !inspectData ||
-        (inspectData.file_path !== trimmedFlowsPath && lastInspectedInputPath !== trimmedFlowsPath)
-      ) {
-        inspectData = await inspectCsv(trimmedFlowsPath, 20);
-        lastInspectedInputPath = trimmedFlowsPath;
-      }
-      const res = await analyzeCsv({
-        filePath: flowsPath,
-        modelName: selectedModel,
-        createIncidents: false,
-        batchSize: 500,
+      const result = await runSingleModelAnalysisWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        onProgress: (msg) => {
+          busyMessage = msg;
+        },
+        onInspectData: (inspected) => {
+          inspectData = inspected;
+          if (inspected && inspected.models_status.length > 0) {
+            models = inspected.models_status;
+            ensureReadySelectedModel(inspected.models_status);
+          }
+        },
+        onAnalysisRecorded: () => {
+          activeTab = "predictions";
+        },
+        flowsPath,
+        modelKey: targetModel,
+        inspectData,
       });
-      analysisData = res;
-      evalData = null;
-      simulationExportData = null;
-      activeTab = "predictions";
-      try {
-        simulationData = await runDryRunSimulationForAnalysis(res);
-        await refreshSimulationHistory();
-      } catch (simErr) {
-        simulationData = null;
-        const detail = simErr instanceof Error ? simErr.message : String(simErr);
-        simulationWarning = `Phân tích CSV đã hoàn tất, nhưng mô phỏng Dry-Run (#27) chưa thể chạy: ${detail}`;
+      if (result.aborted) return;
+      if (result.error) {
+        errorMessage = result.error;
+        return;
       }
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      simulationWarning = result.simulationWarning;
+      if (result.simulation) {
+        await refreshSimulationHistory();
+      }
+    } finally {
+      busyMessage = null;
+    }
+  }
+
+  async function handleRunAllComparison() {
+    if (!flowsPath.trim()) {
+      errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
+      return;
+    }
+    const readyList = models.filter((m) => m.ready);
+    if (readyList.length === 0) {
+      errorMessage = "Không có mô hình nào ở trạng thái READY để so sánh.";
+      return;
+    }
+    errorMessage = null;
+    simulationWarning = null;
+    exportData = null;
+    simulationExportData = null;
+    try {
+      const result = await runAllModelsComparisonWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        onProgress: (msg) => {
+          busyMessage = msg;
+        },
+        onInspectData: (inspected) => {
+          inspectData = inspected;
+          if (inspected && inspected.models_status.length > 0) {
+            models = inspected.models_status;
+            ensureReadySelectedModel(inspected.models_status);
+          }
+        },
+        flowsPath,
+        labelsPath,
+        models,
+        selectedModel,
+        inspectData,
+      });
+      if (result.aborted) return;
+      activeTab = "overview";
+      if (result.activeAnalysis && !coherentAnalyses[selectedModel]) {
+        selectedModel = result.activeAnalysis.model_key;
+      }
+      if (result.simulation) {
+        await refreshSimulationHistory();
+      }
+      simulationWarning = result.simulationWarning;
+      errorMessage = result.errorSummary;
     } finally {
       busyMessage = null;
     }
@@ -260,25 +505,65 @@
     if (!isTauriRuntime()) return;
     const chosen = await pickCsvFile("Chọn tệp Ground Truth Labels CSV");
     if (chosen) {
-      labelsPath = chosen;
+      handleLabelsPathChange(chosen);
     }
   }
 
   async function handleUseDemoLabels() {
     const demo = await getDemoPaths();
-    labelsPath = demo.labels_path;
+    handleLabelsPathChange(demo.labels_path);
   }
 
   async function handleRunEvaluate() {
     if (!analysisData || !labelsPath.trim()) return;
+    const targetModel = selectedModel;
+    const targetAnalysis = analysisData;
     evaluatedFlag = true;
     errorMessage = null;
     try {
-      evalData = await evaluateCsv(labelsPath, analysisData.results);
-      activeTab = "evaluation";
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      const result = await evaluateSingleModelWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        labelsPath,
+        modelKey: targetModel,
+        analysis: targetAnalysis,
+      });
+      if (result.aborted) return;
+      if (result.error) {
+        errorMessage = result.error;
+        return;
+      }
+      if (result.evaluation) {
+        activeTab = "evaluation";
+      }
     } finally {
+      evaluatedFlag = false;
+    }
+  }
+
+  async function handleEvaluateAllAnalyzed() {
+    if (Object.keys(coherentAnalyses).length === 0 || !labelsPath.trim()) return;
+    evaluatedFlag = true;
+    errorMessage = null;
+    try {
+      const result = await evaluateAllModelsWorkflow({
+        deps: workflowDeps,
+        getState: () => comparisonState,
+        setState: (next) => {
+          comparisonState = next;
+        },
+        onProgress: (msg) => {
+          busyMessage = msg;
+        },
+        labelsPath,
+      });
+      if (result.aborted) return;
+      errorMessage = result.errorSummary;
+    } finally {
+      busyMessage = null;
       evaluatedFlag = false;
     }
   }
@@ -294,14 +579,18 @@
 
   async function handleRunSecuritySimulation() {
     if (!analysisData) return;
+    const targetAnalysis = analysisData;
+    const startEpoch = comparisonState.sessionEpoch;
     simulatingFlag = true;
     errorMessage = null;
     simulationWarning = null;
     simulationExportData = null;
     try {
-      simulationData = await runDryRunSimulationForAnalysis(analysisData);
+      await runDryRunSimulationForAnalysis(targetAnalysis, startEpoch);
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       await refreshSimulationHistory();
     } catch (err) {
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       const detail = err instanceof Error ? err.message : String(err);
       simulationWarning = `Không thể chạy mô phỏng Dry-Run (#27): ${detail}`;
     } finally {
@@ -313,14 +602,18 @@
     const defaultName = `dry_run_${simulationId}.json`;
     const chosen = await pickSaveJsonFile(defaultName);
     if (!chosen) return;
+    const startEpoch = comparisonState.sessionEpoch;
     simulatingFlag = true;
     errorMessage = null;
     try {
-      simulationExportData = await exportSecuritySimulation({
+      const exported = await exportSecuritySimulation({
         output_path: chosen,
         simulation_id: simulationId,
       });
+      if (comparisonState.sessionEpoch !== startEpoch) return;
+      simulationExportData = exported;
     } catch (err) {
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
       simulatingFlag = false;
@@ -329,26 +622,32 @@
 
   async function handleExportResults() {
     if (!analysisData) return;
-    const defaultName = `predictions_${analysisData.model_key}.csv`;
+    const targetAnalysis = analysisData;
+    const targetEval = evalData;
+    const defaultName = `predictions_${targetAnalysis.model_key}.csv`;
     const chosen = await pickSaveCsvFile(defaultName);
     if (!chosen) return;
 
+    const startEpoch = comparisonState.sessionEpoch;
     busyMessage = "Đang xuất file predictions CSV và metadata SHA-256...";
     errorMessage = null;
     try {
-      exportData = await exportCsv({
+      const exported = await exportCsv({
         output_path: chosen,
-        analysis_id: analysisData.analysis_id,
-        source_csv_path: analysisData.file_path,
-        model_key: analysisData.model_key,
-        model_type: analysisData.model_type,
-        run_id: analysisData.run_id,
-        model_sha256: analysisData.model_sha256,
-        preprocessor_sha256: analysisData.preprocessor_sha256,
-        results: analysisData.results,
-        evaluation: evalData,
+        analysis_id: targetAnalysis.analysis_id,
+        source_csv_path: targetAnalysis.file_path,
+        model_key: targetAnalysis.model_key,
+        model_type: targetAnalysis.model_type,
+        run_id: targetAnalysis.run_id,
+        model_sha256: targetAnalysis.model_sha256,
+        preprocessor_sha256: targetAnalysis.preprocessor_sha256,
+        results: targetAnalysis.results,
+        evaluation: targetEval,
       });
+      if (comparisonState.sessionEpoch !== startEpoch) return;
+      exportData = exported;
     } catch (err) {
+      if (comparisonState.sessionEpoch !== startEpoch) return;
       errorMessage = err instanceof Error ? err.message : String(err);
     } finally {
       busyMessage = null;
@@ -363,7 +662,7 @@
         <Icons name="shield" size={20} />
       </div>
       <div>
-        <h1 class="brand-title">NetFlow Sentinel M6 — Phân tích Bất thường Lưu lượng Mạng</h1>
+        <h1 class="brand-title">NetFlow Sentinel v0.6.0 — Phân tích Bất thường Lưu lượng Mạng</h1>
         <p class="brand-subtitle">
           Offline Desktop • Rust Tauri 2 + Svelte 5 + Python FastAPI (127.0.0.1 Only) • UNSW-NB15-v3
         </p>
@@ -432,6 +731,19 @@
       </div>
     {/if}
 
+    <RuntimeSetupPanel
+      diagnostics={runtimeDiagnostics}
+      {backendStatus}
+      preprocessorReady={Boolean(healthData?.preprocessor_ready)}
+      readyModelsCount={models.filter((m) => m.ready).length}
+      busy={Boolean(busyMessage) || initializing}
+      isTauri={isTauriRuntime()}
+      onSetupPython={handleSetupPythonRuntime}
+      onImportZip={handleImportCompanionZip}
+      onImportFolder={handleImportCompanionFolder}
+      onRefresh={refreshStatus}
+    />
+
     <section class="card" aria-label="Điều khiển Dữ liệu NetFlow CSV">
       <div class="input-bar">
         <input
@@ -439,7 +751,8 @@
           class="input mono"
           style="flex: 1; min-width: 260px;"
           placeholder="Đường dẫn tới tệp NetFlow CSV..."
-          bind:value={flowsPath}
+          value={flowsPath}
+          oninput={(e) => handleFlowsPathChange((e.currentTarget as HTMLInputElement).value)}
           aria-label="Đường dẫn tệp NetFlow CSV"
         />
         <button type="button" class="btn" onclick={handleBrowseFlowsCsv} disabled={Boolean(busyMessage)}>
@@ -457,6 +770,15 @@
         >
           <Icons name="play" size={15} />
           Chạy Phân tích AI ({selectedModel})
+        </button>
+        <button
+          type="button"
+          class="btn"
+          onclick={handleRunAllComparison}
+          disabled={!flowsPath.trim() || Boolean(busyMessage)}
+        >
+          <Icons name="target" size={15} />
+          So sánh 4 Model READY
         </button>
         <button
           type="button"
@@ -482,6 +804,7 @@
     <ModelReadinessPanel
       {models}
       {selectedModel}
+      busy={Boolean(busyMessage)}
       onSelect={(k) => (selectedModel = k)}
     />
 
@@ -529,6 +852,22 @@
     </div>
 
     {#if activeTab === "overview"}
+      <ModelComparisonPanel
+        {models}
+        {selectedModel}
+        analysesByModel={coherentAnalyses}
+        evaluationsByModel={coherentEvaluations}
+        errorsByModel={comparisonState.errorsByModel}
+        batchFileSha256={comparisonState.activeFileSha256}
+        batchLabelsSha256={comparisonState.activeLabelsSha256}
+        canRunComparison={Boolean(flowsPath.trim())}
+        hasLabelsPath={Boolean(labelsPath.trim())}
+        busy={Boolean(busyMessage)}
+        onSelectModel={(k) => (selectedModel = k)}
+        onRunAllComparison={handleRunAllComparison}
+        onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
+      />
+
       {#if analysisData}
         <div class="grid-5">
           <div class="kpi-box">
@@ -593,7 +932,7 @@
         onPickLabels={handlePickLabelsFile}
         onUseDemoLabels={handleUseDemoLabels}
         onRunEvaluate={handleRunEvaluate}
-        onUpdateLabelsPath={(v) => (labelsPath = v)}
+        onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
       />
     {:else if activeTab === "forensics"}
       <ForensicTimelinePanel

@@ -1935,5 +1935,142 @@ def test_run_pipeline_evaluate_test_invariance_with_poisoned_test_rows(tmp_path)
     m_poison, man_poison = _run_eval(poison_dir, 1000)
 
     assert man_clean["threshold"] == pytest.approx(man_poison["threshold"], rel=0.0, abs=0.0)
+    assert man_clean["score_normalization"] == man_poison["score_normalization"]
+    assert man_clean["score_normalization"]["calibration_partition"] == "validation"
+    assert man_clean["score_normalization"]["score_direction"] == "higher_is_more_anomalous"
+    vals = man_clean["score_normalization"]["score_values"]
+    assert len(vals) == 101
+    assert all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
     for w_clean, w_poison in zip(m_clean.coefs_, m_poison.coefs_, strict=True):
         np.testing.assert_array_equal(w_clean, w_poison)
+
+
+def test_run_pipeline_enforce_target_fpr_fails_closed_without_writing_artifacts(tmp_path, rng):
+    fixture = _build_real_preprocessor_e2e_fixture(tmp_path, rng)
+    out_dir = tmp_path / "artifacts_fpr_fail"
+    rep_dir = tmp_path / "reports_fpr_fail"
+    args = _make_real_prep_args(fixture, out_dir, rep_dir)
+    args.evaluate_test = False
+    args.enforce_target_fpr = True
+    args.target_fpr = 0.05
+    args.calibration_method = "benign_quantile"
+
+    forced_cal = {
+        "threshold": 1.0,
+        "calibration_method": "benign_quantile",
+        "target_fpr": 0.05,
+        "empirical_val_fpr": 0.0500015,
+        "n_benign_used": 20,
+        "n_known_attack_used": 10,
+        "n_unknown_excluded": 0,
+        "unknown_categories_excluded": [],
+        "threshold_frozen": True,
+    }
+    with mock.patch("scripts.train_autoencoder.calibrate_threshold", return_value=forced_cal):
+        exit_code = run_pipeline(args)
+
+    assert exit_code == 1
+    assert not (out_dir / "autoencoder_model.joblib").exists()
+    assert not (rep_dir / "metrics.json").exists()
+
+
+@pytest.mark.parametrize("bad_run_id", ["../escape", "sub/dir", "sub\\dir", "..", "   "])
+def test_run_pipeline_rejects_unsafe_run_id_traversal(tmp_path, rng, bad_run_id):
+    fixture = _build_real_preprocessor_e2e_fixture(tmp_path, rng)
+    out_dir = tmp_path / "artifacts_bad_id"
+    rep_dir = tmp_path / "reports_bad_id"
+    args = _make_real_prep_args(fixture, out_dir, rep_dir)
+    args.evaluate_test = False
+    args.run_id = bad_run_id
+
+    with pytest.raises(ValueError, match="Invalid --run-id"):
+        run_pipeline(args)
+
+
+def test_shipped_autoencoder_manifest_satisfies_val_fpr_constraint():
+    repo_root = Path(__file__).resolve().parents[2]
+    manifest = json.loads(
+        (repo_root / "reports" / "models" / "autoencoder_manifest.json").read_text(encoding="utf-8")
+    )
+    cal = json.loads(
+        (
+            repo_root / "reports" / "evaluation" / "autoencoder" / "threshold_calibration.json"
+        ).read_text(encoding="utf-8")
+    )
+    metrics = json.loads(
+        (repo_root / "reports" / "evaluation" / "autoencoder" / "metrics.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert cal["threshold_frozen"] is True
+    assert cal["target_fpr"] <= 0.05
+    assert cal["empirical_val_fpr"] <= cal["target_fpr"]
+    man_cal = manifest["threshold_calibration"]
+    assert man_cal["empirical_val_fpr"] <= man_cal["target_fpr"]
+    assert man_cal["threshold"] == pytest.approx(cal["threshold"], rel=0.0, abs=1e-9)
+    assert metrics["run_id"] == manifest["run_id"]
+    assert metrics["validation"]["fpr"] <= cal["target_fpr"]
+
+
+def test_serialize_cli_args_uses_repo_relative_posix_paths_and_write_json_has_newline(
+    tmp_path: Path,
+):
+    from scripts.train_autoencoder import PROJECT_ROOT, serialize_cli_args, write_json_file
+
+    ns = argparse.Namespace(
+        raw_data=PROJECT_ROOT / "data" / "demo" / "demo_flows.csv",
+        report_dir=PROJECT_ROOT / "reports" / "evaluation" / "autoencoder",
+        external_dir=tmp_path / "external_out",
+        hidden_layers="32,16,32",
+    )
+    serialized = serialize_cli_args(ns)
+    assert serialized["raw_data"] == "data/demo/demo_flows.csv"
+    assert serialized["report_dir"] == "reports/evaluation/autoencoder"
+    assert serialized["external_dir"] == str(tmp_path / "external_out")
+    assert serialized["hidden_layers"] == "32,16,32"
+
+    out_json = tmp_path / "run_metadata.json"
+    write_json_file(out_json, {"arguments": serialized})
+    raw = out_json.read_bytes()
+    assert raw.endswith(b"\n")
+    assert b"\r\n" not in raw
+    assert json.loads(raw.decode("utf-8"))["arguments"]["raw_data"] == "data/demo/demo_flows.csv"
+
+
+def test_shipped_pr70_evaluation_jsons_have_clean_paths_and_trailing_newlines():
+    repo_root = Path(__file__).resolve().parents[2]
+    eval_dirs = [
+        repo_root / "reports" / "evaluation" / "autoencoder",
+        repo_root / "reports" / "evaluation" / "xgboost",
+    ]
+    json_files = sorted(p for d in eval_dirs for p in d.rglob("*.json"))
+    assert len(json_files) >= 16
+
+    path_keys = {
+        "raw_data",
+        "data_manifest",
+        "split_manifest",
+        "indices_dir",
+        "preprocessor_artifact",
+        "preprocessor_manifest",
+        "output_dir",
+        "report_dir",
+    }
+    for json_path in json_files:
+        raw = json_path.read_bytes()
+        assert raw.endswith(b"\n"), f"Missing trailing newline in {json_path}"
+        assert b"\r\n" not in raw, f"CRLF detected in {json_path}"
+        text = raw.decode("utf-8")
+        assert (
+            "C:\\Users\\" not in text and "/Users/" not in text
+        ), f"Local path leaked in {json_path}"
+        if json_path.name == "run_metadata.json":
+            args = json.loads(text)["arguments"]
+            for key in path_keys:
+                val = args[key]
+                assert isinstance(val, str)
+                assert "\\" not in val, f"Backslash path in {json_path}:{key}={val}"
+                assert (
+                    not val.startswith("/") and ":/" not in val
+                ), f"Absolute path in {json_path}:{key}={val}"

@@ -610,3 +610,126 @@ def test_check_prerequisites_passes_on_real_artifacts():
         ]
     )
     assert rc == 0
+
+
+def test_execute_training_evaluate_test_post_fit_and_lock(
+    tmp_path, mock_split_environment, patch_dataset_sha
+):
+    """Held-out Test evaluation runs only post-fit/post-reload and leaves Validation invariant."""
+    env = mock_split_environment
+    patch_dataset_sha(env["dataset_sha"])
+
+    df_train_only = env["df_raw"].iloc[env["train_idx"]][list(ML_FEATURE_COLUMNS)]
+    prep = TrainOnlyPreprocessor(config=PreprocessingConfig())
+    prep.dataset_sha256 = env["dataset_sha"]
+    prep.split_manifest_sha256 = env["split_manifest_sha"]
+    prep.fit(df_train_only)
+
+    preprocessor_artifact_path = tmp_path / "preprocessor.joblib"
+    preprocessor_manifest_path = tmp_path / "preprocessor_manifest.json"
+    prep.save(preprocessor_artifact_path, manifest_path=preprocessor_manifest_path)
+
+    base_manifest = execute_training(
+        dataset_path=env["dataset_path"],
+        split_manifest_path=env["split_manifest_path"],
+        indices_dir=env["indices_dir"],
+        preprocessor_artifact_path=preprocessor_artifact_path,
+        preprocessor_manifest_path=preprocessor_manifest_path,
+        output_model_path=tmp_path / "xgb_no_test.joblib",
+        output_manifest_path=tmp_path / "xgb_no_test_manifest.json",
+        report_md_path=tmp_path / "xgb_no_test.md",
+        evaluate_test=False,
+    )
+
+    eval_dir = tmp_path / "eval_xgb"
+    test_manifest = execute_training(
+        dataset_path=env["dataset_path"],
+        split_manifest_path=env["split_manifest_path"],
+        indices_dir=env["indices_dir"],
+        preprocessor_artifact_path=preprocessor_artifact_path,
+        preprocessor_manifest_path=preprocessor_manifest_path,
+        output_model_path=tmp_path / "xgb_with_test.joblib",
+        output_manifest_path=tmp_path / "xgb_with_test_manifest.json",
+        report_md_path=tmp_path / "xgb_with_test.md",
+        evaluate_test=True,
+        evaluation_dir=eval_dir,
+    )
+
+    assert base_manifest["validation_summary"]["precision"] == pytest.approx(
+        test_manifest["validation_summary"]["precision"]
+    )
+    assert base_manifest["validation_summary"]["recall"] == pytest.approx(
+        test_manifest["validation_summary"]["recall"]
+    )
+    assert base_manifest["validation_summary"]["confusion_matrix"] == (
+        test_manifest["validation_summary"]["confusion_matrix"]
+    )
+    assert test_manifest["test_lock_audit"]["test_evaluated_post_fit"] is True
+    assert test_manifest["test_lock_audit"]["test_rows_loaded"] == len(env["test_idx"])
+    assert test_manifest["test_evaluation"]["rows_evaluated"] == len(env["test_idx"])
+    assert (eval_dir / "metrics.json").is_file()
+    assert (eval_dir / "confusion_matrix.csv").is_file()
+    assert (eval_dir / "evaluation_metadata.json").is_file()
+    assert (eval_dir / "evaluation_report.md").is_file()
+    assert "Zero Test partition rows are materialized or converted into DataFrames." != (
+        test_manifest["test_lock_audit"]["contract_b_guarantee"]
+    )
+    assert test_manifest["test_lock_audit"]["contract_b_guarantee"].startswith("PASSED_DURING_FIT:")
+
+
+def test_shipped_xgboost_manifest_test_lock_audit_consistent():
+    manifest_path = (
+        Path(__file__).resolve().parents[2] / "reports" / "models" / "xgboost_manifest.json"
+    )
+    raw = manifest_path.read_text(encoding="utf-8")
+    assert raw.endswith("\n")
+    manifest = json.loads(raw)
+    audit = manifest["test_lock_audit"]
+    assert audit["test_partition_accessed"] is True
+    assert audit["test_rows_loaded"] > 0
+    assert (
+        "Zero Test partition rows are materialized or converted into DataFrames."
+        not in audit["contract_b_guarantee"]
+    )
+    assert "PASSED_DURING_FIT" in audit["contract_b_guarantee"]
+
+
+def test_collect_git_provenance_dirty_disclosure_and_strict_guard(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    import scripts.train_xgboost as txgb
+    from network_anomaly.models.provenance import collect_git_provenance
+
+    fake_commit = "a" * 40
+
+    def _fake_check_output(cmd, **kwargs):
+        if cmd[:2] == ["git", "rev-parse"]:
+            return fake_commit + "\n"
+        if cmd[:2] == ["git", "status"]:
+            return " M scripts/train_xgboost.py\n?? untracked.txt\n"
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(subprocess, "check_output", _fake_check_output)
+    prov = collect_git_provenance(tmp_path, require_clean_git=False)
+    assert prov["git_commit"] == fake_commit
+    assert prov["git_dirty"] is True
+    assert prov["git_clean"] is False
+    assert prov["worktree_provenance"] == "DIRTY_DISCLOSED"
+    assert prov["provenance_complete"] is True
+    assert prov["provenance_status"] == "VERIFIED"
+    assert prov["git_dirty_paths"] == ["M scripts/train_xgboost.py", "?? untracked.txt"]
+    assert "uncommitted worktree changes (2 modified/untracked path(s))" in (
+        prov["git_dirty_disclosure"] or ""
+    )
+
+    with pytest.raises(RuntimeError, match="Clean git worktree required"):
+        txgb.execute_training(
+            dataset_path=tmp_path / "ds.csv",
+            split_manifest_path=tmp_path / "sm.json",
+            indices_dir=tmp_path / "idx",
+            preprocessor_artifact_path=tmp_path / "prep.joblib",
+            preprocessor_manifest_path=tmp_path / "pm.json",
+            output_model_path=tmp_path / "out.joblib",
+            output_manifest_path=tmp_path / "out.json",
+            require_clean_git=True,
+        )

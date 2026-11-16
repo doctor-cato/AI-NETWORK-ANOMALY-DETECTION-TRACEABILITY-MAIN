@@ -36,6 +36,7 @@ import hashlib
 import json
 import numbers
 import platform
+import re
 import subprocess
 import sys
 import time
@@ -43,26 +44,31 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-import joblib
-import numpy as np
-import pandas as pd
-from sklearn.metrics import average_precision_score, roc_auc_score
+_SCRIPT_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_LOCAL_SRC = _SCRIPT_PROJECT_ROOT / "src"
+if str(_LOCAL_SRC) not in sys.path:
+    sys.path.insert(0, str(_LOCAL_SRC))
 
-from network_anomaly.config import (
+import joblib  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+from sklearn.metrics import average_precision_score, roc_auc_score  # noqa: E402
+
+from network_anomaly.config import (  # noqa: E402
     PROJECT_ROOT,
     RANDOM_SEED,
 )
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
-from network_anomaly.models.autoencoder import (
+from network_anomaly.models.autoencoder import (  # noqa: E402
     build_model,
     fit_model,
     reconstruction_errors,
 )
-from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor
+from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Default Paths and Constants
@@ -82,6 +88,7 @@ PREPROCESSOR_MANIFEST_PATH = (
 )
 
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "artifacts" / "models" / "autoencoder"
+DEFAULT_REPORT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json"
 DEFAULT_REPORT_DIR = PROJECT_ROOT / "reports" / "evaluation" / "autoencoder"
 
 ATTACK_CATEGORIES = (
@@ -109,6 +116,21 @@ def safe_relpath(path: Path) -> str:
         return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
     except ValueError:
         return str(path)
+
+
+def serialize_cli_args(args: argparse.Namespace) -> dict[str, object]:
+    """Serialize CLI arguments with repo-relative POSIX paths where applicable."""
+    return {
+        key: safe_relpath(value) if isinstance(value, Path) else value
+        for key, value in vars(args).items()
+    }
+
+
+def write_json_file(path: Path, payload: object, *, default=None) -> None:
+    """Write formatted JSON with LF line endings and a trailing newline."""
+    with path.open("w", encoding="utf-8", newline="\n") as fh:
+        json.dump(payload, fh, indent=2, default=default)
+        fh.write("\n")
 
 
 def sha256_file(path: Path) -> str:
@@ -1188,6 +1210,22 @@ def _validate_manifest_provenance(
             )
 
 
+def compute_score_normalization(scores_val_cal: np.ndarray) -> dict[str, Any]:
+    """Build quantile-based [0, 1] display normalization strictly from Validation scores."""
+    arr = np.asarray(scores_val_cal, dtype=np.float64)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return {}
+    grid = np.linspace(0.0, 1.0, 101)
+    values = np.quantile(arr, grid)
+    return {
+        "calibration_partition": "validation",
+        "score_direction": "higher_is_more_anomalous",
+        "quantile_grid": [round(float(x), 4) for x in grid],
+        "score_values": [float(v) for v in values],
+    }
+
+
 def save_artifacts(
     model: Any,
     config: dict[str, Any],
@@ -1195,6 +1233,8 @@ def save_artifacts(
     training_meta: dict[str, Any],
     output_dir: Path,
     unknown_categories: Sequence[str] | frozenset[str] | set[str] | None = None,
+    score_normalization: dict[str, Any] | None = None,
+    evaluation_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Save model artifact, configuration, threshold, and verified companion manifest."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1207,12 +1247,10 @@ def save_artifacts(
     joblib.dump(model, model_file)
     model_sha256 = sha256_file(model_file)
 
-    with config_file.open("w", encoding="utf-8") as fh:
-        json.dump(config, fh, indent=2)
+    write_json_file(config_file, config)
     config_sha256 = sha256_file(config_file)
 
-    with threshold_file.open("w", encoding="utf-8") as fh:
-        json.dump(threshold_meta, fh, indent=2)
+    write_json_file(threshold_file, threshold_meta)
     threshold_sha256 = sha256_file(threshold_file)
 
     resolved_unknown = _resolve_unknown_categories(
@@ -1283,6 +1321,7 @@ def save_artifacts(
     manifest_data = {
         "artifact_type": "autoencoder-anomaly-detector",
         "schema_version": "1.0",
+        "run_id": training_meta.get("run_id"),
         "model_file": model_file.name,
         "model_sha256": model_sha256,
         "config_file": config_file.name,
@@ -1317,12 +1356,18 @@ def save_artifacts(
         "provenance_complete": provenance_complete,
         "provenance": provenance,
         "feature_contract_version": feature_contract_version,
+        "model_artifact_path": safe_relpath(model_file),
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "git_commit": training_meta.get("git_commit"),
     }
+    if score_normalization:
+        manifest_data["score_normalization"] = score_normalization
+    if evaluation_summary:
+        manifest_data["evaluation_summary"] = evaluation_summary
+        if evaluation_summary.get("test") is not None:
+            manifest_data["experiment_status"] = "EXPERIMENTALLY VALIDATED"
 
-    with manifest_file.open("w", encoding="utf-8") as fh:
-        json.dump(manifest_data, fh, indent=2)
+    write_json_file(manifest_file, manifest_data)
 
     return {
         "directory": str(output_dir),
@@ -1462,6 +1507,7 @@ def generate_markdown_report(
     lines = [
         "# Autoencoder Anomaly Detection Evaluation Report (Issue #29 / C4)",
         "",
+        f"- Run ID: `{training_meta.get('run_id', 'N/A')}`",
         f"- Generated at: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}",
         f"- Git commit: `{training_meta.get('git_commit', 'N/A')}`",
         f"- Model architecture: MLP Autoencoder `{training_meta.get('hidden_layer_sizes')}`",
@@ -1764,12 +1810,24 @@ def run_pipeline(args: argparse.Namespace) -> int:
         target_fpr=args.target_fpr,
         unknown_categories=unknown_cats,
     )
+    known_cal_mask = ~np.isin(np.asarray(val_data["attack"], dtype=str), list(unknown_cats))
+    cal_scores_for_norm = val_scores[known_cal_mask] if np.any(known_cal_mask) else val_scores
+    score_norm = compute_score_normalization(cal_scores_for_norm)
     th_val = threshold_meta["threshold"]
     print(f"  OK Frozen threshold: {th_val:.6f} (Method: {args.calibration_method})")
     print(
         f"  Target FPR: {args.target_fpr}, "
-        f"Empirical Val FPR: {threshold_meta['empirical_val_fpr']:.4f}"
+        f"Empirical Val FPR: {threshold_meta['empirical_val_fpr']:.9f}"
     )
+    if (
+        getattr(args, "enforce_target_fpr", False) or args.calibration_method == "fpr_constrained"
+    ) and threshold_meta["empirical_val_fpr"] > threshold_meta["target_fpr"]:
+        print(
+            "FAILED: Validation empirical FPR "
+            f"({threshold_meta['empirical_val_fpr']:.9f}) exceeded target_fpr "
+            f"({threshold_meta['target_fpr']:.9f})."
+        )
+        return 1
     print(f"  Unknown categories held out: {sorted(unknown_cats)}")
 
     val_preds = (val_scores >= th_val).astype(np.int64)
@@ -1868,7 +1926,24 @@ def run_pipeline(args: argparse.Namespace) -> int:
         "unified_csv_stream_bounded_to_loaded_partitions": True,
     }
 
+    _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+    raw_run_id = getattr(args, "run_id", None)
+    if raw_run_id is not None:
+        candidate_run_id = str(raw_run_id).strip()
+        if (
+            not candidate_run_id
+            or not _SAFE_RUN_ID_RE.fullmatch(candidate_run_id)
+            or ".." in candidate_run_id
+        ):
+            raise ValueError(
+                f"Invalid --run-id {raw_run_id!r}: must match {_SAFE_RUN_ID_RE.pattern} without path separators or '..'."
+            )
+        run_id = candidate_run_id
+    else:
+        run_id = f"ae_{args.calibration_method}_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+
     training_meta = {
+        "run_id": run_id,
         "model_type": "Autoencoder (MLPRegressor)",
         "hidden_layer_sizes": hidden_layers,
         "training_population": "benign-only (Label == 0)",
@@ -1896,8 +1971,15 @@ def run_pipeline(args: argparse.Namespace) -> int:
         training_meta=training_meta,
         output_dir=output_dir,
         unknown_categories=unknown_cats,
+        score_normalization=score_norm,
+        evaluation_summary={"validation": metrics_val, "test": metrics_test},
     )
     print(f"  OK Artifacts saved to: {output_dir}")
+
+    if output_dir.resolve() == DEFAULT_OUTPUT_DIR.resolve():
+        DEFAULT_REPORT_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+        write_json_file(DEFAULT_REPORT_MANIFEST_PATH, art_res["manifest"])
+        print(f"  OK Report manifest mirrored to: {DEFAULT_REPORT_MANIFEST_PATH}")
 
     sample_eval = val_data["X"][: min(100, len(val_data["X"]))]
     verify_res = verify_saved_model(
@@ -1917,37 +1999,32 @@ def run_pipeline(args: argparse.Namespace) -> int:
     print("  OK Saved artifact, companion manifest, and provenance verified.")
 
     report_dir.mkdir(parents=True, exist_ok=True)
-    with (report_dir / "metrics.json").open("w", encoding="utf-8") as fh:
-        json.dump(
-            {
-                "validation": metrics_val,
-                "test": metrics_test,
-                "threshold_calibration": threshold_meta,
-            },
-            fh,
-            indent=2,
-        )
+    write_json_file(
+        report_dir / "metrics.json",
+        {
+            "run_id": run_id,
+            "validation": metrics_val,
+            "test": metrics_test,
+            "threshold_calibration": threshold_meta,
+        },
+    )
 
-    with (report_dir / "threshold_calibration.json").open("w", encoding="utf-8") as fh:
-        json.dump(threshold_meta, fh, indent=2)
+    write_json_file(report_dir / "threshold_calibration.json", threshold_meta)
 
-    with (report_dir / "training_metadata.json").open("w", encoding="utf-8") as fh:
-        json.dump(training_meta, fh, indent=2)
+    write_json_file(report_dir / "training_metadata.json", training_meta)
 
-    with (report_dir / "run_metadata.json").open("w", encoding="utf-8") as fh:
-        json.dump(
-            {
-                "arguments": vars(args),
-                "platform": platform.platform(),
-                "python_version": sys.version,
-                "execution_time_seconds": training_meta["elapsed_seconds"],
-                "git_commit": git_commit,
-                "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
-            },
-            fh,
-            indent=2,
-            default=str,
-        )
+    write_json_file(
+        report_dir / "run_metadata.json",
+        {
+            "arguments": serialize_cli_args(args),
+            "platform": platform.platform(),
+            "python_version": sys.version,
+            "execution_time_seconds": training_meta["elapsed_seconds"],
+            "git_commit": git_commit,
+            "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
+        },
+        default=str,
+    )
 
     report_md_path = report_dir / "evaluation_report.md"
     generate_markdown_report(
@@ -1958,6 +2035,24 @@ def run_pipeline(args: argparse.Namespace) -> int:
         report_path=report_md_path,
     )
     print(f"  OK Evaluation report written to: {report_md_path}")
+
+    runs_root = (report_dir / "runs").resolve()
+    run_snapshot_dir = (runs_root / run_id).resolve()
+    if not run_snapshot_dir.is_relative_to(runs_root) or run_snapshot_dir == runs_root:
+        raise ValueError(
+            f"Unsafe run snapshot directory resolved outside runs/: {run_snapshot_dir}"
+        )
+    run_snapshot_dir.mkdir(parents=True, exist_ok=True)
+    for fname in (
+        "metrics.json",
+        "threshold_calibration.json",
+        "training_metadata.json",
+        "run_metadata.json",
+        "evaluation_report.md",
+    ):
+        (run_snapshot_dir / fname).write_bytes((report_dir / fname).read_bytes())
+    write_json_file(run_snapshot_dir / "autoencoder_manifest.json", art_res["manifest"])
+    print(f"  OK Run snapshot archived to: {run_snapshot_dir}")
     print("=" * 70)
     print(f"Pipeline completed successfully in {training_meta['elapsed_seconds']:.2f}s!")
     print("=" * 70)
@@ -1999,6 +2094,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--unknown-categories", type=str, default="Worms,Backdoor")
     parser.add_argument("--evaluate-test", action="store_true", default=False)
+    parser.add_argument("--run-id", type=str, default=None)
+    parser.add_argument(
+        "--enforce-target-fpr",
+        action="store_true",
+        default=False,
+        help="Fail closed if empirical Validation FPR exceeds --target-fpr.",
+    )
     parser.add_argument("--sample-size", type=int, default=None)
     parser.add_argument("--skip-checksums", action="store_true", default=False)
 

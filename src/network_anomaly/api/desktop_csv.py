@@ -90,6 +90,8 @@ _SENSITIVE_SYSTEM_PREFIXES = (
     "c:\\windows\\system",
     "c:\\windows\\boot",
     "c:\\program files",
+    "c:\\program files (x86)",
+    "c:\\programdata",
     "/system",
     "/etc",
     "/usr/bin",
@@ -103,10 +105,10 @@ def _utc_now_iso() -> str:
 
 
 def _is_sensitive_system_path(resolved: Path) -> bool:
-    norm = str(resolved).replace("/", os.sep).lower()
+    norm = str(resolved).replace("\\", "/").lower()
     for prefix in _SENSITIVE_SYSTEM_PREFIXES:
-        pref_norm = prefix.replace("/", os.sep).lower()
-        if norm == pref_norm or norm.startswith(pref_norm + os.sep):
+        pref_norm = prefix.replace("\\", "/").lower()
+        if norm == pref_norm or norm.startswith(pref_norm + "/"):
             return True
     return False
 
@@ -487,10 +489,23 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
             raw_manifest = (
                 meta.get("raw_manifest") if isinstance(meta.get("raw_manifest"), dict) else {}
             )
-            thresh = (
-                meta.get("threshold")
-                if meta.get("threshold") is not None
-                else raw_manifest.get("threshold")
+            test_summary = (
+                raw_manifest.get("test_summary")
+                if isinstance(raw_manifest.get("test_summary"), dict)
+                else {}
+            )
+            thresh = next(
+                (
+                    candidate
+                    for candidate in (
+                        meta.get("threshold"),
+                        raw_manifest.get("threshold"),
+                        raw_manifest.get("decision_threshold"),
+                        test_summary.get("decision_threshold"),
+                    )
+                    if candidate is not None
+                ),
+                None,
             )
             items.append(
                 ModelStatusItem(
@@ -1325,6 +1340,7 @@ def analyze_csv_file(
             pred_class = "ABSTAINED_OOD"
             pred_attack_prob: Optional[float] = None
             pred_raw_score: Optional[float] = None
+            pred_norm_score: Optional[float] = None
             risk_score: Optional[float] = None
             risk_level = "ABSTAINED_OOD"
             is_ood_flagged = True
@@ -1353,6 +1369,7 @@ def analyze_csv_file(
             pred_class = "Attack" if pred_label == 1 else "Benign"
             pred_attack_prob = api_item.attack_probability
             pred_raw_score = api_item.raw_anomaly_score
+            pred_norm_score = api_item.normalized_anomaly_score
             decision_threshold = api_item.decision_threshold
             score_type = api_item.score_type
             score_direction = api_item.score_direction
@@ -1369,6 +1386,7 @@ def analyze_csv_file(
                 predicted_class=pred_class,
                 attack_probability=pred_attack_prob,
                 raw_anomaly_score=pred_raw_score,
+                normalized_anomaly_score=pred_norm_score,
                 decision_threshold=decision_threshold,
                 score_type=score_type,
                 score_direction=score_direction,

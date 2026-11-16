@@ -1,31 +1,45 @@
 pub mod backend;
 pub mod commands;
 
-use backend::{default_db_path, resolve_repo_root, BackendManager};
+use backend::{
+    default_db_path, default_runtime_dir, resolve_preferred_backend_port,
+    resolve_repo_root_with_resource_dir, BackendManager,
+};
 use std::time::Duration;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let repo_root = resolve_repo_root().unwrap_or_else(|_| {
-        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-    });
-    let db_path = default_db_path(&repo_root);
-    let backend =
-        BackendManager::new(repo_root, db_path).expect("Failed initializing BackendManager");
-
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(backend)
         .setup(|app| {
-            let mgr = app.state::<BackendManager>().inner().clone();
+            let resource_dir = app.path().resource_dir().ok();
+            let repo_root = resolve_repo_root_with_resource_dir(resource_dir.as_deref())
+                .unwrap_or_else(|_| {
+                    resource_dir.unwrap_or_else(|| {
+                        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    })
+                });
+            let runtime_dir = default_runtime_dir(&repo_root);
+            let db_path = default_db_path(&repo_root, &runtime_dir);
+            let backend = BackendManager::new_with_runtime(repo_root, runtime_dir, db_path)
+                .map_err(std::io::Error::other)?;
+            app.manage(backend.clone());
+
+            let preferred_port = resolve_preferred_backend_port();
             std::thread::spawn(move || {
-                let _ = mgr.ensure_started(8000, Duration::from_secs(20));
+                let _ = backend.ensure_started(preferred_port, Duration::from_secs(20));
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_status,
+            commands::get_runtime_diagnostics,
+            commands::setup_python_runtime,
+            commands::import_companion_bundle,
+            commands::pick_zip_file,
+            commands::pick_companion_folder,
+            commands::report_frontend_ready,
             commands::restart_backend,
             commands::get_demo_paths,
             commands::pick_csv_file,
