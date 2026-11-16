@@ -2401,6 +2401,7 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
 
     # 5d) Clean live host probe + wrong secret fails closed; right secret passes
     monkeypatch.setattr(vca.shutil, "which", lambda _tool: None)
+    monkeypatch.setattr(vca, "_probe_standard_dev_tool_dirs", lambda: ([], []))
     monkeypatch.setenv("NETFLOW_VM_ATTESTATION_HMAC_KEY", "wrong-secret")
     with pytest.raises(RuntimeError, match="cryptographic signature verification failed"):
         vca._resolve_clean_machine_provenance(

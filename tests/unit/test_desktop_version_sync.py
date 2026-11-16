@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -177,18 +178,9 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "non-commercial-academic-approved" not in rel_notes
 
 
-def test_release_workflow_verify_companion_invocations_have_no_duplicate_flags():
-    """F-08 regression: catch duplicated CLI flags & invalid invocations in release.yml."""
-    import re
-    import shlex
-
-    from scripts.verify_companion_artifacts import build_parser
-
-    release_yml = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(
-        encoding="utf-8"
-    )
-    lines = release_yml.splitlines()
-    invocations = []
+def _extract_verify_companion_invocations(workflow_text: str) -> list[str]:
+    lines = workflow_text.splitlines()
+    invocations: list[str] = []
     idx = 0
     while idx < len(lines):
         stripped = lines[idx].strip()
@@ -203,17 +195,46 @@ def test_release_workflow_verify_companion_invocations_have_no_duplicate_flags()
             cmd = re.sub(r"\s*>\s*\$null\b", "", cmd)
             invocations.append(cmd)
         idx += 1
+    return invocations
 
-    assert (
-        len(invocations) >= 5
-    ), f"Expected >=5 invocations in release.yml, found {len(invocations)}"
+
+def _validate_verify_companion_workflow_invocations(workflow_text: str) -> list[str]:
+    import shlex
+
+    from scripts.verify_companion_artifacts import build_parser
+
+    invocations = _extract_verify_companion_invocations(workflow_text)
     parser = build_parser()
     for cmd in invocations:
         sanitized = re.sub(r"\$\{\{[^}]+\}\}|\$[A-Za-z_][A-Za-z0-9_]*", "placeholder", cmd)
         tokens = shlex.split(sanitized, posix=True)[2:]  # drop 'python scripts/...'
         flags = [tok for tok in tokens if tok.startswith("--")]
-        assert len(flags) == len(
-            set(flags)
-        ), f"Duplicate CLI flags in release.yml invocation: {cmd}"
+        if len(flags) != len(set(flags)):
+            raise AssertionError(f"Duplicate CLI flags in workflow invocation: {cmd}")
         parsed = parser.parse_args(tokens)
         assert parsed is not None
+    return invocations
+
+
+def test_release_workflow_verify_companion_invocations_have_no_duplicate_flags():
+    """F-08 regression: catch duplicated CLI flags & invalid invocations in release.yml."""
+    release_yml = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    invocations = _validate_verify_companion_workflow_invocations(release_yml)
+    assert (
+        len(invocations) >= 5
+    ), f"Expected >=5 invocations in release.yml, found {len(invocations)}"
+    assert "desktop/src-tauri/target/release/netflow-sentinel-backend.exe" in release_yml
+
+    # Negative F-08 regression checks: duplicated or unknown CLI flags MUST be detected
+    dup_workflow = (
+        "python scripts/verify_companion_artifacts.py --verify-attestation a.json "
+        "--verify-github-run --token-env GH_TOKEN --verify-github-run"
+    )
+    with pytest.raises(AssertionError, match="Duplicate CLI flags"):
+        _validate_verify_companion_workflow_invocations(dup_workflow)
+
+    bad_flag_workflow = "python scripts/verify_companion_artifacts.py --verify-attestation a.json --nonexistent-flag"
+    with pytest.raises(SystemExit):
+        _validate_verify_companion_workflow_invocations(bad_flag_workflow)

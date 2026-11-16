@@ -594,6 +594,7 @@ jobs:
             "build", `
             "desktop/src-tauri/staged_bundle", `
             "desktop/src-tauri/binaries/netflow-sentinel-backend-x86_64-pc-windows-msvc.exe", `
+            "desktop/src-tauri/target/release/netflow-sentinel-backend.exe", `
             "desktop/src-tauri/target/release/artifacts", `
             "desktop/src-tauri/target/release/data", `
             "desktop/src-tauri/target/release/bundle", `
