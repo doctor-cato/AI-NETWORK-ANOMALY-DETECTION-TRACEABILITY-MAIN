@@ -568,7 +568,7 @@ def install_companion_bundle(
         )
 
     with tempfile.TemporaryDirectory(prefix="nf_install_companion_") as tmp_dir:
-        tmp_path = Path(tmp_dir)
+        tmp_path = Path(tmp_dir).resolve()
         staged_root: Path
         installed_archive_sha: Optional[str] = None
 
@@ -645,7 +645,7 @@ def install_companion_bundle(
                     f"Companion bundle archive SHA-256 mismatch: "
                     f"{installed_archive_sha} != {norm_expected_sha}"
                 )
-            staged_root = tmp_path / "extracted"
+            staged_root = (tmp_path / "extracted").resolve()
             _extract_safe_companion_zip(archive_file, staged_root)
 
         sums_path = staged_root / "COMPANION_SHA256SUMS.txt"
