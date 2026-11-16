@@ -175,3 +175,45 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "non-commercial-academic-approved" not in release_yml
     assert "non-commercial-academic-approved" not in desktop_readme
     assert "non-commercial-academic-approved" not in rel_notes
+
+
+def test_release_workflow_verify_companion_invocations_have_no_duplicate_flags():
+    """F-08 regression: catch duplicated CLI flags & invalid invocations in release.yml."""
+    import re
+    import shlex
+
+    from scripts.verify_companion_artifacts import build_parser
+
+    release_yml = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    lines = release_yml.splitlines()
+    invocations = []
+    idx = 0
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if stripped.startswith("python scripts/verify_companion_artifacts.py"):
+            combined = [stripped.rstrip("`").strip()]
+            cur = stripped
+            while cur.endswith("`") and idx + 1 < len(lines):
+                idx += 1
+                cur = lines[idx].strip()
+                combined.append(cur.rstrip("`").strip())
+            cmd = " ".join(combined)
+            cmd = re.sub(r"\s*>\s*\$null\b", "", cmd)
+            invocations.append(cmd)
+        idx += 1
+
+    assert (
+        len(invocations) >= 5
+    ), f"Expected >=5 invocations in release.yml, found {len(invocations)}"
+    parser = build_parser()
+    for cmd in invocations:
+        sanitized = re.sub(r"\$\{\{[^}]+\}\}|\$[A-Za-z_][A-Za-z0-9_]*", "placeholder", cmd)
+        tokens = shlex.split(sanitized, posix=True)[2:]  # drop 'python scripts/...'
+        flags = [tok for tok in tokens if tok.startswith("--")]
+        assert len(flags) == len(
+            set(flags)
+        ), f"Duplicate CLI flags in release.yml invocation: {cmd}"
+        parsed = parser.parse_args(tokens)
+        assert parsed is not None

@@ -2829,75 +2829,171 @@ def _verify_github_runner_provenance(
     }
 
 
+def _probe_clean_vm_host(resolved_root: Path) -> Dict[str, Any]:
+    """Perform live OS/filesystem probe rather than trusting self-declared VM JSON booleans."""
+    found_dev_tools = [
+        tool for tool in ("git", "rustc", "cargo", "node", "npm") if shutil.which(tool) is not None
+    ]
+    git_dir_present = (resolved_root / ".git").exists()
+    dev_models_tree_absent = not any(
+        (resolved_root / spec[0]).exists() for spec in MODEL_SPECS.values()
+    )
+    return {
+        "platform": sys.platform,
+        "observed_hostname": socket.gethostname(),
+        "git_dir_present": git_dir_present,
+        "dev_tools_absent": len(found_dev_tools) == 0,
+        "found_dev_tools": found_dev_tools,
+        "dev_models_tree_absent": dev_models_tree_absent,
+    }
+
+
+def _canonical_vm_witness_payload(
+    *,
+    source_commit: str,
+    installer_sha256: str,
+    sidecar_sha256: str,
+    vm_provenance_ref: str,
+    observed_hostname: str,
+    issued_at_utc: str,
+    trusted_authority_id: str,
+) -> bytes:
+    """Build canonical byte string signed by external VM attestation authority."""
+    payload = {
+        "environment_tier": "independent_windows_vm",
+        "issued_at_utc": issued_at_utc,
+        "installer_sha256": installer_sha256.lower(),
+        "observed_hostname": observed_hostname,
+        "sidecar_sha256": sidecar_sha256.lower(),
+        "source_commit": source_commit.lower(),
+        "trusted_authority_id": trusted_authority_id,
+        "vm_provenance_ref": vm_provenance_ref,
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
 def _verify_independent_vm_provenance(
     *,
     vm_evidence_path: Path,
-    expected_vm_evidence_sha256: Optional[str],
+    vm_witness_secret_env: Optional[str],
     source_commit: str,
+    installer_sha256: Optional[str],
+    sidecar_sha256: Optional[str],
     resolved_root: Path,
 ) -> Dict[str, Any]:
-    """Verify out-of-band attested independent Windows VM clean-machine provenance."""
+    """Verify independent Windows VM provenance via live host probe + external witness signature.
+
+    Refuses self-declared JSON + bare file SHA-256 without external cryptographic witness
+    binding and live host verification of absent developer tooling.
+    """
     ev_path = Path(vm_evidence_path).resolve()
     if not ev_path.is_file():
         raise RuntimeError(
             f"REFUSED --clean-machine-e2e: Independent VM evidence file not found: {ev_path}"
         )
-    norm_expected = (expected_vm_evidence_sha256 or "").strip().lower()
-    if not _is_hex_sha256(norm_expected):
-        raise RuntimeError(
-            "REFUSED --clean-machine-e2e: Independent VM provenance requires a 64-hex "
-            "--expect-vm-evidence-sha256 digest from an external verifier."
-        )
-    actual_sha = _sha256_file(ev_path).lower()
-    if not hmac.compare_digest(actual_sha, norm_expected):
-        raise RuntimeError(
-            "REFUSED --clean-machine-e2e: Independent VM evidence SHA-256 verification failed."
-        )
 
-    vm_doc = _read_json_dict(ev_path, "independent VM evidence JSON")
+    vm_doc = _read_json_dict(ev_path, "independent VM witness JSON")
     if vm_doc.get("environment_tier") != "independent_windows_vm":
         raise RuntimeError(
-            "REFUSED --clean-machine-e2e: VM evidence must declare environment_tier='independent_windows_vm'."
+            "REFUSED --clean-machine-e2e: VM witness must declare environment_tier='independent_windows_vm'."
         )
     if str(vm_doc.get("source_commit") or "").strip().lower() != source_commit.lower():
         raise RuntimeError(
-            "REFUSED --clean-machine-e2e: VM evidence source_commit mismatch against HEAD."
+            "REFUSED --clean-machine-e2e: VM witness source_commit mismatch against HEAD."
         )
-    for req_flag in (
-        "python_absent",
-        "rust_absent",
-        "git_absent",
-        "node_absent",
-        "companion_bundle_absent",
-    ):
-        if vm_doc.get(req_flag) is not True:
-            raise RuntimeError(
-                f"REFUSED --clean-machine-e2e: Independent VM evidence missing {req_flag}=True."
-            )
-    vm_ref = str(vm_doc.get("vm_provenance_ref") or "").strip()
-    if not vm_ref:
+    if not _is_hex_sha256(installer_sha256) or not _is_hex_sha256(sidecar_sha256):
         raise RuntimeError(
-            "REFUSED --clean-machine-e2e: Independent VM evidence missing non-empty vm_provenance_ref."
+            "REFUSED --clean-machine-e2e: Independent VM witness verification requires valid "
+            "installer_sha256 and --expect-sidecar-sha256 bindings."
+        )
+    if str(vm_doc.get("installer_sha256") or "").strip().lower() != str(installer_sha256).lower():
+        raise RuntimeError("REFUSED --clean-machine-e2e: VM witness installer_sha256 mismatch.")
+    if str(vm_doc.get("sidecar_sha256") or "").strip().lower() != str(sidecar_sha256).lower():
+        raise RuntimeError("REFUSED --clean-machine-e2e: VM witness sidecar_sha256 mismatch.")
+
+    vm_ref = str(vm_doc.get("vm_provenance_ref") or "").strip()
+    authority_id = str(vm_doc.get("trusted_authority_id") or "").strip()
+    issued_at_raw = str(vm_doc.get("issued_at_utc") or "").strip()
+    sig_alg = str(vm_doc.get("signature_algorithm") or "").strip().lower()
+    sig_hex = str(vm_doc.get("witness_signature_hex") or "").strip().lower()
+    if not vm_ref or not authority_id or not issued_at_raw:
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: VM witness missing vm_provenance_ref, "
+            "trusted_authority_id, or issued_at_utc (self-declared JSON is rejected)."
+        )
+    try:
+        issued_dt = datetime.fromisoformat(issued_at_raw.replace("Z", "+00:00"))
+        if issued_dt.tzinfo is None:
+            raise ValueError("Timezone-aware ISO-8601 UTC timestamp required")
+    except ValueError as exc:
+        raise RuntimeError(
+            f"REFUSED --clean-machine-e2e: Invalid VM witness issued_at_utc: {issued_at_raw!r}"
+        ) from exc
+
+    if sig_alg != "hmac-sha256-external-witness" or not _is_hex_sha256(sig_hex):
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: VM witness must include signature_algorithm="
+            "'hmac-sha256-external-witness' and 64-hex witness_signature_hex; "
+            "self-declared JSON + SHA-256 cannot verify clean VM provenance."
         )
 
-    dev_model_path = resolved_root / MODEL_SPECS["random_forest"][0]
-    if (resolved_root / ".git").exists() and dev_model_path.is_file():
+    secret_env_name = (vm_witness_secret_env or "NETFLOW_VM_ATTESTATION_HMAC_KEY").strip()
+    secret_val = os.environ.get(secret_env_name, "").strip()
+    if not secret_val:
         raise RuntimeError(
-            "REFUSED --clean-machine-e2e: Cannot claim independent_windows_vm inside a local "
-            "developer git checkout containing dev model artifacts."
+            "REFUSED --clean-machine-e2e: Missing external VM verifier witness secret in "
+            f"environment variable {secret_env_name!r}; status remains NOT VERIFIED."
+        )
+
+    probe = _probe_clean_vm_host(resolved_root)
+    if (
+        probe["git_dir_present"]
+        or not probe["dev_tools_absent"]
+        or not probe["dev_models_tree_absent"]
+    ):
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: Live host probe detected developer workspace/toolchain "
+            f"on this machine ({probe}); refusing independent_windows_vm claim."
+        )
+
+    doc_host = str(vm_doc.get("observed_hostname") or "").strip()
+    if not doc_host or doc_host.lower() != str(probe["observed_hostname"]).lower():
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: VM witness observed_hostname mismatch against live host "
+            f"({doc_host!r} != {probe['observed_hostname']!r})."
+        )
+
+    canonical_bytes = _canonical_vm_witness_payload(
+        source_commit=source_commit,
+        installer_sha256=str(installer_sha256),
+        sidecar_sha256=str(sidecar_sha256),
+        vm_provenance_ref=vm_ref,
+        observed_hostname=doc_host,
+        issued_at_utc=issued_at_raw,
+        trusted_authority_id=authority_id,
+    )
+    expected_sig = hmac.new(secret_val.encode("utf-8"), canonical_bytes, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig_hex, expected_sig):
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: Independent Windows VM witness cryptographic signature "
+            "verification failed."
         )
 
     return {
         "environment_tier": "independent_windows_vm",
-        "provenance_source": "independent_vm_verified_attestation",
+        "provenance_source": "independent_vm_signed_witness",
         "workflow_run_id": None,
         "run_attempt": None,
         "github_repository": None,
         "workflow_path": None,
-        "runner_name": str(vm_doc.get("vm_name") or vm_ref).strip(),
+        "runner_name": str(vm_doc.get("vm_name") or doc_host).strip(),
         "runner_labels": ["independent-windows-vm"],
         "vm_provenance_ref": vm_ref,
-        "vm_evidence_sha256": actual_sha,
+        "trusted_authority_id": authority_id,
+        "issued_at_utc": issued_at_raw,
+        "signature_algorithm": sig_alg,
+        "signature_verified": True,
+        "live_host_probe": probe,
     }
 
 
@@ -2913,26 +3009,36 @@ def _resolve_clean_machine_provenance(
     github_run_id: Optional[str],
     token_env_var: Optional[str],
     independent_vm_evidence: Optional[Path],
-    expect_vm_evidence_sha256: Optional[str],
+    vm_witness_secret_env: Optional[str] = None,
+    installer_sha256: Optional[str] = None,
+    sidecar_sha256: Optional[str] = None,
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Enforce fail-closed runner/VM provenance; never trust --clean-machine-e2e CLI flag alone."""
     if not clean_machine_e2e:
         return "local_developer_machine", None
 
-    if not standalone_embedded or pass_repo_root_env or source_tree_clean is not True:
+    if not standalone_embedded or pass_repo_root_env:
         raise RuntimeError(
             "REFUSED --clean-machine-e2e: Clean-machine verification strictly requires "
-            "--standalone-embedded, --no-repo-root-env, and a clean git HEAD."
+            "--standalone-embedded and --no-repo-root-env."
         )
 
     if independent_vm_evidence is not None:
         identity = _verify_independent_vm_provenance(
             vm_evidence_path=independent_vm_evidence,
-            expected_vm_evidence_sha256=expect_vm_evidence_sha256,
+            vm_witness_secret_env=vm_witness_secret_env,
             source_commit=source_commit,
+            installer_sha256=installer_sha256,
+            sidecar_sha256=sidecar_sha256,
             resolved_root=resolved_root,
         )
         return "independent_windows_vm", identity
+
+    if source_tree_clean is not True:
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: GitHub runner clean-machine verification strictly "
+            "requires a clean git HEAD checkout."
+        )
 
     if github_repo and github_run_id:
         identity = _verify_github_runner_provenance(
@@ -2947,8 +3053,8 @@ def _resolve_clean_machine_provenance(
     raise RuntimeError(
         "REFUSED --clean-machine-e2e: Refusing to mark clean_machine_verified=True on a local "
         "developer machine or unverified runner. Provide authoritative GitHub Actions API run "
-        "provenance (--github-repo + --github-run-id + GitHub token) or out-of-band hash-bound "
-        "--independent-vm-evidence."
+        "provenance (--github-repo + --github-run-id + GitHub token) or signed external VM "
+        "witness (--independent-vm-evidence + --vm-witness-secret-env)."
     )
 
 
@@ -2968,7 +3074,7 @@ def run_four_model_e2e_verification(
     github_run_id: Optional[str] = None,
     token_env_var: Optional[str] = None,
     independent_vm_evidence: Optional[Path] = None,
-    expect_vm_evidence_sha256: Optional[str] = None,
+    vm_witness_secret_env: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fail-closed live loopback E2E verification across all 4 models on demo_flows.csv."""
     resolved_root = Path(root).resolve()
@@ -2991,6 +3097,11 @@ def run_four_model_e2e_verification(
             "E2E attestation BLOCKED: git working tree is dirty or unavailable; "
             "attestation requires clean committed HEAD."
         )
+    pre_installer_sha = (
+        _sha256_file(Path(installer_path).resolve()).lower()
+        if installer_path is not None and Path(installer_path).is_file()
+        else None
+    )
     env_tier, verified_identity = _resolve_clean_machine_provenance(
         clean_machine_e2e=clean_machine_e2e,
         standalone_embedded=standalone_embedded,
@@ -3002,7 +3113,9 @@ def run_four_model_e2e_verification(
         github_run_id=github_run_id,
         token_env_var=token_env_var,
         independent_vm_evidence=independent_vm_evidence,
-        expect_vm_evidence_sha256=expect_vm_evidence_sha256,
+        vm_witness_secret_env=vm_witness_secret_env,
+        installer_sha256=pre_installer_sha,
+        sidecar_sha256=expected_sidecar_sha256,
     )
     desktop_version = _read_desktop_version(resolved_root)
     split_manifest_path = resolved_root / SPLIT_MANIFEST_REL
@@ -3134,7 +3247,11 @@ def run_four_model_e2e_verification(
             "runner_name": verified_identity.get("runner_name"),
             "runner_labels": verified_identity.get("runner_labels") or [],
             "vm_provenance_ref": verified_identity.get("vm_provenance_ref"),
-            "vm_evidence_sha256": verified_identity.get("vm_evidence_sha256"),
+            "trusted_authority_id": verified_identity.get("trusted_authority_id"),
+            "issued_at_utc": verified_identity.get("issued_at_utc"),
+            "signature_algorithm": verified_identity.get("signature_algorithm"),
+            "signature_verified": verified_identity.get("signature_verified"),
+            "live_host_probe": verified_identity.get("live_host_probe"),
         }
         if verified_identity is not None
         else {
@@ -3146,8 +3263,21 @@ def run_four_model_e2e_verification(
             "runner_name": None,
             "runner_labels": [],
             "vm_provenance_ref": None,
-            "vm_evidence_sha256": None,
+            "trusted_authority_id": None,
+            "issued_at_utc": None,
+            "signature_algorithm": None,
+            "signature_verified": False,
+            "live_host_probe": None,
         }
+    )
+
+    standalone_env_ok = (
+        source_tree_clean is True
+        if env_tier == "github_hosted_windows_runner"
+        else bool(
+            verified_identity
+            and (verified_identity.get("live_host_probe") or {}).get("dev_tools_absent") is True
+        )
     )
 
     report: Dict[str, Any] = {
@@ -3181,7 +3311,7 @@ def run_four_model_e2e_verification(
                 "sidecar_sha256": sidecar_sha_bound,
             },
             "standalone_verified": bool(
-                standalone_embedded and is_clean_runner and source_tree_clean is True
+                standalone_embedded and is_clean_runner and standalone_env_ok
             ),
         },
     }
@@ -3756,11 +3886,26 @@ def verify_e2e_attestation(
                         )
                 elif env_tier_val == "independent_windows_vm":
                     vm_ref = str(runner_id_val.get("vm_provenance_ref") or "").strip()
+                    authority_id = str(runner_id_val.get("trusted_authority_id") or "").strip()
+                    sig_alg = str(runner_id_val.get("signature_algorithm") or "").strip()
+                    issued_at = str(runner_id_val.get("issued_at_utc") or "").strip()
+                    probe_block = runner_id_val.get("live_host_probe")
+                    probe_ok = (
+                        isinstance(probe_block, dict)
+                        and probe_block.get("git_dir_present") is False
+                        and probe_block.get("dev_tools_absent") is True
+                        and probe_block.get("dev_models_tree_absent") is True
+                        and bool(str(probe_block.get("observed_hostname") or "").strip())
+                    )
                     identity_ok = (
-                        runner_id_val.get("provenance_source")
-                        == "independent_vm_verified_attestation"
+                        runner_id_val.get("provenance_source") == "independent_vm_signed_witness"
+                        and runner_id_val.get("signature_verified") is True
+                        and sig_alg
+                        in {"hmac-sha256-external-witness", "rsa-sha256-x509", "ecdsa-p256-sha256"}
                         and bool(vm_ref)
-                        and _is_hex_sha256(runner_id_val.get("vm_evidence_sha256"))
+                        and bool(authority_id)
+                        and bool(issued_at)
+                        and probe_ok
                         and bool(str(runner_id_val.get("runner_name") or "").strip())
                     )
 
@@ -3770,7 +3915,11 @@ def verify_e2e_attestation(
             and att_env.get("clean_machine_status") == "VERIFIED"
             and att_env.get("clean_machine_verified") is True
             and att_env.get("runner_provenance_verified") is True
-            and att_env.get("source_tree_clean") is True
+            and (
+                att_env.get("source_tree_clean") is True
+                if env_tier_val == "github_hosted_windows_runner"
+                else True
+            )
             and att_env.get("system_python_used") is False
             and att_env.get("standalone_verified") is True
             and identity_ok
@@ -3898,13 +4047,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--independent-vm-evidence",
         type=Path,
         default=None,
-        help="Out-of-band attested independent Windows VM evidence JSON path for --clean-machine-e2e.",
+        help="Cryptographically signed external Windows VM witness JSON path for --clean-machine-e2e.",
     )
     parser.add_argument(
-        "--expect-vm-evidence-sha256",
+        "--vm-witness-secret-env",
         type=str,
         default=None,
-        help="Expected 64-char SHA-256 of --independent-vm-evidence JSON.",
+        help="Environment variable holding external VM verifier HMAC-SHA256 key (defaults to NETFLOW_VM_ATTESTATION_HMAC_KEY).",
     )
     parser.add_argument(
         "--verify-github-run",
@@ -4242,7 +4391,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 github_run_id=args.github_run_id,
                 token_env_var=args.token_env,
                 independent_vm_evidence=args.independent_vm_evidence,
-                expect_vm_evidence_sha256=args.expect_vm_evidence_sha256,
+                vm_witness_secret_env=args.vm_witness_secret_env,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E VERIFICATION BLOCKED/FAILED] {exc}\n")

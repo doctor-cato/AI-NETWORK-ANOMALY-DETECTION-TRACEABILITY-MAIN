@@ -2089,11 +2089,11 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
     assert res_clean["clean_machine_status"] == "VERIFIED"
     assert res_clean["environment_tier"] == "github_hosted_windows_runner"
 
-    # F-04: Independent Windows VM attestation with matching bindings also passes
-    vm_clean = copy.deepcopy(gh_clean)
-    vm_clean["attestation_environment"]["environment_tier"] = "independent_windows_vm"
-    vm_clean["attestation_environment"]["execution_context"] = "independent_windows_vm"
-    vm_clean["attestation_environment"]["runner_identity"] = {
+    # F-07: Self-declared independent_windows_vm (bare vm_evidence_sha256 without signed witness + live probe) MUST fail closed
+    legacy_vm = copy.deepcopy(gh_clean)
+    legacy_vm["attestation_environment"]["environment_tier"] = "independent_windows_vm"
+    legacy_vm["attestation_environment"]["execution_context"] = "independent_windows_vm"
+    legacy_vm["attestation_environment"]["runner_identity"] = {
         "provenance_source": "independent_vm_verified_attestation",
         "workflow_run_id": None,
         "run_attempt": None,
@@ -2103,6 +2103,45 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
         "runner_labels": ["independent-windows-vm"],
         "vm_provenance_ref": "hyperv-snapshot-clean-2026-11-16",
         "vm_evidence_sha256": "c" * 64,
+    }
+    standalone_path.write_text(json.dumps(legacy_vm), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_bundled_resources=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+    # F-07: Signed external VM witness + live host probe passes independent_windows_vm
+    vm_clean = copy.deepcopy(gh_clean)
+    vm_clean["attestation_environment"]["environment_tier"] = "independent_windows_vm"
+    vm_clean["attestation_environment"]["execution_context"] = "independent_windows_vm"
+    vm_clean["attestation_environment"]["runner_identity"] = {
+        "provenance_source": "independent_vm_signed_witness",
+        "workflow_run_id": None,
+        "run_attempt": None,
+        "github_repository": None,
+        "workflow_path": None,
+        "runner_name": "win11-clean-vm-01",
+        "runner_labels": ["independent-windows-vm"],
+        "vm_provenance_ref": "hyperv-snapshot-clean-2026-11-16",
+        "trusted_authority_id": "ci-vm-witness-authority",
+        "issued_at_utc": "2026-11-16T14:30:00Z",
+        "signature_algorithm": "hmac-sha256-external-witness",
+        "signature_verified": True,
+        "live_host_probe": {
+            "platform": "win32",
+            "observed_hostname": "win11-clean-vm-01",
+            "git_dir_present": False,
+            "dev_tools_absent": True,
+            "found_dev_tools": [],
+            "dev_models_tree_absent": True,
+        },
     }
     standalone_path.write_text(json.dumps(vm_clean), encoding="utf-8")
     res_vm = vca.verify_e2e_attestation(
@@ -2151,7 +2190,6 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
             github_run_id=None,
             token_env_var=None,
             independent_vm_evidence=None,
-            expect_vm_evidence_sha256=None,
         )
 
     # 2) Spoofed env vars without API provenance or VM evidence still fail closed
@@ -2170,7 +2208,6 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
             github_run_id=None,
             token_env_var=None,
             independent_vm_evidence=None,
-            expect_vm_evidence_sha256=None,
         )
 
     # 3) Historical completed workflow run MUST be refused when asserting live clean-machine E2E
@@ -2203,7 +2240,6 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
             github_run_id="999999",
             token_env_var="GH_TOKEN",
             independent_vm_evidence=None,
-            expect_vm_evidence_sha256=None,
         )
 
     # 4) Active live in_progress GitHub-hosted Windows runner passes and captures runner_identity
@@ -2245,7 +2281,6 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
         github_run_id="999999",
         token_env_var="GH_TOKEN",
         independent_vm_evidence=None,
-        expect_vm_evidence_sha256=None,
     )
     assert tier == "github_hosted_windows_runner"
     assert ident is not None
@@ -2253,54 +2288,153 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
     assert ident["runner_name"] == "Hosted Agent"
     assert ident["runner_labels"] == ["windows-latest"]
 
-    # 5) Independent Windows VM evidence rejects wrong digest and local git dev tree, passes on clean workspace
+    # 5) F-07: Independent Windows VM rejects self-declared JSON, missing witness secret,
+    # bad signature, and live dev tools; passes only with external HMAC witness + clean live host probe
+    import hmac as _hmac
+    import socket as _socket
+
+    installer_sha = "1" * 64
+    sidecar_sha = "2" * 64
+    live_host = _socket.gethostname()
     vm_json = tmp_path / "vm_evidence.json"
     vm_json.write_text(
         json.dumps(
             {
                 "environment_tier": "independent_windows_vm",
                 "source_commit": commit,
+                "installer_sha256": installer_sha,
+                "sidecar_sha256": sidecar_sha,
                 "vm_provenance_ref": "hyperv-clean-win11-v1",
-                "vm_name": "win11-sandbox",
                 "python_absent": True,
-                "rust_absent": True,
                 "git_absent": True,
-                "node_absent": True,
-                "companion_bundle_absent": True,
             }
         ),
         encoding="utf-8",
     )
-    vm_sha = _sha256_path(vm_json)
-    with pytest.raises(RuntimeError, match="SHA-256 verification failed"):
+    # 5a) Self-declared JSON without external cryptographic witness fails closed
+    with pytest.raises(RuntimeError, match="trusted_authority_id"):
         vca._resolve_clean_machine_provenance(
             clean_machine_e2e=True,
             standalone_embedded=True,
             pass_repo_root_env=False,
-            source_tree_clean=True,
+            source_tree_clean=None,
             source_commit=commit,
             resolved_root=tmp_path,
             github_repo=None,
             github_run_id=None,
             token_env_var=None,
             independent_vm_evidence=vm_json,
-            expect_vm_evidence_sha256="0" * 64,
+            installer_sha256=installer_sha,
+            sidecar_sha256=sidecar_sha,
         )
 
+    issued_at = "2026-11-16T14:30:00Z"
+    canonical = vca._canonical_vm_witness_payload(
+        source_commit=commit,
+        installer_sha256=installer_sha,
+        sidecar_sha256=sidecar_sha,
+        vm_provenance_ref="hyperv-clean-win11-v1",
+        observed_hostname=live_host,
+        issued_at_utc=issued_at,
+        trusted_authority_id="ci-vm-witness-authority",
+    )
+    good_secret = "external-verifier-hmac-key-01"
+    good_sig = _hmac.new(good_secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+
+    vm_json.write_text(
+        json.dumps(
+            {
+                "environment_tier": "independent_windows_vm",
+                "source_commit": commit,
+                "installer_sha256": installer_sha,
+                "sidecar_sha256": sidecar_sha,
+                "vm_provenance_ref": "hyperv-clean-win11-v1",
+                "vm_name": "win11-sandbox",
+                "observed_hostname": live_host,
+                "trusted_authority_id": "ci-vm-witness-authority",
+                "issued_at_utc": issued_at,
+                "signature_algorithm": "hmac-sha256-external-witness",
+                "witness_signature_hex": good_sig,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # 5b) Missing external secret env var fails closed
+    monkeypatch.delenv("NETFLOW_VM_ATTESTATION_HMAC_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="NOT VERIFIED"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=None,
+            source_commit=commit,
+            resolved_root=tmp_path,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=vm_json,
+            installer_sha256=installer_sha,
+            sidecar_sha256=sidecar_sha,
+        )
+
+    # 5c) Live host probe finding developer toolchain (git/cargo/node) fails closed even with valid signature
+    monkeypatch.setenv("NETFLOW_VM_ATTESTATION_HMAC_KEY", good_secret)
+    monkeypatch.setattr(
+        vca.shutil, "which", lambda tool: f"/usr/bin/{tool}" if tool == "git" else None
+    )
+    with pytest.raises(RuntimeError, match="Live host probe detected"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=None,
+            source_commit=commit,
+            resolved_root=tmp_path,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=vm_json,
+            installer_sha256=installer_sha,
+            sidecar_sha256=sidecar_sha,
+        )
+
+    # 5d) Clean live host probe + wrong secret fails closed; right secret passes
+    monkeypatch.setattr(vca.shutil, "which", lambda _tool: None)
+    monkeypatch.setenv("NETFLOW_VM_ATTESTATION_HMAC_KEY", "wrong-secret")
+    with pytest.raises(RuntimeError, match="cryptographic signature verification failed"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=None,
+            source_commit=commit,
+            resolved_root=tmp_path,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=vm_json,
+            installer_sha256=installer_sha,
+            sidecar_sha256=sidecar_sha,
+        )
+
+    monkeypatch.setenv("NETFLOW_VM_ATTESTATION_HMAC_KEY", good_secret)
     vm_tier, vm_ident = vca._resolve_clean_machine_provenance(
         clean_machine_e2e=True,
         standalone_embedded=True,
         pass_repo_root_env=False,
-        source_tree_clean=True,
+        source_tree_clean=None,
         source_commit=commit,
         resolved_root=tmp_path,
         github_repo=None,
         github_run_id=None,
         token_env_var=None,
         independent_vm_evidence=vm_json,
-        expect_vm_evidence_sha256=vm_sha,
+        installer_sha256=installer_sha,
+        sidecar_sha256=sidecar_sha,
     )
     assert vm_tier == "independent_windows_vm"
     assert vm_ident is not None
-    assert vm_ident["vm_provenance_ref"] == "hyperv-clean-win11-v1"
-    assert vm_ident["vm_evidence_sha256"] == vm_sha
+    assert vm_ident["provenance_source"] == "independent_vm_signed_witness"
+    assert vm_ident["signature_verified"] is True
+    assert vm_ident["live_host_probe"]["dev_tools_absent"] is True

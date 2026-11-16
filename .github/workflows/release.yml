@@ -477,8 +477,6 @@ jobs:
             --require-standalone-embedded `
             --require-clean-machine-e2e `
             --verify-github-run `
-            --token-env GH_TOKEN `
-            --verify-github-run `
             --token-env GH_TOKEN
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Generated HEAD-bound standalone release E2E attestation failed strict verification."
