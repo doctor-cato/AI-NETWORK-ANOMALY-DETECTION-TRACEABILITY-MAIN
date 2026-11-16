@@ -105,10 +105,10 @@ def _utc_now_iso() -> str:
 
 
 def _is_sensitive_system_path(resolved: Path) -> bool:
-    norm = str(resolved).replace("/", os.sep).lower()
+    norm = str(resolved).replace("\\", "/").lower()
     for prefix in _SENSITIVE_SYSTEM_PREFIXES:
-        pref_norm = prefix.replace("/", os.sep).lower()
-        if norm == pref_norm or norm.startswith(pref_norm + os.sep):
+        pref_norm = prefix.replace("\\", "/").lower()
+        if norm == pref_norm or norm.startswith(pref_norm + "/"):
             return True
     return False
 

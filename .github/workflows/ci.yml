@@ -97,7 +97,7 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install Python backend dependencies
         run: |
-          pip install fastapi uvicorn pydantic httpx pandas numpy scikit-learn joblib
+          pip install -r requirements-runtime.txt
           pip install --no-deps -e .
       - name: Verify desktop version consistency
         run: python scripts/check_desktop_version.py --check

@@ -2123,10 +2123,17 @@ def test_session_token_middleware_enforces_header_when_configured(
 
 
 def test_sensitive_system_path_blocks_program_files_x86_and_programdata():
+    from pathlib import PurePosixPath, PureWindowsPath
+
     from network_anomaly.api.desktop_csv import _is_sensitive_system_path
 
     assert _is_sensitive_system_path(Path(r"C:\Program Files (x86)\Evil\test.csv")) is True
     assert _is_sensitive_system_path(Path(r"C:\ProgramData\Evil\test.csv")) is True
+    assert (
+        _is_sensitive_system_path(PureWindowsPath(r"C:\Program Files (x86)\Evil\test.csv")) is True
+    )
+    assert _is_sensitive_system_path(PurePosixPath(r"C:\Program Files (x86)\Evil\test.csv")) is True
+    assert _is_sensitive_system_path(PurePosixPath("/etc/passwd")) is True
     assert (
         _is_sensitive_system_path(Path(r"C:\Users\Alice\AppData\Local\NetFlowSentinelM6\demo.csv"))
         is False
