@@ -1,24 +1,24 @@
 ---
-title: Windows desktop & release
-description: Tauri 2 + Svelte 5 desktop installer, Python 3.12+ runtime and Companion Bundle setup.
+title: Desktop Windows & Phát hành
+description: Bộ cài Tauri 2 + Svelte 5, Python 3.12+ runtime và nạp Companion Bundle.
 order: 13
 ---
 
-## Packaging architecture (v0.6.0)
+## Kiến trúc đóng gói (v0.6.0)
 
-The Windows x64 NSIS installer (`NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`) bundles the **Svelte 5** frontend, **Rust / Tauri 2** host, **Python backend source** (`src/network_anomaly/`, `scripts/run_api.py`, `requirements-runtime.txt`) and tracked **SHA-256 manifests** (`reports/`). Users do not need `git clone` or `NETWORK_ANOMALY_REPO_ROOT`. User state (`.venv`, model `.joblib` files, `data/demo/`, `network_anomaly.db`) lives under `%LOCALAPPDATA%\NetFlowSentinelM6` for standard-user compatibility.
+Bộ cài đặt Windows x64 NSIS (`NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`) đóng gói giao diện **Svelte 5**, nhân điều phối **Rust / Tauri 2**, mã nguồn **Python backend** (`src/network_anomaly/`, `scripts/run_api.py`, `requirements-runtime.txt`) và các **manifest SHA-256** (`reports/`). Người dùng không cần `git clone` hay khai báo `NETWORK_ANOMALY_REPO_ROOT`. Dữ liệu người dùng (`.venv`, `.joblib`, `data/demo/`, `network_anomaly.db`) được lưu tại `%LOCALAPPDATA%\NetFlowSentinelM6` (chạy được với tài khoản Standard User).
 
-Because `NF-UNSW-NB15-v3` carries non-commercial reuse terms and `.joblib` binaries stay outside Git, target Windows machines require:
+Do `NF-UNSW-NB15-v3` có điều khoản phi thương mại và tệp `.joblib` không lưu trong Git, máy Windows đích cần:
 
-- **Windows 10/11 (x64)** with **Microsoft Edge WebView2 Runtime**.
-- **Python `>= 3.12` (x64)** for `requirements-runtime.txt` compatibility.
-- **Companion Bundle ZIP** (4 models + preprocessor + 200-row Validation demo CSVs), verified fail-closed via `COMPANION_SHA256SUMS.txt` and tracked manifests.
+- **Windows 10/11 (x64)** kèm **Microsoft Edge WebView2 Runtime**.
+- **Python `>= 3.12` (x64)** phù hợp `requirements-runtime.txt`.
+- **Gói Companion Bundle ZIP** (4 mô hình + preprocessor + 200 dòng demo Validation), được kiểm chứng SHA-256 fail-closed với `COMPANION_SHA256SUMS.txt` và tracked manifests.
 
-## Verification & release attestation
+## Kiểm chứng & attestation phát hành
 
 ```powershell
 python scripts/check_desktop_version.py --check --expect-version 0.6.0
 python scripts/verify_companion_artifacts.py --verify-attestation .\release_e2e_verification.json --expect-installer-sha256 <SHA256> --require-nsis-e2e --require-demo-files
 ```
 
-See the [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md), [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md), [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md) and [E2E verification record](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+Xem chi tiết [hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md), [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md), [ghi chú v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md) và [biên bản E2E](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).

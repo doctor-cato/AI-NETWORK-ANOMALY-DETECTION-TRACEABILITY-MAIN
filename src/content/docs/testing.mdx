@@ -1,10 +1,10 @@
 ---
-title: Testing
-description: Automated checks, companion E2E verification and how to read skipped real-data steps.
+title: Kiểm thử & xác minh E2E
+description: Kiểm thử tự động, xác minh Companion E2E và cách đọc trạng thái SKIPPED.
 order: 7
 ---
 
-## Automated behavior checks
+## Kiểm thử hành vi tự động
 
 ```powershell
 python scripts/check_environment.py
@@ -13,10 +13,10 @@ python scripts/export_openapi_spec.py --check
 python scripts/check_desktop_version.py --check
 ```
 
-The Python CI workflow runs on Windows and Ubuntu (Python 3.11 and 3.12) and checks imports, syntax, unit, API and integration behavior. It does not download the restricted raw dataset in CI. Synthetic tests verify code behavior, not model performance on NF-UNSW-NB15-v3.
+Workflow CI Python chạy trên Windows và Ubuntu (Python 3.11 và 3.12), kiểm tra import, cú pháp, unit, API và integration tests. CI không tự tải dataset có điều khoản hạn chế; các test tổng hợp kiểm chứng logic phần mềm chứ không thay thế hiệu năng thật trên NF-UNSW-NB15-v3.
 
-## Companion E2E & research verification
+## Xác minh Companion E2E & nghiên cứu
 
-A stable release requires running `python scripts/verify_companion_artifacts.py --verify-e2e` on a host with the four verified `.joblib` binaries and `data/demo/` slice present. A `SKIPPED` dataset step, even with exit code 0, must stay `SKIPPED` in any report.
+Một bản phát hành Stable bắt buộc chạy `python scripts/verify_companion_artifacts.py --verify-e2e` trên môi trường có đủ 4 tệp `.joblib` và bộ `data/demo/`. Một bước dữ liệu báo `SKIPPED`, dù mã thoát bằng 0, vẫn phải ghi nhận là `SKIPPED` trong mọi báo cáo.
 
-See the [testing guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/.github/workflows/ci.yml) and [v0.6.0 E2E attestation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+Xem [hướng dẫn kiểm thử](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/.github/workflows/ci.yml) và [biên bản E2E v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).

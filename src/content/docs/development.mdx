@@ -1,14 +1,14 @@
 ---
-title: Development environment
-description: Repository layout, local checks and the separation of website and research code.
+title: Môi trường phát triển
+description: Cấu trúc thư mục repository, kiểm tra nhanh và ranh giới giữa website với mã nguồn ML.
 order: 3
 ---
 
-## Repository boundaries
+## Ranh giới thư mục trong repository
 
-On `main`, `src/network_anomaly/` holds research, ingestion, inference and FastAPI code; `desktop/` holds the Rust Tauri 2 + Svelte 5 desktop application (`v0.6.0`); `scripts/` holds CLI entry points; `data/` holds manifests and ignored dataset/demo CSV locations; `reports/` holds versioned quality, evaluation, OpenAPI and E2E evidence; and `artifacts/` stores local `.joblib` binaries excluded from Git. This portal lives on the dedicated `site-source` branch and builds to static HTML.
+Trên `main`, `src/network_anomaly/` chứa mã nghiên cứu, ingestion, inference và FastAPI; `desktop/` chứa ứng dụng desktop Rust Tauri 2 + Svelte 5 (`v0.6.0`); `scripts/` chứa các điểm vào CLI; `data/` chứa manifest và đường dẫn dataset/demo CSV bị Git bỏ qua; `reports/` lưu bằng chứng chất lượng, đánh giá, OpenAPI và kiểm thử E2E; `artifacts/` lưu file nhị phân `.joblib` cục bộ ngoài Git. Cổng thông tin này nằm riêng trên nhánh `site-source` và build thành HTML tĩnh.
 
-## Basic checks
+## Kiểm tra cơ bản
 
 ```powershell
 python scripts/check_environment.py
@@ -19,4 +19,4 @@ python -m black --check .
 git diff --check
 ```
 
-These checks do not stand in for real-data evaluation. CI runs tests with synthetic fixtures; dataset-dependent and companion-artifact steps report `SKIPPED` when raw bytes or `.joblib` files are absent. See [testing guidance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md) and [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md).
+Các lệnh trên dùng để kiểm tra mã nguồn, không thay thế cho đánh giá trên dữ liệu thật. CI chạy pytest bằng fixture tổng hợp; các bước phụ thuộc dữ liệu thật hoặc companion `.joblib` sẽ báo `SKIPPED` khi thiếu tệp. Xem thêm [hướng dẫn kiểm thử](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md) và [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md).

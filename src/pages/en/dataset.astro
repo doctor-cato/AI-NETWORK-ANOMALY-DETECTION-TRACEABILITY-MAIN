@@ -1,0 +1,17 @@
+---
+import DatasetView from "../../components/views/DatasetView.astro";
+
+const categories: [string, string][] = [
+  ["Exploits", "42,748"],
+  ["Fuzzers", "33,816"],
+  ["Generic", "19,651"],
+  ["Reconnaissance", "17,074"],
+  ["DoS", "5,980"],
+  ["Backdoor", "4,659"],
+  ["Shellcode", "2,381"],
+  ["Analysis", "1,226"],
+  ["Worms", "158"],
+];
+---
+
+<DatasetView lang="en" categories={categories} />

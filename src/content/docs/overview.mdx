@@ -1,23 +1,23 @@
 ---
-title: Project overview
-description: Research scope, current v0.6.0 capabilities and where to start.
+title: Tổng quan dự án
+description: Phạm vi nghiên cứu, năng lực v0.6.0 hiện tại và điểm bắt đầu.
 order: 1
 ---
 
-## Purpose
+## Mục tiêu
 
-This repository studies network-flow anomaly detection and an evidence-linked traceability architecture. The public website is a static research portal. It does not run a detector or monitor traffic.
+Repository này nghiên cứu bài toán phát hiện bất thường trên lưu lượng mạng (NetFlow) gắn với kiến trúc truy vết có bằng chứng. Cổng thông tin công khai này là website tài liệu tĩnh; nó không chạy mô hình phát hiện hay giám sát lưu lượng trực tiếp.
 
-The current `main` branch contains the NF-UNSW-NB15-v3 data contract, quality and EDA records, chronological split and train-only preprocessing code, **real-data Validation and Held-out Test evidence for all four models** (Random Forest, XGBoost, Isolation Forest and Autoencoder), a cross-dataset audit on `NF-CSE-CIC-IDS2018-v3`, an OOD abstention and provenance gate, a localhost FastAPI + SQLite service, and the **Rust / Tauri 2 + Svelte 5 desktop prototype (`v0.6.0`)**. Live OS firewall actions and production AES-256-GCM OS keyring storage remain deferred.
+Nhánh `main` hiện tại bao gồm hợp đồng dữ liệu NF-UNSW-NB15-v3, báo cáo chất lượng và EDA, mã chia tập theo thời gian và tiền xử lý chỉ trên Train, **bằng chứng Validation và Held-out Test trên dữ liệu thật cho cả bốn mô hình** (Random Forest, XGBoost, Isolation Forest và Autoencoder), kiểm toán tổng quát hóa cross-dataset trên `NF-CSE-CIC-IDS2018-v3`, cổng kiểm chứng provenance và từ chối OOD, dịch vụ FastAPI + SQLite chạy cục bộ và **ứng dụng Desktop Rust / Tauri 2 + Svelte 5 (`v0.6.0`)**. Các thao tác chặn firewall thật trên hệ điều hành và lưu khóa AES-256-GCM trong OS keyring vẫn ở trạng thái hoãn (`DEFERRED`).
 
-## Start here
+## Điểm bắt đầu
 
-- [README and current project summary](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md)
-- [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md)
-- [Project charter](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/PROJECT_CHARTER.md)
-- [Implementation checkpoints](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/IMPLEMENTATION_CHECKPOINTS.md)
-- [Traceability matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TRACEABILITY_MATRIX.md)
+- [README và tóm tắt dự án hiện tại](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md)
+- [Ghi chú phát hành v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md)
+- [Tài liệu phạm vi đề tài (Project charter)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/PROJECT_CHARTER.md)
+- [Sổ checkpoint triển khai](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/IMPLEMENTATION_CHECKPOINTS.md)
+- [Ma trận truy vết (Traceability matrix)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TRACEABILITY_MATRIX.md)
 
-## Evidence levels
+## Quy ước mức độ bằng chứng
 
-**Implemented** means code exists on `main`; **Tested** means behavior has an automated check; **Experimentally validated** requires a real-data run with provenance and metrics; **Deferred** means an operational capability (such as live firewall automation or OS keyring rotation) is intentionally excluded from runtime execution. A synthetic fixture or a closed Issue alone does not establish experimental validation.
+**Implemented** nghĩa là mã nguồn đã có trên `main`; **Tested** nghĩa là hành vi đã có kiểm thử tự động; **Experimentally validated** yêu cầu lượt chạy trên dữ liệu thật có provenance và metric đầy đủ; **Deferred** nghĩa là tính năng vận hành (như tự động hóa firewall hay xoay khóa OS keyring) chủ đích không thực thi ở runtime. Một fixture tổng hợp hay Issue đã đóng không tự chứng minh mức xác thực thực nghiệm.

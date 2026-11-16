@@ -1,20 +1,20 @@
 ---
-title: Data validation
-description: Schema, labels, quality findings, compatibility tiers and OOD audit status.
+title: Kiểm định dữ liệu
+description: Lược đồ 55 cột, nhãn, phát hiện chất lượng, tầng tương thích và trạng thái kiểm toán OOD.
 order: 5
 ---
 
-## Contract
+## Hợp đồng dữ liệu (Schema)
 
-The verified file has 55 columns: 47 baseline ML features, six trace metadata fields (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`), `Label` and `Attack`. The [schema document](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) lists the exact ordered fields and observed class counts.
+Tệp CSV đã xác minh gồm 55 cột: 47 đặc trưng ML baseline, 6 trường metadata truy vết (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`), `Label` và `Attack`. [Tài liệu schema](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) liệt kê đúng thứ tự trường và phân bố lớp thực tế.
 
-## Run the checks
+## Chạy kiểm định chất lượng và EDA
 
 ```powershell
 python scripts/validate_data.py
 python scripts/eda_nf_unsw_nb15_v3.py
 ```
 
-The [quality report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/data_quality/nf_unsw_nb15_v3_validation.json) records 122,493 rows with missing or `+Inf` rate tokens, 14,815 exact duplicates and 1,134,553 repeated 47-feature vectors. Source integrity, raw quality and ML readiness are separate states. If the raw package is absent, `validate_data.py` can exit 0 while reporting `SKIPPED`; that is not a real-data PASS.
+[Báo cáo chất lượng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/data_quality/nf_unsw_nb15_v3_validation.json) ghi nhận 122.493 dòng có giá trị thiếu hoặc `+Inf`, 14.815 dòng trùng hệt và 1.134.553 dòng lặp vector 47 đặc trưng. Tính toàn vẹn nguồn, chất lượng dữ liệu thô và trạng thái sẵn sàng ML là ba trạng thái độc lập. Nếu thiếu CSV gốc, `validate_data.py` có thể thoát với mã 0 và ghi `SKIPPED` — không phải kết quả PASS trên dữ liệu thật.
 
-At inference time, [multi-source ingestion](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) and the [feature compatibility matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md) enforce 4-tier validation and `ABSTAINED_OOD` abstention for `MIN_TTL == 0` or network-invariant violations.
+Ở pha suy luận, [kiến trúc tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) và [ma trận tương thích đặc trưng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md) áp dụng kiểm tra 4 tầng và từ chối `ABSTAINED_OOD` cho dòng `MIN_TTL == 0` hoặc vi phạm bất biến mạng.

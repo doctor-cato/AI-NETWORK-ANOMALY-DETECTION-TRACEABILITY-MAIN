@@ -1,0 +1,498 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import { source, type Lang } from "../../lib/links";
+
+interface Props {
+  lang?: Lang;
+  categories: [string, string][];
+}
+const { lang = "vi", categories } = Astro.props;
+const isVi = lang === "vi";
+---
+
+<Layout
+  title={isVi ? "Bộ dữ liệu" : "Dataset"}
+  description={isVi
+    ? "Nguồn gốc NF-UNSW-NB15-v3, lược đồ 55 cột, phân bố lớp, chất lượng và tiền xử lý."
+    : "NF-UNSW-NB15-v3 provenance, schema, distribution, quality and preprocessing."}
+  section="Dataset"
+  lang={lang}
+  routePath="dataset/"
+>
+  <PageIntro
+    eyebrow={isVi ? "02 / Nguồn dữ liệu" : "02 / Data provenance"}
+    current={isVi ? "Bộ dữ liệu" : "Dataset"}
+    title={isVi
+      ? "NF-UNSW-NB15-v3, kiểm tra từ byte gốc."
+      : "NF-UNSW-NB15-v3, examined at the source."}
+    description={isVi
+      ? "Bộ dữ liệu là nguồn bằng chứng benchmark, không phải luồng mạng vận hành trực tiếp. Repository ghi nhận nhà xuất bản, checksum, schema gốc, các vấn đề chất lượng và điều kiện sử dụng."
+      : "The dataset is an evidence source, not an operational traffic feed. The repository records the publisher, checksums, raw schema, observed quality issues and the conditions for model use."}
+    lang={lang}
+  />
+  <section class="section">
+    <div class="container">
+      <div class="facts">
+        <div>
+          <small>{isVi ? "Nhà xuất bản" : "Publisher"}</small><strong
+            >University of Queensland</strong
+          >
+        </div><div>
+          <small>{isVi ? "Định danh ổn định" : "Stable record"}</small><strong
+            ><a href="https://doi.org/10.48610/6E0EDA1"
+              >DOI 10.48610/6E0EDA1 ↗</a
+            ></strong
+          >
+        </div><div>
+          <small>{isVi ? "CSV đã xác minh" : "Verified CSV"}</small><strong
+            >{
+              isVi ? "2,365,424 dòng · 55 cột" : "2,365,424 rows · 55 columns"
+            }</strong
+          >
+        </div><div>
+          <small>{isVi ? "Giấy phép" : "License"}</small><strong
+            >{isVi ? "Hạn chế thương mại" : "Commercial use restricted"}</strong
+          >
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section rule">
+    <div class="container two-column">
+      <div>
+        <span class="eyebrow">{isVi ? "Phân bố lớp" : "Population"}</span><h2>
+          {
+            isVi
+              ? "Tập dữ liệu flow mất cân bằng mạnh."
+              : "A heavily imbalanced flow record."
+          }
+        </h2><p class="lede">
+          {
+            isVi
+              ? "Tệp CSV đã xác minh gồm 2,237,731 flow Benign và 127,693 flow Attack. Đây là số đếm trong gói dữ liệu này, không phải tỷ lệ lưu lượng mạng thực tế."
+              : "The verified CSV contains 2,237,731 benign flows and 127,693 attack flows. These are counts in this package, not estimates of real-world traffic prevalence."
+          }
+        </p><div
+          class="distribution"
+          role="img"
+          aria-label={isVi
+            ? "Phân bố dữ liệu: 94.6 phần trăm Benign và 5.4 phần trăm Attack"
+            : "Dataset distribution: 94.6 percent benign and 5.4 percent attack"}
+        >
+          <span style="width:94.6%"></span><span style="width:5.4%"></span>
+        </div><div class="legend">
+          <span>● Benign · 2,237,731</span><span>● Attack · 127,693</span>
+        </div><p class="note">
+          {
+            isVi
+              ? "Trang giới thiệu của nhà xuất bản ghi tổng Attack lệch 54 dòng so với CSV thực tế. Cổng thông tin này bám sát byte tệp đã kiểm tra. "
+              : "The publisher landing-page attack total differs by 54 rows from the verified CSV. This portal follows the checked file bytes. "
+          }<a href={source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md")}
+            >{isVi ? "Đọc ghi nhận sai khác ↗" : "Read discrepancy record ↗"}</a
+          >
+        </p>
+      </div><div class="surface category-panel">
+        <h3>{isVi ? "Chín họ tấn công (Attack)" : "Attack categories"}</h3><div
+          class="table-wrap"
+        >
+          <table class="data-table">
+            <caption class="sr-only"
+              >{
+                isVi
+                  ? "Số lượng dòng theo từng họ tấn công trong CSV đã xác minh"
+                  : "Attack category counts in verified CSV"
+              }</caption
+            ><thead
+              ><tr
+                ><th scope="col">{isVi ? "Họ tấn công" : "Category"}</th><th
+                  scope="col">{isVi ? "Số dòng" : "Rows"}</th
+                ></tr
+              ></thead
+            ><tbody
+              >{
+                categories.map(([name, count]) => (
+                  <tr>
+                    <>
+                      <th scope="row">{name}</th>
+                      <td>{count}</td>
+                    </>
+                  </tr>
+                ))
+              }</tbody
+            >
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="container">
+      <span class="eyebrow">{isVi ? "Hợp đồng dữ liệu" : "Data contract"}</span
+      ><h2>
+        {
+          isVi
+            ? "55 cột gốc, tách thành ba vai trò."
+            : "55 raw columns, three distinct roles."
+        }
+      </h2><div class="schema-grid">
+        <div class="surface">
+          <span class="schema-num">47</span><h3>
+            {isVi ? "Đặc trưng mô hình" : "Model features"}
+          </h3><p>
+            {
+              isVi
+                ? "Các thuộc tính NetFlow theo thứ tự cố định như protocol, số byte/gói, thời lượng, TTL và thống kê flow. Trường phân loại mã hóa số được tách riêng với trường định lượng."
+                : "Ordered NetFlow attributes such as protocol, byte and packet counts, timing, TTL and flow statistics. Numeric-coded categories remain distinct from quantitative fields."
+            }
+          </p>
+        </div><div class="surface">
+          <span class="schema-num">06</span><h3>
+            {isVi ? "Metadata truy vết" : "Trace metadata"}
+          </h3><p>
+            {
+              isVi
+                ? "Timestamp đầu/cuối, địa chỉ IPv4 nguồn/đích và cả hai cổng L4 được giữ cho phân nhóm và ngữ cảnh truy vết, nhưng bị loại khỏi ma trận baseline "
+                : "Start/end timestamps, source/destination IPv4 addresses and both L4 ports are retained for grouping and trace context, but excluded from baseline "
+            }<code>X</code>.
+          </p>
+        </div><div class="surface">
+          <span class="schema-num">02</span><h3>
+            {isVi ? "Nhãn mục tiêu" : "Targets"}
+          </h3><p>
+            <code>Label</code>{" "}
+            {
+              isVi
+                ? "là nhãn nhị phân (0 Benign, 1 Attack); "
+                : "is binary (0 benign, 1 attack); "
+            }<code>Attack</code>{" "}
+            {
+              isVi
+                ? "chứa Benign hoặc 1 trong 9 họ tấn công. Cả hai bị loại khỏi đầu vào mô hình."
+                : "contains Benign or one of nine attack categories. Both are excluded from input features."
+            }
+          </p>
+        </div>
+      </div><p class="source-line">
+        {
+          isVi
+            ? "Baseline giữ nguyên thứ tự chuẩn 47 trường thống kê NetFlow v3; không sử dụng biến thể chọn lọc đặc trưng hay 49 trường gộp cổng."
+            : "The baseline retains the publisher's NetFlow v3 flow statistics in a fixed order. No additional selected-feature set or 49-feature port variant is presented as an evaluated model."
+        }
+      </p><p class="source-line">
+        {isVi ? "Nguồn: " : "Source: "}<a
+          href={source("docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md")}
+          >{isVi ? "schema đã xác minh ↗" : "verified schema ↗"}</a
+        > · <a href={source("src/network_anomaly/data/nf_unsw_nb15_v3.py")}
+          >{
+            isVi
+              ? "hợp đồng đặc trưng trong mã nguồn ↗"
+              : "executable feature contract ↗"
+          }</a
+        >
+      </p>
+    </div>
+  </section>
+  <section class="section rule tinted">
+    <div class="container two-column">
+      <div>
+        <span class="eyebrow"
+          >{isVi ? "Tải & kiểm định" : "Acquisition and quality"}</span
+        ><h2>
+          {
+            isVi
+              ? "Kiểm tra trước khi biến đổi."
+              : "Checked before transformation."
+          }
+        </h2><p>
+          {
+            isVi
+              ? "Script tải lấy URL tạm từ UQRDM, xác minh checksum archive/payload và giữ CSV lớn ngoài Git. Bộ kiểm định streaming kiểm tra số cột, schema, nhãn, token thiếu/vô hạn và dấu vân tay trùng lặp."
+              : "The fetch script obtains a short-lived URL from UQRDM, verifies archive and payload checksums, and keeps the large CSV outside Git. The streaming validator checks row width, schema, labels, missing and non-finite tokens, and duplicate fingerprints."
+          }
+        </p><div class="callout">
+          {
+            isVi
+              ? "Báo cáo chất lượng ghi nhận giá trị trống, +Inf, dòng trùng hệt và vector đặc trưng lặp. Kiểm tra toàn vẹn nguồn đạt chuẩn không đồng nghĩa dữ liệu thô đã sẵn sàng cho ML."
+              : "The raw quality record reports blank and positive-infinity rate values, exact duplicates and equivalent flow vectors. A successful source-integrity check is not a statement that raw data is directly ML-ready."
+          }
+        </div><p class="source-line">
+          <a href={source("scripts/fetch_nf_unsw_nb15_v3.py")}
+            >{isVi ? "Mã tải dữ liệu ↗" : "Acquisition code ↗"}</a
+          > · <a
+            href={source(
+              "reports/data_quality/nf_unsw_nb15_v3_validation.json",
+            )}>{isVi ? "Báo cáo chất lượng ↗" : "Quality report ↗"}</a
+          >
+        </p>
+      </div><div>
+        <span class="eyebrow"
+          >{isVi ? "Chia tập & tiền xử lý" : "Split and preprocessing"}</span
+        ><h2>{isVi ? "Chỉ fit trên tập Train." : "Fit only on Train."}</h2><ol
+          class="steps"
+        >
+          <li>
+            <strong>{isVi ? "Phân vùng" : "Partition"}</strong><span
+              >{
+                isVi
+                  ? "Chia Train / Validation / Test theo thời gian và nhóm luồng kèm purge gap."
+                  : "Chronological, group-aware Train / Validation / Test with purge gaps."
+              }</span
+            >
+          </li><li>
+            <strong>{isVi ? "Kiểm toán" : "Audit"}</strong><span
+              >{
+                isVi
+                  ? "Ghi nhận trùng lặp tuyệt đối và tương đương đặc trưng; nhãn và metadata nằm ngoài "
+                  : "Record exact and feature-equivalent vectors; targets and trace metadata stay outside "
+              }<code>X</code>.</span
+            >
+          </li><li>
+            <strong>{isVi ? "Biến đổi" : "Transform"}</strong><span
+              >{
+                isVi
+                  ? "Đưa giá trị thiếu/không hữu hạn về sentinel, điền median/mode học từ Train. Validation và Test chỉ áp dụng phép biến đổi đã đóng băng."
+                  : "Map missing/non-finite values to missing sentinels, then use train-derived medians or modes. Validation and Test receive frozen transforms."
+              }</span
+            >
+          </li><li>
+            <strong>{isVi ? "Đánh giá" : "Evaluate"}</strong><span
+              >{
+                isVi
+                  ? "Dùng Validation để phát triển/chọn ngưỡng và giữ Test cho bước báo cáo cuối."
+                  : "Use Validation for development and preserve Test for a separately reported final check."
+              }</span
+            >
+          </li>
+        </ol><p class="source-line">
+          <a href={source("reports/splits/nf_unsw_nb15_v3_split_manifest.json")}
+            >{isVi ? "Split manifest ↗" : "Split manifest ↗"}</a
+          > · <a href={source("docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md")}
+            >{isVi ? "Chính sách tiền xử lý ↗" : "Preprocessing policy ↗"}</a
+          >
+        </p>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="container two-column">
+      <div>
+        <span class="eyebrow"
+          >{isVi ? "Tái lập dữ liệu" : "Reproducibility"}</span
+        ><h2>
+          {isVi ? "Dùng đúng hồ sơ chính thức." : "Use the official record."}
+        </h2><p>
+          {
+            isVi
+              ? "Thực hiện đúng hướng dẫn tải và xác minh trong repository. Giá trị SHA-256 trong manifest do dự án tính từ byte chính thức, không phải checksum gốc do nhà xuất bản công bố."
+              : "Follow repository instructions to fetch and validate the package. The SHA-256 pins in the manifest were computed by the project from official bytes; they are not publisher-authored SHA-256 values."
+          }
+        </p><a class="button" href={source("docs/DATASET.md")}
+          >{isVi ? "Hướng dẫn bộ dữ liệu ↗" : "Dataset guide ↗"}</a
+        >
+      </div><div class="surface license-note">
+        <h3>
+          {
+            isVi
+              ? "Bản quyền, trích dẫn & kiểm định ngoại vi"
+              : "Attribution, licensing & external checks"
+          }
+        </h3><p>
+          {
+            isVi
+              ? "Bộ dữ liệu tuân theo điều khoản “Permitted Re-Use with Commercial Use Restriction” của UQ (trích dẫn đầy đủ, phi thương mại); giấy phép Apache-2.0 của mã nguồn không cấp lại quyền cho dữ liệu. Ngoài ra, một mẫu 100.000 dòng của "
+              : "The dataset is under UQ's “Permitted Re-Use with Commercial Use Restriction” terms, requiring full citation and non-commercial use. The repository's Apache-2.0 source license does not relicense the data. A separate 100,000-row sample of "
+          }<code>NF-CSE-CIC-IDS2018-v3</code>{" "}
+          {isVi ? "được ghi nhận trong " : "is also recorded in the "}<a
+            href={source("data/EXTERNAL_DATASETS_PROVENANCE.json")}
+            >{
+              isVi
+                ? "hồ sơ provenance ngoại vi ↗"
+                : "external provenance manifest ↗"
+            }</a
+          >{" "}
+          {
+            isVi
+              ? "để kiểm tra tổng quát hóa cross-dataset, và "
+              : "for cross-dataset generalization testing, and "
+          }<code>prepare_demo_dataset.py</code>{" "}
+          {
+            isVi
+              ? "tạo lát cắt demo 200 dòng chỉ từ Validation không chồng lấn Train/Test."
+              : "generates a 200-row Validation-only demo slice without leaking Train or Test rows."
+          }
+        </p><a href="https://doi.org/10.48610/6E0EDA1"
+          >{isVi ? "Hồ sơ nhà xuất bản ↗" : "Publisher record ↗"}</a
+        >
+      </div>
+    </div>
+  </section>
+</Layout>
+<style>
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .facts > div {
+    padding: 1rem;
+    border-right: 1px solid var(--line);
+  }
+  .facts > div:first-child {
+    padding-left: 0;
+  }
+  .facts > div:last-child {
+    border: 0;
+  }
+  .facts small,
+  .facts strong {
+    display: block;
+  }
+  .facts small {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.5rem;
+  }
+  .facts strong {
+    font-size: 0.92rem;
+  }
+  .two-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+  }
+  .two-column h2 {
+    margin: 0.7rem 0 1rem;
+  }
+  .two-column p {
+    color: var(--muted);
+  }
+  .distribution {
+    display: flex;
+    height: 20px;
+    overflow: hidden;
+    border-radius: 2px;
+    margin: 2rem 0 0.6rem;
+  }
+  .distribution span:first-child {
+    background: var(--cyan);
+  }
+  .distribution span:last-child {
+    background: var(--violet);
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    font-size: 0.76rem;
+  }
+  .legend span:first-child {
+    color: var(--cyan);
+  }
+  .legend span:last-child {
+    color: var(--violet);
+  }
+  .note {
+    font-size: 0.84rem;
+    margin-top: 2rem;
+  }
+  .note a,
+  .source-line a,
+  .license-note a {
+    color: var(--cyan);
+  }
+  .category-panel {
+    padding: 1.5rem;
+  }
+  .category-panel h3 {
+    margin: 0 0 1rem;
+  }
+  .category-panel .data-table {
+    min-width: 0;
+  }
+  .category-panel td {
+    text-align: right;
+  }
+  .schema-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin: 2rem 0;
+  }
+  .schema-grid > div {
+    padding: 1.5rem;
+  }
+  .schema-num {
+    font-size: 2.1rem;
+    font-weight: 800;
+    color: var(--cyan);
+    letter-spacing: -0.05em;
+  }
+  .schema-grid h3 {
+    margin: 0.8rem 0;
+  }
+  .schema-grid p {
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+  .source-line {
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+  .tinted {
+    background: var(--surface);
+  }
+  .steps {
+    list-style: none;
+    margin: 1.5rem 0;
+    padding: 0;
+  }
+  .steps li {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 1rem;
+    border-top: 1px solid var(--line);
+    padding: 1rem 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .steps strong {
+    color: var(--cyan);
+  }
+  .license-note {
+    padding: 1.5rem;
+    align-self: start;
+  }
+  .license-note h3 {
+    margin-top: 0;
+  }
+  .license-note p {
+    color: var(--muted);
+  }
+  @media (max-width: 800px) {
+    .facts,
+    .schema-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .two-column {
+      grid-template-columns: 1fr;
+      gap: 3rem;
+    }
+  }
+  @media (max-width: 550px) {
+    .facts,
+    .schema-grid {
+      grid-template-columns: 1fr;
+    }
+    .facts > div {
+      padding: 1rem 0;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .facts > div:last-child {
+      border: 0;
+    }
+  }
+</style>

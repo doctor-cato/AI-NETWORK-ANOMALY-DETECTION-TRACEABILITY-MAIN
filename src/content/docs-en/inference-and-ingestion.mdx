@@ -1,0 +1,23 @@
+---
+title: Inference & ingestion gate
+description: 47-feature CSV inference, source provenance verification and OOD abstention.
+order: 14
+---
+
+## Fail-closed inference pipeline
+
+`scripts/predict.py` and `InferencePipeline` enforce the canonical 47-feature contract (`nf-unsw-nb15-v3-baseline-47`), strip `Label`, `Attack` and six trace metadata columns before transformation, verify SHA-256 digests on both `TrainOnlyPreprocessor` and the target model `.joblib`, and write `.csv` + `.metadata.json` provenance records. Missing or mismatched binaries halt fail-closed as `BLOCKED / NOT READY`.
+
+```powershell
+$env:PYTHONPATH = "src"
+python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest --output data/demo/demo_predictions.csv --metadata-output data/demo/demo_predictions_meta.json
+```
+
+## Provenance & OOD abstention
+
+Before ML scoring, `src/network_anomaly/ingestion/` and `desktop_csv.py` classify input CSVs across four compatibility tiers (`PARSEABLE`, `SCHEMA_COMPATIBLE`, `SEMANTICALLY_COMPATIBLE`, `MODEL_VALIDATED`):
+
+- Only verified canonical or allowlisted Validation demo CSVs receive `source:nf-v3-canonical` (`MODEL_VALIDATED`). Unverified external CSVs fail closed to `source:nf-v3-unverified` (`VALIDATION_NOT_VERIFIED`).
+- Flows violating network invariants or showing `MIN_TTL == 0` are marked `ABSTAINED_OOD` (`predicted_label = null`, `risk_level = "ABSTAINED_OOD"`) prior to calling the ML model and are excluded from confusion matrices.
+
+See the [inference pipeline guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/INFERENCE_PIPELINE.md), [multi-source ingestion](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) and [feature compatibility matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md).

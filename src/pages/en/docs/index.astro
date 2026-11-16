@@ -1,0 +1,8 @@
+---
+import { getCollection } from "astro:content";
+import DocsIndexView from "../../../components/views/DocsIndexView.astro";
+
+const docs = await getCollection("docsEn");
+---
+
+<DocsIndexView lang="en" docs={docs} />

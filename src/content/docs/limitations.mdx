@@ -1,17 +1,17 @@
 ---
-title: Limitations
-description: Known scientific, cross-dataset, packaging and security boundaries.
+title: Giới hạn nghiên cứu
+description: Các giới hạn khoa học, suy giảm cross-dataset, đóng gói Windows và bảo mật.
 order: 11
 ---
 
-## Benchmark validity & cross-dataset collapse
+## Tính hợp lệ benchmark & sụp đổ cross-dataset
 
-The verified package contains flows observed in early 2015 in a controlled IXIA PerfectStorm testbed. `49.98%` of Validation rows and `53.21%` of Test rows share identical 47-feature vectors with Train, and a single `MIN_TTL` tree reaches `0.999849` Validation accuracy. On a 100,000-row external sample of `NF-CSE-CIC-IDS2018-v3`, `99.99%` of rows exhibit TTL shortcut drift and canonical Random Forest drops to **`0.0000` Recall** and **`0.3802` FPR**. Meanwhile, under a strict `Val FPR <= 0.05` constraint, the Autoencoder achieves only `0.1361` Held-out Test F1 and `0.1093` Recall.
+Bộ dữ liệu đã xác minh được thu thập đầu năm 2015 trong môi trường testbed IXIA PerfectStorm. `49,98%` dòng Validation và `53,21%` dòng Test trùng nguyên vector 47 đặc trưng với Train, và cây chỉ dùng một đặc trưng `MIN_TTL` đạt Accuracy Validation `0,999849`. Trên mẫu ngoại vi 100.000 dòng `NF-CSE-CIC-IDS2018-v3`, `99,99%` dòng có trôi dạt TTL và Random Forest sụp đổ xuống **`0,0000` Recall** và **`0,3802` FPR**. Trong khi đó, dưới ràng buộc `Val FPR <= 0,05`, Autoencoder chỉ đạt Held-out Test `F1 = 0,1361` và `Recall = 0,1093`.
 
-## Packaging & external prerequisites (v0.6.0)
+## Đóng gói & điều kiện chạy Windows (v0.6.0)
 
-The static research portal does not run inference. On Windows, the `v0.6.0` NSIS installer bundles the Svelte 5 UI, Rust Tauri 2 host, Python backend source and tracked manifests, **not** an embedded Python interpreter or `.joblib` model binaries (due to dataset licensing and binary size). Target machines need Python `>= 3.12` (x64), WebView2 Runtime and the Companion Bundle (`BLOCKED / NOT READY` if missing).
+Cổng thông tin này chỉ là trang tĩnh. Trên Windows, bộ cài NSIS `v0.6.0` đóng gói giao diện Svelte 5, nhân Rust Tauri 2, mã nguồn Python backend và các manifest đã track, **chưa nhúng sẵn** trình thông dịch Python hay tệp nhị phân `.joblib` (do điều khoản dữ liệu và dung lượng). Máy đích cần Python `>= 3.12` (x64), WebView2 Runtime và nạp Companion Bundle (`BLOCKED / NOT READY` nếu thiếu).
 
-## Deferred operational capabilities
+## Tính năng hoãn (`DEFERRED`)
 
-Live packet capture (PCAP), authentication/API log correlation, live OS firewall automation and production AES-256-GCM OS keyring key rotation remain **DEFERRED**. Security response simulation (#27) runs strictly in deterministic dry-run mode (`executed = false`). See [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md).
+Bắt gói tin trực tiếp (PCAP), tương quan log xác thực/API ngoài NetFlow, tự động hóa tường lửa hệ điều hành và xoay vòng khóa AES-256-GCM trong OS keyring đều ở trạng thái **DEFERRED**. Mô phỏng phản ứng an ninh (#27) chỉ chạy ở chế độ Dry-Run tất định (`executed = false`). Xem [ghi chú phát hành v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md).

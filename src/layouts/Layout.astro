@@ -1,26 +1,62 @@
 ---
 import "../styles/global.css";
-import { evidenceCommit, href, repository } from "../lib/links";
+import { evidenceCommit, href, repository, type Lang } from "../lib/links";
 
 interface Props {
   title: string;
   description: string;
   section?: string;
+  lang?: Lang;
+  routePath?: string;
 }
-const { title, description, section } = Astro.props;
-const nav = [
-  ["Research", "research/"],
-  ["Dataset", "dataset/"],
-  ["Models", "models/"],
-  ["Results", "results/"],
-  ["Architecture", "architecture/"],
-  ["Docs", "docs/"],
-  ["Roadmap", "roadmap/"],
-];
+const {
+  title,
+  description,
+  section,
+  lang = "vi",
+  routePath = "",
+} = Astro.props;
+const isVi = lang === "vi";
+const nav = isVi
+  ? [
+      ["Nghiên cứu", "research/", "Research"],
+      ["Dữ liệu", "dataset/", "Dataset"],
+      ["Mô hình", "models/", "Models"],
+      ["Kết quả", "results/", "Results"],
+      ["Kiến trúc", "architecture/", "Architecture"],
+      ["Tài liệu", "docs/", "Docs"],
+      ["Lộ trình", "roadmap/", "Roadmap"],
+    ]
+  : [
+      ["Research", "research/", "Research"],
+      ["Dataset", "dataset/", "Dataset"],
+      ["Models", "models/", "Models"],
+      ["Results", "results/", "Results"],
+      ["Architecture", "architecture/", "Architecture"],
+      ["Docs", "docs/", "Docs"],
+      ["Roadmap", "roadmap/", "Roadmap"],
+    ];
+const copyLabels = isVi
+  ? {
+      copy: "Sao chép",
+      copied: "Đã chép",
+      unavailable: "Không khả dụng",
+      aria: "Sao chép khối mã",
+      switchDark: "Chuyển sang giao diện tối",
+      switchLight: "Chuyển sang giao diện sáng",
+    }
+  : {
+      copy: "Copy",
+      copied: "Copied",
+      unavailable: "Unavailable",
+      aria: "Copy code block",
+      switchDark: "Switch to dark theme",
+      switchLight: "Switch to light theme",
+    };
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -28,10 +64,22 @@ const nav = [
     <meta name="description" content={description} />
     <link rel="icon" type="image/svg+xml" href={href("favicon.svg")} />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <link
+      rel="alternate"
+      hreflang="vi"
+      href={new URL(href(routePath, "vi"), Astro.site)}
+    />
+    <link
+      rel="alternate"
+      hreflang="en"
+      href={new URL(href(routePath, "en"), Astro.site)}
+    />
     <title>
       {
-        title === "Home"
-          ? "Network Anomaly Detection & Traceability"
+        title === "Home" || title === "Trang chủ"
+          ? isVi
+            ? "Phát hiện Bất thường & Truy vết Mạng · Network Anomaly Detection"
+            : "Network Anomaly Detection & Traceability"
           : `${title} | Network Anomaly Detection`
       }
     </title>
@@ -42,22 +90,36 @@ const nav = [
       } catch {}
     </script>
   </head>
-  <body>
-    <a class="skip-link" href="#main">Skip to content</a>
+  <body
+    data-copy-label={copyLabels.copy}
+    data-copied-label={copyLabels.copied}
+    data-unavailable-label={copyLabels.unavailable}
+    data-copy-aria={copyLabels.aria}
+    data-switch-dark={copyLabels.switchDark}
+    data-switch-light={copyLabels.switchLight}
+  >
+    <a class="skip-link" href="#main"
+      >{isVi ? "Chuyển tới nội dung" : "Skip to content"}</a
+    >
     <header class="site-header">
       <div class="container header-inner">
-        <a class="brand" href={href()}>
+        <a class="brand" href={href("", lang)}>
           <span class="brand-mark" aria-hidden="true">N<span>∕</span>A</span>
           <span class="brand-name"
-            >NETWORK ANOMALY<br /><b>RESEARCH PORTAL</b></span
+            >NETWORK ANOMALY<br /><b
+              >{isVi ? "CỔNG NGHIÊN CỨU" : "RESEARCH PORTAL"}</b
+            ></span
           >
         </a>
-        <nav class="desktop-nav" aria-label="Primary navigation">
+        <nav
+          class="desktop-nav"
+          aria-label={isVi ? "Điều hướng chính" : "Primary navigation"}
+        >
           {
-            nav.map(([label, path]) => (
+            nav.map(([label, path, key]) => (
               <a
-                href={href(path)}
-                aria-current={section === label ? "page" : undefined}
+                href={href(path, lang)}
+                aria-current={section === key ? "page" : undefined}
               >
                 {label}
               </a>
@@ -65,11 +127,31 @@ const nav = [
           }
         </nav>
         <div class="header-actions">
+          <div
+            class="lang-switch"
+            role="group"
+            aria-label={isVi ? "Chọn ngôn ngữ" : "Select language"}
+          >
+            <a
+              href={href(routePath, "vi")}
+              aria-current={lang === "vi" ? "page" : undefined}
+              hreflang="vi"
+              lang="vi"
+              title="Tiếng Việt">VI</a
+            ><a
+              href={href(routePath, "en")}
+              aria-current={lang === "en" ? "page" : undefined}
+              hreflang="en"
+              lang="en"
+              title="English">EN</a
+            >
+          </div>
           <button
             class="theme-toggle"
             type="button"
-            aria-label="Switch to light theme"
-            title="Toggle color theme"><span aria-hidden="true">◐</span></button
+            aria-label={copyLabels.switchLight}
+            title={isVi ? "Đổi giao diện sáng/tối" : "Toggle color theme"}
+            ><span aria-hidden="true">◐</span></button
           >
           <a
             class="github-link"
@@ -79,14 +161,15 @@ const nav = [
             >GitHub <span aria-hidden="true">↗</span></a
           >
           <details class="mobile-menu">
-            <summary aria-label="Open navigation menu"
+            <summary
+              aria-label={isVi ? "Mở menu điều hướng" : "Open navigation menu"}
               >Menu <span aria-hidden="true">☰</span></summary
             ><nav aria-label="Mobile navigation">
               {
-                nav.map(([label, path]) => (
+                nav.map(([label, path, key]) => (
                   <a
-                    href={href(path)}
-                    aria-current={section === label ? "page" : undefined}
+                    href={href(path, lang)}
+                    aria-current={section === key ? "page" : undefined}
                   >
                     {label}
                   </a>
@@ -101,43 +184,65 @@ const nav = [
     <footer class="site-footer rule">
       <div class="container footer-grid">
         <div>
-          <span class="eyebrow">Research prototype</span><h2>
-            Evidence before claims.
+          <span class="eyebrow"
+            >{isVi ? "Prototype nghiên cứu" : "Research prototype"}</span
+          ><h2>
+            {isVi ? "Bằng chứng trước tuyên bố." : "Evidence before claims."}
           </h2><p>
-            This portal documents a research system in progress. Validation
-            scores are benchmark observations, not operational guarantees.
+            {
+              isVi
+                ? "Cổng thông tin này ghi nhận một hệ thống nghiên cứu đang phát triển. Điểm benchmark phản ánh phép đo thực nghiệm trong phạm vi bộ dữ liệu, không phải bảo đảm vận hành thực tế."
+                : "This portal documents a research system in progress. Validation scores are benchmark observations, not operational guarantees."
+            }
           </p>
         </div>
         <div>
-          <strong>Explore</strong><a href={href("results/")}
-            >Experiments & results</a
-          ><a href={href("docs/")}>Technical documentation</a><a
-            href={href("roadmap/")}>Project roadmap</a
+          <strong>{isVi ? "Khám phá" : "Explore"}</strong><a
+            href={href("results/", lang)}
+            >{isVi ? "Thực nghiệm & kết quả" : "Experiments & results"}</a
+          ><a href={href("docs/", lang)}
+            >{isVi ? "Tài liệu kỹ thuật" : "Technical documentation"}</a
+          ><a href={href("roadmap/", lang)}
+            >{isVi ? "Lộ trình dự án" : "Project roadmap"}</a
           >
         </div>
         <div>
-          <strong>Source</strong><a href={repository}>Repository ↗</a><a
-            href={`${repository}/issues`}>Issues ↗</a
-          ><a href={`${repository}/blob/main/LICENSE`}
-            >Apache-2.0 source license ↗</a
+          <strong>{isVi ? "Mã nguồn" : "Source"}</strong><a href={repository}
+            >Repository ↗</a
+          ><a href={`${repository}/issues`}>Issues ↗</a><a
+            href={`${repository}/blob/main/LICENSE`}
+            >{
+              isVi
+                ? "Giấy phép mã nguồn Apache-2.0 ↗"
+                : "Apache-2.0 source license ↗"
+            }</a
           >
         </div>
       </div>
       <div class="container footer-bottom">
         <span
-          >Evidence snapshot: main @ <a
-            href={`${repository}/tree/${evidenceCommit}`}
+          >{isVi ? "Ảnh chụp bằng chứng: main @" : "Evidence snapshot: main @"}
+          <a href={`${repository}/tree/${evidenceCommit}`}
             >{evidenceCommit.slice(0, 7)}</a
           > · 16 Nov 2026</span
-        ><span>Dataset use follows the publisher's separate terms.</span>
+        ><span
+          >{
+            isVi
+              ? "Dữ liệu tuân theo điều khoản sử dụng riêng của nhà xuất bản."
+              : "Dataset use follows the publisher's separate terms."
+          }</span
+        >
       </div>
     </footer>
     <script>
+      const body = document.body;
       const button = document.querySelector<HTMLButtonElement>(".theme-toggle");
       const updateLabel = () =>
         button?.setAttribute(
           "aria-label",
-          `Switch to ${document.documentElement.dataset.theme === "dark" ? "light" : "dark"} theme`,
+          document.documentElement.dataset.theme === "dark"
+            ? (body.dataset.switchLight ?? "Switch to light theme")
+            : (body.dataset.switchDark ?? "Switch to dark theme"),
         );
       updateLabel();
       button?.addEventListener("click", () => {
@@ -149,24 +254,28 @@ const nav = [
         } catch {}
         updateLabel();
       });
+      const copyLabel = body.dataset.copyLabel ?? "Copy";
+      const copiedLabel = body.dataset.copiedLabel ?? "Copied";
+      const unavailableLabel = body.dataset.unavailableLabel ?? "Unavailable";
+      const copyAria = body.dataset.copyAria ?? "Copy code block";
       document.querySelectorAll<HTMLElement>("pre").forEach((pre) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "copy-code";
-        button.textContent = "Copy";
-        button.setAttribute("aria-label", "Copy code block");
-        button.addEventListener("click", async () => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "copy-code";
+        btn.textContent = copyLabel;
+        btn.setAttribute("aria-label", copyAria);
+        btn.addEventListener("click", async () => {
           try {
             await navigator.clipboard.writeText(
               pre.querySelector("code")?.textContent ?? pre.textContent ?? "",
             );
-            button.textContent = "Copied";
-            setTimeout(() => (button.textContent = "Copy"), 1800);
+            btn.textContent = copiedLabel;
+            setTimeout(() => (btn.textContent = copyLabel), 1800);
           } catch {
-            button.textContent = "Unavailable";
+            btn.textContent = unavailableLabel;
           }
         });
-        pre.append(button);
+        pre.append(btn);
       });
     </script>
   </body>
@@ -184,13 +293,13 @@ const nav = [
   .header-inner {
     display: flex;
     align-items: center;
-    gap: 2rem;
+    gap: 1.5rem;
     min-height: 74px;
   }
   .brand {
     display: flex;
     align-items: center;
-    gap: 0.8rem;
+    gap: 0.75rem;
     text-decoration: none;
     flex-shrink: 0;
   }
@@ -223,7 +332,7 @@ const nav = [
   .desktop-nav {
     display: flex;
     align-items: center;
-    gap: 1.22rem;
+    gap: 1.1rem;
     margin-left: auto;
   }
   .desktop-nav a {
@@ -240,7 +349,28 @@ const nav = [
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 0.8rem;
+    gap: 0.55rem;
+  }
+  .lang-switch {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 0.3rem;
+    overflow: hidden;
+  }
+  .lang-switch a {
+    padding: 0.32rem 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-decoration: none;
+    color: var(--muted);
+    line-height: 1.2;
+  }
+  .lang-switch a[aria-current="page"] {
+    background: var(--cyan);
+    color: #071a25;
+  }
+  :root[data-theme="light"] .lang-switch a[aria-current="page"] {
+    color: #fff;
   }
   .theme-toggle {
     height: 34px;
@@ -304,7 +434,7 @@ const nav = [
     color: var(--muted);
     font-size: 0.74rem;
   }
-  @media (max-width: 1100px) {
+  @media (max-width: 1150px) {
     .desktop-nav {
       gap: 0.7rem;
     }
@@ -315,14 +445,14 @@ const nav = [
       display: none;
     }
   }
-  @media (max-width: 760px) {
+  @media (max-width: 820px) {
     .desktop-nav,
     .github-link {
       display: none;
     }
     .header-inner {
       min-height: 64px;
-      gap: 0.6rem;
+      gap: 0.5rem;
     }
     .header-actions {
       margin-left: auto;
@@ -339,8 +469,8 @@ const nav = [
       white-space: nowrap;
       border: 1px solid var(--line);
       border-radius: 0.3rem;
-      padding: 0.35rem 0.6rem;
-      font-size: 0.84rem;
+      padding: 0.35rem 0.55rem;
+      font-size: 0.82rem;
       cursor: pointer;
     }
     .mobile-menu summary::-webkit-details-marker {
@@ -378,6 +508,11 @@ const nav = [
     }
     .footer-bottom {
       flex-direction: column;
+    }
+  }
+  @media (max-width: 420px) {
+    .brand-name {
+      display: none;
     }
   }
 </style>

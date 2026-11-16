@@ -1,0 +1,718 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { href, repository, source, type Lang } from "../../lib/links";
+
+interface Props {
+  lang?: Lang;
+}
+const { lang = "vi" } = Astro.props;
+const isVi = lang === "vi";
+
+const copy = isVi
+  ? {
+      title: "Trang chủ",
+      description:
+        "Nghiên cứu phát hiện bất thường lưu lượng mạng dựa trên bằng chứng, đánh giá tổng quát hóa và kiến trúc truy vết.",
+      eyebrow: "Nghiên cứu mở · NF-UNSW-NB15-v3",
+      h1a: "Phát hiện bất thường.",
+      h1b: "Truy vết bằng chứng.",
+      lede: "Prototype nghiên cứu cách các mô hình phân loại lưu lượng mạng, phát hiện bất thường và bằng chứng truy vết hỗ trợ phân tích an ninh. Cổng thông tin này tách bạch rõ kết quả đã đo đạc với các hạng mục còn đang hoãn.",
+      ctaPrimary: "Xem bằng chứng thực nghiệm",
+      ctaSecondary: "Xem repository",
+      badge: "Đang phát triển (v0.6.0)",
+      portalNote:
+        "Cổng tài liệu tĩnh · không xử lý lưu lượng hay suy luận trực tiếp",
+      panelTitle: "PIPELINE NGHIÊN CỨU / 002",
+      steps: [
+        [
+          "01",
+          "NF-UNSW-NB15-v3",
+          "Nguồn đã xác minh · 2.365.424 dòng flow",
+          "ĐÃ XÁC MINH",
+          false,
+        ],
+        [
+          "02",
+          "Chia tập, cổng OOD & tiền xử lý",
+          "Hợp đồng 47 đặc trưng · fit chỉ trên Train",
+          "ĐÃ TRIỂN KHAI",
+          false,
+        ],
+        [
+          "03",
+          "Bốn mô hình đã đánh giá Test",
+          "RF · XGBoost · Isolation Forest · Autoencoder",
+          "ĐÃ KIỂM CHỨNG",
+          false,
+        ],
+        [
+          "04",
+          "Desktop UI, truy vết & Dry-Run (v0.6.0)",
+          "Tauri 2 + FastAPI · chặn firewall thật & AES keyring hoãn",
+          "PHẠM VI M6",
+          true,
+        ],
+      ] as const,
+      panelFoot: "TEST TRONG MIỀN ≠ TỔNG QUÁT HÓA NGOÀI MIỀN",
+      metrics: [
+        ["2,36M", "dòng flow đã xác minh"],
+        ["47", "đặc trưng ML baseline"],
+        ["4", "mô hình đã đánh giá Train / Val / Test"],
+        ["18", "endpoint FastAPI (ứng dụng cục bộ v0.6.0)"],
+      ] as const,
+      qEyebrow: "Câu hỏi nghiên cứu",
+      qTitle: "Mô hình thực sự học được gì?",
+      qText:
+        "Phát hiện bất thường mạng tìm các flow khác biệt so với hành vi bình thường hoặc nhãn đã biết. Dự án kiểm tra xem điểm số cao trên benchmark có đứng vững trước bài kiểm tra trùng lặp vector, đường tắt testbed và sự dịch chuyển phân phối giữa các mạng hay không.",
+      qLink: "Đọc phạm vi nghiên cứu",
+      tEyebrow: "Các hướng mô hình",
+      tTitle: "Bốn họ mô hình, hai cách tiếp cận.",
+      tText:
+        "Hai baseline supervised và hai bộ phát hiện unsupervised với giao thức huấn luyện, hiệu chuẩn ngưỡng và đầu ra riêng biệt.",
+      models: [
+        [
+          "#random-forest",
+          "01 / SUPERVISED",
+          "Random Forest",
+          "Baseline nhị phân chính. Đã có Held-out Test (F1 0,999853), kiểm toán TTL và báo cáo sụp đổ cross-dataset.",
+          "Đã đánh giá Test",
+        ],
+        [
+          "#xgboost",
+          "02 / SUPERVISED",
+          "XGBoost",
+          "Baseline đối chiếu. Cả Validation và Held-out Test đạt F1 0,999984; tệp .joblib giữ ngoài Git.",
+          "Đã đánh giá Test",
+        ],
+        [
+          "#isolation-forest",
+          "03 / UNSUPERVISED",
+          "Isolation Forest",
+          "Huấn luyện trên Train lành tính, chọn ngưỡng trên Validation (-0,033527). Test F1 0,5064, Recall 0,8997, Unknown 0,8657.",
+          "Đã đánh giá Test",
+        ],
+        [
+          "#autoencoder",
+          "04 / UNSUPERVISED",
+          "Autoencoder",
+          "Lỗi tái tạo trên Train lành tính dưới ràng buộc Val FPR ≤ 0,05. Test F1 0,1361, Recall 0,1093, Unknown 0,0625.",
+          "Đã đánh giá Test",
+        ],
+      ] as const,
+      eEyebrow: "Bằng chứng hiện có",
+      eTitle1: "Tiến độ rõ ràng.",
+      eTitle2: "Giới hạn cũng minh bạch.",
+      eLede:
+        "Cả bốn mô hình đều đã hoàn tất Train, Validation và Held-out Test trên NF-UNSW-NB15-v3 cùng prototype Desktop v0.6.0. Tuy nhiên kiểm thử cross-dataset vẫn ghi nhận suy giảm nghiêm trọng.",
+      eButton: "Xem trạng thái các mốc",
+      evidences: [
+        [
+          "01",
+          "Hoàn tất Held-out Test cho cả 4 mô hình",
+          "Random Forest, XGBoost, Isolation Forest và Autoencoder đều đã đánh giá trên 345.953 dòng tập Test.",
+        ],
+        [
+          "02",
+          "Đã đo đạc sụp đổ cross-dataset",
+          "Trên mẫu 100.000 dòng NF-CSE-CIC-IDS2018-v3, Random Forest tụt xuống 0,0000 Recall và 0,3802 FPR do trôi dạt MIN_TTL.",
+        ],
+        [
+          "03",
+          "Ranh giới Desktop & Dry-Run rõ ràng",
+          "Tauri 2 + Svelte 5 + FastAPI (127.0.0.1) chạy cổng OOD và mô phỏng chính sách dry-run; firewall thật và AES-GCM keyring đang hoãn.",
+        ],
+      ] as const,
+      cEyebrow: "Bắt đầu từ hồ sơ gốc",
+      cTitle: "Đối chiếu mọi tuyên bố tới mã nguồn.",
+      cText:
+        "Đọc phương pháp, xem kết quả Held-out Test 4 mô hình và kiểm tra trực tiếp báo cáo lưu trong repository.",
+      cPrimary: "Xem tài liệu kỹ thuật",
+      cSecondary: "Xem phân tích lỗi Test",
+    }
+  : {
+      title: "Home",
+      description:
+        "Evidence-led research into network-flow anomaly detection, model validity and traceability.",
+      eyebrow: "Open research · NF-UNSW-NB15-v3",
+      h1a: "Detect the anomaly.",
+      h1b: "Trace the evidence.",
+      lede: "A research prototype studying how network-flow classifiers, anomaly detectors and traceable evidence can support security analysis. This portal separates measured results from deferred system capabilities.",
+      ctaPrimary: "Explore the evidence",
+      ctaSecondary: "View repository",
+      badge: "Research prototype (v0.6.0)",
+      portalNote: "Static documentation portal · no live traffic or inference",
+      panelTitle: "RESEARCH PIPELINE / 002",
+      steps: [
+        [
+          "01",
+          "NF-UNSW-NB15-v3",
+          "Verified source · 2,365,424 flow records",
+          "VERIFIED",
+          false,
+        ],
+        [
+          "02",
+          "Split, OOD gate & preprocessing",
+          "47-feature baseline contract · train-only fit",
+          "IMPLEMENTED",
+          false,
+        ],
+        [
+          "03",
+          "Four validated model families",
+          "RF · XGBoost · Isolation Forest · Autoencoder",
+          "VALIDATED",
+          false,
+        ],
+        [
+          "04",
+          "Desktop UI, trace & dry-run (v0.6.0)",
+          "Tauri 2 + FastAPI · live firewall & AES keyring deferred",
+          "SCOPED M6",
+          true,
+        ],
+      ] as const,
+      panelFoot: "IN-DOMAIN TEST ≠ EXTERNAL GENERALIZATION",
+      metrics: [
+        ["2.36M", "verified flow rows"],
+        ["47", "baseline ML features"],
+        ["4", "validated models (Train / Val / Test)"],
+        ["18", "FastAPI endpoints (v0.6.0 local UI)"],
+      ] as const,
+      qEyebrow: "Research question",
+      qTitle: "What does the model learn?",
+      qText:
+        "Network anomaly detection identifies flows whose patterns diverge from expected or labelled behavior. The project asks whether strong benchmark scores survive stricter checks for duplicate vectors, testbed shortcuts and changing traffic distributions.",
+      qLink: "Read the research scope",
+      tEyebrow: "Investigation tracks",
+      tTitle: "Four model families, two learning paradigms.",
+      tText:
+        "Two supervised baselines and two unsupervised anomaly-score approaches with separate training, threshold and output contracts.",
+      models: [
+        [
+          "#random-forest",
+          "01 / SUPERVISED",
+          "Random Forest",
+          "Primary binary baseline. Held-out Test F1 0.999853, diagnostic TTL audit and cross-dataset collapse documented.",
+          "Held-out Test verified",
+        ],
+        [
+          "#xgboost",
+          "02 / SUPERVISED",
+          "XGBoost",
+          "Comparison baseline. Validation and Held-out Test both reach F1 0.999984; .joblib binary stays outside Git.",
+          "Held-out Test verified",
+        ],
+        [
+          "#isolation-forest",
+          "03 / UNSUPERVISED",
+          "Isolation Forest",
+          "Benign-only training and Validation calibration (-0.033527). Test F1 0.5064, Recall 0.8997, Unknown Recall 0.8657.",
+          "Held-out Test verified",
+        ],
+        [
+          "#autoencoder",
+          "04 / UNSUPERVISED",
+          "Autoencoder",
+          "Benign-only reconstruction error under Validation FPR ≤ 0.05. Held-out Test F1 0.1361, Recall 0.1093, Unknown 0.0625.",
+          "Held-out Test verified",
+        ],
+      ] as const,
+      eEyebrow: "Current evidence",
+      eTitle1: "Progress is visible.",
+      eTitle2: "So are the limits.",
+      eLede:
+        "All four models now have recorded Train, Validation and Held-out Test evidence on NF-UNSW-NB15-v3, alongside a Tauri 2 + FastAPI desktop prototype (v0.6.0). Cross-dataset testing still exposes severe domain collapse.",
+      eButton: "View milestone status",
+      evidences: [
+        [
+          "01",
+          "Held-out Test completed across 4 models",
+          "Random Forest, XGBoost, Isolation Forest and Autoencoder are all evaluated on the 345,953-row Test partition.",
+        ],
+        [
+          "02",
+          "Cross-dataset failure is measured",
+          "On a 100,000-row NF-CSE-CIC-IDS2018-v3 sample, RF drops to 0.0000 Recall and 0.3802 FPR due to MIN_TTL drift.",
+        ],
+        [
+          "03",
+          "Scoped desktop & dry-run boundaries",
+          "Tauri 2 + Svelte 5 + FastAPI (127.0.0.1) runs OOD gating and dry-run policy checks; live firewall actions and AES-GCM keyring remain deferred.",
+        ],
+      ] as const,
+      cEyebrow: "Start with the record",
+      cTitle: "Follow each claim to its source.",
+      cText:
+        "Read the methods, inspect the four-model Held-out Test results, then examine the underlying repository artifacts.",
+      cPrimary: "Browse documentation",
+      cSecondary: "Inspect Test error analysis",
+    };
+---
+
+<Layout
+  title={copy.title}
+  description={copy.description}
+  lang={lang}
+  routePath=""
+>
+  <section class="hero grid-lines">
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <span class="eyebrow">{copy.eyebrow}</span>
+        <h1>{copy.h1a}<br /><em>{copy.h1b}</em></h1>
+        <p class="lede">{copy.lede}</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href={href("results/", lang)}
+            >{copy.ctaPrimary} <span aria-hidden="true">↗</span></a
+          ><a class="button" href={repository}
+            >{copy.ctaSecondary} <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <div class="hero-note">
+          <span class="status status-progress">{copy.badge}</span><span
+            >{copy.portalNote}</span
+          >
+        </div>
+      </div>
+      <div class="signal-panel" role="region" aria-label={copy.panelTitle}>
+        <div class="panel-top">
+          <span>{copy.panelTitle}</span><span
+            class="panel-dots"
+            aria-hidden="true">● ● ●</span
+          >
+        </div>
+        {
+          copy.steps.map(([idx, title, desc, state, planned], i) => (
+            <>
+              {i > 0 && (
+                <div
+                  class={`flow-connector ${planned ? "muted-connector" : ""}`}
+                  aria-hidden="true"
+                />
+              )}
+              <div class={`flow-step ${planned ? "planned" : ""}`}>
+                <span class="flow-index">{idx}</span>
+                <div>
+                  <strong>{title}</strong>
+                  <small>{desc}</small>
+                </div>
+                <span class="flow-state">{state}</span>
+              </div>
+            </>
+          ))
+        }
+        <div class="panel-foot">
+          <span>{copy.panelFoot}</span><span>↗</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="metrics-strip rule">
+    <div class="container metrics-grid">
+      {
+        copy.metrics.map(([value, label]) => (
+          <div>
+            <strong>{value}</strong>
+            <span>{label}</span>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container split-heading">
+      <div>
+        <span class="eyebrow">{copy.qEyebrow}</span><h2>{copy.qTitle}</h2>
+      </div><div>
+        <p class="lede">{copy.qText}</p><a
+          class="text-link"
+          href={href("research/", lang)}
+          >{copy.qLink} <span aria-hidden="true">↗</span></a
+        >
+      </div>
+    </div>
+  </section>
+
+  <section class="section tinted rule">
+    <div class="container">
+      <div class="section-heading">
+        <span class="eyebrow">{copy.tEyebrow}</span><h2>{copy.tTitle}</h2><p>
+          {copy.tText}
+        </p>
+      </div><div class="model-grid">
+        {
+          copy.models.map(([hash, num, name, desc, status]) => (
+            <a class="model-card" href={href(`models/${hash}`, lang)}>
+              <span class="model-number">{num}</span>
+              <h3>{name}</h3>
+              <p>{desc}</p>
+              <span class="status status-validated">{status}</span>
+            </a>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container evidence-grid">
+      <div>
+        <span class="eyebrow">{copy.eEyebrow}</span><h2>
+          {copy.eTitle1}<br />{copy.eTitle2}
+        </h2><p class="lede">{copy.eLede}</p><a
+          class="button"
+          href={href("roadmap/", lang)}>{copy.eButton} ↗</a
+        >
+      </div><div class="evidence-list">
+        {
+          copy.evidences.map(([idx, title, desc]) => (
+            <div>
+              <span>{idx}</span>
+              <p>
+                <strong>{title}</strong>
+                <br />
+                {desc}
+              </p>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <section class="section closing rule">
+    <div class="container">
+      <span class="eyebrow">{copy.cEyebrow}</span><h2>{copy.cTitle}</h2><p>
+        {copy.cText}
+      </p><div class="hero-actions">
+        <a class="button button-primary" href={href("docs/", lang)}
+          >{copy.cPrimary} ↗</a
+        ><a
+          class="button"
+          href={source("reports/evaluation/error_analysis_report.md")}
+          >{copy.cSecondary} ↗</a
+        >
+      </div>
+    </div>
+  </section>
+</Layout>
+<style>
+  .hero {
+    padding: 5.4rem 0 5.8rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero:before {
+    content: "";
+    position: absolute;
+    width: 600px;
+    height: 600px;
+    right: -100px;
+    top: -300px;
+    background: radial-gradient(circle, #26698038, transparent 70%);
+    pointer-events: none;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 4rem;
+    align-items: center;
+    position: relative;
+  }
+  .hero h1 {
+    margin: 1.2rem 0 1.4rem;
+    max-width: 14ch;
+  }
+  .hero h1 em {
+    font-style: normal;
+    color: var(--cyan);
+  }
+  .hero .lede {
+    max-width: 54ch;
+  }
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 2rem;
+  }
+  .hero-note {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 3rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+  }
+  .signal-panel {
+    background: linear-gradient(145deg, var(--surface), #0a192b);
+    border: 1px solid var(--line);
+    border-radius: 0.4rem;
+    box-shadow: var(--shadow);
+    padding: 1.3rem;
+    color: #eaf5fa;
+  }
+  .panel-top,
+  .panel-foot {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font:
+      700 0.65rem/1.3 ui-monospace,
+      SFMono-Regular,
+      monospace;
+    letter-spacing: 0.1em;
+    color: #86a9ba;
+  }
+  .panel-top {
+    padding-bottom: 1.2rem;
+    border-bottom: 1px solid #294056;
+  }
+  .panel-dots {
+    color: var(--cyan);
+    letter-spacing: 0.4em;
+  }
+  .flow-step {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border: 1px solid #375269;
+    background: #12273a;
+    padding: 1rem 0.8rem;
+    border-radius: 0.25rem;
+  }
+  .flow-step > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .flow-step strong,
+  .flow-step small {
+    display: block;
+  }
+  .flow-step strong {
+    font-size: 0.88rem;
+  }
+  .flow-step small {
+    font-size: 0.72rem;
+    color: #9fb3c4;
+    margin-top: 0.15rem;
+  }
+  .flow-index {
+    font:
+      700 0.65rem ui-monospace,
+      monospace;
+    color: var(--cyan);
+  }
+  .flow-state {
+    font:
+      700 0.58rem ui-monospace,
+      monospace;
+    color: var(--cyan);
+    text-align: right;
+  }
+  .flow-connector {
+    height: 24px;
+    width: 1px;
+    background: var(--cyan);
+    margin-left: 1.25rem;
+  }
+  .muted-connector {
+    background: #61758a;
+  }
+  .flow-step.planned {
+    opacity: 0.75;
+    border-style: dashed;
+  }
+  .panel-foot {
+    border-top: 1px solid #294056;
+    margin-top: 1.2rem;
+    padding-top: 1rem;
+    color: var(--cyan);
+  }
+  .metrics-strip {
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .metrics-grid > div {
+    padding: 1.4rem 1.6rem;
+    border-right: 1px solid var(--line);
+  }
+  .metrics-grid > div:first-child {
+    padding-left: 0;
+  }
+  .metrics-grid > div:last-child {
+    border: 0;
+  }
+  .metrics-grid strong {
+    display: block;
+    color: var(--text);
+    font-size: 1.85rem;
+    line-height: 1.2;
+    letter-spacing: -0.05em;
+  }
+  .metrics-grid span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.75rem;
+    margin-top: 0.4rem;
+  }
+  .split-heading {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+  }
+  .split-heading h2 {
+    max-width: 14ch;
+    margin: 0.8rem 0 0;
+  }
+  .text-link {
+    display: inline-block;
+    color: var(--cyan);
+    font-weight: 700;
+    margin-top: 0.5rem;
+  }
+  .tinted {
+    background: var(--surface);
+  }
+  .section-heading {
+    max-width: 650px;
+    margin-bottom: 2rem;
+  }
+  .section-heading h2 {
+    margin: 0.7rem 0;
+  }
+  .section-heading p {
+    color: var(--muted);
+  }
+  .model-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+  }
+  .model-card {
+    border: 1px solid var(--line);
+    padding: 1.45rem;
+    background: var(--bg);
+    border-radius: 0.35rem;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 275px;
+    transition:
+      border-color 0.2s,
+      transform 0.2s;
+  }
+  .model-card:hover {
+    border-color: var(--cyan);
+    transform: translateY(-3px);
+  }
+  .model-number {
+    color: var(--cyan);
+    font:
+      700 0.7rem ui-monospace,
+      monospace;
+    letter-spacing: 0.08em;
+  }
+  .model-card h3 {
+    margin: 1.7rem 0 0.5rem;
+  }
+  .model-card p {
+    color: var(--muted);
+    font-size: 0.86rem;
+    line-height: 1.6;
+    flex: 1;
+  }
+  .evidence-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6rem;
+  }
+  .evidence-grid h2 {
+    margin: 0.7rem 0;
+  }
+  .evidence-grid .button {
+    margin-top: 1rem;
+  }
+  .evidence-list > div {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .evidence-list > div:first-child {
+    border-top: 1px solid var(--line);
+  }
+  .evidence-list span {
+    color: var(--cyan);
+    font:
+      700 0.75rem ui-monospace,
+      monospace;
+    padding-top: 0.25rem;
+  }
+  .evidence-list p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .evidence-list strong {
+    color: var(--text);
+  }
+  .closing {
+    background: var(--surface-2);
+  }
+  .closing h2 {
+    margin: 0.8rem 0;
+  }
+  .closing p {
+    color: var(--muted);
+  }
+  @media (max-width: 1000px) {
+    .hero-grid {
+      gap: 2rem;
+    }
+    .model-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 760px) {
+    .hero {
+      padding: 3.5rem 0;
+    }
+    .hero-grid,
+    .split-heading,
+    .evidence-grid {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    .hero h1 {
+      font-size: clamp(2.4rem, 9.5vw, 3.8rem);
+    }
+    .hero-note {
+      margin-top: 2rem;
+    }
+    .metrics-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .metrics-grid > div {
+      padding: 1rem !important;
+      border-bottom: 1px solid var(--line);
+    }
+    .model-grid {
+      grid-template-columns: 1fr;
+    }
+    .model-card {
+      min-height: auto;
+    }
+    .model-card h3 {
+      margin: 1rem 0 0.2rem;
+    }
+  }
+</style>

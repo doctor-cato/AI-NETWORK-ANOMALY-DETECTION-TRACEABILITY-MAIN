@@ -1,0 +1,375 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import { source, type Lang } from "../../lib/links";
+
+interface Props {
+  lang?: Lang;
+}
+const { lang = "vi" } = Astro.props;
+const isVi = lang === "vi";
+
+const layers = isVi
+  ? [
+      [
+        "Tải & kiểm định dữ liệu",
+        "Đã kiểm thử & xác minh",
+        "Script tải nguồn chính thức, manifest, kiểm định chất lượng streaming, EDA và tách demo chỉ từ Validation đã có trên main.",
+        source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md"),
+      ],
+      [
+        "Chia tập, tiền xử lý & cổng OOD",
+        "Đã triển khai & kiểm thử",
+        "Split theo thời gian, TrainOnlyPreprocessor, đánh giá tương thích 4 tầng, xác minh provenance và từ chối ABSTAINED_OOD.",
+        source("docs/MULTI_SOURCE_INGESTION.md"),
+      ],
+      [
+        "Bốn mô hình ML đã kiểm chứng",
+        "Đã đánh giá Held-out Test",
+        "Random Forest, XGBoost, Isolation Forest và Autoencoder đều đã đánh giá Train/Val/Test; file .joblib giữ ngoài Git.",
+        source("reports/evaluation/error_analysis_report.md"),
+      ],
+      [
+        "Thống kê hành vi, rủi ro & timeline",
+        "Đã triển khai (phạm vi M6)",
+        "Thống kê metadata NetFlow (#28), chấm điểm ưu tiên tất định 0–100 (#32) và timeline tất định (#24); không dùng log Auth/API.",
+        source("docs/ARCHITECTURE.md"),
+      ],
+      [
+        "Phản ứng thích ứng Dry-Run (#27)",
+        "Đã triển khai (Dry-Run)",
+        "Policy engine tất định và mô phỏng xoay khóa (executed=false) gắn với phân tích xác minh trên server; firewall thật & AES keyring hoãn.",
+        source("reports/api/API_CONTRACT.md"),
+      ],
+      [
+        "FastAPI (127.0.0.1) & SQLite",
+        "Đã triển khai & kiểm thử",
+        "18 endpoint REST cục bộ, token phiên 256-bit X-Sentinel-Session-Token, SQLite đơn chủ ghi và xuất metadata SHA-256.",
+        source("reports/api/openapi.json"),
+      ],
+      [
+        "Desktop UI (Tauri 2 + Svelte 5)",
+        "Đã triển khai (v0.6.0)",
+        "Bộ cài Windows x64 NSIS, quản lý tiến trình Python và nạp Companion Bundle; cần Python >= 3.12 + WebView2 bên ngoài.",
+        source("docs/WINDOWS_INSTALLATION.md"),
+      ],
+      [
+        "Chặn OS thật & Python nhúng",
+        "Đang hoãn (Deferred)",
+        "Tự động hóa firewall hệ điều hành, xoay khóa AES-256-GCM trong OS keyring, bắt gói PCAP trực tiếp và Python nhúng standalone đang hoãn.",
+        source("docs/releases/v0.6.0.md"),
+      ],
+    ]
+  : [
+      [
+        "Data acquisition & validation",
+        "Tested & verified",
+        "Official-source fetcher, manifest, streaming quality checks, EDA and Validation-only demo prep are on main.",
+        source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md"),
+      ],
+      [
+        "Split, preprocessing & OOD gate",
+        "Implemented & tested",
+        "Chronological split, TrainOnlyPreprocessor, 4-tier compatibility evaluator, provenance trust anchor and ABSTAINED_OOD gate.",
+        source("docs/MULTI_SOURCE_INGESTION.md"),
+      ],
+      [
+        "Four verified ML models",
+        "Held-out Test verified",
+        "Random Forest, XGBoost, Isolation Forest and Autoencoder all evaluated on Train/Val/Test; .joblib binaries stay outside Git.",
+        source("reports/evaluation/error_analysis_report.md"),
+      ],
+      [
+        "Behavioral, risk & timeline",
+        "Implemented (scoped M6)",
+        "NetFlow metadata stats (#28), deterministic 0–100 priority (#32) and deterministic timeline (#24); no Auth/API logs.",
+        source("docs/ARCHITECTURE.md"),
+      ],
+      [
+        "Adaptive response dry-run (#27)",
+        "Implemented (Dry-Run)",
+        "Deterministic policy engine and rotation simulation (executed=false) gated on server-verified analysis; live OS firewall & AES keyring deferred.",
+        source("reports/api/API_CONTRACT.md"),
+      ],
+      [
+        "FastAPI (127.0.0.1) & SQLite",
+        "Implemented & tested",
+        "18 localhost REST endpoints, 256-bit X-Sentinel-Session-Token auth, single-writer SQLite persistence and SHA-256 export metadata.",
+        source("reports/api/openapi.json"),
+      ],
+      [
+        "Desktop UI (Tauri 2 + Svelte 5)",
+        "Implemented (v0.6.0)",
+        "Windows x64 NSIS installer, Python process lifecycle and Companion Bundle onboarding; requires external Python >= 3.12 + WebView2.",
+        source("docs/WINDOWS_INSTALLATION.md"),
+      ],
+      [
+        "Live OS blocking & embedded Python",
+        "Deferred",
+        "Live firewall automation, production AES-256-GCM OS keyring rotation, live PCAP capture and embedded Python runtime remain deferred.",
+        source("docs/releases/v0.6.0.md"),
+      ],
+    ];
+---
+
+<Layout
+  title={isVi ? "Kiến trúc hệ thống" : "System Architecture"}
+  description={isVi
+    ? "Kiến trúc M6 hợp nhất (Tauri 2 + Svelte 5 + FastAPI + SQLite) và ranh giới từng tầng."
+    : "Consolidated M6 architecture (Tauri 2 + Svelte 5 + FastAPI + SQLite) and layer boundaries."}
+  section="Architecture"
+  lang={lang}
+  routePath="architecture/"
+>
+  <PageIntro
+    eyebrow={isVi ? "05 / Kiến trúc" : "05 / Architecture"}
+    current={isVi ? "Kiến trúc" : "Architecture"}
+    title={isVi
+      ? "Hệ thống desktop cục bộ với ranh giới rõ ràng."
+      : "A local desktop system with explicit boundaries."}
+    description={isVi
+      ? "Kiến trúc v0.6.0 kết nối dữ liệu NetFlow đã xác minh qua cổng OOD, bốn mô hình đã kiểm chứng, FastAPI + SQLite cục bộ và giao diện Tauri 2 + Svelte 5. Khối nét liền đã có trên main; khối nét đứt đang hoãn."
+      : "The consolidated v0.6.0 architecture connects verified NetFlow data through OOD gating, four validated models, localhost FastAPI + SQLite and a Tauri 2 + Svelte 5 desktop UI. Solid nodes are implemented on main; dashed nodes are deferred."}
+    lang={lang}
+  />
+  <section class="section">
+    <div class="container">
+      <div class="diagram-head">
+        <div>
+          <span class="eyebrow"
+            >{
+              isVi ? "MVP Hợp nhất (v0.6.0)" : "Consolidated MVP (v0.6.0)"
+            }</span
+          ><h2>
+            {
+              isVi
+                ? "Từ bản ghi flow tới bằng chứng trên desktop."
+                : "From flow record to desktop evidence trail."
+            }
+          </h2>
+        </div><div class="diagram-legend">
+          <span
+            ><i></i>
+            {isVi ? "Đã triển khai trên main" : "Implemented on main"}</span
+          ><span
+            ><i></i>
+            {isVi ? "Đang hoãn / phụ thuộc ngoài" : "Deferred / external"}</span
+          >
+        </div>
+      </div><div class="diagram-wrap surface">
+        <svg
+          role="img"
+          aria-labelledby="diagram-title diagram-desc"
+          viewBox="0 0 1040 610"
+          xmlns="http://www.w3.org/2000/svg"
+          ><title id="diagram-title">
+            {
+              isVi
+                ? "Kiến trúc desktop phát hiện bất thường mạng hợp nhất"
+                : "Consolidated network anomaly detection desktop architecture"
+            }
+          </title><desc id="diagram-desc"
+            >{
+              isVi
+                ? "Tải dữ liệu và cổng OOD nối vào tiền xử lý train-only, bốn mô hình, tầng rủi ro/timeline/dry-run, FastAPI + SQLite trên 127.0.0.1 và ứng dụng Tauri 2 + Svelte 5. Tự động hóa firewall và AES-256-GCM keyring đang hoãn."
+                : "Verified NetFlow acquisition and OOD gating feed train-only preprocessing, four validated models, deterministic risk/timeline/dry-run layers, SQLite-backed FastAPI on 127.0.0.1 and the Tauri 2 + Svelte 5 desktop app. Live firewall automation and AES-256-GCM OS keyring remain deferred."
+            }</desc
+          ><defs
+            ><marker
+              id="arrow"
+              markerWidth="8"
+              markerHeight="8"
+              refX="7"
+              refY="4"
+              orient="auto"
+              ><path d="M0 0 L8 4 L0 8" fill="#66e1e8"></path></marker
+            ></defs
+          >
+          <g
+            fill="none"
+            stroke="#66e1e8"
+            stroke-width="2"
+            marker-end="url(#arrow)"
+            ><path d="M235 100H305"></path><path d="M495 100H565"></path><path
+              d="M755 100H825"></path><path d="M920 145V230"></path><path
+              d="M825 270H755"></path><path d="M565 270H495"></path><path
+              d="M400 310V390"></path><path d="M495 435H565"></path></g
+          >
+          <g fill="#132b3d" stroke="#66e1e8" stroke-width="2"
+            ><rect x="25" y="55" width="210" height="90" rx="5"></rect><rect
+              x="305"
+              y="55"
+              width="190"
+              height="90"
+              rx="5"></rect><rect x="565" y="55" width="190" height="90" rx="5"
+            ></rect><rect x="825" y="55" width="190" height="90" rx="5"
+            ></rect><rect x="565" y="230" width="190" height="80" rx="5"
+            ></rect><rect x="305" y="230" width="190" height="80" rx="5"
+            ></rect><rect x="305" y="390" width="190" height="90" rx="5"
+            ></rect></g
+          >
+          <g
+            fill="#152334"
+            stroke="#778ca0"
+            stroke-width="2"
+            stroke-dasharray="7 6"
+            ><rect x="565" y="390" width="240" height="90" rx="5"></rect><rect
+              x="25"
+              y="390"
+              width="210"
+              height="90"
+              rx="5"></rect></g
+          >
+          <g
+            font-family="ui-sans-serif,system-ui"
+            fill="#e8f6f8"
+            font-size="17"
+            font-weight="700"
+            ><text x="45" y="91">Acquire + OOD gate</text><text x="325" y="91"
+              >Preprocess</text
+            ><text x="585" y="91">RF / XGBoost</text><text x="845" y="91"
+              >IF / Autoencoder</text
+            ><text x="585" y="265">Risk + Timeline</text><text x="325" y="265"
+              >FastAPI + SQLite</text
+            ><text x="325" y="425">Tauri 2 + Svelte 5</text><text
+              x="585"
+              y="425">Live OS Actions</text
+            ><text x="45" y="425">Embedded Python</text></g
+          >
+          <g font-family="ui-sans-serif,system-ui" fill="#9fb3c4" font-size="12"
+            ><text x="45" y="119">provenance & ABSTAINED_OOD</text><text
+              x="325"
+              y="119">train-only SHA-256</text
+            ><text x="585" y="119">Test F1 0.9999 / 1.0000</text><text
+              x="845"
+              y="119">Test F1 0.5064 / 0.1361</text
+            ><text x="585" y="290">Dry-run #27 (executed=false)</text><text
+              x="325"
+              y="290">127.0.0.1 + token auth</text
+            ><text x="325" y="452">Windows NSIS v0.6.0</text><text
+              x="585"
+              y="452">firewall & AES keyring deferred</text
+            ><text x="45" y="452">external Python 3.12+ & bundle</text></g
+          ></svg
+        >
+      </div><p class="diagram-note">
+        {
+          isVi
+            ? "NF-UNSW-NB15-v3 chỉ chứa trường NetFlow, không có log API, xác thực hay phiên ứng dụng. Thống kê hành vi (#28) chỉ dùng metadata NetFlow kèm thông báo không quy kết danh tính."
+            : "NF-UNSW-NB15-v3 contains NetFlow fields, not API, authentication or application-session events. Behavioral summaries (#28) use NetFlow metadata only and include an explicit non-attribution notice."
+        }
+      </p>
+    </div>
+  </section>
+  <section class="section rule tinted">
+    <div class="container">
+      <span class="eyebrow"
+        >{isVi ? "Kiểm kê các tầng" : "Implementation inventory"}</span
+      ><h2>
+        {
+          isVi
+            ? "Trạng thái thực tế của từng tầng hệ thống."
+            : "What each layer can claim today."
+        }
+      </h2><div class="table-wrap">
+        <table class="data-table">
+          <caption class="sr-only"
+            >{
+              isVi
+                ? "Các tầng kiến trúc, trạng thái hiện tại và bằng chứng nguồn"
+                : "Architecture layers, implementation status and evidence"
+            }</caption
+          ><thead
+            ><tr
+              ><th scope="col">{isVi ? "Tầng" : "Layer"}</th><th scope="col"
+                >{isVi ? "Trạng thái" : "Current status"}</th
+              ><th scope="col"
+                >{isVi ? "Ranh giới bằng chứng" : "Evidence boundary"}</th
+              ><th scope="col">{isVi ? "Nguồn" : "Source"}</th></tr
+            ></thead
+          ><tbody
+            >{
+              layers.map(([name, status, note, link]) => (
+                <tr>
+                  <>
+                    <th scope="row">{name}</th>
+                    <td>{status}</td>
+                    <td>{note}</td>
+                    <td>
+                      <a href={link}>{isVi ? "Xem ↗" : "Inspect ↗"}</a>
+                    </td>
+                  </>
+                </tr>
+              ))
+            }</tbody
+          >
+        </table>
+      </div>
+    </div>
+  </section>
+</Layout>
+<style>
+  .diagram-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 2rem;
+  }
+  .diagram-head h2 {
+    margin: 0.6rem 0 1.5rem;
+  }
+  .diagram-legend {
+    display: flex;
+    gap: 1.4rem;
+    color: var(--muted);
+    font-size: 0.78rem;
+    margin-bottom: 1.5rem;
+  }
+  .diagram-legend span {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .diagram-legend i {
+    display: block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--cyan);
+  }
+  .diagram-legend span:last-child i {
+    border-color: var(--muted);
+    border-style: dashed;
+  }
+  .diagram-wrap {
+    overflow: auto;
+    padding: 1.5rem;
+    background: #0b1929;
+  }
+  .diagram-wrap svg {
+    display: block;
+    min-width: 700px;
+    width: 100%;
+    height: auto;
+  }
+  .diagram-note {
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .tinted {
+    background: var(--surface);
+  }
+  .data-table a {
+    color: var(--cyan);
+  }
+  .data-table td {
+    color: var(--muted);
+  }
+  @media (max-width: 700px) {
+    .diagram-head {
+      display: block;
+    }
+    .diagram-legend {
+      flex-wrap: wrap;
+    }
+  }
+</style>

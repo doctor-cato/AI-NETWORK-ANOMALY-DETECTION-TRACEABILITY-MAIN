@@ -1,19 +1,19 @@
 ---
-title: Research methodology
-description: Split, benign-only fitting, threshold calibration and cross-dataset interpretation rules.
+title: Phương pháp nghiên cứu
+description: Quy tắc chia tập, fit trên benign-only, hiệu chuẩn ngưỡng và diễn giải cross-dataset.
 order: 10
 ---
 
-## Split before fit
+## Chia tập trước khi fit
 
-The v3 dataset is a single CSV. The repository's chronological, group-aware split places 5-minute purge gaps between Train (`1,655,797`), Validation (`345,371`) and Test (`345,953`). Imputation and other learned statistics are fitted only on Train; model selection and score thresholds belong exclusively to Validation; Test is evaluated once after freezing.
+Bộ dữ liệu v3 là một CSV duy nhất. Giao thức chia theo thời gian và nhóm luồng giữ khoảng đệm (purge gap) 5 phút giữa Train (`1.655.797`), Validation (`345.371`) và Test (`345.953`). Tham số xử lý thiếu và thống kê học từ dữ liệu chỉ được fit trên Train; chọn mô hình và hiệu chuẩn ngưỡng chỉ thực hiện trên Validation; Test được đánh giá sau khi đóng băng mô hình.
 
-## Supervised vs unsupervised protocols
+## Giao thức supervised và unsupervised
 
-Binary classification uses `Label=1` for Attack and label order `[0, 1]`. Supervised baselines emit `attack_probability` in `[0, 1]`. Unsupervised detectors (Isolation Forest, Autoencoder) fit on benign-only Train (`1,590,608` rows), isolate `{Backdoor, Worms}` as unknown holdout families, calibrate thresholds on Validation (`max-F1-on-known-attacks` for Isolation Forest; `fpr_constrained` at `FPR <= 0.05` for Autoencoder), and emit `raw_anomaly_score` with `attack_probability = null`.
+Phân loại nhị phân dùng `Label=1` cho Attack theo thứ tự nhãn `[0, 1]`. Mô hình supervised xuất `attack_probability` trong `[0, 1]`. Mô hình unsupervised (Isolation Forest, Autoencoder) chỉ fit trên Train lành tính (`1.590.608` dòng), cô lập `{Backdoor, Worms}` làm họ tấn công chưa biết, chọn ngưỡng trên Validation (`max-F1-on-known-attacks` cho Isolation Forest; `fpr_constrained` với `FPR <= 0,05` cho Autoencoder) và xuất `raw_anomaly_score` với `attack_probability = null`.
 
-## Interpretation
+## Diễn giải kết quả
 
-The [RF diagnostic audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/models/rf_baseline_validation_audit.json) identifies TTL shortcuts, the [split leakage audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md) records repeated feature vectors, and the [cross-dataset report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/cross_dataset_generalization_report.md) confirms collapse on `NF-CSE-CIC-IDS2018-v3`.
+[Kiểm toán chẩn đoán RF](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/models/rf_baseline_validation_audit.json) chỉ ra đường tắt TTL, [kiểm toán rò rỉ split](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md) ghi nhận tỷ lệ trùng lặp vector đặc trưng cao, và [báo cáo cross-dataset](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/cross_dataset_generalization_report.md) xác nhận mô hình sụp đổ khi sang `NF-CSE-CIC-IDS2018-v3`.
 
-See [methodology](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/METHODOLOGY.md) and [evaluation rules](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/EVALUATION.md).
+Xem chi tiết [phương pháp luận](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/METHODOLOGY.md) và [quy tắc đánh giá](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/EVALUATION.md).

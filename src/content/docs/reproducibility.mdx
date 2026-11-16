@@ -1,15 +1,15 @@
 ---
-title: Reproducibility
-description: Dataset, split, configuration and artifact evidence needed to repeat a result.
+title: Khả năng tái lập
+description: Chuỗi provenance dữ liệu, split, cấu hình và bằng chứng để lặp lại kết quả.
 order: 8
 ---
 
-## Provenance chain
+## Chuỗi provenance
 
-Each experiment records the source CSV hash (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`), split manifest (`bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`), ordered 47-feature contract, train-only preprocessor hash (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`), model parameters, dependency versions and commands.
+Mỗi thí nghiệm ghi nhận mã băm SHA-256 của CSV nguồn (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`), split manifest (`bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`), hợp đồng 47 đặc trưng, preprocessor train-only (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`), tham số mô hình, phiên bản thư viện và lệnh thực thi.
 
-## Current record
+## Hồ sơ hiện tại
 
-The [split manifest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_split_manifest.json) records Train (`1,655,797`), Validation (`345,371`), Test (`345,953`) and purge-gap row counts. Held-out Test evidence is published for [Random Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/error_analysis_report.md), [XGBoost](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/xgboost/evaluation_report.md), [Isolation Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) and [Autoencoder](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md).
+[Split manifest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_split_manifest.json) lưu số dòng Train (`1.655.797`), Validation (`345.371`), Test (`345.953`) và khoảng purge gap. Bằng chứng Held-out Test đã có cho [Random Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/error_analysis_report.md), [XGBoost](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/xgboost/evaluation_report.md), [Isolation Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) và [Autoencoder](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md).
 
-Follow the canonical [reproducibility document](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) and [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md) before running any resource-intensive step or verifying installer attestations.
+Đọc kỹ [tài liệu tái lập](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) và [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md) trước khi chạy các bước tốn nhiều RAM hoặc kiểm tra attestation bộ cài.

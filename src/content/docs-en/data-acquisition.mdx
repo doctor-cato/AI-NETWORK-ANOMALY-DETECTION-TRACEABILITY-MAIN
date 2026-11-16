@@ -1,0 +1,21 @@
+---
+title: Dataset acquisition
+description: Official UQ source, checksum verification, demo slicing and external provenance.
+order: 4
+---
+
+## Source
+
+NF-UNSW-NB15-v3 is published by the University of Queensland at [DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1). The repository records the UQRDM package and project-computed SHA-256 (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`) in the [provenance report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md).
+
+## Acquisition & Validation demo commands
+
+```powershell
+python scripts/fetch_nf_unsw_nb15_v3.py
+python scripts/dataset_manifest.py verify
+python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
+```
+
+The fetcher resolves a short-lived official download URL, verifies archive and payload integrity, and keeps raw data outside Git. `prepare_demo_dataset.py` builds a 200-row Validation-only demo slice (`demo_flows.csv` without labels, `demo_labels.csv`, and `demo_manifest.json` with 0 Train/Test overlap). External dataset provenance for `NF-CSE-CIC-IDS2018-v3` (100,000-row sample) is recorded separately in [external datasets provenance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/data/EXTERNAL_DATASETS_PROVENANCE.json).
+
+Do not commit downloaded CSVs. The dataset's non-commercial reuse and attribution terms are separate from the repository's Apache-2.0 source license.

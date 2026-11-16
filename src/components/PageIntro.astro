@@ -1,20 +1,21 @@
 ---
-import { href } from "../lib/links";
+import { href, type Lang } from "../lib/links";
 interface Props {
   eyebrow: string;
   title: string;
   description: string;
   current: string;
+  lang?: Lang;
 }
-const { eyebrow, title, description, current } = Astro.props;
+const { eyebrow, title, description, current, lang = "vi" } = Astro.props;
 ---
 
 <section class="page-intro grid-lines">
   <div class="container">
     <nav class="breadcrumbs" aria-label="Breadcrumb">
-      <a href={href()}>Home</a><span aria-hidden="true">/</span><span
-        aria-current="page">{current}</span
-      >
+      <a href={href("", lang)}>{lang === "vi" ? "Trang chủ" : "Home"}</a><span
+        aria-hidden="true">/</span
+      ><span aria-current="page">{current}</span>
     </nav>
     <span class="eyebrow">{eyebrow}</span>
     <h1>{title}</h1>

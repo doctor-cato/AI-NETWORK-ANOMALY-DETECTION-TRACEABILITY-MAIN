@@ -1,0 +1,247 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import { href, source, type Lang } from "../../lib/links";
+
+interface Props {
+  lang?: Lang;
+}
+const { lang = "vi" } = Astro.props;
+const isVi = lang === "vi";
+---
+
+<Layout
+  title={isVi ? "Nghiên cứu" : "Research"}
+  description={isVi
+    ? "Câu hỏi nghiên cứu, phương pháp và ranh giới phát hiện bất thường lưu lượng mạng."
+    : "Research question, methods and boundaries for network anomaly detection and traceability."}
+  section="Research"
+  lang={lang}
+  routePath="research/"
+>
+  <PageIntro
+    eyebrow={isVi ? "01 / Nghiên cứu" : "01 / Research"}
+    current={isVi ? "Nghiên cứu" : "Research"}
+    title={isVi
+      ? "Nghiên cứu với ranh giới minh bạch."
+      : "Research with a clear boundary."}
+    description={isVi
+      ? "Đề tài khảo sát bài toán phát hiện bất thường trên NetFlow, tính hợp lệ khi chuyển sang miền dữ liệu khác và bằng chứng giải thích cho quyết định an ninh. Toàn bộ 4 mô hình đã có Held-out Test trên main cùng prototype Desktop Tauri 2 + FastAPI."
+      : "The project investigates network-flow detection, cross-dataset validity and traceable decision evidence. All four models now have Held-out Test evaluations on main alongside a scoped Tauri 2 + FastAPI desktop prototype."}
+    lang={lang}
+  />
+  <div class="container section research-grid">
+    {
+      isVi ? (
+        <article class="prose">
+          <h2 id="problem">Bài toán đặt ra</h2>
+          <p>
+            Các bộ dữ liệu xâm nhập có nhãn cho phép so sánh mô hình, nhưng điểm
+            số cao trên một benchmark có thể bắt nguồn từ flow lặp lại hoặc đặc
+            trưng riêng của phòng lab. Một hệ thống hữu ích còn cần đường dẫn
+            truy vết từ quan sát tới bằng chứng, đồng thời không suy diễn địa
+            chỉ IP thành bằng chứng danh tính con người.
+          </p>
+          <h2 id="objectives">Mục tiêu nghiên cứu</h2>
+          <ol>
+            <li>
+              Thiết lập baseline tái lập được trên byte chính thức của bộ
+              NF-UNSW-NB15-v3.
+            </li>
+            <li>
+              Đối chiếu phân loại supervised (Random Forest, XGBoost) với phát
+              hiện bất thường unsupervised (Isolation Forest, Autoencoder) dưới
+              quy tắc split và chọn ngưỡng tách bạch.
+            </li>
+            <li>
+              Kiểm toán hiện tượng shortcut, trùng lặp vector đặc trưng, false
+              positive, false negative và suy giảm cross-dataset (
+              <code>NF-CSE-CIC-IDS2018-v3</code>).
+            </li>
+            <li>
+              Cung cấp pipeline suy luận fail-closed có từ chối OOD, chấm điểm
+              ưu tiên tất định, timeline NetFlow, mô phỏng dry-run và ứng dụng
+              desktop cục bộ (<code>v0.6.0</code>).
+            </li>
+          </ol>
+          <h2 id="method">Phương pháp thực hiện</h2>
+          <p>
+            CSV v3 được xác minh qua manifest và kiểm định chất lượng. Quy trình
+            chia tập theo thời gian và nhóm luồng kèm khoảng đệm (purge gap) 5
+            phút tách riêng Train, Validation và Test trước khi tiền xử lý. Hợp
+            đồng baseline giữ đúng 47 đặc trưng flow theo thứ tự và loại 6
+            trường metadata cùng 2 cột nhãn khỏi ma trận <code>X</code>. Thống
+            kê học từ dữ liệu chỉ fit trên Train. Validation chọn ngưỡng (
+            <code>max-F1-on-known-attacks</code> cho Isolation Forest;{" "}
+            <code>fpr_constrained</code> tại <code>FPR &lt;= 0,05</code> cho
+            Autoencoder với <code>Backdoor</code> và <code>Worms</code> tách làm
+            họ tấn công chưa biết); Held-out Test (345.953 dòng) đánh giá trên
+            cả 4 mô hình đã đóng băng.
+          </p>
+          <h2 id="contributions">Đóng góp hiện có</h2>
+          <p>
+            Repository hiện có hợp đồng dữ liệu đã xác minh, pipeline chia tập
+            và tiền xử lý, kết quả Held-out Test cho cả 4 mô hình, kiểm toán
+            cross-dataset trên <code>NF-CSE-CIC-IDS2018-v3</code>, cổng từ chối
+            OOD và xác minh provenance, dịch vụ FastAPI + SQLite cục bộ và ứng
+            dụng Windows Desktop (<code>Rust / Tauri 2 + Svelte 5</code>,{" "}
+            <code>v0.6.0</code>). Tự động hóa firewall trên hệ điều hành và lưu
+            trữ khóa AES-256-GCM trong OS keyring đang ở trạng thái hoãn (chỉ có
+            mô phỏng dry-run với <code>executed=false</code>).
+          </p>
+          <h2 id="limitations">Giới hạn &amp; hướng tiếp theo</h2>
+          <p>
+            Gói v3 công bố năm 2025 nhưng lưu lượng gốc được tạo từ đầu năm
+            2015. Điểm Validation/Test gần tuyệt đối của mô hình cây supervised
+            sụp đổ hoàn toàn trên <code>NF-CSE-CIC-IDS2018-v3</code> (Random
+            Forest tụt xuống <code>0,0000</code> Recall và <code>0,3802</code>{" "}
+            FPR với <code>99,99%</code> dòng trôi <code>MIN_TTL</code>). Trong
+            khi đó Autoencoder chỉ đạt <code>0,1361</code> F1 dưới ràng buộc{" "}
+            <code>Val FPR &lt;= 0,05</code>. Đóng gói Python nhúng độc lập và
+            bài toán bền vững cross-dataset là hướng phát triển tiếp theo.
+          </p>
+          <div class="callout">
+            <strong>Quy tắc diễn giải</strong>
+            <br />
+            Thử nghiệm tách họ tấn công chưa biết (<code>Backdoor</code>,{" "}
+            <code>Worms</code>) kiểm tra một giao thức xác định trong cùng
+            testbed 2015; không phải bằng chứng phát hiện zero-day ngoài thực
+            tế.
+          </div>
+        </article>
+      ) : (
+        <article class="prose">
+          <h2 id="problem">The problem</h2>
+          <p>
+            Labelled intrusion benchmarks make model comparison possible, but a
+            high score on one dataset can reflect repeated flows or
+            laboratory-specific patterns. A useful detection system also needs a
+            traceable path from an observation to the evidence, without treating
+            an IP address as proof of a person's identity.
+          </p>
+          <h2 id="objectives">Research objectives</h2>
+          <ol>
+            <li>
+              Establish a reproducible baseline on verified NF-UNSW-NB15-v3
+              bytes.
+            </li>
+            <li>
+              Compare supervised classification (Random Forest, XGBoost) with
+              unsupervised anomaly scores (Isolation Forest, Autoencoder) under
+              explicit split, benign-only training and threshold rules.
+            </li>
+            <li>
+              Audit shortcuts, equivalent feature vectors, false positives,
+              false negatives and cross-dataset degradation (
+              <code>NF-CSE-CIC-IDS2018-v3</code>).
+            </li>
+            <li>
+              Deliver a fail-closed inference pipeline with OOD abstention,
+              deterministic priority scoring, NetFlow evidence timelines,
+              dry-run response simulation and a local desktop prototype (
+              <code>v0.6.0</code>).
+            </li>
+          </ol>
+          <h2 id="method">Method</h2>
+          <p>
+            The published v3 CSV is verified by manifest and quality checks. A
+            chronological, group-aware split with 5-minute purge gaps assigns
+            Train, Validation and Test before learned preprocessing. The
+            baseline model contract keeps 47 ordered flow features and separates
+            six trace metadata fields and the two targets. Train-only statistics
+            are frozen for later partitions. Validation selects thresholds (
+            <code>max-F1-on-known-attacks</code> for Isolation Forest;{" "}
+            <code>fpr_constrained</code> at <code>FPR &lt;= 0.05</code> for
+            Autoencoder with <code>Backdoor</code> and <code>Worms</code> held
+            out as unknown categories); Held-out Test (345,953 flows) evaluates
+            all four frozen models.
+          </p>
+          <h2 id="contributions">Current contributions</h2>
+          <p>
+            The repository now contains the verified data contract, split and
+            preprocessing pipelines, Held-out Test evidence for all four models,
+            an external cross-dataset audit on{" "}
+            <code>NF-CSE-CIC-IDS2018-v3</code>, an OOD abstention and provenance
+            gate, a localhost FastAPI + SQLite service, and a Windows desktop
+            application (<code>Rust / Tauri 2 + Svelte 5</code>,{" "}
+            <code>v0.6.0</code>). Live firewall automation and production
+            AES-256-GCM OS keyring storage remain deferred (
+            <code>executed=false</code> dry-run simulation only).
+          </p>
+          <h2 id="limitations">Limits and next work</h2>
+          <p>
+            The v3 package was published in 2025, while its observed flows are
+            from early 2015. Near-perfect in-domain Validation and Test scores
+            for supervised trees fail catastrophically on{" "}
+            <code>NF-CSE-CIC-IDS2018-v3</code> (RF drops to <code>0.0000</code>{" "}
+            Recall and <code>0.3802</code> FPR with <code>99.99%</code>{" "}
+            <code>MIN_TTL</code> drift). Meanwhile, Autoencoder reaches only{" "}
+            <code>0.1361</code> F1 under the strict{" "}
+            <code>Val FPR &lt;= 0.05</code> constraint. Standalone embedded
+            Python packaging and cross-dataset robustness remain future work.
+          </p>
+          <div class="callout">
+            <strong>Interpretation rule</strong>
+            <br />
+            Unknown-attack holdouts (<code>Backdoor</code>, <code>Worms</code>)
+            test a defined experimental protocol inside the 2015 testbed; they
+            do not prove zero-day detection in production networks.
+          </div>
+        </article>
+      )
+    }
+    <aside
+      class="source-rail"
+      aria-label={isVi ? "Nguồn nghiên cứu" : "Research sources"}
+    >
+      <span class="eyebrow">{isVi ? "Dấu vết nguồn" : "Source trail"}</span><a
+        href={source("docs/PROBLEM_STATEMENT.md")}
+        >{isVi ? "Phát biểu bài toán ↗" : "Problem statement ↗"}</a
+      ><a href={source("docs/METHODOLOGY.md")}
+        >{isVi ? "Phương pháp luận ↗" : "Methodology ↗"}</a
+      ><a href={source("docs/MULTI_SOURCE_INGESTION.md")}
+        >{isVi ? "Tiếp nhận đa nguồn & OOD ↗" : "Multi-source & OOD gate ↗"}</a
+      ><a
+        href={source(
+          "reports/evaluation/cross_dataset_generalization_report.md",
+        )}>{isVi ? "Báo cáo cross-dataset ↗" : "Cross-dataset report ↗"}</a
+      ><a href={source("docs/ROADMAP_FULL_SYSTEM.md")}
+        >{isVi ? "Lộ trình hệ thống ↗" : "Full-system roadmap ↗"}</a
+      ><a href={source("docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md")}
+        >{isVi ? "Giao thức chia tập ↗" : "Split protocol ↗"}</a
+      ><a href={href("docs/limitations/", lang)}
+        >{isVi ? "Đọc giới hạn →" : "Read limitations →"}</a
+      >
+    </aside>
+  </div>
+</Layout>
+<style>
+  .research-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 250px;
+    gap: 5rem;
+  }
+  .source-rail {
+    align-self: start;
+    position: sticky;
+    top: 110px;
+    border-left: 1px solid var(--line);
+    padding-left: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .source-rail a {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  @media (max-width: 800px) {
+    .research-grid {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    .source-rail {
+      position: static;
+    }
+  }
+</style>

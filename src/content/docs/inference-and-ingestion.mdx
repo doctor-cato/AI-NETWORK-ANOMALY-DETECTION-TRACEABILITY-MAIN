@@ -1,23 +1,23 @@
 ---
-title: Inference & ingestion gate
-description: 47-feature CSV inference, source provenance verification and OOD abstention.
+title: Suy luận & Cổng tiếp nhận
+description: Suy luận CSV 47 đặc trưng, xác minh provenance nguồn và từ chối OOD.
 order: 14
 ---
 
-## Fail-closed inference pipeline
+## Pipeline suy luận fail-closed
 
-`scripts/predict.py` and `InferencePipeline` enforce the canonical 47-feature contract (`nf-unsw-nb15-v3-baseline-47`), strip `Label`, `Attack` and six trace metadata columns before transformation, verify SHA-256 digests on both `TrainOnlyPreprocessor` and the target model `.joblib`, and write `.csv` + `.metadata.json` provenance records. Missing or mismatched binaries halt fail-closed as `BLOCKED / NOT READY`.
+`scripts/predict.py` và `InferencePipeline` thực thi hợp đồng 47 đặc trưng (`nf-unsw-nb15-v3-baseline-47`), loại bỏ `Label`, `Attack` và 6 cột metadata truy vết trước khi biến đổi, xác minh SHA-256 trên cả `TrainOnlyPreprocessor` lẫn `.joblib` mô hình, và xuất `.csv` kèm `.metadata.json`. Nếu thiếu hoặc sai checksum artifact, hệ thống dừng fail-closed ở trạng thái `BLOCKED / NOT READY`.
 
 ```powershell
 $env:PYTHONPATH = "src"
 python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest --output data/demo/demo_predictions.csv --metadata-output data/demo/demo_predictions_meta.json
 ```
 
-## Provenance & OOD abstention
+## Kiểm chứng provenance & từ chối OOD
 
-Before ML scoring, `src/network_anomaly/ingestion/` and `desktop_csv.py` classify input CSVs across four compatibility tiers (`PARSEABLE`, `SCHEMA_COMPATIBLE`, `SEMANTICALLY_COMPATIBLE`, `MODEL_VALIDATED`):
+Trước khi suy luận ML, `src/network_anomaly/ingestion/` và `desktop_csv.py` phân loại CSV theo 4 tầng tương thích (`PARSEABLE`, `SCHEMA_COMPATIBLE`, `SEMANTICALLY_COMPATIBLE`, `MODEL_VALIDATED`):
 
-- Only verified canonical or allowlisted Validation demo CSVs receive `source:nf-v3-canonical` (`MODEL_VALIDATED`). Unverified external CSVs fail closed to `source:nf-v3-unverified` (`VALIDATION_NOT_VERIFIED`).
-- Flows violating network invariants or showing `MIN_TTL == 0` are marked `ABSTAINED_OOD` (`predicted_label = null`, `risk_level = "ABSTAINED_OOD"`) prior to calling the ML model and are excluded from confusion matrices.
+- Chỉ CSV chuẩn hoặc bộ demo Validation trong allowlist mới nhận `source:nf-v3-canonical` (`MODEL_VALIDATED`). CSV bên ngoài chưa xác minh bị phân loại fail-closed là `source:nf-v3-unverified` (`VALIDATION_NOT_VERIFIED`).
+- Các dòng vi phạm bất biến mạng hoặc có `MIN_TTL == 0` bị gắn nhãn `ABSTAINED_OOD` (`predicted_label = null`, `risk_level = "ABSTAINED_OOD"`) trước khi gọi mô hình ML và được loại trừ khỏi confusion matrix.
 
-See the [inference pipeline guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/INFERENCE_PIPELINE.md), [multi-source ingestion](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) and [feature compatibility matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md).
+Xem [tài liệu inference pipeline](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/INFERENCE_PIPELINE.md), [tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) và [ma trận tương thích đặc trưng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md).

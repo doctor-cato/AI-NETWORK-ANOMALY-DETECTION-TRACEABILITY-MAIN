@@ -1,0 +1,162 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import { href, type Lang } from "../../lib/links";
+import type { CollectionEntry } from "astro:content";
+
+interface Props {
+  lang?: Lang;
+  docs: Array<CollectionEntry<"docs"> | CollectionEntry<"docsEn">>;
+}
+const { lang = "vi", docs } = Astro.props;
+const isVi = lang === "vi";
+const sorted = [...docs].sort((a, b) => a.data.order - b.data.order);
+---
+
+<Layout
+  title={isVi ? "Tài liệu kỹ thuật" : "Documentation"}
+  description={isVi
+    ? "Hướng dẫn kỹ thuật, phương pháp và liên kết bằng chứng của prototype nghiên cứu."
+    : "Technical guides, methods and evidence links for the research prototype."}
+  section="Docs"
+  lang={lang}
+  routePath="docs/"
+>
+  <PageIntro
+    eyebrow={isVi ? "06 / Tài liệu" : "06 / Documentation"}
+    current={isVi ? "Tài liệu" : "Documentation"}
+    title={isVi
+      ? "Đọc phương pháp. Đối chiếu mã nguồn."
+      : "Read the method. Follow the source."}
+    description={isVi
+      ? "Các hướng dẫn ngắn kết nối bức tranh nghiên cứu với tài liệu chuẩn và mã nguồn thực thi trong repository. Tìm kiếm theo chủ đề hoặc từ khóa."
+      : "Short guides connect the public research narrative to the canonical repository documents and executable code. Search this static index by topic or keyword."}
+    lang={lang}
+  />
+  <section class="section">
+    <div class="container">
+      <label class="search-label" for="docs-search"
+        >{isVi ? "Tìm kiếm tài liệu" : "Search documentation"}</label
+      ><input
+        id="docs-search"
+        class="search"
+        type="search"
+        placeholder={isVi
+          ? "Thử ‘split’, ‘OOD’, hoặc ‘Windows’"
+          : "Try ‘split’, ‘training’, or ‘license’"}
+        autocomplete="off"
+      /><p id="search-empty" class="empty" hidden>
+        {
+          isVi
+            ? "Không có hướng dẫn phù hợp. Thử từ khóa khác hoặc xem trực tiếp tài liệu trong repository."
+            : "No matching guide. Try another term or inspect the repository documentation."
+        }
+      </p><div class="docs-grid">
+        {
+          sorted.map((doc) => (
+            <a
+              class="doc-card surface"
+              href={href(`docs/${doc.id}/`, lang)}
+              data-search={`${doc.data.title} ${doc.data.description} ${doc.body ?? ""}`.toLowerCase()}
+            >
+              <>
+                <span class="eyebrow">
+                  {isVi ? "HƯỚNG DẪN" : "GUIDE"} /{" "}
+                  {String(doc.data.order).padStart(2, "0")}
+                </span>
+                <h2>{doc.data.title}</h2>
+                <p>{doc.data.description}</p>
+                <span class="read-more">
+                  {isVi ? "Đọc hướng dẫn ↗" : "Read guide ↗"}
+                </span>
+              </>
+            </a>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+  <script>
+    const search = document.querySelector<HTMLInputElement>("#docs-search");
+    const cards = [...document.querySelectorAll<HTMLElement>(".doc-card")];
+    const empty = document.querySelector<HTMLElement>("#search-empty");
+    search?.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      let count = 0;
+      cards.forEach((card) => {
+        const match = (card.dataset.search ?? "").includes(query);
+        card.hidden = !match;
+        if (match) count++;
+      });
+      if (empty) empty.hidden = count > 0;
+    });
+  </script>
+</Layout>
+<style>
+  .search-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+  .search {
+    width: min(100%, 500px);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+    border-radius: 0.3rem;
+    padding: 0.8rem 1rem;
+  }
+  .search::placeholder {
+    color: var(--muted);
+  }
+  .docs-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-top: 2rem;
+  }
+  .doc-card {
+    padding: 1.4rem;
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    min-height: 240px;
+  }
+  .doc-card:hover {
+    border-color: var(--cyan);
+  }
+  .doc-card h2 {
+    font-size: 1.25rem;
+    margin: 1.2rem 0 0.4rem;
+  }
+  .doc-card p {
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin: 0;
+    flex: 1;
+  }
+  .read-more {
+    color: var(--cyan);
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-top: 1rem;
+  }
+  .empty {
+    color: var(--muted);
+    margin-top: 2rem;
+  }
+  .doc-card[hidden] {
+    display: none;
+  }
+  @media (max-width: 900px) {
+    .docs-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  @media (max-width: 600px) {
+    .docs-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

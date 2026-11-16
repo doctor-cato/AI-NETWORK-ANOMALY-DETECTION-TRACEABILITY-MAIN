@@ -38,7 +38,7 @@ try {
       assert.ok(
         await page
           .getByRole("navigation", { name: "Mobile navigation" })
-          .getByText("Research")
+          .getByText("Nghiên cứu")
           .isVisible(),
       );
       await page.screenshot({
@@ -53,9 +53,15 @@ try {
       });
   }
 
+  assert.equal(await page.locator("html").getAttribute("lang"), "vi");
   await page.goto(url("dataset/"), { waitUntil: "networkidle" });
   assert.match(await page.locator("h1").innerText(), /NF-UNSW-NB15-v3/);
   await page.reload({ waitUntil: "networkidle" });
+  assert.ok(await page.getByText("2,365,424 dòng").count());
+
+  await page.locator('.lang-switch a[lang="en"]').click();
+  await page.waitForLoadState("networkidle");
+  assert.equal(await page.locator("html").getAttribute("lang"), "en");
   assert.ok(await page.getByText("2,365,424 rows").count());
 
   await page.goto(url("docs/"), { waitUntil: "networkidle" });
@@ -69,7 +75,7 @@ try {
   await page.locator(".copy-code").first().click();
   assert.match(
     await page.locator(".copy-code").first().innerText(),
-    /Copied|Unavailable/,
+    /Đã chép|Không khả dụng|Copied|Unavailable/,
   );
 
   await page.locator(".theme-toggle").click();
@@ -89,6 +95,10 @@ try {
       "docs/",
       "docs/installation/",
       "roadmap/",
+      "en/",
+      "en/models/",
+      "en/results/",
+      "en/docs/installation/",
     ]) {
       await page.goto(url(path), { waitUntil: "networkidle" });
       assert.equal(

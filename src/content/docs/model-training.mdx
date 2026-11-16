@@ -1,21 +1,21 @@
 ---
-title: Model training
-description: Baseline input contract and all four trained and Test-evaluated models.
+title: Huấn luyện mô hình
+description: Hợp đồng đầu vào baseline và cả 4 mô hình đã huấn luyện, đánh giá trên Held-out Test.
 order: 6
 ---
 
-## Input boundary
+## Ranh giới đầu vào
 
-The canonical baseline uses 47 ordered NetFlow features (`nf-unsw-nb15-v3-baseline-47`). `Label`, `Attack`, timestamps, IP addresses and L4 ports are excluded from model input. Split membership is assigned before imputation or other learned transformations. Training data and `.joblib` artifacts are not shipped in Git or on this website.
+Baseline chuẩn sử dụng đúng 47 đặc trưng NetFlow theo thứ tự (`nf-unsw-nb15-v3-baseline-47`). `Label`, `Attack`, timestamp, địa chỉ IP và cổng L4 bị loại khỏi ma trận `X`. Phân vùng split được ấn định trước khi fit các phép biến đổi thống kê. Dữ liệu huấn luyện và tệp `.joblib` không nằm trong Git hoặc trên website này.
 
-## Protocols and real-data runs
+## Giao thức và các lượt chạy thực nghiệm
 
-- [Random Forest baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RF_BASELINE_PROTOCOL.md) — Held-out Test run `rf-heldout-ea330b9` (`F1 = 0.999853`).
-- [XGBoost baseline protocol](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/XGB_BASELINE_PROTOCOL.md) — Held-out Test run `xgb-baseline-1794755807` (`F1 = 0.999984`).
-- [Isolation Forest evaluation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) — Benign-only Train (`1,590,608` rows), Validation `max-F1-on-known-attacks` threshold `-0.033527`, Held-out Test `F1 = 0.5064`, Unknown `{Backdoor, Worms}` `Recall = 0.8657`.
-- [Autoencoder evaluation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md) — Benign-only Train, `fpr_constrained` Validation threshold `17234985.79` (`Val FPR = 0.0500 <= 0.05`), Held-out Test `F1 = 0.1361`, `Recall = 0.1093`, Unknown `Recall = 0.0625`.
-- [Train-only preprocessing policy](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md).
+- [Giao thức Random Forest baseline](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RF_BASELINE_PROTOCOL.md) — Held-out Test `rf-heldout-ea330b9` (`F1 = 0,999853`).
+- [Giao thức XGBoost baseline](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/XGB_BASELINE_PROTOCOL.md) — Held-out Test `xgb-baseline-1794755807` (`F1 = 0,999984`).
+- [Đánh giá Isolation Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) — Train benign-only (`1.590.608` dòng), ngưỡng Validation `max-F1-on-known-attacks` (`-0,033527`), Held-out Test `F1 = 0,5064`, Unknown `{Backdoor, Worms}` `Recall = 0,8657`.
+- [Đánh giá Autoencoder](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md) — Train benign-only, ngưỡng Validation `fpr_constrained` `17234985,79` (`Val FPR = 0,0500 <= 0,05`), Held-out Test `F1 = 0,1361`, `Recall = 0,1093`, Unknown `Recall = 0,0625`.
+- [Chính sách tiền xử lý train-only](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md).
 
-## Reproduction boundary
+## Ranh giới tái lập
 
-Large `.joblib` artifacts are excluded from Git. On a fresh checkout without the Companion Bundle or locally reproduced artifacts, `InferencePipeline` and `/api/v1/models` enforce fail-closed SHA-256 verification and report `BLOCKED / NOT READY` (`HTTP 503`). Note also that `xgb-baseline-1794755807` was trained at commit `7f51390` with `git_dirty=True`, and historical RF vs newer split index parity remains `MEMBERSHIP_EQUIVALENCE: NOT_VERIFIED` in the [split membership audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/split_membership_audit_report.md).
+Tệp `.joblib` kích thước lớn không lưu trong Git. Trên máy mới chưa có Companion Bundle hoặc artifact tự tái lập, `InferencePipeline` và `/api/v1/models` kiểm tra SHA-256 fail-closed và báo `BLOCKED / NOT READY` (`HTTP 503`). Lưu ý thêm: `xgb-baseline-1794755807` được train tại commit `7f51390` với `git_dirty=True`, và đối chiếu chỉ mục split RF cũ với bộ mới vẫn ở trạng thái `MEMBERSHIP_EQUIVALENCE: NOT_VERIFIED` trong [báo cáo đối chiếu split](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/split_membership_audit_report.md).
