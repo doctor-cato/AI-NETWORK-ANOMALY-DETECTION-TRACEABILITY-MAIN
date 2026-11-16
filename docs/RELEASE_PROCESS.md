@@ -138,7 +138,7 @@ Sau khi lệnh `tauri build` hoàn tất:
    ```powershell
    Get-Item "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe", "desktop/src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object FullName, Length, LastWriteTime
    ```
-2. Chạy kiểm chứng tự động cài đặt sạch NSIS trên Windows (silent install `/S /NS /D=...`, đối chiếu SHA-256 của `netflow-sentinel-desktop.exe` cài ra với binary `--release`, và silent uninstall `uninstall.exe /S _?=...`):
+2. Chạy kiểm chứng tự động cài đặt sạch NSIS trên Windows (silent install `/S /NS /D=...`, đối chiếu SHA-256 của `netflow-sentinel-desktop.exe` cài ra với binary `--release`, và silent uninstall `uninstall.exe /S`):
    ```powershell
    python scripts/verify_companion_artifacts.py --verify-nsis-only `
      --installer-path "dist/release-assets/NetFlow-Sentinel-<TAG>-windows-x64-setup.exe" `

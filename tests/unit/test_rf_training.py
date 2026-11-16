@@ -1349,3 +1349,44 @@ def test_execute_training_rejects_nan_in_transformed_features(
             output_model_path=tmp_path / "out_model.joblib",
             output_manifest_path=tmp_path / "out_man.json",
         )
+
+
+def test_rf_execute_training_require_clean_git_fails_closed(tmp_path, monkeypatch):
+    import subprocess
+
+    from network_anomaly.models.provenance import collect_git_provenance
+
+    fake_commit = "b" * 40
+
+    def _fake_check_output(cmd, **kwargs):
+        if cmd[:2] == ["git", "rev-parse"]:
+            return fake_commit + "\n"
+        if cmd[:2] == ["git", "status"]:
+            return ""
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(subprocess, "check_output", _fake_check_output)
+    clean_prov = collect_git_provenance(tmp_path, require_clean_git=True)
+    assert clean_prov["worktree_provenance"] == "CLEAN"
+    assert clean_prov["git_clean"] is True
+    assert clean_prov["git_dirty_disclosure"] is None
+
+    def _dirty_check_output(cmd, **kwargs):
+        if cmd[:2] == ["git", "rev-parse"]:
+            return fake_commit + "\n"
+        if cmd[:2] == ["git", "status"]:
+            return " M scripts/train_random_forest.py\n"
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(subprocess, "check_output", _dirty_check_output)
+    with pytest.raises(RuntimeError, match="Clean git worktree required"):
+        execute_training(
+            dataset_path=tmp_path / "ds.csv",
+            split_manifest_path=tmp_path / "sm.json",
+            indices_dir=tmp_path / "idx",
+            preprocessor_artifact_path=tmp_path / "prep.joblib",
+            preprocessor_manifest_path=tmp_path / "pm.json",
+            output_model_path=tmp_path / "out_model.joblib",
+            output_manifest_path=tmp_path / "out_man.json",
+            require_clean_git=True,
+        )

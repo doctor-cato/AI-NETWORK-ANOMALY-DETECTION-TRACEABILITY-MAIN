@@ -46,7 +46,6 @@ import gc
 import json
 import os
 import platform
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -81,6 +80,7 @@ from network_anomaly.evaluation.metrics import (  # noqa: E402
     compute_attack_category_breakdown,
     compute_metrics,
 )
+from network_anomaly.models.provenance import collect_git_provenance  # noqa: E402
 from network_anomaly.models.xgboost_model import XGBoostModel  # noqa: E402
 from network_anomaly.models.xgboost_protocol import (  # noqa: E402
     FEATURE_CONTRACT_VERSION,
@@ -206,6 +206,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--verify-only",
         action="store_true",
         help="Verify all prerequisite artifacts and exit without training",
+    )
+    parser.add_argument(
+        "--require-clean-git",
+        action="store_true",
+        default=False,
+        help="Fail closed if git worktree has uncommitted or untracked changes",
     )
     return parser.parse_args(argv)
 
@@ -413,8 +419,10 @@ def execute_training(
     *,
     evaluate_test: bool = False,
     evaluation_dir: Optional[Path] = None,
+    require_clean_git: bool = False,
 ) -> Dict[str, Any]:
     """Execute real XGBoost baseline training using verified prerequisites."""
+    git_provenance = collect_git_provenance(PROJECT_ROOT, require_clean_git=require_clean_git)
     tracker = PartitionAccessTracker()
 
     if output_model_path.exists():
@@ -599,24 +607,10 @@ def execute_training(
 
     # 8. Create run manifest with unified schema + runtime provenance
     run_id = f"xgb-baseline-{int(time.time())}"
-    try:
-        git_commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=str(PROJECT_ROOT), text=True
-        ).strip()
-    except Exception:
-        git_commit = "UNKNOWN"
-
-    git_dirty = False
-    try:
-        git_status = subprocess.check_output(
-            ["git", "status", "--porcelain"], cwd=str(PROJECT_ROOT), text=True
-        ).strip()
-        git_dirty = bool(git_status)
-    except Exception:
-        pass
-
-    provenance_complete = git_commit != "UNKNOWN" and len(git_commit) == 40
-    provenance_status = "VERIFIED" if provenance_complete else "INCOMPLETE"
+    git_commit = git_provenance["git_commit"]
+    git_dirty = git_provenance["git_dirty"]
+    provenance_complete = git_provenance["provenance_complete"]
+    provenance_status = git_provenance["provenance_status"]
 
     rf_reference: Dict[str, Any] = {"status": "NOT AVAILABLE"}
     if RF_REFERENCE_MANIFEST_PATH.exists():
@@ -698,6 +692,7 @@ def execute_training(
         },
         "provenance_complete": provenance_complete,
         "provenance_status": provenance_status,
+        "worktree_provenance": git_provenance["worktree_provenance"],
         "split_provenance": {
             "split_protocol_id": SPLIT_PROTOCOL_VERSION,
             "split_manifest_path": _safe_relpath(split_manifest_path),
@@ -731,7 +726,9 @@ def execute_training(
             "cpu_count": os.cpu_count(),
             "git_commit": git_commit,
             "git_dirty": git_dirty,
-            "git_clean": not git_dirty,
+            "git_clean": git_provenance["git_clean"],
+            "git_dirty_paths": git_provenance["git_dirty_paths"],
+            "git_dirty_disclosure": git_provenance["git_dirty_disclosure"],
             "provenance_complete": provenance_complete,
             "packages": {
                 "xgboost": xgboost.__version__,
@@ -1157,6 +1154,13 @@ def render_training_report_md(manifest: Dict[str, Any]) -> str:
         f"- **Run ID:** `{manifest['run_id']}`",
         f"- **Trained at (UTC):** `{manifest['trained_at_utc']}`",
         f"- **Git commit:** `{manifest['environment']['git_commit']}` (`git_dirty={manifest['environment'].get('git_dirty')}`)",
+        *(
+            [
+                f"- **Worktree provenance disclosure:** {manifest['environment']['git_dirty_disclosure']}"
+            ]
+            if manifest["environment"].get("git_dirty_disclosure")
+            else []
+        ),
         f"- **Dataset:** `{manifest['dataset_name']}` (SHA-256 `{manifest['dataset_sha256']}`)",
         f"- **Split protocol:** `{manifest['split_protocol_id']}` "
         f"(manifest SHA-256 `{manifest['split_manifest_sha256']}`)",
@@ -1334,6 +1338,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             report_md_path=args.report_md,
             evaluate_test=args.evaluate_test,
             evaluation_dir=args.evaluation_dir,
+            require_clean_git=args.require_clean_git,
         )
         print("\n[PASS] XGBoost supervised baseline training completed successfully.")
         return 0

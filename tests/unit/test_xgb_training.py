@@ -692,3 +692,44 @@ def test_shipped_xgboost_manifest_test_lock_audit_consistent():
         not in audit["contract_b_guarantee"]
     )
     assert "PASSED_DURING_FIT" in audit["contract_b_guarantee"]
+
+
+def test_collect_git_provenance_dirty_disclosure_and_strict_guard(tmp_path: Path, monkeypatch):
+    import subprocess
+
+    import scripts.train_xgboost as txgb
+    from network_anomaly.models.provenance import collect_git_provenance
+
+    fake_commit = "a" * 40
+
+    def _fake_check_output(cmd, **kwargs):
+        if cmd[:2] == ["git", "rev-parse"]:
+            return fake_commit + "\n"
+        if cmd[:2] == ["git", "status"]:
+            return " M scripts/train_xgboost.py\n?? untracked.txt\n"
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(subprocess, "check_output", _fake_check_output)
+    prov = collect_git_provenance(tmp_path, require_clean_git=False)
+    assert prov["git_commit"] == fake_commit
+    assert prov["git_dirty"] is True
+    assert prov["git_clean"] is False
+    assert prov["worktree_provenance"] == "DIRTY_DISCLOSED"
+    assert prov["provenance_complete"] is True
+    assert prov["provenance_status"] == "VERIFIED"
+    assert prov["git_dirty_paths"] == ["M scripts/train_xgboost.py", "?? untracked.txt"]
+    assert "uncommitted worktree changes (2 modified/untracked path(s))" in (
+        prov["git_dirty_disclosure"] or ""
+    )
+
+    with pytest.raises(RuntimeError, match="Clean git worktree required"):
+        txgb.execute_training(
+            dataset_path=tmp_path / "ds.csv",
+            split_manifest_path=tmp_path / "sm.json",
+            indices_dir=tmp_path / "idx",
+            preprocessor_artifact_path=tmp_path / "prep.joblib",
+            preprocessor_manifest_path=tmp_path / "pm.json",
+            output_model_path=tmp_path / "out.joblib",
+            output_manifest_path=tmp_path / "out.json",
+            require_clean_git=True,
+        )

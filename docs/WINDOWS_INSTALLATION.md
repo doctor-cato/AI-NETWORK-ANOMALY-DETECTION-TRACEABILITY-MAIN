@@ -128,9 +128,29 @@ $ArtifactsToVerify = @(
         Key = "model_artifact_sha256"
     },
     @{
+        File = "artifacts/models/xgboost/xgboost_baseline.joblib"
+        Manifest = "reports/models/xgboost_manifest.json"
+        Key = "model_artifact_sha256"
+    },
+    @{
         File = "artifacts/models/isolation_forest/isolation_forest.joblib"
         Manifest = "reports/models/isolation_forest_manifest.json"
         Key = "model_artifact_sha256"
+    },
+    @{
+        File = "artifacts/models/autoencoder/autoencoder_model.joblib"
+        Manifest = "reports/models/autoencoder_manifest.json"
+        Key = "model_sha256"
+    },
+    @{
+        File = "artifacts/models/autoencoder/model_config.json"
+        Manifest = "reports/models/autoencoder_manifest.json"
+        Key = "config_sha256"
+    },
+    @{
+        File = "artifacts/models/autoencoder/threshold.json"
+        Manifest = "reports/models/autoencoder_manifest.json"
+        Key = "threshold_sha256"
     }
 )
 

@@ -22,7 +22,6 @@ import io
 import json
 import os
 import platform
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -54,6 +53,7 @@ from network_anomaly.evaluation.metrics import (  # noqa: E402
     compute_attack_category_breakdown,
     compute_metrics,
 )
+from network_anomaly.models.provenance import collect_git_provenance  # noqa: E402
 from network_anomaly.models.random_forest import (  # noqa: E402
     FEATURE_CONTRACT_VERSION,
     PREPROCESSING_CONTRACT_ID,
@@ -222,6 +222,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--verify-only",
         action="store_true",
         help="Verify all prerequisite artifacts and exit without training",
+    )
+    parser.add_argument(
+        "--require-clean-git",
+        action="store_true",
+        default=False,
+        help="Fail closed if git worktree has uncommitted or untracked changes",
     )
     return parser.parse_args(argv)
 
@@ -659,8 +665,11 @@ def execute_training(
     preprocessor_manifest_path: Path,
     output_model_path: Path,
     output_manifest_path: Path,
+    *,
+    require_clean_git: bool = False,
 ) -> Dict[str, Any]:
     """Execute real Random Forest baseline training using verified prerequisites."""
+    git_provenance = collect_git_provenance(PROJECT_ROOT, require_clean_git=require_clean_git)
     tracker = PartitionAccessTracker()
 
     # 1. Load verified preprocessor artifact
@@ -850,24 +859,10 @@ def execute_training(
 
     # 8. Create run manifest with unified schema and runtime provenance
     run_id = f"rf-baseline-{int(time.time())}"
-    try:
-        git_commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=str(PROJECT_ROOT), text=True
-        ).strip()
-    except Exception:
-        git_commit = "UNKNOWN"
-
-    git_dirty = False
-    try:
-        git_status = subprocess.check_output(
-            ["git", "status", "--porcelain"], cwd=str(PROJECT_ROOT), text=True
-        ).strip()
-        git_dirty = bool(git_status)
-    except Exception:
-        pass
-
-    provenance_complete = git_commit != "UNKNOWN" and len(git_commit) == 40
-    provenance_status = "VERIFIED" if provenance_complete else "INCOMPLETE"
+    git_commit = git_provenance["git_commit"]
+    git_dirty = git_provenance["git_dirty"]
+    provenance_complete = git_provenance["provenance_complete"]
+    provenance_status = git_provenance["provenance_status"]
 
     manifest: Dict[str, Any] = {
         "run_id": run_id,
@@ -895,6 +890,7 @@ def execute_training(
         "preprocessor_manifest_sha256": actual_pm_sha,
         "provenance_complete": provenance_complete,
         "provenance_status": provenance_status,
+        "worktree_provenance": git_provenance["worktree_provenance"],
         "split_provenance": {
             "split_protocol_id": SPLIT_PROTOCOL_VERSION,
             "split_manifest_path": _safe_relpath(split_manifest_path),
@@ -927,6 +923,9 @@ def execute_training(
             "cpu_count": os.cpu_count(),
             "git_commit": git_commit,
             "git_dirty": git_dirty,
+            "git_clean": git_provenance["git_clean"],
+            "git_dirty_paths": git_provenance["git_dirty_paths"],
+            "git_dirty_disclosure": git_provenance["git_dirty_disclosure"],
             "provenance_complete": provenance_complete,
             "packages": {
                 "pandas": pd.__version__,
@@ -1080,6 +1079,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             preprocessor_manifest_path=args.preprocessor_manifest,
             output_model_path=args.output_model,
             output_manifest_path=args.output_manifest,
+            require_clean_git=args.require_clean_git,
         )
         return 0
     except Exception as exc:
