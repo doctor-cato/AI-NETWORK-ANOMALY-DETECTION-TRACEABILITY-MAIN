@@ -28,17 +28,13 @@ pub fn run() {
 
             let preferred_port = resolve_preferred_backend_port();
             std::thread::spawn(move || {
-                let _ = backend.ensure_started(preferred_port, Duration::from_secs(20));
+                let _ = backend.ensure_started(preferred_port, Duration::from_secs(45));
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_status,
             commands::get_runtime_diagnostics,
-            commands::setup_python_runtime,
-            commands::import_companion_bundle,
-            commands::pick_zip_file,
-            commands::pick_companion_folder,
             commands::report_frontend_ready,
             commands::restart_backend,
             commands::get_demo_paths,

@@ -209,6 +209,86 @@ export function formatBlockedModelReason(reason: string | null | undefined): str
   return trimmed || "Thiếu artifact hoặc chưa kiểm chứng — không tự fallback giả lập.";
 }
 
+export interface ModelGovernanceInfo {
+  tier: "MODEL_VALIDATED" | "RESEARCH_ONLY";
+  badgeLabel: string;
+  shortRole: string;
+  explanation: string;
+}
+
+export function getModelGovernanceInfo(modelKey: string): ModelGovernanceInfo {
+  if (modelKey === "random_forest") {
+    return {
+      tier: "MODEL_VALIDATED",
+      badgeLabel: "Chính thức (Validated)",
+      shortRole: "Baseline đã kiểm chứng",
+      explanation:
+        "Mô hình chuẩn đã được kiểm chứng đầy đủ trên tập dữ liệu NF-UNSW-NB15-v3. Hỗ trợ đầy đủ phân loại và khuyến nghị phản ứng (dry-run).",
+    };
+  }
+  if (modelKey === "xgboost") {
+    return {
+      tier: "RESEARCH_ONLY",
+      badgeLabel: "Nghiên cứu (Research)",
+      shortRole: "So sánh hiệu năng Gradient Boosting",
+      explanation:
+        "Mô hình có giám sát dùng để đối chiếu độ chính xác với Random Forest; không tự kích hoạt khuyến nghị cách ly.",
+    };
+  }
+  if (modelKey === "isolation_forest") {
+    return {
+      tier: "RESEARCH_ONLY",
+      badgeLabel: "Nghiên cứu (Unsupervised)",
+      shortRole: "Phát hiện bất thường không nhãn",
+      explanation:
+        "Học từ lưu lượng bình thường để phát hiện mẫu lạ bằng điểm bất thường thô và ngưỡng Validation đóng băng.",
+    };
+  }
+  return {
+    tier: "RESEARCH_ONLY",
+    badgeLabel: "Nghiên cứu (Deep Learning)",
+    shortRole: "Sai số tái tạo (FPR ≤ 5%)",
+    explanation:
+      "Học tái tạo lưu lượng bình thường (MLP Autoencoder); độ lệch tái tạo vượt ngưỡng cố định sẽ được gắn cờ bất thường.",
+  };
+}
+
+export function formatUserFriendlyError(raw: unknown): string {
+  const msg = raw instanceof Error ? raw.message : String(raw ?? "");
+  const lower = msg.toLowerCase();
+  if (!msg.trim()) {
+    return "Đã xảy ra lỗi không xác định khi xử lý yêu cầu. Vui lòng thử lại hoặc nhấn 'Làm mới Dịch vụ'.";
+  }
+  if (lower.includes("missing") && lower.includes("baseline ml feature")) {
+    return `Tệp CSV chưa đúng định dạng NetFlow v3 (thiếu cột đặc trưng bắt buộc). Vui lòng chọn tệp CSV hợp lệ hoặc dùng dữ liệu Demo. (${msg})`;
+  }
+  if (lower.includes("0 bytes") || lower.includes("empty")) {
+    return "Tệp CSV đang trống (không có dòng dữ liệu). Vui lòng chọn tệp CSV có ít nhất 1 dòng lưu lượng.";
+  }
+  if (lower.includes("only .csv")) {
+    return "Ứng dụng chỉ hỗ trợ tệp định dạng .csv. Vui lòng chọn đúng tệp CSV.";
+  }
+  if (lower.includes("unc or network share")) {
+    return "Vì lý do bảo mật offline, ứng dụng không đọc/ghi trực tiếp qua đường dẫn mạng chia sẻ (UNC). Hãy sao chép tệp vào ổ đĩa cục bộ.";
+  }
+  if (lower.includes("protected system directory")) {
+    return "Không được phép đọc hoặc xuất tệp vào thư mục hệ thống Windows. Vui lòng chọn thư mục cá nhân như Documents hoặc Desktop.";
+  }
+  if (lower.includes("overwrite the input csv")) {
+    return "Không thể ghi đè trực tiếp lên tệp CSV đầu vào. Vui lòng đặt tên tệp xuất khác.";
+  }
+  if (lower.includes("http 503") || lower.includes("not ready")) {
+    return `Hệ thống mô hình AI chưa sẵn sàng hoặc đang bị khóa kiểm chứng SHA-256 (${msg}). Hãy nhấn 'Làm mới Dịch vụ' hoặc kiểm tra lại cài đặt.`;
+  }
+  if (lower.includes("http 401") || lower.includes("unauthorized")) {
+    return "Phiên kết nối nội bộ hết hạn hoặc chưa hợp lệ. Hãy nhấn 'Làm mới Dịch vụ' để khôi phục kết nối an toàn.";
+  }
+  if (lower.includes("unreachable") || lower.includes("timed out")) {
+    return "Dịch vụ phân tích cục bộ đang khởi động hoặc chưa phản hồi. Vui lòng đợi vài giây hoặc nhấn 'Làm mới Dịch vụ'.";
+  }
+  return msg;
+}
+
 export function shortDigest(sha: string | null | undefined): string {
   if (!sha) return "N/A";
   return sha.length > 14 ? `${sha.slice(0, 12)}...` : sha;

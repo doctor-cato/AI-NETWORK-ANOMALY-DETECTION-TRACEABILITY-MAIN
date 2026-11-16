@@ -4,16 +4,22 @@
 from __future__ import annotations
 
 import argparse
+import multiprocessing
 import os
 import sys
 from pathlib import Path
 
 import uvicorn
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-_SRC_DIR = _REPO_ROOT / "src"
-if str(_SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(_SRC_DIR))
+_FROZEN = bool(getattr(sys, "frozen", False))
+if _FROZEN:
+    _REPO_ROOT = Path(sys.executable).resolve().parent
+    _SRC_DIR = _REPO_ROOT / "src"
+else:
+    _REPO_ROOT = Path(__file__).resolve().parent.parent
+    _SRC_DIR = _REPO_ROOT / "src"
+    if str(_SRC_DIR) not in sys.path:
+        sys.path.insert(0, str(_SRC_DIR))
 
 
 def _is_loopback_host(host: str) -> bool:
@@ -22,6 +28,7 @@ def _is_loopback_host(host: str) -> bool:
 
 
 def main() -> None:
+    multiprocessing.freeze_support()
     parser = argparse.ArgumentParser(description="Run Network Anomaly Detection FastAPI Service")
     parser.add_argument(
         "--host", default="127.0.0.1", help="Host interface to bind (default: 127.0.0.1)"
@@ -51,11 +58,12 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    existing_pypath = os.environ.get("PYTHONPATH", "")
-    if str(_SRC_DIR) not in existing_pypath.split(os.pathsep):
-        os.environ["PYTHONPATH"] = (
-            f"{_SRC_DIR}{os.pathsep}{existing_pypath}" if existing_pypath else str(_SRC_DIR)
-        )
+    if not _FROZEN:
+        existing_pypath = os.environ.get("PYTHONPATH", "")
+        if str(_SRC_DIR) not in existing_pypath.split(os.pathsep):
+            os.environ["PYTHONPATH"] = (
+                f"{_SRC_DIR}{os.pathsep}{existing_pypath}" if existing_pypath else str(_SRC_DIR)
+            )
 
     if args.db_path is not None:
         os.environ["NETWORK_ANOMALY_DB_PATH"] = args.db_path
@@ -63,13 +71,27 @@ def main() -> None:
     print(f"Starting Network Anomaly FastAPI Service on http://{args.host}:{args.port}")
     print(f"OpenAPI documentation available at http://{args.host}:{args.port}/docs")
 
+    if args.reload:
+        if _FROZEN:
+            parser.error("--reload is not supported in frozen standalone backend mode.")
+        uvicorn.run(
+            "network_anomaly.api.main:app",
+            host=args.host,
+            port=args.port,
+            reload=True,
+        )
+        return
+
+    from network_anomaly.api.main import create_app
+
     uvicorn.run(
-        "network_anomaly.api.main:app",
+        create_app(),
         host=args.host,
         port=args.port,
-        reload=args.reload,
+        reload=False,
     )
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

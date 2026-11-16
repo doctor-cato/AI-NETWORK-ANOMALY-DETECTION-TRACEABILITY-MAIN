@@ -9,21 +9,41 @@ on:
       tag_label:
         description: 'Dry-run version label for artifact naming (when triggered manually without a tag)'
         required: false
-        default: 'v0.6.0-dryrun'
+        default: 'v1.0.0-dryrun'
+      model_bundle_url:
+        description: 'Build-time allowlisted HTTPS URL to authorized 4-model bundle ZIP (overrides vars.MODEL_BUNDLE_URL)'
+        required: false
+        default: ''
+      model_bundle_sha256:
+        description: 'Required 64-hex SHA-256 of model bundle ZIP when using URL or workflow run ID'
+        required: false
+        default: ''
+      model_artifact_run_id:
+        description: 'GitHub Actions workflow run ID in this repo with authorized 4-model artifact'
+        required: false
+        default: ''
+      model_bundle_dir:
+        description: 'Optional external directory containing staged 4-model artifacts (self-hosted/manual only)'
+        required: false
+        default: ''
+      distribution_scope:
+        description: 'Distribution permission scope (non-commercial-academic-approved or private-build-only)'
+        required: false
+        default: 'private-build-only'
       companion_bundle_url:
-        description: 'Optional allowlisted HTTPS URL to packaged companion ZIP (override vars.COMPANION_BUNDLE_URL)'
+        description: 'DEPRECATED alias for model_bundle_url (build-time acquisition only)'
         required: false
         default: ''
       companion_bundle_sha256:
-        description: 'Required 64-hex SHA-256 of companion ZIP when using URL or workflow run ID'
+        description: 'DEPRECATED alias for model_bundle_sha256'
         required: false
         default: ''
       companion_artifact_run_id:
-        description: 'Optional GitHub Actions workflow run ID in this repo with companion artifact'
+        description: 'DEPRECATED alias for model_artifact_run_id'
         required: false
         default: ''
       companion_bundle_dir:
-        description: 'Optional external directory containing staged companion artifacts (self-hosted/manual only)'
+        description: 'DEPRECATED alias for model_bundle_dir'
         required: false
         default: ''
 
@@ -32,7 +52,7 @@ permissions:
 
 jobs:
   release-windows-x64:
-    name: Build, Verify & Package Windows x64 Release
+    name: Build, Verify & Package Standalone Windows x64 Release
     runs-on: windows-latest
     env:
       CARGO_INCREMENTAL: "0"
@@ -54,10 +74,11 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Install Python dependencies
+      - name: Install Python dependencies and PyInstaller packaging toolchain
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -r requirements-runtime.txt
+          pip install -e ".[dev,packaging]"
 
       - name: Verify clean working tree, tag integrity, and version consistency
         id: meta
@@ -137,35 +158,71 @@ jobs:
           "is_tag_push=$($isTagPush.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "is_prerelease=$($isPrerelease.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Resolve, verify, and install companion artifacts bundle (tag-push & dispatch)
+      - name: Build-time model acquisition, SHA-256 verification & distribution permission gate
+        id: embedded
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODEL_BUNDLE_TOKEN: ${{ secrets.MODEL_BUNDLE_TOKEN }}
           COMPANION_BUNDLE_TOKEN: ${{ secrets.COMPANION_BUNDLE_TOKEN }}
-          INPUT_COMPANION_URL: ${{ inputs.companion_bundle_url }}
-          INPUT_COMPANION_SHA256: ${{ inputs.companion_bundle_sha256 }}
-          INPUT_COMPANION_RUN_ID: ${{ inputs.companion_artifact_run_id }}
-          INPUT_COMPANION_DIR: ${{ inputs.companion_bundle_dir }}
-          VAR_COMPANION_URL: ${{ vars.COMPANION_BUNDLE_URL }}
-          VAR_COMPANION_SHA256: ${{ vars.COMPANION_BUNDLE_SHA256 }}
-          VAR_COMPANION_RUN_ID: ${{ vars.COMPANION_ARTIFACT_RUN_ID }}
-          VAR_COMPANION_ARTIFACT_NAME: ${{ vars.COMPANION_ARTIFACT_NAME }}
-          VAR_COMPANION_ALLOWED_HOSTS: ${{ vars.COMPANION_BUNDLE_ALLOWED_HOSTS }}
+          INPUT_MODEL_URL: ${{ inputs.model_bundle_url }}
+          INPUT_MODEL_SHA256: ${{ inputs.model_bundle_sha256 }}
+          INPUT_MODEL_RUN_ID: ${{ inputs.model_artifact_run_id }}
+          INPUT_MODEL_DIR: ${{ inputs.model_bundle_dir }}
+          INPUT_DIST_SCOPE: ${{ inputs.distribution_scope }}
+          INPUT_DEP_URL: ${{ inputs.companion_bundle_url }}
+          INPUT_DEP_SHA256: ${{ inputs.companion_bundle_sha256 }}
+          INPUT_DEP_RUN_ID: ${{ inputs.companion_artifact_run_id }}
+          INPUT_DEP_DIR: ${{ inputs.companion_bundle_dir }}
+          VAR_MODEL_URL: ${{ vars.MODEL_BUNDLE_URL }}
+          VAR_MODEL_SHA256: ${{ vars.MODEL_BUNDLE_SHA256 }}
+          VAR_MODEL_RUN_ID: ${{ vars.MODEL_ARTIFACT_RUN_ID }}
+          VAR_MODEL_ARTIFACT_NAME: ${{ vars.MODEL_ARTIFACT_NAME }}
+          VAR_MODEL_ALLOWED_HOSTS: ${{ vars.MODEL_BUNDLE_ALLOWED_HOSTS }}
+          VAR_DIST_SCOPE: ${{ vars.ALLOW_EMBEDDED_MODEL_REDISTRIBUTION }}
+          VAR_DEP_URL: ${{ vars.COMPANION_BUNDLE_URL }}
+          VAR_DEP_SHA256: ${{ vars.COMPANION_BUNDLE_SHA256 }}
+          VAR_DEP_RUN_ID: ${{ vars.COMPANION_ARTIFACT_RUN_ID }}
+          VAR_DEP_ARTIFACT_NAME: ${{ vars.COMPANION_ARTIFACT_NAME }}
+          VAR_DEP_ALLOWED_HOSTS: ${{ vars.COMPANION_BUNDLE_ALLOWED_HOSTS }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
+          $isTagPush = "${{ steps.meta.outputs.is_tag_push }}" -eq "true"
           $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
 
-          $bundleUrl = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_URL)) { $env:INPUT_COMPANION_URL.Trim() } else { "$($env:VAR_COMPANION_URL)".Trim() }
-          $bundleRunId = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_RUN_ID)) { $env:INPUT_COMPANION_RUN_ID.Trim() } else { "$($env:VAR_COMPANION_RUN_ID)".Trim() }
-          $bundleSha = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_SHA256)) { $env:INPUT_COMPANION_SHA256.Trim() } else { "$($env:VAR_COMPANION_SHA256)".Trim() }
-          $artifactName = if (-not [string]::IsNullOrWhiteSpace($env:VAR_COMPANION_ARTIFACT_NAME)) { $env:VAR_COMPANION_ARTIFACT_NAME.Trim() } else { "netflow-sentinel-companion-bundle" }
-          $allowedHosts = "$($env:VAR_COMPANION_ALLOWED_HOSTS)".Trim()
-          $bundleDir = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "$($env:INPUT_COMPANION_DIR)".Trim() } else { "" }
+          function Pick-FirstNonEmpty([string[]]$vals) {
+            foreach ($v in $vals) {
+              if (-not [string]::IsNullOrWhiteSpace($v)) { return $v.Trim() }
+            }
+            return ""
+          }
+
+          $bundleUrl = Pick-FirstNonEmpty @($env:INPUT_MODEL_URL, $env:VAR_MODEL_URL, $env:INPUT_DEP_URL, $env:VAR_DEP_URL)
+          $bundleRunId = Pick-FirstNonEmpty @($env:INPUT_MODEL_RUN_ID, $env:VAR_MODEL_RUN_ID, $env:INPUT_DEP_RUN_ID, $env:VAR_DEP_RUN_ID)
+          $bundleSha = Pick-FirstNonEmpty @($env:INPUT_MODEL_SHA256, $env:VAR_MODEL_SHA256, $env:INPUT_DEP_SHA256, $env:VAR_DEP_SHA256)
+          $artifactName = Pick-FirstNonEmpty @($env:VAR_MODEL_ARTIFACT_NAME, $env:VAR_DEP_ARTIFACT_NAME, "netflow-sentinel-model-bundle")
+          $allowedHosts = Pick-FirstNonEmpty @($env:VAR_MODEL_ALLOWED_HOSTS, $env:VAR_DEP_ALLOWED_HOSTS)
+          $bundleDir = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            Pick-FirstNonEmpty @($env:INPUT_MODEL_DIR, $env:INPUT_DEP_DIR)
+          } else { "" }
+
+          if (-not [string]::IsNullOrWhiteSpace($env:INPUT_DEP_URL) -or -not [string]::IsNullOrWhiteSpace($env:VAR_DEP_URL) -or -not [string]::IsNullOrWhiteSpace($env:INPUT_DEP_RUN_ID) -or -not [string]::IsNullOrWhiteSpace($env:VAR_DEP_RUN_ID)) {
+            Write-Warning "[DEPRECATED] COMPANION_* variables/inputs are deprecated for v1.0.0 standalone builds. Migrate to MODEL_BUNDLE_URL / MODEL_ARTIFACT_RUN_ID / MODEL_BUNDLE_SHA256 (build-time acquisition)."
+          }
+
+          $distScope = Pick-FirstNonEmpty @($env:VAR_DIST_SCOPE, $env:INPUT_DIST_SCOPE, "private-build-only")
+          $acquiredDir = Join-Path $PWD "build/acquired_models"
 
           if (-not [string]::IsNullOrWhiteSpace($bundleUrl)) {
+            $tokenEnv = if (-not [string]::IsNullOrWhiteSpace($env:MODEL_BUNDLE_TOKEN)) {
+              "MODEL_BUNDLE_TOKEN"
+            } elseif (-not [string]::IsNullOrWhiteSpace($env:COMPANION_BUNDLE_TOKEN)) {
+              "COMPANION_BUNDLE_TOKEN"
+            } else { "" }
             $cmdArgs = @(
               "scripts/verify_companion_artifacts.py",
+              "--runtime-dir", $acquiredDir,
               "--install-bundle-url", $bundleUrl,
               "--github-repo", "${{ github.repository }}"
             )
@@ -175,14 +232,15 @@ jobs:
             if (-not [string]::IsNullOrWhiteSpace($allowedHosts)) {
               $cmdArgs += @("--allowed-hosts", $allowedHosts)
             }
-            if (-not [string]::IsNullOrWhiteSpace($env:COMPANION_BUNDLE_TOKEN)) {
-              $cmdArgs += @("--token-env", "COMPANION_BUNDLE_TOKEN")
+            if (-not [string]::IsNullOrWhiteSpace($tokenEnv)) {
+              $cmdArgs += @("--token-env", $tokenEnv)
             }
             python @cmdArgs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } elseif (-not [string]::IsNullOrWhiteSpace($bundleRunId)) {
             $cmdArgs = @(
               "scripts/verify_companion_artifacts.py",
+              "--runtime-dir", $acquiredDir,
               "--install-bundle-run-id", $bundleRunId,
               "--install-bundle-artifact-name", $artifactName,
               "--github-repo", "${{ github.repository }}",
@@ -195,28 +253,54 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } elseif (-not [string]::IsNullOrWhiteSpace($bundleDir)) {
             python scripts/verify_companion_artifacts.py `
+              --runtime-dir $acquiredDir `
               --install-bundle-dir $bundleDir `
               --github-repo "${{ github.repository }}"
             if ($LASTEXITCODE -ne 0) { exit 1 }
-          } else {
-            python scripts/verify_companion_artifacts.py > $null
-            if ($LASTEXITCODE -ne 0) {
-              if ($isStableRelease) {
-                Write-Error (
-                  "FAIL-CLOSED: Stable release ($tagName) requires verified companion artifacts on the runner. " +
-                  "Configure Repository Variables vars.COMPANION_BUNDLE_URL + vars.COMPANION_BUNDLE_SHA256 " +
-                  "(or vars.COMPANION_ARTIFACT_RUN_ID + vars.COMPANION_BUNDLE_SHA256) with the 4-model bundle ZIP " +
-                  "built via 'python scripts/verify_companion_artifacts.py --package-bundle <zip>'."
-                )
-                exit 1
-              }
-              Write-Warning (
-                "Prerelease/dry-run ($tagName): no companion bundle configured; proceeding with build and " +
-                "clean NSIS installed-desktop startup/shutdown E2E only (4-model live E2E skipped for prerelease)."
-              )
-              $global:LASTEXITCODE = 0
-            }
           }
+
+          $sourceRuntimeDir = if (Test-Path (Join-Path $acquiredDir "artifacts")) { $acquiredDir } else { $PWD.Path }
+          python scripts/verify_companion_artifacts.py --runtime-dir $sourceRuntimeDir > $null
+          $modelsReady = ($LASTEXITCODE -eq 0)
+          $global:LASTEXITCODE = 0
+
+          if (-not $modelsReady) {
+            if ($isStableRelease) {
+              Write-Error (
+                "FAIL-CLOSED: Stable standalone release ($tagName) requires all 4 verified ML models, " +
+                "preprocessor, and demo CSV during build stage. Configure vars.MODEL_BUNDLE_URL + " +
+                "vars.MODEL_BUNDLE_SHA256 (or vars.MODEL_ARTIFACT_RUN_ID + vars.MODEL_BUNDLE_SHA256)."
+              )
+              exit 1
+            }
+            Write-Warning (
+              "Prerelease/dry-run ($tagName): build-time 4-model bundle not configured; " +
+              "proceeding with non-embedded NSIS smoke build only (standalone 4-model E2E skipped)."
+            )
+            "standalone_ready=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          if ($isTagPush) {
+            python scripts/verify_companion_artifacts.py --verify-distribution-permission $distScope --public-release
+          } else {
+            python scripts/verify_companion_artifacts.py --verify-distribution-permission $distScope
+          }
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "BLOCKED — DISTRIBUTION PERMISSION: Refusing to embed NF-UNSW-NB15-v3 artifacts without valid distribution scope."
+            exit 1
+          }
+
+          $stagedBundle = "desktop/src-tauri/staged_bundle"
+          python scripts/verify_companion_artifacts.py `
+            --runtime-dir $sourceRuntimeDir `
+            --stage-embedded-dir $stagedBundle `
+            --distribution-scope $distScope
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed staging verified embedded bundle into $stagedBundle."
+            exit 1
+          }
+          "standalone_ready=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
@@ -237,7 +321,7 @@ jobs:
           cache-all-crates: true
           cache-on-failure: true
 
-      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest, Committed Attestation)
+      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest, Baseline Attestation)
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -277,17 +361,38 @@ jobs:
           cargo clippy --release --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
           cargo test --release --manifest-path desktop/src-tauri/Cargo.toml --lib
 
-      - name: Build Tauri Windows x64 application and NSIS installer
+      - name: Build Python FastAPI + 4-Model PyInstaller Sidecar
+        shell: pwsh
         run: |
-          npx --prefix desktop tauri build --bundles nsis
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path "dist/release-assets" | Out-Null
+          python scripts/build_backend_sidecar.py --output-json dist/release-assets/sidecar_build.json
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Verify build artifacts, generate SHA256SUMS.txt, and enforce NSIS + Live 4-Model E2E Gate
+      - name: Build Standalone Tauri Windows x64 NSIS Installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $isStandalone = "${{ steps.embedded.outputs.standalone_ready }}" -eq "true"
+          Push-Location desktop
+          try {
+            if ($isStandalone) {
+              npx tauri build --config src-tauri/tauri.standalone.conf.json --bundles nsis
+            } else {
+              npx tauri build --bundles nsis
+            }
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Embedded Artifacts Verification Gate & Clean Windows Standalone E2E
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
           $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
-          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+          $isStandalone = "${{ steps.embedded.outputs.standalone_ready }}" -eq "true"
           $exePath = "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe"
           if (-not (Test-Path $exePath)) {
             Write-Error "Missing compiled Windows executable: $exePath"
@@ -312,51 +417,22 @@ jobs:
           $sumsFile = Join-Path $stageDir "SHA256SUMS.txt"
           "$setupHash  $setupAssetName" | Out-File -FilePath $sumsFile -Encoding ascii
 
-          $nsisReport = Join-Path $stageDir "nsis_e2e_verification.json"
-          python scripts/verify_companion_artifacts.py --verify-nsis-only `
-            --installer-path $setupDest `
-            --sums-file $sumsFile `
-            --compiled-exe $exePath `
-            --no-repo-root-env `
-            --output-json $nsisReport
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Clean Windows NSIS E2E verification (bundled resources mode) failed."
-            exit 1
-          }
-
-          python scripts/verify_companion_artifacts.py > $null
-          if ($LASTEXITCODE -eq 0) {
+          if ($isStandalone) {
+            $sidecarMeta = Get-Content (Join-Path $stageDir "sidecar_build.json") -Raw | ConvertFrom-Json
+            $sidecarSha = "$($sidecarMeta.sha256)".Trim().ToLower()
             $releaseAttestation = Join-Path $stageDir "release_e2e_verification.json"
-            $e2eSandboxRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nf_release_e2e_" + [System.Guid]::NewGuid().ToString("N"))
-            $e2eStageDir = Join-Path $e2eSandboxRoot "staged_companion"
-            $e2eRuntimeDir = Join-Path $e2eSandboxRoot "NetFlow Runtime User"
-            New-Item -ItemType Directory -Force -Path $e2eRuntimeDir | Out-Null
-            try {
-              python scripts/verify_companion_artifacts.py --stage-dir $e2eStageDir > $null
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to stage verified companion bundle for isolated E2E runtime."
-                exit 1
-              }
-              python scripts/verify_companion_artifacts.py --install-bundle-dir $e2eStageDir --runtime-dir $e2eRuntimeDir > $null
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to install companion bundle into isolated runtime directory ($e2eRuntimeDir)."
-                exit 1
-              }
-              python scripts/verify_companion_artifacts.py --verify-e2e `
-                --no-repo-root-env `
-                --runtime-dir $e2eRuntimeDir `
-                --installer-path $setupDest `
-                --sums-file $sumsFile `
-                --compiled-exe $exePath `
-                --output-json $releaseAttestation
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Live 4-model + NSIS E2E (bundled resources + isolated runtime mode) verification failed."
-                exit 1
-              }
-            } finally {
-              if (Test-Path $e2eSandboxRoot) {
-                Remove-Item -Recurse -Force $e2eSandboxRoot -ErrorAction SilentlyContinue
-              }
+
+            python scripts/verify_companion_artifacts.py --verify-e2e `
+              --standalone-embedded `
+              --no-repo-root-env `
+              --installer-path $setupDest `
+              --sums-file $sumsFile `
+              --compiled-exe $exePath `
+              --expect-sidecar-sha256 $sidecarSha `
+              --output-json $releaseAttestation
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Clean Windows standalone 4-model + sidecar + NSIS E2E verification failed."
+              exit 1
             }
 
             python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
@@ -364,34 +440,31 @@ jobs:
               --expect-installer-sha256 $setupHash `
               --require-nsis-e2e `
               --require-demo-files `
-              --require-bundled-resources `
-              --require-bundled-resources
+              --require-standalone-embedded
             if ($LASTEXITCODE -ne 0) {
-              Write-Error "Generated release E2E attestation failed strict verification."
+              Write-Error "Generated standalone release E2E attestation failed strict verification."
               exit 1
-            }
-
-            $inputCompanionSha = "${{ inputs.companion_bundle_sha256 }}".Trim().ToLower()
-            $varCompanionSha = "${{ vars.COMPANION_BUNDLE_SHA256 }}".Trim().ToLower()
-            $effectiveCompanionSha = if (-not [string]::IsNullOrWhiteSpace($inputCompanionSha)) { $inputCompanionSha } else { $varCompanionSha }
-            if (-not [string]::IsNullOrWhiteSpace($effectiveCompanionSha)) {
-              "$effectiveCompanionSha  netflow-sentinel-$tagName-companion-bundle.zip" | Out-File -FilePath (Join-Path $stageDir "COMPANION_BUNDLE_SHA256.txt") -Encoding ascii
             }
           } else {
             if ($isStableRelease) {
               Write-Error (
-                "FAIL-CLOSED: Refusing Stable release ($tagName) because live 4-model companion artifacts " +
-                "are NOT READY on this runner. Historical attestation JSON in reports/releases/ MUST NOT " +
-                "substitute for live 4-model + clean Windows NSIS E2E verification bound to commit " +
-                "${{ github.sha }} and installer SHA-256 $setupHash."
+                "FAIL-CLOSED: Refusing Stable release ($tagName) because standalone embedded 4-model bundle " +
+                "was not staged during build."
               )
               exit 1
             }
-            Write-Warning (
-              "Prerelease/dry-run build ($tagName): clean Windows NSIS install/uninstall E2E PASSED " +
-              "(recorded in nsis_e2e_verification.json), but live 4-model companion binaries are absent on this runner."
-            )
-            $global:LASTEXITCODE = 0
+            $nsisReport = Join-Path $stageDir "nsis_e2e_verification.json"
+            python scripts/verify_companion_artifacts.py --verify-nsis-only `
+              --installer-path $setupDest `
+              --sums-file $sumsFile `
+              --compiled-exe $exePath `
+              --no-repo-root-env `
+              --output-json $nsisReport
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Prerelease NSIS E2E verification failed."
+              exit 1
+            }
+            Write-Warning "Prerelease/dry-run ($tagName): NSIS install/uninstall E2E PASSED without embedded 4-model bundle."
           }
 
           Write-Host "Staged release assets in ${stageDir}:"
@@ -441,9 +514,9 @@ jobs:
               --expect-installer-sha256 $setupHash `
               --require-nsis-e2e `
               --require-demo-files `
-              --require-bundled-resources
+              --require-standalone-embedded
             if ($LASTEXITCODE -ne 0) {
-              Write-Error "FAIL-CLOSED: Stable release attestation verification failed before gh release create."
+              Write-Error "FAIL-CLOSED: Stable release standalone attestation verification failed before gh release create."
               exit 1
             }
           }
@@ -465,13 +538,9 @@ jobs:
             "release", "create", $tagName,
             $setupDest,
             $sumsFile,
-            "requirements-runtime.txt",
-            "scripts/windows_setup_runtime.ps1"
+            "NOTICE",
+            "THIRD_PARTY_NOTICES.md"
           )
-          $companionSumsFile = Join-Path $stageDir "COMPANION_BUNDLE_SHA256.txt"
-          if (Test-Path $companionSumsFile) {
-            $releaseArgs += $companionSumsFile
-          }
           if (Test-Path $releaseAttestation) {
             $releaseArgs += $releaseAttestation
           } elseif (Test-Path $nsisAttestation) {
@@ -479,7 +548,7 @@ jobs:
           }
           $releaseArgs += @(
             "--verify-tag",
-            "--title", "NetFlow Sentinel $tagName — M6 Desktop Demo",
+            "--title", "NetFlow Sentinel $tagName — Standalone Windows x64 Release",
             "--notes-file", $notesPath
           )
           if ($isPrerelease) {

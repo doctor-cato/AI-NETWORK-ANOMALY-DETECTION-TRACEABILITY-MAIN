@@ -89,6 +89,19 @@ DEMO_FILES_REL: Tuple[Path, ...] = (
     Path("data/demo/demo_labels.csv"),
     Path("data/demo/demo_manifest.json"),
 )
+EMBEDDED_EXTRA_FILES_REL: Tuple[Path, ...] = (
+    Path("data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"),
+    Path("data/NF_UNSW_NB15_V3_MANIFEST.json"),
+    Path("NOTICE"),
+    Path("THIRD_PARTY_NOTICES.md"),
+    Path("LICENSE"),
+)
+APPROVED_DISTRIBUTION_SCOPES = frozenset(
+    {
+        "non-commercial-academic-approved",
+        "private-build-only",
+    }
+)
 SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
     "artifacts/models/xgboost/xgboost_manifest.json": "reports/models/xgboost_manifest.json",
     "artifacts/models/autoencoder/autoencoder_manifest.json": "reports/models/autoencoder_manifest.json",
@@ -326,6 +339,216 @@ def stage_companion_bundle(
         "destination": str(dest_dir),
         "checksums_file": str(sums_path),
         "staged_file_count": len(checksum_lines),
+    }
+
+
+def verify_distribution_permission(
+    scope: str,
+    *,
+    is_public_release: bool = False,
+    root: Path = PROJECT_ROOT,
+) -> Dict[str, Any]:
+    """Enforce UQ NF-UNSW-NB15-v3 non-commercial attribution & redistribution gate."""
+    resolved_root = Path(root).resolve()
+    norm_scope = (scope or "").strip().lower()
+    missing_notices = [
+        rel.as_posix()
+        for rel in (Path("NOTICE"), Path("THIRD_PARTY_NOTICES.md"), Path("LICENSE"))
+        if not (resolved_root / rel).is_file()
+    ]
+    if missing_notices:
+        raise RuntimeError(
+            "BLOCKED — DISTRIBUTION PERMISSION: Missing mandatory attribution/license notices: "
+            f"{missing_notices}"
+        )
+
+    if is_public_release and norm_scope != "non-commercial-academic-approved":
+        raise RuntimeError(
+            "BLOCKED — DISTRIBUTION PERMISSION: Public release embedding NF-UNSW-NB15-v3 "
+            "derived models and demo CSV requires explicit non-commercial academic distribution "
+            "authorization (scope='non-commercial-academic-approved', UQ License ID 454104, "
+            "DOI: 10.48610/6E0EDA1, full citation in NOTICE). "
+            f"Got distribution_scope={scope!r}."
+        )
+
+    if norm_scope not in APPROVED_DISTRIBUTION_SCOPES:
+        raise RuntimeError(
+            "BLOCKED — DISTRIBUTION PERMISSION: Unrecognized distribution scope "
+            f"{scope!r}. Expected one of {sorted(APPROVED_DISTRIBUTION_SCOPES)}."
+        )
+
+    return {
+        "status": "APPROVED",
+        "distribution_scope": norm_scope,
+        "is_public_release": is_public_release,
+        "dataset_license": "UQ-454104-Permitted-Re-Use-NonCommercial",
+        "citation_doi": "10.48610/6E0EDA1",
+        "notices_verified": ["NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSE"],
+    }
+
+
+def stage_embedded_bundle(
+    destination: Path,
+    root: Path = PROJECT_ROOT,
+    *,
+    runtime_dir: Optional[Path] = None,
+    distribution_scope: str = "non-commercial-academic-approved",
+) -> Dict[str, Any]:
+    """Stage all 4 verified models, preprocessor, manifests, demo CSV, and notices for NSIS embedding."""
+    resolved_root = Path(root).resolve()
+    perm = verify_distribution_permission(
+        distribution_scope,
+        is_public_release=False,
+        root=resolved_root,
+    )
+    dest_dir = Path(destination).resolve()
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
+    staged = stage_companion_bundle(
+        destination=dest_dir,
+        root=resolved_root,
+        runtime_dir=runtime_dir,
+    )
+
+    extra_checksum_lines: List[str] = []
+    extra_rels: List[str] = []
+    for rel in EMBEDDED_EXTRA_FILES_REL:
+        src = resolved_root / rel
+        if not src.is_file():
+            raise RuntimeError(f"Missing required embedded resource file: {src}")
+        dst = dest_dir / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        rel_posix = rel.as_posix()
+        extra_rels.append(rel_posix)
+        extra_checksum_lines.append(f"{_sha256_file(dst).lower()}  {rel_posix}")
+
+    companion_sums_path = dest_dir / "COMPANION_SHA256SUMS.txt"
+    existing_lines = [
+        line.strip()
+        for line in companion_sums_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    all_lines = sorted(set(existing_lines + extra_checksum_lines))
+    embedded_sums_path = dest_dir / "EMBEDDED_SHA256SUMS.txt"
+    embedded_sums_path.write_text("\n".join(all_lines) + "\n", encoding="utf-8", newline="\n")
+    companion_sums_path.unlink(missing_ok=True)
+
+    source_commit: Optional[str] = None
+    if (resolved_root / ".git").exists():
+        try:
+            source_commit = _get_git_head_commit(resolved_root)
+        except Exception:
+            source_commit = None
+
+    split_path = resolved_root / SPLIT_MANIFEST_REL
+    embedded_files = sorted(set(staged["companion_files"] + extra_rels))
+    manifest_payload: Dict[str, Any] = {
+        "format": "netflow-sentinel-embedded-bundle-v1",
+        "source_commit": source_commit,
+        "desktop_version": (
+            _read_desktop_version(resolved_root)
+            if (resolved_root / "desktop/package.json").is_file()
+            else None
+        ),
+        "distribution_scope": perm["distribution_scope"],
+        "dataset_license": perm["dataset_license"],
+        "citation_doi": perm["citation_doi"],
+        "split_manifest_sha256": (
+            _sha256_file(split_path).lower() if split_path.is_file() else None
+        ),
+        "preprocessor_sha256": staged["preprocessor"]["sha256"],
+        "models": {
+            key: {"sha256": info["sha256"], "run_id": info["run_id"]}
+            for key, info in staged["models"].items()
+        },
+        "demo_sha256": {key: info["sha256"] for key, info in staged["demo"].items()},
+        "files": embedded_files,
+    }
+    manifest_path = dest_dir / "EMBEDDED_ARTIFACTS_MANIFEST.json"
+    manifest_path.write_text(
+        json.dumps(manifest_payload, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+
+    return {
+        "stage_status": "READY",
+        "destination": str(dest_dir),
+        "distribution_permission": perm,
+        "embedded_file_count": len(embedded_files),
+        "embedded_files": embedded_files,
+        "checksums_file": str(embedded_sums_path),
+        "manifest_file": str(manifest_path),
+        "preprocessor": staged["preprocessor"],
+        "models": staged["models"],
+        "demo": staged["demo"],
+    }
+
+
+def verify_installed_standalone_layout(
+    install_dir: Path,
+    *,
+    expected_sidecar_sha256: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Verify an installed NSIS directory has sidecar, notices, and all 4 embedded models."""
+    resolved_install = Path(install_dir).resolve()
+    sidecar_exe = resolved_install / "netflow-sentinel-backend.exe"
+    desktop_exe = resolved_install / "netflow-sentinel-desktop.exe"
+    uninstaller_exe = resolved_install / "uninstall.exe"
+    for req_bin, label in (
+        (desktop_exe, "installed desktop executable"),
+        (sidecar_exe, "embedded PyInstaller backend sidecar"),
+        (uninstaller_exe, "NSIS uninstaller"),
+    ):
+        if not req_bin.is_file() or req_bin.stat().st_size <= 0:
+            raise RuntimeError(f"Missing {label} inside installed directory: {req_bin}")
+
+    sidecar_sha = _sha256_file(sidecar_exe).lower()
+    if expected_sidecar_sha256 is not None:
+        exp = expected_sidecar_sha256.strip().lower()
+        if not _is_hex_sha256(exp) or sidecar_sha != exp:
+            raise RuntimeError(
+                f"Installed backend sidecar SHA-256 mismatch: {sidecar_sha} != {exp}"
+            )
+
+    for notice_rel in EMBEDDED_EXTRA_FILES_REL:
+        if not (resolved_install / notice_rel).is_file():
+            raise RuntimeError(
+                f"Missing required embedded notice/manifest in install dir: {notice_rel.as_posix()}"
+            )
+
+    sums_file = resolved_install / "EMBEDDED_SHA256SUMS.txt"
+    sums_map = _parse_sha256_sums_file(sums_file)
+    for rel_str, expected_sha in sums_map.items():
+        candidate = (resolved_install / rel_str).resolve()
+        if not candidate.is_relative_to(resolved_install) or not candidate.is_file():
+            raise RuntimeError(
+                f"Installed standalone bundle missing file {rel_str!r} listed in EMBEDDED_SHA256SUMS.txt"
+            )
+        actual_sha = _sha256_file(candidate).lower()
+        if actual_sha != expected_sha:
+            raise RuntimeError(
+                f"Installed embedded file SHA-256 mismatch for {rel_str}: {actual_sha} != {expected_sha}"
+            )
+
+    manifest_data = _read_json_dict(
+        resolved_install / "EMBEDDED_ARTIFACTS_MANIFEST.json",
+        "installed EMBEDDED_ARTIFACTS_MANIFEST.json",
+    )
+    summary = verify_companion_artifacts(root=resolved_install, runtime_dir=resolved_install)
+    if summary["overall_status"] != "READY" or len(summary["ready_models"]) != len(MODEL_SPECS):
+        raise RuntimeError(
+            "Installed standalone artifacts verification failed: "
+            f"ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']}"
+        )
+
+    return {
+        "status": "READY",
+        "install_dir": str(resolved_install),
+        "sidecar_sha256": sidecar_sha,
+        "sidecar_size_bytes": sidecar_exe.stat().st_size,
+        "embedded_file_count": len(sums_map),
+        "distribution_scope": manifest_data.get("distribution_scope"),
+        "summary": summary,
     }
 
 
@@ -1428,9 +1651,15 @@ def verify_nsis_installer_e2e(
     pass_repo_root_env: bool = True,
     launch_installed_app: bool = True,
     backend_verifier: Optional[Callable[..., Dict[str, Any]]] = None,
+    standalone_embedded: bool = False,
+    expected_sidecar_sha256: Optional[str] = None,
+    verify_restart: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Verify NSIS clean install, exe SHA-256 parity, live installed app launch & zero-orphan uninstall."""
     resolved_root = Path(root).resolve()
+    effective_verify_restart = standalone_embedded if verify_restart is None else verify_restart
+    if standalone_embedded:
+        pass_repo_root_env = False
     installer = Path(installer_path)
     if not installer.is_file():
         raise RuntimeError(f"NSIS installer not found: {installer}")
@@ -1558,9 +1787,22 @@ def verify_nsis_installer_e2e(
                 "Installed desktop launch verification cannot be disabled (fail-closed)."
             )
 
+        standalone_layout_info: Optional[Dict[str, Any]] = None
+        if standalone_embedded:
+            standalone_layout_info = verify_installed_standalone_layout(
+                install_dir,
+                expected_sidecar_sha256=expected_sidecar_sha256,
+            )
+
         telemetry_path = tmp_root / "desktop_telemetry.json"
         wv2_dir = tmp_root / "webview2_user_data"
-        desktop_db = tmp_root / "installed_desktop.db"
+        desktop_db = tmp_root / "User AppData" / "installed_desktop.db"
+        isolated_runtime_dir = (
+            Path(runtime_dir).resolve()
+            if runtime_dir is not None
+            else (tmp_root / "User AppData").resolve()
+        )
+        isolated_runtime_dir.mkdir(parents=True, exist_ok=True)
         e2e_session_token = secrets.token_hex(32)
         auth_headers = {"X-Sentinel-Session-Token": e2e_session_token}
         launch_env = os.environ.copy()
@@ -1568,15 +1810,36 @@ def verify_nsis_installer_e2e(
             launch_env["NETWORK_ANOMALY_REPO_ROOT"] = str(resolved_root)
         else:
             launch_env.pop("NETWORK_ANOMALY_REPO_ROOT", None)
-        if runtime_dir is not None:
-            launch_env["NETWORK_ANOMALY_RUNTIME_DIR"] = str(Path(runtime_dir).resolve())
+        launch_env.pop("NETWORK_ANOMALY_RESOURCE_DIR", None)
+        launch_env.pop("NETWORK_ANOMALY_ARTIFACTS_DIR", None)
+        launch_env.pop("NETWORK_ANOMALY_DEMO_DIR", None)
+        launch_env.pop("NETWORK_ANOMALY_SIDECAR_EXE", None)
+        if standalone_embedded:
+            launch_env.pop("NETWORK_ANOMALY_PYTHON", None)
+            launch_env.pop("PYTHONPATH", None)
+            launch_env.pop("PYTHONHOME", None)
+            launch_env.pop("VIRTUAL_ENV", None)
+            launch_env.pop("CONDA_PREFIX", None)
+            win_root = os.environ.get("SystemRoot", r"C:\Windows")
+            launch_env["PATH"] = ";".join(
+                [
+                    str(Path(win_root) / "System32"),
+                    win_root,
+                    str(Path(win_root) / "System32" / "Wbem"),
+                ]
+            )
+            launch_env["NETWORK_ANOMALY_RUNTIME_DIR"] = str(isolated_runtime_dir)
+        else:
+            if runtime_dir is not None:
+                launch_env["NETWORK_ANOMALY_RUNTIME_DIR"] = str(isolated_runtime_dir)
+            launch_env["NETWORK_ANOMALY_PYTHON"] = sys.executable
         launch_env["NETWORK_ANOMALY_DB_PATH"] = str(desktop_db)
         launch_env["NETWORK_ANOMALY_BACKEND_PORT"] = "0"
-        launch_env["NETWORK_ANOMALY_PYTHON"] = sys.executable
         launch_env["NETWORK_ANOMALY_API_TOKEN"] = e2e_session_token
         launch_env["NETWORK_ANOMALY_DESKTOP_TELEMETRY_FILE"] = str(telemetry_path)
         launch_env["WEBVIEW2_USER_DATA_FOLDER"] = str(wv2_dir)
 
+        startup_wait_s = 50.0 if standalone_embedded else 35.0
         desktop_proc = subprocess.Popen(  # noqa: S603 - explicit installed NSIS binary
             [str(installed_exe)],
             cwd=str(install_dir),
@@ -1588,7 +1851,7 @@ def verify_nsis_installer_e2e(
         observed_backend_pid: Optional[int] = None
         backend_base_url: Optional[str] = None
         try:
-            wait_deadline = time.monotonic() + 35.0
+            wait_deadline = time.monotonic() + startup_wait_s
             telemetry_data: Optional[Dict[str, Any]] = None
             while time.monotonic() < wait_deadline:
                 if desktop_proc.poll() is not None:
@@ -1636,12 +1899,26 @@ def verify_nsis_installer_e2e(
             if telemetry_data is None or backend_base_url is None or observed_backend_pid is None:
                 raise RuntimeError(
                     "Installed desktop application did not report WebView2 frontend connection + "
-                    "loopback FastAPI readiness within 35s."
+                    f"loopback FastAPI readiness within {int(startup_wait_s)}s."
                 )
             if not _is_windows_pid_alive(observed_backend_pid):
                 raise RuntimeError(
                     f"Reported FastAPI backend child PID {observed_backend_pid} is not alive."
                 )
+            if standalone_embedded:
+                b_status_tel = telemetry_data.get("backend_status") or {}
+                expected_sidecar = (install_dir / "netflow-sentinel-backend.exe").resolve()
+                actual_backend_exe = Path(
+                    str(b_status_tel.get("python_executable") or "")
+                ).resolve()
+                if (
+                    b_status_tel.get("backend_mode") != "embedded_sidecar"
+                    or actual_backend_exe != expected_sidecar
+                ):
+                    raise RuntimeError(
+                        "Standalone desktop must launch embedded sidecar inside install_dir: "
+                        f"mode={b_status_tel.get('backend_mode')!r}, exe={actual_backend_exe}"
+                    )
             # Confirm unauthenticated /api/v1/models fails closed with HTTP 401 when session token is active
             try:
                 _http_json(f"{backend_base_url}/api/v1/models", timeout=5.0)
@@ -1659,9 +1936,16 @@ def verify_nsis_installer_e2e(
 
             if backend_verifier is not None:
                 try:
-                    verifier_result = backend_verifier(backend_base_url, auth_headers)
+                    verifier_result = backend_verifier(
+                        backend_base_url,
+                        auth_headers,
+                        install_dir if standalone_embedded else None,
+                    )
                 except TypeError:
-                    verifier_result = backend_verifier(backend_base_url)
+                    try:
+                        verifier_result = backend_verifier(backend_base_url, auth_headers)
+                    except TypeError:
+                        verifier_result = backend_verifier(backend_base_url)
             else:
                 m_code, m_payload = _http_json(
                     f"{backend_base_url}/api/v1/models",
@@ -1703,6 +1987,91 @@ def verify_nsis_installer_e2e(
             if observed_backend_pid is not None and _is_windows_pid_alive(observed_backend_pid):
                 _terminate_pid_best_effort(observed_backend_pid)
 
+        restart_persistence_verified = False
+        if effective_verify_restart:
+            telemetry_path.unlink(missing_ok=True)
+            restart_token = secrets.token_hex(32)
+            restart_headers = {"X-Sentinel-Session-Token": restart_token}
+            restart_env = dict(launch_env)
+            restart_env["NETWORK_ANOMALY_API_TOKEN"] = restart_token
+            restart_proc = subprocess.Popen(  # noqa: S603 - explicit installed NSIS binary restart
+                [str(installed_exe)],
+                cwd=str(install_dir),
+                env=restart_env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            restart_backend_pid: Optional[int] = None
+            restart_backend_url: Optional[str] = None
+            restart_port: Optional[int] = None
+            try:
+                r_deadline = time.monotonic() + startup_wait_s
+                while time.monotonic() < r_deadline:
+                    if restart_proc.poll() is not None:
+                        raise RuntimeError(
+                            f"Restarted desktop app exited prematurely ({restart_proc.returncode})."
+                        )
+                    if telemetry_path.is_file():
+                        try:
+                            r_tel = json.loads(telemetry_path.read_text(encoding="utf-8"))
+                        except Exception:
+                            r_tel = None
+                        if (
+                            isinstance(r_tel, dict)
+                            and r_tel.get("desktop_pid") == restart_proc.pid
+                            and r_tel.get("frontend_connected") is True
+                        ):
+                            rb = r_tel.get("backend_status") or {}
+                            rb_url = str(rb.get("base_url") or "")
+                            rb_pid = rb.get("pid")
+                            if (
+                                rb.get("running") is True
+                                and isinstance(rb_pid, int)
+                                and rb_pid > 0
+                                and rb_url.startswith("http://127.0.0.1:")
+                            ):
+                                restart_backend_pid = rb_pid
+                                restart_backend_url = rb_url
+                                restart_port = int(rb.get("port") or rb_url.rsplit(":", 1)[1])
+                                break
+                    time.sleep(0.25)
+                if restart_backend_url is None or restart_backend_pid is None:
+                    raise RuntimeError("Restarted standalone desktop failed to reconnect backend.")
+                sim_code, sim_hist = _http_json(
+                    f"{restart_backend_url}/api/v1/security/simulations?limit=10&offset=0",
+                    headers=restart_headers,
+                    timeout=10.0,
+                )
+                if sim_code != 200 or not isinstance(sim_hist, dict):
+                    raise RuntimeError("Restarted standalone backend failed SQLite history check.")
+                if backend_verifier is not None and int(sim_hist.get("total", 0)) < 4:
+                    raise RuntimeError(
+                        f"Restart persistence check expected >= 4 persisted simulations, got {sim_hist}"
+                    )
+                _request_windows_graceful_close(restart_proc.pid)
+                restart_proc.wait(timeout=15)
+                r_orphan_deadline = time.monotonic() + 5.0
+                while time.monotonic() < r_orphan_deadline:
+                    if not _is_windows_pid_alive(restart_backend_pid):
+                        break
+                    time.sleep(0.15)
+                else:
+                    raise RuntimeError(
+                        f"Orphan backend process detected after restart close (pid={restart_backend_pid})."
+                    )
+                if restart_port is not None and _is_loopback_port_open(restart_port):
+                    raise RuntimeError(
+                        f"Backend port {restart_port} remained open after restart close."
+                    )
+                restart_persistence_verified = True
+            finally:
+                if restart_proc.poll() is None:
+                    restart_proc.kill()
+                    restart_proc.wait(timeout=5)
+                if restart_backend_pid is not None and _is_windows_pid_alive(restart_backend_pid):
+                    _terminate_pid_best_effort(restart_backend_pid)
+
         uninstall_proc = subprocess.run(  # noqa: S603 - explicit NSIS uninstaller in temp dir
             [str(uninstaller_exe), "/S"],
             capture_output=True,
@@ -1742,13 +2111,27 @@ def verify_nsis_installer_e2e(
         "frontend_ready_models": frontend_ready_models,
         "bundled_resources_mode": not pass_repo_root_env,
         "repo_root_env_passed": bool(pass_repo_root_env),
-        "runtime_dir_isolated": runtime_dir is not None,
+        "runtime_dir_isolated": (runtime_dir is not None) or standalone_embedded,
         "backend_spawned_on_loopback": True,
         "backend_port": backend_port,
         "graceful_close_verified": True,
         "graceful_close_method": graceful_close_method,
         "zero_orphan_processes_verified": True,
         "uninstall_cleanup_verified": True,
+        "standalone_embedded_mode": standalone_embedded,
+        "sidecar_exe_verified": bool(standalone_layout_info),
+        "sidecar_sha256": (
+            standalone_layout_info.get("sidecar_sha256") if standalone_layout_info else None
+        ),
+        "sidecar_size_bytes": (
+            standalone_layout_info.get("sidecar_size_bytes") if standalone_layout_info else None
+        ),
+        "system_python_used": not standalone_embedded,
+        "external_companion_used": (not standalone_embedded) and (runtime_dir is not None),
+        "restart_persistence_verified": restart_persistence_verified,
+        "export_verified": bool(
+            isinstance(verifier_result, dict) and verifier_result.get("export_verified")
+        ),
         "frontend_interactive_gui_clicks": (
             "NOT VERIFIED (WebView2 mounted and Svelte onMount IPC handshake verified; "
             "manual/UIA button clicks across UI tabs not automated)"
@@ -1991,9 +2374,50 @@ def _execute_four_model_api_suite(
     ):
         raise RuntimeError(f"Unverified client payload failed fail-closed check: {spoof_check}")
 
+    with tempfile.TemporaryDirectory(prefix="nf_export_e2e_") as exp_tmp:
+        export_csv_path = Path(exp_tmp) / "User Exports" / "rf_standalone_export.csv"
+        rf_entry = per_model_results["random_forest"]
+        _, rf_az_full = _http_json(
+            f"{base_url}/api/v1/csv/analyze",
+            method="POST",
+            payload={
+                "file_path": str(demo_flows),
+                "model_name": "random_forest",
+                "batch_size": 100,
+                "create_incidents": False,
+            },
+            headers=headers,
+            timeout=30.0,
+        )
+        _, exp_resp = _http_json(
+            f"{base_url}/api/v1/csv/export",
+            method="POST",
+            payload={
+                "output_path": str(export_csv_path),
+                "analysis_id": rf_az_full["analysis_id"],
+                "source_csv_path": str(demo_flows),
+                "model_key": "random_forest",
+                "model_type": rf_az_full["model_type"],
+                "run_id": rf_az_full["run_id"],
+                "model_sha256": rf_entry["artifact_sha256"],
+                "preprocessor_sha256": rf_entry["preprocessor_sha256"],
+                "results": rf_az_full["results"],
+                "evaluation": None,
+            },
+            headers=headers,
+            timeout=15.0,
+        )
+        if (
+            int(exp_resp.get("rows_exported", 0)) != 200
+            or not Path(exp_resp["csv_path"]).is_file()
+            or not Path(exp_resp["metadata_path"]).is_file()
+        ):
+            raise RuntimeError(f"CSV export E2E verification failed: {exp_resp}")
+
     return {
         "port": port,
         "models": per_model_results,
+        "export_verified": True,
         "client_spoof_fail_closed": {
             "provenance_verification": spoof_check["provenance_verification"],
             "critical_downgraded_action": spoof_check["recommendations"][0]["action"],
@@ -2010,6 +2434,8 @@ def run_four_model_e2e_verification(
     installer_path: Optional[Path] = None,
     sums_file: Optional[Path] = None,
     compiled_exe_path: Optional[Path] = None,
+    standalone_embedded: bool = False,
+    expected_sidecar_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fail-closed live loopback E2E verification across all 4 models on demo_flows.csv."""
     resolved_root = Path(root).resolve()
@@ -2018,7 +2444,7 @@ def run_four_model_e2e_verification(
         if runtime_dir is None
         else verify_companion_artifacts(root=resolved_root, runtime_dir=runtime_dir)
     )
-    if summary["overall_status"] != "READY":
+    if not standalone_embedded and summary["overall_status"] != "READY":
         raise RuntimeError(
             "Mandatory 4-model E2E gate BLOCKED: companion artifacts incomplete or unverified "
             f"(ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']}, "
@@ -2032,30 +2458,78 @@ def run_four_model_e2e_verification(
         raise RuntimeError(f"Missing split manifest: {split_manifest_path}")
     split_manifest_sha256 = _sha256_file(split_manifest_path).lower()
 
-    run_api_script = resolved_root / "scripts/run_api.py"
-    if not run_api_script.is_file():
-        raise RuntimeError(f"Missing server entrypoint: {run_api_script}")
+    if standalone_embedded:
+        if installer_path is None:
+            raise RuntimeError("Standalone embedded E2E verification requires --installer-path.")
+    else:
+        run_api_script = resolved_root / "scripts/run_api.py"
+        if not run_api_script.is_file():
+            raise RuntimeError(f"Missing server entrypoint: {run_api_script}")
 
     nsis_report: Optional[Dict[str, Any]] = None
     if installer_path is not None:
-        nsis_report = verify_nsis_installer_e2e(
-            installer_path=installer_path,
-            root=resolved_root,
-            sums_file=sums_file,
-            compiled_exe_path=compiled_exe_path,
-            runtime_dir=runtime_dir,
-            pass_repo_root_env=pass_repo_root_env,
-            launch_installed_app=True,
-            backend_verifier=lambda base_url, auth_headers=None: _execute_four_model_api_suite(
-                base_url,
-                resolved_root,
-                summary,
+        if standalone_embedded:
+
+            def _standalone_verifier(
+                base_url: str,
+                auth_headers: Optional[Dict[str, str]] = None,
+                installed_dir: Optional[Path] = None,
+            ) -> Dict[str, Any]:
+                if installed_dir is None:
+                    raise RuntimeError("Standalone verifier missing installed_dir.")
+                installed_summary = verify_companion_artifacts(
+                    root=installed_dir,
+                    runtime_dir=installed_dir,
+                )
+                if installed_summary["overall_status"] != "READY":
+                    raise RuntimeError(
+                        "Installed standalone directory artifacts are not READY: "
+                        f"{installed_summary}"
+                    )
+                res = _execute_four_model_api_suite(
+                    base_url,
+                    installed_dir,
+                    installed_summary,
+                    runtime_dir=installed_dir,
+                    headers=auth_headers,
+                )
+                res["_installed_summary"] = installed_summary
+                return res
+
+            nsis_report = verify_nsis_installer_e2e(
+                installer_path=installer_path,
+                root=resolved_root,
+                sums_file=sums_file,
+                compiled_exe_path=compiled_exe_path,
+                runtime_dir=None,
+                pass_repo_root_env=False,
+                launch_installed_app=True,
+                backend_verifier=_standalone_verifier,
+                standalone_embedded=True,
+                expected_sidecar_sha256=expected_sidecar_sha256,
+            )
+            suite_result = dict(nsis_report.pop("_backend_verifier_result"))
+            summary = suite_result.pop("_installed_summary")
+            backend_origin = "installed_standalone_nsis"
+        else:
+            nsis_report = verify_nsis_installer_e2e(
+                installer_path=installer_path,
+                root=resolved_root,
+                sums_file=sums_file,
+                compiled_exe_path=compiled_exe_path,
                 runtime_dir=runtime_dir,
-                headers=auth_headers,
-            ),
-        )
-        suite_result = dict(nsis_report.pop("_backend_verifier_result"))
-        backend_origin = "installed_nsis_desktop"
+                pass_repo_root_env=pass_repo_root_env,
+                launch_installed_app=True,
+                backend_verifier=lambda base_url, auth_headers=None: _execute_four_model_api_suite(
+                    base_url,
+                    resolved_root,
+                    summary,
+                    runtime_dir=runtime_dir,
+                    headers=auth_headers,
+                ),
+            )
+            suite_result = dict(nsis_report.pop("_backend_verifier_result"))
+            backend_origin = "installed_nsis_desktop"
     else:
         tmp_dir = tempfile.TemporaryDirectory(prefix="netflow_e2e_")
         db_path = Path(tmp_dir.name) / "e2e_verify.db"
@@ -2226,6 +2700,7 @@ def verify_e2e_attestation(
     require_nsis_e2e: bool = False,
     require_demo_files: bool = False,
     require_bundled_resources: bool = False,
+    require_standalone_embedded: bool = False,
 ) -> Dict[str, Any]:
     """Verify a 4-model E2E attestation JSON against tracked manifests, commit, demo, and NSIS E2E."""
     resolved_root = Path(root).resolve()
@@ -2485,9 +2960,11 @@ def verify_e2e_attestation(
 
     nsis_present = "nsis_e2e" in report
     bundled_resources_verified = False
+    standalone_embedded_verified = False
     if (
         require_nsis_e2e
         or require_bundled_resources
+        or require_standalone_embedded
         or expect_installer_sha256 is not None
         or nsis_present
     ):
@@ -2510,11 +2987,12 @@ def verify_e2e_attestation(
             nsis.get(flag) is not True for flag in required_nsis_flags
         ):
             raise RuntimeError(f"E2E attestation invalid nsis_e2e verification flags: {nsis}")
-        if (require_nsis_e2e or require_bundled_resources) and report.get(
-            "e2e_backend_origin"
-        ) != "installed_nsis_desktop":
+        allowed_origins = {"installed_nsis_desktop", "installed_standalone_nsis"}
+        if (
+            require_nsis_e2e or require_bundled_resources or require_standalone_embedded
+        ) and report.get("e2e_backend_origin") not in allowed_origins:
             raise RuntimeError(
-                "E2E attestation must record e2e_backend_origin='installed_nsis_desktop' when require_nsis_e2e=True, "
+                f"E2E attestation must record e2e_backend_origin in {sorted(allowed_origins)}, "
                 f"got {report.get('e2e_backend_origin')!r}"
             )
         if nsis.get("frontend_ready_models") != expected_models_order:
@@ -2534,6 +3012,28 @@ def verify_e2e_attestation(
                 f"(bundled_resources_mode={nsis.get('bundled_resources_mode')!r}, "
                 f"repo_root_env_passed={nsis.get('repo_root_env_passed')!r}, "
                 f"runtime_dir_isolated={nsis.get('runtime_dir_isolated')!r})."
+            )
+        standalone_embedded_verified = (
+            report.get("e2e_backend_origin") == "installed_standalone_nsis"
+            and nsis.get("standalone_embedded_mode") is True
+            and nsis.get("sidecar_exe_verified") is True
+            and _is_hex_sha256(nsis.get("sidecar_sha256"))
+            and nsis.get("system_python_used") is False
+            and nsis.get("external_companion_used") is False
+            and nsis.get("restart_persistence_verified") is True
+            and nsis.get("export_verified") is True
+        )
+        if require_standalone_embedded and not standalone_embedded_verified:
+            raise RuntimeError(
+                "E2E attestation must verify standalone embedded NSIS installer with PyInstaller sidecar, "
+                "embedded 4 models, zero system Python/external companion, restart persistence, and CSV export "
+                f"(origin={report.get('e2e_backend_origin')!r}, "
+                f"standalone_embedded_mode={nsis.get('standalone_embedded_mode')!r}, "
+                f"sidecar_exe_verified={nsis.get('sidecar_exe_verified')!r}, "
+                f"system_python_used={nsis.get('system_python_used')!r}, "
+                f"external_companion_used={nsis.get('external_companion_used')!r}, "
+                f"restart_persistence_verified={nsis.get('restart_persistence_verified')!r}, "
+                f"export_verified={nsis.get('export_verified')!r})."
             )
         inst_size = nsis.get("installer_size_bytes")
         if type(inst_size) is not int or inst_size < 1_000_000:
@@ -2562,8 +3062,9 @@ def verify_e2e_attestation(
         "split_manifest_sha256": actual_split_sha,
         "nsis_e2e_verified": isinstance(report.get("nsis_e2e"), dict),
         "installed_desktop_e2e_verified": report.get("e2e_backend_origin")
-        == "installed_nsis_desktop",
+        in {"installed_nsis_desktop", "installed_standalone_nsis"},
         "bundled_resources_verified": bundled_resources_verified,
+        "standalone_embedded_verified": standalone_embedded_verified,
         "demo_files_verified_on_disk": demo_files_verified_on_disk,
     }
 
@@ -2602,6 +3103,40 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Optional directory to stage verified companion files + COMPANION_SHA256SUMS.txt.",
+    )
+    parser.add_argument(
+        "--stage-embedded-dir",
+        type=Path,
+        default=None,
+        help="Stage verified 4 models, preprocessor, manifests, demo CSV, and notices for standalone NSIS embedding.",
+    )
+    parser.add_argument(
+        "--distribution-scope",
+        type=str,
+        default="non-commercial-academic-approved",
+        help="Distribution permission scope for embedded NF-UNSW-NB15-v3 artifacts.",
+    )
+    parser.add_argument(
+        "--verify-distribution-permission",
+        type=str,
+        default=None,
+        help="Verify distribution permission gate for embedded NF-UNSW-NB15-v3 artifacts.",
+    )
+    parser.add_argument(
+        "--public-release",
+        action="store_true",
+        help="Enforce public release distribution permission checks.",
+    )
+    parser.add_argument(
+        "--standalone-embedded",
+        action="store_true",
+        help="Verify installed NSIS standalone desktop using embedded sidecar and 4 embedded models (no system Python/external companion).",
+    )
+    parser.add_argument(
+        "--expect-sidecar-sha256",
+        type=str,
+        default=None,
+        help="Expected 64-char SHA-256 of embedded netflow-sentinel-backend.exe sidecar.",
     )
     parser.add_argument(
         "--package-bundle",
@@ -2725,6 +3260,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require nsis_e2e production mode (--no-repo-root-env + isolated --runtime-dir) when verifying an E2E attestation.",
     )
     parser.add_argument(
+        "--require-standalone-embedded",
+        action="store_true",
+        help="Require standalone embedded NSIS + PyInstaller sidecar + 4 embedded models when verifying an E2E attestation.",
+    )
+    parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
@@ -2736,6 +3276,33 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.verify_distribution_permission is not None:
+        try:
+            perm_report = verify_distribution_permission(
+                args.verify_distribution_permission,
+                is_public_release=args.public_release,
+                root=args.root,
+            )
+        except Exception as exc:
+            sys.stderr.write(f"[DISTRIBUTION PERMISSION BLOCKED] {exc}\n")
+            return 1
+        _emit_json(perm_report, args.output_json)
+        return 0
+
+    if args.stage_embedded_dir is not None:
+        try:
+            staged_emb = stage_embedded_bundle(
+                destination=args.stage_embedded_dir,
+                root=args.root,
+                runtime_dir=args.runtime_dir,
+                distribution_scope=args.distribution_scope,
+            )
+        except Exception as exc:
+            sys.stderr.write(f"[EMBEDDED ARTIFACTS BLOCKED] {exc}\n")
+            return 1
+        _emit_json(staged_emb, args.output_json)
+        return 0
+
     if args.stage_dir is not None:
         try:
             staged = stage_companion_bundle(
@@ -2801,6 +3368,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 require_nsis_e2e=args.require_nsis_e2e,
                 require_demo_files=args.require_demo_files,
                 require_bundled_resources=args.require_bundled_resources,
+                require_standalone_embedded=args.require_standalone_embedded,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E ATTESTATION VERIFICATION FAILED] {exc}\n")
@@ -2820,6 +3388,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 compiled_exe_path=args.compiled_exe,
                 runtime_dir=args.runtime_dir,
                 pass_repo_root_env=not args.no_repo_root_env,
+                standalone_embedded=args.standalone_embedded,
+                expected_sidecar_sha256=args.expect_sidecar_sha256,
             )
         except Exception as exc:
             sys.stderr.write(f"[NSIS E2E FAILED] {exc}\n")
@@ -2836,6 +3406,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 installer_path=args.installer_path,
                 sums_file=args.sums_file,
                 compiled_exe_path=args.compiled_exe,
+                standalone_embedded=args.standalone_embedded,
+                expected_sidecar_sha256=args.expect_sidecar_sha256,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E VERIFICATION BLOCKED/FAILED] {exc}\n")

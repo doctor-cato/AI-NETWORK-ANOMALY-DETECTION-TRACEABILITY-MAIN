@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { ModelStatusItem } from "../types";
-  import { formatBlockedModelReason, shortDigest } from "../utils";
+  import {
+    formatBlockedModelReason,
+    getModelGovernanceInfo,
+    shortDigest,
+  } from "../utils";
   import Icons from "./Icons.svelte";
 
   interface Props {
@@ -13,7 +17,7 @@
   let { models, selectedModel, busy = false, onSelect }: Props = $props();
 
   function semanticsLabel(semantics: string | null): string {
-    if (semantics === "attack_probability") return "Xác suất phân lớp [0..1]";
+    if (semantics === "attack_probability") return "Xác suất phân lớp [0..100%]";
     if (semantics === "anomaly_score_unsupervised") return "Điểm bất thường thô (không ép xác suất)";
     if (semantics === "reconstruction_error") return "Sai số tái tạo MSE (Autoencoder)";
     return semantics ?? "Chưa xác định";
@@ -24,17 +28,18 @@
   <div class="card-header">
     <h2 id="models-heading" class="card-title">
       <Icons name="cpu" size={17} />
-      Trạng thái 4 Mô hình AI (Xác thực SHA-256 Fail-Closed)
+      Trạng thái 4 Mô hình AI Tích hợp (Xác thực SHA-256 Fail-Closed)
     </h2>
     <span class="badge badge-info">Hợp đồng: 47 ML Features • UNSW-NB15-v3</span>
   </div>
 
   {#if models.length === 0}
-    <div class="empty-state">Đang tải thông tin artifact từ FastAPI /api/v1/models...</div>
+    <div class="empty-state">Đang tải và xác thực SHA-256 của 4 mô hình AI...</div>
   {:else}
     <div class="grid-4" role="radiogroup" aria-label="Chọn mô hình AI">
       {#each models as model (model.model_key)}
         {@const isSelected = selectedModel === model.model_key}
+        {@const gov = getModelGovernanceInfo(model.model_key)}
         <button
           type="button"
           class="model-card"
@@ -58,6 +63,18 @@
                 BLOCKED
               </span>
             {/if}
+          </div>
+
+          <div class="gov-row">
+            <span
+              class="badge"
+              class:badge-info={gov.tier === "MODEL_VALIDATED"}
+              class:badge-warning={gov.tier === "RESEARCH_ONLY"}
+              title={gov.explanation}
+            >
+              {gov.badgeLabel}
+            </span>
+            <span class="gov-role">{gov.shortRole}</span>
           </div>
 
           <div class="model-meta">
@@ -127,6 +144,18 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+  }
+
+  .gov-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .gov-role {
+    font-size: 11.5px;
+    color: var(--text-secondary);
   }
 
   .blocked-reason {

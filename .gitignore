@@ -75,4 +75,7 @@ desktop/dist/
 desktop/.svelte-kit/
 desktop/src-tauri/gen/
 desktop/src-tauri/target/
+desktop/src-tauri/binaries/*.exe
+desktop/src-tauri/staged_bundle/
 desktop/*.log
+*.spec

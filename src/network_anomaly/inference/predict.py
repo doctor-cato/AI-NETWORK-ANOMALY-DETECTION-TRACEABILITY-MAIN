@@ -58,16 +58,26 @@ def _sha256_file(path: Union[str, Path]) -> str:
 
 
 def _get_git_commit() -> str:
-    """Retrieve git HEAD commit SHA, or 'unknown' if unavailable."""
-    try:
-        return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-            cwd=PROJECT_ROOT,
-        ).strip()
-    except Exception:
-        return "unknown"
+    """Retrieve git HEAD commit SHA, embedded manifest commit, or 'unknown' if unavailable."""
+    if (PROJECT_ROOT / ".git").exists():
+        try:
+            return subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+                cwd=PROJECT_ROOT,
+            ).strip()
+        except Exception:
+            return "unknown"
+    embedded_manifest = PROJECT_ROOT / "EMBEDDED_ARTIFACTS_MANIFEST.json"
+    if embedded_manifest.is_file():
+        try:
+            data = json.loads(embedded_manifest.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and isinstance(data.get("source_commit"), str):
+                return data["source_commit"].strip() or "unknown"
+        except Exception:
+            pass
+    return "unknown"
 
 
 def validate_inference_input(

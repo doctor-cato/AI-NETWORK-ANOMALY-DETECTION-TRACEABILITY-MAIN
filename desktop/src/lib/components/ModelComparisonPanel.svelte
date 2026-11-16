@@ -4,7 +4,7 @@
     CsvEvaluateResponse,
     ModelStatusItem,
   } from "../types";
-  import { shortDigest } from "../utils";
+  import { getModelGovernanceInfo, shortDigest } from "../utils";
   import Icons from "./Icons.svelte";
 
   interface Props {
@@ -123,6 +123,7 @@
           {@const ev = evaluationsByModel[m.model_key]}
           {@const err = errorsByModel[m.model_key]}
           {@const isSelected = selectedModel === m.model_key}
+          {@const gov = getModelGovernanceInfo(m.model_key)}
           <tr
             class="clickable-row"
             class:disabled-row={!m.ready || busy}
@@ -134,6 +135,15 @@
               {#if isSelected}
                 <span class="badge badge-info" style="margin-left: 6px;">Đang xem</span>
               {/if}
+              <span
+                class="badge"
+                class:badge-info={gov.tier === "MODEL_VALIDATED"}
+                class:badge-warning={gov.tier === "RESEARCH_ONLY"}
+                style="margin-left: 6px;"
+                title={gov.explanation}
+              >
+                {gov.tier === "MODEL_VALIDATED" ? "Validated" : "Research"}
+              </span>
             </td>
             <td>
               {#if m.ready}

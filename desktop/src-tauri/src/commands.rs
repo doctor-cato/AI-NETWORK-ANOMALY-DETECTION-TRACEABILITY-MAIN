@@ -92,97 +92,6 @@ pub async fn get_runtime_diagnostics(
 }
 
 #[tauri::command]
-pub async fn setup_python_runtime(
-    backend: State<'_, BackendManager>,
-    wheelhouse_dir: Option<String>,
-) -> Result<BackendStatus, String> {
-    let mgr = backend.inner().clone();
-    let wheelhouse = wheelhouse_dir
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from);
-    tauri::async_runtime::spawn_blocking(move || mgr.setup_python_runtime(wheelhouse))
-        .await
-        .map_err(|e| format!("Python runtime setup task panicked: {e}"))?
-}
-
-#[tauri::command]
-pub async fn import_companion_bundle(
-    backend: State<'_, BackendManager>,
-    archive_path: Option<String>,
-    bundle_dir: Option<String>,
-    expected_sha256: Option<String>,
-) -> Result<Value, String> {
-    let mgr = backend.inner().clone();
-    let zip_path = archive_path
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from);
-    let dir_path = bundle_dir
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from);
-    tauri::async_runtime::spawn_blocking(move || {
-        mgr.install_companion_bundle(zip_path, dir_path, expected_sha256)
-    })
-    .await
-    .map_err(|e| format!("Companion bundle import task panicked: {e}"))?
-}
-
-#[tauri::command]
-pub async fn pick_zip_file(
-    app: AppHandle,
-    title: Option<String>,
-) -> Result<Option<String>, String> {
-    let dialog_title = title.unwrap_or_else(|| "Chọn gói Companion Bundle (.zip)".to_string());
-    let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .set_title(&dialog_title)
-            .add_filter("ZIP Archives", &["zip"])
-            .blocking_pick_file()
-    })
-    .await
-    .map_err(|e| format!("File dialog task failed: {e}"))?;
-
-    match picked {
-        Some(fp) => {
-            let path = fp
-                .into_path()
-                .map_err(|e| format!("Invalid archive path selected: {e}"))?;
-            Ok(Some(path.to_string_lossy().to_string()))
-        }
-        None => Ok(None),
-    }
-}
-
-#[tauri::command]
-pub async fn pick_companion_folder(
-    app: AppHandle,
-    title: Option<String>,
-) -> Result<Option<String>, String> {
-    let dialog_title = title.unwrap_or_else(|| "Chọn thư mục Companion Artifacts".to_string());
-    let picked = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .set_title(&dialog_title)
-            .blocking_pick_folder()
-    })
-    .await
-    .map_err(|e| format!("Folder dialog task failed: {e}"))?;
-
-    match picked {
-        Some(fp) => {
-            let path = fp
-                .into_path()
-                .map_err(|e| format!("Invalid folder selected: {e}"))?;
-            Ok(Some(path.to_string_lossy().to_string()))
-        }
-        None => Ok(None),
-    }
-}
-
-#[tauri::command]
 pub fn report_frontend_ready(
     backend: State<'_, BackendManager>,
     summary: Value,
@@ -232,7 +141,7 @@ pub async fn restart_backend(backend: State<'_, BackendManager>) -> Result<Backe
     let mgr = backend.inner().clone();
     let preferred_port = resolve_preferred_backend_port();
     tauri::async_runtime::spawn_blocking(move || {
-        mgr.ensure_started(preferred_port, Duration::from_secs(15))
+        mgr.ensure_started(preferred_port, Duration::from_secs(45))
     })
     .await
     .map_err(|e| format!("Restart task panicked: {e}"))?
@@ -242,27 +151,27 @@ pub async fn restart_backend(backend: State<'_, BackendManager>) -> Result<Backe
 pub fn get_demo_paths(backend: State<'_, BackendManager>) -> Result<DemoPaths, String> {
     let runtime_dir = backend.runtime_dir()?;
     let repo_root = backend.repo_root()?;
+    let repo_flows = repo_root.join("data").join("demo").join("demo_flows.csv");
+    let repo_labels = repo_root.join("data").join("demo").join("demo_labels.csv");
     let runtime_flows = runtime_dir.join("data").join("demo").join("demo_flows.csv");
     let runtime_labels = runtime_dir
         .join("data")
         .join("demo")
         .join("demo_labels.csv");
-    let repo_flows = repo_root.join("data").join("demo").join("demo_flows.csv");
-    let repo_labels = repo_root.join("data").join("demo").join("demo_labels.csv");
 
-    let flows = if runtime_flows.is_file() {
-        runtime_flows
-    } else if repo_flows.is_file() {
+    let flows = if repo_flows.is_file() {
         repo_flows
-    } else {
+    } else if runtime_flows.is_file() {
         runtime_flows
-    };
-    let labels = if runtime_labels.is_file() {
-        runtime_labels
-    } else if repo_labels.is_file() {
-        repo_labels
     } else {
+        repo_flows
+    };
+    let labels = if repo_labels.is_file() {
+        repo_labels
+    } else if runtime_labels.is_file() {
         runtime_labels
+    } else {
+        repo_labels
     };
 
     Ok(DemoPaths {

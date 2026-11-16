@@ -1,9 +1,10 @@
-//! Managed localhost Python FastAPI child-process lifecycle (#16, #26).
+//! Managed localhost FastAPI backend sidecar / child-process lifecycle (#16, #26, #71).
 //!
-//! Spawns `scripts/run_api.py` strictly on `127.0.0.1` with a per-session CSPRNG
-//! token (`NETWORK_ANOMALY_API_TOKEN`), resolves bundled Tauri resources or repo roots,
-//! separates read-only code roots from per-user writable runtime directories, and
-//! terminates the child process tree cleanly on exit.
+//! Prioritizes the bundled standalone PyInstaller sidecar (`netflow-sentinel-backend.exe`)
+//! with embedded ML models/preprocessor/demo data, falling back to local Python +
+//! `scripts/run_api.py` in developer/test checkouts. Always binds strictly to `127.0.0.1`
+//! with a per-session 256-bit CSPRNG token (`NETWORK_ANOMALY_API_TOKEN`) and terminates
+//! the child process tree cleanly on exit.
 
 use serde::{Deserialize, Serialize};
 use std::net::{SocketAddr, TcpListener};
@@ -25,6 +26,7 @@ pub struct BackendStatus {
     pub running: bool,
     pub managed_child: bool,
     pub pid: Option<u32>,
+    pub backend_mode: String,
     pub python_executable: String,
     pub repo_root: String,
     pub runtime_dir: String,
@@ -38,16 +40,13 @@ pub struct RuntimeDiagnostics {
     pub repo_root_valid: bool,
     pub runtime_dir: String,
     pub db_path: String,
+    pub backend_mode: String,
+    pub sidecar_ready: bool,
+    pub sidecar_executable: Option<String>,
     pub python_ready: bool,
     pub python_executable: Option<String>,
     pub python_error: Option<String>,
-    pub base_python_available: bool,
-    pub base_python_executable: Option<String>,
-    pub base_python_error: Option<String>,
-    pub venv_python_path: String,
-    pub venv_exists: bool,
-    pub requirements_file_exists: bool,
-    pub companion_status: String,
+    pub embedded_status: String,
     pub ready_models: Vec<String>,
     pub demo_flows_exists: bool,
     pub demo_labels_exists: bool,
@@ -59,6 +58,7 @@ struct InnerState {
     child: Option<Child>,
     managed_child: bool,
     generation: u64,
+    backend_mode: String,
     python_executable: String,
     repo_root: PathBuf,
     runtime_dir: PathBuf,
@@ -79,17 +79,59 @@ impl std::fmt::Debug for BackendManager {
     }
 }
 
-fn is_valid_repo_root(path: &Path) -> bool {
+fn is_valid_standalone_root(path: &Path) -> bool {
+    path.join("reports").join("models").is_dir()
+        && (path.join("artifacts").is_dir() || path.join("data").is_dir())
+}
+
+fn is_valid_dev_repo_root(path: &Path) -> bool {
     path.join("scripts").join("run_api.py").is_file()
         && path.join("src").join("network_anomaly").is_dir()
 }
 
-/// Locate code/manifest root containing `scripts/run_api.py` and `src/network_anomaly`.
+fn is_valid_repo_root(path: &Path) -> bool {
+    is_valid_dev_repo_root(path) || is_valid_standalone_root(path)
+}
+
+/// Locate the bundled standalone backend sidecar executable adjacent to the desktop binary.
+pub fn resolve_sidecar_executable() -> Option<PathBuf> {
+    if let Ok(explicit) = std::env::var("NETWORK_ANOMALY_SIDECAR_EXE") {
+        let trimmed = explicit.trim();
+        if !trimmed.is_empty() {
+            let candidate = PathBuf::from(trimmed);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            #[cfg(windows)]
+            let candidates = [
+                dir.join("netflow-sentinel-backend.exe"),
+                dir.join("netflow-sentinel-backend-x86_64-pc-windows-msvc.exe"),
+            ];
+            #[cfg(not(windows))]
+            let candidates = [
+                dir.join("netflow-sentinel-backend"),
+                dir.join("netflow-sentinel-backend-x86_64-unknown-linux-gnu"),
+            ];
+            for candidate in candidates {
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Locate resource/manifest root containing either standalone `reports/`+`artifacts/` or dev `scripts/run_api.py`.
 ///
 /// Precedence:
 /// 1. `NETWORK_ANOMALY_REPO_ROOT` environment variable
 /// 2. Tauri bundled `resource_dir` (and `_up_/_up_` fallback if present)
-/// 3. Ancestors of `current_dir()` and `current_exe()`
+/// 3. Ancestors of `current_exe()` and `current_dir()`
 pub fn resolve_repo_root_with_resource_dir(resource_dir: Option<&Path>) -> Result<PathBuf, String> {
     if let Ok(explicit) = std::env::var("NETWORK_ANOMALY_REPO_ROOT") {
         let trimmed = explicit.trim();
@@ -112,13 +154,13 @@ pub fn resolve_repo_root_with_resource_dir(resource_dir: Option<&Path>) -> Resul
     }
 
     let mut search_roots: Vec<PathBuf> = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        search_roots.push(cwd);
-    }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
             search_roots.push(parent.to_path_buf());
         }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        search_roots.push(cwd);
     }
 
     for start in search_roots {
@@ -134,7 +176,7 @@ pub fn resolve_repo_root_with_resource_dir(resource_dir: Option<&Path>) -> Resul
     }
 
     Err(
-        "Could not locate backend resources containing scripts/run_api.py and src/network_anomaly."
+        "Không tìm thấy thư mục tài nguyên backend (reports/models + artifacts hoặc scripts/run_api.py)."
             .to_string(),
     )
 }
@@ -144,7 +186,7 @@ pub fn resolve_repo_root() -> Result<PathBuf, String> {
     resolve_repo_root_with_resource_dir(None)
 }
 
-/// Resolve writable per-user runtime directory for `.venv`, companion artifacts, demo CSV, and SQLite.
+/// Resolve writable per-user runtime directory for SQLite DB, logs, and exports.
 pub fn default_runtime_dir(repo_root: &Path) -> PathBuf {
     if let Ok(explicit) = std::env::var("NETWORK_ANOMALY_RUNTIME_DIR") {
         let trimmed = explicit.trim();
@@ -152,14 +194,14 @@ pub fn default_runtime_dir(repo_root: &Path) -> PathBuf {
             return PathBuf::from(trimmed);
         }
     }
-    // When running from an active git checkout in dev/CI, keep repo_root unless artifacts are absent.
+    // When running from an active git checkout in dev/CI, keep repo_root unless overridden.
     if repo_root.join(".git").exists() {
         return repo_root.to_path_buf();
     }
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
         let trimmed = local_app_data.trim();
         if !trimmed.is_empty() {
-            let dir = PathBuf::from(trimmed).join("NetFlowSentinelM6");
+            let dir = PathBuf::from(trimmed).join("NetFlowSentinel");
             if std::fs::create_dir_all(&dir).is_ok() {
                 return dir;
             }
@@ -168,7 +210,7 @@ pub fn default_runtime_dir(repo_root: &Path) -> PathBuf {
     if let Ok(home) = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")) {
         let trimmed = home.trim();
         if !trimmed.is_empty() {
-            let dir = PathBuf::from(trimmed).join(".netflow-sentinel-m6");
+            let dir = PathBuf::from(trimmed).join(".netflow-sentinel");
             if std::fs::create_dir_all(&dir).is_ok() {
                 return dir;
             }
@@ -189,7 +231,7 @@ pub fn default_db_path(repo_root: &Path, runtime_dir: &Path) -> PathBuf {
         return runtime_dir.join("network_anomaly.db");
     }
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        let dir = PathBuf::from(local_app_data).join("NetFlowSentinelM6");
+        let dir = PathBuf::from(local_app_data).join("NetFlowSentinel");
         if std::fs::create_dir_all(&dir).is_ok() {
             return dir.join("network_anomaly.db");
         }
@@ -276,71 +318,7 @@ fn resolve_python_candidate(exe: &str, prefix_args: &[&str], repo_root: &Path) -
     }
 }
 
-/// Probe a base Python >= 3.12 interpreter (without requiring ML deps yet) for automated `.venv` setup.
-fn resolve_base_python_candidate(exe: &str, prefix_args: &[&str]) -> Option<String> {
-    let mut cmd = Command::new(exe);
-    cmd.args(prefix_args);
-    cmd.args([
-        "-c",
-        "import sys, venv; assert sys.version_info >= (3, 12); print(sys.executable)",
-    ]);
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::null());
-    configure_python_utf8(&mut cmd);
-
-    let output = cmd.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let resolved = stdout.lines().last()?.trim();
-    if resolved.is_empty() {
-        None
-    } else {
-        Some(resolved.to_string())
-    }
-}
-
-/// Discover a base Python (>= 3.12) capable of creating a virtual environment.
-pub fn discover_base_python() -> Result<String, String> {
-    if let Ok(explicit) = std::env::var("NETWORK_ANOMALY_PYTHON") {
-        let trimmed = explicit.trim();
-        if !trimmed.is_empty() {
-            if let Some(resolved) = resolve_base_python_candidate(trimmed, &[]) {
-                return Ok(resolved);
-            }
-        }
-    }
-
-    let candidates: &[(&str, &[&str])] = &[
-        ("py", &["-3.12"]),
-        ("py", &["-3.13"]),
-        ("py", &["-3.14"]),
-        ("py", &["-3"]),
-        ("python", &[]),
-    ];
-    for (exe, args) in candidates {
-        if let Some(resolved) = resolve_base_python_candidate(exe, args) {
-            return Ok(resolved);
-        }
-    }
-    for path in windows_standard_python_paths() {
-        if path.is_file() {
-            let s = path.to_string_lossy().to_string();
-            if let Some(resolved) = resolve_base_python_candidate(&s, &[]) {
-                return Ok(resolved);
-            }
-        }
-    }
-
-    Err(
-        "Không tìm thấy Python >= 3.12 trên máy. Vui lòng cài Python 3.12 (x64) từ python.org hoặc 'winget install Python.Python.3.12'."
-            .to_string(),
-    )
-}
-
-/// Discover a Python interpreter that can run FastAPI + Uvicorn + all 4-model ML dependencies.
+/// Discover a Python interpreter for dev/test checkouts (when sidecar binary is not bundled).
 pub fn discover_python_command_with_runtime(
     repo_root: &Path,
     runtime_dir: &Path,
@@ -395,8 +373,7 @@ pub fn discover_python_command_with_runtime(
     }
 
     Err(
-        "Không tìm thấy Python có đủ fastapi, uvicorn, pandas, joblib, scikit-learn và xgboost. \
-         Hãy bấm 'Thiết lập Python Runtime (.venv)' hoặc đặt NETWORK_ANOMALY_PYTHON."
+        "Không tìm thấy tiến trình backend nhúng (netflow-sentinel-backend.exe) hoặc môi trường Python phát triển hợp lệ."
             .to_string(),
     )
 }
@@ -477,6 +454,69 @@ fn kill_child_process_tree(child: &mut Child) {
     let _ = child.wait();
 }
 
+fn check_embedded_artifacts_files(base: &Path) -> Vec<String> {
+    let prep = base
+        .join("artifacts")
+        .join("preprocessing")
+        .join("nf_unsw_nb15_v3_preprocessor.joblib");
+    let prep_manifest = base
+        .join("reports")
+        .join("preprocessing")
+        .join("nf_unsw_nb15_v3_preprocessing_manifest.json");
+    if !prep.is_file() || !prep_manifest.is_file() {
+        return Vec::new();
+    }
+    let specs = [
+        (
+            "random_forest",
+            base.join("artifacts")
+                .join("models")
+                .join("random_forest")
+                .join("random_forest_baseline.joblib"),
+            base.join("reports")
+                .join("models")
+                .join("random_forest_manifest.json"),
+        ),
+        (
+            "xgboost",
+            base.join("artifacts")
+                .join("models")
+                .join("xgboost")
+                .join("xgboost_baseline.joblib"),
+            base.join("reports")
+                .join("models")
+                .join("xgboost_manifest.json"),
+        ),
+        (
+            "isolation_forest",
+            base.join("artifacts")
+                .join("models")
+                .join("isolation_forest")
+                .join("isolation_forest.joblib"),
+            base.join("reports")
+                .join("models")
+                .join("isolation_forest_manifest.json"),
+        ),
+        (
+            "autoencoder",
+            base.join("artifacts")
+                .join("models")
+                .join("autoencoder")
+                .join("autoencoder_model.joblib"),
+            base.join("reports")
+                .join("models")
+                .join("autoencoder_manifest.json"),
+        ),
+    ];
+    let mut ready = Vec::new();
+    for (key, model_path, manifest_path) in specs {
+        if model_path.is_file() && manifest_path.is_file() {
+            ready.push(key.to_string());
+        }
+    }
+    ready
+}
+
 impl BackendManager {
     pub fn new_with_runtime(
         repo_root: PathBuf,
@@ -495,6 +535,11 @@ impl BackendManager {
                 child: None,
                 managed_child: false,
                 generation: 0,
+                backend_mode: if resolve_sidecar_executable().is_some() {
+                    "embedded_sidecar".to_string()
+                } else {
+                    "python_script".to_string()
+                },
                 python_executable: String::new(),
                 repo_root,
                 runtime_dir,
@@ -556,6 +601,7 @@ impl BackendManager {
                     running: false,
                     managed_child: false,
                     pid: None,
+                    backend_mode: "unknown".to_string(),
                     python_executable: String::new(),
                     repo_root: String::new(),
                     runtime_dir: String::new(),
@@ -574,7 +620,8 @@ impl BackendManager {
                     pid = Some(child.id());
                 }
                 Ok(Some(code)) => {
-                    guard.last_error = Some(format!("Python backend exited unexpectedly ({code})"));
+                    guard.last_error =
+                        Some(format!("Backend service exited unexpectedly ({code})"));
                     guard.child = None;
                     guard.managed_child = false;
                 }
@@ -596,6 +643,7 @@ impl BackendManager {
             running,
             managed_child: guard.managed_child,
             pid,
+            backend_mode: guard.backend_mode.clone(),
             python_executable: guard.python_executable.clone(),
             repo_root: guard.repo_root.to_string_lossy().to_string(),
             runtime_dir: guard.runtime_dir.to_string_lossy().to_string(),
@@ -604,13 +652,14 @@ impl BackendManager {
         }
     }
 
-    /// Inspect bundled code root, Python runtime, venv, and companion artifact readiness.
+    /// Inspect bundled sidecar/code root, embedded 4-model artifacts, and demo CSV readiness without requiring Python.
     pub fn diagnostics(&self) -> RuntimeDiagnostics {
-        let (repo_root, runtime_dir, db_path) = match self.state.lock() {
+        let (repo_root, runtime_dir, db_path, running_exe) = match self.state.lock() {
             Ok(g) => (
                 g.repo_root.clone(),
                 g.runtime_dir.clone(),
                 g.db_path.clone(),
+                g.python_executable.clone(),
             ),
             Err(_) => {
                 let fallback = PathBuf::from(".");
@@ -618,265 +667,79 @@ impl BackendManager {
                     fallback.clone(),
                     fallback.clone(),
                     fallback.join("network_anomaly.db"),
+                    String::new(),
                 )
             }
         };
 
         let repo_root_valid = is_valid_repo_root(&repo_root);
-        let venv_py = venv_python_path(&runtime_dir);
-        let venv_exists = venv_py.is_file();
-        let requirements_file_exists = repo_root.join("requirements-runtime.txt").is_file();
+        let sidecar = resolve_sidecar_executable();
+        let sidecar_ready = sidecar.is_some();
+        let sidecar_executable = sidecar.as_ref().map(|p| p.to_string_lossy().to_string());
 
-        let (python_ready, python_executable, python_error) = if repo_root_valid {
+        let (backend_mode, python_ready, python_executable, python_error) = if let Some(sc) =
+            sidecar_executable.clone()
+        {
+            ("embedded_sidecar".to_string(), true, Some(sc), None)
+        } else if !running_exe.is_empty() {
+            ("python_script".to_string(), true, Some(running_exe), None)
+        } else if repo_root_valid && is_valid_dev_repo_root(&repo_root) {
             match discover_python_command_with_runtime(&repo_root, &runtime_dir) {
-                Ok((py, _)) => (true, Some(py), None),
-                Err(err) => (false, None, Some(err)),
+                Ok((py, _)) => ("python_script".to_string(), true, Some(py), None),
+                Err(err) => ("python_script".to_string(), false, None, Some(err)),
             }
         } else {
             (
+                "embedded_sidecar".to_string(),
                 false,
                 None,
                 Some(
-                    "Thiếu thư mục backend scripts/run_api.py và src/network_anomaly.".to_string(),
+                    "Không tìm thấy tệp thực thi backend nhúng (netflow-sentinel-backend.exe) trong thư mục cài đặt."
+                        .to_string(),
                 ),
             )
         };
 
-        let (base_python_available, base_python_executable, base_python_error) =
-            match discover_base_python() {
-                Ok(base_py) => (true, Some(base_py), None),
-                Err(err) => (false, None, Some(err)),
-            };
-
-        let demo_dir = if (runtime_dir.join("data").join("demo").join("demo_flows.csv")).is_file() {
-            runtime_dir.join("data").join("demo")
-        } else {
+        let demo_dir = if repo_root
+            .join("data")
+            .join("demo")
+            .join("demo_flows.csv")
+            .is_file()
+        {
             repo_root.join("data").join("demo")
+        } else {
+            runtime_dir.join("data").join("demo")
         };
         let demo_flows_exists = demo_dir.join("demo_flows.csv").is_file();
         let demo_labels_exists = demo_dir.join("demo_labels.csv").is_file();
 
-        let mut companion_status = "BLOCKED / NOT READY".to_string();
-        let mut ready_models: Vec<String> = Vec::new();
-        if repo_root_valid {
-            if let Some(py_exe) = python_executable.as_deref() {
-                let verify_script = repo_root
-                    .join("scripts")
-                    .join("verify_companion_artifacts.py");
-                if verify_script.is_file() {
-                    let mut cmd = Command::new(py_exe);
-                    cmd.args([
-                        verify_script.to_string_lossy().as_ref(),
-                        "--root",
-                        repo_root.to_string_lossy().as_ref(),
-                        "--runtime-dir",
-                        runtime_dir.to_string_lossy().as_ref(),
-                    ]);
-                    cmd.current_dir(&repo_root);
-                    cmd.env("PYTHONPATH", repo_root.join("src"));
-                    cmd.stdin(Stdio::null());
-                    cmd.stdout(Stdio::piped());
-                    cmd.stderr(Stdio::null());
-                    configure_python_runtime_env(&mut cmd, &repo_root);
-                    if let Ok(out) = cmd.output() {
-                        if let Ok(parsed) = serde_json::from_slice::<serde_json::Value>(&out.stdout)
-                        {
-                            if let Some(st) = parsed.get("overall_status").and_then(|v| v.as_str())
-                            {
-                                companion_status = st.to_string();
-                            }
-                            if let Some(arr) = parsed.get("ready_models").and_then(|v| v.as_array())
-                            {
-                                ready_models = arr
-                                    .iter()
-                                    .filter_map(|v| v.as_str().map(str::to_string))
-                                    .collect();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let ready_models = check_embedded_artifacts_files(&repo_root);
+        let embedded_status = if ready_models.len() == 4 && demo_flows_exists && demo_labels_exists
+        {
+            "READY".to_string()
+        } else {
+            "BLOCKED / NOT READY".to_string()
+        };
 
         RuntimeDiagnostics {
             repo_root: repo_root.to_string_lossy().to_string(),
             repo_root_valid,
             runtime_dir: runtime_dir.to_string_lossy().to_string(),
             db_path: db_path.to_string_lossy().to_string(),
+            backend_mode,
+            sidecar_ready,
+            sidecar_executable,
             python_ready,
             python_executable,
             python_error,
-            base_python_available,
-            base_python_executable,
-            base_python_error,
-            venv_python_path: venv_py.to_string_lossy().to_string(),
-            venv_exists,
-            requirements_file_exists,
-            companion_status,
+            embedded_status,
             ready_models,
             demo_flows_exists,
             demo_labels_exists,
         }
     }
 
-    /// Create/update `%LOCALAPPDATA%\NetFlowSentinelM6\.venv` with bounded runtime deps, then start backend.
-    pub fn setup_python_runtime(
-        &self,
-        wheelhouse_dir: Option<PathBuf>,
-    ) -> Result<BackendStatus, String> {
-        let (repo_root, runtime_dir) = {
-            let guard = self
-                .state
-                .lock()
-                .map_err(|_| "Backend state lock poisoned".to_string())?;
-            (guard.repo_root.clone(), guard.runtime_dir.clone())
-        };
-
-        if !is_valid_repo_root(&repo_root) {
-            return Err(
-                "Backend resources missing scripts/run_api.py and src/network_anomaly.".to_string(),
-            );
-        }
-        let req_path = repo_root.join("requirements-runtime.txt");
-        if !req_path.is_file() {
-            return Err(format!(
-                "Missing runtime dependency specification: {}",
-                req_path.display()
-            ));
-        }
-
-        let base_py = discover_base_python()?;
-        std::fs::create_dir_all(&runtime_dir)
-            .map_err(|e| format!("Failed creating runtime directory: {e}"))?;
-
-        let venv_dir = runtime_dir.join(".venv");
-        let venv_py = venv_python_path(&runtime_dir);
-        if !venv_py.is_file() {
-            let mut venv_cmd = Command::new(&base_py);
-            venv_cmd.args(["-m", "venv", &venv_dir.to_string_lossy()]);
-            venv_cmd.stdin(Stdio::null());
-            configure_python_utf8(&mut venv_cmd);
-            let out = venv_cmd
-                .output()
-                .map_err(|e| format!("Failed creating virtual environment: {e}"))?;
-            if !out.status.success() {
-                let err_txt = String::from_utf8_lossy(&out.stderr);
-                return Err(format!("Failed creating Python .venv: {}", err_txt.trim()));
-            }
-        }
-
-        let mut pip_cmd = Command::new(&venv_py);
-        pip_cmd.args(["-m", "pip", "install"]);
-        if let Some(wh) = wheelhouse_dir {
-            pip_cmd.args(["--no-index", "--find-links", wh.to_string_lossy().as_ref()]);
-        }
-        pip_cmd.args(["-r", req_path.to_string_lossy().as_ref()]);
-        pip_cmd.current_dir(&repo_root);
-        pip_cmd.stdin(Stdio::null());
-        configure_python_utf8(&mut pip_cmd);
-
-        let pip_out = pip_cmd
-            .output()
-            .map_err(|e| format!("Failed running pip install: {e}"))?;
-        if !pip_out.status.success() {
-            let err_txt = String::from_utf8_lossy(&pip_out.stderr);
-            let out_txt = String::from_utf8_lossy(&pip_out.stdout);
-            let detail = if err_txt.trim().is_empty() {
-                out_txt.trim()
-            } else {
-                err_txt.trim()
-            };
-            return Err(format!("Cài đặt Python dependencies thất bại: {detail}"));
-        }
-
-        let preferred_port = resolve_preferred_backend_port();
-        self.ensure_started(preferred_port, Duration::from_secs(20))
-    }
-
-    /// Install and verify a companion bundle archive (.zip) or directory into `runtime_dir`.
-    pub fn install_companion_bundle(
-        &self,
-        archive_path: Option<PathBuf>,
-        bundle_dir: Option<PathBuf>,
-        expected_sha256: Option<String>,
-    ) -> Result<serde_json::Value, String> {
-        let (repo_root, runtime_dir) = {
-            let guard = self
-                .state
-                .lock()
-                .map_err(|_| "Backend state lock poisoned".to_string())?;
-            (guard.repo_root.clone(), guard.runtime_dir.clone())
-        };
-        if !is_valid_repo_root(&repo_root) {
-            return Err(
-                "Backend resources missing scripts/verify_companion_artifacts.py.".to_string(),
-            );
-        }
-
-        let (py_exe, _) = discover_python_command_with_runtime(&repo_root, &runtime_dir).map_err(
-            |_| {
-                "Vui lòng hoàn tất Bước 2 (Thiết lập Python Runtime .venv) trước khi nạp Companion Bundle."
-                    .to_string()
-            },
-        )?;
-        let verify_script = repo_root
-            .join("scripts")
-            .join("verify_companion_artifacts.py");
-
-        let mut cmd = Command::new(&py_exe);
-        cmd.arg(&verify_script);
-        cmd.args([
-            "--root",
-            repo_root.to_string_lossy().as_ref(),
-            "--runtime-dir",
-            runtime_dir.to_string_lossy().as_ref(),
-        ]);
-        match (archive_path, bundle_dir) {
-            (Some(zip_path), None) => {
-                cmd.args([
-                    "--install-bundle-archive",
-                    zip_path.to_string_lossy().as_ref(),
-                ]);
-            }
-            (None, Some(dir_path)) => {
-                cmd.args(["--install-bundle-dir", dir_path.to_string_lossy().as_ref()]);
-            }
-            _ => {
-                return Err(
-                    "Cần chọn đúng một nguồn Companion Bundle (.zip hoặc thư mục).".to_string(),
-                );
-            }
-        }
-        if let Some(sha) = expected_sha256 {
-            let trimmed = sha.trim();
-            if !trimmed.is_empty() {
-                cmd.args(["--expect-bundle-sha256", trimmed]);
-            }
-        }
-        cmd.current_dir(&repo_root);
-        cmd.env("PYTHONPATH", repo_root.join("src"));
-        cmd.stdin(Stdio::null());
-        configure_python_runtime_env(&mut cmd, &repo_root);
-
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Failed executing companion bundle verification: {e}"))?;
-        if !output.status.success() {
-            let err_txt = String::from_utf8_lossy(&output.stderr);
-            let out_txt = String::from_utf8_lossy(&output.stdout);
-            let msg = if err_txt.trim().is_empty() {
-                out_txt.trim()
-            } else {
-                err_txt.trim()
-            };
-            return Err(msg.to_string());
-        }
-
-        serde_json::from_slice::<serde_json::Value>(&output.stdout)
-            .map_err(|e| format!("Invalid companion installer JSON output: {e}"))
-    }
-
-    /// Spawn the FastAPI backend on `127.0.0.1` and wait for `/health` readiness.
+    /// Spawn the FastAPI backend (bundled sidecar preferred, dev Python fallback) on `127.0.0.1`.
     pub fn ensure_started(
         &self,
         preferred_port: u16,
@@ -899,56 +762,106 @@ impl BackendManager {
         };
 
         if !is_valid_repo_root(&repo_root) {
-            let err = "Không tìm thấy thư mục mã nguồn backend (scripts/run_api.py).".to_string();
+            let err = "Không tìm thấy thư mục tài nguyên mô hình và cấu hình ứng dụng.".to_string();
             if let Ok(mut guard) = self.state.lock() {
                 guard.last_error = Some(err.clone());
             }
             return Err(err);
         }
 
-        let (py_exe, py_prefix) =
-            match discover_python_command_with_runtime(&repo_root, &runtime_dir) {
-                Ok(v) => v,
-                Err(err) => {
-                    if let Ok(mut guard) = self.state.lock() {
-                        guard.last_error = Some(err.clone());
-                    }
-                    return Err(err);
-                }
-            };
+        let explicit_python_override = std::env::var("NETWORK_ANOMALY_PYTHON")
+            .ok()
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false);
+        let sidecar_opt = if explicit_python_override {
+            None
+        } else {
+            resolve_sidecar_executable()
+        };
 
         let session_token = resolve_effective_session_token()?;
         let port = pick_available_port(preferred_port)?;
-        let script_path = repo_root.join("scripts").join("run_api.py");
 
-        let mut cmd = Command::new(&py_exe);
-        cmd.args(&py_prefix);
-        cmd.arg(&script_path);
-        cmd.args([
-            "--host",
-            "127.0.0.1",
-            "--port",
-            &port.to_string(),
-            "--db-path",
-            &db_path.to_string_lossy(),
-        ]);
-        cmd.current_dir(&repo_root);
-        cmd.env("PYTHONPATH", repo_root.join("src"));
-        cmd.env("PYTHONUNBUFFERED", "1");
-        if !repo_root.join(".git").exists() {
-            cmd.env("PYTHONDONTWRITEBYTECODE", "1");
-        }
-        cmd.env("NETWORK_ANOMALY_REPO_ROOT", &repo_root);
-        cmd.env("NETWORK_ANOMALY_RUNTIME_DIR", &runtime_dir);
-        cmd.env("NETWORK_ANOMALY_API_TOKEN", &session_token);
-        cmd.stdin(Stdio::null());
-        cmd.stdout(Stdio::null());
-        cmd.stderr(Stdio::null());
-        configure_python_utf8(&mut cmd);
+        let (mut cmd, display_cmd, effective_mode) = if let Some(sidecar_exe) = sidecar_opt {
+            let mut c = Command::new(&sidecar_exe);
+            c.args([
+                "--host",
+                "127.0.0.1",
+                "--port",
+                &port.to_string(),
+                "--db-path",
+                &db_path.to_string_lossy(),
+            ]);
+            c.current_dir(&repo_root);
+            c.env("NETWORK_ANOMALY_REPO_ROOT", &repo_root);
+            c.env("NETWORK_ANOMALY_RESOURCE_DIR", &repo_root);
+            c.env("NETWORK_ANOMALY_RUNTIME_DIR", &runtime_dir);
+            c.env("NETWORK_ANOMALY_API_TOKEN", &session_token);
+            c.stdin(Stdio::null());
+            c.stdout(Stdio::null());
+            c.stderr(Stdio::null());
+            configure_python_utf8(&mut c);
+            (
+                c,
+                sidecar_exe.to_string_lossy().to_string(),
+                "embedded_sidecar".to_string(),
+            )
+        } else {
+            if !is_valid_dev_repo_root(&repo_root) {
+                let err =
+                    "Thiếu tệp thực thi backend nhúng (netflow-sentinel-backend.exe).".to_string();
+                if let Ok(mut guard) = self.state.lock() {
+                    guard.last_error = Some(err.clone());
+                }
+                return Err(err);
+            }
+            let (py_exe, py_prefix) =
+                match discover_python_command_with_runtime(&repo_root, &runtime_dir) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        if let Ok(mut guard) = self.state.lock() {
+                            guard.last_error = Some(err.clone());
+                        }
+                        return Err(err);
+                    }
+                };
+            let script_path = repo_root.join("scripts").join("run_api.py");
+            let mut c = Command::new(&py_exe);
+            c.args(&py_prefix);
+            c.arg(&script_path);
+            c.args([
+                "--host",
+                "127.0.0.1",
+                "--port",
+                &port.to_string(),
+                "--db-path",
+                &db_path.to_string_lossy(),
+            ]);
+            c.current_dir(&repo_root);
+            c.env("PYTHONPATH", repo_root.join("src"));
+            c.env("PYTHONUNBUFFERED", "1");
+            if !repo_root.join(".git").exists() {
+                c.env("PYTHONDONTWRITEBYTECODE", "1");
+            }
+            c.env("NETWORK_ANOMALY_REPO_ROOT", &repo_root);
+            c.env("NETWORK_ANOMALY_RESOURCE_DIR", &repo_root);
+            c.env("NETWORK_ANOMALY_RUNTIME_DIR", &runtime_dir);
+            c.env("NETWORK_ANOMALY_API_TOKEN", &session_token);
+            c.stdin(Stdio::null());
+            c.stdout(Stdio::null());
+            c.stderr(Stdio::null());
+            configure_python_utf8(&mut c);
+            let disp = if py_prefix.is_empty() {
+                py_exe
+            } else {
+                format!("{py_exe} {}", py_prefix.join(" "))
+            };
+            (c, disp, "python_script".to_string())
+        };
 
         let mut child = cmd
             .spawn()
-            .map_err(|e| format!("Failed starting FastAPI process with '{py_exe}': {e}"))?;
+            .map_err(|e| format!("Failed starting backend process '{display_cmd}': {e}"))?;
 
         let started = Instant::now();
         let health_url = format!("http://127.0.0.1:{port}/health");
@@ -970,7 +883,7 @@ impl BackendManager {
 
             if let Ok(Some(exit)) = child.try_wait() {
                 let err_msg =
-                    format!("FastAPI child process exited early ({exit}) before becoming healthy.");
+                    format!("Backend child process exited early ({exit}) before becoming healthy.");
                 if let Ok(mut guard) = self.state.lock() {
                     guard.last_error = Some(err_msg.clone());
                 }
@@ -979,11 +892,6 @@ impl BackendManager {
 
             match probe_client.get(&health_url).send() {
                 Ok(resp) if resp.status().is_success() => {
-                    let display_cmd = if py_prefix.is_empty() {
-                        py_exe
-                    } else {
-                        format!("{py_exe} {}", py_prefix.join(" "))
-                    };
                     if let Ok(mut guard) = self.state.lock() {
                         if guard.generation != start_gen {
                             drop(guard);
@@ -993,6 +901,7 @@ impl BackendManager {
                         guard.port = port;
                         guard.child = Some(child);
                         guard.managed_child = true;
+                        guard.backend_mode = effective_mode;
                         guard.python_executable = display_cmd;
                         guard.session_token = session_token;
                         guard.last_error = None;
@@ -1019,7 +928,7 @@ impl BackendManager {
         Err(timeout_msg)
     }
 
-    /// Terminate the controlled Python backend process if we spawned it.
+    /// Terminate the controlled backend process tree if we spawned it.
     pub fn shutdown(&self) {
         if let Ok(mut guard) = self.state.lock() {
             guard.generation = guard.generation.wrapping_add(1);
@@ -1036,7 +945,6 @@ impl BackendManager {
 
 impl Drop for BackendManager {
     fn drop(&mut self) {
-        // Shutdown only when the last Arc reference is dropped
         if Arc::strong_count(&self.state) == 1 {
             self.shutdown();
         }
@@ -1071,8 +979,23 @@ mod tests {
         std::fs::write(tmp.join("scripts").join("run_api.py"), "# test\n").unwrap();
 
         assert!(is_valid_repo_root(&tmp));
-        // Only assert helper directly without mutating global process env
         assert!(resolve_repo_root_with_resource_dir(Some(&tmp)).is_ok());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_resolve_standalone_resource_dir_without_python_sources() {
+        let tmp = std::env::temp_dir().join(format!("nf_standalone_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("reports").join("models")).unwrap();
+        std::fs::create_dir_all(tmp.join("artifacts").join("models")).unwrap();
+
+        assert!(is_valid_standalone_root(&tmp));
+        assert!(is_valid_repo_root(&tmp));
+        assert_eq!(
+            resolve_repo_root_with_resource_dir(Some(&tmp)).unwrap(),
+            tmp
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
