@@ -1,7 +1,8 @@
 //! Typed Tauri IPC commands bridging Svelte UI to localhost FastAPI & native file dialogs.
 
 use crate::backend::{
-    resolve_preferred_backend_port, BackendManager, BackendStatus, RuntimeDiagnostics,
+    resolve_preferred_backend_port, strip_windows_verbatim_prefix, BackendLogSnapshot,
+    BackendManager, BackendStatus, RuntimeDiagnostics,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -82,6 +83,11 @@ pub fn get_backend_status(backend: State<'_, BackendManager>) -> BackendStatus {
 }
 
 #[tauri::command]
+pub fn get_backend_logs(backend: State<'_, BackendManager>) -> BackendLogSnapshot {
+    backend.logs_snapshot()
+}
+
+#[tauri::command]
 pub async fn get_runtime_diagnostics(
     backend: State<'_, BackendManager>,
 ) -> Result<RuntimeDiagnostics, String> {
@@ -141,7 +147,7 @@ pub async fn restart_backend(backend: State<'_, BackendManager>) -> Result<Backe
     let mgr = backend.inner().clone();
     let preferred_port = resolve_preferred_backend_port();
     tauri::async_runtime::spawn_blocking(move || {
-        mgr.ensure_started(preferred_port, Duration::from_secs(45))
+        mgr.ensure_started(preferred_port, Duration::from_secs(120))
     })
     .await
     .map_err(|e| format!("Restart task panicked: {e}"))?
@@ -159,20 +165,20 @@ pub fn get_demo_paths(backend: State<'_, BackendManager>) -> Result<DemoPaths, S
         .join("demo")
         .join("demo_labels.csv");
 
-    let flows = if repo_flows.is_file() {
+    let flows = strip_windows_verbatim_prefix(&if repo_flows.is_file() {
         repo_flows
     } else if runtime_flows.is_file() {
         runtime_flows
     } else {
         repo_flows
-    };
-    let labels = if repo_labels.is_file() {
+    });
+    let labels = strip_windows_verbatim_prefix(&if repo_labels.is_file() {
         repo_labels
     } else if runtime_labels.is_file() {
         runtime_labels
     } else {
         repo_labels
-    };
+    });
 
     Ok(DemoPaths {
         flows_exists: flows.is_file(),
@@ -200,9 +206,10 @@ pub async fn pick_csv_file(
 
     match picked {
         Some(fp) => {
-            let path = fp
-                .into_path()
-                .map_err(|e| format!("Invalid local path selected: {e}"))?;
+            let path = strip_windows_verbatim_prefix(
+                &fp.into_path()
+                    .map_err(|e| format!("Invalid local path selected: {e}"))?,
+            );
             Ok(Some(path.to_string_lossy().to_string()))
         }
         None => Ok(None),
@@ -228,9 +235,10 @@ pub async fn pick_save_csv_file(
 
     match picked {
         Some(fp) => {
-            let path = fp
-                .into_path()
-                .map_err(|e| format!("Invalid export path selected: {e}"))?;
+            let path = strip_windows_verbatim_prefix(
+                &fp.into_path()
+                    .map_err(|e| format!("Invalid export path selected: {e}"))?,
+            );
             Ok(Some(path.to_string_lossy().to_string()))
         }
         None => Ok(None),
@@ -345,9 +353,10 @@ pub async fn pick_save_json_file(
 
     match picked {
         Some(fp) => {
-            let path = fp
-                .into_path()
-                .map_err(|e| format!("Invalid export path selected: {e}"))?;
+            let path = strip_windows_verbatim_prefix(
+                &fp.into_path()
+                    .map_err(|e| format!("Invalid export path selected: {e}"))?,
+            );
             Ok(Some(path.to_string_lossy().to_string()))
         }
         None => Ok(None),

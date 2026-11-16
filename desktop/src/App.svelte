@@ -7,6 +7,7 @@
     exportSecuritySimulation,
     fetchHealth,
     fetchModelsStatus,
+    getBackendLogs,
     getBackendStatus,
     getDemoPaths,
     getRuntimeDiagnostics,
@@ -22,6 +23,7 @@
   } from "./lib/api";
   import ChartsPanel from "./lib/components/ChartsPanel.svelte";
   import CsvPreviewPanel from "./lib/components/CsvPreviewPanel.svelte";
+  import DevLogsPanel from "./lib/components/DevLogsPanel.svelte";
   import EvaluationPanel from "./lib/components/EvaluationPanel.svelte";
   import ForensicTimelinePanel from "./lib/components/ForensicTimelinePanel.svelte";
   import Icons from "./lib/components/Icons.svelte";
@@ -48,6 +50,7 @@
     type ComparisonWorkflowDeps,
   } from "./lib/comparisonState";
   import type {
+    BackendLogSnapshot,
     BackendStatus,
     CsvAnalyzeResponse,
     CsvExportResponse,
@@ -92,6 +95,8 @@
   let simulationWarning = $state<string | null>(null);
   let evaluatedFlag = $state(false);
   let simulatingFlag = $state(false);
+  let showDevLogs = $state(false);
+  let devLogs = $state<BackendLogSnapshot | null>(null);
 
   let readyModelsCount = $derived(models.filter((m) => m.ready).length);
 
@@ -172,47 +177,93 @@
     }
   }
 
-  onMount(async () => {
+  async function refreshDevLogs(): Promise<void> {
     try {
-      // Poll up to 44s while bundled standalone backend starts, exiting early if startup errored.
-      for (let attempt = 0; attempt < 110; attempt += 1) {
-        try {
-          await fetchHealth();
-          break;
-        } catch {
-          if (attempt >= 4 && isTauriRuntime()) {
-            try {
-              const probe = await getBackendStatus();
-              backendStatus = probe;
-              if (!probe.running && probe.last_error) {
-                break;
-              }
-            } catch {
-              // Ignore probe error
+      devLogs = await getBackendLogs();
+    } catch {
+      // Ignore secondary log fetch error
+    }
+  }
+
+  $effect(() => {
+    const shouldPollLogs = showDevLogs || Boolean(backendStatus?.starting);
+    if (!shouldPollLogs) return;
+    void refreshDevLogs();
+    const timer = setInterval(() => {
+      void refreshDevLogs();
+      if (backendStatus?.starting && isTauriRuntime()) {
+        void getBackendStatus()
+          .then((st) => {
+            backendStatus = st;
+            if (st.running && !healthData) {
+              void refreshStatus();
             }
-          }
-          await new Promise((r) => setTimeout(r, 400));
+          })
+          .catch(() => {});
+      }
+    }, 1200);
+    return () => clearInterval(timer);
+  });
+
+  onMount(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.shiftKey && (e.key === "F9" || e.code === "F9")) {
+        e.preventDefault();
+        showDevLogs = !showDevLogs;
+        if (showDevLogs) {
+          void refreshDevLogs();
         }
       }
-      await refreshStatus();
-      const demo = await getDemoPaths();
-      if (demo.flows_exists && !flowsPath.trim()) {
-        handleFlowsPathChange(demo.flows_path);
+    };
+    window.addEventListener("keydown", handleKeydown);
+
+    void (async () => {
+      try {
+        // Poll up to 120s for cold-start PyInstaller extraction + AV scan on clean Windows machines.
+        for (let attempt = 0; attempt < 300; attempt += 1) {
+          try {
+            await fetchHealth();
+            break;
+          } catch {
+            if (isTauriRuntime()) {
+              try {
+                const probe = await getBackendStatus();
+                backendStatus = probe;
+                if (!probe.starting && !probe.running && probe.last_error) {
+                  break;
+                }
+              } catch {
+                // Ignore probe error
+              }
+            }
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
+        await refreshStatus();
+        await refreshDevLogs();
+        const demo = await getDemoPaths();
+        if (demo.flows_exists && !flowsPath.trim()) {
+          handleFlowsPathChange(demo.flows_path);
+        }
+        if (demo.labels_exists && !labelsPath.trim()) {
+          handleLabelsPathChange(demo.labels_path);
+        }
+        await reportFrontendReady({
+          connected: !errorMessage && Boolean(healthData) && Boolean(backendStatus?.running),
+          health_status: healthData?.status ?? null,
+          ready_models: models.filter((m) => m.ready).map((m) => m.model_key),
+          flows_exists: demo.flows_exists,
+          labels_exists: demo.labels_exists,
+          error_message: errorMessage,
+        });
+      } finally {
+        initializing = false;
       }
-      if (demo.labels_exists && !labelsPath.trim()) {
-        handleLabelsPathChange(demo.labels_path);
-      }
-      await reportFrontendReady({
-        connected: !errorMessage && Boolean(healthData) && Boolean(backendStatus?.running),
-        health_status: healthData?.status ?? null,
-        ready_models: models.filter((m) => m.ready).map((m) => m.model_key),
-        flows_exists: demo.flows_exists,
-        labels_exists: demo.labels_exists,
-        error_message: errorMessage,
-      });
-    } finally {
-      initializing = false;
-    }
+    })();
+
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+    };
   });
 
   async function handleRestartBackend() {
@@ -648,6 +699,19 @@
       <button
         type="button"
         class="btn btn-sm"
+        onclick={() => {
+          showDevLogs = !showDevLogs;
+          if (showDevLogs) void refreshDevLogs();
+        }}
+        title="Bật/tắt nhật ký kỹ thuật backend (Shift+F9)"
+      >
+        <Icons name="cpu" size={14} />
+        {showDevLogs ? "Ẩn Logs" : "Dev Logs (Shift+F9)"}
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-sm"
         onclick={toggleTheme}
         aria-label="Chuyển giao diện Sáng / Tối"
       >
@@ -658,12 +722,22 @@
   </header>
 
   <main class="workspace-main">
-    {#if errorMessage}
+    {#if errorMessage && !backendStatus?.starting}
       <div class="banner banner-error" role="alert">
         <Icons name="alert" size={18} />
         <div style="flex: 1;">
           <strong>Thông báo hệ thống:</strong> {errorMessage}
         </div>
+        <button
+          type="button"
+          class="btn btn-sm"
+          onclick={() => {
+            showDevLogs = true;
+            void refreshDevLogs();
+          }}
+        >
+          Xem Dev Logs (Shift+F9)
+        </button>
         <button type="button" class="btn btn-sm" onclick={() => (errorMessage = null)}>Đóng</button>
       </div>
     {/if}
@@ -678,11 +752,27 @@
       </div>
     {/if}
 
-    {#if busyMessage || initializing}
+    {#if busyMessage || initializing || (backendStatus?.starting && !backendStatus?.running)}
       <div class="banner banner-info" role="status">
         <Icons name="refresh" size={16} spin={true} />
-        <div>{busyMessage ?? "Đang khởi tạo hệ thống phân tích AI cục bộ, vui lòng đợi..."}</div>
+        <div style="flex: 1;">
+          {#if busyMessage}
+            {busyMessage}
+          {:else}
+            Đang khởi tạo máy chủ AI cục bộ (lần đầu trên máy mới có thể mất 30–90 giây để giải nén runtime và Windows kiểm tra an toàn) — <strong>{Math.round((backendStatus?.startup_elapsed_ms ?? 0) / 1000)}s</strong> ({backendStatus?.startup_stage ?? "booting"}). Nhấn <strong>Shift+F9</strong> để xem chi tiết log dev.
+          {/if}
+        </div>
       </div>
+    {/if}
+
+    {#if showDevLogs}
+      <DevLogsPanel
+        logs={devLogs}
+        {backendStatus}
+        diagnostics={runtimeDiagnostics}
+        onRefresh={() => void refreshDevLogs()}
+        onClose={() => (showDevLogs = false)}
+      />
     {/if}
 
     <OnboardingGuidePanel

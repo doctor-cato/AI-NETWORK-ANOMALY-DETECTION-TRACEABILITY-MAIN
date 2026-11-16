@@ -7,11 +7,17 @@
 //! the child process tree cleanly on exit.
 
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+const MAX_LOG_LINES: usize = 600;
+const MAX_LOG_FILE_BYTES: u64 = 512 * 1024;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -19,11 +25,29 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Strip Windows extended-length verbatim path prefix (`\\?\`) for clean UI display and Python compatibility.
+pub fn strip_windows_verbatim_prefix(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = path.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{stripped}"));
+        }
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+    }
+    path.to_path_buf()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackendStatus {
     pub base_url: String,
     pub port: u16,
     pub running: bool,
+    pub starting: bool,
+    pub startup_stage: String,
+    pub startup_elapsed_ms: u64,
     pub managed_child: bool,
     pub pid: Option<u32>,
     pub backend_mode: String,
@@ -32,6 +56,20 @@ pub struct BackendStatus {
     pub runtime_dir: String,
     pub db_path: String,
     pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendLogSnapshot {
+    pub starting: bool,
+    pub running: bool,
+    pub backend_mode: String,
+    pub startup_stage: String,
+    pub startup_elapsed_ms: u64,
+    pub port: u16,
+    pub pid: Option<u32>,
+    pub log_file_path: String,
+    pub last_error: Option<String>,
+    pub lines: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,10 +91,68 @@ pub struct RuntimeDiagnostics {
 }
 
 #[derive(Debug)]
+struct LogStore {
+    started_at: Instant,
+    lines: VecDeque<String>,
+    log_file: PathBuf,
+    redactions: Vec<String>,
+}
+
+impl LogStore {
+    fn new(log_file: PathBuf) -> Self {
+        if let Some(parent) = log_file.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(meta) = std::fs::metadata(&log_file) {
+            if meta.len() > MAX_LOG_FILE_BYTES {
+                let _ = File::create(&log_file);
+            }
+        }
+        Self {
+            started_at: Instant::now(),
+            lines: VecDeque::with_capacity(MAX_LOG_LINES),
+            log_file,
+            redactions: Vec::new(),
+        }
+    }
+
+    fn set_redaction(&mut self, secret: &str) {
+        if !secret.is_empty() && !self.redactions.iter().any(|s| s == secret) {
+            self.redactions.push(secret.to_string());
+        }
+    }
+
+    fn push(&mut self, message: &str) {
+        let mut clean = message.trim_end_matches(&['\r', '\n'][..]).to_string();
+        for secret in &self.redactions {
+            if !secret.is_empty() && clean.contains(secret) {
+                clean = clean.replace(secret, "[REDACTED]");
+            }
+        }
+        let elapsed = self.started_at.elapsed().as_secs_f64();
+        let formatted = format!("[+{elapsed:6.2}s] {clean}");
+        if self.lines.len() >= MAX_LOG_LINES {
+            self.lines.pop_front();
+        }
+        self.lines.push_back(formatted.clone());
+        if let Ok(mut fh) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log_file)
+        {
+            let _ = writeln!(fh, "{formatted}");
+        }
+    }
+}
+
+#[derive(Debug)]
 struct InnerState {
     port: u16,
     child: Option<Child>,
     managed_child: bool,
+    starting: bool,
+    startup_stage: String,
+    startup_started_at: Option<Instant>,
     generation: u64,
     backend_mode: String,
     python_executable: String,
@@ -70,6 +166,7 @@ struct InnerState {
 #[derive(Clone)]
 pub struct BackendManager {
     state: Arc<Mutex<InnerState>>,
+    logs: Arc<Mutex<LogStore>>,
     pub http: reqwest::Client,
 }
 
@@ -136,7 +233,7 @@ pub fn resolve_repo_root_with_resource_dir(resource_dir: Option<&Path>) -> Resul
     if let Ok(explicit) = std::env::var("NETWORK_ANOMALY_REPO_ROOT") {
         let trimmed = explicit.trim();
         if !trimmed.is_empty() {
-            let p = PathBuf::from(trimmed);
+            let p = strip_windows_verbatim_prefix(&PathBuf::from(trimmed));
             if is_valid_repo_root(&p) {
                 return Ok(p);
             }
@@ -144,10 +241,11 @@ pub fn resolve_repo_root_with_resource_dir(resource_dir: Option<&Path>) -> Resul
     }
 
     if let Some(res_dir) = resource_dir {
-        if is_valid_repo_root(res_dir) {
-            return Ok(res_dir.to_path_buf());
+        let clean_res = strip_windows_verbatim_prefix(res_dir);
+        if is_valid_repo_root(&clean_res) {
+            return Ok(clean_res);
         }
-        let up2 = res_dir.join("_up_").join("_up_");
+        let up2 = clean_res.join("_up_").join("_up_");
         if is_valid_repo_root(&up2) {
             return Ok(up2);
         }
@@ -156,11 +254,11 @@ pub fn resolve_repo_root_with_resource_dir(resource_dir: Option<&Path>) -> Resul
     let mut search_roots: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent) = exe.parent() {
-            search_roots.push(parent.to_path_buf());
+            search_roots.push(strip_windows_verbatim_prefix(parent));
         }
     }
     if let Ok(cwd) = std::env::current_dir() {
-        search_roots.push(cwd);
+        search_roots.push(strip_windows_verbatim_prefix(&cwd));
     }
 
     for start in search_roots {
@@ -523,17 +621,32 @@ impl BackendManager {
         runtime_dir: PathBuf,
         db_path: PathBuf,
     ) -> Result<Self, String> {
+        let clean_repo = strip_windows_verbatim_prefix(&repo_root);
+        let clean_runtime = strip_windows_verbatim_prefix(&runtime_dir);
+        let clean_db = strip_windows_verbatim_prefix(&db_path);
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(60))
             .no_proxy()
             .build()
             .map_err(|e| format!("Failed building localhost HTTP client: {e}"))?;
 
+        let log_file = clean_runtime.join("logs").join("backend.log");
+        let mut store = LogStore::new(log_file);
+        store.push(&format!(
+            "[tauri] Initialized manager (resource_root={}, runtime_dir={}, db={})",
+            clean_repo.to_string_lossy(),
+            clean_runtime.to_string_lossy(),
+            clean_db.to_string_lossy()
+        ));
+
         Ok(Self {
             state: Arc::new(Mutex::new(InnerState {
                 port: 0,
                 child: None,
                 managed_child: false,
+                starting: false,
+                startup_stage: "idle".to_string(),
+                startup_started_at: None,
                 generation: 0,
                 backend_mode: if resolve_sidecar_executable().is_some() {
                     "embedded_sidecar".to_string()
@@ -541,14 +654,59 @@ impl BackendManager {
                     "python_script".to_string()
                 },
                 python_executable: String::new(),
-                repo_root,
-                runtime_dir,
-                db_path,
+                repo_root: clean_repo,
+                runtime_dir: clean_runtime,
+                db_path: clean_db,
                 session_token: String::new(),
                 last_error: None,
             })),
+            logs: Arc::new(Mutex::new(store)),
             http,
         })
+    }
+
+    pub fn append_log(&self, line: &str) {
+        if let Ok(mut guard) = self.logs.lock() {
+            guard.push(line);
+        }
+    }
+
+    fn set_stage(&self, starting: bool, stage: &str) {
+        if let Ok(mut guard) = self.state.lock() {
+            guard.starting = starting;
+            guard.startup_stage = stage.to_string();
+            if starting && guard.startup_started_at.is_none() {
+                guard.startup_started_at = Some(Instant::now());
+            } else if !starting {
+                guard.startup_started_at = None;
+            }
+        }
+    }
+
+    pub fn logs_snapshot(&self) -> BackendLogSnapshot {
+        let status = self.status();
+        let (log_file_path, lines) = match self.logs.lock() {
+            Ok(g) => (
+                g.log_file.to_string_lossy().to_string(),
+                g.lines.iter().cloned().collect(),
+            ),
+            Err(_) => (
+                String::new(),
+                vec!["[tauri] Log store lock poisoned".to_string()],
+            ),
+        };
+        BackendLogSnapshot {
+            starting: status.starting,
+            running: status.running,
+            backend_mode: status.backend_mode,
+            startup_stage: status.startup_stage,
+            startup_elapsed_ms: status.startup_elapsed_ms,
+            port: status.port,
+            pid: status.pid,
+            log_file_path,
+            last_error: status.last_error,
+            lines,
+        }
     }
 
     pub fn new(repo_root: PathBuf, db_path: PathBuf) -> Result<Self, String> {
@@ -599,6 +757,9 @@ impl BackendManager {
                     base_url: String::new(),
                     port: 0,
                     running: false,
+                    starting: false,
+                    startup_stage: "lock_error".to_string(),
+                    startup_elapsed_ms: 0,
                     managed_child: false,
                     pid: None,
                     backend_mode: "unknown".to_string(),
@@ -624,6 +785,9 @@ impl BackendManager {
                         Some(format!("Backend service exited unexpectedly ({code})"));
                     guard.child = None;
                     guard.managed_child = false;
+                    guard.starting = false;
+                    guard.startup_stage = "exited".to_string();
+                    guard.startup_started_at = None;
                 }
                 Err(err) => {
                     guard.last_error = Some(format!("Failed polling child status: {err}"));
@@ -636,11 +800,18 @@ impl BackendManager {
         } else {
             String::new()
         };
+        let startup_elapsed_ms = guard
+            .startup_started_at
+            .map(|t| t.elapsed().as_millis() as u64)
+            .unwrap_or(0);
 
         BackendStatus {
             base_url,
             port: guard.port,
             running,
+            starting: guard.starting,
+            startup_stage: guard.startup_stage.clone(),
+            startup_elapsed_ms,
             managed_child: guard.managed_child,
             pid,
             backend_mode: guard.backend_mode.clone(),
@@ -753,6 +924,10 @@ impl BackendManager {
                 .lock()
                 .map_err(|_| "Backend state lock poisoned".to_string())?;
             guard.generation = guard.generation.wrapping_add(1);
+            guard.starting = true;
+            guard.startup_stage = "resolving_resources".to_string();
+            guard.startup_started_at = Some(Instant::now());
+            guard.last_error = None;
             (
                 guard.repo_root.clone(),
                 guard.runtime_dir.clone(),
@@ -763,8 +938,12 @@ impl BackendManager {
 
         if !is_valid_repo_root(&repo_root) {
             let err = "Không tìm thấy thư mục tài nguyên mô hình và cấu hình ứng dụng.".to_string();
+            self.append_log(&format!("[tauri][error] {err}"));
             if let Ok(mut guard) = self.state.lock() {
                 guard.last_error = Some(err.clone());
+                guard.starting = false;
+                guard.startup_stage = "failed_resources".to_string();
+                guard.startup_started_at = None;
             }
             return Err(err);
         }
@@ -776,10 +955,13 @@ impl BackendManager {
         let sidecar_opt = if explicit_python_override {
             None
         } else {
-            resolve_sidecar_executable()
+            resolve_sidecar_executable().map(|p| strip_windows_verbatim_prefix(&p))
         };
 
         let session_token = resolve_effective_session_token()?;
+        if let Ok(mut log_guard) = self.logs.lock() {
+            log_guard.set_redaction(&session_token);
+        }
         let port = pick_available_port(preferred_port)?;
 
         let (mut cmd, display_cmd, effective_mode) = if let Some(sidecar_exe) = sidecar_opt {
@@ -793,13 +975,14 @@ impl BackendManager {
                 &db_path.to_string_lossy(),
             ]);
             c.current_dir(&repo_root);
+            c.env("PYTHONUNBUFFERED", "1");
             c.env("NETWORK_ANOMALY_REPO_ROOT", &repo_root);
             c.env("NETWORK_ANOMALY_RESOURCE_DIR", &repo_root);
             c.env("NETWORK_ANOMALY_RUNTIME_DIR", &runtime_dir);
             c.env("NETWORK_ANOMALY_API_TOKEN", &session_token);
             c.stdin(Stdio::null());
-            c.stdout(Stdio::null());
-            c.stderr(Stdio::null());
+            c.stdout(Stdio::piped());
+            c.stderr(Stdio::piped());
             configure_python_utf8(&mut c);
             (
                 c,
@@ -810,8 +993,12 @@ impl BackendManager {
             if !is_valid_dev_repo_root(&repo_root) {
                 let err =
                     "Thiếu tệp thực thi backend nhúng (netflow-sentinel-backend.exe).".to_string();
+                self.append_log(&format!("[tauri][error] {err}"));
                 if let Ok(mut guard) = self.state.lock() {
                     guard.last_error = Some(err.clone());
+                    guard.starting = false;
+                    guard.startup_stage = "failed_missing_sidecar".to_string();
+                    guard.startup_started_at = None;
                 }
                 return Err(err);
             }
@@ -819,8 +1006,12 @@ impl BackendManager {
                 match discover_python_command_with_runtime(&repo_root, &runtime_dir) {
                     Ok(v) => v,
                     Err(err) => {
+                        self.append_log(&format!("[tauri][error] {err}"));
                         if let Ok(mut guard) = self.state.lock() {
                             guard.last_error = Some(err.clone());
+                            guard.starting = false;
+                            guard.startup_stage = "failed_python_discovery".to_string();
+                            guard.startup_started_at = None;
                         }
                         return Err(err);
                     }
@@ -848,8 +1039,8 @@ impl BackendManager {
             c.env("NETWORK_ANOMALY_RUNTIME_DIR", &runtime_dir);
             c.env("NETWORK_ANOMALY_API_TOKEN", &session_token);
             c.stdin(Stdio::null());
-            c.stdout(Stdio::null());
-            c.stderr(Stdio::null());
+            c.stdout(Stdio::piped());
+            c.stderr(Stdio::piped());
             configure_python_utf8(&mut c);
             let disp = if py_prefix.is_empty() {
                 py_exe
@@ -859,9 +1050,59 @@ impl BackendManager {
             (c, disp, "python_script".to_string())
         };
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| format!("Failed starting backend process '{display_cmd}': {e}"))?;
+        self.set_stage(true, "spawning_sidecar");
+        self.append_log(&format!(
+            "[tauri] Spawning {effective_mode} on 127.0.0.1:{port} (timeout={}s): {display_cmd}",
+            timeout.as_secs()
+        ));
+
+        let mut child = match cmd.spawn() {
+            Ok(ch) => ch,
+            Err(e) => {
+                let err = format!("Failed starting backend process '{display_cmd}': {e}");
+                self.append_log(&format!("[tauri][error] {err}"));
+                if let Ok(mut guard) = self.state.lock() {
+                    guard.last_error = Some(err.clone());
+                    guard.starting = false;
+                    guard.startup_stage = "spawn_failed".to_string();
+                    guard.startup_started_at = None;
+                }
+                return Err(err);
+            }
+        };
+
+        let spawned_pid = child.id();
+        if let Ok(mut guard) = self.state.lock() {
+            guard.backend_mode = effective_mode.clone();
+            guard.python_executable = display_cmd.clone();
+            guard.startup_stage = "unpacking_and_booting".to_string();
+        }
+        self.append_log(&format!(
+            "[tauri] Spawned PID={spawned_pid}. Waiting for FastAPI /health (PyInstaller first-run unpack/AV scan on Windows may take 30-90s)..."
+        ));
+
+        if let Some(stdout) = child.stdout.take() {
+            let logs = self.logs.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines().map_while(Result::ok) {
+                    if let Ok(mut g) = logs.lock() {
+                        g.push(&format!("[sidecar:stdout] {line}"));
+                    }
+                }
+            });
+        }
+        if let Some(stderr) = child.stderr.take() {
+            let logs = self.logs.clone();
+            std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    if let Ok(mut g) = logs.lock() {
+                        g.push(&format!("[sidecar:stderr] {line}"));
+                    }
+                }
+            });
+        }
 
         let started = Instant::now();
         let health_url = format!("http://127.0.0.1:{port}/health");
@@ -872,35 +1113,50 @@ impl BackendManager {
             .map_err(|e| format!("Failed creating health probe client: {e}"))?;
 
         let mut last_probe_err = String::from("Backend still starting");
+        let mut next_heartbeat_secs: u64 = 5;
         while started.elapsed() < timeout {
             if let Ok(guard) = self.state.lock() {
                 if guard.generation != start_gen {
                     drop(guard);
                     kill_child_process_tree(&mut child);
+                    self.set_stage(false, "canceled");
                     return Err("Backend startup canceled due to shutdown.".to_string());
                 }
             }
 
             if let Ok(Some(exit)) = child.try_wait() {
+                std::thread::sleep(Duration::from_millis(120));
                 let err_msg =
                     format!("Backend child process exited early ({exit}) before becoming healthy.");
+                self.append_log(&format!("[tauri][error] {err_msg}"));
                 if let Ok(mut guard) = self.state.lock() {
                     guard.last_error = Some(err_msg.clone());
+                    guard.starting = false;
+                    guard.startup_stage = "exited_early".to_string();
+                    guard.startup_started_at = None;
                 }
                 return Err(err_msg);
             }
 
             match probe_client.get(&health_url).send() {
                 Ok(resp) if resp.status().is_success() => {
+                    let boot_secs = started.elapsed().as_secs_f64();
+                    self.append_log(&format!(
+                        "[tauri] FastAPI /health READY in {boot_secs:.2}s (PID={spawned_pid}, port={port})"
+                    ));
                     if let Ok(mut guard) = self.state.lock() {
                         if guard.generation != start_gen {
                             drop(guard);
                             kill_child_process_tree(&mut child);
+                            self.set_stage(false, "canceled");
                             return Err("Backend startup canceled due to shutdown.".to_string());
                         }
                         guard.port = port;
                         guard.child = Some(child);
                         guard.managed_child = true;
+                        guard.starting = false;
+                        guard.startup_stage = "ready".to_string();
+                        guard.startup_started_at = None;
                         guard.backend_mode = effective_mode;
                         guard.python_executable = display_cmd;
                         guard.session_token = session_token;
@@ -916,14 +1172,27 @@ impl BackendManager {
                 }
             }
 
+            let elapsed_secs = started.elapsed().as_secs();
+            if elapsed_secs >= next_heartbeat_secs {
+                self.append_log(&format!(
+                    "[tauri] Still waiting for /health ({elapsed_secs}s / {}s)...",
+                    timeout.as_secs()
+                ));
+                next_heartbeat_secs += 5;
+            }
+
             std::thread::sleep(Duration::from_millis(200));
         }
 
         kill_child_process_tree(&mut child);
         let timeout_msg =
             format!("Timed out waiting for FastAPI backend on {health_url} ({last_probe_err}).");
+        self.append_log(&format!("[tauri][error] {timeout_msg}"));
         if let Ok(mut guard) = self.state.lock() {
             guard.last_error = Some(timeout_msg.clone());
+            guard.starting = false;
+            guard.startup_stage = "timed_out".to_string();
+            guard.startup_started_at = None;
         }
         Err(timeout_msg)
     }
@@ -938,6 +1207,9 @@ impl BackendManager {
                 }
             }
             guard.managed_child = false;
+            guard.starting = false;
+            guard.startup_stage = "stopped".to_string();
+            guard.startup_started_at = None;
             guard.session_token.clear();
         }
     }
@@ -1058,11 +1330,25 @@ mod tests {
         let mgr = BackendManager::new(repo_root, temp_db.clone()).unwrap();
         let status = mgr.ensure_started(0, Duration::from_secs(20)).unwrap();
         assert!(status.running);
+        assert!(!status.starting);
+        assert_eq!(status.startup_stage, "ready");
         assert!(status.managed_child);
         assert!(status.pid.is_some());
         assert!(status.base_url.starts_with("http://127.0.0.1:"));
         assert!(Path::new(&status.python_executable).is_file());
-        assert!(!mgr.session_token().unwrap().is_empty());
+        let token = mgr.session_token().unwrap();
+        assert!(!token.is_empty());
+
+        mgr.append_log(&format!("[test] secret leakage check token={token}"));
+        let snap = mgr.logs_snapshot();
+        assert!(!snap.lines.is_empty());
+        assert!(snap.lines.iter().all(|l| !l.contains(&token)));
+
+        #[cfg(windows)]
+        {
+            let clean = strip_windows_verbatim_prefix(Path::new(r"\\?\C:\Users\Admin\demo.csv"));
+            assert_eq!(clean, PathBuf::from(r"C:\Users\Admin\demo.csv"));
+        }
 
         mgr.shutdown();
         let after = mgr.status();

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  BackendLogSnapshot,
   BackendStatus,
   CsvAnalyzeResponse,
   CsvEvaluateResponse,
@@ -115,6 +116,28 @@ export async function restartBackend(): Promise<BackendStatus> {
     return invoke<BackendStatus>("restart_backend");
   }
   return getBackendStatus();
+}
+
+export async function getBackendLogs(): Promise<BackendLogSnapshot> {
+  if (isTauriRuntime()) {
+    return invoke<BackendLogSnapshot>("get_backend_logs");
+  }
+  const status = await getBackendStatus();
+  return {
+    starting: Boolean(status.starting),
+    running: status.running,
+    backend_mode: status.backend_mode ?? "browser_dev",
+    startup_stage: status.running ? "ready" : "offline",
+    startup_elapsed_ms: status.startup_elapsed_ms ?? 0,
+    port: status.port,
+    pid: status.pid,
+    log_file_path: "(chỉ khả dụng khi chạy bản Desktop Tauri)",
+    last_error: status.last_error,
+    lines: [
+      `[dev] Browser preview mode -> ${status.base_url} (${status.running ? "online" : "offline"})`,
+      ...(status.last_error ? [`[dev][error] ${status.last_error}`] : []),
+    ],
+  };
 }
 
 export async function getRuntimeDiagnostics(): Promise<RuntimeDiagnostics | null> {

@@ -2,6 +2,9 @@ export interface BackendStatus {
   base_url: string;
   port: number;
   running: boolean;
+  starting?: boolean;
+  startup_stage?: string;
+  startup_elapsed_ms?: number;
   managed_child: boolean;
   pid: number | null;
   backend_mode?: string;
@@ -10,6 +13,19 @@ export interface BackendStatus {
   runtime_dir?: string;
   db_path: string;
   last_error: string | null;
+}
+
+export interface BackendLogSnapshot {
+  starting: boolean;
+  running: boolean;
+  backend_mode: string;
+  startup_stage: string;
+  startup_elapsed_ms: number;
+  port: number;
+  pid: number | null;
+  log_file_path: string;
+  last_error: string | null;
+  lines: string[];
 }
 
 export interface RuntimeDiagnostics {

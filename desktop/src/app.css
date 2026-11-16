@@ -1,5 +1,6 @@
 :root,
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg-canvas: #090e1a;
   --bg-surface: #111827;
   --bg-elevated: #1e293b;
@@ -24,6 +25,7 @@
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg-canvas: #f8fafc;
   --bg-surface: #ffffff;
   --bg-elevated: #eff4fb;
@@ -60,7 +62,39 @@ body {
   font-family: "Fira Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size: 14px;
   line-height: 1.5;
+  overflow-x: hidden;
+  overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Sleek theme-aware scrollbars for Windows WebView2 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-subtle);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-strong);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 .mono {

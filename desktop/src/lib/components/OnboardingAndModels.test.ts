@@ -1,9 +1,10 @@
 import { render } from "svelte/server";
 import { describe, expect, it } from "vitest";
+import DevLogsPanel from "./DevLogsPanel.svelte";
 import ModelReadinessPanel from "./ModelReadinessPanel.svelte";
 import OnboardingGuidePanel from "./OnboardingGuidePanel.svelte";
 import { formatUserFriendlyError, getModelGovernanceInfo } from "../utils";
-import type { ModelStatusItem } from "../types";
+import type { BackendLogSnapshot, ModelStatusItem } from "../types";
 
 const sampleModels: ModelStatusItem[] = [
   {
@@ -118,5 +119,37 @@ describe("Standalone v1.0.0 Onboarding & Model Governance UI", () => {
     expect(formatUserFriendlyError("UNC or network share CSV paths are blocked")).toContain(
       "đường dẫn mạng chia sẻ",
     );
+  });
+
+  it("renders DevLogsPanel (Shift+F9) with sidecar startup stage and captured log lines", () => {
+    const logs: BackendLogSnapshot = {
+      starting: true,
+      running: false,
+      backend_mode: "embedded_sidecar",
+      startup_stage: "unpacking_and_booting",
+      startup_elapsed_ms: 14500,
+      port: 0,
+      pid: null,
+      log_file_path: "C:\\Users\\Admin\\AppData\\Local\\NetFlowSentinel\\logs\\backend.log",
+      last_error: null,
+      lines: [
+        "[+  0.01s] [tauri] Spawning embedded_sidecar on 127.0.0.1:8000",
+        "[+ 10.02s] [tauri] Still waiting for /health (10s / 120s)...",
+      ],
+    };
+    const out = render(DevLogsPanel, {
+      props: {
+        logs,
+        backendStatus: null,
+        diagnostics: null,
+        onRefresh: () => {},
+        onClose: () => {},
+      },
+    });
+    expect(out.body).toContain("Nhật ký Kỹ thuật Backend / Dev Logs");
+    expect(out.body).toContain("Shift+F9");
+    expect(out.body).toContain("unpacking_and_booting");
+    expect(out.body).toContain("14.5s");
+    expect(out.body).toContain("Spawning embedded_sidecar");
   });
 });
