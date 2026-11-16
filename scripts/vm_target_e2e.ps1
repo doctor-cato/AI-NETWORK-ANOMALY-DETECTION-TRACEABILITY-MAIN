@@ -30,7 +30,15 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 function Get-LowerSha256([string]$Path) {
-    return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $hashBytes = $sha.ComputeHash($stream)
+        return ([System.BitConverter]::ToString($hashBytes) -replace "-", "").ToLowerInvariant()
+    } finally {
+        $stream.Dispose()
+        $sha.Dispose()
+    }
 }
 
 function New-RandomHexToken([int]$ByteCount = 32) {
@@ -689,12 +697,18 @@ try {
         }
     }
 
-    $outParent = Split-Path -Path $OutputJson -Parent
+    $resolvedOut = if ([System.IO.Path]::IsPathRooted($OutputJson)) {
+        $OutputJson
+    } else {
+        Join-Path (Get-Location).Path $OutputJson
+    }
+    $outParent = Split-Path -Path $resolvedOut -Parent
     if ($outParent) {
         New-Item -ItemType Directory -Force -Path $outParent | Out-Null
     }
-    $evidencePayload | ConvertTo-Json -Depth 12 | Set-Content -Path $OutputJson -Encoding utf8
-    Write-Host "Target E2E evidence written to: $OutputJson"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($resolvedOut, (($evidencePayload | ConvertTo-Json -Depth 12) + "`n"), $utf8NoBom)
+    Write-Host "Target E2E evidence written to: $resolvedOut"
 } finally {
     if ($cleanupWorkDir -and (Test-Path $WorkDir)) {
         Remove-Item -Path $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
