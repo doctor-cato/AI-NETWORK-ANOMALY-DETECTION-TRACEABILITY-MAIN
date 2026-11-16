@@ -15,6 +15,7 @@
     pickCsvFile,
     pickSaveCsvFile,
     pickSaveJsonFile,
+    reportFrontendReady,
     restartBackend,
     simulateSecurityResponse,
   } from "./lib/api";
@@ -168,6 +169,14 @@
       if (demo.labels_exists && !labelsPath.trim()) {
         handleLabelsPathChange(demo.labels_path);
       }
+      await reportFrontendReady({
+        connected: !errorMessage && Boolean(healthData) && Boolean(backendStatus?.running),
+        health_status: healthData?.status ?? null,
+        ready_models: models.filter((m) => m.ready).map((m) => m.model_key),
+        flows_exists: demo.flows_exists,
+        labels_exists: demo.labels_exists,
+        error_message: errorMessage,
+      });
     } finally {
       initializing = false;
     }

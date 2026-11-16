@@ -10,8 +10,20 @@ on:
         description: 'Dry-run version label for artifact naming (when triggered manually without a tag)'
         required: false
         default: 'v0.6.0-dryrun'
+      companion_bundle_url:
+        description: 'Optional allowlisted HTTPS URL to packaged companion ZIP (override vars.COMPANION_BUNDLE_URL)'
+        required: false
+        default: ''
+      companion_bundle_sha256:
+        description: 'Required 64-hex SHA-256 of companion ZIP when using URL or workflow run ID'
+        required: false
+        default: ''
+      companion_artifact_run_id:
+        description: 'Optional GitHub Actions workflow run ID in this repo with companion artifact'
+        required: false
+        default: ''
       companion_bundle_dir:
-        description: 'Optional external directory containing staged companion artifacts (artifacts/, data/demo/, COMPANION_SHA256SUMS.txt)'
+        description: 'Optional external directory containing staged companion artifacts (self-hosted/manual only)'
         required: false
         default: ''
 
@@ -123,76 +135,85 @@ jobs:
           "is_tag_push=$($isTagPush.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "is_prerelease=$($isPrerelease.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Stage and verify external companion bundle (workflow_dispatch optional)
-        if: github.event_name == 'workflow_dispatch' && inputs.companion_bundle_dir != ''
+      - name: Resolve, verify, and install companion artifacts bundle (tag-push & dispatch)
         env:
-          COMPANION_BUNDLE_DIR: ${{ inputs.companion_bundle_dir }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMPANION_BUNDLE_TOKEN: ${{ secrets.COMPANION_BUNDLE_TOKEN }}
+          INPUT_COMPANION_URL: ${{ inputs.companion_bundle_url }}
+          INPUT_COMPANION_SHA256: ${{ inputs.companion_bundle_sha256 }}
+          INPUT_COMPANION_RUN_ID: ${{ inputs.companion_artifact_run_id }}
+          INPUT_COMPANION_DIR: ${{ inputs.companion_bundle_dir }}
+          VAR_COMPANION_URL: ${{ vars.COMPANION_BUNDLE_URL }}
+          VAR_COMPANION_SHA256: ${{ vars.COMPANION_BUNDLE_SHA256 }}
+          VAR_COMPANION_RUN_ID: ${{ vars.COMPANION_ARTIFACT_RUN_ID }}
+          VAR_COMPANION_ARTIFACT_NAME: ${{ vars.COMPANION_ARTIFACT_NAME }}
+          VAR_COMPANION_ALLOWED_HOSTS: ${{ vars.COMPANION_BUNDLE_ALLOWED_HOSTS }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          python -c @'
-          import hashlib, os, re, shutil
-          from pathlib import Path
+          $tagName = "${{ steps.meta.outputs.tag_name }}"
+          $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
 
-          repo_root = Path.cwd().resolve()
-          bundle_dir = Path(os.environ["COMPANION_BUNDLE_DIR"]).resolve()
-          if not bundle_dir.is_dir():
-              raise SystemExit(f"companion_bundle_dir is not a directory: {bundle_dir}")
+          $bundleUrl = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_URL)) { $env:INPUT_COMPANION_URL.Trim() } else { "$($env:VAR_COMPANION_URL)".Trim() }
+          $bundleRunId = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_RUN_ID)) { $env:INPUT_COMPANION_RUN_ID.Trim() } else { "$($env:VAR_COMPANION_RUN_ID)".Trim() }
+          $bundleSha = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_SHA256)) { $env:INPUT_COMPANION_SHA256.Trim() } else { "$($env:VAR_COMPANION_SHA256)".Trim() }
+          $artifactName = if (-not [string]::IsNullOrWhiteSpace($env:VAR_COMPANION_ARTIFACT_NAME)) { $env:VAR_COMPANION_ARTIFACT_NAME.Trim() } else { "netflow-sentinel-companion-bundle" }
+          $allowedHosts = "$($env:VAR_COMPANION_ALLOWED_HOSTS)".Trim()
+          $bundleDir = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "$($env:INPUT_COMPANION_DIR)".Trim() } else { "" }
 
-          allowed_prefixes = ("artifacts/", "data/demo/", "reports/")
-          sums_file = bundle_dir / "COMPANION_SHA256SUMS.txt"
-
-          def safe_copy(rel_posix: str, expected_sha: str | None = None) -> None:
-              if not rel_posix or rel_posix.startswith("/") or ".." in Path(rel_posix).parts:
-                  raise SystemExit(f"Unsafe companion path rejected: {rel_posix!r}")
-              if not any(rel_posix.startswith(p) for p in allowed_prefixes):
-                  raise SystemExit(f"Disallowed companion destination prefix: {rel_posix!r}")
-              raw_src = bundle_dir / rel_posix
-              if raw_src.is_symlink():
-                  raise SystemExit(f"Symlink companion source rejected: {raw_src}")
-              src = raw_src.resolve()
-              if not src.is_relative_to(bundle_dir) or not src.is_file():
-                  raise SystemExit(f"Invalid companion source file: {src}")
-              actual = hashlib.sha256(src.read_bytes()).hexdigest().lower()
-              if expected_sha is not None and actual != expected_sha.lower():
-                  raise SystemExit(f"Checksum mismatch for {rel_posix}: {actual} != {expected_sha}")
-              dst = (repo_root / rel_posix).resolve()
-              if not dst.is_relative_to(repo_root):
-                  raise SystemExit(f"Destination escapes repository root: {dst}")
-              if rel_posix.startswith("reports/") and not dst.is_file():
-                  raise SystemExit(
-                      f"Untracked reports/ path rejected from companion bundle: {rel_posix!r}"
-                  )
-              if rel_posix.startswith(("reports/", "data/demo/")) and dst.is_file():
-                  tracked_sha = hashlib.sha256(dst.read_bytes()).hexdigest().lower()
-                  if actual != tracked_sha:
-                      raise SystemExit(
-                          f"Companion bundle {rel_posix} does not match tracked file at HEAD ({actual} != {tracked_sha})"
-                      )
-                  return
-              dst.parent.mkdir(parents=True, exist_ok=True)
-              shutil.copy2(src, dst)
-
-          if sums_file.is_file():
-              lines = [ln.strip() for ln in sums_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
-              if not lines:
-                  raise SystemExit("COMPANION_SHA256SUMS.txt is empty")
-              for ln in lines:
-                  m = re.fullmatch(r"([0-9a-fA-F]{64})\s+\*?(.+)", ln)
-                  if not m:
-                      raise SystemExit(f"Malformed line in COMPANION_SHA256SUMS.txt: {ln!r}")
-                  safe_copy(m.group(2).strip().replace("\\", "/"), m.group(1))
-          else:
-              for sub in ("artifacts", "data/demo"):
-                  sub_dir = bundle_dir / sub
-                  if sub_dir.is_dir():
-                      for p in sub_dir.rglob("*"):
-                          if p.is_file():
-                              safe_copy(p.relative_to(bundle_dir).as_posix())
-          '@
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          python scripts/verify_companion_artifacts.py
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not [string]::IsNullOrWhiteSpace($bundleUrl)) {
+            $cmdArgs = @(
+              "scripts/verify_companion_artifacts.py",
+              "--install-bundle-url", $bundleUrl,
+              "--github-repo", "${{ github.repository }}"
+            )
+            if (-not [string]::IsNullOrWhiteSpace($bundleSha)) {
+              $cmdArgs += @("--expect-bundle-sha256", $bundleSha)
+            }
+            if (-not [string]::IsNullOrWhiteSpace($allowedHosts)) {
+              $cmdArgs += @("--allowed-hosts", $allowedHosts)
+            }
+            python @cmdArgs
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } elseif (-not [string]::IsNullOrWhiteSpace($bundleRunId)) {
+            $cmdArgs = @(
+              "scripts/verify_companion_artifacts.py",
+              "--install-bundle-run-id", $bundleRunId,
+              "--install-bundle-artifact-name", $artifactName,
+              "--github-repo", "${{ github.repository }}",
+              "--token-env", "GH_TOKEN"
+            )
+            if (-not [string]::IsNullOrWhiteSpace($bundleSha)) {
+              $cmdArgs += @("--expect-bundle-sha256", $bundleSha)
+            }
+            if (-not [string]::IsNullOrWhiteSpace($allowedHosts)) {
+              $cmdArgs += @("--allowed-hosts", $allowedHosts)
+            }
+            python @cmdArgs
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } elseif (-not [string]::IsNullOrWhiteSpace($bundleDir)) {
+            python scripts/verify_companion_artifacts.py `
+              --install-bundle-dir $bundleDir `
+              --github-repo "${{ github.repository }}"
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } else {
+            python scripts/verify_companion_artifacts.py > $null
+            if ($LASTEXITCODE -ne 0) {
+              if ($isStableRelease) {
+                Write-Error (
+                  "FAIL-CLOSED: Stable release ($tagName) requires verified companion artifacts on the runner. " +
+                  "Configure Repository Variables vars.COMPANION_BUNDLE_URL + vars.COMPANION_BUNDLE_SHA256 " +
+                  "(or vars.COMPANION_ARTIFACT_RUN_ID + vars.COMPANION_BUNDLE_SHA256) with the 4-model bundle ZIP " +
+                  "built via 'python scripts/verify_companion_artifacts.py --package-bundle <zip>'."
+                )
+                exit 1
+              }
+              Write-Warning (
+                "Prerelease/dry-run ($tagName): no companion bundle configured; proceeding with build and " +
+                "clean NSIS installed-desktop startup/shutdown E2E only (4-model live E2E skipped for prerelease)."
+              )
+            }
+          }
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4

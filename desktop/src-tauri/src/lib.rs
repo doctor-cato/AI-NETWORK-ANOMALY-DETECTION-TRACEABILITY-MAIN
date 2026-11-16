@@ -1,7 +1,7 @@
 pub mod backend;
 pub mod commands;
 
-use backend::{default_db_path, resolve_repo_root, BackendManager};
+use backend::{default_db_path, resolve_preferred_backend_port, resolve_repo_root, BackendManager};
 use std::time::Duration;
 use tauri::Manager;
 
@@ -19,13 +19,15 @@ pub fn run() {
         .manage(backend)
         .setup(|app| {
             let mgr = app.state::<BackendManager>().inner().clone();
+            let preferred_port = resolve_preferred_backend_port();
             std::thread::spawn(move || {
-                let _ = mgr.ensure_started(8000, Duration::from_secs(20));
+                let _ = mgr.ensure_started(preferred_port, Duration::from_secs(20));
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_backend_status,
+            commands::report_frontend_ready,
             commands::restart_backend,
             commands::get_demo_paths,
             commands::pick_csv_file,

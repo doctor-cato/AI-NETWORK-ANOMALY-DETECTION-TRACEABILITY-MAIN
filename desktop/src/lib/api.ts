@@ -292,3 +292,19 @@ export async function exportSecuritySimulation(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+export async function reportFrontendReady(summary: {
+  connected: boolean;
+  health_status: string | null;
+  ready_models: string[];
+  flows_exists: boolean;
+  labels_exists: boolean;
+  error_message: string | null;
+}): Promise<void> {
+  if (!isTauriRuntime()) return;
+  try {
+    await invoke<void>("report_frontend_ready", { summary });
+  } catch {
+    // Non-fatal diagnostics hook; ignore errors during normal interactive runs
+  }
+}

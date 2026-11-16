@@ -1,10 +1,10 @@
 //! Typed Tauri IPC commands bridging Svelte UI to localhost FastAPI & native file dialogs.
 
-use crate::backend::{BackendManager, BackendStatus};
+use crate::backend::{resolve_preferred_backend_port, BackendManager, BackendStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -75,11 +75,59 @@ pub fn get_backend_status(backend: State<'_, BackendManager>) -> BackendStatus {
 }
 
 #[tauri::command]
+pub fn report_frontend_ready(
+    backend: State<'_, BackendManager>,
+    summary: Value,
+) -> Result<(), String> {
+    let Some(target) = std::env::var_os("NETWORK_ANOMALY_DESKTOP_TELEMETRY_FILE") else {
+        return Ok(());
+    };
+    let target_path = PathBuf::from(target);
+    if target_path.as_os_str().is_empty() {
+        return Ok(());
+    }
+    if let Some(parent) = target_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed creating telemetry directory: {e}"))?;
+        }
+    }
+    let backend_status = backend.status();
+    let reported_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let frontend_connected = summary
+        .get("connected")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        && backend_status.running;
+    let payload = json!({
+        "desktop_pid": std::process::id(),
+        "frontend_connected": frontend_connected,
+        "reported_unix_ms": reported_unix_ms,
+        "backend_status": backend_status,
+        "summary": summary,
+    });
+    let serialized = serde_json::to_string_pretty(&payload)
+        .map_err(|e| format!("Failed serializing desktop telemetry: {e}"))?;
+    let tmp_path = target_path.with_extension("json.tmp");
+    std::fs::write(&tmp_path, format!("{serialized}\n"))
+        .map_err(|e| format!("Failed writing desktop telemetry temp file: {e}"))?;
+    std::fs::rename(&tmp_path, &target_path)
+        .map_err(|e| format!("Failed finalizing desktop telemetry file: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn restart_backend(backend: State<'_, BackendManager>) -> Result<BackendStatus, String> {
     let mgr = backend.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || mgr.ensure_started(8000, Duration::from_secs(15)))
-        .await
-        .map_err(|e| format!("Restart task panicked: {e}"))?
+    let preferred_port = resolve_preferred_backend_port();
+    tauri::async_runtime::spawn_blocking(move || {
+        mgr.ensure_started(preferred_port, Duration::from_secs(15))
+    })
+    .await
+    .map_err(|e| format!("Restart task panicked: {e}"))?
 }
 
 #[tauri::command]

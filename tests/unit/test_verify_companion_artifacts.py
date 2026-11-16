@@ -7,6 +7,7 @@ import hashlib
 import json
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict
@@ -15,14 +16,16 @@ import pytest
 
 import scripts.verify_companion_artifacts as vca
 from scripts.verify_companion_artifacts import (
-    main as verify_companion_main,
-)
-from scripts.verify_companion_artifacts import (
+    install_companion_bundle,
+    package_companion_bundle,
     run_four_model_e2e_verification,
     stage_companion_bundle,
     verify_companion_artifacts,
     verify_e2e_attestation,
     verify_nsis_installer_e2e,
+)
+from scripts.verify_companion_artifacts import (
+    main as verify_companion_main,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -215,6 +218,7 @@ def _build_valid_attestation_payload(
 
     payload: Dict[str, Any] = {
         "e2e_status": "PASS",
+        "e2e_backend_origin": "installed_nsis_desktop" if include_nsis else "api_only_run_api",
         "companion_status": "READY",
         "ready_models": list(cm_specs.keys()),
         "verify_script_sha256": _sha256_path(root / "scripts/verify_companion_artifacts.py"),
@@ -242,6 +246,13 @@ def _build_valid_attestation_payload(
             "compiled_exe_sha256_match": True,
             "uninstaller_verified": True,
             "clean_install_verified": True,
+            "installed_app_launched": True,
+            "installed_exe_path_verified": True,
+            "frontend_webview_connected": True,
+            "backend_spawned_on_loopback": True,
+            "graceful_close_verified": True,
+            "zero_orphan_processes_verified": True,
+            "uninstall_cleanup_verified": True,
         }
     return payload
 
@@ -547,6 +558,123 @@ def test_verify_e2e_attestation_rejects_missing_or_mismatched_nsis_e2e(tmp_path:
         verify_e2e_attestation(p_bad_match, root=ws, require_nsis_e2e=True)
 
 
+def _install_mocked_windows_desktop_env(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    installer: Path,
+    installed_bytes: bytes,
+    compiled_exe: Path | None = None,
+    desktop_pid: int = 44001,
+    backend_pid: int = 44002,
+    backend_port: int = 54321,
+    frontend_connected: bool = True,
+    orphan_after_close: bool = False,
+    leave_files_on_uninstall: bool = False,
+) -> Dict[str, Any]:
+    state: Dict[str, Any] = {
+        "run_cmds": [],
+        "launched_cmds": [],
+        "launched_envs": [],
+        "backend_alive": False,
+        "closed": False,
+        "installed_dir": None,
+    }
+
+    def _fake_run(cmd, **_kwargs):
+        state["run_cmds"].append(list(cmd))
+        exe_arg = Path(cmd[0])
+        if exe_arg.resolve() == installer.resolve():
+            d_arg = next(a for a in cmd if a.startswith("/D="))
+            target_dir = Path(d_arg[3:])
+            state["installed_dir"] = target_dir
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "netflow-sentinel-desktop.exe").write_bytes(installed_bytes)
+            (target_dir / "uninstall.exe").write_bytes(b"UNINST")
+        elif exe_arg.name.lower() == "uninstall.exe" and not leave_files_on_uninstall:
+            target_dir = exe_arg.parent
+            for item in ("netflow-sentinel-desktop.exe", "uninstall.exe"):
+                p = target_dir / item
+                if p.exists():
+                    p.unlink()
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    class _FakeDesktopProc:
+        def __init__(self, cmd, env):
+            self.pid = desktop_pid
+            self.returncode = None
+            state["launched_cmds"].append(list(cmd))
+            state["launched_envs"].append(dict(env))
+            if compiled_exe is not None:
+                assert Path(cmd[0]).resolve() != compiled_exe.resolve()
+            assert Path(cmd[0]).parent.name == "CleanInstall"
+            state["backend_alive"] = True
+            tel_file = Path(env["NETWORK_ANOMALY_DESKTOP_TELEMETRY_FILE"])
+            tel_file.parent.mkdir(parents=True, exist_ok=True)
+            tel_file.write_text(
+                json.dumps(
+                    {
+                        "desktop_pid": desktop_pid,
+                        "frontend_connected": frontend_connected,
+                        "backend_status": {
+                            "base_url": f"http://127.0.0.1:{backend_port}",
+                            "port": backend_port,
+                            "running": True,
+                            "managed_child": True,
+                            "pid": backend_pid,
+                        },
+                        "summary": {
+                            "connected": frontend_connected,
+                            "health_status": "ok",
+                            "ready_models": list(vca.MODEL_SPECS.keys()),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, timeout=None):  # noqa: ARG002
+            if self.returncode is None:
+                self.returncode = 0
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
+    def _fake_popen(cmd, **kwargs):
+        return _FakeDesktopProc(cmd, kwargs.get("env") or {})
+
+    def _fake_http_json(url: str, **_kwargs):
+        if url.endswith("/api/v1/health"):
+            return 200, {"status": "ok"}
+        if url.endswith("/api/v1/models"):
+            return 200, [{"model_key": k, "ready": True} for k in vca.MODEL_SPECS]
+        raise AssertionError(f"Unexpected _http_json URL: {url}")
+
+    def _fake_close(pid: int) -> str:
+        assert pid == desktop_pid
+        state["closed"] = True
+        if not orphan_after_close:
+            state["backend_alive"] = False
+        return "wm_close"
+
+    monkeypatch.setattr(vca, "os", SimpleNamespace(name="nt", environ={}))
+    monkeypatch.setattr(vca.subprocess, "run", _fake_run)
+    monkeypatch.setattr(vca.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(vca, "_http_json", _fake_http_json)
+    monkeypatch.setattr(
+        vca,
+        "_is_windows_pid_alive",
+        lambda pid: bool(state["backend_alive"]) and pid == backend_pid,
+    )
+    monkeypatch.setattr(vca, "_request_windows_graceful_close", _fake_close)
+    monkeypatch.setattr(vca, "_is_loopback_port_open", lambda _port: False)
+    monkeypatch.setattr(vca, "_terminate_pid_best_effort", lambda _pid: None)
+    return state
+
+
 def test_verify_nsis_installer_e2e_guards_and_mocked_windows_flow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -572,7 +700,7 @@ def test_verify_nsis_installer_e2e_guards_and_mocked_windows_flow(
     with pytest.raises(RuntimeError, match="requires Windows"):
         verify_nsis_installer_e2e(installer, root=tmp_path)
 
-    # Mock clean Windows install/uninstall verification
+    # Mock clean Windows install -> installed launch -> WebView2 IPC -> close -> zero orphan -> uninstall
     sums_file = tmp_path / "SHA256SUMS.txt"
     sums_file.write_text(f"{installer_sha}  {installer.name}\n", encoding="utf-8")
     compiled_exe = tmp_path / "netflow-sentinel-desktop.exe"
@@ -580,21 +708,12 @@ def test_verify_nsis_installer_e2e_guards_and_mocked_windows_flow(
     compiled_exe.write_bytes(exe_bytes)
     compiled_sha = _sha256_bytes(exe_bytes)
 
-    seen_cmds: list[list[str]] = []
-
-    def _fake_subprocess_run(cmd, **_kwargs):
-        seen_cmds.append(list(cmd))
-        exe_arg = Path(cmd[0])
-        if exe_arg.resolve() == installer.resolve():
-            d_arg = next(a for a in cmd if a.startswith("/D="))
-            target_dir = Path(d_arg[3:])
-            target_dir.mkdir(parents=True, exist_ok=True)
-            (target_dir / "netflow-sentinel-desktop.exe").write_bytes(exe_bytes)
-            (target_dir / "uninstall.exe").write_bytes(b"UNINST")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(vca, "os", SimpleNamespace(name="nt"))
-    monkeypatch.setattr(vca.subprocess, "run", _fake_subprocess_run)
+    state = _install_mocked_windows_desktop_env(
+        monkeypatch,
+        installer=installer,
+        installed_bytes=exe_bytes,
+        compiled_exe=compiled_exe,
+    )
 
     nsis_out = verify_nsis_installer_e2e(
         installer,
@@ -608,7 +727,12 @@ def test_verify_nsis_installer_e2e_guards_and_mocked_windows_flow(
     assert nsis_out["compiled_exe_sha256_match"] is True
     assert nsis_out["clean_install_verified"] is True
     assert nsis_out["uninstaller_verified"] is True
-    assert len(seen_cmds) == 2
+    assert nsis_out["installed_app_launched"] is True
+    assert nsis_out["frontend_webview_connected"] is True
+    assert nsis_out["zero_orphan_processes_verified"] is True
+    assert nsis_out["uninstall_cleanup_verified"] is True
+    assert len(state["run_cmds"]) == 2
+    assert len(state["launched_cmds"]) == 1
 
     # CLI --verify-nsis-only without --installer-path fails closed
     assert verify_companion_main(["--verify-nsis-only"]) == 1
@@ -661,18 +785,12 @@ def test_verify_nsis_installer_e2e_tauri_bundle_marker_normalized(tmp_path: Path
     compiled_exe = tmp_path / "netflow-sentinel-desktop.exe"
     compiled_exe.write_bytes(compiled_bytes)
 
-    def _fake_subprocess_run(cmd, **_kwargs):
-        exe_arg = Path(cmd[0])
-        if exe_arg.resolve() == installer.resolve():
-            d_arg = next(a for a in cmd if a.startswith("/D="))
-            target_dir = Path(d_arg[3:])
-            target_dir.mkdir(parents=True, exist_ok=True)
-            (target_dir / "netflow-sentinel-desktop.exe").write_bytes(installed_bytes)
-            (target_dir / "uninstall.exe").write_bytes(b"UNINST")
-        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(vca, "os", SimpleNamespace(name="nt"))
-    monkeypatch.setattr(vca.subprocess, "run", _fake_subprocess_run)
+    _install_mocked_windows_desktop_env(
+        monkeypatch,
+        installer=installer,
+        installed_bytes=installed_bytes,
+        compiled_exe=compiled_exe,
+    )
 
     nsis_out = verify_nsis_installer_e2e(
         installer,
@@ -701,6 +819,233 @@ def test_verify_nsis_installer_e2e_tauri_bundle_marker_normalized(tmp_path: Path
             sums_file=sums_file,
             compiled_exe_path=tampered_compiled,
         )
+
+
+def test_verify_nsis_installer_e2e_rejects_orphan_backend_and_uninstall_leftovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    installer = tmp_path / "NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe"
+    installer.write_bytes(b"MZ" + b"\x11" * 1_100_000)
+    exe_bytes = b"MZ" + b"\x22" * 1_200_000
+    compiled_exe = tmp_path / "netflow-sentinel-desktop.exe"
+    compiled_exe.write_bytes(exe_bytes)
+
+    # Orphan Python backend after desktop exit must fail closed
+    _install_mocked_windows_desktop_env(
+        monkeypatch,
+        installer=installer,
+        installed_bytes=exe_bytes,
+        compiled_exe=compiled_exe,
+        orphan_after_close=True,
+    )
+    with pytest.raises(RuntimeError, match="Orphan Python backend process detected"):
+        verify_nsis_installer_e2e(installer, root=tmp_path, compiled_exe_path=compiled_exe)
+
+    # Leftover binary after NSIS uninstall must fail closed
+    _install_mocked_windows_desktop_env(
+        monkeypatch,
+        installer=installer,
+        installed_bytes=exe_bytes,
+        compiled_exe=compiled_exe,
+        leave_files_on_uninstall=True,
+    )
+    with pytest.raises(RuntimeError, match="NSIS uninstall left executables behind"):
+        verify_nsis_installer_e2e(installer, root=tmp_path, compiled_exe_path=compiled_exe)
+
+    # Attestation must reject nsis_e2e missing installed-desktop flags or wrong backend origin
+    ws = _copy_attestation_workspace(tmp_path / "att_ws")
+    payload = _build_valid_attestation_payload(ws, include_nsis=True, commit="a" * 40)
+    bad_orphan = copy.deepcopy(payload)
+    bad_orphan["nsis_e2e"]["zero_orphan_processes_verified"] = False
+    p_bad_orphan = tmp_path / "bad_orphan_att.json"
+    p_bad_orphan.write_text(json.dumps(bad_orphan), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="invalid nsis_e2e verification flags"):
+        verify_e2e_attestation(p_bad_orphan, root=ws, require_nsis_e2e=True)
+
+    bad_origin = copy.deepcopy(payload)
+    bad_origin["e2e_backend_origin"] = "api_only_run_api"
+    p_bad_origin = tmp_path / "bad_origin_att.json"
+    p_bad_origin.write_text(json.dumps(bad_origin), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="e2e_backend_origin='installed_nsis_desktop'"):
+        verify_e2e_attestation(p_bad_origin, root=ws, require_nsis_e2e=True)
+
+
+def test_package_and_install_companion_bundle_security_and_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    ws = _copy_attestation_workspace(tmp_path / "src_ws")
+    fake_files = {
+        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
+        "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
+        "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
+        "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
+        "artifacts/models/autoencoder/autoencoder_model.joblib": b"ae",
+    }
+    for rel, content in fake_files.items():
+        p = ws / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(content)
+
+    all_companion_files = sorted(
+        [
+            *fake_files.keys(),
+            "data/demo/demo_flows.csv",
+            "data/demo/demo_labels.csv",
+            "data/demo/demo_manifest.json",
+            "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+            "reports/models/random_forest_manifest.json",
+            "reports/models/xgboost_manifest.json",
+            "reports/models/isolation_forest_manifest.json",
+            "reports/models/autoencoder_manifest.json",
+        ]
+    )
+
+    def _ready_summary(root: Path) -> Dict[str, Any]:
+        demo_info = {
+            rel: {
+                "present": (root / rel).is_file(),
+                "sha256": _sha256_path(root / rel) if (root / rel).is_file() else None,
+            }
+            for rel in (
+                "data/demo/demo_flows.csv",
+                "data/demo/demo_labels.csv",
+                "data/demo/demo_manifest.json",
+            )
+        }
+        all_present = all((root / rel).is_file() for rel in all_companion_files)
+        return {
+            "overall_status": "READY" if all_present else "BLOCKED / NOT READY",
+            "ready_models": (
+                ["random_forest", "xgboost", "isolation_forest", "autoencoder"]
+                if all_present
+                else []
+            ),
+            "preprocessor": {
+                "ready": all_present,
+                "sha256": (
+                    _sha256_path(
+                        root / "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib"
+                    )
+                    if all_present
+                    else None
+                ),
+            },
+            "models": {
+                key: {
+                    "ready": all_present,
+                    "sha256": "1" * 64,
+                    "run_id": f"{key}_run",
+                }
+                for key in ("random_forest", "xgboost", "isolation_forest", "autoencoder")
+            },
+            "demo": demo_info,
+            "demo_ready": all_present,
+            "companion_files": all_companion_files,
+        }
+
+    monkeypatch.setattr(vca, "verify_companion_artifacts", _ready_summary)
+
+    bundle_zip = tmp_path / "companion.zip"
+    pkg_info = package_companion_bundle(bundle_zip, root=ws)
+    assert pkg_info["package_status"] == "READY"
+    bundle_sha = pkg_info["bundle_sha256"]
+    bundle_bytes = bundle_zip.read_bytes()
+
+    # URL allowlist and checksum guards fail closed
+    target_ws = _copy_attestation_workspace(tmp_path / "target_ws")
+    shutil.rmtree(target_ws / "data/demo")
+
+    with pytest.raises(RuntimeError, match="HTTPS required"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_url="http://github.com/doctor-cato/repo/releases/download/v0.6.0/c.zip",
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=bundle_sha,
+        )
+    with pytest.raises(RuntimeError, match="Disallowed companion URL host"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_url="https://evil.example.com/companion.zip",
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=bundle_sha,
+        )
+    with pytest.raises(RuntimeError, match="must belong to repository"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_url="https://github.com/other-owner/other-repo/releases/download/v1/c.zip",
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=bundle_sha,
+        )
+    with pytest.raises(RuntimeError, match="Missing required expected bundle SHA-256"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_url="https://github.com/doctor-cato/repo/releases/download/v1/c.zip",
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=None,
+        )
+    with pytest.raises(RuntimeError, match="archive SHA-256 mismatch"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_archive=bundle_zip,
+            expected_bundle_sha256="0" * 64,
+        )
+
+    # ZipSlip path traversal and untracked reports/ injection rejected
+    bad_zip_slip = tmp_path / "slip.zip"
+    with zipfile.ZipFile(bad_zip_slip, "w") as zf:
+        zf.writestr("../escape.txt", b"pwn")
+    with pytest.raises(RuntimeError, match="Path traversal archive entry rejected"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_archive=bad_zip_slip,
+            expected_bundle_sha256=_sha256_path(bad_zip_slip),
+        )
+
+    bad_untracked_report = tmp_path / "bad_report.zip"
+    with zipfile.ZipFile(bad_untracked_report, "w") as zf:
+        payload_bytes = b"{}"
+        zf.writestr("reports/untracked_fake.json", payload_bytes)
+        zf.writestr(
+            "COMPANION_SHA256SUMS.txt",
+            f"{_sha256_bytes(payload_bytes)}  reports/untracked_fake.json\n",
+        )
+    with pytest.raises(RuntimeError, match="Untracked reports/ path rejected"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_archive=bad_untracked_report,
+            expected_bundle_sha256=_sha256_path(bad_untracked_report),
+        )
+
+    # Mock GitHub Actions run artifact download (artifact_run_id) + happy-path install into clean checkout
+    def _fake_download(url: str, **_kwargs):
+        if "/actions/runs/987654/artifacts" in url:
+            return json.dumps(
+                {
+                    "artifacts": [
+                        {
+                            "name": "netflow-sentinel-companion-bundle",
+                            "expired": False,
+                            "archive_download_url": "https://api.github.com/repos/doctor-cato/repo/actions/artifacts/555/zip",
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+        if url.endswith("/actions/artifacts/555/zip"):
+            return bundle_bytes
+        raise AssertionError(f"Unexpected download URL: {url}")
+
+    monkeypatch.setenv("GH_TOKEN", "test-token-value")
+    monkeypatch.setattr(vca, "_download_allowlisted_bytes", _fake_download)
+    installed = install_companion_bundle(
+        root=target_ws,
+        artifact_run_id="987654",
+        github_repo="doctor-cato/repo",
+        expected_bundle_sha256=bundle_sha,
+    )
+    assert installed["install_status"] == "READY"
+    assert installed["archive_sha256"] == bundle_sha
+    assert (target_ws / "data/demo/demo_flows.csv").is_file()
+    assert (target_ws / "artifacts/models/autoencoder/autoencoder_model.joblib").is_file()
 
 
 def test_verify_shipped_v060_e2e_attestation_passes():

@@ -164,6 +164,17 @@ pub fn discover_python_command(repo_root: &Path) -> Result<(String, Vec<String>)
     )
 }
 
+fn parse_backend_port_str(raw: Option<&str>) -> u16 {
+    raw.and_then(|v| v.trim().parse::<u16>().ok())
+        .unwrap_or(8000)
+}
+
+/// Resolve preferred FastAPI port from `NETWORK_ANOMALY_BACKEND_PORT` (defaults to 8000; 0 picks free port).
+pub fn resolve_preferred_backend_port() -> u16 {
+    let raw = std::env::var("NETWORK_ANOMALY_BACKEND_PORT").ok();
+    parse_backend_port_str(raw.as_deref())
+}
+
 /// Bind an unused localhost port on `127.0.0.1`, preferring `preferred` when available.
 pub fn pick_available_port(preferred: u16) -> Result<u16, String> {
     if preferred > 0 {
@@ -493,6 +504,15 @@ mod tests {
         assert_ne!(chosen, busy_port);
         assert!(chosen > 0);
         drop(occupied);
+    }
+
+    #[test]
+    fn test_parse_backend_port_str_supports_ephemeral_and_defaults() {
+        assert_eq!(parse_backend_port_str(None), 8000);
+        assert_eq!(parse_backend_port_str(Some("")), 8000);
+        assert_eq!(parse_backend_port_str(Some("invalid")), 8000);
+        assert_eq!(parse_backend_port_str(Some(" 0 ")), 0);
+        assert_eq!(parse_backend_port_str(Some("9123")), 9123);
     }
 
     #[test]

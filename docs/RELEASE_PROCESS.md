@@ -65,7 +65,7 @@ python -m pytest tests -q -rs
 ```
 
 > [!IMPORTANT]
-> **Không coi bài test bị `SKIPPED` hoặc attestation lịch sử là `PASS` cho Stable release:** Trên GitHub Actions runner mặc định không có raw dataset hoặc `.joblib` companion artifacts ngoài Git, các test real-data sẽ hiển thị `SKIPPED`. Tệp `reports/releases/v0.6.0_e2e_verification.json` chỉ dùng trong bước pre-build để đối chiếu tính nhất quán với manifest hiện hành, **tuyệt đối không được dùng thay thế cho kiểm chứng live trên bản phát hành Stable**. Trước khi xuất bản `v0.6.0` Stable, pipeline phát hành bắt buộc chạy kiểm chứng live đủ 4 model kết hợp cài đặt sạch NSIS trên Windows gắn chặt với commit phát hành và SHA-256 của bộ cài đặt:
+> **Không coi bài test bị `SKIPPED` hoặc attestation lịch sử là `PASS` cho Stable release:** Trên GitHub Actions runner mặc định không có raw dataset hoặc `.joblib` companion artifacts trong Git, các test raw-dataset sẽ hiển thị `SKIPPED`. Tệp `reports/releases/v0.6.0_e2e_verification.json` chỉ dùng trong bước pre-build để đối chiếu tính nhất quán với manifest hiện hành, **tuyệt đối không được dùng thay thế cho kiểm chứng live trên bản phát hành Stable**. Trước khi xuất bản `v0.6.0` Stable, pipeline phát hành bắt buộc cài đặt thành công companion bundle đã xác minh SHA-256 + provenance, rồi chạy kiểm chứng live **installed-desktop E2E** (cài NSIS vào thư mục sạch, đối chiếu SHA-256, khởi chạy `CleanInstall\netflow-sentinel-desktop.exe`, xác minh WebView2 Svelte `onMount` kết nối FastAPI localhost, chạy đủ 4 model trên `demo_flows.csv` qua backend của ứng dụng đã cài, đóng app bằng `WM_CLOSE`, xác nhận không còn orphan Python process, rồi gỡ cài đặt sạch):
 > ```powershell
 > python scripts/verify_companion_artifacts.py --verify-e2e `
 >   --installer-path dist/release-assets/NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe `
@@ -76,9 +76,10 @@ python -m pytest tests -q -rs
 > python scripts/verify_companion_artifacts.py --verify-attestation dist/release-assets/release_e2e_verification.json `
 >   --expect-commit <COMMIT_SHA> `
 >   --expect-installer-sha256 <SETUP_SHA256> `
->   --require-nsis-e2e
+>   --require-nsis-e2e `
+>   --require-demo-files
 > ```
-> Lệnh `--verify-e2e` chỉ `PASS` (exit code `0`) khi cả 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) đạt `READY`, chạy thực tế `POST /api/v1/csv/analyze` + `/evaluate` trên `data/demo/demo_flows.csv`, bảo toàn `ABSTAINED_OOD`, xác minh Issue #27 dry-run provenance mà không fallback ngầm, đồng thời vượt qua clean Windows NSIS silent install/uninstall và đối chiếu SHA-256 của `netflow-sentinel-desktop.exe`.
+> Lệnh `--verify-e2e` khi truyền `--installer-path` chỉ `PASS` (exit code `0`) khi cả 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`) đạt `READY`, chạy thực tế `POST /api/v1/csv/analyze` + `/evaluate` trên `data/demo/demo_flows.csv` **trực tiếp qua backend FastAPI do ứng dụng cài từ NSIS khởi tạo** (`e2e_backend_origin == "installed_nsis_desktop"`), bảo toàn `ABSTAINED_OOD`, xác minh Issue #27 dry-run provenance mà không fallback ngầm, đồng thời hoàn tất clean Windows NSIS silent install/launch/shutdown (zero orphan PID)/uninstall. *(Lưu ý: Thao tác click chuột thủ công qua các tab GUI trong WebView2 được tách bạch ghi nhận rõ là `NOT VERIFIED` trong báo cáo nếu không có UIA tự động).*
 
 ### 3.2. Kiểm chứng Hợp đồng OpenAPI (`reports/api/openapi.json` & `API_CONTRACT.md`)
 
@@ -189,11 +190,20 @@ Mọi tag phát hành (cả **Beta** lẫn **Stable**) trên `.github/workflows/
 1. Commit được gắn tag phải đã được merge vào `origin/main` (`git merge-base --is-ancestor $tagCommit origin/main`). **Cấm gắn tag phát hành lên commit chỉ tồn tại trên feature branch.**
 2. Tên tag (`v<VERSION>`) phải khớp 1-1 với phiên bản trong 5 tệp cấu hình desktop, binary ứng dụng và tên tệp NSIS (`python scripts/check_desktop_version.py --check --expect-tag <TAG>`).
 3. Tag chưa từng được xuất bản GitHub Release trước đó (`gh release view <TAG>` phải báo chưa tồn tại — nghiêm cấm ghi đè hoặc di chuyển tag đã phát hành).
-4. **Cổng kiểm chứng NSIS + Live 4-Model E2E fail-closed:**
-   - Sau khi `tauri build --bundles nsis` tạo ra bộ cài đặt và `SHA256SUMS.txt`, workflow luôn chạy `python scripts/verify_companion_artifacts.py --verify-nsis-only` để cài đặt im lặng vào thư mục sạch, đối chiếu SHA-256 giữa `netflow-sentinel-desktop.exe` cài ra và bản biên dịch `--release`, rồi gỡ cài đặt im lặng (`nsis_e2e_verification.json`).
+4. **Cổng kiểm chứng NSIS Installed-Desktop + Live 4-Model E2E fail-closed:**
+   - **Cung cấp companion artifacts an toàn cho GitHub-hosted runner (không commit `.joblib`/raw CSV vào Git, không phụ thuộc path local):**
+     1. Trên máy đã có companion artifacts hợp lệ (`READY`), đóng gói thành gói ZIP tất định kèm `COMPANION_SHA256SUMS.txt` và `COMPANION_BUNDLE_MANIFEST.json`:
+        ```powershell
+        python scripts/verify_companion_artifacts.py --package-bundle dist/netflow-sentinel-v0.6.0-companion-bundle.zip
+        ```
+     2. Cấu hình một trong hai nguồn được phép qua **GitHub Actions Repository Variables** (và secret `COMPANION_BUNDLE_TOKEN` tùy chọn nếu tải từ URL cần xác thực; **tuyệt đối không hardcode secret hoặc URL ngoài allowlist**):
+        - **Cách A (Allowlisted HTTPS URL):** Đặt `vars.COMPANION_BUNDLE_URL` (mặc định chỉ cho phép host GitHub của chính repository trừ khi khai báo `vars.COMPANION_BUNDLE_ALLOWED_HOSTS`) và `vars.COMPANION_BUNDLE_SHA256` (64-hex bắt buộc).
+        - **Cách B (GitHub Actions Artifact Run):** Đặt `vars.COMPANION_ARTIFACT_RUN_ID` (+ `vars.COMPANION_ARTIFACT_NAME` nếu khác `netflow-sentinel-companion-bundle`) và `vars.COMPANION_BUNDLE_SHA256`.
+     3. Ở đầu workflow `.github/workflows/release.yml`, `--install-bundle-*` tự động kiểm tra HTTPS + host allowlist + chuyển hướng HTTP, đối chiếu SHA-256 gói ZIP, chống ZipSlip/symlink/ghi đè `reports/`, đối chiếu `COMPANION_SHA256SUMS.txt` + tracked manifests.
+   - Sau khi `tauri build --bundles nsis` tạo ra bộ cài đặt và `SHA256SUMS.txt`, workflow luôn chạy `python scripts/verify_companion_artifacts.py --verify-nsis-only` để cài đặt im lặng vào thư mục sạch, đối chiếu SHA-256 `netflow-sentinel-desktop.exe`, khởi chạy binary đã cài từ thư mục cài đặt sạch, xác nhận WebView2 Svelte `onMount` IPC kết nối được FastAPI localhost, đóng cửa sổ bằng `WM_CLOSE`, kiểm tra không còn orphan Python PID và xác minh gỡ cài đặt sạch (`nsis_e2e_verification.json`).
    - Sau đó workflow kiểm tra tình trạng companion artifacts (`python scripts/verify_companion_artifacts.py`):
-     - Nếu **READY** (ví dụ trên runner có sẵn companion bundle hoặc khi chạy `workflow_dispatch` truyền input `companion_bundle_dir` đã qua kiểm chứng checksum): workflow chạy `--verify-e2e --installer-path ... --sums-file ... --compiled-exe ... --output-json .../release_e2e_verification.json` và xác minh bằng `--verify-attestation ... --expect-commit <GITHUB_SHA> --expect-installer-sha256 <SETUP_SHA256> --require-nsis-e2e`.
-     - Nếu **KHÔNG READY**: với **Stable release** (`is_prerelease != 'true'`), workflow **FAIL-CLOSED (`exit 1`)** ngay lập tức và từ chối phát hành — không bao giờ dùng attestation JSON lịch sử trong `reports/releases/` để thay thế cho kiểm chứng live 4-model + NSIS E2E. Chỉ bản **Pre-release / dry-run** (`is_prerelease == 'true'`) mới được tiếp tục khi thiếu companion binaries trên runner, kèm cảnh báo rõ đây mới chỉ là bản kiểm tra đóng gói + NSIS clean install (`nsis_e2e_verification.json`).
+     - Nếu **READY**: workflow chạy `--verify-e2e --installer-path ... --sums-file ... --compiled-exe ... --output-json .../release_e2e_verification.json` (thực thi suy luận & đánh giá đủ 4 model **trên chính FastAPI localhost do bản cài NSIS khởi chạy**) và xác minh bằng `--verify-attestation ... --expect-commit <GITHUB_SHA> --expect-installer-sha256 <SETUP_SHA256> --require-nsis-e2e --require-demo-files`.
+     - Nếu **KHÔNG READY**: với **Stable release** (`is_prerelease != 'true'`), workflow **FAIL-CLOSED (`exit 1`)** ngay từ bước chuẩn bị companion lẫn bước sau build/trước publish — không bao giờ dùng attestation JSON lịch sử trong `reports/releases/` để thay thế cho kiểm chứng live. Chỉ bản **Pre-release / dry-run** (`is_prerelease == 'true'`) mới được tiếp tục với phạm vi đóng gói + clean NSIS installed-desktop startup/shutdown (`nsis_e2e_verification.json`).
 
 *(Ghi chú phát hành Stable `v0.6.0`: Kế tiếp bản thử nghiệm `v0.6.0-beta.1` đã gắn tag trước đó, cả 5 tệp cấu hình desktop hiện được đồng bộ ở `0.6.0` nhằm phát hành bản Stable `v0.6.0` sau khi PR #69 (đã merge vào `main` tại `ab018da`) và PR #70 (`feat/stable-four-model-demo-and-release`) đều được duyệt merge vào `main`.)*
 

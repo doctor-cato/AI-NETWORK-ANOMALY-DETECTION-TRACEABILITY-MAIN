@@ -106,6 +106,12 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "--expect-installer-sha256" in release_yml
     assert "--require-nsis-e2e" in release_yml
     assert "--require-demo-files" in release_yml
+    assert "--install-bundle-url" in release_yml
+    assert "--install-bundle-run-id" in release_yml
+    assert "--expect-bundle-sha256" in release_yml
+    assert "vars.COMPANION_BUNDLE_URL" in release_yml
+    assert "vars.COMPANION_BUNDLE_SHA256" in release_yml
+    assert "vars.COMPANION_ARTIFACT_RUN_ID" in release_yml
     assert "if ($isStableRelease)" in release_yml
     assert '$isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"' in release_yml
     assert "gh release view $tagName" in release_yml
