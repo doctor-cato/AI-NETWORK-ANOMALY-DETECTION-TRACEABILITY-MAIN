@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { onMount } from "svelte";
   import {
     analyzeCsv,
@@ -62,7 +63,7 @@
     SecuritySimulationExportResponse,
     SecuritySimulationHistoryItem,
   } from "./lib/types";
-  import { formatUserFriendlyError, shortDigest } from "./lib/utils";
+  import { formatUserFriendlyError, getDroppedCsvPath, shortDigest } from "./lib/utils";
 
   type TabId = "overview" | "predictions" | "evaluation" | "forensics";
 
@@ -90,6 +91,7 @@
   let simulationExportData = $state<SecuritySimulationExportResponse | null>(null);
 
   let initializing = $state(true);
+  let dragDropUnavailable = $state(false);
   let busyMessage = $state<string | null>(null);
   let errorMessage = $state<string | null>(null);
   let simulationWarning = $state<string | null>(null);
@@ -101,6 +103,9 @@
   let readyModelsCount = $derived(models.filter((m) => m.ready).length);
 
   function handleFlowsPathChange(nextPath: string) {
+    if (nextPath !== flowsPath) {
+      handleLabelsPathChange("");
+    }
     flowsPath = nextPath;
     const nextState = invalidateForFlowsChange(comparisonState, nextPath);
     if (nextState !== comparisonState) {
@@ -141,7 +146,7 @@
       if (demo.flows_exists && !flowsPath.trim()) {
         handleFlowsPathChange(demo.flows_path);
       }
-      if (demo.labels_exists && !labelsPath.trim()) {
+      if (demo.labels_exists && flowsPath === demo.flows_path && !labelsPath.trim()) {
         handleLabelsPathChange(demo.labels_path);
       }
     } catch {
@@ -206,6 +211,20 @@
   });
 
   onMount(() => {
+    const unlistenDrop = isTauriRuntime()
+      ? getCurrentWebview().onDragDropEvent(({ payload }) => {
+          if (payload.type !== "drop" || initializing || busyMessage) return;
+          const path = getDroppedCsvPath(payload.paths);
+          if (path === null) {
+            errorMessage = "Hãy thả một tệp NetFlow có đuôi .csv.";
+            return;
+          }
+          void runInspectPath(path);
+        }).catch(() => {
+          dragDropUnavailable = true;
+          return null;
+        })
+      : null;
     const handleKeydown = (e: KeyboardEvent) => {
       if (e.shiftKey && (e.key === "F9" || e.code === "F9")) {
         e.preventDefault();
@@ -245,7 +264,7 @@
         if (demo.flows_exists && !flowsPath.trim()) {
           handleFlowsPathChange(demo.flows_path);
         }
-        if (demo.labels_exists && !labelsPath.trim()) {
+        if (demo.labels_exists && flowsPath === demo.flows_path && !labelsPath.trim()) {
           handleLabelsPathChange(demo.labels_path);
         }
         await reportFrontendReady({
@@ -263,6 +282,7 @@
 
     return () => {
       window.removeEventListener("keydown", handleKeydown);
+      void unlistenDrop?.then((unlisten) => unlisten?.());
     };
   });
 
@@ -506,6 +526,10 @@
 
   async function handleUseDemoLabels() {
     const demo = await getDemoPaths();
+    if (flowsPath !== demo.flows_path) {
+      errorMessage = "Nhãn demo chỉ dùng với dữ liệu demo. Hãy chọn tệp nhãn tương ứng với CSV của bạn.";
+      return;
+    }
     handleLabelsPathChange(demo.labels_path);
   }
 
@@ -788,6 +812,9 @@
     />
 
     <section class="card" aria-label="Điều khiển Dữ liệu NetFlow CSV">
+      {#if isTauriRuntime() && !dragDropUnavailable}
+        <p class="muted">Kéo thả một tệp NetFlow CSV vào cửa sổ để kiểm tra định dạng.</p>
+      {/if}
       <div class="input-bar">
         <input
           type="text"

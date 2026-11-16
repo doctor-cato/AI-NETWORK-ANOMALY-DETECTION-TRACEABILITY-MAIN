@@ -1,6 +1,6 @@
 # Hướng dẫn Cài đặt & Sử dụng trên Windows (NetFlow Sentinel v1.0.0)
 
-Tài liệu này hướng dẫn cài đặt và sử dụng **NetFlow Sentinel `v1.0.0` Stable** trên máy **Windows 10/11 x64 sạch**. Từ phiên bản `v1.0.0`, người dùng cuối **không cần cài đặt Python, Rust, Node.js, Git**, **không cần clone repository** và **không cần tải thêm Companion Bundle ZIP**.
+Tài liệu này mô tả cách cài đặt và sử dụng bộ cài ứng viên **NetFlow Sentinel `v1.0.0`** cho Windows 10/11 x64. Việc phát hành Stable đang chờ nghiệm thu Windows sạch và xác nhận quyền phân phối.
 
 > [!IMPORTANT]
 > **Kiến trúc Standalone Embedded của `v1.0.0`:**
@@ -16,7 +16,7 @@ Tài liệu này hướng dẫn cài đặt và sử dụng **NetFlow Sentinel `
 >    - `data/demo/demo_flows.csv`, `data/demo/demo_labels.csv`, `data/demo/demo_manifest.json`
 > 4. **WebView2 Offline Installer**, thông báo bản quyền (`NOTICE`, `THIRD_PARTY_NOTICES.md`, `LICENSE`), cùng tệp kiểm chứng nhúng `EMBEDDED_SHA256SUMS.txt` và `EMBEDDED_ARTIFACTS_MANIFEST.json`.
 >
-> Tất cả dữ liệu phát sinh khi người dùng sử dụng (SQLite database `network_anomaly.db`) được lưu riêng tại `%LOCALAPPDATA%\NetFlowSentinel\`, hoàn toàn tương thích tài khoản **Standard User** (không yêu cầu quyền Administrator) và chạy **100% offline**.
+> Ứng dụng lưu SQLite tại `%LOCALAPPDATA%\NetFlowSentinel\`. Cấu hình cài theo người dùng hiện tại và nhúng WebView2 Offline Installer. Kiểm thử offline với Standard User trên VM sạch vẫn **NOT VERIFIED**.
 
 ---
 
@@ -24,7 +24,7 @@ Tài liệu này hướng dẫn cài đặt và sử dụng **NetFlow Sentinel `
 
 | Thành phần | Yêu cầu | Ghi chú |
 |---|---|---|
-| **Hệ điều hành** | Windows 10 (64-bit, 1903+) hoặc Windows 11 (x64) | Kiến trúc `x86_64-pc-windows-msvc`; cài được với tài khoản Standard User |
+| **Hệ điều hành mục tiêu** | Windows 10 x64 hoặc Windows 11 x64 | Kiến trúc `x86_64-pc-windows-msvc` |
 | **Python / Rust / Node.js / Git** | **Không yêu cầu** đối với người dùng cuối | Python `>= 3.11` chỉ dùng khi lập trình viên tự build lại sidecar từ mã nguồn |
 | **WebView2 Runtime** | Tự động cài đặt từ bộ cài nếu máy chưa có | Nhúng sẵn Microsoft Edge WebView2 **Offline Installer** |
 | **Dung lượng ổ đĩa** | ~900 MB trống (sau giải nén cài đặt) | Bao gồm sidecar backend, 4 mô hình, dữ liệu demo và database cục bộ |
@@ -36,7 +36,7 @@ Tài liệu này hướng dẫn cài đặt và sử dụng **NetFlow Sentinel `
 
 ### Bước 1: Tải bộ cài & Kiểm tra SHA-256 (khuyến nghị)
 
-Tải từ GitHub Release `v1.0.0`:
+Các tệp dự kiến trên GitHub Release sau khi nghiệm thu:
 - `NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`
 - `SHA256SUMS.txt`
 
@@ -63,10 +63,11 @@ Nhấn đúp vào `NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`:
 
 Nhấn đúp biểu tượng **NetFlow Sentinel** trên Desktop hoặc Start Menu:
 1. Ứng dụng tự động khởi chạy **PyInstaller Backend Sidecar** trên `127.0.0.1` với mã phiên bảo mật (`X-Sentinel-Session-Token`), kiểm tra `/health` và nạp đủ **4 mô hình ở trạng thái `READY`**.
-2. Giao diện hiển thị **Hướng dẫn 3 bước** ngay trên màn hình:
+2. Giao diện hiển thị **Hướng dẫn 4 bước** ngay trên màn hình:
    - **Bước 1 — Chọn dữ liệu:** Dùng ngay dữ liệu mẫu tích hợp sẵn (`data/demo/demo_flows.csv`, kèm `demo_labels.csv` để tính Confusion Matrix) hoặc bấm chọn tệp CSV NetFlow riêng (cần đủ feature theo hợp đồng `NF-UNSW-NB15-v3`).
-   - **Bước 2 — Phân tích & So sánh:** Chạy đánh giá cho từng mô hình hoặc **So sánh 4 mô hình**, xem giải thích dễ hiểu về **Benign / Attack / OOD (`ABSTAINED_OOD`)** và độ tin cậy (**Confidence**), đồng thời phân biệt giữa **`Đã kiểm chứng khoa học (MODEL_VALIDATED)`** (`Random Forest`) và **`Thử nghiệm / Nghiên cứu (RESEARCH_ONLY)`** (`XGBoost`, `Isolation Forest`, `Autoencoder`).
-   - **Bước 3 — Xuất kết quả:** Lưu báo cáo phân tích ra CSV (có bảo vệ công thức spreadsheet an toàn) hoặc xem lịch sử phiên tại SQLite cục bộ `%LOCALAPPDATA%\NetFlowSentinel\network_anomaly.db`.
+   - **Bước 2 — Phân tích:** Chạy một mô hình hoặc so sánh các mô hình đang `READY`.
+   - **Bước 3 — Đánh giá & Đối chiếu:** Xem Benign, Attack, OOD và độ tin cậy. Chọn tệp ground truth tương ứng để tính confusion matrix và các chỉ số đánh giá.
+   - **Bước 4 — Xuất kết quả:** Lưu báo cáo phân tích ra CSV và metadata SHA-256.
 
 ---
 

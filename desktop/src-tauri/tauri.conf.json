@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "NetFlow Sentinel v1.0.0 \u2014 Ph\u00e2n t\u00edch B\u1ea5t th\u01b0\u1eddng L\u01b0u l\u01b0\u1ee3ng M\u1ea1ng",
-        "width": 1380,
-        "height": 880,
-        "minWidth": 1024,
-        "minHeight": 700,
+        "width": 880,
+        "height": 460,
+        "minWidth": 800,
+        "minHeight": 420,
+        "maximized": true,
         "resizable": true
       }
     ],

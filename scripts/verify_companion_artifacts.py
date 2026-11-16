@@ -1712,15 +1712,20 @@ def _is_finite_number(value: Any) -> bool:
 
 
 def _read_json_dict(path: Path, label: str) -> Dict[str, Any]:
+    return _read_json_snapshot(path, label)[0]
+
+
+def _read_json_snapshot(path: Path, label: str) -> Tuple[Dict[str, Any], bytes]:
     if not path.is_file():
         raise RuntimeError(f"Missing required {label}: {path}")
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
+        content = path.read_bytes()
+        data = json.loads(content.decode("utf-8"))
+    except (OSError, ValueError) as exc:
         raise RuntimeError(f"Failed to parse {label} ({path}): {exc}") from exc
     if not isinstance(data, dict):
         raise RuntimeError(f"{label} must be a JSON object: {path}")
-    return data
+    return data, content
 
 
 def _parse_sha256_sums_file(sums_file: Path) -> Dict[str, str]:
@@ -2331,11 +2336,11 @@ def verify_nsis_installer_e2e(
             )
         cleanup_deadline = time.monotonic() + 20.0
         while time.monotonic() < cleanup_deadline:
-            if not installed_exe.exists() and not uninstaller_exe.exists():
+            if not any(path.is_file() for path in install_dir.rglob("*")):
                 break
             time.sleep(0.2)
         else:
-            raise RuntimeError(f"NSIS uninstall left executables behind in {install_dir}")
+            raise RuntimeError(f"NSIS uninstall left installed files behind in {install_dir}")
 
     nsis_summary: Dict[str, Any] = {
         "status": "PASS",
@@ -2831,70 +2836,9 @@ def _verify_github_runner_provenance(
     }
 
 
-_DEV_TOOL_NAMES: Tuple[str, ...] = (
-    "git",
-    "python",
-    "python3",
-    "py",
-    "rustc",
-    "cargo",
-    "node",
-    "npm",
-)
 _VM_CHALLENGE_FORMAT = "netflow-sentinel-vm-challenge-v1"
 _VM_TARGET_EVIDENCE_FORMAT = "netflow-sentinel-vm-target-evidence-v1"
-_VM_WITNESS_FORMAT = "netflow-sentinel-vm-witness-v1"
-
-
-def _probe_standard_dev_tool_dirs() -> Tuple[List[str], List[str]]:
-    std_dirs_checked: List[str] = []
-    found_std_dirs: List[str] = []
-    if os.name == "nt":
-        program_files = os.environ.get("ProgramFiles", r"C:\Program Files")
-        program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
-        local_app = os.environ.get("LOCALAPPDATA", "")
-        user_home = os.environ.get("USERPROFILE", "")
-        candidates = [
-            Path(program_files) / "Git",
-            Path(program_files) / "nodejs",
-            Path(program_files_x86) / "nodejs",
-        ]
-        if local_app:
-            candidates.append(Path(local_app) / "Programs" / "Python")
-        if user_home:
-            candidates.append(Path(user_home) / ".cargo" / "bin")
-        for cand in candidates:
-            std_dirs_checked.append(str(cand))
-            if cand.exists():
-                found_std_dirs.append(str(cand))
-    return std_dirs_checked, found_std_dirs
-
-
-def _probe_clean_vm_host(resolved_root: Path) -> Dict[str, Any]:
-    """Perform live OS/filesystem probe rather than trusting self-declared VM JSON booleans.
-
-    Records observed PATH and standard-install-directory checks honestly without claiming
-    cryptographic proof of OS cleanliness.
-    """
-    found_dev_tools = [tool for tool in _DEV_TOOL_NAMES if shutil.which(tool) is not None]
-    std_dirs_checked, found_std_dirs = _probe_standard_dev_tool_dirs()
-
-    git_dir_present = (resolved_root / ".git").exists()
-    dev_models_tree_absent = not any(
-        (resolved_root / spec[0]).exists() for spec in MODEL_SPECS.values()
-    )
-    return {
-        "platform": sys.platform,
-        "observed_hostname": socket.gethostname(),
-        "git_dir_present": git_dir_present,
-        "dev_tools_checked": list(_DEV_TOOL_NAMES),
-        "dev_tools_absent": len(found_dev_tools) == 0 and len(found_std_dirs) == 0,
-        "found_dev_tools": found_dev_tools,
-        "standard_tool_dirs_checked": std_dirs_checked,
-        "found_standard_tool_dirs": found_std_dirs,
-        "dev_models_tree_absent": dev_models_tree_absent,
-        "cleanliness_claim_scope": "observed_path_and_standard_dirs_only_not_cryptographic_clean_os_proof",
-    }
+_VM_WITNESS_FORMAT = "netflow-sentinel-vm-witness-v2"
 
 
 def _canonical_vm_witness_payload(
@@ -2904,26 +2848,26 @@ def _canonical_vm_witness_payload(
     sidecar_sha256: str,
     vm_provenance_ref: str,
     observed_hostname: str,
+    controller_hostname: str,
     issued_at_utc: str,
     trusted_authority_id: str,
-    challenge_nonce: Optional[str] = None,
-    target_evidence_sha256: Optional[str] = None,
+    challenge_nonce: str,
+    target_evidence_sha256: str,
 ) -> bytes:
     """Build canonical byte string signed by external VM attestation authority."""
     payload: Dict[str, Any] = {
+        "challenge_nonce": challenge_nonce.lower(),
+        "controller_hostname": controller_hostname.lower(),
         "environment_tier": "independent_windows_vm",
         "issued_at_utc": issued_at_utc,
         "installer_sha256": installer_sha256.lower(),
         "observed_hostname": observed_hostname,
         "sidecar_sha256": sidecar_sha256.lower(),
         "source_commit": source_commit.lower(),
+        "target_evidence_sha256": target_evidence_sha256.lower(),
         "trusted_authority_id": trusted_authority_id,
         "vm_provenance_ref": vm_provenance_ref,
     }
-    if challenge_nonce is not None:
-        payload["challenge_nonce"] = challenge_nonce.lower()
-    if target_evidence_sha256 is not None:
-        payload["target_evidence_sha256"] = target_evidence_sha256.lower()
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -2968,6 +2912,8 @@ def _validate_target_probe(
         controller_hostname and observed_host.lower() == controller_hostname.strip().lower()
     )
     if require_clean_target:
+        if probe.get("platform") != "win32":
+            raise RuntimeError("REFUSED --clean-machine-e2e: Target evidence must report Windows.")
         if probe.get("git_dir_present") is not False:
             raise RuntimeError(
                 f"REFUSED --clean-machine-e2e: Target reported .git present: {probe}"
@@ -3091,8 +3037,8 @@ def sign_vm_witness_receipt(
     if challenge.get("format") != _VM_CHALLENGE_FORMAT:
         raise RuntimeError(f"Unsupported VM challenge format: {challenge.get('format')!r}")
     ev_path = Path(target_evidence_path).resolve()
-    target_ev = _read_json_dict(ev_path, "VM target evidence JSON")
-    target_ev_sha = _sha256_file(ev_path).lower()
+    target_ev, target_bytes = _read_json_snapshot(ev_path, "VM target evidence JSON")
+    target_ev_sha = hashlib.sha256(target_bytes).hexdigest()
 
     nonce = str(challenge.get("challenge_nonce") or "").strip().lower()
     if not _is_hex_sha256(nonce):
@@ -3101,6 +3047,8 @@ def sign_vm_witness_receipt(
         raise RuntimeError("Target evidence challenge_nonce does not match VM challenge.")
 
     controller_host = str(challenge.get("controller_hostname") or "").strip()
+    if not controller_host:
+        raise RuntimeError("VM challenge missing controller_hostname.")
     observed_host, _ = _validate_target_probe(
         target_ev.get("target_probe"),
         controller_hostname=controller_host,
@@ -3136,6 +3084,7 @@ def sign_vm_witness_receipt(
         sidecar_sha256=sidecar_sha,
         vm_provenance_ref=vm_ref,
         observed_hostname=observed_host,
+        controller_hostname=controller_host,
         issued_at_utc=issued_str,
         trusted_authority_id=auth_id,
         challenge_nonce=nonce,
@@ -3154,7 +3103,7 @@ def sign_vm_witness_receipt(
         "vm_provenance_ref": vm_ref,
         "vm_name": str(probe.get("vm_name") or observed_host).strip(),
         "observed_hostname": observed_host,
-        "controller_hostname": controller_host or socket.gethostname(),
+        "controller_hostname": controller_host,
         "trusted_authority_id": auth_id,
         "issued_at_utc": issued_str,
         "signature_algorithm": "hmac-sha256-external-witness",
@@ -3166,29 +3115,78 @@ def sign_vm_witness_receipt(
     }
 
 
-def _load_consumed_nonces(ledger_path: Optional[Path]) -> set[str]:
-    if ledger_path is None or not Path(ledger_path).is_file():
-        return set()
-    data = _read_json_dict(Path(ledger_path), "consumed VM challenge nonces ledger")
-    entries = data.get("consumed_nonces")
-    if not isinstance(entries, list):
-        raise RuntimeError(f"Malformed consumed_nonces list in {ledger_path}")
-    return {str(item).strip().lower() for item in entries if str(item).strip()}
+def _nonce_ledger_lock_path(ledger: Path) -> Path:
+    return ledger.with_name(f"{ledger.name}.lock")
 
 
-def _record_consumed_nonce(ledger_path: Optional[Path], nonce: str) -> None:
-    if ledger_path is None:
-        return
-    resolved = Path(ledger_path).resolve()
-    existing = sorted(_load_consumed_nonces(resolved) | {nonce.lower()})
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    tmp_file = resolved.with_suffix(resolved.suffix + ".tmp")
-    tmp_file.write_text(
-        json.dumps({"schema_version": 1, "consumed_nonces": existing}, indent=2) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
-    tmp_file.replace(resolved)
+def _vm_controller_signature(report: Dict[str, Any], secret_env: Optional[str]) -> str:
+    env_name = (secret_env or "NETFLOW_VM_ATTESTATION_HMAC_KEY").strip()
+    secret = os.environ.get(env_name, "").strip()
+    if not secret:
+        raise RuntimeError(f"Missing Controller attestation signature key in {env_name!r}.")
+    payload = {key: value for key, value in report.items() if key != "vm_controller_signature_hex"}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hmac.new(
+        secret.encode("utf-8"),
+        b"netflow-sentinel-vm-controller-attestation-v1\n" + canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _record_consumed_nonce(ledger_path: Path, nonce: str) -> None:
+    ledger = ledger_path.resolve()
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    # Lock a stable file because the ledger itself is replaced on every write.
+    with _nonce_ledger_lock_path(ledger).open("a+b") as lock:
+        lock.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+
+        try:
+            with ledger.open(encoding="utf-8") as stream:
+                data = json.load(stream)
+        except FileNotFoundError:
+            data = {"schema_version": 1, "consumed_nonces": []}
+        entries = data.get("consumed_nonces") if isinstance(data, dict) else None
+        if (
+            not isinstance(entries, list)
+            or type(data.get("schema_version")) is not int
+            or data["schema_version"] != 1
+            or any(not isinstance(item, str) or not _is_hex_sha256(item) for item in entries)
+        ):
+            raise RuntimeError(f"Malformed consumed VM challenge nonces ledger: {ledger}")
+        existing = {item.lower() for item in entries}
+        if nonce in existing:
+            raise RuntimeError(
+                f"REPLAY REJECTED: VM challenge_nonce {nonce} has already been consumed."
+            )
+        data["consumed_nonces"] = sorted(existing | {nonce})
+
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=ledger.parent, mode="w", encoding="utf-8", newline="\n", delete=False
+            ) as stream:
+                temporary_path = Path(stream.name)
+                stream.write(json.dumps(data, indent=2) + "\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary_path.replace(ledger)
+            if os.name != "nt":
+                directory = os.open(ledger.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+        finally:
+            if temporary_path is not None:
+                temporary_path.unlink(missing_ok=True)
 
 
 def _verify_signed_vm_witness_doc(
@@ -3199,9 +3197,9 @@ def _verify_signed_vm_witness_doc(
     installer_sha256: str,
     sidecar_sha256: str,
     observed_hostname: str,
-    challenge_nonce: Optional[str] = None,
-    target_evidence_sha256: Optional[str] = None,
-    skip_hmac: bool = False,
+    controller_hostname: str,
+    challenge_nonce: str,
+    target_evidence_sha256: str,
 ) -> Dict[str, Any]:
     if vm_doc.get("environment_tier") != "independent_windows_vm":
         raise RuntimeError(
@@ -3220,17 +3218,13 @@ def _verify_signed_vm_witness_doc(
         raise RuntimeError("REFUSED --clean-machine-e2e: VM witness installer_sha256 mismatch.")
     if str(vm_doc.get("sidecar_sha256") or "").strip().lower() != sidecar_sha256.lower():
         raise RuntimeError("REFUSED --clean-machine-e2e: VM witness sidecar_sha256 mismatch.")
-    if challenge_nonce is not None:
-        if str(vm_doc.get("challenge_nonce") or "").strip().lower() != challenge_nonce.lower():
-            raise RuntimeError("REFUSED --clean-machine-e2e: VM witness challenge_nonce mismatch.")
-    if target_evidence_sha256 is not None:
-        if (
-            str(vm_doc.get("target_evidence_sha256") or "").strip().lower()
-            != target_evidence_sha256.lower()
-        ):
-            raise RuntimeError(
-                "REFUSED --clean-machine-e2e: VM witness target_evidence_sha256 mismatch."
-            )
+    for field, expected in (
+        ("challenge_nonce", challenge_nonce),
+        ("target_evidence_sha256", target_evidence_sha256),
+        ("controller_hostname", controller_hostname),
+    ):
+        if str(vm_doc.get(field) or "").strip().lower() != expected.lower():
+            raise RuntimeError(f"REFUSED --clean-machine-e2e: VM witness {field} mismatch.")
 
     vm_ref = str(vm_doc.get("vm_provenance_ref") or "").strip()
     authority_id = str(vm_doc.get("trusted_authority_id") or "").strip()
@@ -3270,22 +3264,13 @@ def _verify_signed_vm_witness_doc(
             f"environment variable {secret_env_name!r}; status remains NOT VERIFIED."
         )
 
-    if skip_hmac:
-        return {
-            "vm_provenance_ref": vm_ref,
-            "trusted_authority_id": authority_id,
-            "issued_at_utc": issued_at_raw,
-            "signature_algorithm": sig_alg,
-            "witness_signature_hex": sig_hex,
-            "vm_name": str(vm_doc.get("vm_name") or doc_host).strip(),
-        }
-
     canonical_bytes = _canonical_vm_witness_payload(
         source_commit=source_commit,
         installer_sha256=installer_sha256,
         sidecar_sha256=sidecar_sha256,
         vm_provenance_ref=vm_ref,
         observed_hostname=doc_host,
+        controller_hostname=controller_hostname,
         issued_at_utc=issued_at_raw,
         trusted_authority_id=authority_id,
         challenge_nonce=challenge_nonce,
@@ -3304,101 +3289,6 @@ def _verify_signed_vm_witness_doc(
         "signature_algorithm": sig_alg,
         "witness_signature_hex": sig_hex,
         "vm_name": str(vm_doc.get("vm_name") or doc_host).strip(),
-    }
-
-
-def _verify_independent_vm_provenance(
-    *,
-    vm_evidence_path: Path,
-    vm_witness_secret_env: Optional[str],
-    source_commit: str,
-    installer_sha256: Optional[str],
-    sidecar_sha256: Optional[str],
-    resolved_root: Path,
-) -> Dict[str, Any]:
-    """Verify independent Windows VM provenance via live host probe + external witness signature.
-
-    Note: When verifying an external Clean Windows Target from a Controller checkout that has
-    `.git`/developer tools, use `verify_vm_target_evidence` (--verify-target-evidence) instead.
-    """
-    ev_path = Path(vm_evidence_path).resolve()
-    if not ev_path.is_file():
-        raise RuntimeError(
-            f"REFUSED --clean-machine-e2e: Independent VM evidence file not found: {ev_path}"
-        )
-
-    vm_doc = _read_json_dict(ev_path, "independent VM witness JSON")
-    if not _is_hex_sha256(installer_sha256) or not _is_hex_sha256(sidecar_sha256):
-        raise RuntimeError(
-            "REFUSED --clean-machine-e2e: Independent VM witness verification requires valid "
-            "installer_sha256 and --expect-sidecar-sha256 bindings."
-        )
-
-    # Validate witness metadata and secret availability before inspecting host, then require clean host probe.
-    _verify_signed_vm_witness_doc(
-        vm_doc=vm_doc,
-        vm_witness_secret_env=vm_witness_secret_env,
-        source_commit=source_commit,
-        installer_sha256=str(installer_sha256),
-        sidecar_sha256=str(sidecar_sha256),
-        observed_hostname=str(vm_doc.get("observed_hostname") or socket.gethostname()),
-        challenge_nonce=(
-            str(vm_doc["challenge_nonce"]).lower() if vm_doc.get("challenge_nonce") else None
-        ),
-        target_evidence_sha256=(
-            str(vm_doc["target_evidence_sha256"]).lower()
-            if vm_doc.get("target_evidence_sha256")
-            else None
-        ),
-        skip_hmac=True,
-    )
-
-    probe = _probe_clean_vm_host(resolved_root)
-    if (
-        probe["git_dir_present"]
-        or not probe["dev_tools_absent"]
-        or not probe["dev_models_tree_absent"]
-    ):
-        raise RuntimeError(
-            "REFUSED --clean-machine-e2e: Live host probe detected developer workspace/toolchain "
-            f"on this machine ({probe}); refusing independent_windows_vm claim. "
-            "Use Controller/Target split (--issue-vm-challenge -> scripts/vm_target_e2e.ps1 -> "
-            "--verify-target-evidence) to verify an isolated Windows VM from a developer/CI Controller."
-        )
-
-    verified = _verify_signed_vm_witness_doc(
-        vm_doc=vm_doc,
-        vm_witness_secret_env=vm_witness_secret_env,
-        source_commit=source_commit,
-        installer_sha256=str(installer_sha256),
-        sidecar_sha256=str(sidecar_sha256),
-        observed_hostname=str(probe["observed_hostname"]),
-        challenge_nonce=(
-            str(vm_doc["challenge_nonce"]).lower() if vm_doc.get("challenge_nonce") else None
-        ),
-        target_evidence_sha256=(
-            str(vm_doc["target_evidence_sha256"]).lower()
-            if vm_doc.get("target_evidence_sha256")
-            else None
-        ),
-    )
-
-    return {
-        "environment_tier": "independent_windows_vm",
-        "provenance_source": "independent_vm_signed_witness",
-        "workflow_run_id": None,
-        "run_attempt": None,
-        "github_repository": None,
-        "workflow_path": None,
-        "runner_name": verified["vm_name"],
-        "runner_labels": ["independent-windows-vm"],
-        "vm_provenance_ref": verified["vm_provenance_ref"],
-        "trusted_authority_id": verified["trusted_authority_id"],
-        "issued_at_utc": verified["issued_at_utc"],
-        "signature_algorithm": verified["signature_algorithm"],
-        "signature_verified": True,
-        "witness_signature_hex": verified["witness_signature_hex"],
-        "live_host_probe": probe,
     }
 
 
@@ -3440,10 +3330,6 @@ def verify_vm_target_evidence(
     nonce = str(challenge.get("challenge_nonce") or "").strip().lower()
     if not _is_hex_sha256(nonce):
         raise RuntimeError("VM challenge missing valid 64-hex challenge_nonce.")
-    if nonce in _load_consumed_nonces(consumed_nonces_file):
-        raise RuntimeError(
-            f"REPLAY REJECTED: VM challenge_nonce {nonce} has already been consumed."
-        )
 
     issued_dt = _parse_utc_iso8601(
         str(challenge.get("issued_at_utc") or ""), "challenge.issued_at_utc"
@@ -3486,8 +3372,8 @@ def verify_vm_target_evidence(
                 )
 
     ev_path = Path(target_evidence_path).resolve()
-    target_ev = _read_json_dict(ev_path, "VM target evidence JSON")
-    target_ev_sha = _sha256_file(ev_path).lower()
+    target_ev, target_bytes = _read_json_snapshot(ev_path, "VM target evidence JSON")
+    target_ev_sha = hashlib.sha256(target_bytes).hexdigest()
     if target_ev.get("format") != _VM_TARGET_EVIDENCE_FORMAT:
         raise RuntimeError(f"Unsupported target evidence format: {target_ev.get('format')!r}")
     if str(target_ev.get("challenge_nonce") or "").strip().lower() != nonce:
@@ -3550,7 +3436,9 @@ def verify_vm_target_evidence(
                 f"Target installed_exe_sha256 mismatch vs challenge compiled exe: {installed_exe_sha}"
             )
 
-    controller_host = str(challenge.get("controller_hostname") or socket.gethostname()).strip()
+    controller_host = str(challenge.get("controller_hostname") or "").strip()
+    if not controller_host:
+        raise RuntimeError("VM challenge missing controller_hostname.")
     observed_host, same_host = _validate_target_probe(
         target_ev.get("target_probe"),
         controller_hostname=controller_host,
@@ -3558,7 +3446,8 @@ def verify_vm_target_evidence(
     )
     target_probe = dict(target_ev["target_probe"])
     probe_looks_clean = (
-        target_probe.get("git_dir_present") is False
+        target_probe.get("platform") == "win32"
+        and target_probe.get("git_dir_present") is False
         and target_probe.get("dev_tools_absent") is True
         and not target_probe.get("found_dev_tools")
         and not target_probe.get("found_standard_tool_dirs")
@@ -3570,7 +3459,7 @@ def verify_vm_target_evidence(
     verified_witness: Optional[Dict[str, Any]] = None
     if vm_witness_path is not None:
         witness_doc = _read_json_dict(Path(vm_witness_path).resolve(), "VM witness receipt JSON")
-        if witness_doc.get("format") not in (None, _VM_WITNESS_FORMAT):
+        if witness_doc.get("format") != _VM_WITNESS_FORMAT:
             raise RuntimeError(f"Unsupported VM witness format: {witness_doc.get('format')!r}")
         secret_env_name = (vm_witness_secret_env or "NETFLOW_VM_ATTESTATION_HMAC_KEY").strip()
         secret_val = os.environ.get(secret_env_name, "").strip()
@@ -3582,6 +3471,7 @@ def verify_vm_target_evidence(
                 installer_sha256=challenge_installer_sha,
                 sidecar_sha256=challenge_sidecar_sha,
                 observed_hostname=observed_host,
+                controller_hostname=controller_host,
                 challenge_nonce=nonce,
                 target_evidence_sha256=target_ev_sha,
             )
@@ -3598,6 +3488,11 @@ def verify_vm_target_evidence(
         )
 
     is_clean_vm = bool(witness_verified and probe_looks_clean)
+    if (clean_machine_e2e or is_clean_vm) and consumed_nonces_file is None:
+        raise RuntimeError(
+            "Clean VM E2E remains NOT VERIFIED: --consumed-nonces-file is required "
+            "and must reference the persistent Controller ledger."
+        )
     if is_clean_vm and verified_witness is not None:
         env_tier = "independent_windows_vm"
         runner_identity: Dict[str, Any] = {
@@ -3681,6 +3576,13 @@ def verify_vm_target_evidence(
         },
     }
 
+    if is_clean_vm:
+        if "windows_acceptance" in target_ev:
+            report["windows_acceptance"] = target_ev["windows_acceptance"]
+        report["vm_controller_signature_hex"] = _vm_controller_signature(
+            report, vm_witness_secret_env
+        )
+
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", encoding="utf-8", delete=False
     ) as tmp_att:
@@ -3704,7 +3606,8 @@ def verify_vm_target_evidence(
     finally:
         tmp_att_path.unlink(missing_ok=True)
 
-    _record_consumed_nonce(consumed_nonces_file, nonce)
+    if is_clean_vm and consumed_nonces_file is not None:
+        _record_consumed_nonce(consumed_nonces_file, nonce)
     return report
 
 
@@ -3715,14 +3618,10 @@ def _resolve_clean_machine_provenance(
     pass_repo_root_env: bool,
     source_tree_clean: Optional[bool],
     source_commit: str,
-    resolved_root: Path,
     github_repo: Optional[str],
     github_run_id: Optional[str],
     token_env_var: Optional[str],
     independent_vm_evidence: Optional[Path],
-    vm_witness_secret_env: Optional[str] = None,
-    installer_sha256: Optional[str] = None,
-    sidecar_sha256: Optional[str] = None,
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Enforce fail-closed runner/VM provenance; never trust --clean-machine-e2e CLI flag alone."""
     if not clean_machine_e2e:
@@ -3735,15 +3634,11 @@ def _resolve_clean_machine_provenance(
         )
 
     if independent_vm_evidence is not None:
-        identity = _verify_independent_vm_provenance(
-            vm_evidence_path=independent_vm_evidence,
-            vm_witness_secret_env=vm_witness_secret_env,
-            source_commit=source_commit,
-            installer_sha256=installer_sha256,
-            sidecar_sha256=sidecar_sha256,
-            resolved_root=resolved_root,
+        raise RuntimeError(
+            "REFUSED --clean-machine-e2e: --independent-vm-evidence is retired. "
+            "Use --verify-target-evidence with --vm-challenge, --vm-witness "
+            "and the persistent --consumed-nonces-file."
         )
-        return "independent_windows_vm", identity
 
     if source_tree_clean is not True:
         raise RuntimeError(
@@ -3785,7 +3680,6 @@ def run_four_model_e2e_verification(
     github_run_id: Optional[str] = None,
     token_env_var: Optional[str] = None,
     independent_vm_evidence: Optional[Path] = None,
-    vm_witness_secret_env: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Fail-closed live loopback E2E verification across all 4 models on demo_flows.csv."""
     resolved_root = Path(root).resolve()
@@ -3808,25 +3702,16 @@ def run_four_model_e2e_verification(
             "E2E attestation BLOCKED: git working tree is dirty or unavailable; "
             "attestation requires clean committed HEAD."
         )
-    pre_installer_sha = (
-        _sha256_file(Path(installer_path).resolve()).lower()
-        if installer_path is not None and Path(installer_path).is_file()
-        else None
-    )
     env_tier, verified_identity = _resolve_clean_machine_provenance(
         clean_machine_e2e=clean_machine_e2e,
         standalone_embedded=standalone_embedded,
         pass_repo_root_env=pass_repo_root_env,
         source_tree_clean=source_tree_clean,
         source_commit=source_commit,
-        resolved_root=resolved_root,
         github_repo=github_repo,
         github_run_id=github_run_id,
         token_env_var=token_env_var,
         independent_vm_evidence=independent_vm_evidence,
-        vm_witness_secret_env=vm_witness_secret_env,
-        installer_sha256=pre_installer_sha,
-        sidecar_sha256=expected_sidecar_sha256,
     )
     desktop_version = _read_desktop_version(resolved_root)
     split_manifest_path = resolved_root / SPLIT_MANIFEST_REL
@@ -4149,9 +4034,11 @@ def verify_e2e_attestation(
     expect_sidecar_sha256: Optional[str] = None,
     require_nsis_e2e: bool = False,
     require_demo_files: bool = False,
+    demo_root: Optional[Path] = None,
     require_bundled_resources: bool = False,
     require_standalone_embedded: bool = False,
     require_clean_machine_e2e: bool = False,
+    require_stable_windows_e2e: bool = False,
     verify_github_run: bool = False,
     verify_vm_witness: bool = False,
     vm_witness_secret_env: Optional[str] = None,
@@ -4159,6 +4046,7 @@ def verify_e2e_attestation(
 ) -> Dict[str, Any]:
     """Verify a 4-model E2E attestation JSON against tracked manifests, commit, demo, and NSIS E2E."""
     resolved_root = Path(root).resolve()
+    require_clean_machine_e2e = require_clean_machine_e2e or require_stable_windows_e2e
     report = _read_json_dict(Path(attestation_path), "E2E attestation JSON")
     if report.get("e2e_status") != "PASS" or report.get("companion_status") != "READY":
         raise RuntimeError(f"E2E attestation did not record PASS/READY: {attestation_path}")
@@ -4237,8 +4125,9 @@ def verify_e2e_attestation(
             raise RuntimeError(f"E2E attestation invalid SHA-256 for {rel_str}: {recorded_sha!r}")
 
     sorted_demo_keys = sorted(expected_demo_keys)
+    demo_root = demo_root.resolve() if demo_root is not None else resolved_root
     present_demo_files = [
-        rel_str for rel_str in sorted_demo_keys if (resolved_root / rel_str).is_file()
+        rel_str for rel_str in sorted_demo_keys if (demo_root / rel_str).is_file()
     ]
     if 0 < len(present_demo_files) < len(expected_demo_keys):
         missing_demo = sorted(expected_demo_keys - set(present_demo_files))
@@ -4248,14 +4137,14 @@ def verify_e2e_attestation(
     if len(present_demo_files) == len(expected_demo_keys):
         for rel_str in sorted_demo_keys:
             recorded_sha = demo_sha256[rel_str]
-            actual_demo_sha = _sha256_file(resolved_root / rel_str).lower()
+            actual_demo_sha = _sha256_file(demo_root / rel_str).lower()
             if recorded_sha != actual_demo_sha:
                 raise RuntimeError(
                     f"E2E attestation demo_sha256 mismatch for {rel_str}: {recorded_sha} != {actual_demo_sha}"
                 )
 
         demo_manifest = _read_json_dict(
-            resolved_root / "data/demo/demo_manifest.json", "data/demo/demo_manifest.json"
+            demo_root / "data/demo/demo_manifest.json", "data/demo/demo_manifest.json"
         )
         sampling = demo_manifest.get("sampling") or {}
         if sampling.get("partition") != "validation":
@@ -4280,7 +4169,7 @@ def verify_e2e_attestation(
             raise RuntimeError("demo_manifest split_manifest_sha256 mismatch with split manifest")
         demo_files_verified_on_disk = True
     elif require_demo_files:
-        missing_demo = [str(resolved_root / rel_str) for rel_str in sorted_demo_keys]
+        missing_demo = [str(demo_root / rel_str) for rel_str in sorted_demo_keys]
         raise RuntimeError(
             f"Missing required demo files for attestation verification: {missing_demo}"
         )
@@ -4609,11 +4498,10 @@ def verify_e2e_attestation(
                         else ""
                     )
                     ctrl_host = str(runner_id_val.get("controller_hostname") or "").strip()
-                    host_distinct = (
-                        True if not ctrl_host else observed_host.lower() != ctrl_host.lower()
-                    )
+                    host_distinct = bool(ctrl_host and observed_host.lower() != ctrl_host.lower())
                     probe_ok = (
                         isinstance(probe_block, dict)
+                        and probe_block.get("platform") == "win32"
                         and probe_block.get("git_dir_present") is False
                         and probe_block.get("dev_tools_absent") is True
                         and not probe_block.get("found_dev_tools")
@@ -4631,9 +4519,18 @@ def verify_e2e_attestation(
                         and authority_id.lower() != observed_host.lower()
                         and bool(issued_at)
                         and probe_ok
+                        and _is_hex_sha256(runner_id_val.get("challenge_nonce"))
+                        and _is_hex_sha256(runner_id_val.get("target_evidence_sha256"))
+                        and _is_hex_sha256(runner_id_val.get("witness_signature_hex"))
                         and bool(str(runner_id_val.get("runner_name") or "").strip())
                     )
-                    if identity_ok and verify_vm_witness:
+                    if identity_ok and (verify_vm_witness or require_clean_machine_e2e):
+                        controller_signature = report.get("vm_controller_signature_hex")
+                        if not _is_hex_sha256(controller_signature) or not hmac.compare_digest(
+                            controller_signature,
+                            _vm_controller_signature(report, vm_witness_secret_env),
+                        ):
+                            raise RuntimeError("Invalid Controller attestation signature.")
                         _verify_signed_vm_witness_doc(
                             vm_doc={
                                 "environment_tier": "independent_windows_vm",
@@ -4646,6 +4543,7 @@ def verify_e2e_attestation(
                                 ),
                                 "vm_provenance_ref": vm_ref,
                                 "observed_hostname": observed_host,
+                                "controller_hostname": ctrl_host,
                                 "trusted_authority_id": authority_id,
                                 "issued_at_utc": issued_at,
                                 "signature_algorithm": sig_alg,
@@ -4657,16 +4555,9 @@ def verify_e2e_attestation(
                             installer_sha256=str(bindings_val["installer_sha256"]),
                             sidecar_sha256=str(bindings_val["sidecar_sha256"]),
                             observed_hostname=observed_host,
-                            challenge_nonce=(
-                                str(runner_id_val["challenge_nonce"]).lower()
-                                if runner_id_val.get("challenge_nonce")
-                                else None
-                            ),
-                            target_evidence_sha256=(
-                                str(runner_id_val["target_evidence_sha256"]).lower()
-                                if runner_id_val.get("target_evidence_sha256")
-                                else None
-                            ),
+                            controller_hostname=ctrl_host,
+                            challenge_nonce=runner_id_val["challenge_nonce"],
+                            target_evidence_sha256=runner_id_val["target_evidence_sha256"],
                         )
 
         clean_machine_verified = bool(
@@ -4691,6 +4582,30 @@ def verify_e2e_attestation(
             f"attestation_environment={att_env!r} (local developer or unverified runner provenance "
             "cannot assert clean-machine STANDALONE VERIFIED)."
         )
+
+    if require_stable_windows_e2e:
+        if env_tier_val != "independent_windows_vm":
+            raise RuntimeError("Stable Windows E2E requires independent VM evidence.")
+        acceptance = report.get("windows_acceptance")
+        for platform in ("windows_10_x64", "windows_11_x64"):
+            observations = acceptance.get(platform) if isinstance(acceptance, dict) else None
+            if (
+                not isinstance(observations, dict)
+                or not str(observations.get("evidence_ref") or "").strip()
+                or any(
+                    observations.get(check) is not True
+                    for check in (
+                        "offline",
+                        "standard_user",
+                        "unicode_and_spaces",
+                        "windows_reboot",
+                        "webview2_gui_workflow",
+                        "model_error",
+                        "uninstall",
+                    )
+                )
+            ):
+                raise RuntimeError(f"Stable Windows E2E remains NOT VERIFIED for {platform}.")
 
     return {
         "attestation_status": "PASS",
@@ -4807,7 +4722,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--independent-vm-evidence",
         type=Path,
         default=None,
-        help="Cryptographically signed external Windows VM witness JSON path for --clean-machine-e2e.",
+        help="Retired. Use --verify-target-evidence with a persistent Controller nonce ledger.",
     )
     parser.add_argument(
         "--vm-witness-secret-env",
@@ -4875,7 +4790,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--consumed-nonces-file",
         type=Path,
         default=None,
-        help="Optional anti-replay ledger JSON path recording consumed VM challenge nonces.",
+        help="Persistent Controller JSON ledger required to verify Clean VM target evidence.",
     )
     parser.add_argument(
         "--clean-machine-e2e",
@@ -5028,6 +4943,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-clean-machine-e2e",
         action="store_true",
         help="Require clean CI runner attestation_environment and standalone_verified=True.",
+    )
+    parser.add_argument(
+        "--require-stable-windows-e2e",
+        action="store_true",
+        help="Require signed independent VM evidence with the Windows 10/11 acceptance checks.",
     )
     parser.add_argument(
         "--output-json",
@@ -5202,6 +5122,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
             return 1
         try:
+            if args.consumed_nonces_file is not None and args.output_json is not None:
+                ledger = args.consumed_nonces_file.resolve()
+                if args.output_json.resolve() in (
+                    ledger,
+                    _nonce_ledger_lock_path(ledger).resolve(),
+                ):
+                    raise RuntimeError(
+                        "--output-json must be separate from the nonce ledger and lock."
+                    )
             target_att = verify_vm_target_evidence(
                 target_evidence_path=args.verify_target_evidence,
                 challenge_path=args.vm_challenge,
@@ -5232,9 +5161,11 @@ def main(argv: Optional[List[str]] = None) -> int:
                 expect_sidecar_sha256=args.expect_sidecar_sha256,
                 require_nsis_e2e=args.require_nsis_e2e,
                 require_demo_files=args.require_demo_files,
+                demo_root=args.runtime_dir,
                 require_bundled_resources=args.require_bundled_resources,
                 require_standalone_embedded=args.require_standalone_embedded,
                 require_clean_machine_e2e=args.require_clean_machine_e2e,
+                require_stable_windows_e2e=args.require_stable_windows_e2e,
                 verify_github_run=args.verify_github_run,
                 verify_vm_witness=args.verify_vm_witness,
                 vm_witness_secret_env=args.vm_witness_secret_env,
@@ -5284,7 +5215,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 github_run_id=args.github_run_id,
                 token_env_var=args.token_env,
                 independent_vm_evidence=args.independent_vm_evidence,
-                vm_witness_secret_env=args.vm_witness_secret_env,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E VERIFICATION BLOCKED/FAILED] {exc}\n")

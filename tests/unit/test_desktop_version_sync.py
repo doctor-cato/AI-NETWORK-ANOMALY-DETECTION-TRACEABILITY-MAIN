@@ -106,10 +106,9 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "--no-repo-root-env" in release_yml
     assert "--standalone-embedded" in release_yml
     assert "--require-standalone-embedded" in release_yml
-    assert "--clean-machine-e2e" in release_yml
     assert "--require-clean-machine-e2e" in release_yml
-    assert "--github-run-id" in release_yml
-    assert "--verify-github-run" in release_yml
+    assert "INPUT_TAG_LABEL: ${{ inputs.tag_label }}" in release_yml
+    assert "$tagName = $env:INPUT_TAG_LABEL" in release_yml
     assert "::add-mask::$bundleUrl" in release_yml
     assert "--require-clean-git" in release_yml
     assert "--expect-sidecar-sha256" in release_yml
@@ -128,7 +127,10 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "tauri.standalone.conf.json" in release_yml
     assert "NOTICE" in release_yml
     assert "THIRD_PARTY_NOTICES.md" in release_yml
-    publish_section = release_yml.split("Publish GitHub Release", 1)[1]
+    build_section, publish_section = release_yml.split("Publish GitHub Release", 1)
+    assert "--clean-machine-e2e" not in build_section
+    assert "--require-clean-machine-e2e" not in build_section
+    assert "--require-clean-machine-e2e" in publish_section
     assert "requirements-runtime.txt" not in publish_section
     assert "scripts/windows_setup_runtime.ps1" not in release_yml
     assert "COMPANION_BUNDLE_SHA256.txt" not in release_yml

@@ -96,13 +96,13 @@
       <div class="glossary-item">
         <strong style="color: var(--semantic-benign);">Benign (Bình thường)</strong>
         <p>
-          Lưu lượng mạng hợp lệ, hành vi khớp với mô hình lưu lượng thông thường trong dữ liệu huấn luyện.
+          Lưu lượng được mô hình đánh giá là bình thường.
         </p>
       </div>
       <div class="glossary-item">
         <strong style="color: var(--semantic-attack);">Attack (Nghi ngờ tấn công)</strong>
         <p>
-          Lưu lượng mang dấu hiệu bất thường hoặc khớp với mẫu tấn công đã học (DoS, Exploits, Fuzzers, Reconnaissance...).
+          Lưu lượng được mô hình đánh giá là nghi ngờ tấn công. Cần xem xét thêm để xác định sự cố.
         </p>
       </div>
       <div class="glossary-item">

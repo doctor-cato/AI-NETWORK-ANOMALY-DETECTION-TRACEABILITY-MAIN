@@ -136,9 +136,22 @@ function Invoke-LoopbackJson {
 function Get-TargetHostProbe([string]$InstallerDir, [string]$InstallDir) {
     $checkedTools = @("git", "python", "python3", "py", "rustc", "cargo", "node", "npm")
     $foundTools = @()
+    $storeAliases = @()
     foreach ($tool in $checkedTools) {
-        if ($null -ne (Get-Command $tool -ErrorAction SilentlyContinue)) {
+        foreach ($command in @(Get-Command $tool -All -ErrorAction SilentlyContinue)) {
+            if ($tool -in @("python", "python3") -and $command.CommandType -eq "Application") {
+                $expectedAlias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\$tool.exe"
+                if ($command.Source -eq $expectedAlias) {
+                    $stub = Get-Item -LiteralPath $command.Source -Force -ErrorAction SilentlyContinue
+                    if ($null -ne $stub -and $stub.Length -eq 0 -and
+                        ($stub.Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+                        $storeAliases += $tool
+                        continue
+                    }
+                }
+            }
             $foundTools += $tool
+            break
         }
     }
 
@@ -172,6 +185,7 @@ function Get-TargetHostProbe([string]$InstallerDir, [string]$InstallDir) {
         dev_tools_checked        = $checkedTools
         dev_tools_absent         = ($foundTools.Count -eq 0 -and $foundStdDirs.Count -eq 0)
         found_dev_tools          = $foundTools
+        python_store_aliases     = $storeAliases
         standard_tool_dirs_checked = $stdDirsChecked
         found_standard_tool_dirs = $foundStdDirs
         dev_models_tree_absent   = (-not $devModelsPresent)
@@ -203,6 +217,9 @@ if ([string]::IsNullOrWhiteSpace($WorkDir)) {
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
 $installDir = Join-Path $WorkDir "CleanInstall"
+if (Test-Path -LiteralPath $installDir) {
+    throw "Target install directory already exists: $installDir. Use a fresh work directory."
+}
 $runtimeDir = Join-Path $WorkDir "UserAppData"
 $wv2Dir = Join-Path $WorkDir "WebView2Data"
 $exportDir = Join-Path $WorkDir "UserExports"
@@ -632,12 +649,13 @@ try {
         throw "NSIS silent uninstall failed with exit code $($uninstProc.ExitCode)"
     }
     $cleanWait = (Get-Date).AddSeconds(20)
-    while ((Get-Date) -lt $cleanWait) {
-        if (-not (Test-Path $installedExe) -and -not (Test-Path $uninstallerExe)) { break }
+    while (Test-Path -LiteralPath $installDir) {
+        $remainingFile = Get-ChildItem -LiteralPath $installDir -File -Recurse -Force | Select-Object -First 1
+        if (-not $remainingFile) { break }
+        if ((Get-Date) -ge $cleanWait) {
+            throw "NSIS uninstall left an installed file behind: $($remainingFile.FullName)"
+        }
         Start-Sleep -Milliseconds 200
-    }
-    if ((Test-Path $installedExe) -or (Test-Path $uninstallerExe)) {
-        throw "NSIS uninstall left executables behind in $installDir"
     }
 
     $evidencePayload = [ordered]@{

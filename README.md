@@ -39,7 +39,7 @@ False positive (FP) làm tăng công điều tra, false negative (FN) bỏ lọt
 | Isolation Forest (#11) | **EXPERIMENTALLY VALIDATED & REPRODUCED** trên Validation & Held-out Test (`if-c4-20261115T055359Z`, `F1=0.5064`, `Recall=0.8997`, `ROC-AUC=0.893730`) |
 | Autoencoder (#29) | **EXPERIMENTALLY VALIDATED** (`ae_fpr_constrained_20261115T163000Z`: Val `FPR=0.049998 <= 0.05`, threshold `17234985.792476`, Held-out Test `F1=0.1361`, `Recall=0.1093`, `ROC-AUC=0.6303`, Unknown `R=0.0625`; run cũ `benign_quantile` lưu riêng tại `runs/ae_benign_quantile_20261115T151859Z/`; `BLOCKED / NOT READY` nếu thiếu binary) |
 | FastAPI (`127.0.0.1`), SQLite persistence, 4-model inference & Validation Demo CSV Prep | **IMPLEMENTED / TESTED** (#30, #15, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
-| Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, #71) | **IMPLEMENTED / TESTED** (`v1.0.0` Stable — Windows NSIS Standalone Installer nhúng PyInstaller sidecar + 4 model + hướng dẫn 3 bước; không cần Python/Companion Bundle) |
+| Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, #71) | **IMPLEMENTED / TESTED** (bộ cài ứng viên `v1.0.0` nhúng PyInstaller sidecar, 4 model và hướng dẫn 4 bước). Nghiệm thu Windows sạch và phát hành Stable đang chờ. |
 | Behavioral Vector (#28), Risk Ranking (#32), Trace Timeline (#24), Adaptive Response Dry-Run (#27), Bảo mật cục bộ (#26) | **IMPLEMENTED / TESTED (Scoped M6/M7)** — thống kê NetFlow, risk/timeline tất định, mô phỏng phản ứng dry-run (`executed=false`); live firewall/OS commands & AES-256-GCM keyring **DEFERRED** |
 
 ## Kiến trúc hệ thống

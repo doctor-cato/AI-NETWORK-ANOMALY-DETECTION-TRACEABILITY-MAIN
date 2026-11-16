@@ -10,11 +10,11 @@
 
 ## 1. Dành cho người dùng cuối (Standalone Installer)
 
-Tải duy nhất tệp `NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe` từ GitHub Release `v1.0.0`:
+Bộ cài dự kiến cho GitHub Release `v1.0.0` là `NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`. Việc phát hành đang chờ nghiệm thu Windows sạch và xác nhận quyền phân phối.
 - **Không cần cài Python, Rust, Node.js, Git hay tải Companion Bundle.**
 - Nhúng sẵn ứng dụng Tauri 2 + Svelte 5, PyInstaller sidecar backend (`netflow-sentinel-backend.exe`), **cả 4 mô hình ML thật**, preprocessor, manifests, demo CSV, **WebView2 Offline Installer** và `NOTICE` / `THIRD_PARTY_NOTICES.md`.
 - Tự động khởi chạy/health-check/restart/shutdown sidecar trên `127.0.0.1` với token phiên `X-Sentinel-Session-Token` và lưu DB cục bộ tại `%LOCALAPPDATA%\NetFlowSentinel\`.
-- Giao diện Svelte 5 cung cấp hướng dẫn 3 bước (Nạp CSV → Phân tích & So sánh 4 mô hình → Xuất kết quả), giải thích Benign / Attack / OOD (`ABSTAINED_OOD`) / Confidence, phân biệt `MODEL_VALIDATED` với `RESEARCH_ONLY`, và thông báo lỗi tiếng Việt dễ hiểu.
+- Giao diện Svelte 5 hướng dẫn 4 bước (Nhập CSV → Phân tích → Đánh giá & Đối chiếu → Xuất kết quả), giải thích Benign, Attack, OOD (`ABSTAINED_OOD`) và Confidence, đồng thời phân biệt `MODEL_VALIDATED` với `RESEARCH_ONLY`.
 
 Chi tiết xem [docs/WINDOWS_INSTALLATION.md](../docs/WINDOWS_INSTALLATION.md).
 

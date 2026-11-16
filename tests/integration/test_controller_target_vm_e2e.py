@@ -9,6 +9,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
@@ -359,6 +360,7 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
     assert unwitnessed_report["attestation_environment"]["standalone_verified"] is False
 
     # And with --clean-machine-e2e, missing witness fails closed
+    nonces_ledger = tmp_path / "controller_state" / "consumed_nonces.json"
     with pytest.raises(RuntimeError, match="NOT VERIFIED"):
         verify_vm_target_evidence(
             target_evidence_path=target_ev_path,
@@ -368,6 +370,7 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
             compiled_exe_path=compiled_exe,
             expected_sidecar_sha256=sidecar_sha,
             clean_machine_e2e=True,
+            consumed_nonces_file=nonces_ledger,
         )
 
     # 2. Trusted-boundary witness signing (secret lives ONLY on witness authority / Controller, never Target)
@@ -392,32 +395,48 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
     assert rc_sign == 0
 
     # 3. Full Controller verification with anti-replay ledger succeeds despite Controller having .git!
-    nonces_ledger = tmp_path / "controller_state" / "consumed_nonces.json"
     final_att_path = tmp_path / "out" / "release_e2e_verification.json"
-    rc_verify = verify_companion_main(
-        [
-            "--root",
-            str(ctrl_repo),
-            "--verify-target-evidence",
-            str(target_ev_path),
-            "--vm-challenge",
-            str(challenge_path),
-            "--vm-witness",
-            str(witness_path),
-            "--consumed-nonces-file",
-            str(nonces_ledger),
-            "--installer-path",
-            str(installer),
-            "--compiled-exe",
-            str(compiled_exe),
-            "--expect-sidecar-sha256",
-            sidecar_sha,
-            "--require-clean-git",
-            "--clean-machine-e2e",
-            "--output-json",
-            str(final_att_path),
-        ]
-    )
+    verify_args = [
+        "--root",
+        str(ctrl_repo),
+        "--verify-target-evidence",
+        str(target_ev_path),
+        "--vm-challenge",
+        str(challenge_path),
+        "--vm-witness",
+        str(witness_path),
+        "--installer-path",
+        str(installer),
+        "--compiled-exe",
+        str(compiled_exe),
+        "--expect-sidecar-sha256",
+        sidecar_sha,
+        "--require-clean-git",
+        "--clean-machine-e2e",
+        "--output-json",
+        str(final_att_path),
+    ]
+    for args in (verify_args, [arg for arg in verify_args if arg != "--clean-machine-e2e"]):
+        assert verify_companion_main(args) == 1
+        assert not final_att_path.exists()
+
+    nonces_ledger.parent.mkdir()
+    for invalid_ledger in ('{"schema_version":2,"consumed_nonces":[]}', '{"consumed_nonces":[1]}'):
+        nonces_ledger.write_text(invalid_ledger, encoding="utf-8")
+        assert (
+            verify_companion_main([*verify_args, "--consumed-nonces-file", str(nonces_ledger)]) == 1
+        )
+        assert nonces_ledger.read_text(encoding="utf-8") == invalid_ledger
+        assert not final_att_path.exists()
+    nonces_ledger.unlink()
+    nonces_ledger.mkdir()
+    assert verify_companion_main([*verify_args, "--consumed-nonces-file", str(nonces_ledger)]) == 1
+    assert not final_att_path.exists()
+    nonces_ledger.rmdir()
+    assert verify_companion_main([*verify_args, "--consumed-nonces-file", str(final_att_path)]) == 1
+    assert not final_att_path.exists()
+
+    rc_verify = verify_companion_main([*verify_args, "--consumed-nonces-file", str(nonces_ledger)])
     assert rc_verify == 0
     final_att = json.loads(final_att_path.read_text(encoding="utf-8"))
     assert final_att["attestation_environment"]["environment_tier"] == "independent_windows_vm"
@@ -440,6 +459,25 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
     )
     assert att_res["clean_machine_verified"] is True
     assert att_res["clean_machine_status"] == "VERIFIED"
+    with pytest.raises(RuntimeError, match="NOT VERIFIED for windows_10_x64"):
+        verify_e2e_attestation(
+            final_att_path,
+            root=ctrl_repo,
+            expect_commit=ctrl_info["head_sha"],
+            require_stable_windows_e2e=True,
+        )
+
+    altered_report = copy.deepcopy(final_att)
+    altered_report["nsis_e2e"]["frontend_interactive_gui_clicks"] = "PASS"
+    altered_report_path = tmp_path / "out" / "altered_attestation.json"
+    altered_report_path.write_text(json.dumps(altered_report), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="Controller attestation signature"):
+        verify_e2e_attestation(
+            altered_report_path,
+            root=ctrl_repo,
+            expect_commit=ctrl_info["head_sha"],
+            require_clean_machine_e2e=True,
+        )
 
     # 4. Replay of same challenge + target evidence + witness MUST be rejected
     with pytest.raises(RuntimeError, match="REPLAY REJECTED"):
@@ -493,6 +531,7 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
             expected_sidecar_sha256=sidecar_sha,
             clean_machine_e2e=True,
             vm_witness_path=fresh_w_path,
+            consumed_nonces_file=nonces_ledger,
         )
 
     # 6. Wrong HMAC witness signature MUST fail
@@ -510,6 +549,7 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
             expected_sidecar_sha256=sidecar_sha,
             clean_machine_e2e=True,
             vm_witness_path=bad_w_path,
+            consumed_nonces_file=nonces_ledger,
         )
 
     # 7. Local developer machine masquerading as clean VM (same hostname OR dev tools present) MUST fail
@@ -536,6 +576,7 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
             expected_sidecar_sha256=sidecar_sha,
             clean_machine_e2e=True,
             vm_witness_path=fresh_w_path,
+            consumed_nonces_file=nonces_ledger,
         )
 
     dirty_tools_ev = json.loads(fresh_ev_path.read_text(encoding="utf-8"))
@@ -553,6 +594,7 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
             expected_sidecar_sha256=sidecar_sha,
             clean_machine_e2e=True,
             vm_witness_path=fresh_w_path,
+            consumed_nonces_file=nonces_ledger,
         )
 
     # 8. Mismatched installer or source_commit MUST fail
@@ -568,6 +610,7 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
             expected_sidecar_sha256=sidecar_sha,
             clean_machine_e2e=True,
             vm_witness_path=fresh_w_path,
+            consumed_nonces_file=nonces_ledger,
         )
 
     bad_commit_ch = copy.deepcopy(fresh_challenge)
@@ -580,6 +623,51 @@ def test_controller_target_vm_e2e_full_lifecycle_and_negative_gates(
             challenge_path=bad_commit_ch_path,
             root=ctrl_repo,
         )
+
+
+def test_nonce_ledger_serializes_concurrent_processes(tmp_path: Path):
+    ledger = tmp_path / "État contrôleur" / "consumed_nonces.json"
+    shared_nonce = "a" * 64
+    other_nonce = "b" * 64
+    # The same persisted nonce may be claimed only once, across separate interpreters.
+    script = """
+import sys
+from pathlib import Path
+from scripts.verify_companion_artifacts import _record_consumed_nonce
+
+try:
+    _record_consumed_nonce(Path(sys.argv[1]), sys.argv[2])
+except RuntimeError as exc:
+    if "REPLAY REJECTED" not in str(exc):
+        raise
+    sys.exit(3)
+"""
+    processes = []
+    try:
+        for nonce in (shared_nonce, shared_nonce, other_nonce):
+            processes.append(
+                subprocess.Popen([sys.executable, "-c", script, str(ledger), nonce], cwd=REPO_ROOT)
+            )
+        assert sorted(process.wait(timeout=60) for process in processes) == [0, 0, 3]
+    finally:
+        for process in processes:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+    assert json.loads(ledger.read_text(encoding="utf-8"))["consumed_nonces"] == [
+        shared_nonce,
+        other_nonce,
+    ]
+    # A fresh process also rejects an already consumed challenge.
+    assert (
+        subprocess.run(
+            [sys.executable, "-c", script, str(ledger), shared_nonce],
+            cwd=REPO_ROOT,
+            timeout=60,
+            check=False,
+        ).returncode
+        == 3
+    )
 
 
 def test_vm_target_powershell_script_syntax_and_hash_mismatch_guard(tmp_path: Path):

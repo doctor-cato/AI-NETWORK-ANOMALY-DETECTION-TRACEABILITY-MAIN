@@ -13,8 +13,17 @@ import {
   formatRiskDisplay,
   formatScoreSemantically,
   getResponseActionBadgeClass,
+  getDroppedCsvPath,
   summarizeEvaluationCoverage,
 } from "./utils";
+
+it("accepts exactly one dropped CSV path, preserving Unicode and spaces", () => {
+  const csv = "C:\\Bộ dữ liệu\\Luồng mạng.CSV";
+  expect(getDroppedCsvPath([csv])).toBe(csv);
+  expect(getDroppedCsvPath([csv, csv])).toBeNull();
+  expect(getDroppedCsvPath(["C:\\example.csv.exe"])).toBeNull();
+  expect(getDroppedCsvPath([])).toBeNull();
+});
 
 function makeItem(overrides: Partial<CsvFlowPredictionItem>): CsvFlowPredictionItem {
   return {

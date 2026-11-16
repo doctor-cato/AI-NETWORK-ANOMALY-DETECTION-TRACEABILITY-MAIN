@@ -21,6 +21,10 @@ export interface FilterSortOptions {
   sortDir: SortDirection;
 }
 
+export function getDroppedCsvPath(paths: string[]): string | null {
+  return paths.length === 1 && paths[0].toLowerCase().endsWith(".csv") ? paths[0] : null;
+}
+
 export function formatScoreSemantically(item: CsvFlowPredictionItem): {
   probabilityText: string;
   anomalyScoreText: string;
