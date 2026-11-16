@@ -2,10 +2,10 @@
   "e2e_status": "PASS",
   "e2e_backend_origin": "installed_nsis_desktop",
   "host": "127.0.0.1",
-  "port": 56722,
-  "source_commit": "ee99c5120e773d9e6ece8e8d0b7602e1552cf934",
+  "port": 62296,
+  "source_commit": "d0a5f734c30507804024f6d9c6fb75ab50033475",
   "desktop_version": "0.6.0",
-  "verify_script_sha256": "b111077beeaa5bd3ee64d807ef89874ca336c947a73229f0fa4cf07b282e3dc3",
+  "verify_script_sha256": "66e0c5954ab9915e99e5c117b95d797cfc0af8073007ea5d9343df11b80a71b5",
   "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
   "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
   "demo_sha256": {
@@ -22,9 +22,9 @@
   ],
   "models": {
     "random_forest": {
-      "analysis_id": "csvrun_d417e4775030",
+      "analysis_id": "csvrun_603c4e6b81b5",
       "run_id": "rf-baseline-1794068628",
-      "inference_run_id": "inference-20261116020622-206bf6",
+      "inference_run_id": "inference-20261116025735-ebe9d6",
       "artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -46,7 +46,7 @@
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_a76aca58ec45",
+      "dry_run_simulation_id": "sim_4bf31367ba16",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -57,9 +57,9 @@
       "dry_run_rotation_decision": "SIMULATED_ROTATION_RECOMMENDED"
     },
     "xgboost": {
-      "analysis_id": "csvrun_fa020c3a43ac",
+      "analysis_id": "csvrun_4eb53f110b52",
       "run_id": "xgb-baseline-1794755807",
-      "inference_run_id": "inference-20261116020623-1fc25d",
+      "inference_run_id": "inference-20261116025736-63602a",
       "artifact_sha256": "3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -81,7 +81,7 @@
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_a21b833489a9",
+      "dry_run_simulation_id": "sim_a6251c7f2b04",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -92,9 +92,9 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "isolation_forest": {
-      "analysis_id": "csvrun_c18b2dbbe7f0",
+      "analysis_id": "csvrun_112b3d23e09b",
       "run_id": "if-c4-20261115T055359Z",
-      "inference_run_id": "inference-20261116020623-5b206d",
+      "inference_run_id": "inference-20261116025736-e15419",
       "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -116,7 +116,7 @@
       "f1": 0.893401,
       "fpr": 0.091837,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_3d042d101c63",
+      "dry_run_simulation_id": "sim_cfe5a7dc7fcf",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 13,
@@ -127,9 +127,9 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "autoencoder": {
-      "analysis_id": "csvrun_11bb3b177c4d",
+      "analysis_id": "csvrun_79aa49681bb4",
       "run_id": "ae_fpr_constrained_20261115T163000Z",
-      "inference_run_id": "inference-20261116020623-a89b5f",
+      "inference_run_id": "inference-20261116025736-c7cd1f",
       "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -151,7 +151,7 @@
       "f1": 0.220339,
       "fpr": 0.05102,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_74c9eca3fedb",
+      "dry_run_simulation_id": "sim_607cfcdfa834",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 180,
@@ -190,7 +190,7 @@
       "autoencoder"
     ],
     "backend_spawned_on_loopback": true,
-    "backend_port": 56722,
+    "backend_port": 62296,
     "graceful_close_verified": true,
     "graceful_close_method": "wm_close",
     "zero_orphan_processes_verified": true,
