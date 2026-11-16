@@ -30,6 +30,10 @@ on:
         description: 'Distribution scope (private-build-only, non-commercial-controlled, or public-release-approved)'
         required: false
         default: 'private-build-only'
+      release_mode:
+        description: 'Release mode: windows-binary or source-only'
+        required: false
+        default: 'windows-binary'
       companion_bundle_url:
         description: 'DEPRECATED alias for model_bundle_url (build-time acquisition only)'
         required: false
@@ -85,6 +89,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG_LABEL: ${{ inputs.tag_label }}
+          INPUT_RELEASE_MODE: ${{ inputs.release_mode }}
+          VAR_RELEASE_MODE: ${{ vars.RELEASE_MODE }}
+          VAR_DIST_SCOPE: ${{ vars.ALLOW_EMBEDDED_MODEL_REDISTRIBUTION }}
+          VAR_CANDIDATE_RUN_ID: ${{ vars.VERIFIED_WINDOWS_CANDIDATE_RUN_ID }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -152,7 +160,19 @@ jobs:
             # Require strict 1-to-1 SemVer match between Git tag (vX.Y.Z[-beta.N]) and desktop configs/binary.
             python scripts/check_desktop_version.py --check --expect-tag $tagName
             if ($LASTEXITCODE -ne 0) { exit 1 }
-            $targetChannel = "public_github_release"
+
+            $explicitMode = "$($env:VAR_RELEASE_MODE)".Trim().ToLower()
+            if ($explicitMode -eq "windows-binary" -or (
+              $explicitMode -ne "source-only" -and
+              "$($env:VAR_DIST_SCOPE)".Trim().ToLower() -eq "public-release-approved" -and
+              "$($env:VAR_CANDIDATE_RUN_ID)".Trim() -match '\A[1-9][0-9]*\z'
+            )) {
+              $releaseMode = "windows-binary"
+              $targetChannel = "public_github_release"
+            } else {
+              $releaseMode = "source-only"
+              $targetChannel = "source_only_release"
+            }
           } else {
             python scripts/check_desktop_version.py --check
             if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -164,7 +184,14 @@ jobs:
               exit 1
             }
             $isPrerelease = $true
-            $targetChannel = if ($repoIsPrivate) { "private_ci_artifact" } else { "public_ci_artifact" }
+            $rawDispatchMode = "$($env:INPUT_RELEASE_MODE)".Trim().ToLower()
+            if ($rawDispatchMode -eq "source-only") {
+              $releaseMode = "source-only"
+              $targetChannel = "source_only_release"
+            } else {
+              $releaseMode = "windows-binary"
+              $targetChannel = if ($repoIsPrivate) { "private_ci_artifact" } else { "public_ci_artifact" }
+            }
           }
 
           "tag_name=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -174,8 +201,26 @@ jobs:
           "repo_is_private=$($repoIsPrivate.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "repo_visibility=$repoVisibility" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "target_channel=$targetChannel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "release_mode=$releaseMode" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Verify Source-Only Release Governance & Clean Source Snapshot
+        if: steps.meta.outputs.release_mode == 'source-only'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline > $null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $trackedRestricted = @(git ls-files | Where-Object {
+            $_ -match '\.joblib$' -or $_ -match 'setup\.exe$' -or $_ -match 'netflow-sentinel-backend.*\.exe$' -or $_ -match '^data/demo/demo_(flows|labels)\.csv$'
+          })
+          if ($trackedRestricted.Count -gt 0) {
+            Write-Error ("Refusing source-only release: restricted binaries/datasets are tracked in Git:`n" + ($trackedRestricted -join "`n"))
+            exit 1
+          }
+          Write-Host "Source-only release governance verified (no Windows installer, .joblib models, or demo CSVs included)."
 
       - name: Evidence-based distribution permission gate & build-time model acquisition
+        if: steps.meta.outputs.release_mode == 'windows-binary'
         id: embedded
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -350,7 +395,7 @@ jobs:
           }
 
       - name: Set up Node.js 22
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -358,7 +403,7 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
 
       - name: Set up Rust stable toolchain
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -367,7 +412,7 @@ jobs:
       # model resources in desktop/src-tauri/target/release are never persisted in Actions Cache.
 
       - name: Run Python verification checks (Environment, Lint, OpenAPI, Governance, Pytest)
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -385,7 +430,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Install and verify Svelte 5 frontend
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         shell: pwsh
         run: |
           npm --prefix desktop ci
@@ -398,7 +443,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Verify Rust formatting, Clippy lints, and unit tests
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         env:
           NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"
         shell: pwsh
@@ -411,7 +456,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build Python FastAPI + 4-Model PyInstaller Sidecar
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -420,7 +465,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Build Standalone Tauri Windows x64 NSIS Installer
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -433,7 +478,7 @@ jobs:
           }
 
       - name: Verify Embedded Artifacts & Run Standalone E2E on the Build Runner
-        if: steps.meta.outputs.is_tag_push != 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -497,7 +542,7 @@ jobs:
           Get-ChildItem $stageDir | Format-Table Name, Length
 
       - name: Upload staged Windows release assets (strictly gated on authorized upload_allowed)
-        if: steps.meta.outputs.is_tag_push != 'true' && steps.embedded.outputs.upload_allowed == 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true' && steps.embedded.outputs.upload_allowed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: netflow-sentinel-${{ steps.meta.outputs.tag_name }}-windows-x64
@@ -506,7 +551,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish GitHub Release (on tag push & verified public release authorization only)
-        if: steps.meta.outputs.is_tag_push == 'true' && steps.embedded.outputs.public_release_allowed == 'true'
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push == 'true' && steps.embedded.outputs.public_release_allowed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DISTRIBUTION_EVIDENCE_SHA256: ${{ secrets.DISTRIBUTION_EVIDENCE_SHA256 }}
@@ -620,6 +665,60 @@ jobs:
           & gh @releaseArgs
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to create GitHub Release for $tagName"
+            exit 1
+          }
+
+      - name: Publish Source-Only GitHub Release (tag push without Windows binary or model assets)
+        if: steps.meta.outputs.is_tag_push == 'true' && steps.meta.outputs.release_mode == 'source-only'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tagName = "${{ steps.meta.outputs.tag_name }}"
+          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
+
+          python scripts/verify_companion_artifacts.py `
+            --verify-distribution-permission research-only `
+            --target-channel local_offline > $null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          gh release view $tagName > $null 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "GitHub Release for tag $tagName already exists. Refusing to overwrite existing release."
+            exit 1
+          }
+          $global:LASTEXITCODE = 0
+
+          $baseSemVer = ($desktopVer -split '-')[0]
+          $exactNotesPath = "docs/releases/v$desktopVer.md"
+          $baseNotesPath = "docs/releases/v$baseSemVer.md"
+          if (Test-Path $exactNotesPath) {
+            $notesPath = $exactNotesPath
+          } elseif (Test-Path $baseNotesPath) {
+            $notesPath = $baseNotesPath
+          } else {
+            Write-Error "Release notes file not found: $exactNotesPath or $baseNotesPath"
+            exit 1
+          }
+
+          $sourceReleaseArgs = @(
+            "release", "create", $tagName,
+            "NOTICE",
+            "THIRD_PARTY_NOTICES.md",
+            "LICENSE",
+            "--verify-tag",
+            "--title", "NetFlow Sentinel $tagName — Source Release",
+            "--notes-file", $notesPath
+          )
+          if ($isPrerelease) {
+            $sourceReleaseArgs += "--prerelease"
+          }
+
+          & gh @sourceReleaseArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to create Source-Only GitHub Release for $tagName"
             exit 1
           }
 

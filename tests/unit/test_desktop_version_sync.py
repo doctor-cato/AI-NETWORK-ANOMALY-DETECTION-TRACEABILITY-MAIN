@@ -178,6 +178,9 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "non-commercial-academic-approved" not in release_yml
     assert "non-commercial-academic-approved" not in desktop_readme
     assert "non-commercial-academic-approved" not in rel_notes
+    assert "source-only" in release_yml
+    assert "Publish Source-Only GitHub Release" in release_yml
+    assert "Source Release" in rel_notes
 
 
 def _extract_verify_companion_invocations(workflow_text: str) -> list[str]:
