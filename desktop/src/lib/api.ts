@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  BackendLogSnapshot,
   BackendStatus,
   CsvAnalyzeResponse,
   CsvEvaluateResponse,
@@ -117,47 +118,31 @@ export async function restartBackend(): Promise<BackendStatus> {
   return getBackendStatus();
 }
 
+export async function getBackendLogs(): Promise<BackendLogSnapshot> {
+  if (isTauriRuntime()) {
+    return invoke<BackendLogSnapshot>("get_backend_logs");
+  }
+  const status = await getBackendStatus();
+  return {
+    starting: Boolean(status.starting),
+    running: status.running,
+    backend_mode: status.backend_mode ?? "browser_dev",
+    startup_stage: status.running ? "ready" : "offline",
+    startup_elapsed_ms: status.startup_elapsed_ms ?? 0,
+    port: status.port,
+    pid: status.pid,
+    log_file_path: "(chỉ khả dụng khi chạy bản Desktop Tauri)",
+    last_error: status.last_error,
+    lines: [
+      `[dev] Browser preview mode -> ${status.base_url} (${status.running ? "online" : "offline"})`,
+      ...(status.last_error ? [`[dev][error] ${status.last_error}`] : []),
+    ],
+  };
+}
+
 export async function getRuntimeDiagnostics(): Promise<RuntimeDiagnostics | null> {
   if (isTauriRuntime()) {
     return invoke<RuntimeDiagnostics>("get_runtime_diagnostics");
-  }
-  return null;
-}
-
-export async function setupPythonRuntime(wheelhouseDir?: string): Promise<BackendStatus> {
-  if (isTauriRuntime()) {
-    return invoke<BackendStatus>("setup_python_runtime", {
-      wheelhouseDir: wheelhouseDir ?? null,
-    });
-  }
-  throw new Error("Tự động cài đặt Python Runtime chỉ khả dụng trong Tauri Desktop App.");
-}
-
-export async function importCompanionBundle(params: {
-  archivePath?: string | null;
-  bundleDir?: string | null;
-  expectedSha256?: string | null;
-}): Promise<Record<string, unknown>> {
-  if (isTauriRuntime()) {
-    return invoke<Record<string, unknown>>("import_companion_bundle", {
-      archivePath: params.archivePath ?? null,
-      bundleDir: params.bundleDir ?? null,
-      expectedSha256: params.expectedSha256 ?? null,
-    });
-  }
-  throw new Error("Nhập Companion Bundle chỉ khả dụng trong Tauri Desktop App.");
-}
-
-export async function pickZipFile(title?: string): Promise<string | null> {
-  if (isTauriRuntime()) {
-    return invoke<string | null>("pick_zip_file", { title });
-  }
-  return null;
-}
-
-export async function pickCompanionFolder(title?: string): Promise<string | null> {
-  if (isTauriRuntime()) {
-    return invoke<string | null>("pick_companion_folder", { title });
   }
   return null;
 }

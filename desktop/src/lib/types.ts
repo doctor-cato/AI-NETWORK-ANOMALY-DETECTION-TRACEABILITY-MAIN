@@ -2,8 +2,12 @@ export interface BackendStatus {
   base_url: string;
   port: number;
   running: boolean;
+  starting?: boolean;
+  startup_stage?: string;
+  startup_elapsed_ms?: number;
   managed_child: boolean;
   pid: number | null;
+  backend_mode?: string;
   python_executable: string;
   repo_root: string;
   runtime_dir?: string;
@@ -11,21 +15,31 @@ export interface BackendStatus {
   last_error: string | null;
 }
 
+export interface BackendLogSnapshot {
+  starting: boolean;
+  running: boolean;
+  backend_mode: string;
+  startup_stage: string;
+  startup_elapsed_ms: number;
+  port: number;
+  pid: number | null;
+  log_file_path: string;
+  last_error: string | null;
+  lines: string[];
+}
+
 export interface RuntimeDiagnostics {
   repo_root: string;
   repo_root_valid: boolean;
   runtime_dir: string;
   db_path: string;
+  backend_mode: string;
+  sidecar_ready: boolean;
+  sidecar_executable: string | null;
   python_ready: boolean;
   python_executable: string | null;
   python_error: string | null;
-  base_python_available: boolean;
-  base_python_executable: string | null;
-  base_python_error: string | null;
-  venv_python_path: string;
-  venv_exists: boolean;
-  requirements_file_exists: boolean;
-  companion_status: string;
+  embedded_status: string;
   ready_models: string[];
   demo_flows_exists: boolean;
   demo_labels_exists: boolean;

@@ -20,9 +20,10 @@
   interface Props {
     name: IconName;
     size?: number;
+    spin?: boolean;
   }
 
-  let { name, size = 16 }: Props = $props();
+  let { name, size = 16, spin = false }: Props = $props();
 </script>
 
 <svg
@@ -35,6 +36,7 @@
   stroke-linecap="round"
   stroke-linejoin="round"
   aria-hidden="true"
+  class:icon-spin={spin}
   style="flex-shrink: 0"
 >
   {#if name === "shield"}

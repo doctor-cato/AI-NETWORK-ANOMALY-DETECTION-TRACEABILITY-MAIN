@@ -220,18 +220,30 @@ class ApiService:
         status = "healthy" if (db_ready and model_ready and preprocessor_ready) else "degraded"
 
         git_commit = "unknown"
-        try:
-            import subprocess
+        if (PROJECT_ROOT / ".git").exists():
+            try:
+                import subprocess
 
-            res = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"],
-                stderr=subprocess.DEVNULL,
-                text=True,
-                cwd=PROJECT_ROOT,
-            )
-            git_commit = res.strip()
-        except Exception:
-            pass
+                res = subprocess.check_output(
+                    ["git", "rev-parse", "HEAD"],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    cwd=PROJECT_ROOT,
+                )
+                git_commit = res.strip()
+            except Exception:
+                pass
+        else:
+            embedded_manifest = PROJECT_ROOT / "EMBEDDED_ARTIFACTS_MANIFEST.json"
+            if embedded_manifest.is_file():
+                try:
+                    emb_data = json.loads(embedded_manifest.read_text(encoding="utf-8"))
+                    if isinstance(emb_data, dict) and isinstance(
+                        emb_data.get("source_commit"), str
+                    ):
+                        git_commit = emb_data["source_commit"].strip() or "unknown"
+                except Exception:
+                    pass
 
         return HealthResponse(
             status=status,

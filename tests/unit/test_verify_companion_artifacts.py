@@ -141,6 +141,7 @@ def _build_valid_attestation_payload(
     if all((root / rel).is_file() for rel in demo_rels):
         demo_sha256 = {rel: _sha256_path(root / rel) for rel in demo_rels}
     else:
+        # Demo CSV files are .gitignored on clean CI checkouts; reuse historical demo_sha256 only
         tracked_att_path = root / "reports/releases/v0.6.0_e2e_verification.json"
         if not tracked_att_path.is_file():
             tracked_att_path = REPO_ROOT / "reports/releases/v0.6.0_e2e_verification.json"
@@ -594,12 +595,14 @@ def _install_mocked_windows_desktop_env(
             target_dir.mkdir(parents=True, exist_ok=True)
             (target_dir / "netflow-sentinel-desktop.exe").write_bytes(installed_bytes)
             (target_dir / "uninstall.exe").write_bytes(b"UNINST")
-        elif exe_arg.name.lower() == "uninstall.exe" and not leave_files_on_uninstall:
+        elif exe_arg.name.lower() == "uninstall.exe":
             target_dir = exe_arg.parent
             for item in ("netflow-sentinel-desktop.exe", "uninstall.exe"):
                 p = target_dir / item
                 if p.exists():
                     p.unlink()
+            if leave_files_on_uninstall:
+                (target_dir / "netflow-sentinel-backend.exe").write_bytes(b"LEFTOVER")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     class _FakeDesktopProc:
@@ -861,7 +864,7 @@ def test_verify_nsis_installer_e2e_rejects_orphan_backend_and_uninstall_leftover
         compiled_exe=compiled_exe,
         leave_files_on_uninstall=True,
     )
-    with pytest.raises(RuntimeError, match="NSIS uninstall left executables behind"):
+    with pytest.raises(RuntimeError, match="NSIS uninstall left installed files behind"):
         verify_nsis_installer_e2e(installer, root=tmp_path, compiled_exe_path=compiled_exe)
 
     # Attestation must reject nsis_e2e missing installed-desktop flags or wrong backend origin
@@ -878,7 +881,7 @@ def test_verify_nsis_installer_e2e_rejects_orphan_backend_and_uninstall_leftover
     bad_origin["e2e_backend_origin"] = "api_only_run_api"
     p_bad_origin = tmp_path / "bad_origin_att.json"
     p_bad_origin.write_text(json.dumps(bad_origin), encoding="utf-8")
-    with pytest.raises(RuntimeError, match="e2e_backend_origin='installed_nsis_desktop'"):
+    with pytest.raises(RuntimeError, match="must record e2e_backend_origin in"):
         verify_e2e_attestation(p_bad_origin, root=ws, require_nsis_e2e=True)
 
 
@@ -990,11 +993,40 @@ def test_package_and_install_companion_bundle_security_and_provenance(
     assert (target_ws / "artifacts/models/autoencoder/autoencoder_model.joblib").is_file()
 
 
-def test_verify_shipped_v060_e2e_attestation_passes():
-    att_path = REPO_ROOT / "reports" / "releases" / "v0.6.0_e2e_verification.json"
-    result = verify_e2e_attestation(att_path, root=REPO_ROOT)
-    assert result["attestation_status"] == "PASS"
-    assert len(result["verified_models"]) == 4
+def test_repo_governance_manifest_blocks_unapproved_public_model_release():
+    res_local = vca.verify_distribution_permission(
+        "research-only", target_channel="local_offline", root=REPO_ROOT
+    )
+    assert res_local["status"] == "APPROVED"
+    assert res_local["upload_allowed"] is False
+    assert res_local["public_release_allowed"] is False
+
+    # Actual repo governance state has approved=False; public channels & private-build on public repo MUST fail closed
+    for channel in ("public_ci_artifact", "public_github_release"):
+        with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
+            vca.verify_distribution_permission(
+                "public-release-approved",
+                target_channel=channel,
+                repo_is_private=False,
+                root=REPO_ROOT,
+            )
+        with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
+            vca.verify_distribution_permission(
+                "private-build-only",
+                target_channel=channel,
+                repo_is_private=False,
+                root=REPO_ROOT,
+            )
+
+    # Even private-build-only on private_ci_artifact MUST fail closed when repo_is_private is False or None
+    for non_private in (False, None):
+        with pytest.raises(RuntimeError, match="repository privacy is not verified private"):
+            vca.verify_distribution_permission(
+                "private-build-only",
+                target_channel="private_ci_artifact",
+                repo_is_private=non_private,
+                root=REPO_ROOT,
+            )
 
 
 def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_demo_flag(
@@ -1602,11 +1634,8 @@ def test_extract_safe_companion_zip_rejects_zip_bomb_entry_and_byte_limits(
 
 
 def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mode(tmp_path: Path):
-    import scripts.verify_companion_artifacts as vca
-
-    att_path = Path(__file__).resolve().parents[2] / "reports/releases/v0.6.0_e2e_verification.json"
-    base = json.loads(att_path.read_text(encoding="utf-8"))
-    base["verify_script_sha256"] = vca._sha256_file(Path(vca.__file__)).lower()
+    ws = _copy_attestation_workspace(tmp_path)
+    base = _build_valid_attestation_payload(ws, include_nsis=True, commit="a" * 40)
 
     # Legacy or repo-root-env attestation must fail when bundled resources mode is strictly required
     bad_repo_env = json.loads(json.dumps(base))
@@ -1619,6 +1648,7 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
     with pytest.raises(RuntimeError, match="bundled resources"):
         vca.verify_e2e_attestation(
             bad_path,
+            root=ws,
             require_nsis_e2e=True,
             require_bundled_resources=True,
         )
@@ -1632,7 +1662,639 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
 
     res = vca.verify_e2e_attestation(
         good_path,
+        root=ws,
         require_nsis_e2e=True,
         require_bundled_resources=True,
     )
     assert res["bundled_resources_verified"] is True
+
+
+def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: Path):
+    (tmp_path / "NOTICE").write_text(
+        "Dataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | UQ License ID 454104\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "THIRD_PARTY_NOTICES.md").write_text(
+        "# Notices\nDataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | License ID 454104\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "LICENSE").write_text("Apache License 2.0\n", encoding="utf-8")
+
+    gov_dir = tmp_path / "reports" / "governance"
+    gov_dir.mkdir(parents=True, exist_ok=True)
+    auth_path = gov_dir / "DISTRIBUTION_AUTHORIZATION.json"
+    auth_base = json.loads(
+        (REPO_ROOT / "reports/governance/DISTRIBUTION_AUTHORIZATION.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    auth_path.write_text(json.dumps(auth_base, indent=2), encoding="utf-8")
+
+    # Legacy variable string alone must be rejected
+    with pytest.raises(RuntimeError, match="NOT legal evidence"):
+        vca.verify_distribution_permission(
+            "non-commercial-academic-approved",
+            target_channel="public_github_release",
+            root=tmp_path,
+        )
+
+    # Private build on public or unknown repository privacy must fail closed
+    for non_private_flag in (False, None):
+        with pytest.raises(RuntimeError, match="not verified private"):
+            vca.verify_distribution_permission(
+                "private-build-only",
+                target_channel="private_ci_artifact",
+                repo_is_private=non_private_flag,
+                root=tmp_path,
+            )
+
+    # Private build on public_ci_artifact must fail closed even if caller passes private-build-only
+    with pytest.raises(RuntimeError, match="forbids public channel"):
+        vca.verify_distribution_permission(
+            "private-build-only",
+            target_channel="public_ci_artifact",
+            repo_is_private=False,
+            root=tmp_path,
+        )
+
+    # Corrupted attribution markers in NOTICE fail closed
+    saved_notice = (tmp_path / "NOTICE").read_text(encoding="utf-8")
+    (tmp_path / "NOTICE").write_text("NOTICE without license id\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="attribution markers"):
+        vca.verify_distribution_permission(
+            "research-only",
+            target_channel="local_offline",
+            root=tmp_path,
+        )
+    (tmp_path / "NOTICE").write_text(saved_notice, encoding="utf-8")
+
+    # Private build on verified private repo/runner is approved for private_ci_artifact (but never public release)
+    res_priv_ci = vca.verify_distribution_permission(
+        "private-build-only",
+        target_channel="private_ci_artifact",
+        repo_is_private=True,
+        root=tmp_path,
+    )
+    assert res_priv_ci["status"] == "APPROVED"
+    assert res_priv_ci["upload_allowed"] is True
+    assert res_priv_ci["public_release_allowed"] is False
+
+    # research-only cannot upload CI artifacts
+    with pytest.raises(RuntimeError, match="research-only"):
+        vca.verify_distribution_permission(
+            "research-only",
+            target_channel="private_ci_artifact",
+            repo_is_private=True,
+            root=tmp_path,
+        )
+
+    # Unapproved public_release_authorization blocks public-release-approved fail-closed
+    with pytest.raises(RuntimeError, match="NOT authorized"):
+        vca.verify_distribution_permission(
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            repo_is_private=False,
+            root=tmp_path,
+        )
+
+    # Populating valid verifiable evidence unlocks public release only when evidence hash matches
+    evidence_sha = "d" * 64
+    auth_approved = copy.deepcopy(auth_base)
+    auth_approved["public_release_authorization"].update(
+        {
+            "approved": True,
+            "status": "APPROVED",
+            "legal_basis": "written-publisher-authorization",
+            "maintainer_approver": "maintainer@example.org",
+            "approved_at_utc": "2026-11-16T12:00:00Z",
+            "evidence_ref": "UQ-AUTH-RECORD-001",
+            "evidence_sha256": evidence_sha,
+        }
+    )
+    auth_path.write_text(json.dumps(auth_approved, indent=2), encoding="utf-8")
+
+    # Missing or wrong secret evidence hash fails closed when require_evidence_hash=True
+    with pytest.raises(RuntimeError, match="Missing expected evidence SHA-256"):
+        vca.verify_distribution_permission(
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            root=tmp_path,
+            require_evidence_hash=True,
+        )
+    with pytest.raises(RuntimeError, match="evidence SHA-256 verification failed"):
+        vca.verify_distribution_permission(
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            root=tmp_path,
+            expected_evidence_sha256="e" * 64,
+            require_evidence_hash=True,
+        )
+
+    res_public = vca.verify_distribution_permission(
+        "public-release-approved",
+        is_public_release=True,
+        target_channel="public_github_release",
+        root=tmp_path,
+        expected_evidence_sha256=evidence_sha,
+        require_evidence_hash=True,
+    )
+    assert res_public["public_release_allowed"] is True
+    assert res_public["upload_allowed"] is True
+    assert res_public["evidence_verified"] is True
+    assert res_public["citation_doi"] == "10.48610/6E0EDA1"
+
+    # Attribution notices remain mandatory even when authorization exists
+    (tmp_path / "NOTICE").unlink()
+    with pytest.raises(RuntimeError, match="NOTICE"):
+        vca.verify_distribution_permission(
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            root=tmp_path,
+            expected_evidence_sha256=evidence_sha,
+            require_evidence_hash=True,
+        )
+
+
+def test_tauri_standalone_config_covers_all_required_embedded_resources():
+    base_cfg = json.loads(
+        (REPO_ROOT / "desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+    )
+    standalone_cfg = json.loads(
+        (REPO_ROOT / "desktop/src-tauri/tauri.standalone.conf.json").read_text(encoding="utf-8")
+    )
+    assert standalone_cfg["bundle"]["externalBin"] == ["binaries/netflow-sentinel-backend"]
+    base_res = base_cfg["bundle"]["resources"]
+    standalone_res = standalone_cfg["bundle"]["resources"]
+    destinations = set(standalone_res.values())
+    # Must explicitly include sidecar-supporting artifacts for all 4 models, preprocessor, demo, and manifests
+    required_standalone_dests = {
+        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+        "artifacts/models/random_forest/random_forest_baseline.joblib",
+        "artifacts/models/random_forest/random_forest_manifest.json",
+        "artifacts/models/xgboost/xgboost_baseline.joblib",
+        "artifacts/models/xgboost/xgboost_manifest.json",
+        "artifacts/models/isolation_forest/isolation_forest.joblib",
+        "artifacts/models/isolation_forest/model_config.json",
+        "artifacts/models/isolation_forest/threshold.json",
+        "artifacts/models/isolation_forest/training_metadata.json",
+        "artifacts/models/autoencoder/autoencoder_model.joblib",
+        "artifacts/models/autoencoder/autoencoder_manifest.json",
+        "artifacts/models/autoencoder/model_config.json",
+        "artifacts/models/autoencoder/threshold.json",
+        "data/demo/demo_flows.csv",
+        "data/demo/demo_labels.csv",
+        "data/demo/demo_manifest.json",
+        "EMBEDDED_ARTIFACTS_MANIFEST.json",
+        "EMBEDDED_SHA256SUMS.txt",
+    }
+    assert required_standalone_dests.issubset(destinations)
+    for notice_key in ("../../NOTICE", "../../THIRD_PARTY_NOTICES.md", "../../LICENSE"):
+        assert notice_key in base_res
+
+
+def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
+    import hashlib
+
+    import scripts.verify_companion_artifacts as vca
+
+    if not (REPO_ROOT / "artifacts/models/random_forest/random_forest_baseline.joblib").is_file():
+        pytest.skip("Local ML model binaries absent on runner")
+
+    stage_dir = tmp_path / "staged"
+    staged = vca.stage_embedded_bundle(
+        stage_dir,
+        root=REPO_ROOT,
+        runtime_dir=REPO_ROOT,
+        distribution_scope="private-build-only",
+        target_channel="local_offline",
+    )
+    assert staged["stage_status"] == "READY"
+    assert (stage_dir / "EMBEDDED_SHA256SUMS.txt").is_file()
+    assert (stage_dir / "EMBEDDED_ARTIFACTS_MANIFEST.json").is_file()
+    assert not (stage_dir / "COMPANION_SHA256SUMS.txt").exists()
+
+    # Build a synthetic installed standalone directory matching staged files + sidecar
+    install_dir = tmp_path / "install_dir"
+    shutil.copytree(stage_dir, install_dir)
+    (install_dir / "netflow-sentinel-desktop.exe").write_bytes(b"DESKTOP-STUB")
+    sidecar_bytes = b"PYINSTALLER-SIDECAR-STUB"
+    (install_dir / "netflow-sentinel-backend.exe").write_bytes(sidecar_bytes)
+    (install_dir / "uninstall.exe").write_bytes(b"NSIS-UNINSTALL-STUB")
+    expected_sidecar_sha = hashlib.sha256(sidecar_bytes).hexdigest()
+
+    layout = vca.verify_installed_standalone_layout(
+        install_dir, expected_sidecar_sha256=expected_sidecar_sha
+    )
+    assert layout["status"] == "READY"
+    assert layout["sidecar_sha256"] == expected_sidecar_sha
+
+    # Tamper sidecar or embedded file must fail closed
+    with pytest.raises(RuntimeError, match="sidecar SHA-256 mismatch"):
+        vca.verify_installed_standalone_layout(install_dir, expected_sidecar_sha256="0" * 64)
+
+    (install_dir / "data/demo/demo_flows.csv").write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        vca.verify_installed_standalone_layout(
+            install_dir, expected_sidecar_sha256=expected_sidecar_sha
+        )
+
+
+def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
+    ws = _copy_attestation_workspace(tmp_path)
+    head_commit = "a" * 40
+    base = _build_valid_attestation_payload(ws, include_nsis=True, commit=head_commit)
+
+    # Non-standalone attestation must fail --require-standalone-embedded
+    legacy_payload = json.loads(json.dumps(base))
+    legacy_payload["e2e_backend_origin"] = "installed_nsis_desktop"
+    legacy_payload["nsis_e2e"]["standalone_embedded_mode"] = False
+    legacy_payload["nsis_e2e"]["system_python_used"] = True
+    legacy_path = tmp_path / "legacy_att.json"
+    legacy_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="standalone embedded NSIS"):
+        vca.verify_e2e_attestation(
+            legacy_path,
+            root=ws,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+
+    standalone_att = json.loads(json.dumps(base))
+    standalone_att["e2e_backend_origin"] = "installed_standalone_nsis"
+    standalone_att["session_auth_fail_closed"] = False
+    standalone_att["nsis_e2e"].update(
+        {
+            "bundled_resources_mode": True,
+            "repo_root_env_passed": False,
+            "runtime_dir_isolated": True,
+            "standalone_embedded_mode": True,
+            "sidecar_exe_verified": True,
+            "sidecar_sha256": "f" * 64,
+            "system_python_used": False,
+            "external_companion_used": False,
+            "restart_persistence_verified": True,
+            "export_verified": True,
+        }
+    )
+    standalone_att["attestation_environment"] = {
+        "environment_tier": "local_developer_machine",
+        "execution_context": "local_developer_machine",
+        "clean_machine_status": "NOT VERIFIED",
+        "source_tree_clean": True,
+        "system_python_used": False,
+        "clean_machine_verified": False,
+        "runner_provenance_verified": False,
+        "runner_identity": {
+            "provenance_source": "none_local_developer_machine",
+            "workflow_run_id": None,
+            "run_attempt": None,
+            "github_repository": None,
+            "workflow_path": None,
+            "runner_name": None,
+            "runner_labels": [],
+            "vm_provenance_ref": None,
+            "vm_evidence_sha256": None,
+        },
+        "bindings": {
+            "source_commit": head_commit,
+            "installer_sha256": standalone_att["nsis_e2e"]["installer_sha256"],
+            "sidecar_sha256": "f" * 64,
+        },
+        "standalone_verified": False,
+    }
+    standalone_path = tmp_path / "standalone_att.json"
+    standalone_path.write_text(json.dumps(standalone_att), encoding="utf-8")
+
+    # Missing session_auth_fail_closed=True fails standalone verification
+    with pytest.raises(RuntimeError, match="session_auth_fail_closed"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+
+    standalone_att["session_auth_fail_closed"] = True
+    standalone_path.write_text(json.dumps(standalone_att), encoding="utf-8")
+
+    # F-03: stale source_commit != HEAD or mismatched sidecar_sha256 fails closed
+    with pytest.raises(RuntimeError, match="source_commit mismatch"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit="9" * 40,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+    with pytest.raises(RuntimeError, match="sidecar_sha256 mismatch"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="e" * 64,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+
+    # F-03: local developer machine attestation passes local standalone check,
+    # NOT --require-clean-machine-e2e
+    res_local = vca.verify_e2e_attestation(
+        standalone_path,
+        root=ws,
+        expect_commit=head_commit,
+        expect_sidecar_sha256="f" * 64,
+        require_nsis_e2e=True,
+        require_bundled_resources=True,
+        require_standalone_embedded=True,
+    )
+    assert res_local["standalone_embedded_verified"] is True
+    assert res_local["clean_machine_verified"] is False
+    assert res_local["clean_machine_status"] == "NOT VERIFIED"
+
+    with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+    # F-04: Self-declared bare 'clean_ci_runner' without runner identity & provenance MUST fail
+    spoofed_clean = copy.deepcopy(standalone_att)
+    spoofed_clean["attestation_environment"] = {
+        "execution_context": "clean_ci_runner",
+        "source_tree_clean": True,
+        "system_python_used": False,
+        "clean_machine_verified": True,
+        "standalone_verified": True,
+    }
+    standalone_path.write_text(json.dumps(spoofed_clean), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_bundled_resources=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+    # F-04: GitHub-hosted Windows runner attestation with full bindings passes
+    gh_clean = copy.deepcopy(standalone_att)
+    gh_clean["attestation_environment"] = {
+        "environment_tier": "github_hosted_windows_runner",
+        "execution_context": "github_hosted_windows_runner",
+        "clean_machine_status": "VERIFIED",
+        "source_tree_clean": True,
+        "system_python_used": False,
+        "clean_machine_verified": True,
+        "runner_provenance_verified": True,
+        "runner_identity": {
+            "provenance_source": "github_actions_api",
+            "workflow_run_id": "123456789",
+            "run_attempt": 1,
+            "github_repository": "owner/repo",
+            "workflow_path": ".github/workflows/release.yml",
+            "runner_name": "Hosted Agent",
+            "runner_labels": ["windows-latest"],
+            "vm_provenance_ref": None,
+            "vm_evidence_sha256": None,
+        },
+        "bindings": {
+            "source_commit": head_commit,
+            "installer_sha256": standalone_att["nsis_e2e"]["installer_sha256"],
+            "sidecar_sha256": "f" * 64,
+        },
+        "standalone_verified": True,
+    }
+    standalone_path.write_text(json.dumps(gh_clean), encoding="utf-8")
+    res_clean = vca.verify_e2e_attestation(
+        standalone_path,
+        root=ws,
+        expect_commit=head_commit,
+        expect_sidecar_sha256="f" * 64,
+        require_nsis_e2e=True,
+        require_bundled_resources=True,
+        require_standalone_embedded=True,
+        require_clean_machine_e2e=True,
+    )
+    assert res_clean["clean_machine_verified"] is True
+    assert res_clean["clean_machine_status"] == "VERIFIED"
+    assert res_clean["environment_tier"] == "github_hosted_windows_runner"
+
+    # F-07: Self-declared independent_windows_vm (bare vm_evidence_sha256 without signed witness + live probe) MUST fail closed
+    legacy_vm = copy.deepcopy(gh_clean)
+    legacy_vm["attestation_environment"]["environment_tier"] = "independent_windows_vm"
+    legacy_vm["attestation_environment"]["execution_context"] = "independent_windows_vm"
+    legacy_vm["attestation_environment"]["runner_identity"] = {
+        "provenance_source": "independent_vm_verified_attestation",
+        "workflow_run_id": None,
+        "run_attempt": None,
+        "github_repository": None,
+        "workflow_path": None,
+        "runner_name": "win11-clean-vm-01",
+        "runner_labels": ["independent-windows-vm"],
+        "vm_provenance_ref": "hyperv-snapshot-clean-2026-11-16",
+        "vm_evidence_sha256": "c" * 64,
+    }
+    standalone_path.write_text(json.dumps(legacy_vm), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_bundled_resources=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+    # A legacy VM report without challenge/evidence bindings must fail closed.
+    vm_clean = copy.deepcopy(gh_clean)
+    vm_clean["attestation_environment"]["environment_tier"] = "independent_windows_vm"
+    vm_clean["attestation_environment"]["execution_context"] = "independent_windows_vm"
+    vm_clean["attestation_environment"]["runner_identity"] = {
+        "provenance_source": "independent_vm_signed_witness",
+        "workflow_run_id": None,
+        "run_attempt": None,
+        "github_repository": None,
+        "workflow_path": None,
+        "runner_name": "win11-clean-vm-01",
+        "runner_labels": ["independent-windows-vm"],
+        "vm_provenance_ref": "hyperv-snapshot-clean-2026-11-16",
+        "trusted_authority_id": "ci-vm-witness-authority",
+        "issued_at_utc": "2026-11-16T14:30:00Z",
+        "signature_algorithm": "hmac-sha256-external-witness",
+        "signature_verified": True,
+        "live_host_probe": {
+            "platform": "win32",
+            "observed_hostname": "win11-clean-vm-01",
+            "git_dir_present": False,
+            "dev_tools_absent": True,
+            "found_dev_tools": [],
+            "dev_models_tree_absent": True,
+        },
+    }
+    standalone_path.write_text(json.dumps(vm_clean), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_bundled_resources=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+    # F-04: Mismatched bindings (source_commit / sidecar_sha256 / installer_sha256) must fail
+    bad_bind = copy.deepcopy(gh_clean)
+    bad_bind["attestation_environment"]["bindings"]["installer_sha256"] = "1" * 64
+    standalone_path.write_text(json.dumps(bad_bind), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="bindings.installer_sha256 mismatch"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+
+def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_provenance(
+    tmp_path: Path, monkeypatch
+):
+    commit = "a" * 40
+    # 1) Local developer machine passing clean_machine_e2e=True must fail closed
+    with pytest.raises(RuntimeError, match="REFUSED --clean-machine-e2e"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=None,
+        )
+
+    # 2) Spoofed env vars without API provenance or VM evidence still fail closed
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("RUNNER_NAME", "Hosted Agent")
+    monkeypatch.setenv("GITHUB_RUN_ID", "999999")
+    with pytest.raises(RuntimeError, match="REFUSED --clean-machine-e2e"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=None,
+        )
+
+    # 3) Historical completed workflow run MUST be refused when asserting live clean-machine E2E
+    monkeypatch.setenv("GH_TOKEN", "dummy-ci-token")
+
+    def _mock_completed_api(url: str, **_kwargs) -> bytes:
+        if url.endswith("/actions/runs/999999"):
+            return json.dumps(
+                {
+                    "id": 999999,
+                    "head_sha": commit,
+                    "status": "completed",
+                    "run_attempt": 1,
+                    "path": ".github/workflows/release.yml",
+                    "repository": {"full_name": "owner/repo"},
+                }
+            ).encode("utf-8")
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(vca, "_download_allowlisted_bytes", _mock_completed_api)
+    with pytest.raises(RuntimeError, match="status must be 'in_progress'"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            github_repo="owner/repo",
+            github_run_id="999999",
+            token_env_var="GH_TOKEN",
+            independent_vm_evidence=None,
+        )
+
+    # 4) Active live in_progress GitHub-hosted Windows runner passes and captures runner_identity
+    def _mock_live_windows_api(url: str, **_kwargs) -> bytes:
+        if url.endswith("/actions/runs/999999"):
+            return json.dumps(
+                {
+                    "id": 999999,
+                    "head_sha": commit,
+                    "status": "in_progress",
+                    "run_attempt": 2,
+                    "path": ".github/workflows/release.yml",
+                    "repository": {"full_name": "owner/repo"},
+                }
+            ).encode("utf-8")
+        if "/jobs" in url:
+            return json.dumps(
+                {
+                    "jobs": [
+                        {
+                            "status": "in_progress",
+                            "runner_name": "Hosted Agent",
+                            "labels": ["windows-latest"],
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(vca, "_download_allowlisted_bytes", _mock_live_windows_api)
+    tier, ident = vca._resolve_clean_machine_provenance(
+        clean_machine_e2e=True,
+        standalone_embedded=True,
+        pass_repo_root_env=False,
+        source_tree_clean=True,
+        source_commit=commit,
+        github_repo="owner/repo",
+        github_run_id="999999",
+        token_env_var="GH_TOKEN",
+        independent_vm_evidence=None,
+    )
+    assert tier == "github_hosted_windows_runner"
+    assert ident is not None
+    assert ident["workflow_run_id"] == "999999"
+    assert ident["runner_name"] == "Hosted Agent"
+    assert ident["runner_labels"] == ["windows-latest"]
+
+    # The same-host legacy path cannot bypass Controller nonce consumption.
+    with pytest.raises(RuntimeError, match="persistent --consumed-nonces-file"):
+        vca._resolve_clean_machine_provenance(
+            clean_machine_e2e=True,
+            standalone_embedded=True,
+            pass_repo_root_env=False,
+            source_tree_clean=True,
+            source_commit=commit,
+            github_repo=None,
+            github_run_id=None,
+            token_env_var=None,
+            independent_vm_evidence=tmp_path / "vm_evidence.json",
+        )

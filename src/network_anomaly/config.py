@@ -1,18 +1,41 @@
 """Configuration for network anomaly detection project."""
 
 import os
+import sys
 from pathlib import Path
 
 _PACKAGE_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _is_valid_project_root(candidate: Path) -> bool:
+    """Return True if `candidate` is a source repo root or standalone resource root."""
+    if (candidate / "src" / "network_anomaly").is_dir():
+        return True
+    return (candidate / "reports" / "models").is_dir() and (
+        (candidate / "artifacts").is_dir() or (candidate / "data").is_dir()
+    )
+
+
 def resolve_project_root() -> Path:
-    """Resolve code/manifest root, honoring NETWORK_ANOMALY_REPO_ROOT when valid."""
-    explicit = os.environ.get("NETWORK_ANOMALY_REPO_ROOT", "").strip()
-    if explicit:
-        candidate = Path(explicit).expanduser().resolve()
-        if (candidate / "src" / "network_anomaly").is_dir():
-            return candidate
+    """Resolve code/manifest root, honoring env overrides and PyInstaller frozen bundles."""
+    for env_key in ("NETWORK_ANOMALY_REPO_ROOT", "NETWORK_ANOMALY_RESOURCE_DIR"):
+        explicit = os.environ.get(env_key, "").strip()
+        if explicit:
+            candidate = Path(explicit).expanduser().resolve()
+            if _is_valid_project_root(candidate):
+                return candidate
+
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates = [exe_dir, exe_dir / "_up_" / "_up_"]
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass).resolve())
+        for candidate in candidates:
+            if _is_valid_project_root(candidate):
+                return candidate
+        return exe_dir
+
     return _PACKAGE_ROOT
 
 
@@ -33,18 +56,18 @@ def _has_populated_artifacts(artifacts_dir: Path) -> bool:
 
 
 def get_runtime_root() -> Path:
-    """Return writable per-user runtime root for venv, companion artifacts, demo CSVs, and SQLite."""
+    """Return writable per-user runtime root for SQLite DB, logs, and user exports."""
     explicit = os.environ.get("NETWORK_ANOMALY_RUNTIME_DIR", "").strip()
     if explicit:
         return Path(explicit).expanduser().resolve()
     local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
-    if local_app_data and not (PROJECT_ROOT / ".git").exists():
-        return Path(local_app_data).expanduser().resolve() / "NetFlowSentinelM6"
+    if local_app_data and (getattr(sys, "frozen", False) or not (PROJECT_ROOT / ".git").exists()):
+        return Path(local_app_data).expanduser().resolve() / "NetFlowSentinel"
     return PROJECT_ROOT
 
 
 def resolve_artifacts_dir() -> Path:
-    """Resolve the active artifacts directory (env override -> repo artifacts -> runtime dir)."""
+    """Resolve the active artifacts directory (env override -> bundled/repo artifacts -> runtime dir)."""
     explicit = os.environ.get("NETWORK_ANOMALY_ARTIFACTS_DIR", "").strip()
     if explicit:
         return Path(explicit).expanduser().resolve()
@@ -58,7 +81,7 @@ def resolve_artifacts_dir() -> Path:
 
 
 def resolve_demo_dir() -> Path:
-    """Resolve the active demo CSV directory (env override -> repo data/demo -> runtime dir)."""
+    """Resolve the active demo CSV directory (env override -> bundled/repo data/demo -> runtime dir)."""
     explicit = os.environ.get("NETWORK_ANOMALY_DEMO_DIR", "").strip()
     if explicit:
         return Path(explicit).expanduser().resolve()

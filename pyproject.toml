@@ -44,6 +44,9 @@ dev = [
     "ruff>=0.6.0",
     "mypy>=1.10.0",
 ]
+packaging = [
+    "pyinstaller>=6.10.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN"

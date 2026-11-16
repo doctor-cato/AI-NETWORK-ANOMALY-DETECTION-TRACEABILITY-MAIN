@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -34,12 +35,12 @@ def _copy_version_tree(dst_root: Path) -> None:
         shutil.copy2(PROJECT_ROOT / rel, target)
 
 
-def test_repo_desktop_version_is_0_6_0_and_api_version_is_0_1_0():
+def test_repo_desktop_version_is_1_0_0_and_api_version_is_0_1_0():
     desktop_versions = collect_desktop_versions(PROJECT_ROOT)
     unique_versions = set(desktop_versions.values())
     assert len(unique_versions) == 1
     desktop_ver = next(iter(unique_versions))
-    assert desktop_ver == "0.6.0" or desktop_ver.startswith("0.6.0-")
+    assert desktop_ver == "1.0.0" or desktop_ver.startswith("1.0.0-")
 
     backend_versions = collect_backend_api_versions(PROJECT_ROOT)
     assert set(backend_versions.values()) == {"0.1.0"}
@@ -53,28 +54,28 @@ def test_repo_desktop_version_is_0_6_0_and_api_version_is_0_1_0():
 
 
 def test_semver_validation_and_set_version_supports_beta_and_stable(tmp_path: Path):
-    validate_semver("0.6.0")
-    validate_semver("0.6.0-beta.1")
+    validate_semver("1.0.0")
+    validate_semver("1.0.0-beta.1")
     with pytest.raises(ValueError, match="Invalid SemVer"):
-        validate_semver("v0.6.0")
+        validate_semver("v1.0.0")
 
     _copy_version_tree(tmp_path)
 
-    # Set to 0.6.0-beta.1
-    updated_beta = set_desktop_version("0.6.0-beta.1", root=tmp_path)
-    assert set(updated_beta.values()) == {"0.6.0-beta.1"}
+    # Set to 1.0.0-beta.1
+    updated_beta = set_desktop_version("1.0.0-beta.1", root=tmp_path)
+    assert set(updated_beta.values()) == {"1.0.0-beta.1"}
     ok_beta, msg_beta = verify_desktop_version(
         root=tmp_path,
-        expected_version="0.6.0-beta.1",
-        expected_tag="refs/tags/v0.6.0-beta.1",
+        expected_version="1.0.0-beta.1",
+        expected_tag="refs/tags/v1.0.0-beta.1",
     )
     assert ok_beta is True, msg_beta
 
-    # Set back to 0.6.0 and verify strict 1-to-1 mismatch rejection for beta tag on 0.6.0 binary (F-04)
-    set_desktop_version("0.6.0", root=tmp_path)
+    # Set back to 1.0.0 and verify strict 1-to-1 mismatch rejection for beta tag on 1.0.0 binary (F-04)
+    set_desktop_version("1.0.0", root=tmp_path)
     ok_mismatch, msg_mismatch = verify_desktop_version(
         root=tmp_path,
-        expected_tag="v0.6.0-beta.1",
+        expected_tag="v1.0.0-beta.1",
     )
     assert ok_mismatch is False
     assert "does not match Git tag" in msg_mismatch
@@ -82,7 +83,7 @@ def test_semver_validation_and_set_version_supports_beta_and_stable(tmp_path: Pa
     # Detect drift when one file has a different version
     tauri_conf = tmp_path / "desktop" / "src-tauri" / "tauri.conf.json"
     tauri_conf.write_text(
-        tauri_conf.read_text(encoding="utf-8").replace('"0.6.0"', '"0.1.0"'),
+        tauri_conf.read_text(encoding="utf-8").replace('"1.0.0"', '"0.1.0"'),
         encoding="utf-8",
     )
     ok_drift, msg_drift = verify_desktop_version(root=tmp_path)
@@ -99,12 +100,40 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "git merge-base --is-ancestor $tagCommit origin/main" in release_yml
     # Ensure merge-base ancestry check is NOT conditionally skipped for prerelease tags
     assert "if (-not $isPrerelease)" not in release_yml
-    # Ensure F-01 clean NSIS + live 4-model E2E gate is enforced fail-closed for Stable releases
-    assert "--verify-nsis-only" in release_yml
+    # Ensure Issue #71 + F-01/F-02/F-03 fail-closed standalone & anti-leakage gates exist in release.yml
+    assert "--verify-nsis-only" not in release_yml
+    assert "Swatinem/rust-cache" not in release_yml
     assert "--no-repo-root-env" in release_yml
-    assert "requirements-runtime.txt" in release_yml
-    assert "scripts/windows_setup_runtime.ps1" in release_yml
-    assert "COMPANION_BUNDLE_SHA256.txt" in release_yml
+    assert "--standalone-embedded" in release_yml
+    assert "--require-standalone-embedded" in release_yml
+    assert "--require-clean-machine-e2e" in release_yml
+    assert "INPUT_TAG_LABEL: ${{ inputs.tag_label }}" in release_yml
+    assert "$tagName = $env:INPUT_TAG_LABEL" in release_yml
+    assert "::add-mask::$bundleUrl" in release_yml
+    assert "--require-clean-git" in release_yml
+    assert "--expect-sidecar-sha256" in release_yml
+    assert "--stage-embedded-dir" in release_yml
+    assert "--verify-distribution-permission" in release_yml
+    assert "--target-channel" in release_yml
+    assert "--repo-private" in release_yml
+    assert "--evidence-sha256-env" in release_yml
+    assert "--require-evidence-hash" in release_yml
+    assert "DISTRIBUTION_EVIDENCE_SHA256" in release_yml
+    assert "steps.embedded.outputs.upload_allowed == 'true'" in release_yml
+    assert "steps.embedded.outputs.public_release_allowed == 'true'" in release_yml
+    assert 'gh api "repos/${{ github.repository }}"' in release_yml
+    assert "if: always()" in release_yml
+    assert "scripts/build_backend_sidecar.py" in release_yml
+    assert "tauri.standalone.conf.json" in release_yml
+    assert "NOTICE" in release_yml
+    assert "THIRD_PARTY_NOTICES.md" in release_yml
+    build_section, publish_section = release_yml.split("Publish GitHub Release", 1)
+    assert "--clean-machine-e2e" not in build_section
+    assert "--require-clean-machine-e2e" not in build_section
+    assert "--require-clean-machine-e2e" in publish_section
+    assert "requirements-runtime.txt" not in publish_section
+    assert "scripts/windows_setup_runtime.ps1" not in release_yml
+    assert "COMPANION_BUNDLE_SHA256.txt" not in release_yml
     assert "release_e2e_verification.json" in release_yml
     assert "--expect-commit" in release_yml
     assert "--expect-installer-sha256" in release_yml
@@ -113,32 +142,104 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "--install-bundle-url" in release_yml
     assert "--install-bundle-run-id" in release_yml
     assert "--expect-bundle-sha256" in release_yml
+    assert "vars.MODEL_BUNDLE_URL" in release_yml
+    assert "vars.MODEL_BUNDLE_SHA256" in release_yml
+    assert "vars.MODEL_ARTIFACT_RUN_ID" in release_yml
+    assert "vars.ALLOW_EMBEDDED_MODEL_REDISTRIBUTION" in release_yml
     assert "vars.COMPANION_BUNDLE_URL" in release_yml
-    assert "vars.COMPANION_BUNDLE_SHA256" in release_yml
-    assert "vars.COMPANION_ARTIFACT_RUN_ID" in release_yml
-    assert "if ($isStableRelease)" in release_yml
     assert '$isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"' in release_yml
     assert "gh release view $tagName" in release_yml
-    assert "if: steps.meta.outputs.is_tag_push == 'true'" in release_yml
     assert "SHA256SUMS.txt" in release_yml
     assert "*_${desktopVer}_x64-setup.exe" in release_yml
-    assert release_yml.count("$global:LASTEXITCODE = 0") >= 4
+    assert release_yml.count("$global:LASTEXITCODE = 0") >= 2
     assert "\npermissions:\n  contents: read\n" in release_yml
     assert "    permissions:\n      contents: write\n      actions: read\n" in release_yml
     assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in release_yml
     ci_yml = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in ci_yml
 
-    # Check Python >= 3.11 and #27 DEFERRED documentation consistency (F-05/F-06)
+    # Check v1.0.0 standalone documentation consistency (no end-user Python/Companion Bundle requirement)
     win_doc = (PROJECT_ROOT / "docs" / "WINDOWS_INSTALLATION.md").read_text(encoding="utf-8")
-    rel_notes = (PROJECT_ROOT / "docs" / "releases" / "v0.6.0.md").read_text(encoding="utf-8")
+    rel_notes = (PROJECT_ROOT / "docs" / "releases" / "v1.0.0.md").read_text(encoding="utf-8")
     desktop_readme = (PROJECT_ROOT / "desktop" / "README.md").read_text(encoding="utf-8")
     assert ">= 3.10" not in win_doc
     assert ">= 3.10" not in rel_notes
     assert ">=3.10" not in desktop_readme
-    assert ">= 3.11" in win_doc
-    assert ">= 3.11" in rel_notes
-    assert ">=3.11" in desktop_readme
-    assert "| **#27** | **Artifact Provenance" not in rel_notes
-    assert "Adaptive Rotation & Security Response" in rel_notes
-    assert "DEFERRED" in rel_notes
+    assert "v1.0.0" in win_doc
+    assert "v1.0.0" in rel_notes
+    assert "v1.0.0" in desktop_readme
+    assert "Companion Bundle" in rel_notes
+    assert "Random Forest" in rel_notes
+    assert "XGBoost" in rel_notes
+    assert "Isolation Forest" in rel_notes
+    assert "Autoencoder" in rel_notes
+    assert "454104" in rel_notes
+    assert "DISTRIBUTION_AUTHORIZATION.json" in rel_notes
+    assert "non-commercial-academic-approved" not in release_yml
+    assert "non-commercial-academic-approved" not in desktop_readme
+    assert "non-commercial-academic-approved" not in rel_notes
+    assert "source-only" in release_yml
+    assert "Publish Source-Only GitHub Release" in release_yml
+    assert "Source Release" in rel_notes
+
+
+def _extract_verify_companion_invocations(workflow_text: str) -> list[str]:
+    lines = workflow_text.splitlines()
+    invocations: list[str] = []
+    idx = 0
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if stripped.startswith("python scripts/verify_companion_artifacts.py"):
+            combined = [stripped.rstrip("`").strip()]
+            cur = stripped
+            while cur.endswith("`") and idx + 1 < len(lines):
+                idx += 1
+                cur = lines[idx].strip()
+                combined.append(cur.rstrip("`").strip())
+            cmd = " ".join(combined)
+            cmd = re.sub(r"\s*>\s*\$null\b", "", cmd)
+            invocations.append(cmd)
+        idx += 1
+    return invocations
+
+
+def _validate_verify_companion_workflow_invocations(workflow_text: str) -> list[str]:
+    import shlex
+
+    from scripts.verify_companion_artifacts import build_parser
+
+    invocations = _extract_verify_companion_invocations(workflow_text)
+    parser = build_parser()
+    for cmd in invocations:
+        sanitized = re.sub(r"\$\{\{[^}]+\}\}|\$[A-Za-z_][A-Za-z0-9_]*", "placeholder", cmd)
+        tokens = shlex.split(sanitized, posix=True)[2:]  # drop 'python scripts/...'
+        flags = [tok for tok in tokens if tok.startswith("--")]
+        if len(flags) != len(set(flags)):
+            raise AssertionError(f"Duplicate CLI flags in workflow invocation: {cmd}")
+        parsed = parser.parse_args(tokens)
+        assert parsed is not None
+    return invocations
+
+
+def test_release_workflow_verify_companion_invocations_have_no_duplicate_flags():
+    """F-08 regression: catch duplicated CLI flags & invalid invocations in release.yml."""
+    release_yml = (PROJECT_ROOT / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    invocations = _validate_verify_companion_workflow_invocations(release_yml)
+    assert (
+        len(invocations) >= 5
+    ), f"Expected >=5 invocations in release.yml, found {len(invocations)}"
+    assert "desktop/src-tauri/target/release/netflow-sentinel-backend.exe" in release_yml
+
+    # Negative F-08 regression checks: duplicated or unknown CLI flags MUST be detected
+    dup_workflow = (
+        "python scripts/verify_companion_artifacts.py --verify-attestation a.json "
+        "--verify-github-run --token-env GH_TOKEN --verify-github-run"
+    )
+    with pytest.raises(AssertionError, match="Duplicate CLI flags"):
+        _validate_verify_companion_workflow_invocations(dup_workflow)
+
+    bad_flag_workflow = "python scripts/verify_companion_artifacts.py --verify-attestation a.json --nonexistent-flag"
+    with pytest.raises(SystemExit):
+        _validate_verify_companion_workflow_invocations(bad_flag_workflow)

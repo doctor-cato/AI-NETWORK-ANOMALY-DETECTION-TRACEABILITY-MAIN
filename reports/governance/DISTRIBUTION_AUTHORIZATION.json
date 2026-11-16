@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "dataset": "NF-UNSW-NB15-v3",
+  "dataset_publisher": "The University of Queensland",
+  "dataset_doi": "10.48610/6E0EDA1",
+  "dataset_license_id": "454104",
+  "dataset_license_title": "Permitted Re-Use with Commercial Use Restriction",
+  "dataset_license_grants_derived_public_redistribution": false,
+  "permission_tiers": {
+    "research_only": {
+      "scope": "research-only",
+      "description": "Local academic research, evaluation, and verification on authorized workstations without redistribution.",
+      "public_upload_allowed": false,
+      "public_release_allowed": false
+    },
+    "private_build_only": {
+      "scope": "private-build-only",
+      "description": "Internal standalone installer packaging and E2E testing strictly inside private repositories/runners with restricted access or local offline builds.",
+      "public_upload_allowed": false,
+      "private_ci_upload_allowed": true,
+      "public_release_allowed": false
+    },
+    "non_commercial_controlled": {
+      "scope": "non-commercial-controlled",
+      "description": "Controlled non-commercial academic delivery inside access-restricted private channels with attribution notices preserved; public unauthenticated distribution remains blocked.",
+      "public_upload_allowed": false,
+      "private_ci_upload_allowed": true,
+      "public_release_allowed": false
+    },
+    "public_release_approved": {
+      "scope": "public-release-approved",
+      "description": "Public distribution via public GitHub Actions artifacts or public GitHub Releases. Blocked fail-closed unless supported by verifiable written authorization or independent clean-room license evidence.",
+      "public_upload_allowed": true,
+      "public_release_allowed": true
+    }
+  },
+  "public_release_authorization": {
+    "approved": false,
+    "status": "BLOCKED_PENDING_VERIFIABLE_EVIDENCE",
+    "legal_basis": null,
+    "maintainer_approver": null,
+    "approved_at_utc": null,
+    "evidence_ref": null,
+    "evidence_sha256": null,
+    "forbids_commercial_use": true,
+    "requires_attribution_notices": true,
+    "covered_artifacts": [
+      "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+      "artifacts/models/random_forest/random_forest_baseline.joblib",
+      "artifacts/models/xgboost/xgboost_baseline.joblib",
+      "artifacts/models/isolation_forest/isolation_forest.joblib",
+      "artifacts/models/autoencoder/autoencoder_model.joblib",
+      "data/demo/demo_flows.csv",
+      "data/demo/demo_labels.csv",
+      "data/demo/demo_manifest.json"
+    ],
+    "notes": "UQ License ID 454104 permits non-commercial re-use with attribution but does not automatically establish unrestricted public redistribution rights for derived model binaries or demo CSV subsets. Keep approved=false until verifiable publisher permission or clean-room licensing evidence is recorded and verified via DISTRIBUTION_EVIDENCE_SHA256."
+  }
+}

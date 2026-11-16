@@ -7,23 +7,47 @@ on:
   workflow_dispatch:
     inputs:
       tag_label:
-        description: 'Dry-run version label for artifact naming (when triggered manually without a tag)'
+        description: 'Artifact label for private/authorized testing without a tag'
         required: false
-        default: 'v0.6.0-dryrun'
+        default: 'v1.0.0-dryrun'
+      model_bundle_url:
+        description: 'Build-time allowlisted HTTPS URL to authorized 4-model bundle ZIP (overrides vars.MODEL_BUNDLE_URL)'
+        required: false
+        default: ''
+      model_bundle_sha256:
+        description: 'Required 64-hex SHA-256 of model bundle ZIP when using URL or workflow run ID'
+        required: false
+        default: ''
+      model_artifact_run_id:
+        description: 'GitHub Actions workflow run ID in this repo with authorized 4-model artifact'
+        required: false
+        default: ''
+      model_bundle_dir:
+        description: 'Optional external directory containing staged 4-model artifacts (private self-hosted runner only)'
+        required: false
+        default: ''
+      distribution_scope:
+        description: 'Distribution scope (private-build-only, non-commercial-controlled, or public-release-approved)'
+        required: false
+        default: 'private-build-only'
+      release_mode:
+        description: 'Release mode: windows-binary or source-only'
+        required: false
+        default: 'windows-binary'
       companion_bundle_url:
-        description: 'Optional allowlisted HTTPS URL to packaged companion ZIP (override vars.COMPANION_BUNDLE_URL)'
+        description: 'DEPRECATED alias for model_bundle_url (build-time acquisition only)'
         required: false
         default: ''
       companion_bundle_sha256:
-        description: 'Required 64-hex SHA-256 of companion ZIP when using URL or workflow run ID'
+        description: 'DEPRECATED alias for model_bundle_sha256'
         required: false
         default: ''
       companion_artifact_run_id:
-        description: 'Optional GitHub Actions workflow run ID in this repo with companion artifact'
+        description: 'DEPRECATED alias for model_artifact_run_id'
         required: false
         default: ''
       companion_bundle_dir:
-        description: 'Optional external directory containing staged companion artifacts (self-hosted/manual only)'
+        description: 'DEPRECATED alias for model_bundle_dir'
         required: false
         default: ''
 
@@ -32,7 +56,7 @@ permissions:
 
 jobs:
   release-windows-x64:
-    name: Build, Verify & Package Windows x64 Release
+    name: Build, Verify & Package Standalone Windows x64 Release
     runs-on: windows-latest
     env:
       CARGO_INCREMENTAL: "0"
@@ -54,15 +78,21 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Install Python dependencies
+      - name: Install Python dependencies and PyInstaller packaging toolchain
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -r requirements-runtime.txt
+          pip install -e ".[dev,packaging]"
 
-      - name: Verify clean working tree, tag integrity, and version consistency
+      - name: Verify clean working tree, tag integrity, repo visibility, and version consistency
         id: meta
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG_LABEL: ${{ inputs.tag_label }}
+          INPUT_RELEASE_MODE: ${{ inputs.release_mode }}
+          VAR_RELEASE_MODE: ${{ vars.RELEASE_MODE }}
+          VAR_DIST_SCOPE: ${{ vars.ALLOW_EMBEDDED_MODEL_REDISTRIBUTION }}
+          VAR_CANDIDATE_RUN_ID: ${{ vars.VERIFIED_WINDOWS_CANDIDATE_RUN_ID }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -82,6 +112,16 @@ jobs:
             Write-Error "Failed to read configured desktop version."
             exit 1
           }
+
+          # Query authoritative repository visibility via GitHub API; never treat 'dryrun' name as private.
+          $repoJson = gh api "repos/${{ github.repository }}" --jq '{private: .private, visibility: .visibility}' 2>$null
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoJson)) {
+            Write-Error "FAIL-CLOSED: Could not verify repository visibility for ${{ github.repository }}."
+            exit 1
+          }
+          $repoMeta = $repoJson | ConvertFrom-Json
+          $repoIsPrivate = ($repoMeta.private -eq $true) -and ("$($repoMeta.visibility)".ToLower() -eq "private")
+          $repoVisibility = "$($repoMeta.visibility)".ToLower()
 
           $isTagPush = "${{ github.ref }}".StartsWith("refs/tags/v")
           if ($isTagPush) {
@@ -120,52 +160,169 @@ jobs:
             # Require strict 1-to-1 SemVer match between Git tag (vX.Y.Z[-beta.N]) and desktop configs/binary.
             python scripts/check_desktop_version.py --check --expect-tag $tagName
             if ($LASTEXITCODE -ne 0) { exit 1 }
+
+            $explicitMode = "$($env:VAR_RELEASE_MODE)".Trim().ToLower()
+            if ($explicitMode -eq "windows-binary" -or (
+              $explicitMode -ne "source-only" -and
+              "$($env:VAR_DIST_SCOPE)".Trim().ToLower() -eq "public-release-approved" -and
+              "$($env:VAR_CANDIDATE_RUN_ID)".Trim() -match '\A[1-9][0-9]*\z'
+            )) {
+              $releaseMode = "windows-binary"
+              $targetChannel = "public_github_release"
+            } else {
+              $releaseMode = "source-only"
+              $targetChannel = "source_only_release"
+            }
           } else {
             python scripts/check_desktop_version.py --check
             if ($LASTEXITCODE -ne 0) { exit 1 }
-            $tagName = "${{ inputs.tag_label }}"
+            $tagName = $env:INPUT_TAG_LABEL
             if ([string]::IsNullOrWhiteSpace($tagName)) { $tagName = "v$desktopVer-dryrun" }
-            if (-not $tagName.StartsWith("v$desktopVer-")) {
-              Write-Error "Dry-run tag_label '$tagName' must start with 'v$desktopVer-' to match desktop version '$desktopVer'."
+            $tagPrefix = [regex]::Escape("v$desktopVer-")
+            if ($tagName -cnotmatch "\A${tagPrefix}[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*\z") {
+              Write-Error "Dry-run tag_label must match desktop version '$desktopVer' and use a SemVer prerelease suffix."
               exit 1
             }
             $isPrerelease = $true
+            $rawDispatchMode = "$($env:INPUT_RELEASE_MODE)".Trim().ToLower()
+            if ($rawDispatchMode -eq "source-only") {
+              $releaseMode = "source-only"
+              $targetChannel = "source_only_release"
+            } else {
+              $releaseMode = "windows-binary"
+              $targetChannel = if ($repoIsPrivate) { "private_ci_artifact" } else { "public_ci_artifact" }
+            }
           }
 
           "tag_name=$tagName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "desktop_version=$desktopVer" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "is_tag_push=$($isTagPush.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "is_prerelease=$($isPrerelease.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "repo_is_private=$($repoIsPrivate.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "repo_visibility=$repoVisibility" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "target_channel=$targetChannel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "release_mode=$releaseMode" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Resolve, verify, and install companion artifacts bundle (tag-push & dispatch)
+      - name: Verify Source-Only Release Governance & Clean Source Snapshot
+        if: steps.meta.outputs.release_mode == 'source-only'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline > $null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $trackedRestricted = @(git ls-files | Where-Object {
+            $_ -match '\.joblib$' -or $_ -match 'setup\.exe$' -or $_ -match 'netflow-sentinel-backend.*\.exe$' -or $_ -match '^data/demo/demo_(flows|labels)\.csv$'
+          })
+          if ($trackedRestricted.Count -gt 0) {
+            Write-Error ("Refusing source-only release: restricted binaries/datasets are tracked in Git:`n" + ($trackedRestricted -join "`n"))
+            exit 1
+          }
+          Write-Host "Source-only release governance verified (no Windows installer, .joblib models, or demo CSVs included)."
+
+      - name: Evidence-based distribution permission gate & build-time model acquisition
+        if: steps.meta.outputs.release_mode == 'windows-binary'
+        id: embedded
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODEL_BUNDLE_TOKEN: ${{ secrets.MODEL_BUNDLE_TOKEN }}
           COMPANION_BUNDLE_TOKEN: ${{ secrets.COMPANION_BUNDLE_TOKEN }}
-          INPUT_COMPANION_URL: ${{ inputs.companion_bundle_url }}
-          INPUT_COMPANION_SHA256: ${{ inputs.companion_bundle_sha256 }}
-          INPUT_COMPANION_RUN_ID: ${{ inputs.companion_artifact_run_id }}
-          INPUT_COMPANION_DIR: ${{ inputs.companion_bundle_dir }}
-          VAR_COMPANION_URL: ${{ vars.COMPANION_BUNDLE_URL }}
-          VAR_COMPANION_SHA256: ${{ vars.COMPANION_BUNDLE_SHA256 }}
-          VAR_COMPANION_RUN_ID: ${{ vars.COMPANION_ARTIFACT_RUN_ID }}
-          VAR_COMPANION_ARTIFACT_NAME: ${{ vars.COMPANION_ARTIFACT_NAME }}
-          VAR_COMPANION_ALLOWED_HOSTS: ${{ vars.COMPANION_BUNDLE_ALLOWED_HOSTS }}
+          DISTRIBUTION_EVIDENCE_SHA256: ${{ secrets.DISTRIBUTION_EVIDENCE_SHA256 }}
+          INPUT_MODEL_URL: ${{ inputs.model_bundle_url }}
+          INPUT_MODEL_SHA256: ${{ inputs.model_bundle_sha256 }}
+          INPUT_MODEL_RUN_ID: ${{ inputs.model_artifact_run_id }}
+          INPUT_MODEL_DIR: ${{ inputs.model_bundle_dir }}
+          INPUT_DIST_SCOPE: ${{ inputs.distribution_scope }}
+          INPUT_DEP_URL: ${{ inputs.companion_bundle_url }}
+          INPUT_DEP_SHA256: ${{ inputs.companion_bundle_sha256 }}
+          INPUT_DEP_RUN_ID: ${{ inputs.companion_artifact_run_id }}
+          INPUT_DEP_DIR: ${{ inputs.companion_bundle_dir }}
+          VAR_MODEL_URL: ${{ vars.MODEL_BUNDLE_URL }}
+          VAR_MODEL_SHA256: ${{ vars.MODEL_BUNDLE_SHA256 }}
+          VAR_MODEL_RUN_ID: ${{ vars.MODEL_ARTIFACT_RUN_ID }}
+          VAR_MODEL_ARTIFACT_NAME: ${{ vars.MODEL_ARTIFACT_NAME }}
+          VAR_MODEL_ALLOWED_HOSTS: ${{ vars.MODEL_BUNDLE_ALLOWED_HOSTS }}
+          VAR_DIST_SCOPE: ${{ vars.ALLOW_EMBEDDED_MODEL_REDISTRIBUTION }}
+          VAR_DEP_URL: ${{ vars.COMPANION_BUNDLE_URL }}
+          VAR_DEP_SHA256: ${{ vars.COMPANION_BUNDLE_SHA256 }}
+          VAR_DEP_RUN_ID: ${{ vars.COMPANION_ARTIFACT_RUN_ID }}
+          VAR_DEP_ARTIFACT_NAME: ${{ vars.COMPANION_ARTIFACT_NAME }}
+          VAR_DEP_ALLOWED_HOSTS: ${{ vars.COMPANION_BUNDLE_ALLOWED_HOSTS }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
-          $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
+          $targetChannel = "${{ steps.meta.outputs.target_channel }}"
+          $repoIsPrivateStr = "${{ steps.meta.outputs.repo_is_private }}"
+          $repoVisibility = "${{ steps.meta.outputs.repo_visibility }}"
 
-          $bundleUrl = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_URL)) { $env:INPUT_COMPANION_URL.Trim() } else { "$($env:VAR_COMPANION_URL)".Trim() }
-          $bundleRunId = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_RUN_ID)) { $env:INPUT_COMPANION_RUN_ID.Trim() } else { "$($env:VAR_COMPANION_RUN_ID)".Trim() }
-          $bundleSha = if (-not [string]::IsNullOrWhiteSpace($env:INPUT_COMPANION_SHA256)) { $env:INPUT_COMPANION_SHA256.Trim() } else { "$($env:VAR_COMPANION_SHA256)".Trim() }
-          $artifactName = if (-not [string]::IsNullOrWhiteSpace($env:VAR_COMPANION_ARTIFACT_NAME)) { $env:VAR_COMPANION_ARTIFACT_NAME.Trim() } else { "netflow-sentinel-companion-bundle" }
-          $allowedHosts = "$($env:VAR_COMPANION_ALLOWED_HOSTS)".Trim()
-          $bundleDir = if ("${{ github.event_name }}" -eq "workflow_dispatch") { "$($env:INPUT_COMPANION_DIR)".Trim() } else { "" }
+          function Pick-FirstNonEmpty([string[]]$vals) {
+            foreach ($v in $vals) {
+              if (-not [string]::IsNullOrWhiteSpace($v)) { return $v.Trim() }
+            }
+            return ""
+          }
 
+          $distScope = Pick-FirstNonEmpty @($env:VAR_DIST_SCOPE, $env:INPUT_DIST_SCOPE, "private-build-only")
+          Write-Host "Distribution gate check: scope='$distScope', target_channel='$targetChannel', repo_visibility='$repoVisibility'"
+
+          # FAIL-CLOSED BEFORE downloading/staging/caching/uploading any restricted model artifacts.
+          $permArgs = @(
+            "scripts/verify_companion_artifacts.py",
+            "--verify-distribution-permission", $distScope,
+            "--target-channel", $targetChannel,
+            "--repo-private", $repoIsPrivateStr,
+            "--evidence-sha256-env", "DISTRIBUTION_EVIDENCE_SHA256",
+            "--output-json", "build/permission_decision.json"
+          )
+          if ($targetChannel -in @("public_ci_artifact", "public_github_release")) {
+            $permArgs += "--require-evidence-hash"
+          }
+          python @permArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error (
+              "BLOCKED — DISTRIBUTION PERMISSION: Refusing to acquire, cache, embed, or upload " +
+              "NF-UNSW-NB15-v3 derived models on channel '$targetChannel' (repo visibility '$repoVisibility', scope '$distScope'). " +
+              "For internal testing, use a private repository/runner with restricted access and distribution_scope='private-build-only'."
+            )
+            exit 1
+          }
+          $permData = Get-Content "build/permission_decision.json" -Raw | ConvertFrom-Json
+          Remove-Item "build/permission_decision.json" -Force -ErrorAction SilentlyContinue
+          if ($permData.status -ne "APPROVED") {
+            Write-Error "FAIL-CLOSED: Permission check did not return APPROVED."
+            exit 1
+          }
+          $uploadAllowed = ($permData.upload_allowed -eq $true).ToString().ToLower()
+          $pubRelAllowed = ($permData.public_release_allowed -eq $true).ToString().ToLower()
+          "upload_allowed=$uploadAllowed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "public_release_allowed=$pubRelAllowed" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "effective_scope=$distScope" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          if ($targetChannel -eq "public_github_release") { return }
+
+          $bundleUrl = Pick-FirstNonEmpty @($env:INPUT_MODEL_URL, $env:VAR_MODEL_URL, $env:INPUT_DEP_URL, $env:VAR_DEP_URL)
+          $bundleRunId = Pick-FirstNonEmpty @($env:INPUT_MODEL_RUN_ID, $env:VAR_MODEL_RUN_ID, $env:INPUT_DEP_RUN_ID, $env:VAR_DEP_RUN_ID)
+          $bundleSha = Pick-FirstNonEmpty @($env:INPUT_MODEL_SHA256, $env:VAR_MODEL_SHA256, $env:INPUT_DEP_SHA256, $env:VAR_DEP_SHA256)
+          $artifactName = Pick-FirstNonEmpty @($env:VAR_MODEL_ARTIFACT_NAME, $env:VAR_DEP_ARTIFACT_NAME, "netflow-sentinel-model-bundle")
+          $allowedHosts = Pick-FirstNonEmpty @($env:VAR_MODEL_ALLOWED_HOSTS, $env:VAR_DEP_ALLOWED_HOSTS)
+          $bundleDir = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            Pick-FirstNonEmpty @($env:INPUT_MODEL_DIR, $env:INPUT_DEP_DIR)
+          } else { "" }
+
+          if (-not [string]::IsNullOrWhiteSpace($env:INPUT_DEP_URL) -or -not [string]::IsNullOrWhiteSpace($env:VAR_DEP_URL) -or -not [string]::IsNullOrWhiteSpace($env:INPUT_DEP_RUN_ID) -or -not [string]::IsNullOrWhiteSpace($env:VAR_DEP_RUN_ID)) {
+            Write-Warning "[DEPRECATED] COMPANION_* variables/inputs are deprecated for v1.0.0 standalone builds. Migrate to MODEL_BUNDLE_URL / MODEL_ARTIFACT_RUN_ID / MODEL_BUNDLE_SHA256 (build-time acquisition)."
+          }
+
+          $acquiredDir = Join-Path $PWD "build/acquired_models"
           if (-not [string]::IsNullOrWhiteSpace($bundleUrl)) {
+            Write-Host "::add-mask::$bundleUrl"
+            $tokenEnv = if (-not [string]::IsNullOrWhiteSpace($env:MODEL_BUNDLE_TOKEN)) {
+              "MODEL_BUNDLE_TOKEN"
+            } elseif (-not [string]::IsNullOrWhiteSpace($env:COMPANION_BUNDLE_TOKEN)) {
+              "COMPANION_BUNDLE_TOKEN"
+            } else { "" }
             $cmdArgs = @(
               "scripts/verify_companion_artifacts.py",
+              "--runtime-dir", $acquiredDir,
               "--install-bundle-url", $bundleUrl,
               "--github-repo", "${{ github.repository }}"
             )
@@ -175,14 +332,18 @@ jobs:
             if (-not [string]::IsNullOrWhiteSpace($allowedHosts)) {
               $cmdArgs += @("--allowed-hosts", $allowedHosts)
             }
-            if (-not [string]::IsNullOrWhiteSpace($env:COMPANION_BUNDLE_TOKEN)) {
-              $cmdArgs += @("--token-env", "COMPANION_BUNDLE_TOKEN")
+            if (-not [string]::IsNullOrWhiteSpace($tokenEnv)) {
+              $cmdArgs += @("--token-env", $tokenEnv)
             }
-            python @cmdArgs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
+            python @cmdArgs > $null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "FAIL-CLOSED: Build-time model acquisition from MODEL_BUNDLE_URL failed."
+              exit 1
+            }
           } elseif (-not [string]::IsNullOrWhiteSpace($bundleRunId)) {
             $cmdArgs = @(
               "scripts/verify_companion_artifacts.py",
+              "--runtime-dir", $acquiredDir,
               "--install-bundle-run-id", $bundleRunId,
               "--install-bundle-artifact-name", $artifactName,
               "--github-repo", "${{ github.repository }}",
@@ -191,34 +352,50 @@ jobs:
             if (-not [string]::IsNullOrWhiteSpace($bundleSha)) {
               $cmdArgs += @("--expect-bundle-sha256", $bundleSha)
             }
-            python @cmdArgs
-            if ($LASTEXITCODE -ne 0) { exit 1 }
+            python @cmdArgs > $null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "FAIL-CLOSED: Build-time model acquisition from MODEL_ARTIFACT_RUN_ID failed."
+              exit 1
+            }
           } elseif (-not [string]::IsNullOrWhiteSpace($bundleDir)) {
+            if ($repoIsPrivateStr -ne "true") {
+              Write-Error "FAIL-CLOSED: model_bundle_dir input is only permitted on verified private runners/repositories."
+              exit 1
+            }
             python scripts/verify_companion_artifacts.py `
+              --runtime-dir $acquiredDir `
               --install-bundle-dir $bundleDir `
-              --github-repo "${{ github.repository }}"
+              --github-repo "${{ github.repository }}" > $null
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } else {
-            python scripts/verify_companion_artifacts.py > $null
-            if ($LASTEXITCODE -ne 0) {
-              if ($isStableRelease) {
-                Write-Error (
-                  "FAIL-CLOSED: Stable release ($tagName) requires verified companion artifacts on the runner. " +
-                  "Configure Repository Variables vars.COMPANION_BUNDLE_URL + vars.COMPANION_BUNDLE_SHA256 " +
-                  "(or vars.COMPANION_ARTIFACT_RUN_ID + vars.COMPANION_BUNDLE_SHA256) with the 4-model bundle ZIP " +
-                  "built via 'python scripts/verify_companion_artifacts.py --package-bundle <zip>'."
-                )
-                exit 1
-              }
-              Write-Warning (
-                "Prerelease/dry-run ($tagName): no companion bundle configured; proceeding with build and " +
-                "clean NSIS installed-desktop startup/shutdown E2E only (4-model live E2E skipped for prerelease)."
-              )
-              $global:LASTEXITCODE = 0
-            }
+            Write-Error (
+              "FAIL-CLOSED: No authorized build-time model source configured for '$tagName'. " +
+              "Configure MODEL_BUNDLE_URL + MODEL_BUNDLE_SHA256 (or MODEL_ARTIFACT_RUN_ID + MODEL_BUNDLE_SHA256)."
+            )
+            exit 1
+          }
+
+          python scripts/verify_companion_artifacts.py --runtime-dir $acquiredDir > $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "FAIL-CLOSED: Acquired model bundle failed 4-model SHA-256/manifest verification."
+            exit 1
+          }
+
+          $stagedBundle = "desktop/src-tauri/staged_bundle"
+          python scripts/verify_companion_artifacts.py `
+            --runtime-dir $acquiredDir `
+            --stage-embedded-dir $stagedBundle `
+            --distribution-scope $distScope `
+            --target-channel $targetChannel `
+            --repo-private $repoIsPrivateStr `
+            --evidence-sha256-env DISTRIBUTION_EVIDENCE_SHA256 > $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed staging verified embedded bundle into $stagedBundle."
+            exit 1
           }
 
       - name: Set up Node.js 22
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -226,18 +403,16 @@ jobs:
           cache-dependency-path: desktop/package-lock.json
 
       - name: Set up Rust stable toolchain
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
-      - name: Cache Rust and Tauri build artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "desktop/src-tauri -> target"
-          cache-all-crates: true
-          cache-on-failure: true
+      # Note: Rust target cache intentionally omitted from release builds so staged/copied
+      # model resources in desktop/src-tauri/target/release are never persisted in Actions Cache.
 
-      - name: Run Python verification checks (Environment, Lint, OpenAPI, Pytest, Committed Attestation)
+      - name: Run Python verification checks (Environment, Lint, OpenAPI, Governance, Pytest)
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
@@ -249,45 +424,64 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           python scripts/export_openapi_spec.py --check
           if ($LASTEXITCODE -ne 0) { exit 1 }
+          python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline > $null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           python -m pytest tests/unit tests/contract tests/integration -q
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
-          $baseSemVer = ($desktopVer -split '-')[0]
-          $attestation = "reports/releases/v${baseSemVer}_e2e_verification.json"
-          if (-not (Test-Path $attestation)) {
-            Write-Error "Missing committed baseline attestation $attestation for pre-build consistency check."
-            exit 1
-          }
-          python scripts/verify_companion_artifacts.py --verify-attestation $attestation
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
       - name: Install and verify Svelte 5 frontend
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
+        shell: pwsh
         run: |
           npm --prefix desktop ci
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           npm --prefix desktop run check
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           npm --prefix desktop test
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           npm --prefix desktop run build
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Verify Rust formatting, Clippy lints, and unit tests
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         env:
           NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"
+        shell: pwsh
         run: |
           cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           cargo clippy --release --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           cargo test --release --manifest-path desktop/src-tauri/Cargo.toml --lib
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Build Tauri Windows x64 application and NSIS installer
-        run: |
-          npx --prefix desktop tauri build --bundles nsis
-
-      - name: Verify build artifacts, generate SHA256SUMS.txt, and enforce NSIS + Live 4-Model E2E Gate
+      - name: Build Python FastAPI + 4-Model PyInstaller Sidecar
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $tagName = "${{ steps.meta.outputs.tag_name }}"
-          $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
-          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+          New-Item -ItemType Directory -Force -Path "dist/release-assets" | Out-Null
+          python scripts/build_backend_sidecar.py --output-json dist/release-assets/sidecar_build.json
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build Standalone Tauri Windows x64 NSIS Installer
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Push-Location desktop
+          try {
+            npx tauri build --config src-tauri/tauri.standalone.conf.json --bundles nsis
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          } finally {
+            Pop-Location
+          }
+
+      - name: Verify Embedded Artifacts & Run Standalone E2E on the Build Runner
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
           $exePath = "desktop/src-tauri/target/release/netflow-sentinel-desktop.exe"
           if (-not (Test-Path $exePath)) {
             Write-Error "Missing compiled Windows executable: $exePath"
@@ -304,7 +498,7 @@ jobs:
           $stageDir = "dist/release-assets"
           New-Item -ItemType Directory -Force -Path $stageDir | Out-Null
 
-          $setupAssetName = "NetFlow-Sentinel-$tagName-windows-x64-setup.exe"
+          $setupAssetName = "NetFlow-Sentinel-v$desktopVer-windows-x64-setup.exe"
           $setupDest = Join-Path $stageDir $setupAssetName
           Copy-Item -Path $nsisFiles[0].FullName -Destination $setupDest -Force
 
@@ -312,110 +506,78 @@ jobs:
           $sumsFile = Join-Path $stageDir "SHA256SUMS.txt"
           "$setupHash  $setupAssetName" | Out-File -FilePath $sumsFile -Encoding ascii
 
-          $nsisReport = Join-Path $stageDir "nsis_e2e_verification.json"
-          python scripts/verify_companion_artifacts.py --verify-nsis-only `
+          $sidecarMeta = Get-Content (Join-Path $stageDir "sidecar_build.json") -Raw | ConvertFrom-Json
+          $sidecarSha = "$($sidecarMeta.sha256)".Trim().ToLower()
+          $releaseAttestation = Join-Path $stageDir "release_e2e_verification.json"
+
+          python scripts/verify_companion_artifacts.py --verify-e2e `
+            --standalone-embedded `
+            --require-clean-git `
+            --no-repo-root-env `
             --installer-path $setupDest `
             --sums-file $sumsFile `
             --compiled-exe $exePath `
-            --no-repo-root-env `
-            --output-json $nsisReport
+            --expect-sidecar-sha256 $sidecarSha `
+            --output-json $releaseAttestation
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Clean Windows NSIS E2E verification (bundled resources mode) failed."
+            Write-Error "Build-runner standalone 4-model + sidecar + NSIS E2E verification failed."
             exit 1
           }
 
-          python scripts/verify_companion_artifacts.py > $null
-          if ($LASTEXITCODE -eq 0) {
-            $releaseAttestation = Join-Path $stageDir "release_e2e_verification.json"
-            $e2eSandboxRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nf_release_e2e_" + [System.Guid]::NewGuid().ToString("N"))
-            $e2eStageDir = Join-Path $e2eSandboxRoot "staged_companion"
-            $e2eRuntimeDir = Join-Path $e2eSandboxRoot "NetFlow Runtime User"
-            New-Item -ItemType Directory -Force -Path $e2eRuntimeDir | Out-Null
-            try {
-              python scripts/verify_companion_artifacts.py --stage-dir $e2eStageDir > $null
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to stage verified companion bundle for isolated E2E runtime."
-                exit 1
-              }
-              python scripts/verify_companion_artifacts.py --install-bundle-dir $e2eStageDir --runtime-dir $e2eRuntimeDir > $null
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Failed to install companion bundle into isolated runtime directory ($e2eRuntimeDir)."
-                exit 1
-              }
-              python scripts/verify_companion_artifacts.py --verify-e2e `
-                --no-repo-root-env `
-                --runtime-dir $e2eRuntimeDir `
-                --installer-path $setupDest `
-                --sums-file $sumsFile `
-                --compiled-exe $exePath `
-                --output-json $releaseAttestation
-              if ($LASTEXITCODE -ne 0) {
-                Write-Error "Live 4-model + NSIS E2E (bundled resources + isolated runtime mode) verification failed."
-                exit 1
-              }
-            } finally {
-              if (Test-Path $e2eSandboxRoot) {
-                Remove-Item -Recurse -Force $e2eSandboxRoot -ErrorAction SilentlyContinue
-              }
-            }
-
-            python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
-              --expect-commit "${{ github.sha }}" `
-              --expect-installer-sha256 $setupHash `
-              --require-nsis-e2e `
-              --require-demo-files `
-              --require-bundled-resources `
-              --require-bundled-resources
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Generated release E2E attestation failed strict verification."
-              exit 1
-            }
-
-            $inputCompanionSha = "${{ inputs.companion_bundle_sha256 }}".Trim().ToLower()
-            $varCompanionSha = "${{ vars.COMPANION_BUNDLE_SHA256 }}".Trim().ToLower()
-            $effectiveCompanionSha = if (-not [string]::IsNullOrWhiteSpace($inputCompanionSha)) { $inputCompanionSha } else { $varCompanionSha }
-            if (-not [string]::IsNullOrWhiteSpace($effectiveCompanionSha)) {
-              "$effectiveCompanionSha  netflow-sentinel-$tagName-companion-bundle.zip" | Out-File -FilePath (Join-Path $stageDir "COMPANION_BUNDLE_SHA256.txt") -Encoding ascii
-            }
-          } else {
-            if ($isStableRelease) {
-              Write-Error (
-                "FAIL-CLOSED: Refusing Stable release ($tagName) because live 4-model companion artifacts " +
-                "are NOT READY on this runner. Historical attestation JSON in reports/releases/ MUST NOT " +
-                "substitute for live 4-model + clean Windows NSIS E2E verification bound to commit " +
-                "${{ github.sha }} and installer SHA-256 $setupHash."
-              )
-              exit 1
-            }
-            Write-Warning (
-              "Prerelease/dry-run build ($tagName): clean Windows NSIS install/uninstall E2E PASSED " +
-              "(recorded in nsis_e2e_verification.json), but live 4-model companion binaries are absent on this runner."
-            )
-            $global:LASTEXITCODE = 0
+          python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
+            --expect-commit "${{ github.sha }}" `
+            --expect-installer-sha256 $setupHash `
+            --expect-sidecar-sha256 $sidecarSha `
+            --require-nsis-e2e `
+            --runtime-dir desktop/src-tauri/staged_bundle `
+            --require-demo-files `
+            --require-bundled-resources `
+            --require-standalone-embedded
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Generated HEAD-bound standalone release E2E attestation failed strict verification."
+            exit 1
           }
 
-          Write-Host "Staged release assets in ${stageDir}:"
+          Write-Host "Staged release assets in ${stageDir} (count=$((Get-ChildItem $stageDir).Count)):"
           Get-ChildItem $stageDir | Format-Table Name, Length
-          Write-Host "SHA256SUMS.txt contents:"
-          Get-Content $sumsFile
 
-      - name: Upload staged Windows release assets to Actions run
+      - name: Upload staged Windows release assets (strictly gated on authorized upload_allowed)
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push != 'true' && steps.embedded.outputs.upload_allowed == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: netflow-sentinel-${{ steps.meta.outputs.tag_name }}-windows-x64
           path: dist/release-assets/*
+          retention-days: 7
           if-no-files-found: error
 
-      - name: Publish GitHub Release (on tag push only)
-        if: steps.meta.outputs.is_tag_push == 'true'
+      - name: Publish GitHub Release (on tag push & verified public release authorization only)
+        if: steps.meta.outputs.release_mode == 'windows-binary' && steps.meta.outputs.is_tag_push == 'true' && steps.embedded.outputs.public_release_allowed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DISTRIBUTION_EVIDENCE_SHA256: ${{ secrets.DISTRIBUTION_EVIDENCE_SHA256 }}
+          VERIFIED_CANDIDATE_RUN_ID: ${{ vars.VERIFIED_WINDOWS_CANDIDATE_RUN_ID }}
+          WINDOWS_VM_ATTESTATION: ${{ secrets.VERIFIED_WINDOWS_VM_ATTESTATION }}
+          NETFLOW_VM_ATTESTATION_HMAC_KEY: ${{ secrets.NETFLOW_VM_ATTESTATION_HMAC_KEY }}
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           $tagName = "${{ steps.meta.outputs.tag_name }}"
-          $isStableRelease = "${{ steps.meta.outputs.is_prerelease }}" -ne "true"
           $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+          $repoIsPrivateStr = "${{ steps.meta.outputs.repo_is_private }}"
+          $effectiveScope = "${{ steps.embedded.outputs.effective_scope }}"
+
+          # Re-verify public release evidence & HEAD-bound attestation immediately before publishing.
+          python scripts/verify_companion_artifacts.py `
+            --verify-distribution-permission $effectiveScope `
+            --target-channel public_github_release `
+            --repo-private $repoIsPrivateStr `
+            --evidence-sha256-env DISTRIBUTION_EVIDENCE_SHA256 `
+            --require-evidence-hash `
+            --public-release > $null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "FAIL-CLOSED: Public release authorization gate failed."
+            exit 1
+          }
 
           gh release view $tagName > $null 2>&1
           if ($LASTEXITCODE -eq 0) {
@@ -424,31 +586,55 @@ jobs:
           }
           $global:LASTEXITCODE = 0
 
-          $stageDir = "dist/release-assets"
-          $setupDest = Join-Path $stageDir "NetFlow-Sentinel-$tagName-windows-x64-setup.exe"
-          $sumsFile = Join-Path $stageDir "SHA256SUMS.txt"
-          $releaseAttestation = Join-Path $stageDir "release_e2e_verification.json"
-          $nsisAttestation = Join-Path $stageDir "nsis_e2e_verification.json"
-          $setupHash = (python -c "import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest())" $setupDest).Trim().ToLower()
-
-          if ($isStableRelease) {
-            if (-not (Test-Path $releaseAttestation)) {
-              Write-Error "FAIL-CLOSED: Missing mandatory live release_e2e_verification.json for Stable release $tagName."
-              exit 1
-            }
-            python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
-              --expect-commit "${{ github.sha }}" `
-              --expect-installer-sha256 $setupHash `
-              --require-nsis-e2e `
-              --require-demo-files `
-              --require-bundled-resources
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "FAIL-CLOSED: Stable release attestation verification failed before gh release create."
-              exit 1
-            }
+          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
+          $runId = $env:VERIFIED_CANDIDATE_RUN_ID
+          if ($runId -notmatch '\A[1-9][0-9]*\z' -or -not $env:WINDOWS_VM_ATTESTATION) {
+            throw "A verified candidate run ID and its signed independent Windows VM attestation are required."
+          }
+          $candidateRunJson = gh run view $runId --json headSha,event,conclusion,workflowName
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $candidateRun = $candidateRunJson | ConvertFrom-Json
+          if ($candidateRun.headSha -ne $env:GITHUB_SHA -or
+              $candidateRun.event -ne "workflow_dispatch" -or
+              $candidateRun.conclusion -ne "success" -or
+              $candidateRun.workflowName -ne "Release Windows Desktop") {
+            throw "Candidate must come from a successful release dry run on the tag commit."
           }
 
-          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
+          $candidateDir = "dist/verified-candidate"
+          gh run download $runId --pattern "netflow-sentinel-v$desktopVer-*-windows-x64" --dir $candidateDir
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $candidateFiles = @(Get-ChildItem -LiteralPath $candidateDir -Recurse -File -Filter "*-setup.exe")
+          if ($candidateFiles.Count -ne 1) { throw "Expected one candidate NSIS installer." }
+          $candidateInstaller = $candidateFiles[0]
+          if ($candidateInstaller.Name -cne "NetFlow-Sentinel-$tagName-windows-x64-setup.exe") {
+            throw "Candidate installer filename does not match the release tag."
+          }
+          $sidecarMeta = Get-Content -LiteralPath (Join-Path $candidateInstaller.DirectoryName "sidecar_build.json") -Raw | ConvertFrom-Json
+          $sidecarSha = "$($sidecarMeta.sha256)".Trim().ToLower()
+          $setupHash = (Get-FileHash -LiteralPath $candidateInstaller.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $releaseAttestation = Join-Path $candidateDir "release_e2e_verification.json"
+          Set-Content -LiteralPath $releaseAttestation -Value $env:WINDOWS_VM_ATTESTATION -Encoding utf8NoBOM
+
+          python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
+            --expect-commit "${{ github.sha }}" `
+            --expect-installer-sha256 $setupHash `
+            --expect-sidecar-sha256 $sidecarSha `
+            --require-nsis-e2e `
+            --require-bundled-resources `
+            --require-standalone-embedded `
+            --require-clean-machine-e2e `
+            --require-stable-windows-e2e `
+            --verify-vm-witness
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "FAIL-CLOSED: Release attestation verification failed before gh release create."
+            exit 1
+          }
+
+          $setupDest = $candidateInstaller.FullName
+          $sumsFile = Join-Path $candidateDir "SHA256SUMS.txt"
+          "$setupHash  $(Split-Path -Leaf $setupDest)" | Set-Content -LiteralPath $sumsFile -Encoding ascii
+
           $baseSemVer = ($desktopVer -split '-')[0]
           $exactNotesPath = "docs/releases/v$desktopVer.md"
           $baseNotesPath = "docs/releases/v$baseSemVer.md"
@@ -465,21 +651,11 @@ jobs:
             "release", "create", $tagName,
             $setupDest,
             $sumsFile,
-            "requirements-runtime.txt",
-            "scripts/windows_setup_runtime.ps1"
-          )
-          $companionSumsFile = Join-Path $stageDir "COMPANION_BUNDLE_SHA256.txt"
-          if (Test-Path $companionSumsFile) {
-            $releaseArgs += $companionSumsFile
-          }
-          if (Test-Path $releaseAttestation) {
-            $releaseArgs += $releaseAttestation
-          } elseif (Test-Path $nsisAttestation) {
-            $releaseArgs += $nsisAttestation
-          }
-          $releaseArgs += @(
+            $releaseAttestation,
+            "NOTICE",
+            "THIRD_PARTY_NOTICES.md",
             "--verify-tag",
-            "--title", "NetFlow Sentinel $tagName — M6 Desktop Demo",
+            "--title", "NetFlow Sentinel $tagName — Standalone Windows x64 Release",
             "--notes-file", $notesPath
           )
           if ($isPrerelease) {
@@ -491,3 +667,72 @@ jobs:
             Write-Error "Failed to create GitHub Release for $tagName"
             exit 1
           }
+
+      - name: Publish Source-Only GitHub Release (tag push without Windows binary or model assets)
+        if: steps.meta.outputs.is_tag_push == 'true' && steps.meta.outputs.release_mode == 'source-only'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tagName = "${{ steps.meta.outputs.tag_name }}"
+          $isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"
+          $desktopVer = "${{ steps.meta.outputs.desktop_version }}"
+
+          python scripts/verify_companion_artifacts.py `
+            --verify-distribution-permission research-only `
+            --target-channel local_offline > $null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          gh release view $tagName > $null 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "GitHub Release for tag $tagName already exists. Refusing to overwrite existing release."
+            exit 1
+          }
+          $global:LASTEXITCODE = 0
+
+          $baseSemVer = ($desktopVer -split '-')[0]
+          $exactNotesPath = "docs/releases/v$desktopVer.md"
+          $baseNotesPath = "docs/releases/v$baseSemVer.md"
+          if (Test-Path $exactNotesPath) {
+            $notesPath = $exactNotesPath
+          } elseif (Test-Path $baseNotesPath) {
+            $notesPath = $baseNotesPath
+          } else {
+            Write-Error "Release notes file not found: $exactNotesPath or $baseNotesPath"
+            exit 1
+          }
+
+          $sourceReleaseArgs = @(
+            "release", "create", $tagName,
+            "NOTICE",
+            "THIRD_PARTY_NOTICES.md",
+            "LICENSE",
+            "--verify-tag",
+            "--title", "NetFlow Sentinel $tagName — Source Release",
+            "--notes-file", $notesPath
+          )
+          if ($isPrerelease) {
+            $sourceReleaseArgs += "--prerelease"
+          }
+
+          & gh @sourceReleaseArgs
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to create Source-Only GitHub Release for $tagName"
+            exit 1
+          }
+
+      - name: Scrub acquired/staged/compiled model artifacts from runner workspace
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue `
+            "build", `
+            "desktop/src-tauri/staged_bundle", `
+            "desktop/src-tauri/binaries/netflow-sentinel-backend-x86_64-pc-windows-msvc.exe", `
+            "desktop/src-tauri/target/release/netflow-sentinel-backend.exe", `
+            "desktop/src-tauri/target/release/artifacts", `
+            "desktop/src-tauri/target/release/data", `
+            "desktop/src-tauri/target/release/bundle", `
+            "dist/release-assets", `
+            "dist/verified-candidate"

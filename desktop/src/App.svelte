@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getCurrentWebview } from "@tauri-apps/api/webview";
   import { onMount } from "svelte";
   import {
     analyzeCsv,
@@ -7,32 +8,30 @@
     exportSecuritySimulation,
     fetchHealth,
     fetchModelsStatus,
+    getBackendLogs,
     getBackendStatus,
     getDemoPaths,
     getRuntimeDiagnostics,
-    importCompanionBundle,
     inspectCsv,
     isTauriRuntime,
     listSecuritySimulations,
-    pickCompanionFolder,
     pickCsvFile,
     pickSaveCsvFile,
     pickSaveJsonFile,
-    pickZipFile,
     reportFrontendReady,
     restartBackend,
-    setupPythonRuntime,
     simulateSecurityResponse,
   } from "./lib/api";
   import ChartsPanel from "./lib/components/ChartsPanel.svelte";
   import CsvPreviewPanel from "./lib/components/CsvPreviewPanel.svelte";
+  import DevLogsPanel from "./lib/components/DevLogsPanel.svelte";
   import EvaluationPanel from "./lib/components/EvaluationPanel.svelte";
   import ForensicTimelinePanel from "./lib/components/ForensicTimelinePanel.svelte";
   import Icons from "./lib/components/Icons.svelte";
   import ModelComparisonPanel from "./lib/components/ModelComparisonPanel.svelte";
   import ModelReadinessPanel from "./lib/components/ModelReadinessPanel.svelte";
+  import OnboardingGuidePanel from "./lib/components/OnboardingGuidePanel.svelte";
   import PredictionsTable from "./lib/components/PredictionsTable.svelte";
-  import RuntimeSetupPanel from "./lib/components/RuntimeSetupPanel.svelte";
   import {
     createInitialComparisonState,
     evaluateAllModelsWorkflow,
@@ -52,6 +51,7 @@
     type ComparisonWorkflowDeps,
   } from "./lib/comparisonState";
   import type {
+    BackendLogSnapshot,
     BackendStatus,
     CsvAnalyzeResponse,
     CsvExportResponse,
@@ -63,7 +63,7 @@
     SecuritySimulationExportResponse,
     SecuritySimulationHistoryItem,
   } from "./lib/types";
-  import { shortDigest } from "./lib/utils";
+  import { formatUserFriendlyError, getDroppedCsvPath, shortDigest } from "./lib/utils";
 
   type TabId = "overview" | "predictions" | "evaluation" | "forensics";
 
@@ -91,13 +91,21 @@
   let simulationExportData = $state<SecuritySimulationExportResponse | null>(null);
 
   let initializing = $state(true);
+  let dragDropUnavailable = $state(false);
   let busyMessage = $state<string | null>(null);
   let errorMessage = $state<string | null>(null);
   let simulationWarning = $state<string | null>(null);
   let evaluatedFlag = $state(false);
   let simulatingFlag = $state(false);
+  let showDevLogs = $state(false);
+  let devLogs = $state<BackendLogSnapshot | null>(null);
+
+  let readyModelsCount = $derived(models.filter((m) => m.ready).length);
 
   function handleFlowsPathChange(nextPath: string) {
+    if (nextPath !== flowsPath) {
+      handleLabelsPathChange("");
+    }
     flowsPath = nextPath;
     const nextState = invalidateForFlowsChange(comparisonState, nextPath);
     if (nextState !== comparisonState) {
@@ -138,7 +146,7 @@
       if (demo.flows_exists && !flowsPath.trim()) {
         handleFlowsPathChange(demo.flows_path);
       }
-      if (demo.labels_exists && !labelsPath.trim()) {
+      if (demo.labels_exists && flowsPath === demo.flows_path && !labelsPath.trim()) {
         handleLabelsPathChange(demo.labels_path);
       }
     } catch {
@@ -161,10 +169,7 @@
       ensureReadySelectedModel(modelList);
       await Promise.all([refreshSimulationHistory(), refreshDiagnosticsAndDemoPaths()]);
     } catch (err) {
-      errorMessage =
-        err instanceof Error
-          ? `Không thể kết nối Python FastAPI localhost: ${err.message}`
-          : String(err);
+      errorMessage = formatUserFriendlyError(err);
       try {
         const [bStatus] = await Promise.all([
           getBackendStatus(),
@@ -177,108 +182,112 @@
     }
   }
 
-  onMount(async () => {
+  async function refreshDevLogs(): Promise<void> {
     try {
-      // Poll up to 20s while Tauri child backend comes online, but exit early if backend startup already errored.
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        try {
-          await fetchHealth();
-          break;
-        } catch {
-          if (attempt >= 2 && isTauriRuntime()) {
-            try {
-              const probe = await getBackendStatus();
-              backendStatus = probe;
-              if (!probe.running && probe.last_error) {
-                break;
-              }
-            } catch {
-              // Ignore probe error
-            }
-          }
-          await new Promise((r) => setTimeout(r, 400));
-        }
-      }
-      await refreshStatus();
-      const demo = await getDemoPaths();
-      if (demo.flows_exists && !flowsPath.trim()) {
-        handleFlowsPathChange(demo.flows_path);
-      }
-      if (demo.labels_exists && !labelsPath.trim()) {
-        handleLabelsPathChange(demo.labels_path);
-      }
-      await reportFrontendReady({
-        connected: !errorMessage && Boolean(healthData) && Boolean(backendStatus?.running),
-        health_status: healthData?.status ?? null,
-        ready_models: models.filter((m) => m.ready).map((m) => m.model_key),
-        flows_exists: demo.flows_exists,
-        labels_exists: demo.labels_exists,
-        error_message: errorMessage,
-      });
-    } finally {
-      initializing = false;
+      devLogs = await getBackendLogs();
+    } catch {
+      // Ignore secondary log fetch error
     }
+  }
+
+  $effect(() => {
+    const shouldPollLogs = showDevLogs || Boolean(backendStatus?.starting);
+    if (!shouldPollLogs) return;
+    void refreshDevLogs();
+    const timer = setInterval(() => {
+      void refreshDevLogs();
+      if (backendStatus?.starting && isTauriRuntime()) {
+        void getBackendStatus()
+          .then((st) => {
+            backendStatus = st;
+            if (st.running && !healthData) {
+              void refreshStatus();
+            }
+          })
+          .catch(() => {});
+      }
+    }, 1200);
+    return () => clearInterval(timer);
   });
 
-  async function handleSetupPythonRuntime(wheelhouseDir?: string) {
-    busyMessage = "Đang tạo môi trường ảo .venv và cài đặt Python dependencies...";
-    errorMessage = null;
-    try {
-      backendStatus = await setupPythonRuntime(wheelhouseDir);
-      await refreshStatus();
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
-      await refreshDiagnosticsAndDemoPaths();
-    } finally {
-      busyMessage = null;
-    }
-  }
-
-  async function handleImportCompanionZip(expectedSha256?: string) {
-    const chosen = await pickZipFile("Chọn gói Companion Bundle (.zip)");
-    if (!chosen) return;
-    busyMessage = "Đang xác minh SHA-256 & provenance gói Companion Bundle (.zip)...";
-    errorMessage = null;
-    try {
-      await importCompanionBundle({
-        archivePath: chosen,
-        expectedSha256: expectedSha256?.trim() || null,
-      });
-      if (!backendStatus?.running) {
-        backendStatus = await restartBackend();
+  onMount(() => {
+    const unlistenDrop = isTauriRuntime()
+      ? getCurrentWebview().onDragDropEvent(({ payload }) => {
+          if (payload.type !== "drop" || initializing || busyMessage) return;
+          const path = getDroppedCsvPath(payload.paths);
+          if (path === null) {
+            errorMessage = "Hãy thả một tệp NetFlow có đuôi .csv.";
+            return;
+          }
+          void runInspectPath(path);
+        }).catch(() => {
+          dragDropUnavailable = true;
+          return null;
+        })
+      : null;
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.shiftKey && (e.key === "F9" || e.code === "F9")) {
+        e.preventDefault();
+        showDevLogs = !showDevLogs;
+        if (showDevLogs) {
+          void refreshDevLogs();
+        }
       }
-      await refreshStatus();
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
-      await refreshDiagnosticsAndDemoPaths();
-    } finally {
-      busyMessage = null;
-    }
-  }
+    };
+    window.addEventListener("keydown", handleKeydown);
 
-  async function handleImportCompanionFolder() {
-    const chosen = await pickCompanionFolder("Chọn thư mục Companion Artifacts");
-    if (!chosen) return;
-    busyMessage = "Đang xác minh SHA-256 & provenance thư mục Companion Artifacts...";
-    errorMessage = null;
-    try {
-      await importCompanionBundle({
-        bundleDir: chosen,
-      });
-      if (!backendStatus?.running) {
-        backendStatus = await restartBackend();
+    void (async () => {
+      try {
+        // Poll up to 120s for cold-start PyInstaller extraction + AV scan on clean Windows machines.
+        for (let attempt = 0; attempt < 300; attempt += 1) {
+          try {
+            await fetchHealth();
+            break;
+          } catch {
+            if (isTauriRuntime()) {
+              try {
+                const probe = await getBackendStatus();
+                backendStatus = probe;
+                if (!probe.starting && !probe.running && probe.last_error) {
+                  break;
+                }
+              } catch {
+                // Ignore probe error
+              }
+            }
+            await new Promise((r) => setTimeout(r, 400));
+          }
+        }
+        await refreshStatus();
+        await refreshDevLogs();
+        const demo = await getDemoPaths();
+        if (demo.flows_exists && !flowsPath.trim()) {
+          handleFlowsPathChange(demo.flows_path);
+        }
+        if (demo.labels_exists && flowsPath === demo.flows_path && !labelsPath.trim()) {
+          handleLabelsPathChange(demo.labels_path);
+        }
+        await reportFrontendReady({
+          connected: !errorMessage && Boolean(healthData) && Boolean(backendStatus?.running),
+          health_status: healthData?.status ?? null,
+          ready_models: models.filter((m) => m.ready).map((m) => m.model_key),
+          flows_exists: demo.flows_exists,
+          labels_exists: demo.labels_exists,
+          error_message: errorMessage,
+        });
+      } finally {
+        initializing = false;
       }
-      await refreshStatus();
-    } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
-      await refreshDiagnosticsAndDemoPaths();
-    } finally {
-      busyMessage = null;
-    }
-  }
+    })();
+
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+      void unlistenDrop?.then((unlisten) => unlisten?.());
+    };
+  });
 
   async function handleRestartBackend() {
-    busyMessage = "Đang khởi động lại tiến trình Python FastAPI...";
+    busyMessage = "Đang khởi động lại dịch vụ phân tích cục bộ...";
     errorMessage = null;
     comparisonState = invalidateForBackendRestart(comparisonState);
     inspectData = null;
@@ -289,7 +298,7 @@
       backendStatus = await restartBackend();
       await refreshStatus();
     } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      errorMessage = formatUserFriendlyError(err);
     } finally {
       busyMessage = null;
     }
@@ -300,7 +309,7 @@
     if (!trimmed) return;
     handleFlowsPathChange(path);
     const preInspectEpoch = comparisonState.sessionEpoch;
-    busyMessage = "Đang kiểm tra schema 47 ML features & OOD...";
+    busyMessage = "Đang kiểm tra định dạng 47 đặc trưng NetFlow & chỉ số an toàn OOD...";
     errorMessage = null;
     try {
       const inspected = await inspectCsv(trimmed, 20);
@@ -318,7 +327,7 @@
       simulationWarning = null;
     } catch (err) {
       if (comparisonState.sessionEpoch === preInspectEpoch) {
-        errorMessage = err instanceof Error ? err.message : String(err);
+        errorMessage = formatUserFriendlyError(err);
       }
     } finally {
       busyMessage = null;
@@ -338,17 +347,23 @@
   }
 
   async function handleLoadDemoDataset() {
-    busyMessage = "Đang nạp bộ dữ liệu Demo Validation...";
+    busyMessage = "Đang nạp bộ dữ liệu Demo chuẩn (200 luồng mạng)...";
     errorMessage = null;
     try {
       const demo = await getDemoPaths();
+      if (!demo.flows_exists) {
+        errorMessage =
+          "Không tìm thấy tệp dữ liệu demo tích hợp (data/demo/demo_flows.csv). Bạn vẫn có thể chọn tệp CSV của riêng mình từ máy.";
+        busyMessage = null;
+        return;
+      }
       handleFlowsPathChange(demo.flows_path);
       if (demo.labels_exists) {
         handleLabelsPathChange(demo.labels_path);
       }
       await runInspectPath(demo.flows_path);
     } catch (err) {
-      errorMessage = err instanceof Error ? err.message : String(err);
+      errorMessage = formatUserFriendlyError(err);
       busyMessage = null;
     }
   }
@@ -403,7 +418,7 @@
 
   async function handleRunInference() {
     if (!flowsPath.trim()) {
-      errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
+      errorMessage = "Vui lòng chọn tệp NetFlow CSV hoặc nhấn 'Mở Demo Validation (200 flows)'.";
       return;
     }
     const targetModel = selectedModel;
@@ -437,7 +452,7 @@
       });
       if (result.aborted) return;
       if (result.error) {
-        errorMessage = result.error;
+        errorMessage = formatUserFriendlyError(result.error);
         return;
       }
       simulationWarning = result.simulationWarning;
@@ -451,12 +466,12 @@
 
   async function handleRunAllComparison() {
     if (!flowsPath.trim()) {
-      errorMessage = "Vui lòng chọn hoặc nhập đường dẫn tệp NetFlow CSV.";
+      errorMessage = "Vui lòng chọn tệp NetFlow CSV hoặc nhấn 'Mở Demo Validation (200 flows)'.";
       return;
     }
     const readyList = models.filter((m) => m.ready);
     if (readyList.length === 0) {
-      errorMessage = "Không có mô hình nào ở trạng thái READY để so sánh.";
+      errorMessage = "Hiện chưa có mô hình nào ở trạng thái READY để so sánh.";
       return;
     }
     errorMessage = null;
@@ -495,7 +510,7 @@
         await refreshSimulationHistory();
       }
       simulationWarning = result.simulationWarning;
-      errorMessage = result.errorSummary;
+      errorMessage = result.errorSummary ? formatUserFriendlyError(result.errorSummary) : null;
     } finally {
       busyMessage = null;
     }
@@ -511,6 +526,10 @@
 
   async function handleUseDemoLabels() {
     const demo = await getDemoPaths();
+    if (flowsPath !== demo.flows_path) {
+      errorMessage = "Nhãn demo chỉ dùng với dữ liệu demo. Hãy chọn tệp nhãn tương ứng với CSV của bạn.";
+      return;
+    }
     handleLabelsPathChange(demo.labels_path);
   }
 
@@ -533,7 +552,7 @@
       });
       if (result.aborted) return;
       if (result.error) {
-        errorMessage = result.error;
+        errorMessage = formatUserFriendlyError(result.error);
         return;
       }
       if (result.evaluation) {
@@ -561,7 +580,7 @@
         labelsPath,
       });
       if (result.aborted) return;
-      errorMessage = result.errorSummary;
+      errorMessage = result.errorSummary ? formatUserFriendlyError(result.errorSummary) : null;
     } finally {
       busyMessage = null;
       evaluatedFlag = false;
@@ -591,8 +610,7 @@
       await refreshSimulationHistory();
     } catch (err) {
       if (comparisonState.sessionEpoch !== startEpoch) return;
-      const detail = err instanceof Error ? err.message : String(err);
-      simulationWarning = `Không thể chạy mô phỏng Dry-Run (#27): ${detail}`;
+      simulationWarning = `Không thể chạy mô phỏng Dry-Run (#27): ${formatUserFriendlyError(err)}`;
     } finally {
       simulatingFlag = false;
     }
@@ -614,7 +632,7 @@
       simulationExportData = exported;
     } catch (err) {
       if (comparisonState.sessionEpoch !== startEpoch) return;
-      errorMessage = err instanceof Error ? err.message : String(err);
+      errorMessage = formatUserFriendlyError(err);
     } finally {
       simulatingFlag = false;
     }
@@ -629,7 +647,7 @@
     if (!chosen) return;
 
     const startEpoch = comparisonState.sessionEpoch;
-    busyMessage = "Đang xuất file predictions CSV và metadata SHA-256...";
+    busyMessage = "Đang xuất tệp kết quả CSV và biên bản kiểm chứng SHA-256...";
     errorMessage = null;
     try {
       const exported = await exportCsv({
@@ -648,7 +666,7 @@
       exportData = exported;
     } catch (err) {
       if (comparisonState.sessionEpoch !== startEpoch) return;
-      errorMessage = err instanceof Error ? err.message : String(err);
+      errorMessage = formatUserFriendlyError(err);
     } finally {
       busyMessage = null;
     }
@@ -662,33 +680,57 @@
         <Icons name="shield" size={20} />
       </div>
       <div>
-        <h1 class="brand-title">NetFlow Sentinel v0.6.0 — Phân tích Bất thường Lưu lượng Mạng</h1>
+        <h1 class="brand-title">NetFlow Sentinel v1.0.0 — Phân tích Bất thường Lưu lượng Mạng</h1>
         <p class="brand-subtitle">
-          Offline Desktop • Rust Tauri 2 + Svelte 5 + Python FastAPI (127.0.0.1 Only) • UNSW-NB15-v3
+          Ứng dụng Windows Độc lập (Offline) • 4 Mô hình AI Tích hợp Sẵn • Dữ liệu chuẩn NF-UNSW-NB15-v3
         </p>
       </div>
     </div>
 
     <div class="header-controls">
-      {#if healthData?.preprocessor_ready}
+      {#if healthData?.preprocessor_ready && readyModelsCount === 4}
         <span class="badge badge-benign">
           <Icons name="check" size={12} />
-          Preprocessor READY
+          Hệ thống AI Sẵn sàng (4/4)
+        </span>
+      {:else if healthData?.preprocessor_ready}
+        <span class="badge badge-warning">
+          <Icons name="alert" size={12} />
+          Mô hình sẵn sàng: {readyModelsCount}/4
         </span>
       {:else}
         <span class="badge badge-attack">
           <Icons name="alert" size={12} />
-          Preprocessor BLOCKED
+          Chờ khởi tạo Mô hình
         </span>
       {/if}
 
-      <span class="badge badge-info mono">
-        {backendStatus?.running ? `FastAPI :${backendStatus.port}` : "FastAPI Offline"}
+      <span
+        class="badge badge-info mono"
+        class:badge-pulsing={!backendStatus?.running}
+        title={runtimeDiagnostics?.sidecar_executable
+          ? `Embedded Sidecar (${backendStatus?.port ?? "..."})`
+          : `Localhost :${backendStatus?.port ?? "..."}`}
+      >
+        {backendStatus?.running ? "Dịch vụ Cục bộ Online" : "Đang khởi động dịch vụ..."}
       </span>
 
       <button type="button" class="btn btn-sm" onclick={handleRestartBackend} disabled={Boolean(busyMessage)}>
         <Icons name="refresh" size={14} />
-        Làm mới Backend
+        Làm mới Dịch vụ
+      </button>
+
+      <button
+        type="button"
+        class="btn btn-sm"
+        onclick={() => {
+          showDevLogs = !showDevLogs;
+          if (showDevLogs) void refreshDevLogs();
+        }}
+        title="Bật/tắt nhật ký kỹ thuật backend (Shift+F9)"
+      >
+        <Icons name="cpu" size={14} />
+        {showDevLogs ? "Ẩn Logs" : "Dev Logs (Shift+F9)"}
       </button>
 
       <button
@@ -704,12 +746,22 @@
   </header>
 
   <main class="workspace-main">
-    {#if errorMessage}
+    {#if errorMessage && !backendStatus?.starting}
       <div class="banner banner-error" role="alert">
         <Icons name="alert" size={18} />
         <div style="flex: 1;">
-          <strong>Lỗi hệ thống / Xác thực Fail-Closed:</strong> {errorMessage}
+          <strong>Thông báo hệ thống:</strong> {errorMessage}
         </div>
+        <button
+          type="button"
+          class="btn btn-sm"
+          onclick={() => {
+            showDevLogs = true;
+            void refreshDevLogs();
+          }}
+        >
+          Xem Dev Logs (Shift+F9)
+        </button>
         <button type="button" class="btn btn-sm" onclick={() => (errorMessage = null)}>Đóng</button>
       </div>
     {/if}
@@ -718,33 +770,51 @@
       <div class="banner banner-warning" role="status">
         <Icons name="alert" size={18} />
         <div style="flex: 1;">
-          <strong>Cảnh báo Dry-Run (#27):</strong> {simulationWarning}
+          <strong>Lưu ý mô phỏng phản ứng (#27):</strong> {simulationWarning}
         </div>
         <button type="button" class="btn btn-sm" onclick={() => (simulationWarning = null)}>Đóng</button>
       </div>
     {/if}
 
-    {#if busyMessage || initializing}
+    {#if busyMessage || initializing || (backendStatus?.starting && !backendStatus?.running)}
       <div class="banner banner-info" role="status">
-        <Icons name="refresh" size={16} />
-        <div>{busyMessage ?? "Đang khởi tạo ứng dụng và kết nối Python FastAPI..."}</div>
+        <Icons name="refresh" size={16} spin={true} />
+        <div style="flex: 1;">
+          {#if busyMessage}
+            {busyMessage}
+          {:else}
+            Đang khởi tạo máy chủ AI cục bộ (lần đầu trên máy mới có thể mất 30–90 giây để giải nén runtime và Windows kiểm tra an toàn) — <strong>{Math.round((backendStatus?.startup_elapsed_ms ?? 0) / 1000)}s</strong> ({backendStatus?.startup_stage ?? "booting"}). Nhấn <strong>Shift+F9</strong> để xem chi tiết log dev.
+          {/if}
+        </div>
       </div>
     {/if}
 
-    <RuntimeSetupPanel
-      diagnostics={runtimeDiagnostics}
-      {backendStatus}
-      preprocessorReady={Boolean(healthData?.preprocessor_ready)}
-      readyModelsCount={models.filter((m) => m.ready).length}
+    {#if showDevLogs}
+      <DevLogsPanel
+        logs={devLogs}
+        {backendStatus}
+        diagnostics={runtimeDiagnostics}
+        onRefresh={() => void refreshDevLogs()}
+        onClose={() => (showDevLogs = false)}
+      />
+    {/if}
+
+    <OnboardingGuidePanel
+      hasFlows={Boolean(inspectData)}
+      hasAnalysis={Boolean(analysisData)}
+      hasComparison={Object.keys(coherentAnalyses).length >= 2}
+      hasEvaluation={Object.keys(coherentEvaluations).length > 0}
+      hasExport={Boolean(exportData)}
+      {readyModelsCount}
+      onLoadDemo={handleLoadDemoDataset}
+      onBrowseCsv={handleBrowseFlowsCsv}
       busy={Boolean(busyMessage) || initializing}
-      isTauri={isTauriRuntime()}
-      onSetupPython={handleSetupPythonRuntime}
-      onImportZip={handleImportCompanionZip}
-      onImportFolder={handleImportCompanionFolder}
-      onRefresh={refreshStatus}
     />
 
     <section class="card" aria-label="Điều khiển Dữ liệu NetFlow CSV">
+      {#if isTauriRuntime() && !dragDropUnavailable}
+        <p class="muted">Kéo thả một tệp NetFlow CSV vào cửa sổ để kiểm tra định dạng.</p>
+      {/if}
       <div class="input-bar">
         <input
           type="text"
@@ -757,7 +827,7 @@
         />
         <button type="button" class="btn" onclick={handleBrowseFlowsCsv} disabled={Boolean(busyMessage)}>
           <Icons name="folder" size={15} />
-          {isTauriRuntime() ? "Chọn CSV (Native)" : "Kiểm tra CSV"}
+          {isTauriRuntime() ? "Chọn CSV từ máy" : "Kiểm tra CSV"}
         </button>
         <button type="button" class="btn" onclick={handleLoadDemoDataset} disabled={Boolean(busyMessage)}>
           Mở Demo Validation (200 flows)
@@ -817,7 +887,7 @@
         onclick={() => (activeTab = "overview")}
       >
         <Icons name="chart" size={15} />
-        1. Tổng quan & Kiểm tra CSV
+        1. Tổng quan &amp; Kiểm tra CSV
       </button>
       <button
         type="button"
@@ -837,7 +907,7 @@
         onclick={() => (activeTab = "evaluation")}
       >
         <Icons name="target" size={15} />
-        3. Ground Truth & Confusion Matrix
+        3. Đối chiếu Nhãn &amp; Độ chính xác
       </button>
       <button
         type="button"
@@ -847,108 +917,112 @@
         onclick={() => (activeTab = "forensics")}
       >
         <Icons name="clock" size={15} />
-        4. Timeline (#24) & Hành vi (#28/#26/#27)
+        4. Dòng thời gian &amp; Mô phỏng Phản ứng
       </button>
     </div>
 
-    {#if activeTab === "overview"}
-      <ModelComparisonPanel
-        {models}
-        {selectedModel}
-        analysesByModel={coherentAnalyses}
-        evaluationsByModel={coherentEvaluations}
-        errorsByModel={comparisonState.errorsByModel}
-        batchFileSha256={comparisonState.activeFileSha256}
-        batchLabelsSha256={comparisonState.activeLabelsSha256}
-        canRunComparison={Boolean(flowsPath.trim())}
-        hasLabelsPath={Boolean(labelsPath.trim())}
-        busy={Boolean(busyMessage)}
-        onSelectModel={(k) => (selectedModel = k)}
-        onRunAllComparison={handleRunAllComparison}
-        onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
-      />
+    {#key activeTab}
+      <div class="tab-panel">
+        {#if activeTab === "overview"}
+          <ModelComparisonPanel
+            {models}
+            {selectedModel}
+            analysesByModel={coherentAnalyses}
+            evaluationsByModel={coherentEvaluations}
+            errorsByModel={comparisonState.errorsByModel}
+            batchFileSha256={comparisonState.activeFileSha256}
+            batchLabelsSha256={comparisonState.activeLabelsSha256}
+            canRunComparison={Boolean(flowsPath.trim())}
+            hasLabelsPath={Boolean(labelsPath.trim())}
+            busy={Boolean(busyMessage)}
+            onSelectModel={(k) => (selectedModel = k)}
+            onRunAllComparison={handleRunAllComparison}
+            onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
+          />
 
-      {#if analysisData}
-        <div class="grid-5">
-          <div class="kpi-box">
-            <div class="kpi-label">Tổng số Flow</div>
-            <div class="kpi-value mono">{analysisData.total_rows}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Dự đoán Attack</div>
-            <div class="kpi-value mono" style="color: var(--semantic-attack)">{analysisData.attack_count}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">Dự đoán Benign</div>
-            <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
-          </div>
-          <div class="kpi-box">
-            <div class="kpi-label">OOD Abstained</div>
-            <div class="kpi-value mono" style="color: var(--semantic-warning)">
-              {analysisData.abstained_rows ?? analysisData.ood_flagged_count}
+          {#if analysisData}
+            <div class="grid-5">
+              <div class="kpi-box">
+                <div class="kpi-label">Tổng số Flow</div>
+                <div class="kpi-value mono">{analysisData.total_rows}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">Dự đoán Attack</div>
+                <div class="kpi-value mono" style="color: var(--semantic-attack)">{analysisData.attack_count}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">Dự đoán Benign</div>
+                <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
+              </div>
+              <div class="kpi-box">
+                <div class="kpi-label">OOD Abstained</div>
+                <div class="kpi-value mono" style="color: var(--semantic-warning)">
+                  {analysisData.abstained_rows ?? analysisData.ood_flagged_count}
+                </div>
+                <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+                  {analysisData.evaluated_rows ?? analysisData.attack_count + analysisData.benign_count}/{analysisData.total_rows}
+                  ({analysisData.prediction_coverage != null
+                    ? `${(analysisData.prediction_coverage * 100).toFixed(1)}%`
+                    : analysisData.total_rows > 0
+                      ? `${(((analysisData.attack_count + analysisData.benign_count) / analysisData.total_rows) * 100).toFixed(1)}%`
+                      : "0.0%"})
+                </div>
+              </div>
+              <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
+                <div class="kpi-label">Eligibility Gate</div>
+                <div class="kpi-value" style="font-size: 13px;">{analysisData.compatibility_gate.eligibility_status}</div>
+                <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
+                  {analysisData.compatibility_gate.compatibility_status}
+                </div>
+              </div>
             </div>
-            <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
-              {analysisData.evaluated_rows ?? analysisData.attack_count + analysisData.benign_count}/{analysisData.total_rows}
-              ({analysisData.prediction_coverage != null
-                ? `${(analysisData.prediction_coverage * 100).toFixed(1)}%`
-                : analysisData.total_rows > 0
-                  ? `${(((analysisData.attack_count + analysisData.benign_count) / analysisData.total_rows) * 100).toFixed(1)}%`
-                  : "0.0%"})
-            </div>
-          </div>
-          <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
-            <div class="kpi-label">Eligibility Gate</div>
-            <div class="kpi-value" style="font-size: 13px;">{analysisData.compatibility_gate.eligibility_status}</div>
-            <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
-              {analysisData.compatibility_gate.compatibility_status}
-            </div>
-          </div>
-        </div>
-        <ChartsPanel analysis={analysisData} />
-      {/if}
+            <ChartsPanel analysis={analysisData} />
+          {/if}
 
-      {#if inspectData}
-        <CsvPreviewPanel {inspectData} />
-      {:else}
-        <div class="empty-state">
-          Nhấn <strong>Mở Demo Validation (200 flows)</strong> hoặc chọn tệp NetFlow CSV từ máy cục bộ để kiểm tra 47 ML features và bắt đầu phân tích.
-        </div>
-      {/if}
-    {:else if activeTab === "predictions"}
-      {#if analysisData}
-        <ChartsPanel analysis={analysisData} />
-        <PredictionsTable analysis={analysisData} />
-      {:else}
-        <div class="empty-state">
-          Chưa có kết quả dự đoán. Hãy chọn mô hình READY và nhấn <strong>Chạy Phân tích AI</strong>.
-        </div>
-      {/if}
-    {:else if activeTab === "evaluation"}
-      <EvaluationPanel
-        {labelsPath}
-        evaluating={evaluatedFlag}
-        evalResult={evalData}
-        canEvaluate={Boolean(analysisData)}
-        onPickLabels={handlePickLabelsFile}
-        onUseDemoLabels={handleUseDemoLabels}
-        onRunEvaluate={handleRunEvaluate}
-        onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
-      />
-    {:else if activeTab === "forensics"}
-      <ForensicTimelinePanel
-        timeline={analysisData?.timeline ?? []}
-        behavioral={analysisData?.behavioral_summary ?? inspectData?.behavioral_summary ?? null}
-        securityNotice={analysisData?.security_notice ?? "Localhost-only FastAPI (127.0.0.1), fail-closed SHA-256 artifact checks. Issue #27 Adaptive Security Response runs in DRY-RUN SIMULATION / RECOMMENDED mode (executed=false); OS firewall automation & AES-256-GCM keyring remain DEFERRED."}
-        simulation={simulationData}
-        {simulationHistory}
-        simulationExportInfo={simulationExportData}
-        simulating={simulatingFlag}
-        canSimulate={Boolean(analysisData)}
-        onRunSimulation={handleRunSecuritySimulation}
-        onRefreshHistory={refreshSimulationHistory}
-        onExportSimulation={handleExportSecuritySimulation}
-      />
-    {/if}
+          {#if inspectData}
+            <CsvPreviewPanel {inspectData} />
+          {:else}
+            <div class="empty-state">
+              Nhấn <strong>Mở Demo Validation (200 flows)</strong> hoặc chọn tệp NetFlow CSV từ máy cục bộ để kiểm tra 47 ML features và bắt đầu phân tích.
+            </div>
+          {/if}
+        {:else if activeTab === "predictions"}
+          {#if analysisData}
+            <ChartsPanel analysis={analysisData} />
+            <PredictionsTable analysis={analysisData} />
+          {:else}
+            <div class="empty-state">
+              Chưa có kết quả dự đoán. Hãy chọn mô hình READY và nhấn <strong>Chạy Phân tích AI</strong>.
+            </div>
+          {/if}
+        {:else if activeTab === "evaluation"}
+          <EvaluationPanel
+            {labelsPath}
+            evaluating={evaluatedFlag}
+            evalResult={evalData}
+            canEvaluate={Boolean(analysisData)}
+            onPickLabels={handlePickLabelsFile}
+            onUseDemoLabels={handleUseDemoLabels}
+            onRunEvaluate={handleRunEvaluate}
+            onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
+          />
+        {:else if activeTab === "forensics"}
+          <ForensicTimelinePanel
+            timeline={analysisData?.timeline ?? []}
+            behavioral={analysisData?.behavioral_summary ?? inspectData?.behavioral_summary ?? null}
+            securityNotice={analysisData?.security_notice ?? "Localhost-only FastAPI (127.0.0.1), fail-closed SHA-256 artifact checks. Issue #27 Adaptive Security Response runs in DRY-RUN SIMULATION / RECOMMENDED mode (executed=false); OS firewall automation & AES-256-GCM keyring remain DEFERRED."}
+            simulation={simulationData}
+            {simulationHistory}
+            simulationExportInfo={simulationExportData}
+            simulating={simulatingFlag}
+            canSimulate={Boolean(analysisData)}
+            onRunSimulation={handleRunSecuritySimulation}
+            onRefreshHistory={refreshSimulationHistory}
+            onExportSimulation={handleExportSecuritySimulation}
+          />
+        {/if}
+      </div>
+    {/key}
   </main>
 </div>
 

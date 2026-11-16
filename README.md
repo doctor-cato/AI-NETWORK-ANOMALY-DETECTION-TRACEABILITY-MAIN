@@ -8,10 +8,10 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-%3E%3D3.11-3776AB)](pyproject.toml)
 [![License: Apache-2.0](https://img.shields.io/badge/code-Apache--2.0-blue)](LICENSE)
 
-> **Cập nhật Củng cố Sản phẩm Cuối kỳ (Consolidation MVP):**
-> - Trên `main`: Đã hợp nhất Random Forest Held-out Test (`rf-heldout-ea330b9`, PR #50), **Autoencoder** (#29, PR #51), **FastAPI + SQLite persistence** (#30, PR #61), **Desktop App `v0.6.0-beta.1`** (#16, PR #67/#68), **Issue #27 Adaptive Security Response Dry-Run** (PR #69, `ab018da`) và các bản vá an toàn `#53–#56, #59` (PR #52 đã đóng `SUPERSEDED`).
-> - Trên PR #47 (`f999930`, 6/6 CI PASS) & PR #49 (`7344994`): Ingestion Gate (#46/#58) và Cross-Dataset M7 (#48/#57) nằm ngoài phạm vi phát hành Stable `v0.6.0`.
-> - Trên nhánh `feat/stable-four-model-demo-and-release` (PR #70, `v0.6.0` Stable): Hoàn tất đánh giá **Held-out Test cho XGBoost (#31)** và **thực nghiệm real-data Train/Validation/Held-out Test cho Autoencoder (#29, `Val FPR <= 0.05`)**, bổ sung so sánh 4 model cùng `scripts/verify_companion_artifacts.py --verify-e2e` và nâng cấp đồng bộ **`v0.6.0` Stable**. Model binaries lớn không lưu trong Git; thiếu file `.joblib` hệ thống báo `BLOCKED / NOT READY`.
+> **Cập nhật Củng cố Sản phẩm Cuối kỳ (Consolidation MVP → v1.0.0 Standalone):**
+> - Trên `main`: Đã hợp nhất Random Forest Held-out Test (`rf-heldout-ea330b9`, PR #50), **Autoencoder** (#29, PR #51), **FastAPI + SQLite persistence** (#30, PR #61), **Desktop App `v0.6.0-beta.1`** (#16, PR #67/#68), **Issue #27 Adaptive Security Response Dry-Run** (PR #69, `ab018da`) và **PR #70 (`v0.6.0` Stable — 4-model Demo & Held-out XGBoost/Autoencoder)**.
+> - Trên PR #47 (`f999930`, 6/6 CI PASS) & PR #49 (`7344994`): Ingestion Gate (#46/#58) và Cross-Dataset M7 (#48/#57) được giữ rõ phạm vi ngoài release chính thức nếu chưa hợp nhất.
+> - Trên nhánh **Issue #71 (`v1.0.0` Stable — Standalone Windows Installer)**: Chuyển kiến trúc sang **Fully Embedded Windows x64 NSIS Installer** (`Tauri 2 + Svelte 5 + PyInstaller Sidecar + 4 Verified ML Models + Preprocessor + Configs + Demo CSV + WebView2 Offline`), loại bỏ hoàn toàn yêu cầu Python hoặc Companion Bundle ở máy người dùng cuối. Model binaries lớn không commit vào Git mà được kiểm tra SHA-256 & quyền phân phối (`NOTICE`, `THIRD_PARTY_NOTICES.md`, UQ License `454104`) tại **giai đoạn build** trước khi nhúng vào bộ cài.
 
 **Đọc nhanh:** [Tổng quan](#tổng-quan-dự-án) · [Dữ liệu](#bộ-dữ-liệu) · [Mô hình](#các-mô-hình-ai) · [Kết quả](#thực-nghiệm-và-kết-quả) · [Demo & Tái lập](#cài-đặt-và-tái-lập) · [Hạn chế](#hạn-chế) · [Tài liệu](docs/REPRODUCIBILITY.md)
 
@@ -19,7 +19,7 @@
 
 Một Network Intrusion Detection System (NIDS) cần phân biệt hoạt động bình thường với lưu lượng đáng nghi, đồng thời cho người phân tích biết dự đoán xuất phát từ dữ liệu và mô hình nào. Dự án xây dựng nền tảng nghiên cứu và ứng dụng desktop offline trên **network flow**: kiểm tra nguồn dữ liệu, tạo phân vùng không rò rỉ, huấn luyện mô hình, lưu bằng chứng cấu hình/checksum/metric và cung cấp API FastAPI cho ứng dụng desktop **Rust / Tauri 2 + Svelte 5**. Người đọc có thể kiểm tra từng bước qua [traceability matrix](docs/TRACEABILITY_MATRIX.md) và các báo cáo trong `reports/`.
 
-**Đã đạt được:** Cả 4 mô hình đều đã có bằng chứng thực nghiệm trên `NF-UNSW-NB15-v3` (Train `1.655.797` flow, Validation `345.371` flow, Held-out Test `345.953` flow) gồm Random Forest (`rf-heldout-ea330b9`), XGBoost (`xgb-baseline-1794755807`), Isolation Forest (`if-c4-20261115T055359Z`) và Autoencoder (`reports/evaluation/autoencoder/`). Python FastAPI (`127.0.0.1`) + SQLite persistence, pipeline tạo dữ liệu demo CSV từ Validation (`scripts/prepare_demo_dataset.py`), **Issue #27 Security Response Dry-Run** (PR #69 đã merge vào `main`), và **Desktop Application Rust / Tauri 2 + Svelte 5** (`#16`, `v0.6.0` Stable — so sánh 4 model trên `demo_flows.csv`) đã triển khai và kiểm chứng. **Mục tiêu hiện tại:** hoàn tất review/merge PR #70 (`v0.6.0` Stable) vào `main` trước khi xuất bản bản cài đặt Windows `v0.6.0` (kế tiếp `v0.6.0-beta.1`) và hoàn thiện tài liệu M7 (#18–#20, #25). Đây là đồ án prototype lab, không phải hệ thống enterprise SOC production.
+**Đã đạt được:** Cả 4 mô hình đều đã có bằng chứng thực nghiệm trên `NF-UNSW-NB15-v3` (Train `1.655.797` flow, Validation `345.371` flow, Held-out Test `345.953` flow) gồm Random Forest (`rf-heldout-ea330b9`), XGBoost (`xgb-baseline-1794755807`), Isolation Forest (`if-c4-20261115T055359Z`) và Autoencoder (`reports/evaluation/autoencoder/`). Python FastAPI (`127.0.0.1`) + SQLite persistence, pipeline tạo dữ liệu demo CSV từ Validation (`scripts/prepare_demo_dataset.py`), **Issue #27 Security Response Dry-Run** (PR #69 đã merge vào `main`), **PR #70 (4-model comparison & E2E)** đã hợp nhất, và **Issue #71 (`NetFlow Sentinel v1.0.0 Stable`)** hoàn thiện bộ cài đặt Windows x64 standalone tích hợp PyInstaller sidecar cùng 4 mô hình. Đây là đồ án prototype lab, không phải hệ thống enterprise SOC production.
 
 ## Bài toán nghiên cứu
 
@@ -39,7 +39,7 @@ False positive (FP) làm tăng công điều tra, false negative (FN) bỏ lọt
 | Isolation Forest (#11) | **EXPERIMENTALLY VALIDATED & REPRODUCED** trên Validation & Held-out Test (`if-c4-20261115T055359Z`, `F1=0.5064`, `Recall=0.8997`, `ROC-AUC=0.893730`) |
 | Autoencoder (#29) | **EXPERIMENTALLY VALIDATED** (`ae_fpr_constrained_20261115T163000Z`: Val `FPR=0.049998 <= 0.05`, threshold `17234985.792476`, Held-out Test `F1=0.1361`, `Recall=0.1093`, `ROC-AUC=0.6303`, Unknown `R=0.0625`; run cũ `benign_quantile` lưu riêng tại `runs/ae_benign_quantile_20261115T151859Z/`; `BLOCKED / NOT READY` nếu thiếu binary) |
 | FastAPI (`127.0.0.1`), SQLite persistence, 4-model inference & Validation Demo CSV Prep | **IMPLEMENTED / TESTED** (#30, #15, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
-| Desktop UI **Rust / Tauri 2 + Svelte 5** (#16 — thay Streamlit) | **IMPLEMENTED / TESTED** (`v0.6.0` Stable — so sánh 4 model & Tab 4 dry-run; localhost HTTP tới FastAPI, Windows NSIS installer) |
+| Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, #71) | **IMPLEMENTED / TESTED** (bộ cài ứng viên `v1.0.0` nhúng PyInstaller sidecar, 4 model và hướng dẫn 4 bước). Nghiệm thu Windows sạch và phát hành Stable đang chờ. |
 | Behavioral Vector (#28), Risk Ranking (#32), Trace Timeline (#24), Adaptive Response Dry-Run (#27), Bảo mật cục bộ (#26) | **IMPLEMENTED / TESTED (Scoped M6/M7)** — thống kê NetFlow, risk/timeline tất định, mô phỏng phản ứng dry-run (`executed=false`); live firewall/OS commands & AES-256-GCM keyring **DEFERRED** |
 
 ## Kiến trúc hệ thống
@@ -66,7 +66,7 @@ Nguồn dữ liệu chính là NetFlow CSV (`NF-UNSW-NB15-v3`), **không** chứ
 | Dữ liệu & Lưu trữ | pandas, NumPy, SQLite | Streaming CSV, mảng số, persistence đơn chủ ghi trong FastAPI |
 | ML & Deep Learning | scikit-learn, XGBoost, joblib, PyTorch (`Autoencoder`) | Random Forest, XGBClassifier, Isolation Forest, Autoencoder và verified loading |
 | Backend API | FastAPI, Uvicorn | Dịch vụ REST local-only `127.0.0.1:8000` (`scripts/run_api.py`), OpenAPI contract |
-| Desktop UI (M6) | **Rust / Tauri 2 + Svelte 5** | **IMPLEMENTED / TESTED (#16, `v0.6.0`)** — Native file picker, lifecycle Python process, bảng/biểu đồ/Confusion Matrix offline |
+| Desktop UI (M6) | **Rust / Tauri 2 + Svelte 5** | **IMPLEMENTED / TESTED (#16, #71, `v1.0.0`)** — Native file picker, PyInstaller sidecar lifecycle, bảng/biểu đồ/Confusion Matrix offline |
 | Chất lượng & Kiểm thử | pytest, Ruff, Black, GitHub Actions | Unit/integration/API tests, lint/format check và raw-data CI guard |
 
 `Streamlit` đã bị loại khỏi kiến trúc chính. PostgreSQL cluster, real-time packet capture và AES-256-GCM keyring rotation đầy đủ không nằm trong phạm vi Demo MVP M6. [Dependency khai báo](pyproject.toml) dùng phiên bản tối thiểu, chưa phải lockfile.
@@ -144,7 +144,7 @@ Precision cho biết tỷ lệ cảnh báo Attack là đúng; Recall cho biết 
 
 Nhóm đã hoàn thành kiểm định CSV nguồn `NF-UNSW-NB15-v3`, EDA có bằng chứng chạy lặp, split và kiểm toán leakage, train-only preprocessor, thực nghiệm đầy đủ trên Train/Validation/Held-out Test cho cả **4 mô hình** (Random Forest `rf-heldout-ea330b9`, XGBoost `xgb-baseline-1794755807`, Isolation Forest `if-c4-20261115T055359Z`, Autoencoder `reports/evaluation/autoencoder/`), **FastAPI (`127.0.0.1:8000`) + SQLite persistence**, pipeline CLI và Desktop App 4 model (`random_forest`, `xgboost`, `isolation_forest`, `autoencoder`), **Issue #27 Adaptive Security Response Dry-Run** (`executed=false`), và luồng tạo/xác minh companion artifacts (`scripts/prepare_demo_dataset.py`, `scripts/verify_companion_artifacts.py`). `reports/` chứa metadata và báo cáo nhỏ; `data/raw/`, `data/processed/`, `data/demo/*.csv` và `artifacts/` nhị phân lớn không track trong Git.
 
-Thử nghiệm smoke E2E trên `data/demo/demo_flows.csv` (200 dòng Validation) đã chạy trực tiếp qua FastAPI cho cả 4 model (`198` dòng hợp lệ + `2` dòng `ABSTAINED_OOD`); **Desktop Application Rust / Tauri 2 + Svelte 5 (`#16`, `v0.6.0` Stable)** sẵn sàng cho review Approve & merge PR #69 + PR `v0.6.0` Stable. [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) lưu đầy đủ chuỗi truy vết yêu cầu → code → test → bằng chứng.
+Thử nghiệm smoke E2E trên `data/demo/demo_flows.csv` (200 dòng Validation) đã chạy trực tiếp qua FastAPI cho cả 4 model (`198` dòng hợp lệ + `2` dòng `ABSTAINED_OOD`); **Desktop Application Rust / Tauri 2 + Svelte 5 (`#16`, `#71`, `v1.0.0` Stable Standalone)** đóng gói trực tiếp sidecar + 4 mô hình thật vào bộ cài NSIS Windows x64. [Implementation checkpoints](docs/IMPLEMENTATION_CHECKPOINTS.md) và [traceability matrix](docs/TRACEABILITY_MATRIX.md) lưu đầy đủ chuỗi truy vết yêu cầu → code → test → bằng chứng.
 
 ## Cài đặt và tái lập
 
@@ -185,13 +185,13 @@ python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest
 python scripts/run_api.py --host 127.0.0.1 --port 8000
 ```
 
-File `data/demo/demo_flows.csv` tuyệt đối không chứa `Label`/`Attack`; ground truth nằm riêng tại `data/demo/demo_labels.csv` để tính Confusion Matrix trên UI/script đánh giá. Xem [hướng dẫn cài đặt Windows (`v0.6.0`)](docs/WINDOWS_INSTALLATION.md), [quy trình đóng gói & phát hành](docs/RELEASE_PROCESS.md), [ghi chú phát hành `v0.6.0`](docs/releases/v0.6.0.md), [hướng dẫn inference](docs/INFERENCE_PIPELINE.md), [hướng dẫn tái lập](docs/REPRODUCIBILITY.md), [API contract](reports/api/API_CONTRACT.md) và [báo cáo Test Random Forest](reports/evaluation/error_analysis_report.md).
+File `data/demo/demo_flows.csv` tuyệt đối không chứa `Label`/`Attack`; ground truth nằm riêng tại `data/demo/demo_labels.csv` để tính Confusion Matrix trên UI/script đánh giá. Xem [hướng dẫn cài đặt Windows (`v1.0.0`)](docs/WINDOWS_INSTALLATION.md), [quy trình đóng gói & phát hành](docs/RELEASE_PROCESS.md), [ghi chú phát hành `v1.0.0`](docs/releases/v1.0.0.md), [hướng dẫn inference](docs/INFERENCE_PIPELINE.md), [hướng dẫn tái lập](docs/REPRODUCIBILITY.md), [API contract](reports/api/API_CONTRACT.md) và [báo cáo Test Random Forest](reports/evaluation/error_analysis_report.md).
 
 ## Cấu trúc thư mục
 
 ```text
 .
-├── desktop/               # Ứng dụng Desktop M6 (v0.6.0): Rust Tauri 2 (src-tauri) + Svelte 5 UI (src)
+├── desktop/               # Ứng dụng Desktop M6 (v1.0.0): Rust Tauri 2 (src-tauri + PyInstaller sidecar) + Svelte 5 UI (src)
 ├── src/network_anomaly/   # data, EDA, preprocessing, models, evaluation, inference, ingestion, api
 ├── scripts/               # acquisition, prepare_demo_dataset, train, predict, run_api, check_desktop_version
 ├── tests/                 # unit, contract và integration (API, desktop CSV/E2E, inference, protocol)
@@ -227,7 +227,7 @@ XGBoost | **EXPERIMENTALLY VALIDATED** cả Validation (`F1=0.999984`) và Held-
 Isolation Forest (#11) | **EXPERIMENTALLY VALIDATED & REPRODUCED** Validation & Held-out Test (`if-c4-20261115T055359Z`) |
 Autoencoder (#29) | **EXPERIMENTALLY VALIDATED** (`ae_fpr_constrained_20261115T163000Z`, Val `FPR=0.049998 <= 0.05`, Held-out Test `F1=0.1361`, `Recall=0.1093`, `ROC-AUC=0.6303`, Unknown `R=0.0625`; run cũ lưu riêng tại `runs/ae_benign_quantile_20261115T151859Z/`; `BLOCKED / NOT READY` nếu thiếu binary) |
 4-Model Inference, FastAPI (`127.0.0.1`), SQLite & Demo CSV Prep | **IMPLEMENTED / TESTED** (#15, #30, `prepare_demo_dataset.py` đã test với 200 dòng Validation) |
-Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, `v0.6.0`) | **IMPLEMENTED / TESTED** (Windows x64 executable + NSIS installer, `/api/v1/csv/*`, OOD abstention, provenance gate) |
+Desktop UI **Rust / Tauri 2 + Svelte 5** (#16, #71, `v1.0.0`) | **IMPLEMENTED / TESTED** (Windows x64 Standalone NSIS installer + PyInstaller sidecar + 4 embedded models, `/api/v1/csv/*`, OOD abstention, provenance gate) |
 Multi-Source Ingestion & Gate (#46) | **IMPLEMENTED / TESTED** (xác minh provenance `source:nf-v3-canonical` vs `source:nf-v3-unverified`) |
 Behavioral (#28), Risk Ranking (#32), Trace Timeline (#24) | **IMPLEMENTED / TESTED (Scoped M6)** — thống kê metadata NetFlow (#28), điểm rủi ro tất định từ chối OOD (#32), timeline tất định (#24) |
 Adaptive Security Response Dry-Run (#27) | **IMPLEMENTED / TESTED (Dry-Run)** — policy engine tất định (`NO_ACTION`/`MONITOR`/`INVESTIGATE`/`ISOLATE_RECOMMENDED`), mô phỏng adaptive key rotation (`executed=false`), Tab 4 + SQLite + JSON export, cấm containment với `ABSTAINED_OOD`; live firewall/OS execution **DEFERRED** |
@@ -238,14 +238,13 @@ Tài liệu và CI | **IMPLEMENTED / TESTED** ([cài đặt Windows](docs/WINDOW
 
 - **Dataset bias và shortcut learning:** NetFlow v3 phản ánh testbed, không đại diện cho mọi mạng. `MIN_TTL` đơn lẻ đạt Accuracy Validation `0,999849` và `49,98%` flow Validation trùng vector 47 features với Train; đánh giá cross-dataset trên PR #47 / #48 cho thấy supervised models có thể suy giảm rất mạnh ngoài domain (ví dụ Random Forest đạt `recall = 0.0`, `fpr = 0.380191` trên `NF-CSE-CIC-IDS2018-v3`), trong khi Autoencoder đạt Held-out Test in-domain `F1 = 0.1361`, `Recall = 0.1093` dưới ngưỡng Validation `FPR <= 0.05`.
 - **Real-data benchmarks & Fail-closed Safety:** Cả 4 mô hình (`Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder`) đều đã hoàn tất Train/Validation/Held-out Test trên `NF-UNSW-NB15-v3`. Tuy nhiên trên bản cài đặt Windows mới hoặc CI không chứa `.joblib` ngoài Git, các test real-data bị `SKIPPED` (không được coi là `PASS`) và mô hình thiếu/sai SHA-256 đều báo `BLOCKED / NOT READY` fail-closed (`HTTP 503`) không fallback ngầm; cần chuẩn bị gói companion artifacts và chạy bắt buộc `python scripts/verify_companion_artifacts.py --verify-e2e`.
-- **Giới hạn đóng gói Desktop M6 (`v0.6.0`):** Bộ cài đặt Windows NSIS (`NetFlow Sentinel M6_0.6.0_x64-setup.exe`) đã đóng gói giao diện Svelte 5, nhân Rust Tauri 2, mã nguồn Python backend (`src/network_anomaly/`, `scripts/run_api.py`, `requirements-runtime.txt`) và tracked manifests (`reports/`) nên **không cần `git clone` hay `NETWORK_ANOMALY_REPO_ROOT` trên máy khác**. Tuy nhiên bản này **chưa nhúng sẵn trình thông dịch Python**: máy đích cần Python `>= 3.12` (x64) + WebView2 Runtime và nạp gói Companion Bundle (4 model `.joblib` + preprocessor + `data/demo/`) qua nút thiết lập ngay trong ứng dụng vào `%LOCALAPPDATA%\NetFlowSentinelM6` (xem [docs/WINDOWS_INSTALLATION.md](docs/WINDOWS_INSTALLATION.md)).
+- **Đóng gói Desktop Standalone (`v1.0.0`, Issue #71):** Bộ cài đặt Windows NSIS (`NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`) tích hợp sẵn ứng dụng Desktop Rust Tauri 2 + Svelte 5, **PyInstaller backend sidecar** (`netflow-sentinel-backend.exe`), **WebView2 Offline Installer**, **cả 4 mô hình thật + preprocessor + manifests + `data/demo/`** và thông báo bản quyền (`NOTICE`, `THIRD_PARTY_NOTICES.md`, UQ License `454104`). Người dùng cuối **không cần cài Python hay tải Companion Bundle**; dữ liệu runtime cục bộ lưu tại `%LOCALAPPDATA%\NetFlowSentinel\` (xem [docs/WINDOWS_INSTALLATION.md](docs/WINDOWS_INSTALLATION.md)). Model binaries lớn vẫn không lưu trong Git mà được lấy và xác minh SHA-256 ở **giai đoạn build** (fail-closed nếu thiếu mô hình hoặc chưa đạt cổng phân phối phi thương mại).
 - **Phạm vi thu gọn minh bạch:** Thực thi tự động hóa tường lửa hệ điều hành/PowerShell (#27), xoay vòng khóa AES-256-GCM thực tế trong OS Keyring (#26, #27) và tương quan đa nguồn log Auth/API ngoài NetFlow (#28) được ghi nhận trạng thái `DEFERRED` (hỗ trợ mô phỏng phản ứng dry-run không tác động hệ thống).
 
 ## Hướng phát triển
 
-1. Hoàn tất review, hợp nhất PR #69 (`Issue #27 Dry-Run`) và PR `v0.6.0` Stable (4-model Desktop demo & release) vào `main`, sau đó xuất bản GitHub Release `v0.6.0` (kế tiếp `v0.6.0-beta.1` theo đúng [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md)).
-2. Nghiên cứu đóng gói Python runtime độc lập (embedded Python / sidecar) trong các phiên bản sau M6 nếu cần phân phối standalone không phụ thuộc môi trường Python ngoài.
-3. Chạy các thực nghiệm trọng tâm M7 (#25, #11, #48), hoàn tất báo cáo PDF, 10–12 slide và bàn giao cuối kỳ (#18–#20). Không tuyên bố zero-day hay kết quả ngoài phạm vi đã kiểm chứng.
+1. Hoàn tất kiểm chứng độc lập trên Windows sạch và phát hành `NetFlow Sentinel v1.0.0 Stable` theo đúng [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md).
+2. Chạy các thực nghiệm trọng tâm M7 (#25, #11, #48), hoàn tất báo cáo PDF, 10–12 slide và bàn giao cuối kỳ (#18–#20). Không tuyên bố zero-day hay kết quả ngoài phạm vi đã kiểm chứng.
 
 ## Thông tin học thuật và nhóm
 
