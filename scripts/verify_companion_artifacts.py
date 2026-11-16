@@ -942,25 +942,42 @@ def _is_loopback_port_open(port: int) -> bool:
 
 
 def _request_windows_graceful_close(desktop_pid: int) -> str:
-    """Send WM_CLOSE to top-level Windows HWNDs of `desktop_pid`, fallback to soft taskkill."""
+    """Send WM_CLOSE only to visible Tauri application window(s) owned by `desktop_pid`."""
     if os.name != "nt":
         return "unsupported"
+    from ctypes import wintypes
+
     user32 = ctypes.windll.user32  # type: ignore[attr-defined]
     wm_close = 0x0010
-    closed_hwnds: List[int] = []
-    enum_cb_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+    enum_cb_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [enum_cb_type, wintypes.LPARAM]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+
+    tauri_hwnds: List[int] = []
+    visible_hwnds: List[int] = []
 
     def _on_window(hwnd: int, _lparam: int) -> bool:
-        owner_pid = ctypes.c_ulong(0)
+        owner_pid = wintypes.DWORD(0)
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner_pid))
         if int(owner_pid.value) == int(desktop_pid):
-            user32.PostMessageW(hwnd, wm_close, 0, 0)
-            closed_hwnds.append(int(hwnd))
+            cls_buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, cls_buf, 256)
+            cls_name = cls_buf.value
+            if cls_name == "Tauri Window":
+                tauri_hwnds.append(int(hwnd))
+            elif user32.IsWindowVisible(hwnd) and cls_name != "Tao Thread Event Target":
+                visible_hwnds.append(int(hwnd))
         return True
 
     callback = enum_cb_type(_on_window)
     user32.EnumWindows(callback, 0)
-    if closed_hwnds:
+    targets = tauri_hwnds or visible_hwnds
+    if targets:
+        for hwnd in targets:
+            user32.PostMessageW(hwnd, wm_close, 0, 0)
         return "wm_close"
 
     subprocess.run(  # noqa: S603 - explicit soft taskkill without /F
