@@ -36,7 +36,7 @@ The transformer in `src/network_anomaly/preprocessing/pipeline.py` strictly adhe
      - `SRC_TO_DST_SECOND_BYTES`: 162.0
      - `DST_TO_SRC_SECOND_BYTES`: 78.28151260504201
    - Categorical-coded features (10 fields): fits finite-value mode computed strictly on Train
-     (e.g., `PROTOCOL`: 6.0 [TCP], `L7_PROTO`: 0.0).
+     (e.g., `PROTOCOL`: 6.0 [TCP], `L7_PROTO`: 37.0, `TCP_FLAGS`: 27.0 — xem [`03_DATA_PREPROCESSING_PIPELINE.md`](academic-defense/03_DATA_PREPROCESSING_PIPELINE.md)).
 5. **Frozen transformation:** applies the stored training medians and modes to validation and test
    without recomputation or adjustment.
 6. **No silent zeroing:** never replaces infinity values with zero; all non-finite values receive
