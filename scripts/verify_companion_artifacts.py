@@ -1255,7 +1255,7 @@ def verify_nsis_installer_e2e(
                 _terminate_pid_best_effort(observed_backend_pid)
 
         uninstall_proc = subprocess.run(  # noqa: S603 - explicit NSIS uninstaller in temp dir
-            [str(uninstaller_exe), "/S", f"_?={install_dir}"],
+            [str(uninstaller_exe), "/S"],
             capture_output=True,
             text=True,
             timeout=60,
