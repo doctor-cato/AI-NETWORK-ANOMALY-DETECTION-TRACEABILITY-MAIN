@@ -186,16 +186,21 @@ Mỗi lần inference tạo ra file `<output>.metadata.json`:
 
 ## 7. Điều kiện cần có để chạy inference với model thật
 
-- **Preprocessing Artifact**: `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`) và manifest `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`. Endpoint `/api/v1/health` tách biệt `preprocessor_ready` khỏi `model_ready`: hệ thống chỉ đạt `status = "healthy"` khi cả `preprocessor_ready` và selected `model_ready` đều `True` (ngược lại báo `status = "degraded"`).
+- **Preprocessing Artifact:** `artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib` (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`) và manifest `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`. Endpoint `/api/v1/health` tách biệt `preprocessor_ready` khỏi `model_ready`: hệ thống chỉ đạt `status = "healthy"` khi cả `preprocessor_ready` và selected `model_ready` đều `True` (ngược lại báo `status = "degraded"`).
 - **Trained Model Artifacts (4 mô hình mục tiêu):**
-  - File trọng số nhị phân lớn không track trực tiếp trong Git (`.gitignore`). Trên môi trường đã chạy thực nghiệm M3, cả **Random Forest** (`artifacts/models/random_forest/random_forest_baseline.joblib`, SHA-256 `801afcbb...`, run `rf-baseline-1794068628`) và **Isolation Forest** (`artifacts/models/isolation_forest/isolation_forest.joblib`, SHA-256 `15a69cc4...`, run `if-c4-20261115T055359Z`, clean commit `bf0f3ec`, manifest `reports/models/isolation_forest_manifest.json` kèm `score_normalization` chuẩn hóa từ Validation) đều đạt trạng thái **`READY`** cho `InferencePipeline`, CLI (`--model random_forest` / `--model isolation_forest`) và FastAPI (`/api/v1/health`, `/api/v1/analyze`).
-  - Đối với `xgboost` hoặc `autoencoder` (hoặc trên máy chưa huấn luyện/khôi phục `.joblib` cục bộ), hệ thống báo **`BLOCKED / NOT READY`** (`model_ready = False`) theo cơ chế fail-closed và không sử dụng dự đoán giả.
+  - Các file `.joblib` không track trực tiếp trong public Git (`.gitignore`). Trong bản đóng gói **Standalone `v1.0.0`** (build cục bộ hoặc từ nguồn cấp phép), cả 4 mô hình đều được nhúng sẵn kèm sidecar tại `staged_bundle/` và đạt trạng thái `READY`:
+    1. **Random Forest** (`random_forest_baseline.joblib`, SHA-256 `801afcbb...`, `MODEL_VALIDATED`)
+    2. **XGBoost** (`xgboost_baseline.joblib`, SHA-256 `3098b75a...`, `RESEARCH_ONLY`)
+    3. **Isolation Forest** (`isolation_forest.joblib`, SHA-256 `15a69cc4...`, `RESEARCH_ONLY`)
+    4. **Autoencoder (`MLPRegressor`)** (`autoencoder_model.joblib`, SHA-256 `df24752b...` + `model_config.json` + `threshold.json`, `RESEARCH_ONLY`)
+  - Trên source checkout mới chưa có `.joblib` cục bộ, mô hình bị thiếu sẽ báo **`BLOCKED / NOT READY`** (`HTTP 503` trên `/api/v1/csv/analyze`) theo cơ chế fail-closed, tuyệt đối không fallback ngầm sang dự đoán giả.
+- **OOD Abstention trên Desktop CSV (`src/network_anomaly/api/desktop_csv.py`):** Trước khi gọi inference, `OODValidator` tách riêng các dòng có `MIN_TTL == 0` (chưa quan sát TTL) hoặc vi phạm bất biến vật lý (thời lượng âm, `MIN_TTL > MAX_TTL`, bộ đếm âm) thành `ABSTAINED_OOD` (`predicted_label = null`, loại khỏi Confusion Matrix). Xem chi tiết giải thích tiền xử lý và inference tại [docs/academic-defense/03_DATA_PREPROCESSING_PIPELINE.md](academic-defense/03_DATA_PREPROCESSING_PIPELINE.md).
 
 ---
 
-## 8. Chuẩn bị Dữ liệu Demo CSV từ Validation & Tích hợp FastAPI
+## 8. Chuẩn bị Dữ liệu Demo CSV từ Validation & Tích hợp FastAPI (Developer)
 
-Để chạy demo offline mà **không** rò rỉ dữ liệu Train hay vi phạm Test Lock:
+Để chạy demo offline trên môi trường developer mà **không** rò rỉ dữ liệu Train hay vi phạm Test Lock:
 
 ```powershell
 # Tách 200 dòng cân bằng (100 Benign / 100 Attack) chỉ từ Validation partition
@@ -203,17 +208,17 @@ $env:PYTHONPATH = "src"
 python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
 ```
 
-- Xuất `data/demo/demo_flows.csv` (tuyệt đối không có `Label`/`Attack`, bảo toàn `row_id`), `data/demo/demo_labels.csv` (dùng đánh giá riêng Confusion Matrix/Metrics), và `data/demo/demo_manifest.json` (SHA-256, kiểm chứng `0` Train/Test overlap, khuyến cáo không đại diện phân bố thực tế và trạng thái `READY` / `BLOCKED / NOT READY` từng model).
+- Xuất `data/demo/demo_flows.csv` (tuyệt đối không có `Label`/`Attack`, bảo toàn `row_id`), `data/demo/demo_labels.csv` (dùng đánh giá riêng Confusion Matrix/Metrics), và `data/demo/demo_manifest.json` (SHA-256, kiểm chứng `0` Train/Test overlap, khuyến cáo không đại diện phân bố thực tế và trạng thái `READY` / `BLOCKED / NOT READY` từng model). Trên 200 dòng này có 198 dòng hợp lệ và 2 dòng `MIN_TTL == 0` bị gắn `ABSTAINED_OOD` trong Desktop API.
 - Chạy thử CLI trên mẫu demo:
 
 ```powershell
 python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest --output data/demo/demo_predictions.csv --metadata-output data/demo/demo_predictions_meta.json
 ```
 
-- Hoặc khởi động FastAPI local-only (`127.0.0.1:8000`) cho **Desktop App Rust / Tauri 2 + Svelte 5** (#16):
+- Hoặc khởi động FastAPI local-only (`127.0.0.1:8000`) cho **Desktop App Rust / Tauri 2 + Svelte 5** (trong bản Standalone `v1.0.0`, Tauri tự khởi chạy `netflow-sentinel-backend.exe` kèm `X-Sentinel-Session-Token`):
 
 ```powershell
 python scripts/run_api.py --host 127.0.0.1 --port 8000
 ```
 
-Các endpoint chính xem tại `reports/api/API_CONTRACT.md` và `reports/api/openapi.json` (`GET /api/v1/health`, `POST /api/v1/analyze`, `POST /api/v1/ingest`, `GET /api/v1/incidents`, `GET /api/v1/timeline`).
+Các endpoint chính xem tại [`reports/api/API_CONTRACT.md`](../reports/api/API_CONTRACT.md) và [`reports/api/openapi.json`](../reports/api/openapi.json) (`GET /api/v1/health`, `GET /api/v1/models`, `POST /api/v1/csv/inspect`, `POST /api/v1/csv/analyze`, `POST /api/v1/csv/evaluate`, `POST /api/v1/csv/export`, `POST /api/v1/security/simulate-response`).

@@ -1,113 +1,91 @@
-# Hướng dẫn Kiểm thử ML Pipeline (Testing Guide)
+# Hướng dẫn Kiểm thử Hệ thống & ML Pipeline (`TESTING.md`)
 
-Tài liệu này hướng dẫn kiến trúc kiểm thử, phân loại bài kiểm thử, quy trình thực thi và cách diễn giải kết quả kiểm thử trong repository `AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN` (Issue #17 — Milestone M4).
+Tài liệu này hướng dẫn kiến trúc kiểm thử đa tầng (Python ML/API, Frontend Svelte 5, Desktop Rust/Tauri 2 và Release E2E) trong repository `AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN` (CI thực tế tại [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) và [`.github/workflows/release.yml`](../.github/workflows/release.yml)).
 
 ---
 
-## 1. Kiến trúc Kiểm thử (Test Architecture)
-
-Hệ thống kiểm thử được tổ chức thành hai tầng riêng biệt trong thư mục `tests/`:
+## 1. Kiến trúc Kiểm thử Đa tầng
 
 ```text
 tests/
-├── unit/                        # Tầng Unit Tests: kiểm tra độc lập từng module/hàm
-│   ├── test_basic.py            # Khởi tạo model, cấu hình hạt giống ngẫu nhiên, guards khi chưa fit
-│   ├── test_nf_unsw_nb15_v3_*.py# Tải, split, audit và kiểm tra tính toàn vẹn dữ liệu
-│   ├── test_validate_data.py    # Kiểm tra schema, kiểu dữ liệu, bounds và token auditing
-│   ├── test_preprocessing_pipeline.py # 70+ test cho TrainOnlyPreprocessor, chính sách fit-on-train
-│   ├── test_rf_*.py             # Protocol, cấu hình baseline, huấn luyện và chẩn đoán Random Forest
-│   ├── test_inference_pipeline.py # Schema validation, CLI flags, bảo toàn row_id của Inference Pipeline
-│   └── test_run_experiments.py  # Giao diện thí nghiệm baseline
-│
-└── integration/                 # Tầng Integration Tests: kiểm tra phối hợp các thành phần
-    ├── test_inference_e2e.py    # Kiểm tra E2E CSV Inference Pipeline qua CLI và Python API
-    └── test_pipeline.py         # Kiểm tra tích hợp toàn bộ pipeline: Preprocessing + RF Model + Inference
+├── unit/                        # Unit Tests: module/hàm độc lập, schema, split, preprocessing, models, API, OOD
+├── contract/                    # Contract Tests: schema event & tích hợp M6 API contracts
+└── integration/                 # Integration Tests: E2E inference, 4-model integrity, desktop E2E, dry-run, VM controller
+
+desktop/
+├── src/lib/**/*.test.ts         # Frontend Unit Tests (Vitest 23 tests) & svelte-check TypeScript
+└── src-tauri/src/*.rs           # Rust Backend Sidecar & IPC Unit Tests (cargo test / clippy / fmt)
 ```
 
 ---
 
-## 2. Phân biệt Unit Test và Integration Test
+## 2. Phân loại kiểm thử và phạm vi chứng minh
 
-| Tiêu chí | Unit Tests (`tests/unit/`) | Integration Tests (`tests/integration/`) |
-|---|---|---|
-| **Mục tiêu** | Kiểm tra tính đúng đắn của từng class, hàm, regex hoặc logic đơn lẻ. | Kiểm tra sự tương tác và tích hợp giữa các thành phần khác nhau. |
-| **Dữ liệu kiểm thử** | Minimal mock fixtures, synthetic arrays nhỏ (1-20 dòng). | Synthetic network flow DataFrame hoàn chỉnh (47 features + targets + trace metadata). |
-| **Phạm vi kiểm tra** | Constructor, validate_input, tính toán metric, error guards (`NotFittedError`). | `Synthetic CSV → Schema Validation → Preprocessing → Model Prediction → Export CSV → Metadata JSON`. |
-| **Thời gian chạy** | Siêu nhanh (vài millisecond mỗi test). | Nhanh, thường từ 0.1s - 2s cho toàn bộ kịch bản. |
+| Tầng kiểm thử | Công cụ | Mục tiêu & Dữ liệu | Điều **chứng minh được** | Điều **không chứng minh được** |
+|---|---|---|---|---|
+| **Python Unit & Contract** | `pytest` (`tests/unit`, `tests/contract`) | Minimal fixtures & synthetic arrays | Logic hàm, 47-feature contract, fit boundary, OOD guards, API auth/validation | Không chứng minh accuracy/F1 trên `NF-UNSW-NB15-v3` |
+| **Python Integration** | `pytest` (`tests/integration`) | Synthetic CSV & fixture artifacts | Luồng end-to-end CSV → Preprocessing → 4 Models → SQLite → Dry-Run → Export | Các test phụ thuộc `.joblib`/raw CSV thật sẽ `SKIPPED` nếu thiếu file |
+| **Frontend Svelte 5** | `npm --prefix desktop run check` & `test` | Vitest mocks (`23` tests) | State comparison 4 model, hiển thị `MODEL_VALIDATED`/`RESEARCH_ONLY`, `ABSTAINED_OOD` | Không thay thế tương tác WebView2 GUI trên Windows thật |
+| **Rust / Tauri 2** | `cargo fmt/clippy/test` | Sidecar launcher & IPC (`9` lib tests) | Spawning sidecar loopback, token auth, shutdown sạch không orphan | Clean Windows 10/11 VM GUI E2E theo dõi riêng tại Issue `#73` |
+| **Release & Artifact E2E** | `verify_companion_artifacts.py --verify-e2e` | Bộ cài NSIS + 4 model `.joblib` thật | SHA-256, 4 model `READY`, 200 dòng demo (`198` + `2` OOD), fail-closed auth, uninstall | Smoke trên máy build giữ `clean_machine_status="NOT VERIFIED"` |
 
 ---
 
-## 3. Lệnh Chạy Kiểm Thử (How to Run Tests)
+## 3. Lệnh Chạy Kiểm Thử trên Windows PowerShell
 
-Tất cả lệnh chạy từ thư mục gốc của repository bằng Python environment đã kích hoạt:
+Chạy từ thư mục gốc repository:
 
-### A. Chạy toàn bộ test suite
-```bash
-python -m pytest tests -q
+### A. Kiểm tra Python & OpenAPI/Governance (theo `ci.yml`)
+```powershell
+python scripts/check_environment.py
+python scripts/export_openapi_spec.py --check
+python scripts/check_desktop_version.py --check
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
+python -m compileall -q src scripts tests
+python -m pytest tests -q --tb=short
 ```
 
-### B. Chạy riêng tầng Unit Tests
-```bash
+### B. Chạy tách từng nhóm Python tests
+```powershell
+python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
 python -m pytest tests/unit -q
+python -m pytest tests/contract tests/integration -q
 ```
 
-### C. Chạy riêng tầng Integration Tests
-```bash
-python -m pytest tests/integration -v
+### C. Kiểm tra Frontend Svelte 5 & Rust Desktop
+```powershell
+npm --prefix desktop ci
+npm --prefix desktop run check
+npm --prefix desktop test
+npm --prefix desktop run build
+
+cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
+cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+$env:NETWORK_ANOMALY_REQUIRE_PYTHON_TEST = "1"
+cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
 ```
 
-### D. Chạy kiểm thử tích hợp pipeline cụ thể (Issue #17)
-```bash
-python -m pytest tests/integration/test_pipeline.py -v
-```
-
-### E. Chạy kiểm tra chất lượng code (Lint & Format)
-```bash
-python -m ruff check src/network_anomaly/inference/predict.py src/network_anomaly/models/random_forest.py tests/integration/test_pipeline.py tests/unit/test_basic.py
-python -m black --check src/network_anomaly/inference/predict.py src/network_anomaly/models/random_forest.py tests/integration/test_pipeline.py tests/unit/test_basic.py
+### D. Lint, Format & Diff Cleanliness
+```powershell
+python -m ruff check src scripts tests
+python -m black --check src scripts tests
 git diff --check
 ```
 
----
-
-## 4. Cách Diễn Giải Trạng Thái Kiểm Thử (Interpreting Results)
-
-Mỗi bài kiểm tra trong pytest trả về một trong các trạng thái sau:
-
-1. **`PASS`**:
-   - Thành phần đáp ứng chính xác contract và vượt qua tất cả assertions logic.
-2. **`FAIL`**:
-   - Vi phạm contract (sai số cột, rò rỉ dữ liệu, sai lệch SHA-256, không ném ngoại lệ khi gặp lỗi).
-   - Bắt buộc phải điều tra và sửa chữa ngay.
-3. **`SKIPPED`**:
-   - Môi trường hiện tại thiếu artifact lớn hoặc raw dataset thực tế (như file `.joblib` bị loại trừ bởi `.gitignore`, hoặc raw dataset 577 MB không tải trên CI).
-   - **Lưu ý quan trọng**: `SKIPPED` không làm fail CI, nhưng **tuyệt đối không được coi là bằng chứng kiểm chứng thành công (PASS) trên dữ liệu thật**.
-   - Test suite được thiết kế **Fail-Closed**: nếu artifact thật bị thiếu, test sẽ báo rõ `SKIPPED` kèm lý do, không bao giờ âm thầm cho `PASS` giả tạo.
+### E. Kiểm tra Real-Data Audit (chỉ chạy khi có raw CSV / `.joblib` cục bộ)
+```powershell
+python scripts/validate_data.py
+python scripts/eda_nf_unsw_nb15_v3.py
+python scripts/verify_eda_reproducibility.py
+python scripts/preprocess_nf_unsw_nb15_v3.py --verify-only
+python scripts/export_academic_schema_summary.py
+```
 
 ---
 
-## 5. Dữ liệu Synthetic Chứng Minh Được Gì và Không Chứng Minh Được Gì?
+## 4. Cách Diễn Giải Trạng Thái Kiểm Thử
 
-### Những điều Synthetic Tests CHỨNG MINH ĐƯỢC:
-- **Tính đúng đắn của phần mềm**: Pipeline hoạt động liền mạch từ khâu nhận file CSV, tiền xử lý đến ra quyết định dự đoán.
-- **Bảo toàn Contract 47 Features**: Đúng 47 feature baseline được chọn theo đúng thứ tự chuẩn hóa NF-UNSW-NB15-v3.
-- **Chống rò rỉ dữ liệu (No Leakage)**: Cột nhãn (`Label`, `Attack`) và siêu dữ liệu vết (`IPV4_SRC_ADDR`, `L4_SRC_PORT`, v.v.) bị loại bỏ hoàn toàn khỏi ma trận đầu vào mô hình $X$.
-- **Bảo toàn trạng thái tiền xử lý (Frozen State)**: Quá trình inference không fit lại bất kỳ tham số nào của `TrainOnlyPreprocessor`.
-- **Tính toàn vẹn Artifact (Fail-Closed Integrity)**: Phát hiện và chặn đứng các artifact bị sửa đổi, hỏng hoặc manifest không khớp mã băm SHA-256.
-- **Tính xác định và Tái lập (Determinism)**: Cùng một input CSV và artifact luôn cho ra cùng một kết quả dự đoán bit-to-bit.
-
-### Những điều Synthetic Tests KHÔNG THỂ CHỨNG MINH:
-- **Độ chính xác ML (F1, Precision, Recall, AUC)**: Dữ liệu synthetic ngẫu nhiên không có ý nghĩa thống kê về lưu lượng mạng thực tế.
-- **Khả năng phát hiện xâm nhập trong thực tế**: Không được dùng kết quả test synthetic để công bố benchmark mô hình. Việc đánh giá năng lực mô hình trên tập Test giữ kín là nhiệm vụ độc lập thuộc Issue #12.
-
----
-
-## 6. Kiểm Chứng Trên Dữ Liệu Thật (Real-Data Verification)
-
-Khi môi trường có sẵn các artifact thực tế:
-
-1. **Preprocessor Artifact Thật (`artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib`)**:
-   - `test_real_preprocessor_artifact_verification` sẽ tự động phát hiện, đối chiếu mã SHA-256 với `reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json`, xác thực 1,655,797 dòng train và báo `PASS`.
-2. **Model Artifact Thật (`artifacts/models/random_forest/random_forest_baseline.joblib`)**:
-   - Nếu file binary tồn tại cục bộ, `test_real_model_artifact_verification` sẽ nạp bằng `RandomForestModel.load_verified()` và kiểm tra tính toàn vẹn.
-   - Nếu file binary vắng mặt (do chính sách `.gitignore` của repository), test sẽ thông báo `SKIPPED` kèm ghi chú rõ ràng về manifest đã được lưu trữ trong Git.
+1. **`PASS`**: Toàn bộ assertions đều đạt.
+2. **`FAIL`**: Vi phạm contract, lỗi runtime, sai hash hoặc regression — bắt buộc sửa trước khi merge.
+3. **`SKIPPED`**: Môi trường thiếu raw dataset (577 MB) hoặc `.joblib` ngoài Git (`.gitignore`). **Lưu ý:** `SKIPPED` với exit code `0` tuyệt đối **không** được báo cáo là `PASS` trên dữ liệu thật.
+4. **`NOT VERIFIED`**: Hạng mục chưa được kiểm chứng trong môi trường mục tiêu (ví dụ `clean_machine_status="NOT VERIFIED"` khi chạy E2E trên máy build có toolchain thay vì VM Windows 10/11 sạch tại `#73`).
