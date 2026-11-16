@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import io
 import json
 import shutil
 import subprocess
+import urllib.request
 import zipfile
+from email.message import Message
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict
@@ -873,77 +876,7 @@ def test_verify_nsis_installer_e2e_rejects_orphan_backend_and_uninstall_leftover
 def test_package_and_install_companion_bundle_security_and_provenance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    ws = _copy_attestation_workspace(tmp_path / "src_ws")
-    fake_files = {
-        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
-        "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
-        "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
-        "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
-        "artifacts/models/autoencoder/autoencoder_model.joblib": b"ae",
-    }
-    for rel, content in fake_files.items():
-        p = ws / rel
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_bytes(content)
-
-    all_companion_files = sorted(
-        [
-            *fake_files.keys(),
-            "data/demo/demo_flows.csv",
-            "data/demo/demo_labels.csv",
-            "data/demo/demo_manifest.json",
-            "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
-            "reports/models/random_forest_manifest.json",
-            "reports/models/xgboost_manifest.json",
-            "reports/models/isolation_forest_manifest.json",
-            "reports/models/autoencoder_manifest.json",
-        ]
-    )
-
-    def _ready_summary(root: Path) -> Dict[str, Any]:
-        demo_info = {
-            rel: {
-                "present": (root / rel).is_file(),
-                "sha256": _sha256_path(root / rel) if (root / rel).is_file() else None,
-            }
-            for rel in (
-                "data/demo/demo_flows.csv",
-                "data/demo/demo_labels.csv",
-                "data/demo/demo_manifest.json",
-            )
-        }
-        all_present = all((root / rel).is_file() for rel in all_companion_files)
-        return {
-            "overall_status": "READY" if all_present else "BLOCKED / NOT READY",
-            "ready_models": (
-                ["random_forest", "xgboost", "isolation_forest", "autoencoder"]
-                if all_present
-                else []
-            ),
-            "preprocessor": {
-                "ready": all_present,
-                "sha256": (
-                    _sha256_path(
-                        root / "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib"
-                    )
-                    if all_present
-                    else None
-                ),
-            },
-            "models": {
-                key: {
-                    "ready": all_present,
-                    "sha256": "1" * 64,
-                    "run_id": f"{key}_run",
-                }
-                for key in ("random_forest", "xgboost", "isolation_forest", "autoencoder")
-            },
-            "demo": demo_info,
-            "demo_ready": all_present,
-            "companion_files": all_companion_files,
-        }
-
-    monkeypatch.setattr(vca, "verify_companion_artifacts", _ready_summary)
+    ws = _setup_companion_source_workspace(tmp_path, monkeypatch)
 
     bundle_zip = tmp_path / "companion.zip"
     pkg_info = package_companion_bundle(bundle_zip, root=ws)
@@ -1101,3 +1034,410 @@ def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_de
     (partial_dir / "demo_flows.csv").write_text("L4_SRC_PORT\n80\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="Incomplete tracked demo files"):
         verify_e2e_attestation(att, root=ws)
+
+
+def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    ws = _copy_attestation_workspace(tmp_path / "src_ws")
+    prep_manifest = json.loads(
+        (ws / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    prep_sha = str(prep_manifest["artifact_sha256"]).lower()
+    model_shas: Dict[str, str] = {}
+    model_runs: Dict[str, str] = {}
+    for key, rel_m in (
+        ("random_forest", "reports/models/random_forest_manifest.json"),
+        ("xgboost", "reports/models/xgboost_manifest.json"),
+        ("isolation_forest", "reports/models/isolation_forest_manifest.json"),
+        ("autoencoder", "reports/models/autoencoder_manifest.json"),
+    ):
+        md = json.loads((ws / rel_m).read_text(encoding="utf-8"))
+        model_shas[key] = str(
+            md.get("model_artifact_sha256") or md.get("model_sha256") or md.get("artifact_sha256")
+        ).lower()
+        model_runs[key] = str(md["run_id"])
+
+    fake_files = {
+        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
+        "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
+        "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
+        "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
+        "artifacts/models/autoencoder/autoencoder_model.joblib": b"ae",
+    }
+    for rel, content in fake_files.items():
+        p = ws / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(content)
+
+    all_companion_files = sorted(
+        [
+            *fake_files.keys(),
+            "data/demo/demo_flows.csv",
+            "data/demo/demo_labels.csv",
+            "data/demo/demo_manifest.json",
+            "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+            "reports/models/random_forest_manifest.json",
+            "reports/models/xgboost_manifest.json",
+            "reports/models/isolation_forest_manifest.json",
+            "reports/models/autoencoder_manifest.json",
+        ]
+    )
+
+    def _ready_summary(root: Path) -> Dict[str, Any]:
+        demo_info = {
+            rel: {
+                "present": (root / rel).is_file(),
+                "sha256": _sha256_path(root / rel) if (root / rel).is_file() else None,
+            }
+            for rel in (
+                "data/demo/demo_flows.csv",
+                "data/demo/demo_labels.csv",
+                "data/demo/demo_manifest.json",
+            )
+        }
+        all_present = all((root / rel).is_file() for rel in all_companion_files)
+        return {
+            "overall_status": "READY" if all_present else "BLOCKED / NOT READY",
+            "ready_models": (
+                ["random_forest", "xgboost", "isolation_forest", "autoencoder"]
+                if all_present
+                else []
+            ),
+            "preprocessor": {
+                "ready": all_present,
+                "sha256": prep_sha if all_present else None,
+            },
+            "models": {
+                key: {
+                    "ready": all_present,
+                    "sha256": model_shas[key],
+                    "run_id": model_runs[key],
+                }
+                for key in ("random_forest", "xgboost", "isolation_forest", "autoencoder")
+            },
+            "demo": demo_info,
+            "demo_ready": all_present,
+            "companion_files": all_companion_files,
+        }
+
+    monkeypatch.setattr(vca, "verify_companion_artifacts", _ready_summary)
+    return ws
+
+
+class _FakeHttpResponse:
+    def __init__(self, url: str, body: bytes):
+        self._url = url
+        self._bio = io.BytesIO(body)
+
+    def geturl(self) -> str:
+        return self._url
+
+    def read(self, n: int = -1) -> bytes:
+        return self._bio.read(n)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+def _make_mock_opener(
+    routes: Dict[str, tuple[int, str | bytes]],
+    recorded_requests: list[tuple[str, Dict[str, str]]],
+):
+    def _factory(
+        allowed_hosts,
+        github_repo,
+        *,
+        allow_actions_storage_redirects: bool = False,
+    ):
+        redir_handler = vca._AllowlistedRedirectHandler(
+            allowed_hosts,
+            github_repo,
+            allow_actions_storage_redirects=allow_actions_storage_redirects,
+        )
+
+        class _MockOpener:
+            def open(self, req: urllib.request.Request, timeout=60.0):  # noqa: ARG002
+                curr_req = req
+                for _hop in range(5):
+                    merged_headers = {**curr_req.unredirected_hdrs, **curr_req.headers}
+                    recorded_requests.append(
+                        (
+                            curr_req.full_url,
+                            {k.lower(): v for k, v in merged_headers.items()},
+                        )
+                    )
+                    status, payload = routes[curr_req.full_url]
+                    if status in (301, 302, 303, 307, 308):
+                        next_req = redir_handler.redirect_request(
+                            curr_req, None, status, "Found", Message(), str(payload)
+                        )
+                        assert next_req is not None
+                        curr_req = next_req
+                        continue
+                    assert isinstance(payload, bytes)
+                    return _FakeHttpResponse(curr_req.full_url, payload)
+                raise AssertionError("Too many redirect hops in test mock")
+
+        return _MockOpener()
+
+    return _factory
+
+
+def test_companion_url_token_scoping_and_redirect_security_f05(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    ws = _setup_companion_source_workspace(tmp_path, monkeypatch)
+    bundle_zip = tmp_path / "companion.zip"
+    pkg_info = package_companion_bundle(bundle_zip, root=ws)
+    bundle_sha = pkg_info["bundle_sha256"]
+    bundle_bytes = bundle_zip.read_bytes()
+
+    monkeypatch.setenv("GH_TOKEN", "ghp_super_secret_token")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_workflow_secret_token")
+    monkeypatch.setenv("COMPANION_BUNDLE_TOKEN", "dedicated_bundle_secret")
+    monkeypatch.setenv("CUSTOM_EXT_TOKEN", "explicit_external_secret")
+
+    # 1. External custom URL must NEVER receive GH_TOKEN/GITHUB_TOKEN or implicit COMPANION_BUNDLE_TOKEN
+    recorded_ext: list[tuple[str, Dict[str, str]]] = []
+    routes_ext: Dict[str, tuple[int, str | bytes]] = {
+        "https://cdn.example.com/bundle.zip": (200, bundle_bytes),
+    }
+    monkeypatch.setattr(
+        vca, "_build_allowlisted_opener", _make_mock_opener(routes_ext, recorded_ext)
+    )
+    target_ws1 = _copy_attestation_workspace(tmp_path / "target_ext_no_token")
+    shutil.rmtree(target_ws1 / "data/demo")
+    res1 = install_companion_bundle(
+        root=target_ws1,
+        bundle_url="https://cdn.example.com/bundle.zip",
+        allowed_hosts=["cdn.example.com"],
+        github_repo="doctor-cato/repo",
+        expected_bundle_sha256=bundle_sha,
+    )
+    assert res1["install_status"] == "READY"
+    assert len(recorded_ext) == 1
+    assert "authorization" not in recorded_ext[0][1]
+
+    # 2. Explicitly asking to send GH_TOKEN/GITHUB_TOKEN to non-GitHub-API host must fail closed
+    for gh_var in ("GH_TOKEN", "GITHUB_TOKEN"):
+        with pytest.raises(RuntimeError, match="Refusing to send"):
+            install_companion_bundle(
+                root=target_ws1,
+                bundle_url="https://cdn.example.com/bundle.zip",
+                allowed_hosts=["cdn.example.com"],
+                github_repo="doctor-cato/repo",
+                expected_bundle_sha256=bundle_sha,
+                token_env_var=gh_var,
+            )
+    with pytest.raises(RuntimeError, match="Refusing to attach GitHub token"):
+        vca._download_allowlisted_bytes(
+            "https://cdn.example.com/bundle.zip",
+            allowed_hosts=["cdn.example.com"],
+            github_repo="doctor-cato/repo",
+            token="ghp_super_secret_token",
+            token_source_is_github=True,
+        )
+
+    # 3. External URL with explicit dedicated token strips Authorization on redirect (same & cross host)
+    recorded_redir: list[tuple[str, Dict[str, str]]] = []
+    routes_redir: Dict[str, tuple[int, str | bytes]] = {
+        "https://cdn.example.com/start.zip": (302, "https://cdn.example.com/signed.zip"),
+        "https://cdn.example.com/signed.zip": (302, "https://edge.example.com/final.zip"),
+        "https://edge.example.com/final.zip": (200, bundle_bytes),
+    }
+    monkeypatch.setattr(
+        vca, "_build_allowlisted_opener", _make_mock_opener(routes_redir, recorded_redir)
+    )
+    target_ws2 = _copy_attestation_workspace(tmp_path / "target_ext_redir")
+    shutil.rmtree(target_ws2 / "data/demo")
+    res2 = install_companion_bundle(
+        root=target_ws2,
+        bundle_url="https://cdn.example.com/start.zip",
+        allowed_hosts=["cdn.example.com", "edge.example.com"],
+        github_repo="doctor-cato/repo",
+        expected_bundle_sha256=bundle_sha,
+        token_env_var="CUSTOM_EXT_TOKEN",
+    )
+    assert res2["install_status"] == "READY"
+    assert recorded_redir[0][1].get("authorization") == "Bearer explicit_external_secret"
+    assert "authorization" not in recorded_redir[1][1]
+    assert "authorization" not in recorded_redir[2][1]
+
+    # 4. Redirects to evil host or another GitHub repo are blocked fail-closed
+    routes_evil_redir: Dict[str, tuple[int, str | bytes]] = {
+        "https://cdn.example.com/evil.zip": (302, "https://evil.attacker.net/pwn.zip"),
+        "https://github.com/doctor-cato/repo/releases/download/v0.6.0/c.zip": (
+            302,
+            "https://github.com/attacker/evil-repo/releases/download/v1/c.zip",
+        ),
+    }
+    monkeypatch.setattr(vca, "_build_allowlisted_opener", _make_mock_opener(routes_evil_redir, []))
+    with pytest.raises(RuntimeError, match="Disallowed companion URL host"):
+        install_companion_bundle(
+            root=target_ws2,
+            bundle_url="https://cdn.example.com/evil.zip",
+            allowed_hosts=["cdn.example.com"],
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=bundle_sha,
+        )
+    with pytest.raises(RuntimeError, match="must belong to repository"):
+        install_companion_bundle(
+            root=target_ws2,
+            bundle_url="https://github.com/doctor-cato/repo/releases/download/v0.6.0/c.zip",
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=bundle_sha,
+        )
+
+
+def test_github_actions_artifact_zip_wrapper_and_provenance_f06(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    ws = _setup_companion_source_workspace(tmp_path, monkeypatch)
+    bundle_zip = tmp_path / "netflow-sentinel-v0.6.0-companion-bundle.zip"
+    pkg_info = package_companion_bundle(bundle_zip, root=ws)
+    inner_sha = pkg_info["bundle_sha256"]
+    inner_bytes = bundle_zip.read_bytes()
+
+    # Simulate real GitHub Actions actions/upload-artifact wrapper ZIP containing inner companion.zip
+    outer_wrapper_zip = tmp_path / "actions_artifact_wrapper.zip"
+    with zipfile.ZipFile(outer_wrapper_zip, "w") as outer_zf:
+        outer_zf.writestr("netflow-sentinel-v0.6.0-companion-bundle.zip", inner_bytes)
+    outer_bytes = outer_wrapper_zip.read_bytes()
+    outer_sha = _sha256_bytes(outer_bytes)
+
+    list_url = (
+        "https://api.github.com/repos/doctor-cato/repo/actions/runs/"
+        "987654/artifacts?name=netflow-sentinel-companion-bundle&per_page=100"
+    )
+    dl_api_url = "https://api.github.com/repos/doctor-cato/repo/actions/artifacts/555/zip"
+    signed_storage_url = (
+        "https://pipelinesghubeus1.actions.githubusercontent.com/dl/555?sig=signed-sas-token"
+    )
+
+    recorded_gh: list[tuple[str, Dict[str, str]]] = []
+    routes_gh: Dict[str, tuple[int, str | bytes]] = {
+        list_url: (
+            200,
+            json.dumps(
+                {
+                    "artifacts": [
+                        {
+                            "name": "netflow-sentinel-companion-bundle",
+                            "expired": False,
+                            "digest": f"sha256:{outer_sha}",
+                            "archive_download_url": dl_api_url,
+                        }
+                    ]
+                }
+            ).encode("utf-8"),
+        ),
+        dl_api_url: (302, signed_storage_url),
+        signed_storage_url: (200, outer_bytes),
+    }
+
+    monkeypatch.setenv("GH_TOKEN", "ghp_actions_secret")
+    monkeypatch.setattr(vca, "_build_allowlisted_opener", _make_mock_opener(routes_gh, recorded_gh))
+
+    target_ws = _copy_attestation_workspace(tmp_path / "clean_actions_ws")
+    shutil.rmtree(target_ws / "data/demo")
+    installed = install_companion_bundle(
+        root=target_ws,
+        artifact_run_id="987654",
+        github_repo="doctor-cato/repo",
+        expected_bundle_sha256=inner_sha,
+    )
+    assert installed["install_status"] == "READY"
+    assert installed["archive_sha256"] == inner_sha
+    assert installed["outer_wrapper_sha256"] == outer_sha
+    assert (target_ws / "data/demo/demo_flows.csv").is_file()
+    assert (target_ws / "artifacts/models/autoencoder/autoencoder_model.joblib").is_file()
+
+    # GH_TOKEN sent ONLY to api.github.com endpoints, NEVER to redirected storage host
+    assert recorded_gh[0] == (
+        list_url,
+        {
+            "user-agent": "netflow-sentinel-companion-installer/0.6.0",
+            "accept": "application/vnd.github+json",
+            "authorization": "Bearer ghp_actions_secret",
+        },
+    )
+    assert recorded_gh[1][0] == dl_api_url
+    assert recorded_gh[1][1].get("authorization") == "Bearer ghp_actions_secret"
+    assert recorded_gh[2][0] == signed_storage_url
+    assert "authorization" not in recorded_gh[2][1]
+
+    # Negative F-06 tests:
+    # (a) Multi-file outer wrapper (extra file alongside zip) rejected fail-closed
+    bad_multi_wrapper = tmp_path / "bad_multi.zip"
+    with zipfile.ZipFile(bad_multi_wrapper, "w") as bad_zf:
+        bad_zf.writestr("companion.zip", inner_bytes)
+        bad_zf.writestr("unexpected.txt", b"extra")
+    routes_gh[signed_storage_url] = (200, bad_multi_wrapper.read_bytes())
+    routes_gh[list_url] = (
+        200,
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "name": "netflow-sentinel-companion-bundle",
+                        "expired": False,
+                        "digest": f"sha256:{_sha256_path(bad_multi_wrapper)}",
+                        "archive_download_url": dl_api_url,
+                    }
+                ]
+            }
+        ).encode("utf-8"),
+    )
+    with pytest.raises(RuntimeError, match="Disallowed companion archive entry prefix"):
+        install_companion_bundle(
+            root=target_ws,
+            artifact_run_id="987654",
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=_sha256_path(bad_multi_wrapper),
+        )
+
+    # (b) GitHub API artifact digest mismatch rejected fail-closed
+    routes_gh[signed_storage_url] = (200, outer_bytes)
+    routes_gh[list_url] = (
+        200,
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "name": "netflow-sentinel-companion-bundle",
+                        "expired": False,
+                        "digest": f"sha256:{'0' * 64}",
+                        "archive_download_url": dl_api_url,
+                    }
+                ]
+            }
+        ).encode("utf-8"),
+    )
+    with pytest.raises(RuntimeError, match="Downloaded GitHub Actions artifact digest mismatch"):
+        install_companion_bundle(
+            root=target_ws,
+            artifact_run_id="987654",
+            github_repo="doctor-cato/repo",
+            expected_bundle_sha256=inner_sha,
+        )
+
+    # (c) Tampered inner COMPANION_BUNDLE_MANIFEST.json provenance rejected fail-closed
+    tampered_inner = tmp_path / "tampered_inner.zip"
+    with zipfile.ZipFile(bundle_zip, "r") as zin, zipfile.ZipFile(tampered_inner, "w") as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "COMPANION_BUNDLE_MANIFEST.json":
+                m = json.loads(data.decode("utf-8"))
+                m["models"]["random_forest"]["sha256"] = "f" * 64
+                data = json.dumps(m).encode("utf-8")
+            zout.writestr(item, data)
+    with pytest.raises(RuntimeError, match="COMPANION_BUNDLE_MANIFEST provenance mismatch"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_archive=tampered_inner,
+            expected_bundle_sha256=_sha256_path(tampered_inner),
+        )

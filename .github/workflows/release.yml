@@ -173,6 +173,9 @@ jobs:
             if (-not [string]::IsNullOrWhiteSpace($allowedHosts)) {
               $cmdArgs += @("--allowed-hosts", $allowedHosts)
             }
+            if (-not [string]::IsNullOrWhiteSpace($env:COMPANION_BUNDLE_TOKEN)) {
+              $cmdArgs += @("--token-env", "COMPANION_BUNDLE_TOKEN")
+            }
             python @cmdArgs
             if ($LASTEXITCODE -ne 0) { exit 1 }
           } elseif (-not [string]::IsNullOrWhiteSpace($bundleRunId)) {
@@ -185,9 +188,6 @@ jobs:
             )
             if (-not [string]::IsNullOrWhiteSpace($bundleSha)) {
               $cmdArgs += @("--expect-bundle-sha256", $bundleSha)
-            }
-            if (-not [string]::IsNullOrWhiteSpace($allowedHosts)) {
-              $cmdArgs += @("--allowed-hosts", $allowedHosts)
             }
             python @cmdArgs
             if ($LASTEXITCODE -ne 0) { exit 1 }

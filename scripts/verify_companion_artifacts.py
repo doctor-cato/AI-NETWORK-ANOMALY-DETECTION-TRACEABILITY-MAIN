@@ -288,6 +288,7 @@ _DEFAULT_ALLOWED_BUNDLE_HOSTS = frozenset(
     }
 )
 _GITHUB_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_GITHUB_TOKEN_ENV_NAMES = frozenset({"GH_TOKEN", "GITHUB_TOKEN"})
 
 
 def _normalize_allowed_hosts(allowed_hosts: Optional[List[str]]) -> Optional[frozenset[str]]:
@@ -302,12 +303,34 @@ def _normalize_allowed_hosts(allowed_hosts: Optional[List[str]]) -> Optional[fro
     return frozenset(normalized) if normalized else None
 
 
+def _is_valid_github_api_url(url: str, github_repo: Optional[str] = None) -> bool:
+    """Return True strictly for HTTPS GitHub REST API repository endpoints."""
+    parsed = urllib.parse.urlsplit(url.strip())
+    if parsed.scheme.lower() != "https" or parsed.username or parsed.password:
+        return False
+    host = (parsed.hostname or "").strip().lower()
+    if host != "api.github.com":
+        return False
+    if github_repo is not None:
+        repo_norm = github_repo.strip()
+        if not _GITHUB_REPO_RE.fullmatch(repo_norm):
+            return False
+        return parsed.path.startswith(f"/repos/{repo_norm}/")
+    return bool(re.match(r"^/repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/", parsed.path))
+
+
+def _is_github_actions_storage_redirect_host(host: str) -> bool:
+    return host in _DEFAULT_ALLOWED_BUNDLE_HOSTS or host.endswith(
+        (".actions.githubusercontent.com", ".blob.core.windows.net")
+    )
+
+
 def _validate_companion_url(
     url: str,
     *,
     allowed_hosts: Optional[List[str]] = None,
     github_repo: Optional[str] = None,
-    enforce_repo_path: bool = True,
+    allow_github_actions_storage_redirects: bool = False,
 ) -> str:
     parsed = urllib.parse.urlsplit(url.strip())
     if parsed.scheme.lower() != "https":
@@ -319,13 +342,22 @@ def _validate_companion_url(
         raise RuntimeError(f"Invalid companion URL missing hostname: {url!r}")
 
     custom_hosts = _normalize_allowed_hosts(allowed_hosts)
-    effective_hosts = custom_hosts if custom_hosts is not None else _DEFAULT_ALLOWED_BUNDLE_HOSTS
-    if host not in effective_hosts:
+    if custom_hosts is not None:
+        effective_hosts = custom_hosts
+        host_allowed = host in effective_hosts
+    else:
+        effective_hosts = _DEFAULT_ALLOWED_BUNDLE_HOSTS
+        host_allowed = (
+            _is_github_actions_storage_redirect_host(host)
+            if allow_github_actions_storage_redirects
+            else host in effective_hosts
+        )
+    if not host_allowed:
         raise RuntimeError(
             f"Disallowed companion URL host {host!r} (allowed: {sorted(effective_hosts)})"
         )
 
-    if custom_hosts is None and enforce_repo_path and github_repo:
+    if custom_hosts is None and github_repo:
         repo_norm = github_repo.strip()
         if not _GITHUB_REPO_RE.fullmatch(repo_norm):
             raise RuntimeError(f"Invalid github_repo identifier: {github_repo!r}")
@@ -341,12 +373,19 @@ def _validate_companion_url(
 
 
 class _AllowlistedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Enforce HTTPS + allowlist on HTTP redirects and strip Auth headers cross-host."""
+    """Enforce HTTPS + allowlist on HTTP redirects and always strip Auth headers."""
 
-    def __init__(self, allowed_hosts: Optional[List[str]], github_repo: Optional[str]) -> None:
+    def __init__(
+        self,
+        allowed_hosts: Optional[List[str]],
+        github_repo: Optional[str],
+        *,
+        allow_actions_storage_redirects: bool = False,
+    ) -> None:
         super().__init__()
         self.allowed_hosts = allowed_hosts
         self.github_repo = github_repo
+        self.allow_actions_storage_redirects = allow_actions_storage_redirects
 
     def redirect_request(  # type: ignore[override]
         self,
@@ -361,17 +400,66 @@ class _AllowlistedRedirectHandler(urllib.request.HTTPRedirectHandler):
             newurl,
             allowed_hosts=self.allowed_hosts,
             github_repo=self.github_repo,
-            enforce_repo_path=False,
+            allow_github_actions_storage_redirects=self.allow_actions_storage_redirects,
         )
         redirected = super().redirect_request(req, fp, code, msg, headers, validated)
         if redirected is not None:
-            orig_host = (urllib.parse.urlsplit(req.full_url).hostname or "").lower()
-            new_host = (urllib.parse.urlsplit(validated).hostname or "").lower()
-            if orig_host != new_host:
-                for hdr in ("Authorization", "authorization"):
+            for hdr in list(redirected.headers.keys()):
+                if hdr.lower() == "authorization":
                     redirected.headers.pop(hdr, None)
+            for hdr in list(redirected.unredirected_hdrs.keys()):
+                if hdr.lower() == "authorization":
                     redirected.unredirected_hdrs.pop(hdr, None)
         return redirected
+
+
+def _build_allowlisted_opener(
+    allowed_hosts: Optional[List[str]],
+    github_repo: Optional[str],
+    *,
+    allow_actions_storage_redirects: bool = False,
+) -> urllib.request.OpenerDirector:
+    return urllib.request.build_opener(
+        _AllowlistedRedirectHandler(
+            allowed_hosts,
+            github_repo,
+            allow_actions_storage_redirects=allow_actions_storage_redirects,
+        )
+    )
+
+
+def _resolve_token_for_url(
+    url: str,
+    *,
+    github_repo: Optional[str],
+    token_env_var: Optional[str],
+    require_token_if_github_api: bool = False,
+) -> Optional[str]:
+    """Scope GH_TOKEN strictly to valid GitHub API URLs; require explicit token_env_var for external URLs."""
+    is_github_api = _is_valid_github_api_url(url, github_repo)
+    cleaned_env = token_env_var.strip() if token_env_var and token_env_var.strip() else None
+
+    if cleaned_env is not None:
+        if cleaned_env in _GITHUB_TOKEN_ENV_NAMES and not is_github_api:
+            raise RuntimeError(f"Refusing to send {cleaned_env} to non-GitHub-API URL: {url!r}")
+        val = os.environ.get(cleaned_env)
+        if not val or not val.strip():
+            raise RuntimeError(
+                f"Configured token environment variable {cleaned_env!r} is missing or empty."
+            )
+        return val.strip()
+
+    if is_github_api:
+        val = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+        if val and val.strip():
+            return val.strip()
+        if require_token_if_github_api:
+            raise RuntimeError(
+                "GH_TOKEN or GITHUB_TOKEN is required in environment to query GitHub Actions API."
+            )
+        return None
+
+    return None
 
 
 def _download_allowlisted_bytes(
@@ -380,6 +468,8 @@ def _download_allowlisted_bytes(
     allowed_hosts: Optional[List[str]] = None,
     github_repo: Optional[str] = None,
     token: Optional[str] = None,
+    token_source_is_github: bool = False,
+    allow_actions_storage_redirects: bool = False,
     accept: str = "application/octet-stream",
     timeout: float = 60.0,
 ) -> bytes:
@@ -387,9 +477,22 @@ def _download_allowlisted_bytes(
         url,
         allowed_hosts=allowed_hosts,
         github_repo=github_repo,
-        enforce_repo_path=True,
+        allow_github_actions_storage_redirects=False,
     )
-    opener = urllib.request.build_opener(_AllowlistedRedirectHandler(allowed_hosts, github_repo))
+    if (
+        token
+        and token_source_is_github
+        and not _is_valid_github_api_url(validated_url, github_repo)
+    ):
+        raise RuntimeError(
+            f"Refusing to attach GitHub token to non-GitHub-API URL: {validated_url!r}"
+        )
+
+    opener = _build_allowlisted_opener(
+        allowed_hosts,
+        github_repo,
+        allow_actions_storage_redirects=allow_actions_storage_redirects,
+    )
     headers = {
         "User-Agent": "netflow-sentinel-companion-installer/0.6.0",
         "Accept": accept,
@@ -404,7 +507,7 @@ def _download_allowlisted_bytes(
                 final_url,
                 allowed_hosts=allowed_hosts,
                 github_repo=github_repo,
-                enforce_repo_path=False,
+                allow_github_actions_storage_redirects=allow_actions_storage_redirects,
             )
         return bytes(resp.read())
 
@@ -513,6 +616,130 @@ def _extract_safe_companion_zip(archive_path: Path, extract_dir: Path) -> None:
                 shutil.copyfileobj(src_fh, dst_fh)
 
 
+def _unpack_and_verify_companion_archive(
+    archive_file: Path,
+    staged_root: Path,
+    norm_expected_sha: Optional[str],
+    *,
+    allow_actions_zip_wrapper: bool = False,
+) -> Tuple[str, Optional[str]]:
+    """Verify archive SHA-256 and extract, safely unwrapping 1-level GitHub Actions ZIP wrapper."""
+    downloaded_sha = _sha256_file(archive_file).lower()
+    if allow_actions_zip_wrapper:
+        with zipfile.ZipFile(archive_file, mode="r") as outer_zf:
+            file_infos: List[Tuple[str, zipfile.ZipInfo]] = []
+            seen_outer: set[str] = set()
+            for info in outer_zf.infolist():
+                if info.is_dir():
+                    continue
+                raw_name = info.filename.replace("\\", "/")
+                if not raw_name or raw_name.startswith("/") or re.match(r"^[A-Za-z]:", raw_name):
+                    raise RuntimeError(f"Unsafe archive entry path rejected: {info.filename!r}")
+                parts = Path(raw_name).parts
+                if ".." in parts or "." in parts:
+                    raise RuntimeError(f"Path traversal archive entry rejected: {info.filename!r}")
+                unix_mode = (info.external_attr >> 16) & 0o170000
+                if unix_mode == 0o120000:
+                    raise RuntimeError(f"Symlink archive entry rejected: {info.filename!r}")
+                norm_rel = Path(*parts).as_posix()
+                if norm_rel in seen_outer:
+                    raise RuntimeError(f"Duplicate archive entry rejected: {norm_rel!r}")
+                seen_outer.add(norm_rel)
+                file_infos.append((norm_rel, info))
+
+            is_single_wrapped_zip = (
+                "COMPANION_SHA256SUMS.txt" not in seen_outer
+                and len(file_infos) == 1
+                and len(Path(file_infos[0][0]).parts) == 1
+                and file_infos[0][0].lower().endswith(".zip")
+            )
+            if is_single_wrapped_zip:
+                _, inner_info = file_infos[0]
+                inner_archive = (archive_file.parent / "unwrapped_companion.zip").resolve()
+                with outer_zf.open(inner_info, "r") as src_fh, inner_archive.open("wb") as dst_fh:
+                    shutil.copyfileobj(src_fh, dst_fh)
+                inner_sha = _sha256_file(inner_archive).lower()
+                if norm_expected_sha is not None and norm_expected_sha not in {
+                    inner_sha,
+                    downloaded_sha,
+                }:
+                    raise RuntimeError(
+                        f"Companion bundle archive SHA-256 mismatch: "
+                        f"inner={inner_sha}, outer={downloaded_sha} != {norm_expected_sha}"
+                    )
+                _extract_safe_companion_zip(inner_archive, staged_root)
+                return inner_sha, downloaded_sha
+
+    if norm_expected_sha is not None and downloaded_sha != norm_expected_sha:
+        raise RuntimeError(
+            f"Companion bundle archive SHA-256 mismatch: {downloaded_sha} != {norm_expected_sha}"
+        )
+    _extract_safe_companion_zip(archive_file, staged_root)
+    return downloaded_sha, None
+
+
+def _verify_companion_bundle_manifest(
+    bundle_manifest: Dict[str, Any],
+    sums_map: Dict[str, str],
+    resolved_root: Path,
+) -> None:
+    """Validate optional COMPANION_BUNDLE_MANIFEST.json provenance against HEAD manifests."""
+    fmt = bundle_manifest.get("format")
+    if fmt != "netflow-sentinel-companion-bundle-v1":
+        raise RuntimeError(f"Unsupported COMPANION_BUNDLE_MANIFEST format: {fmt!r}")
+
+    split_path = resolved_root / SPLIT_MANIFEST_REL
+    if split_path.is_file():
+        actual_split = _sha256_file(split_path).lower()
+        if bundle_manifest.get("split_manifest_sha256") != actual_split:
+            raise RuntimeError(
+                "COMPANION_BUNDLE_MANIFEST split_manifest_sha256 mismatch with HEAD."
+            )
+
+    prep_manifest_path = resolved_root / PREPROCESSOR_MANIFEST_REL
+    if prep_manifest_path.is_file():
+        prep_manifest = _read_json_dict(prep_manifest_path, str(PREPROCESSOR_MANIFEST_REL))
+        expected_prep_sha = str(prep_manifest.get("artifact_sha256") or "").lower()
+        if bundle_manifest.get("preprocessor_sha256") != expected_prep_sha:
+            raise RuntimeError(
+                "COMPANION_BUNDLE_MANIFEST preprocessor_sha256 mismatch with HEAD manifest."
+            )
+
+    models_block = bundle_manifest.get("models")
+    if not isinstance(models_block, dict) or set(models_block.keys()) != set(MODEL_SPECS.keys()):
+        raise RuntimeError(
+            f"COMPANION_BUNDLE_MANIFEST models keys mismatch: {list(models_block or [])}"
+        )
+    for model_key, (_, manifest_candidates) in MODEL_SPECS.items():
+        manifest_file = resolved_root / manifest_candidates[0]
+        if not manifest_file.is_file():
+            continue
+        tracked_manifest = _read_json_dict(manifest_file, str(manifest_candidates[0]))
+        tracked_sha = str(
+            tracked_manifest.get("model_artifact_sha256")
+            or tracked_manifest.get("model_sha256")
+            or tracked_manifest.get("artifact_sha256")
+            or ""
+        ).lower()
+        entry = models_block.get(model_key) or {}
+        if entry.get("sha256") != tracked_sha or entry.get("run_id") != tracked_manifest.get(
+            "run_id"
+        ):
+            raise RuntimeError(
+                f"COMPANION_BUNDLE_MANIFEST provenance mismatch for {model_key}: "
+                f"entry={entry!r}, expected_sha={tracked_sha!r}, expected_run={tracked_manifest.get('run_id')!r}"
+            )
+
+    manifest_files = bundle_manifest.get("files")
+    if isinstance(manifest_files, list):
+        normalized_manifest_files = {str(p).strip().replace("\\", "/") for p in manifest_files}
+        normalized_sum_keys = {str(p).strip().replace("\\", "/") for p in sums_map.keys()}
+        if normalized_manifest_files != normalized_sum_keys:
+            raise RuntimeError(
+                "COMPANION_BUNDLE_MANIFEST files list does not match COMPANION_SHA256SUMS.txt."
+            )
+
+
 def install_companion_bundle(
     root: Path = PROJECT_ROOT,
     *,
@@ -557,20 +784,11 @@ def install_companion_bundle(
             f"Missing required expected bundle SHA-256 for remote companion source {source_kind!r}"
         )
 
-    token: Optional[str] = None
-    if token_env_var and token_env_var.strip():
-        token = os.environ.get(token_env_var.strip())
-    if not token:
-        token = (
-            os.environ.get("COMPANION_BUNDLE_TOKEN")
-            or os.environ.get("GH_TOKEN")
-            or os.environ.get("GITHUB_TOKEN")
-        )
-
     with tempfile.TemporaryDirectory(prefix="nf_install_companion_") as tmp_dir:
         tmp_path = Path(tmp_dir).resolve()
         staged_root: Path
         installed_archive_sha: Optional[str] = None
+        outer_wrapper_sha: Optional[str] = None
 
         if source_kind == "bundle_dir":
             staged_root = Path(bundle_dir).resolve()  # type: ignore[arg-type]
@@ -582,11 +800,22 @@ def install_companion_bundle(
                 if not archive_file.is_file():
                     raise RuntimeError(f"Companion archive not found: {archive_file}")
             elif source_kind == "bundle_url":
+                url_str = str(bundle_url).strip()
+                url_token = _resolve_token_for_url(
+                    url_str,
+                    github_repo=github_repo,
+                    token_env_var=token_env_var,
+                    require_token_if_github_api=False,
+                )
                 raw_bytes = _download_allowlisted_bytes(
-                    str(bundle_url),
+                    url_str,
                     allowed_hosts=allowed_hosts,
                     github_repo=github_repo,
-                    token=token,
+                    token=url_token,
+                    token_source_is_github=(
+                        url_token is not None and _is_valid_github_api_url(url_str, github_repo)
+                    ),
+                    allow_actions_storage_redirects=False,
                 )
                 archive_file = tmp_path / "companion_bundle.zip"
                 archive_file.write_bytes(raw_bytes)
@@ -598,21 +827,25 @@ def install_companion_bundle(
                     raise RuntimeError(
                         "github_repo ('owner/repo') is required for artifact_run_id download."
                     )
-                if not token:
-                    raise RuntimeError(
-                        "GitHub token is required in environment to download workflow artifact."
-                    )
                 repo_norm = github_repo.strip()
                 art_name_q = urllib.parse.quote(artifact_name.strip(), safe="")
                 list_url = (
                     f"https://api.github.com/repos/{repo_norm}/actions/runs/"
                     f"{run_id_str}/artifacts?name={art_name_q}&per_page=100"
                 )
+                gh_token = _resolve_token_for_url(
+                    list_url,
+                    github_repo=repo_norm,
+                    token_env_var=token_env_var,
+                    require_token_if_github_api=True,
+                )
                 listing_bytes = _download_allowlisted_bytes(
                     list_url,
-                    allowed_hosts=allowed_hosts,
+                    allowed_hosts=None,
                     github_repo=repo_norm,
-                    token=token,
+                    token=gh_token,
+                    token_source_is_github=True,
+                    allow_actions_storage_redirects=False,
                     accept="application/vnd.github+json",
                 )
                 listing = json.loads(listing_bytes.decode("utf-8"))
@@ -628,25 +861,42 @@ def install_companion_bundle(
                         f"Expected exactly 1 non-expired artifact named {artifact_name!r} "
                         f"in run {run_id_str}, found {len(candidates)}"
                     )
-                dl_url = str(candidates[0].get("archive_download_url") or "")
+                cand = candidates[0]
+                dl_url = str(cand.get("archive_download_url") or "")
+                if not _is_valid_github_api_url(dl_url, repo_norm):
+                    raise RuntimeError(
+                        f"Invalid archive_download_url returned for artifact {artifact_name!r}: {dl_url!r}"
+                    )
                 raw_bytes = _download_allowlisted_bytes(
                     dl_url,
-                    allowed_hosts=allowed_hosts,
+                    allowed_hosts=None,
                     github_repo=repo_norm,
-                    token=token,
+                    token=gh_token,
+                    token_source_is_github=True,
+                    allow_actions_storage_redirects=True,
                     accept="application/vnd.github+json",
                 )
                 archive_file = tmp_path / "companion_bundle.zip"
                 archive_file.write_bytes(raw_bytes)
+                api_digest = cand.get("digest")
+                if isinstance(api_digest, str) and api_digest.strip():
+                    digest_val = api_digest.strip().lower()
+                    if not digest_val.startswith("sha256:") or not _is_hex_sha256(digest_val[7:]):
+                        raise RuntimeError(f"Invalid GitHub artifact digest format: {api_digest!r}")
+                    actual_outer = _sha256_file(archive_file).lower()
+                    if actual_outer != digest_val[7:]:
+                        raise RuntimeError(
+                            f"Downloaded GitHub Actions artifact digest mismatch: "
+                            f"{actual_outer} != {digest_val[7:]}"
+                        )
 
-            installed_archive_sha = _sha256_file(archive_file).lower()
-            if norm_expected_sha is not None and installed_archive_sha != norm_expected_sha:
-                raise RuntimeError(
-                    f"Companion bundle archive SHA-256 mismatch: "
-                    f"{installed_archive_sha} != {norm_expected_sha}"
-                )
             staged_root = (tmp_path / "extracted").resolve()
-            _extract_safe_companion_zip(archive_file, staged_root)
+            installed_archive_sha, outer_wrapper_sha = _unpack_and_verify_companion_archive(
+                archive_file,
+                staged_root,
+                norm_expected_sha,
+                allow_actions_zip_wrapper=(source_kind in ("artifact_run_id", "bundle_archive")),
+            )
 
         sums_path = staged_root / "COMPANION_SHA256SUMS.txt"
         sums_map = _parse_sha256_sums_file(sums_path)
@@ -654,13 +904,7 @@ def install_companion_bundle(
         manifest_path = staged_root / "COMPANION_BUNDLE_MANIFEST.json"
         if manifest_path.is_file():
             bundle_manifest = _read_json_dict(manifest_path, "COMPANION_BUNDLE_MANIFEST.json")
-            split_path = resolved_root / SPLIT_MANIFEST_REL
-            if split_path.is_file() and bundle_manifest.get("split_manifest_sha256"):
-                actual_split = _sha256_file(split_path).lower()
-                if bundle_manifest["split_manifest_sha256"] != actual_split:
-                    raise RuntimeError(
-                        "COMPANION_BUNDLE_MANIFEST split_manifest_sha256 mismatch with HEAD."
-                    )
+            _verify_companion_bundle_manifest(bundle_manifest, sums_map, resolved_root)
 
         copied_files: List[str] = []
         for raw_rel, expected_sha in sums_map.items():
@@ -718,6 +962,7 @@ def install_companion_bundle(
             "install_status": "READY",
             "source_kind": source_kind,
             "archive_sha256": installed_archive_sha,
+            "outer_wrapper_sha256": outer_wrapper_sha,
             "verified_checksum_entries": len(sums_map),
             "copied_file_count": len(copied_files),
             "summary": summary,
