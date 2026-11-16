@@ -327,21 +327,45 @@ jobs:
           python scripts/verify_companion_artifacts.py > $null
           if ($LASTEXITCODE -eq 0) {
             $releaseAttestation = Join-Path $stageDir "release_e2e_verification.json"
-            python scripts/verify_companion_artifacts.py --verify-e2e `
-              --installer-path $setupDest `
-              --sums-file $sumsFile `
-              --compiled-exe $exePath `
-              --output-json $releaseAttestation
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Live 4-model + NSIS E2E verification failed."
-              exit 1
+            $e2eSandboxRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("nf_release_e2e_" + [System.Guid]::NewGuid().ToString("N"))
+            $e2eStageDir = Join-Path $e2eSandboxRoot "staged_companion"
+            $e2eRuntimeDir = Join-Path $e2eSandboxRoot "NetFlow Runtime User"
+            New-Item -ItemType Directory -Force -Path $e2eRuntimeDir | Out-Null
+            try {
+              python scripts/verify_companion_artifacts.py --stage-dir $e2eStageDir > $null
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Failed to stage verified companion bundle for isolated E2E runtime."
+                exit 1
+              }
+              python scripts/verify_companion_artifacts.py --install-bundle-dir $e2eStageDir --runtime-dir $e2eRuntimeDir > $null
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Failed to install companion bundle into isolated runtime directory ($e2eRuntimeDir)."
+                exit 1
+              }
+              python scripts/verify_companion_artifacts.py --verify-e2e `
+                --no-repo-root-env `
+                --runtime-dir $e2eRuntimeDir `
+                --installer-path $setupDest `
+                --sums-file $sumsFile `
+                --compiled-exe $exePath `
+                --output-json $releaseAttestation
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Live 4-model + NSIS E2E (bundled resources + isolated runtime mode) verification failed."
+                exit 1
+              }
+            } finally {
+              if (Test-Path $e2eSandboxRoot) {
+                Remove-Item -Recurse -Force $e2eSandboxRoot -ErrorAction SilentlyContinue
+              }
             }
 
             python scripts/verify_companion_artifacts.py --verify-attestation $releaseAttestation `
               --expect-commit "${{ github.sha }}" `
               --expect-installer-sha256 $setupHash `
               --require-nsis-e2e `
-              --require-demo-files
+              --require-demo-files `
+              --require-bundled-resources `
+              --require-bundled-resources
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Generated release E2E attestation failed strict verification."
               exit 1
@@ -416,7 +440,8 @@ jobs:
               --expect-commit "${{ github.sha }}" `
               --expect-installer-sha256 $setupHash `
               --require-nsis-e2e `
-              --require-demo-files
+              --require-demo-files `
+              --require-bundled-resources
             if ($LASTEXITCODE -ne 0) {
               Write-Error "FAIL-CLOSED: Stable release attestation verification failed before gh release create."
               exit 1

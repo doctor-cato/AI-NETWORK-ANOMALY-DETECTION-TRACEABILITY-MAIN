@@ -477,7 +477,13 @@ def audit_split_membership_parity(
                 and t_lock_audit.get("test_accessed_strictly_after_fit_and_reload") is True
             ):
                 measured_runtime_evidence = {
-                    "status": "VERIFIED_POST_FIT_HELD_OUT_EVALUATION",
+                    "status": "UNVERIFIED_SELF_REPORTED_POST_FIT",
+                    "self_reported_only": True,
+                    "verification_note": (
+                        "Post-fit held-out evaluation order is declared by self-reported "
+                        "boolean flags in the training manifest without independent execution "
+                        "log or hash proof."
+                    ),
                     "training_run_id": t_manifest.get("run_id"),
                     "manifest_path": str(target_training_manifest),
                     "test_partition_accessed": True,

@@ -43,6 +43,10 @@ from network_anomaly.inference.predict import (  # noqa: E402
 _TAURI_BUNDLE_MARKER_UNK = b"BUNDLE_TYPE_VAR_UNK"
 _TAURI_BUNDLE_MARKER_NSS = b"BUNDLE_TYPE_VAR_NSS"
 
+MAX_COMPANION_ARCHIVE_ENTRIES = 64
+MAX_COMPANION_ENTRY_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+MAX_COMPANION_TOTAL_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+
 MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
     "random_forest": (
         Path("artifacts/models/random_forest/random_forest_baseline.joblib"),
@@ -639,14 +643,66 @@ def package_companion_bundle(
     }
 
 
+def _copy_zip_entry_bounded(
+    zf: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    dst: Path,
+    *,
+    max_entry_bytes: int,
+    remaining_total_bytes: int,
+) -> int:
+    """Stream one ZIP entry to dst while enforcing header and actual decompressed byte limits."""
+    if info.file_size > max_entry_bytes:
+        raise RuntimeError(
+            f"Archive entry {info.filename!r} declared uncompressed size {info.file_size} bytes "
+            f"exceeds limit ({max_entry_bytes} bytes)."
+        )
+    if info.file_size > remaining_total_bytes:
+        raise RuntimeError(
+            f"Archive entry {info.filename!r} declared size {info.file_size} bytes "
+            f"exceeds total archive extraction budget ({remaining_total_bytes} bytes remaining)."
+        )
+    written = 0
+    try:
+        with zf.open(info, "r") as src_fh, dst.open("wb") as dst_fh:
+            while True:
+                chunk = src_fh.read(65536)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_entry_bytes:
+                    raise RuntimeError(
+                        f"Archive entry {info.filename!r} decompressed stream exceeded "
+                        f"per-entry limit ({max_entry_bytes} bytes)."
+                    )
+                if written > remaining_total_bytes:
+                    raise RuntimeError(
+                        f"Archive extraction exceeded total uncompressed byte limit "
+                        f"({MAX_COMPANION_TOTAL_UNCOMPRESSED_BYTES} bytes)."
+                    )
+                dst_fh.write(chunk)
+    except Exception:
+        if dst.exists():
+            dst.unlink(missing_ok=True)
+        raise
+    return written
+
+
 def _extract_safe_companion_zip(archive_path: Path, extract_dir: Path) -> None:
-    """Extract companion ZIP fail-closed against traversal, symlinks, and disallowed prefixes."""
+    """Extract companion ZIP fail-closed against traversal, symlinks, disallowed prefixes, and zip bombs."""
     resolved_extract = extract_dir.resolve()
     seen: set[str] = set()
+    remaining_total_bytes = MAX_COMPANION_TOTAL_UNCOMPRESSED_BYTES
+    entry_count = 0
     with zipfile.ZipFile(archive_path, mode="r") as zf:
         for info in zf.infolist():
             if info.is_dir():
                 continue
+            entry_count += 1
+            if entry_count > MAX_COMPANION_ARCHIVE_ENTRIES:
+                raise RuntimeError(
+                    f"Companion archive exceeds maximum entry count ({MAX_COMPANION_ARCHIVE_ENTRIES})."
+                )
             raw_name = info.filename.replace("\\", "/")
             if not raw_name or raw_name.startswith("/") or re.match(r"^[A-Za-z]:", raw_name):
                 raise RuntimeError(f"Unsafe archive entry path rejected: {info.filename!r}")
@@ -668,8 +724,14 @@ def _extract_safe_companion_zip(archive_path: Path, extract_dir: Path) -> None:
             if not dst.is_relative_to(resolved_extract):
                 raise RuntimeError(f"Archive entry escapes extraction root: {norm_rel!r}")
             dst.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(info, "r") as src_fh, dst.open("wb") as dst_fh:
-                shutil.copyfileobj(src_fh, dst_fh)
+            copied = _copy_zip_entry_bounded(
+                zf,
+                info,
+                dst,
+                max_entry_bytes=MAX_COMPANION_ENTRY_UNCOMPRESSED_BYTES,
+                remaining_total_bytes=remaining_total_bytes,
+            )
+            remaining_total_bytes -= copied
 
 
 def _unpack_and_verify_companion_archive(
@@ -712,8 +774,13 @@ def _unpack_and_verify_companion_archive(
             if is_single_wrapped_zip:
                 _, inner_info = file_infos[0]
                 inner_archive = (archive_file.parent / "unwrapped_companion.zip").resolve()
-                with outer_zf.open(inner_info, "r") as src_fh, inner_archive.open("wb") as dst_fh:
-                    shutil.copyfileobj(src_fh, dst_fh)
+                _copy_zip_entry_bounded(
+                    outer_zf,
+                    inner_info,
+                    inner_archive,
+                    max_entry_bytes=MAX_COMPANION_TOTAL_UNCOMPRESSED_BYTES,
+                    remaining_total_bytes=MAX_COMPANION_TOTAL_UNCOMPRESSED_BYTES,
+                )
                 inner_sha = _sha256_file(inner_archive).lower()
                 if norm_expected_sha is not None and norm_expected_sha not in {
                     inner_sha,
@@ -1673,6 +1740,9 @@ def verify_nsis_installer_e2e(
         "installed_exe_path_verified": True,
         "frontend_webview_connected": True,
         "frontend_ready_models": frontend_ready_models,
+        "bundled_resources_mode": not pass_repo_root_env,
+        "repo_root_env_passed": bool(pass_repo_root_env),
+        "runtime_dir_isolated": runtime_dir is not None,
         "backend_spawned_on_loopback": True,
         "backend_port": backend_port,
         "graceful_close_verified": True,
@@ -2155,6 +2225,7 @@ def verify_e2e_attestation(
     expect_installer_sha256: Optional[str] = None,
     require_nsis_e2e: bool = False,
     require_demo_files: bool = False,
+    require_bundled_resources: bool = False,
 ) -> Dict[str, Any]:
     """Verify a 4-model E2E attestation JSON against tracked manifests, commit, demo, and NSIS E2E."""
     resolved_root = Path(root).resolve()
@@ -2413,7 +2484,13 @@ def verify_e2e_attestation(
         raise RuntimeError(f"E2E attestation missing valid anti-spoof verification: {spoof}")
 
     nsis_present = "nsis_e2e" in report
-    if require_nsis_e2e or expect_installer_sha256 is not None or nsis_present:
+    bundled_resources_verified = False
+    if (
+        require_nsis_e2e
+        or require_bundled_resources
+        or expect_installer_sha256 is not None
+        or nsis_present
+    ):
         nsis = report.get("nsis_e2e")
         if not isinstance(nsis, dict):
             raise RuntimeError("E2E attestation missing required 'nsis_e2e' verification block")
@@ -2433,7 +2510,9 @@ def verify_e2e_attestation(
             nsis.get(flag) is not True for flag in required_nsis_flags
         ):
             raise RuntimeError(f"E2E attestation invalid nsis_e2e verification flags: {nsis}")
-        if require_nsis_e2e and report.get("e2e_backend_origin") != "installed_nsis_desktop":
+        if (require_nsis_e2e or require_bundled_resources) and report.get(
+            "e2e_backend_origin"
+        ) != "installed_nsis_desktop":
             raise RuntimeError(
                 "E2E attestation must record e2e_backend_origin='installed_nsis_desktop' when require_nsis_e2e=True, "
                 f"got {report.get('e2e_backend_origin')!r}"
@@ -2442,6 +2521,19 @@ def verify_e2e_attestation(
             raise RuntimeError(
                 f"E2E attestation nsis_e2e.frontend_ready_models must equal {expected_models_order}, "
                 f"got {nsis.get('frontend_ready_models')!r}"
+            )
+        bundled_resources_verified = (
+            nsis.get("bundled_resources_mode") is True
+            and nsis.get("repo_root_env_passed") is False
+            and nsis.get("runtime_dir_isolated") is True
+        )
+        if require_bundled_resources and not bundled_resources_verified:
+            raise RuntimeError(
+                "E2E attestation must verify production bundled resources without NETWORK_ANOMALY_REPO_ROOT "
+                "and with isolated NETWORK_ANOMALY_RUNTIME_DIR "
+                f"(bundled_resources_mode={nsis.get('bundled_resources_mode')!r}, "
+                f"repo_root_env_passed={nsis.get('repo_root_env_passed')!r}, "
+                f"runtime_dir_isolated={nsis.get('runtime_dir_isolated')!r})."
             )
         inst_size = nsis.get("installer_size_bytes")
         if type(inst_size) is not int or inst_size < 1_000_000:
@@ -2471,6 +2563,7 @@ def verify_e2e_attestation(
         "nsis_e2e_verified": isinstance(report.get("nsis_e2e"), dict),
         "installed_desktop_e2e_verified": report.get("e2e_backend_origin")
         == "installed_nsis_desktop",
+        "bundled_resources_verified": bundled_resources_verified,
         "demo_files_verified_on_disk": demo_files_verified_on_disk,
     }
 
@@ -2627,6 +2720,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require real data/demo/* files on disk when verifying an E2E attestation.",
     )
     parser.add_argument(
+        "--require-bundled-resources",
+        action="store_true",
+        help="Require nsis_e2e production mode (--no-repo-root-env + isolated --runtime-dir) when verifying an E2E attestation.",
+    )
+    parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
@@ -2702,6 +2800,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 expect_installer_sha256=args.expect_installer_sha256,
                 require_nsis_e2e=args.require_nsis_e2e,
                 require_demo_files=args.require_demo_files,
+                require_bundled_resources=args.require_bundled_resources,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E ATTESTATION VERIFICATION FAILED] {exc}\n")

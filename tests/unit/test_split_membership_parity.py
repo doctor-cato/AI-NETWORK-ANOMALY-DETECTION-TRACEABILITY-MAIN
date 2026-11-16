@@ -350,7 +350,9 @@ def test_audit_recognizes_post_fit_held_out_eval_and_violation_renders_safely(tm
         ]
     )
     assert rc_ok == 0
-    assert "VERIFIED_POST_FIT_HELD_OUT_EVALUATION" in report_ok.read_text(encoding="utf-8")
+    report_ok_text = report_ok.read_text(encoding="utf-8")
+    assert "UNVERIFIED_SELF_REPORTED_POST_FIT" in report_ok_text
+    assert "VERIFIED_POST_FIT_HELD_OUT_EVALUATION" not in report_ok_text
 
     leak_manifest = {
         "run_id": "xgb-leak",

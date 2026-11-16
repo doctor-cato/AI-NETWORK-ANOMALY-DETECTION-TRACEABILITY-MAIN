@@ -489,13 +489,24 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
             raw_manifest = (
                 meta.get("raw_manifest") if isinstance(meta.get("raw_manifest"), dict) else {}
             )
-            thresh = (
-                meta.get("threshold")
-                if meta.get("threshold") is not None
-                else raw_manifest.get("threshold")
+            test_summary = (
+                raw_manifest.get("test_summary")
+                if isinstance(raw_manifest.get("test_summary"), dict)
+                else {}
             )
-            if thresh is None and semantics == "attack_probability":
-                thresh = 0.5
+            thresh = next(
+                (
+                    candidate
+                    for candidate in (
+                        meta.get("threshold"),
+                        raw_manifest.get("threshold"),
+                        raw_manifest.get("decision_threshold"),
+                        test_summary.get("decision_threshold"),
+                    )
+                    if candidate is not None
+                ),
+                None,
+            )
             items.append(
                 ModelStatusItem(
                     model_key=key,

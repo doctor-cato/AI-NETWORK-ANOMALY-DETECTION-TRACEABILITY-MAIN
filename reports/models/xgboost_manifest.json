@@ -183,6 +183,8 @@
     "cpu_count": 12,
     "git_commit": "7f51390bfe4cea76a413733ac1882d8579fc4a34",
     "git_dirty": true,
+    "git_clean": false,
+    "worktree_provenance": "DIRTY_DISCLOSED",
     "git_dirty_disclosure": "Trained from ancestor commit 7f51390 with local uncommitted XGBoost training/report files before commit 54d7c8a; binary SHA-256 3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e verified intact.",
     "provenance_complete": true,
     "packages": {

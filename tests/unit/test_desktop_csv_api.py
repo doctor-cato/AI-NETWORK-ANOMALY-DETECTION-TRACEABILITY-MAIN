@@ -2138,3 +2138,56 @@ def test_sensitive_system_path_blocks_program_files_x86_and_programdata():
         _is_sensitive_system_path(Path(r"C:\Users\Alice\AppData\Local\NetFlowSentinelM6\demo.csv"))
         is False
     )
+
+
+def test_collect_models_status_does_not_mask_missing_manifest_threshold(
+    client: TestClient, tmp_path: Path
+):
+    from unittest.mock import patch
+
+    from network_anomaly.api.desktop_csv import collect_models_status
+
+    svc = client.app.state.service
+
+    class _FakePipe:
+        def __init__(self, meta):
+            self.model_metadata = meta
+
+    def _fake_load(key: str):
+        if key == "random_forest":
+            return _FakePipe(
+                {
+                    "model_type": "RandomForest",
+                    "model_artifact_sha256": "a" * 64,
+                    "threshold": None,
+                    "raw_manifest": {"run_id": "rf-no-thresh"},
+                }
+            )
+        if key == "xgboost":
+            return _FakePipe(
+                {
+                    "model_type": "XGBoost",
+                    "model_artifact_sha256": "b" * 64,
+                    "threshold": None,
+                    "raw_manifest": {
+                        "run_id": "xgb-test-thresh",
+                        "test_summary": {"decision_threshold": 0.5},
+                    },
+                }
+            )
+        raise FileNotFoundError(f"Missing {key}")
+
+    with (
+        patch.object(
+            svc,
+            "_resolve_artifact_paths",
+            side_effect=lambda k: (tmp_path / f"{k}.joblib", None, None, None),
+        ),
+        patch.object(svc, "_load_inference_pipeline", side_effect=_fake_load),
+    ):
+        items = {item.model_key: item for item in collect_models_status(svc)}
+
+    assert items["random_forest"].ready is True
+    assert items["random_forest"].decision_threshold is None
+    assert items["xgboost"].ready is True
+    assert items["xgboost"].decision_threshold == 0.5

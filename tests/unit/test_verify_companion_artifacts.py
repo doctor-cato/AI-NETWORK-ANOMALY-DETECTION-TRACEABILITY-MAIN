@@ -1570,3 +1570,69 @@ def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
     ).read_bytes()
     assert (runtime_dir / "data/demo/demo_flows.csv").is_file()
     assert not (target_code_ws / "artifacts/models/xgboost/xgboost_baseline.joblib").exists()
+
+
+def test_extract_safe_companion_zip_rejects_zip_bomb_entry_and_byte_limits(
+    tmp_path: Path, monkeypatch
+):
+    import zipfile
+
+    import scripts.verify_companion_artifacts as vca
+
+    bomb_zip = tmp_path / "too_many_entries.zip"
+    monkeypatch.setattr(vca, "MAX_COMPANION_ARCHIVE_ENTRIES", 2)
+    with zipfile.ZipFile(bomb_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("artifacts/a.txt", b"1")
+        zf.writestr("artifacts/b.txt", b"2")
+        zf.writestr("artifacts/c.txt", b"3")
+
+    with pytest.raises(RuntimeError, match="maximum entry count"):
+        vca._extract_safe_companion_zip(bomb_zip, tmp_path / "out_count")
+
+    monkeypatch.setattr(vca, "MAX_COMPANION_ARCHIVE_ENTRIES", 64)
+    monkeypatch.setattr(vca, "MAX_COMPANION_ENTRY_UNCOMPRESSED_BYTES", 1024)
+    monkeypatch.setattr(vca, "MAX_COMPANION_TOTAL_UNCOMPRESSED_BYTES", 2048)
+
+    big_entry_zip = tmp_path / "big_entry.zip"
+    with zipfile.ZipFile(big_entry_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("artifacts/big.bin", b"A" * 2048)
+
+    with pytest.raises(RuntimeError, match="exceeds limit"):
+        vca._extract_safe_companion_zip(big_entry_zip, tmp_path / "out_entry")
+
+
+def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mode(tmp_path: Path):
+    import scripts.verify_companion_artifacts as vca
+
+    att_path = Path(__file__).resolve().parents[2] / "reports/releases/v0.6.0_e2e_verification.json"
+    base = json.loads(att_path.read_text(encoding="utf-8"))
+    base["verify_script_sha256"] = vca._sha256_file(Path(vca.__file__)).lower()
+
+    # Legacy or repo-root-env attestation must fail when bundled resources mode is strictly required
+    bad_repo_env = json.loads(json.dumps(base))
+    bad_repo_env["nsis_e2e"]["bundled_resources_mode"] = False
+    bad_repo_env["nsis_e2e"]["repo_root_env_passed"] = True
+    bad_repo_env["nsis_e2e"]["runtime_dir_isolated"] = True
+    bad_path = tmp_path / "bad_att.json"
+    bad_path.write_text(json.dumps(bad_repo_env), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="bundled resources"):
+        vca.verify_e2e_attestation(
+            bad_path,
+            require_nsis_e2e=True,
+            require_bundled_resources=True,
+        )
+
+    good = json.loads(json.dumps(base))
+    good["nsis_e2e"]["bundled_resources_mode"] = True
+    good["nsis_e2e"]["repo_root_env_passed"] = False
+    good["nsis_e2e"]["runtime_dir_isolated"] = True
+    good_path = tmp_path / "good_att.json"
+    good_path.write_text(json.dumps(good), encoding="utf-8")
+
+    res = vca.verify_e2e_attestation(
+        good_path,
+        require_nsis_e2e=True,
+        require_bundled_resources=True,
+    )
+    assert res["bundled_resources_verified"] is True
