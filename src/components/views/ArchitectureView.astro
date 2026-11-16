@@ -148,19 +148,15 @@ const layers = isVi
             }
           </h2>
         </div><div class="diagram-legend">
-          <span
-            ><i></i>
-            {isVi ? "Đã triển khai trên main" : "Implemented on main"}</span
-          ><span
-            ><i></i>
-            {isVi ? "Đang hoãn / phụ thuộc ngoài" : "Deferred / external"}</span
+          <span><i></i> {isVi ? "Trên main" : "Implemented on main"}</span><span
+            ><i></i> {isVi ? "Hoãn / ngoài gói" : "Deferred / external"}</span
           >
         </div>
       </div><div class="diagram-wrap surface">
         <svg
           role="img"
           aria-labelledby="diagram-title diagram-desc"
-          viewBox="0 0 1040 610"
+          viewBox="0 0 1040 530"
           xmlns="http://www.w3.org/2000/svg"
           ><title id="diagram-title">
             {
@@ -171,8 +167,8 @@ const layers = isVi
           </title><desc id="diagram-desc"
             >{
               isVi
-                ? "Tải dữ liệu và cổng OOD nối vào tiền xử lý train-only, bốn mô hình, tầng rủi ro/timeline/dry-run, FastAPI + SQLite trên 127.0.0.1 và ứng dụng Tauri 2 + Svelte 5. Tự động hóa firewall và AES-256-GCM keyring đang hoãn."
-                : "Verified NetFlow acquisition and OOD gating feed train-only preprocessing, four validated models, deterministic risk/timeline/dry-run layers, SQLite-backed FastAPI on 127.0.0.1 and the Tauri 2 + Svelte 5 desktop app. Live firewall automation and AES-256-GCM OS keyring remain deferred."
+                ? "Tải dữ liệu và cổng OOD nối vào tiền xử lý train-only, bốn mô hình, thống kê hành vi, rủi ro và timeline, mô phỏng dry-run, FastAPI + SQLite trên 127.0.0.1 và ứng dụng Tauri 2 + Svelte 5. Python 3.12+ ngoài gói và hành động firewall/AES keyring thật nằm ở nhánh hoãn."
+                : "Verified NetFlow acquisition and OOD gating feed train-only preprocessing, four validated models, NetFlow behavioral summary, deterministic risk/timeline, dry-run simulation, SQLite-backed FastAPI on 127.0.0.1 and the Tauri 2 + Svelte 5 desktop app. External Python 3.12+ and live firewall/AES-256-GCM keyring remain deferred."
             }</desc
           ><defs
             ><marker
@@ -183,6 +179,14 @@ const layers = isVi
               refY="4"
               orient="auto"
               ><path d="M0 0 L8 4 L0 8" fill="#66e1e8"></path></marker
+            ><marker
+              id="arrow-muted"
+              markerWidth="8"
+              markerHeight="8"
+              refX="7"
+              refY="4"
+              orient="auto"
+              ><path d="M0 0 L8 4 L0 8" fill="#778ca0"></path></marker
             ></defs
           >
           <g
@@ -192,8 +196,17 @@ const layers = isVi
             marker-end="url(#arrow)"
             ><path d="M235 100H305"></path><path d="M495 100H565"></path><path
               d="M755 100H825"></path><path d="M920 145V230"></path><path
-              d="M825 270H755"></path><path d="M565 270H495"></path><path
-              d="M400 310V390"></path><path d="M495 435H565"></path></g
+              d="M825 272H755"></path><path d="M565 272H495"></path><path
+              d="M305 272H235"></path><path d="M130 315V390"></path></g
+          >
+          <g
+            fill="none"
+            stroke="#778ca0"
+            stroke-width="2"
+            stroke-dasharray="5 5"
+            marker-end="url(#arrow-muted)"
+            ><path d="M235 435H305"></path><path d="M400 315V352H685V390"
+            ></path></g
           >
           <g fill="#132b3d" stroke="#66e1e8" stroke-width="2"
             ><rect x="25" y="55" width="210" height="90" rx="5"></rect><rect
@@ -203,9 +216,11 @@ const layers = isVi
               height="90"
               rx="5"></rect><rect x="565" y="55" width="190" height="90" rx="5"
             ></rect><rect x="825" y="55" width="190" height="90" rx="5"
-            ></rect><rect x="565" y="230" width="190" height="80" rx="5"
-            ></rect><rect x="305" y="230" width="190" height="80" rx="5"
-            ></rect><rect x="305" y="390" width="190" height="90" rx="5"
+            ></rect><rect x="825" y="230" width="190" height="85" rx="5"
+            ></rect><rect x="565" y="230" width="190" height="85" rx="5"
+            ></rect><rect x="305" y="230" width="190" height="85" rx="5"
+            ></rect><rect x="25" y="230" width="210" height="85" rx="5"
+            ></rect><rect x="25" y="390" width="210" height="90" rx="5"
             ></rect></g
           >
           <g
@@ -213,43 +228,53 @@ const layers = isVi
             stroke="#778ca0"
             stroke-width="2"
             stroke-dasharray="7 6"
-            ><rect x="565" y="390" width="240" height="90" rx="5"></rect><rect
-              x="25"
+            ><rect x="305" y="390" width="230" height="90" rx="5"></rect><rect
+              x="565"
               y="390"
-              width="210"
+              width="240"
               height="90"
               rx="5"></rect></g
           >
           <g
             font-family="ui-sans-serif,system-ui"
             fill="#e8f6f8"
-            font-size="17"
+            font-size="16"
             font-weight="700"
-            ><text x="45" y="91">Acquire + OOD gate</text><text x="325" y="91"
-              >Preprocess</text
-            ><text x="585" y="91">RF / XGBoost</text><text x="845" y="91"
+            ><text x="43" y="91"
+              >{isVi ? "Tải + cổng OOD" : "Acquire + OOD gate"}</text
+            ><text x="323" y="91">{isVi ? "Tiền xử lý" : "Preprocess"}</text
+            ><text x="583" y="91">RF / XGBoost</text><text x="843" y="91"
               >IF / Autoencoder</text
-            ><text x="585" y="265">Risk + Timeline</text><text x="325" y="265"
-              >FastAPI + SQLite</text
-            ><text x="325" y="425">Tauri 2 + Svelte 5</text><text
-              x="585"
-              y="425">Live OS Actions</text
-            ><text x="45" y="425">Embedded Python</text></g
+            ><text x="843" y="264"
+              >{isVi ? "Thống kê (#28)" : "Behavioral (#28)"}</text
+            ><text x="583" y="264"
+              >{isVi ? "Rủi ro + Timeline" : "Risk + Timeline"}</text
+            ><text x="323" y="264"
+              >{isVi ? "Mô phỏng (#27)" : "Dry-Run (#27)"}</text
+            ><text x="43" y="264">FastAPI + SQLite</text><text x="43" y="425"
+              >Tauri 2 + Svelte 5</text
+            ><text x="323" y="425"
+              >{isVi ? "Python 3.12+ ngoài" : "External Python 3.12+"}</text
+            ><text x="583" y="425"
+              >{isVi ? "Chặn OS thật (Hoãn)" : "Live OS Actions"}</text
+            ></g
           >
           <g font-family="ui-sans-serif,system-ui" fill="#9fb3c4" font-size="12"
-            ><text x="45" y="119">provenance & ABSTAINED_OOD</text><text
-              x="325"
+            ><text x="43" y="119">provenance & ABSTAINED_OOD</text><text
+              x="323"
               y="119">train-only SHA-256</text
-            ><text x="585" y="119">Test F1 0.9999 / 1.0000</text><text
-              x="845"
+            ><text x="583" y="119">Test F1 0.9999 / 1.0000</text><text
+              x="843"
               y="119">Test F1 0.5064 / 0.1361</text
-            ><text x="585" y="290">Dry-run #27 (executed=false)</text><text
-              x="325"
-              y="290">127.0.0.1 + token auth</text
-            ><text x="325" y="452">Windows NSIS v0.6.0</text><text
-              x="585"
-              y="452">firewall & AES keyring deferred</text
-            ><text x="45" y="452">external Python 3.12+ & bundle</text></g
+            ><text x="843" y="290">NetFlow metadata stats</text><text
+              x="583"
+              y="290">#32 & #24 deterministic</text
+            ><text x="323" y="290">executed = false</text><text x="43" y="290"
+              >127.0.0.1 + token auth</text
+            ><text x="43" y="452">Windows NSIS v0.6.0</text><text
+              x="323"
+              y="452">Companion Bundle .joblib</text
+            ><text x="583" y="452">firewall & AES keyring deferred</text></g
           ></svg
         >
       </div><p class="diagram-note">
@@ -329,6 +354,7 @@ const layers = isVi
     display: flex;
     gap: 0.4rem;
     align-items: center;
+    white-space: nowrap;
   }
   .diagram-legend i {
     display: block;
