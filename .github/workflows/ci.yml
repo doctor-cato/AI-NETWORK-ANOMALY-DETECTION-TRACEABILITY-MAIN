@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -14,10 +18,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: pyproject.toml
       - name: Install quality tools
-        run: python -m pip install ruff black
+        run: python -m pip install --prefer-binary ruff black
       - name: Ruff
         run: python -m ruff check src scripts tests
       - name: Black
@@ -32,15 +34,39 @@ jobs:
         python-version: ['3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - id: setup-py
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
           cache-dependency-path: pyproject.toml
-      - name: Install dependencies
-        run: pip install -e .
+      - name: Cache Python virtualenv
+        id: cache-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py${{ steps.setup-py.outputs.python-version }}-${{ hashFiles('pyproject.toml') }}
+      - name: Install dependencies into virtualenv
+        shell: bash
+        run: |
+          if [ ! -d ".venv" ]; then
+            python -m venv .venv
+          fi
+          if [ -d ".venv/Scripts" ]; then
+            VENV_BIN="$PWD/.venv/Scripts"
+          else
+            VENV_BIN="$PWD/.venv/bin"
+          fi
+          if command -v cygpath >/dev/null 2>&1; then
+            cygpath -w "$VENV_BIN" >> "$GITHUB_PATH"
+          else
+            echo "$VENV_BIN" >> "$GITHUB_PATH"
+          fi
+          if [ "${{ steps.cache-venv.outputs.cache-hit }}" = "true" ]; then
+            "$VENV_BIN/python" -m pip install --no-deps --no-build-isolation -e .
+          else
+            "$VENV_BIN/python" -m pip install --prefer-binary setuptools wheel -e .
+          fi
       - name: Check environment
         run: python scripts/check_environment.py
       - name: Check OpenAPI & API contract sync
@@ -90,14 +116,19 @@ jobs:
       CARGO_TERM_COLOR: "always"
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Rust formatting check
+        run: cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: 'pip'
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: requirements-runtime.txt
       - name: Install Python backend dependencies
         run: |
-          pip install -r requirements-runtime.txt
+          pip install --prefer-binary -r requirements-runtime.txt
           pip install --no-deps -e .
       - name: Verify desktop version consistency
         run: python scripts/check_desktop_version.py --check
@@ -106,9 +137,6 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: desktop/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "desktop/src-tauri -> target"
@@ -117,8 +145,6 @@ jobs:
         run: |
           npm --prefix desktop ci
           npm --prefix desktop run build
-      - name: Rust formatting check
-        run: cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
       - name: Rust clippy lint
         run: cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Rust desktop unit tests
