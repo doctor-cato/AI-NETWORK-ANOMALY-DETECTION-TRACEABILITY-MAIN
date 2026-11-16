@@ -2,10 +2,10 @@
   "e2e_status": "PASS",
   "e2e_backend_origin": "installed_nsis_desktop",
   "host": "127.0.0.1",
-  "port": 62296,
-  "source_commit": "d0a5f734c30507804024f6d9c6fb75ab50033475",
+  "port": 59884,
+  "source_commit": "67f7c812a0f1cc27cc6c9c78803a76df00d1eeda",
   "desktop_version": "0.6.0",
-  "verify_script_sha256": "66e0c5954ab9915e99e5c117b95d797cfc0af8073007ea5d9343df11b80a71b5",
+  "verify_script_sha256": "57acf996370ba037f4751f642d1a8751e49f6011acaddabdd5927ea3c8e54aeb",
   "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
   "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
   "demo_sha256": {
@@ -22,9 +22,9 @@
   ],
   "models": {
     "random_forest": {
-      "analysis_id": "csvrun_603c4e6b81b5",
+      "analysis_id": "csvrun_5a365f8afd47",
       "run_id": "rf-baseline-1794068628",
-      "inference_run_id": "inference-20261116025735-ebe9d6",
+      "inference_run_id": "inference-20261116060401-6f388e",
       "artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -46,7 +46,7 @@
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_4bf31367ba16",
+      "dry_run_simulation_id": "sim_53989c56a998",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -57,9 +57,9 @@
       "dry_run_rotation_decision": "SIMULATED_ROTATION_RECOMMENDED"
     },
     "xgboost": {
-      "analysis_id": "csvrun_4eb53f110b52",
+      "analysis_id": "csvrun_cc3dff9654b3",
       "run_id": "xgb-baseline-1794755807",
-      "inference_run_id": "inference-20261116025736-63602a",
+      "inference_run_id": "inference-20261116060401-061710",
       "artifact_sha256": "3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -81,7 +81,7 @@
       "f1": 1.0,
       "fpr": 0.0,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_a6251c7f2b04",
+      "dry_run_simulation_id": "sim_93e0a0d21d04",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 98,
@@ -92,9 +92,9 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "isolation_forest": {
-      "analysis_id": "csvrun_112b3d23e09b",
+      "analysis_id": "csvrun_6700d6ca28d2",
       "run_id": "if-c4-20261115T055359Z",
-      "inference_run_id": "inference-20261116025736-e15419",
+      "inference_run_id": "inference-20261116060401-9a3108",
       "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -116,7 +116,7 @@
       "f1": 0.893401,
       "fpr": 0.091837,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_cfe5a7dc7fcf",
+      "dry_run_simulation_id": "sim_917428b9d852",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 13,
@@ -127,9 +127,9 @@
       "dry_run_rotation_decision": "HOLD_RESEARCH_ONLY_MODEL"
     },
     "autoencoder": {
-      "analysis_id": "csvrun_79aa49681bb4",
+      "analysis_id": "csvrun_48876d88f7fa",
       "run_id": "ae_fpr_constrained_20261115T163000Z",
-      "inference_run_id": "inference-20261116025736-c7cd1f",
+      "inference_run_id": "inference-20261116060401-b57730",
       "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
       "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
       "source_csv_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
@@ -151,7 +151,7 @@
       "f1": 0.220339,
       "fpr": 0.05102,
       "prediction_coverage": 0.99,
-      "dry_run_simulation_id": "sim_607cfcdfa834",
+      "dry_run_simulation_id": "sim_85b04a7e8742",
       "dry_run_provenance": "server_verified_analysis",
       "dry_run_action_counts": {
         "NO_ACTION": 180,
@@ -170,12 +170,12 @@
   "nsis_e2e": {
     "status": "PASS",
     "installer_filename": "NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe",
-    "installer_sha256": "a2929db366fe6a82a7ee6d9079dfdab0445c5e0477abe59db7049aeef337826c",
-    "installer_size_bytes": 2401685,
+    "installer_sha256": "d2194c9a9d2b29338c9f46343b72a0573953bc9a0679af7ee567b3acae4ef275",
+    "installer_size_bytes": 2713202,
     "sums_file_verified": true,
-    "installed_exe_sha256": "049b2226117bfd09e8419e7473b81ac3f23b1e0f1290cf8303d694f658db7ac4",
-    "compiled_exe_sha256": "20ef77448b9f6a1d84b53b2ed8ccd2ae2cdab7c767d95ca644eed7d6e06e9823",
-    "normalized_compiled_exe_sha256": "049b2226117bfd09e8419e7473b81ac3f23b1e0f1290cf8303d694f658db7ac4",
+    "installed_exe_sha256": "367fedf90c7e23848a23c63d41bc85ea10d7f88ba07714ff8a52c01b5faec441",
+    "compiled_exe_sha256": "08c6d404c69352ace9b64db60cdedc6994f19731f8ab7678c8f45267838d7cc8",
+    "normalized_compiled_exe_sha256": "367fedf90c7e23848a23c63d41bc85ea10d7f88ba07714ff8a52c01b5faec441",
     "compiled_exe_sha256_match": true,
     "exe_parity_mode": "tauri_nsis_bundle_marker_normalized",
     "uninstaller_verified": true,
@@ -190,7 +190,7 @@
       "autoencoder"
     ],
     "backend_spawned_on_loopback": true,
-    "backend_port": 62296,
+    "backend_port": 59884,
     "graceful_close_verified": true,
     "graceful_close_method": "wm_close",
     "zero_orphan_processes_verified": true,
