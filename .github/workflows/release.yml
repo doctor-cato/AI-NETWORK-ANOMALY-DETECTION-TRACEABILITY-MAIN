@@ -317,9 +317,10 @@ jobs:
             --installer-path $setupDest `
             --sums-file $sumsFile `
             --compiled-exe $exePath `
+            --no-repo-root-env `
             --output-json $nsisReport
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "Clean Windows NSIS E2E verification failed."
+            Write-Error "Clean Windows NSIS E2E verification (bundled resources mode) failed."
             exit 1
           }
 
@@ -344,6 +345,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) {
               Write-Error "Generated release E2E attestation failed strict verification."
               exit 1
+            }
+
+            $inputCompanionSha = "${{ inputs.companion_bundle_sha256 }}".Trim().ToLower()
+            $varCompanionSha = "${{ vars.COMPANION_BUNDLE_SHA256 }}".Trim().ToLower()
+            $effectiveCompanionSha = if (-not [string]::IsNullOrWhiteSpace($inputCompanionSha)) { $inputCompanionSha } else { $varCompanionSha }
+            if (-not [string]::IsNullOrWhiteSpace($effectiveCompanionSha)) {
+              "$effectiveCompanionSha  netflow-sentinel-$tagName-companion-bundle.zip" | Out-File -FilePath (Join-Path $stageDir "COMPANION_BUNDLE_SHA256.txt") -Encoding ascii
             }
           } else {
             if ($isStableRelease) {
@@ -431,8 +439,14 @@ jobs:
           $releaseArgs = @(
             "release", "create", $tagName,
             $setupDest,
-            $sumsFile
+            $sumsFile,
+            "requirements-runtime.txt",
+            "scripts/windows_setup_runtime.ps1"
           )
+          $companionSumsFile = Join-Path $stageDir "COMPANION_BUNDLE_SHA256.txt"
+          if (Test-Path $companionSumsFile) {
+            $releaseArgs += $companionSumsFile
+          }
           if (Test-Path $releaseAttestation) {
             $releaseArgs += $releaseAttestation
           } elseif (Test-Path $nsisAttestation) {

@@ -1,6 +1,8 @@
 //! Typed Tauri IPC commands bridging Svelte UI to localhost FastAPI & native file dialogs.
 
-use crate::backend::{resolve_preferred_backend_port, BackendManager, BackendStatus};
+use crate::backend::{
+    resolve_preferred_backend_port, BackendManager, BackendStatus, RuntimeDiagnostics,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -46,9 +48,12 @@ async fn get_json(backend: &BackendManager, path: &str) -> Result<Value, String>
     let base = backend.base_url()?;
     let url = format!("{base}{path}");
     verify_loopback_url(&url)?;
-    let resp = backend
-        .http
-        .get(&url)
+    let mut req = backend.http.get(&url);
+    let token = backend.session_token()?;
+    if !token.is_empty() {
+        req = req.header("X-Sentinel-Session-Token", token);
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("Local FastAPI unreachable ({path}): {e}"))?;
@@ -59,10 +64,12 @@ async fn post_json(backend: &BackendManager, path: &str, body: Value) -> Result<
     let base = backend.base_url()?;
     let url = format!("{base}{path}");
     verify_loopback_url(&url)?;
-    let resp = backend
-        .http
-        .post(&url)
-        .json(&body)
+    let mut req = backend.http.post(&url).json(&body);
+    let token = backend.session_token()?;
+    if !token.is_empty() {
+        req = req.header("X-Sentinel-Session-Token", token);
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| format!("Local FastAPI unreachable ({path}): {e}"))?;
@@ -72,6 +79,107 @@ async fn post_json(backend: &BackendManager, path: &str, body: Value) -> Result<
 #[tauri::command]
 pub fn get_backend_status(backend: State<'_, BackendManager>) -> BackendStatus {
     backend.status()
+}
+
+#[tauri::command]
+pub async fn get_runtime_diagnostics(
+    backend: State<'_, BackendManager>,
+) -> Result<RuntimeDiagnostics, String> {
+    let mgr = backend.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || mgr.diagnostics())
+        .await
+        .map_err(|e| format!("Diagnostics task failed: {e}"))
+}
+
+#[tauri::command]
+pub async fn setup_python_runtime(
+    backend: State<'_, BackendManager>,
+    wheelhouse_dir: Option<String>,
+) -> Result<BackendStatus, String> {
+    let mgr = backend.inner().clone();
+    let wheelhouse = wheelhouse_dir
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    tauri::async_runtime::spawn_blocking(move || mgr.setup_python_runtime(wheelhouse))
+        .await
+        .map_err(|e| format!("Python runtime setup task panicked: {e}"))?
+}
+
+#[tauri::command]
+pub async fn import_companion_bundle(
+    backend: State<'_, BackendManager>,
+    archive_path: Option<String>,
+    bundle_dir: Option<String>,
+    expected_sha256: Option<String>,
+) -> Result<Value, String> {
+    let mgr = backend.inner().clone();
+    let zip_path = archive_path
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    let dir_path = bundle_dir
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from);
+    tauri::async_runtime::spawn_blocking(move || {
+        mgr.install_companion_bundle(zip_path, dir_path, expected_sha256)
+    })
+    .await
+    .map_err(|e| format!("Companion bundle import task panicked: {e}"))?
+}
+
+#[tauri::command]
+pub async fn pick_zip_file(
+    app: AppHandle,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
+    let dialog_title = title.unwrap_or_else(|| "Chọn gói Companion Bundle (.zip)".to_string());
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title(&dialog_title)
+            .add_filter("ZIP Archives", &["zip"])
+            .blocking_pick_file()
+    })
+    .await
+    .map_err(|e| format!("File dialog task failed: {e}"))?;
+
+    match picked {
+        Some(fp) => {
+            let path = fp
+                .into_path()
+                .map_err(|e| format!("Invalid archive path selected: {e}"))?;
+            Ok(Some(path.to_string_lossy().to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn pick_companion_folder(
+    app: AppHandle,
+    title: Option<String>,
+) -> Result<Option<String>, String> {
+    let dialog_title = title.unwrap_or_else(|| "Chọn thư mục Companion Artifacts".to_string());
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title(&dialog_title)
+            .blocking_pick_folder()
+    })
+    .await
+    .map_err(|e| format!("Folder dialog task failed: {e}"))?;
+
+    match picked {
+        Some(fp) => {
+            let path = fp
+                .into_path()
+                .map_err(|e| format!("Invalid folder selected: {e}"))?;
+            Ok(Some(path.to_string_lossy().to_string()))
+        }
+        None => Ok(None),
+    }
 }
 
 #[tauri::command]
@@ -132,9 +240,31 @@ pub async fn restart_backend(backend: State<'_, BackendManager>) -> Result<Backe
 
 #[tauri::command]
 pub fn get_demo_paths(backend: State<'_, BackendManager>) -> Result<DemoPaths, String> {
-    let root = backend.repo_root()?;
-    let flows: PathBuf = root.join("data").join("demo").join("demo_flows.csv");
-    let labels: PathBuf = root.join("data").join("demo").join("demo_labels.csv");
+    let runtime_dir = backend.runtime_dir()?;
+    let repo_root = backend.repo_root()?;
+    let runtime_flows = runtime_dir.join("data").join("demo").join("demo_flows.csv");
+    let runtime_labels = runtime_dir
+        .join("data")
+        .join("demo")
+        .join("demo_labels.csv");
+    let repo_flows = repo_root.join("data").join("demo").join("demo_flows.csv");
+    let repo_labels = repo_root.join("data").join("demo").join("demo_labels.csv");
+
+    let flows = if runtime_flows.is_file() {
+        runtime_flows
+    } else if repo_flows.is_file() {
+        repo_flows
+    } else {
+        runtime_flows
+    };
+    let labels = if runtime_labels.is_file() {
+        runtime_labels
+    } else if repo_labels.is_file() {
+        repo_labels
+    } else {
+        runtime_labels
+    };
+
     Ok(DemoPaths {
         flows_exists: flows.is_file(),
         labels_exists: labels.is_file(),

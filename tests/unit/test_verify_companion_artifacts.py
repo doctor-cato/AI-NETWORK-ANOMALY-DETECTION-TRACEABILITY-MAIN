@@ -252,6 +252,7 @@ def _build_valid_attestation_payload(
             "installed_app_launched": True,
             "installed_exe_path_verified": True,
             "frontend_webview_connected": True,
+            "frontend_ready_models": list(cm_specs.keys()),
             "backend_spawned_on_loopback": True,
             "graceful_close_verified": True,
             "zero_orphan_processes_verified": True,
@@ -649,7 +650,15 @@ def _install_mocked_windows_desktop_env(
     def _fake_popen(cmd, **kwargs):
         return _FakeDesktopProc(cmd, kwargs.get("env") or {})
 
-    def _fake_http_json(url: str, **_kwargs):
+    def _fake_http_json(url: str, **kwargs):
+        req_headers = kwargs.get("headers") or {}
+        expected_token = (
+            state["launched_envs"][-1].get("NETWORK_ANOMALY_API_TOKEN")
+            if state["launched_envs"]
+            else None
+        )
+        if expected_token and req_headers.get("X-Sentinel-Session-Token") != expected_token:
+            raise urllib.error.HTTPError(url, 401, "Unauthorized", Message(), None)
         if url.endswith("/api/v1/health"):
             return 200, {"status": "ok"}
         if url.endswith("/api/v1/models"):
@@ -1441,3 +1450,123 @@ def test_github_actions_artifact_zip_wrapper_and_provenance_f06(
             bundle_archive=tampered_inner,
             expected_bundle_sha256=_sha256_path(tampered_inner),
         )
+
+
+def test_verify_e2e_attestation_requires_all_four_frontend_ready_models(tmp_path: Path):
+    ws = _copy_attestation_workspace(tmp_path)
+    payload = _build_valid_attestation_payload(ws, include_nsis=True)
+    att_path = tmp_path / "att_valid.json"
+    att_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    res = verify_e2e_attestation(att_path, root=ws, require_nsis_e2e=True)
+    assert res["attestation_status"] == "PASS"
+
+    # Missing frontend_ready_models fails closed
+    bad_missing = copy.deepcopy(payload)
+    bad_missing["nsis_e2e"].pop("frontend_ready_models")
+    bad_missing_path = tmp_path / "att_missing_frm.json"
+    bad_missing_path.write_text(json.dumps(bad_missing, indent=2), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="frontend_ready_models"):
+        verify_e2e_attestation(bad_missing_path, root=ws, require_nsis_e2e=True)
+
+    # Incomplete frontend_ready_models fails closed
+    bad_partial = copy.deepcopy(payload)
+    bad_partial["nsis_e2e"]["frontend_ready_models"] = ["random_forest", "xgboost"]
+    bad_partial_path = tmp_path / "att_partial_frm.json"
+    bad_partial_path.write_text(json.dumps(bad_partial, indent=2), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="frontend_ready_models"):
+        verify_e2e_attestation(bad_partial_path, root=ws, require_nsis_e2e=True)
+
+
+def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    src_ws = _copy_attestation_workspace(tmp_path / "src_ws")
+    target_code_ws = _copy_attestation_workspace(tmp_path / "code_ws")
+    runtime_dir = tmp_path / "PerUserRuntime"
+
+    # Populate synthetic companion files in src_ws with a STALE XGBoost sidecar manifest
+    companion_files = {
+        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
+        "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
+        "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
+        "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
+        "artifacts/models/autoencoder/autoencoder_model.joblib": b"ae",
+        "artifacts/models/autoencoder/model_config.json": b"{}",
+        "artifacts/models/autoencoder/threshold.json": b"{}",
+        "artifacts/models/xgboost/xgboost_manifest.json": b'{"stale": true}\n',
+    }
+    for rel, content in companion_files.items():
+        p = src_ws / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(content)
+
+    def _ready_summary(root: Path, runtime_dir: Path | None = None) -> dict[str, Any]:
+        eff_rt = (runtime_dir or root).resolve()
+        prep_sha = json.loads(
+            (root / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )["artifact_sha256"]
+        models_info: dict[str, Any] = {}
+        for k, (_, cands) in vca.MODEL_SPECS.items():
+            man = json.loads((root / cands[0]).read_text(encoding="utf-8"))
+            sha = man.get("model_artifact_sha256") or man.get("model_sha256")
+            models_info[k] = {
+                "ready": True,
+                "status": "READY",
+                "sha256": sha,
+                "run_id": man["run_id"],
+            }
+        demo_info = {
+            rel: {
+                "present": True,
+                "sha256": _sha256_path(eff_rt / rel),
+                "size_bytes": (eff_rt / rel).stat().st_size,
+            }
+            for rel in (
+                "data/demo/demo_flows.csv",
+                "data/demo/demo_labels.csv",
+                "data/demo/demo_manifest.json",
+            )
+        }
+        return {
+            "overall_status": "READY",
+            "ready_models": list(vca.MODEL_SPECS.keys()),
+            "preprocessor": {"ready": True, "status": "READY", "sha256": prep_sha},
+            "models": models_info,
+            "demo": demo_info,
+            "demo_ready": True,
+            "companion_files": sorted(
+                list(companion_files.keys())
+                + [
+                    "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+                    "reports/models/random_forest_manifest.json",
+                    "reports/models/xgboost_manifest.json",
+                    "reports/models/isolation_forest_manifest.json",
+                    "reports/models/autoencoder_manifest.json",
+                    "data/demo/demo_flows.csv",
+                    "data/demo/demo_labels.csv",
+                    "data/demo/demo_manifest.json",
+                ]
+            ),
+        }
+
+    monkeypatch.setattr(vca, "verify_companion_artifacts", _ready_summary)
+
+    bundle_zip = tmp_path / "synced_companion.zip"
+    pkg_res = package_companion_bundle(bundle_zip, root=src_ws)
+    assert pkg_res["package_status"] == "READY"
+
+    # Install into separate runtime_dir (code_ws stays untouched for artifacts/ and data/demo/)
+    inst_res = install_companion_bundle(
+        root=target_code_ws,
+        runtime_dir=runtime_dir,
+        bundle_archive=bundle_zip,
+        expected_bundle_sha256=pkg_res["bundle_sha256"],
+    )
+    assert inst_res["install_status"] == "READY"
+    assert (runtime_dir / "artifacts/models/xgboost/xgboost_manifest.json").read_bytes() == (
+        target_code_ws / "reports/models/xgboost_manifest.json"
+    ).read_bytes()
+    assert (runtime_dir / "data/demo/demo_flows.csv").is_file()
+    assert not (target_code_ws / "artifacts/models/xgboost/xgboost_baseline.joblib").exists()

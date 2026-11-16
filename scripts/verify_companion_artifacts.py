@@ -15,6 +15,7 @@ import json
 import math
 import os
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -84,20 +85,35 @@ DEMO_FILES_REL: Tuple[Path, ...] = (
     Path("data/demo/demo_labels.csv"),
     Path("data/demo/demo_manifest.json"),
 )
+SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
+    "artifacts/models/xgboost/xgboost_manifest.json": "reports/models/xgboost_manifest.json",
+    "artifacts/models/autoencoder/autoencoder_manifest.json": "reports/models/autoencoder_manifest.json",
+    "artifacts/models/random_forest/random_forest_manifest.json": "reports/models/random_forest_manifest.json",
+}
 
 
-def _select_existing_manifest(root: Path, candidates: List[Path]) -> Optional[Path]:
+def _select_existing_manifest(
+    manifest_root: Path,
+    artifact_root: Path,
+    candidates: List[Path],
+) -> Optional[Path]:
     for rel in candidates:
-        candidate = root / rel
+        base = manifest_root if rel.parts[0] == "reports" else artifact_root
+        candidate = base / rel
         if candidate.is_file():
             return candidate
-    return root / candidates[0]
+    return manifest_root / candidates[0]
 
 
-def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
+def verify_companion_artifacts(
+    root: Path = PROJECT_ROOT,
+    *,
+    runtime_dir: Optional[Path] = None,
+) -> Dict[str, Any]:
     """Verify preprocessor, all 4 model bundles, and demo files fail-closed."""
     resolved_root = Path(root).resolve()
-    prep_path = resolved_root / PREPROCESSOR_REL
+    resolved_runtime = Path(runtime_dir).resolve() if runtime_dir is not None else resolved_root
+    prep_path = resolved_runtime / PREPROCESSOR_REL
     prep_manifest = resolved_root / PREPROCESSOR_MANIFEST_REL
     split_manifest = resolved_root / SPLIT_MANIFEST_REL
 
@@ -133,8 +149,8 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
     ready_models: List[str] = []
 
     for model_key, (model_rel, support_rels) in MODEL_SPECS.items():
-        model_abs = resolved_root / model_rel
-        manifest_abs = _select_existing_manifest(resolved_root, support_rels)
+        model_abs = resolved_runtime / model_rel
+        manifest_abs = _select_existing_manifest(resolved_root, resolved_runtime, support_rels)
         if not prep_status["ready"] or prep_sha is None:
             models_status[model_key] = {
                 "ready": False,
@@ -156,14 +172,19 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
                 "ready": True,
                 "status": "READY",
                 "path": model_rel.as_posix(),
-                "manifest_path": manifest_abs.relative_to(resolved_root).as_posix(),
+                "manifest_path": (
+                    manifest_abs.relative_to(resolved_root).as_posix()
+                    if manifest_abs.is_relative_to(resolved_root)
+                    else manifest_abs.relative_to(resolved_runtime).as_posix()
+                ),
                 "sha256": model_meta.get("model_artifact_sha256") or _sha256_file(model_abs),
                 "run_id": model_meta.get("run_id"),
                 "reason": None,
             }
             staged_files.append(model_rel)
             for rel in support_rels:
-                if (resolved_root / rel).is_file():
+                base = resolved_root if rel.parts[0] == "reports" else resolved_runtime
+                if (base / rel).is_file():
                     staged_files.append(rel)
         except Exception as exc:
             models_status[model_key] = {
@@ -178,7 +199,7 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
     demo_ready = True
     demo_error: Optional[str] = None
     for rel in DEMO_FILES_REL:
-        abs_path = resolved_root / rel
+        abs_path = resolved_runtime / rel
         if abs_path.is_file():
             demo_status[rel.as_posix()] = {
                 "present": True,
@@ -193,7 +214,7 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
     if demo_ready:
         try:
             demo_manifest = json.loads(
-                (resolved_root / "data/demo/demo_manifest.json").read_text(encoding="utf-8")
+                (resolved_runtime / "data/demo/demo_manifest.json").read_text(encoding="utf-8")
             )
             sampling = demo_manifest.get("sampling") or {}
             if sampling.get("partition") != "validation":
@@ -242,9 +263,20 @@ def verify_companion_artifacts(root: Path = PROJECT_ROOT) -> Dict[str, Any]:
 def stage_companion_bundle(
     destination: Path,
     root: Path = PROJECT_ROOT,
+    *,
+    runtime_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Copy verified runtime companion artifacts (no raw dataset) + SHA256SUMS."""
-    summary = verify_companion_artifacts(root=root)
+    """Copy verified runtime companion artifacts (no raw dataset) + SHA256SUMS.
+
+    Synchronizes any sidecar model manifest (e.g. XGBoost/Autoencoder sidecars)
+    with the authoritative tracked manifest in ``reports/models/`` before
+    emitting ``COMPANION_SHA256SUMS.txt``.
+    """
+    summary = (
+        verify_companion_artifacts(root=root)
+        if runtime_dir is None
+        else verify_companion_artifacts(root=root, runtime_dir=runtime_dir)
+    )
     if summary["overall_status"] != "READY":
         raise RuntimeError(
             "Cannot stage companion bundle while artifacts are incomplete or unverified: "
@@ -252,12 +284,28 @@ def stage_companion_bundle(
         )
 
     resolved_root = Path(root).resolve()
+    resolved_runtime = Path(runtime_dir).resolve() if runtime_dir is not None else resolved_root
     dest_dir = Path(destination).resolve()
     dest_dir.mkdir(parents=True, exist_ok=True)
 
+    staged_set = list(summary["companion_files"])
+    for sidecar_rel, tracked_rel in SIDECAR_MANIFEST_MAPPINGS.items():
+        if (resolved_root / tracked_rel).is_file() and sidecar_rel not in staged_set:
+            staged_set.append(sidecar_rel)
+    staged_set = sorted(set(staged_set))
+
     checksum_lines: List[str] = []
-    for rel_str in summary["companion_files"]:
-        src = resolved_root / rel_str
+    synced_sidecars: List[str] = []
+    for rel_str in staged_set:
+        if rel_str in SIDECAR_MANIFEST_MAPPINGS:
+            tracked_src = resolved_root / SIDECAR_MANIFEST_MAPPINGS[rel_str]
+            src = tracked_src if tracked_src.is_file() else (resolved_runtime / rel_str)
+            if tracked_src.is_file():
+                synced_sidecars.append(rel_str)
+        elif rel_str.startswith("reports/"):
+            src = resolved_root / rel_str
+        else:
+            src = resolved_runtime / rel_str
         dst = dest_dir / rel_str
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
@@ -269,6 +317,8 @@ def stage_companion_bundle(
 
     return {
         **summary,
+        "companion_files": staged_set,
+        "synced_sidecars": synced_sidecars,
         "destination": str(dest_dir),
         "checksums_file": str(sums_path),
         "staged_file_count": len(checksum_lines),
@@ -515,6 +565,8 @@ def _download_allowlisted_bytes(
 def package_companion_bundle(
     archive_path: Path,
     root: Path = PROJECT_ROOT,
+    *,
+    runtime_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Create a deterministic ZIP of verified companion files + manifest & checksums."""
     resolved_root = Path(root).resolve()
@@ -523,7 +575,11 @@ def package_companion_bundle(
 
     with tempfile.TemporaryDirectory(prefix="nf_pkg_companion_") as tmp_dir:
         stage_dir = Path(tmp_dir) / "staged"
-        staged = stage_companion_bundle(destination=stage_dir, root=resolved_root)
+        staged = stage_companion_bundle(
+            destination=stage_dir,
+            root=resolved_root,
+            runtime_dir=runtime_dir,
+        )
 
         source_commit: Optional[str] = None
         if (resolved_root / ".git").exists():
@@ -740,9 +796,21 @@ def _verify_companion_bundle_manifest(
             )
 
 
+def _has_symlink_ancestor(path: Path, stop_at: Path) -> bool:
+    """Return True if path or any parent directory below stop_at is a symlink."""
+    cur = path
+    while True:
+        if cur.is_symlink():
+            return True
+        if cur == stop_at or cur.parent == cur:
+            return False
+        cur = cur.parent
+
+
 def install_companion_bundle(
     root: Path = PROJECT_ROOT,
     *,
+    runtime_dir: Optional[Path] = None,
     bundle_dir: Optional[Path] = None,
     bundle_archive: Optional[Path] = None,
     bundle_url: Optional[str] = None,
@@ -754,8 +822,9 @@ def install_companion_bundle(
     token_env_var: Optional[str] = None,
     require_checksum_for_remote: bool = True,
 ) -> Dict[str, Any]:
-    """Fetch, verify SHA-256 & provenance, and install companion files into repository root."""
+    """Fetch, verify SHA-256 & provenance, and install companion files into repo or runtime dir."""
     resolved_root = Path(root).resolve()
+    resolved_runtime = Path(runtime_dir).resolve() if runtime_dir is not None else resolved_root
     provided_sources = [
         name
         for name, val in (
@@ -920,7 +989,7 @@ def install_companion_bundle(
                 raise RuntimeError(f"Disallowed companion destination prefix: {rel_posix!r}")
 
             raw_src = staged_root / rel_posix
-            if raw_src.is_symlink():
+            if _has_symlink_ancestor(raw_src, staged_root):
                 raise RuntimeError(f"Symlink companion source rejected: {raw_src}")
             src = raw_src.resolve()
             if not src.is_relative_to(staged_root) or not src.is_file():
@@ -932,14 +1001,41 @@ def install_companion_bundle(
                     f"{actual_sha} != {expected_sha}"
                 )
 
-            dst = (resolved_root / rel_posix).resolve()
-            if not dst.is_relative_to(resolved_root):
-                raise RuntimeError(f"Companion destination escapes repo root: {dst}")
-            if rel_posix.startswith("reports/") and not dst.is_file():
-                raise RuntimeError(
-                    f"Untracked reports/ path rejected from companion bundle: {rel_posix!r}"
-                )
-            if rel_posix.startswith(("reports/", "data/demo/")) and dst.is_file():
+            if rel_posix in SIDECAR_MANIFEST_MAPPINGS:
+                tracked_manifest_path = resolved_root / SIDECAR_MANIFEST_MAPPINGS[rel_posix]
+                if tracked_manifest_path.is_file():
+                    tracked_sidecar_sha = _sha256_file(tracked_manifest_path).lower()
+                    if actual_sha != tracked_sidecar_sha:
+                        raise RuntimeError(
+                            f"Companion sidecar manifest {rel_posix} does not match tracked manifest "
+                            f"{SIDECAR_MANIFEST_MAPPINGS[rel_posix]} ({actual_sha} != {tracked_sidecar_sha})"
+                        )
+
+            if rel_posix.startswith("reports/"):
+                tracked_dst = (resolved_root / rel_posix).resolve()
+                if not tracked_dst.is_relative_to(resolved_root) or not tracked_dst.is_file():
+                    raise RuntimeError(
+                        f"Untracked reports/ path rejected from companion bundle: {rel_posix!r}"
+                    )
+                tracked_sha = _sha256_file(tracked_dst).lower()
+                if actual_sha != tracked_sha:
+                    raise RuntimeError(
+                        f"Companion file {rel_posix} does not match tracked file at HEAD "
+                        f"({actual_sha} != {tracked_sha})"
+                    )
+                continue
+
+            raw_dst = resolved_runtime / rel_posix
+            if _has_symlink_ancestor(raw_dst, resolved_runtime):
+                raise RuntimeError(f"Symlink companion destination rejected: {raw_dst}")
+            dst = raw_dst.resolve()
+            if not dst.is_relative_to(resolved_runtime):
+                raise RuntimeError(f"Companion destination escapes runtime root: {dst}")
+            if (
+                rel_posix.startswith("data/demo/")
+                and dst.is_file()
+                and resolved_runtime == resolved_root
+            ):
                 tracked_sha = _sha256_file(dst).lower()
                 if actual_sha != tracked_sha:
                     raise RuntimeError(
@@ -951,7 +1047,11 @@ def install_companion_bundle(
             shutil.copy2(src, dst)
             copied_files.append(rel_posix)
 
-        summary = verify_companion_artifacts(root=resolved_root)
+        summary = (
+            verify_companion_artifacts(root=resolved_root)
+            if runtime_dir is None
+            else verify_companion_artifacts(root=resolved_root, runtime_dir=resolved_runtime)
+        )
         if summary["overall_status"] != "READY":
             raise RuntimeError(
                 "Installed companion bundle failed verification against tracked manifests: "
@@ -961,6 +1061,7 @@ def install_companion_bundle(
         return {
             "install_status": "READY",
             "source_kind": source_kind,
+            "runtime_dir": str(resolved_runtime),
             "archive_sha256": installed_archive_sha,
             "outer_wrapper_sha256": outer_wrapper_sha,
             "verified_checksum_entries": len(sums_map),
@@ -980,13 +1081,16 @@ def _http_json(
     *,
     method: str = "GET",
     payload: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
     timeout: float = 15.0,
 ) -> Tuple[int, Any]:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    headers = {"Accept": "application/json"}
+    req_headers = {"Accept": "application/json"}
     if data is not None:
-        headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        req_headers["Content-Type"] = "application/json"
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(url, data=data, headers=req_headers, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - 127.0.0.1 only
         body = resp.read().decode("utf-8")
         return int(resp.status), json.loads(body)
@@ -1253,8 +1357,10 @@ def verify_nsis_installer_e2e(
     sums_file: Optional[Path] = None,
     compiled_exe_path: Optional[Path] = None,
     *,
+    runtime_dir: Optional[Path] = None,
+    pass_repo_root_env: bool = True,
     launch_installed_app: bool = True,
-    backend_verifier: Optional[Callable[[str], Dict[str, Any]]] = None,
+    backend_verifier: Optional[Callable[..., Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Verify NSIS clean install, exe SHA-256 parity, live installed app launch & zero-orphan uninstall."""
     resolved_root = Path(root).resolve()
@@ -1388,11 +1494,19 @@ def verify_nsis_installer_e2e(
         telemetry_path = tmp_root / "desktop_telemetry.json"
         wv2_dir = tmp_root / "webview2_user_data"
         desktop_db = tmp_root / "installed_desktop.db"
+        e2e_session_token = secrets.token_hex(32)
+        auth_headers = {"X-Sentinel-Session-Token": e2e_session_token}
         launch_env = os.environ.copy()
-        launch_env["NETWORK_ANOMALY_REPO_ROOT"] = str(resolved_root)
+        if pass_repo_root_env:
+            launch_env["NETWORK_ANOMALY_REPO_ROOT"] = str(resolved_root)
+        else:
+            launch_env.pop("NETWORK_ANOMALY_REPO_ROOT", None)
+        if runtime_dir is not None:
+            launch_env["NETWORK_ANOMALY_RUNTIME_DIR"] = str(Path(runtime_dir).resolve())
         launch_env["NETWORK_ANOMALY_DB_PATH"] = str(desktop_db)
         launch_env["NETWORK_ANOMALY_BACKEND_PORT"] = "0"
         launch_env["NETWORK_ANOMALY_PYTHON"] = sys.executable
+        launch_env["NETWORK_ANOMALY_API_TOKEN"] = e2e_session_token
         launch_env["NETWORK_ANOMALY_DESKTOP_TELEMETRY_FILE"] = str(telemetry_path)
         launch_env["WEBVIEW2_USER_DATA_FOLDER"] = str(wv2_dir)
 
@@ -1435,7 +1549,11 @@ def verify_nsis_installer_e2e(
                             and b_url.startswith("http://127.0.0.1:")
                         ):
                             try:
-                                h_code, h_json = _http_json(f"{b_url}/api/v1/health", timeout=2.0)
+                                h_code, h_json = _http_json(
+                                    f"{b_url}/api/v1/health",
+                                    headers=auth_headers,
+                                    timeout=2.0,
+                                )
                                 if h_code == 200 and isinstance(h_json, dict):
                                     telemetry_data = parsed_tel
                                     observed_backend_pid = b_pid
@@ -1457,13 +1575,32 @@ def verify_nsis_installer_e2e(
                 raise RuntimeError(
                     f"Reported FastAPI backend child PID {observed_backend_pid} is not alive."
                 )
+            # Confirm unauthenticated /api/v1/models fails closed with HTTP 401 when session token is active
+            try:
+                _http_json(f"{backend_base_url}/api/v1/models", timeout=5.0)
+                raise RuntimeError(
+                    "Unauthenticated /api/v1/models request succeeded despite session token enforcement!"
+                )
+            except urllib.error.HTTPError as http_err:
+                if http_err.code != 401:
+                    raise RuntimeError(
+                        f"Expected HTTP 401 for unauthenticated /api/v1/models, got {http_err.code}"
+                    ) from http_err
+
             summary_block = telemetry_data.get("summary") or {}
             frontend_ready_models = list(summary_block.get("ready_models") or [])
 
             if backend_verifier is not None:
-                verifier_result = backend_verifier(backend_base_url)
+                try:
+                    verifier_result = backend_verifier(backend_base_url, auth_headers)
+                except TypeError:
+                    verifier_result = backend_verifier(backend_base_url)
             else:
-                m_code, m_payload = _http_json(f"{backend_base_url}/api/v1/models", timeout=10.0)
+                m_code, m_payload = _http_json(
+                    f"{backend_base_url}/api/v1/models",
+                    headers=auth_headers,
+                    timeout=10.0,
+                )
                 if m_code != 200 or not isinstance(m_payload, list):
                     raise RuntimeError(
                         f"Installed desktop /api/v1/models probe failed: status={m_code}"
@@ -1556,13 +1693,17 @@ def _execute_four_model_api_suite(
     base_url: str,
     resolved_root: Path,
     summary: Dict[str, Any],
+    *,
+    runtime_dir: Optional[Path] = None,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Execute live 4-model analyze, evaluate, OOD abstention, and Issue #27 dry-run suite."""
     port = int(base_url.rsplit(":", 1)[1])
-    demo_flows = resolved_root / "data/demo/demo_flows.csv"
-    demo_labels = resolved_root / "data/demo/demo_labels.csv"
+    demo_root = Path(runtime_dir).resolve() if runtime_dir is not None else resolved_root
+    demo_flows = demo_root / "data/demo/demo_flows.csv"
+    demo_labels = demo_root / "data/demo/demo_labels.csv"
 
-    _, models_payload = _http_json(f"{base_url}/api/v1/models", timeout=10.0)
+    _, models_payload = _http_json(f"{base_url}/api/v1/models", headers=headers, timeout=10.0)
     models_by_key = {item["model_key"]: item for item in models_payload}
     for key in MODEL_SPECS:
         entry = models_by_key.get(key)
@@ -1584,6 +1725,7 @@ def _execute_four_model_api_suite(
                 "batch_size": 100,
                 "create_incidents": False,
             },
+            headers=headers,
             timeout=30.0,
         )
         if az.get("inference_mode") != "verified_model":
@@ -1645,6 +1787,7 @@ def _execute_four_model_api_suite(
             f"{base_url}/api/v1/csv/evaluate",
             method="POST",
             payload={"labels_path": str(demo_labels), "predictions": results},
+            headers=headers,
             timeout=15.0,
         )
         if ev.get("labels_sha256") != expected_labels_sha:
@@ -1669,6 +1812,7 @@ def _execute_four_model_api_suite(
             f"{base_url}/api/v1/security/simulate-response",
             method="POST",
             payload={"analysis_id": az["analysis_id"], "dry_run": True},
+            headers=headers,
             timeout=15.0,
         )
         if (
@@ -1766,6 +1910,7 @@ def _execute_four_model_api_suite(
             ],
             "dry_run": True,
         },
+        headers=headers,
         timeout=15.0,
     )
     if (
@@ -1790,13 +1935,19 @@ def _execute_four_model_api_suite(
 def run_four_model_e2e_verification(
     root: Path = PROJECT_ROOT,
     *,
+    runtime_dir: Optional[Path] = None,
+    pass_repo_root_env: bool = True,
     installer_path: Optional[Path] = None,
     sums_file: Optional[Path] = None,
     compiled_exe_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Fail-closed live loopback E2E verification across all 4 models on demo_flows.csv."""
     resolved_root = Path(root).resolve()
-    summary = verify_companion_artifacts(root=resolved_root)
+    summary = (
+        verify_companion_artifacts(root=resolved_root)
+        if runtime_dir is None
+        else verify_companion_artifacts(root=resolved_root, runtime_dir=runtime_dir)
+    )
     if summary["overall_status"] != "READY":
         raise RuntimeError(
             "Mandatory 4-model E2E gate BLOCKED: companion artifacts incomplete or unverified "
@@ -1822,9 +1973,15 @@ def run_four_model_e2e_verification(
             root=resolved_root,
             sums_file=sums_file,
             compiled_exe_path=compiled_exe_path,
+            runtime_dir=runtime_dir,
+            pass_repo_root_env=pass_repo_root_env,
             launch_installed_app=True,
-            backend_verifier=lambda base_url: _execute_four_model_api_suite(
-                base_url, resolved_root, summary
+            backend_verifier=lambda base_url, auth_headers=None: _execute_four_model_api_suite(
+                base_url,
+                resolved_root,
+                summary,
+                runtime_dir=runtime_dir,
+                headers=auth_headers,
             ),
         )
         suite_result = dict(nsis_report.pop("_backend_verifier_result"))
@@ -1838,13 +1995,17 @@ def run_four_model_e2e_verification(
         src_path = str(resolved_root / "src")
         existing_py = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = f"{src_path}{os.pathsep}{existing_py}" if existing_py else src_path
+        if runtime_dir is not None:
+            env["NETWORK_ANOMALY_RUNTIME_DIR"] = str(Path(runtime_dir).resolve())
 
         proc: Optional[subprocess.Popen[str]] = None
         try:
             proc, base_url = _start_api_process(
                 resolved_root, run_api_script, db_path, log_path, env
             )
-            suite_result = _execute_four_model_api_suite(base_url, resolved_root, summary)
+            suite_result = _execute_four_model_api_suite(
+                base_url, resolved_root, summary, runtime_dir=runtime_dir
+            )
         finally:
             if proc is not None and proc.poll() is None:
                 proc.terminate()
@@ -2277,6 +2438,11 @@ def verify_e2e_attestation(
                 "E2E attestation must record e2e_backend_origin='installed_nsis_desktop' when require_nsis_e2e=True, "
                 f"got {report.get('e2e_backend_origin')!r}"
             )
+        if nsis.get("frontend_ready_models") != expected_models_order:
+            raise RuntimeError(
+                f"E2E attestation nsis_e2e.frontend_ready_models must equal {expected_models_order}, "
+                f"got {nsis.get('frontend_ready_models')!r}"
+            )
         inst_size = nsis.get("installer_size_bytes")
         if type(inst_size) is not int or inst_size < 1_000_000:
             raise RuntimeError(
@@ -2326,6 +2492,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=PROJECT_ROOT,
         help="Repository root to inspect (defaults to project root).",
+    )
+    parser.add_argument(
+        "--runtime-dir",
+        type=Path,
+        default=None,
+        help="Optional separate writable runtime directory for artifacts/ and data/demo/.",
+    )
+    parser.add_argument(
+        "--no-repo-root-env",
+        action="store_true",
+        help="Launch installed NSIS desktop executable without NETWORK_ANOMALY_REPO_ROOT (verifies bundled Tauri resources).",
     )
     parser.add_argument(
         "--stage-dir",
@@ -2463,7 +2640,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     if args.stage_dir is not None:
         try:
-            staged = stage_companion_bundle(destination=args.stage_dir, root=args.root)
+            staged = stage_companion_bundle(
+                destination=args.stage_dir,
+                root=args.root,
+                runtime_dir=args.runtime_dir,
+            )
         except Exception as exc:
             sys.stderr.write(f"[COMPANION ARTIFACTS BLOCKED] {exc}\n")
             return 1
@@ -2472,7 +2653,11 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.package_bundle is not None:
         try:
-            packaged = package_companion_bundle(archive_path=args.package_bundle, root=args.root)
+            packaged = package_companion_bundle(
+                archive_path=args.package_bundle,
+                root=args.root,
+                runtime_dir=args.runtime_dir,
+            )
         except Exception as exc:
             sys.stderr.write(f"[COMPANION PACKAGE BLOCKED] {exc}\n")
             return 1
@@ -2491,6 +2676,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             installed = install_companion_bundle(
                 root=args.root,
+                runtime_dir=args.runtime_dir,
                 bundle_dir=args.install_bundle_dir,
                 bundle_archive=args.install_bundle_archive,
                 bundle_url=args.install_bundle_url,
@@ -2533,6 +2719,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 root=args.root,
                 sums_file=args.sums_file,
                 compiled_exe_path=args.compiled_exe,
+                runtime_dir=args.runtime_dir,
+                pass_repo_root_env=not args.no_repo_root_env,
             )
         except Exception as exc:
             sys.stderr.write(f"[NSIS E2E FAILED] {exc}\n")
@@ -2544,6 +2732,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             e2e_report = run_four_model_e2e_verification(
                 root=args.root,
+                runtime_dir=args.runtime_dir,
+                pass_repo_root_env=not args.no_repo_root_env,
                 installer_path=args.installer_path,
                 sums_file=args.sums_file,
                 compiled_exe_path=args.compiled_exe,
@@ -2554,7 +2744,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         _emit_json(e2e_report, args.output_json)
         return 0
 
-    summary = verify_companion_artifacts(root=args.root)
+    summary = (
+        verify_companion_artifacts(root=args.root)
+        if args.runtime_dir is None
+        else verify_companion_artifacts(root=args.root, runtime_dir=args.runtime_dir)
+    )
     _emit_json(summary, args.output_json)
     return 0 if summary["overall_status"] == "READY" else 1
 

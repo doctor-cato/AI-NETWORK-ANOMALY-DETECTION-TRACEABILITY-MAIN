@@ -6,8 +6,29 @@ export interface BackendStatus {
   pid: number | null;
   python_executable: string;
   repo_root: string;
+  runtime_dir?: string;
   db_path: string;
   last_error: string | null;
+}
+
+export interface RuntimeDiagnostics {
+  repo_root: string;
+  repo_root_valid: boolean;
+  runtime_dir: string;
+  db_path: string;
+  python_ready: boolean;
+  python_executable: string | null;
+  python_error: string | null;
+  base_python_available: boolean;
+  base_python_executable: string | null;
+  base_python_error: string | null;
+  venv_python_path: string;
+  venv_exists: boolean;
+  requirements_file_exists: boolean;
+  companion_status: string;
+  ready_models: string[];
+  demo_flows_exists: boolean;
+  demo_labels_exists: boolean;
 }
 
 export interface DemoPaths {

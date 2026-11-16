@@ -2088,3 +2088,46 @@ def test_f6_float_row_id_with_nan_normalizes_without_dot_zero_suffix(
     assert resp.status_code == 200, resp.text
     row_ids = [item["row_id"] for item in resp.json()["results"]]
     assert row_ids == [101, 102, "row_2", 104]
+
+
+def test_session_token_middleware_enforces_header_when_configured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from network_anomaly.api.main import create_app
+
+    token = "test-session-token-0123456789abcdef"
+    monkeypatch.setenv("NETWORK_ANOMALY_API_TOKEN", token)
+    secured_app = create_app(db_path=":memory:")
+    secured_client = TestClient(secured_app)
+
+    # /health stays available for lightweight liveness check
+    health_resp = secured_client.get("/health")
+    assert health_resp.status_code == 200
+
+    # /api/v1/* rejects missing or wrong token fail-closed with 401
+    unauth_resp = secured_client.get("/api/v1/models")
+    assert unauth_resp.status_code == 401
+    wrong_resp = secured_client.get(
+        "/api/v1/models",
+        headers={"X-Sentinel-Session-Token": "wrong-token"},
+    )
+    assert wrong_resp.status_code == 401
+
+    # Valid session token succeeds
+    ok_resp = secured_client.get(
+        "/api/v1/models",
+        headers={"X-Sentinel-Session-Token": token},
+    )
+    assert ok_resp.status_code == 200
+    assert len(ok_resp.json()) == 4
+
+
+def test_sensitive_system_path_blocks_program_files_x86_and_programdata():
+    from network_anomaly.api.desktop_csv import _is_sensitive_system_path
+
+    assert _is_sensitive_system_path(Path(r"C:\Program Files (x86)\Evil\test.csv")) is True
+    assert _is_sensitive_system_path(Path(r"C:\ProgramData\Evil\test.csv")) is True
+    assert (
+        _is_sensitive_system_path(Path(r"C:\Users\Alice\AppData\Local\NetFlowSentinelM6\demo.csv"))
+        is False
+    )

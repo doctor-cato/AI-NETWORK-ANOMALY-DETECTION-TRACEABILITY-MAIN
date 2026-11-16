@@ -14,10 +14,10 @@ import sqlite3
 from pathlib import Path
 from typing import Generator, Optional, Union
 
-from network_anomaly.config import PROJECT_ROOT
+from network_anomaly.config import resolve_default_db_path
 
 # Default persistent SQLite database path
-DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "network_anomaly.db"
+DEFAULT_DB_PATH = resolve_default_db_path()
 
 # ponytail: SQLite is the zero-dependency CI and local persistence default.
 # For high-throughput distributed deployments, a PostgreSQL adapter implementing
@@ -179,7 +179,7 @@ class DatabaseManager:
             elif env_db_path:
                 self.db_path = Path(env_db_path)
             else:
-                self.db_path = DEFAULT_DB_PATH
+                self.db_path = resolve_default_db_path()
         elif str(db_path) == ":memory:":
             self.db_path = ":memory:"
         else:

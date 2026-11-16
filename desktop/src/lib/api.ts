@@ -10,6 +10,7 @@ import type {
   HealthResponse,
   ModelStatusItem,
   PaginatedSecuritySimulationsResponse,
+  RuntimeDiagnostics,
   SecurityResponseSimulationResponse,
   SecuritySimulationExportResponse,
 } from "./types";
@@ -114,6 +115,51 @@ export async function restartBackend(): Promise<BackendStatus> {
     return invoke<BackendStatus>("restart_backend");
   }
   return getBackendStatus();
+}
+
+export async function getRuntimeDiagnostics(): Promise<RuntimeDiagnostics | null> {
+  if (isTauriRuntime()) {
+    return invoke<RuntimeDiagnostics>("get_runtime_diagnostics");
+  }
+  return null;
+}
+
+export async function setupPythonRuntime(wheelhouseDir?: string): Promise<BackendStatus> {
+  if (isTauriRuntime()) {
+    return invoke<BackendStatus>("setup_python_runtime", {
+      wheelhouseDir: wheelhouseDir ?? null,
+    });
+  }
+  throw new Error("Tự động cài đặt Python Runtime chỉ khả dụng trong Tauri Desktop App.");
+}
+
+export async function importCompanionBundle(params: {
+  archivePath?: string | null;
+  bundleDir?: string | null;
+  expectedSha256?: string | null;
+}): Promise<Record<string, unknown>> {
+  if (isTauriRuntime()) {
+    return invoke<Record<string, unknown>>("import_companion_bundle", {
+      archivePath: params.archivePath ?? null,
+      bundleDir: params.bundleDir ?? null,
+      expectedSha256: params.expectedSha256 ?? null,
+    });
+  }
+  throw new Error("Nhập Companion Bundle chỉ khả dụng trong Tauri Desktop App.");
+}
+
+export async function pickZipFile(title?: string): Promise<string | null> {
+  if (isTauriRuntime()) {
+    return invoke<string | null>("pick_zip_file", { title });
+  }
+  return null;
+}
+
+export async function pickCompanionFolder(title?: string): Promise<string | null> {
+  if (isTauriRuntime()) {
+    return invoke<string | null>("pick_companion_folder", { title });
+  }
+  return null;
 }
 
 export async function getDemoPaths(): Promise<DemoPaths> {

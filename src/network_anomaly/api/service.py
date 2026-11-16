@@ -46,7 +46,9 @@ from network_anomaly.api.schemas import (
     TimelineItemResponse,
     canonicalize_model_name,
 )
-from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
+from network_anomaly.config import ARTIFACTS, PROJECT_ROOT, resolve_artifacts_dir
+
+_DEFAULT_ARTIFACTS = ARTIFACTS
 
 logger = logging.getLogger("network_anomaly.api.service")
 
@@ -149,12 +151,21 @@ class ApiService:
                     },
                 )
 
+    def _active_artifacts_dir(self) -> Path:
+        """Resolve artifacts root, honoring test monkeypatches of module-level ARTIFACTS."""
+        if ARTIFACTS != _DEFAULT_ARTIFACTS:
+            return ARTIFACTS
+        return resolve_artifacts_dir()
+
     def _check_preprocessor_readiness(self) -> Tuple[bool, Optional[str]]:
         """Verify preprocessor artifact and companion manifest independently of models."""
         from network_anomaly.inference.predict import load_verified_preprocessor
 
-        prep_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-        preprocessor_path = prep_path if prep_path.is_file() else ARTIFACTS / "preprocessor.joblib"
+        artifacts_dir = self._active_artifacts_dir()
+        prep_path = artifacts_dir / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+        preprocessor_path = (
+            prep_path if prep_path.is_file() else artifacts_dir / "preprocessor.joblib"
+        )
         prep_manifest = (
             PROJECT_ROOT
             / "reports"
@@ -234,7 +245,7 @@ class ApiService:
             details={
                 "db_backend": "sqlite",
                 "db_path": str(self.db.db_path),
-                "artifacts_dir_exists": ARTIFACTS.exists(),
+                "artifacts_dir_exists": self._active_artifacts_dir().exists(),
                 "model_artifact_found": model_ready,
                 "preprocessor_artifact_found": preprocessor_ready,
                 "preprocessor_status": "READY" if preprocessor_ready else "NOT_READY",
@@ -319,31 +330,34 @@ class ApiService:
     ) -> Tuple[Path, Optional[Path], Optional[Path], Optional[Path]]:
         """Resolve model and preprocessor artifact paths and companion manifests."""
         canonical_key = self._canonical_model_key(model_name)
+        artifacts_dir = self._active_artifacts_dir()
         if canonical_key == "isolation_forest":
-            model_path = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
+            model_path = artifacts_dir / "models" / "isolation_forest" / "isolation_forest.joblib"
             model_manifest = PROJECT_ROOT / "reports" / "models" / "isolation_forest_manifest.json"
         elif canonical_key == "xgboost":
-            xgb_baseline = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
+            xgb_baseline = artifacts_dir / "models" / "xgboost" / "xgboost_baseline.joblib"
             model_path = (
                 xgb_baseline
                 if xgb_baseline.is_file()
-                else ARTIFACTS / "models" / "xgboost" / "xgboost.joblib"
+                else artifacts_dir / "models" / "xgboost" / "xgboost.joblib"
             )
             xgb_sidecar = model_path.parent / "xgboost_manifest.json"
             xgb_report = PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json"
-            model_manifest = xgb_sidecar if xgb_sidecar.is_file() else xgb_report
+            model_manifest = xgb_report if xgb_report.is_file() else xgb_sidecar
         elif canonical_key == "autoencoder":
-            model_path = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
-            ae_sidecar = ARTIFACTS / "models" / "autoencoder" / "autoencoder_manifest.json"
+            model_path = artifacts_dir / "models" / "autoencoder" / "autoencoder_model.joblib"
+            ae_sidecar = artifacts_dir / "models" / "autoencoder" / "autoencoder_manifest.json"
             ae_report = PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json"
-            model_manifest = ae_sidecar if ae_sidecar.is_file() else ae_report
+            model_manifest = ae_report if ae_report.is_file() else ae_sidecar
         else:
-            rf_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
-            model_path = rf_path if rf_path.is_file() else ARTIFACTS / "model.joblib"
+            rf_path = artifacts_dir / "models" / "random_forest" / "random_forest_baseline.joblib"
+            model_path = rf_path if rf_path.is_file() else artifacts_dir / "model.joblib"
             model_manifest = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
 
-        prep_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-        preprocessor_path = prep_path if prep_path.is_file() else ARTIFACTS / "preprocessor.joblib"
+        prep_path = artifacts_dir / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+        preprocessor_path = (
+            prep_path if prep_path.is_file() else artifacts_dir / "preprocessor.joblib"
+        )
         prep_manifest = (
             PROJECT_ROOT
             / "reports"

@@ -90,6 +90,8 @@ _SENSITIVE_SYSTEM_PREFIXES = (
     "c:\\windows\\system",
     "c:\\windows\\boot",
     "c:\\program files",
+    "c:\\program files (x86)",
+    "c:\\programdata",
     "/system",
     "/etc",
     "/usr/bin",

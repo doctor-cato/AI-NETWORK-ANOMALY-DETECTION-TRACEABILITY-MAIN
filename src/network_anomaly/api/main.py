@@ -6,11 +6,14 @@ event timeline, key rotation lifecycle, and system health checks.
 
 from __future__ import annotations
 
+import hmac
+import os
 from pathlib import Path
 from typing import List, Optional, Union
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.desktop_csv import (
@@ -106,8 +109,27 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
         allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Idempotency-Key"],
+        allow_headers=["Content-Type", "X-Idempotency-Key", "X-Sentinel-Session-Token"],
     )
+
+    session_token = os.environ.get("NETWORK_ANOMALY_API_TOKEN", "").strip()
+    if session_token:
+
+        @app.middleware("http")
+        async def _enforce_session_token(request: Request, call_next):
+            # Allow CORS preflight and lightweight /health liveness probe without exposing API routes
+            if request.method == "OPTIONS" or request.url.path == "/health":
+                return await call_next(request)
+            presented = request.headers.get("X-Sentinel-Session-Token", "")
+            if not hmac.compare_digest(presented.encode("utf-8"), session_token.encode("utf-8")):
+                return JSONResponse(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    content={
+                        "error": "Unauthorized",
+                        "detail": "Missing or invalid X-Sentinel-Session-Token.",
+                    },
+                )
+            return await call_next(request)
 
     # Dependency getters
     def get_service() -> ApiService:

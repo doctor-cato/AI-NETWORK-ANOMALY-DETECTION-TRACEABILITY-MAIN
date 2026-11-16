@@ -9,14 +9,19 @@
     fetchModelsStatus,
     getBackendStatus,
     getDemoPaths,
+    getRuntimeDiagnostics,
+    importCompanionBundle,
     inspectCsv,
     isTauriRuntime,
     listSecuritySimulations,
+    pickCompanionFolder,
     pickCsvFile,
     pickSaveCsvFile,
     pickSaveJsonFile,
+    pickZipFile,
     reportFrontendReady,
     restartBackend,
+    setupPythonRuntime,
     simulateSecurityResponse,
   } from "./lib/api";
   import ChartsPanel from "./lib/components/ChartsPanel.svelte";
@@ -27,6 +32,7 @@
   import ModelComparisonPanel from "./lib/components/ModelComparisonPanel.svelte";
   import ModelReadinessPanel from "./lib/components/ModelReadinessPanel.svelte";
   import PredictionsTable from "./lib/components/PredictionsTable.svelte";
+  import RuntimeSetupPanel from "./lib/components/RuntimeSetupPanel.svelte";
   import {
     createInitialComparisonState,
     evaluateAllModelsWorkflow,
@@ -52,6 +58,7 @@
     CsvInspectResponse,
     HealthResponse,
     ModelStatusItem,
+    RuntimeDiagnostics,
     SecurityResponseSimulationResponse,
     SecuritySimulationExportResponse,
     SecuritySimulationHistoryItem,
@@ -64,6 +71,7 @@
   let activeTab = $state<TabId>("overview");
 
   let backendStatus = $state<BackendStatus | null>(null);
+  let runtimeDiagnostics = $state<RuntimeDiagnostics | null>(null);
   let healthData = $state<HealthResponse | null>(null);
   let models = $state<ModelStatusItem[]>([]);
   let selectedModel = $state("random_forest");
@@ -123,6 +131,21 @@
     theme = theme === "dark" ? "light" : "dark";
   }
 
+  async function refreshDiagnosticsAndDemoPaths(): Promise<void> {
+    try {
+      const [diag, demo] = await Promise.all([getRuntimeDiagnostics(), getDemoPaths()]);
+      runtimeDiagnostics = diag;
+      if (demo.flows_exists && !flowsPath.trim()) {
+        handleFlowsPathChange(demo.flows_path);
+      }
+      if (demo.labels_exists && !labelsPath.trim()) {
+        handleLabelsPathChange(demo.labels_path);
+      }
+    } catch {
+      // Ignore secondary diagnostics error
+    }
+  }
+
   async function refreshStatus(): Promise<void> {
     errorMessage = null;
     try {
@@ -136,14 +159,18 @@
       models = modelList;
       comparisonState = reconcileModelsReadiness(comparisonState, modelList);
       ensureReadySelectedModel(modelList);
-      await refreshSimulationHistory();
+      await Promise.all([refreshSimulationHistory(), refreshDiagnosticsAndDemoPaths()]);
     } catch (err) {
       errorMessage =
         err instanceof Error
           ? `Không thể kết nối Python FastAPI localhost: ${err.message}`
           : String(err);
       try {
-        backendStatus = await getBackendStatus();
+        const [bStatus] = await Promise.all([
+          getBackendStatus(),
+          refreshDiagnosticsAndDemoPaths(),
+        ]);
+        backendStatus = bStatus;
       } catch {
         // Ignore secondary probe failure
       }
@@ -152,12 +179,23 @@
 
   onMount(async () => {
     try {
-      // Poll up to 20s while Tauri child backend comes online (matches Rust startup budget)
+      // Poll up to 20s while Tauri child backend comes online, but exit early if backend startup already errored.
       for (let attempt = 0; attempt < 50; attempt += 1) {
         try {
           await fetchHealth();
           break;
         } catch {
+          if (attempt >= 2 && isTauriRuntime()) {
+            try {
+              const probe = await getBackendStatus();
+              backendStatus = probe;
+              if (!probe.running && probe.last_error) {
+                break;
+              }
+            } catch {
+              // Ignore probe error
+            }
+          }
           await new Promise((r) => setTimeout(r, 400));
         }
       }
@@ -181,6 +219,63 @@
       initializing = false;
     }
   });
+
+  async function handleSetupPythonRuntime(wheelhouseDir?: string) {
+    busyMessage = "Đang tạo môi trường ảo .venv và cài đặt Python dependencies...";
+    errorMessage = null;
+    try {
+      backendStatus = await setupPythonRuntime(wheelhouseDir);
+      await refreshStatus();
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      await refreshDiagnosticsAndDemoPaths();
+    } finally {
+      busyMessage = null;
+    }
+  }
+
+  async function handleImportCompanionZip(expectedSha256?: string) {
+    const chosen = await pickZipFile("Chọn gói Companion Bundle (.zip)");
+    if (!chosen) return;
+    busyMessage = "Đang xác minh SHA-256 & provenance gói Companion Bundle (.zip)...";
+    errorMessage = null;
+    try {
+      await importCompanionBundle({
+        archivePath: chosen,
+        expectedSha256: expectedSha256?.trim() || null,
+      });
+      if (!backendStatus?.running) {
+        backendStatus = await restartBackend();
+      }
+      await refreshStatus();
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      await refreshDiagnosticsAndDemoPaths();
+    } finally {
+      busyMessage = null;
+    }
+  }
+
+  async function handleImportCompanionFolder() {
+    const chosen = await pickCompanionFolder("Chọn thư mục Companion Artifacts");
+    if (!chosen) return;
+    busyMessage = "Đang xác minh SHA-256 & provenance thư mục Companion Artifacts...";
+    errorMessage = null;
+    try {
+      await importCompanionBundle({
+        bundleDir: chosen,
+      });
+      if (!backendStatus?.running) {
+        backendStatus = await restartBackend();
+      }
+      await refreshStatus();
+    } catch (err) {
+      errorMessage = err instanceof Error ? err.message : String(err);
+      await refreshDiagnosticsAndDemoPaths();
+    } finally {
+      busyMessage = null;
+    }
+  }
 
   async function handleRestartBackend() {
     busyMessage = "Đang khởi động lại tiến trình Python FastAPI...";
@@ -635,6 +730,19 @@
         <div>{busyMessage ?? "Đang khởi tạo ứng dụng và kết nối Python FastAPI..."}</div>
       </div>
     {/if}
+
+    <RuntimeSetupPanel
+      diagnostics={runtimeDiagnostics}
+      {backendStatus}
+      preprocessorReady={Boolean(healthData?.preprocessor_ready)}
+      readyModelsCount={models.filter((m) => m.ready).length}
+      busy={Boolean(busyMessage) || initializing}
+      isTauri={isTauriRuntime()}
+      onSetupPython={handleSetupPythonRuntime}
+      onImportZip={handleImportCompanionZip}
+      onImportFolder={handleImportCompanionFolder}
+      onRefresh={refreshStatus}
+    />
 
     <section class="card" aria-label="Điều khiển Dữ liệu NetFlow CSV">
       <div class="input-bar">

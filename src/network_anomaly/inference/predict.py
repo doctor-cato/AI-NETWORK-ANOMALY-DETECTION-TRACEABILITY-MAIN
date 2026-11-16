@@ -333,8 +333,8 @@ def load_verified_model(
             candidates.insert(2, PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json")
             candidates.insert(3, model_path.parent / "xgboost_manifest.json")
         elif "autoencoder" in stem_lower:
-            candidates.insert(2, model_path.parent / "autoencoder_manifest.json")
-            candidates.insert(3, PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json")
+            candidates.insert(2, PROJECT_ROOT / "reports" / "models" / "autoencoder_manifest.json")
+            candidates.insert(3, model_path.parent / "autoencoder_manifest.json")
         for c in candidates:
             if c.is_file():
                 manifest_path = c
