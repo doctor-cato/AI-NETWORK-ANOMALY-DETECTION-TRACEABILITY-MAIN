@@ -99,13 +99,27 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "git merge-base --is-ancestor $tagCommit origin/main" in release_yml
     # Ensure merge-base ancestry check is NOT conditionally skipped for prerelease tags
     assert "if (-not $isPrerelease)" not in release_yml
-    # Ensure Issue #71 standalone embedded pipeline + fail-closed Stable gates exist in release.yml
-    assert "--verify-nsis-only" in release_yml
+    # Ensure Issue #71 + F-01/F-02/F-03 fail-closed standalone & anti-leakage gates exist in release.yml
+    assert "--verify-nsis-only" not in release_yml
+    assert "Swatinem/rust-cache" not in release_yml
     assert "--no-repo-root-env" in release_yml
     assert "--standalone-embedded" in release_yml
     assert "--require-standalone-embedded" in release_yml
+    assert "--clean-machine-e2e" in release_yml
+    assert "--require-clean-machine-e2e" in release_yml
+    assert "--require-clean-git" in release_yml
+    assert "--expect-sidecar-sha256" in release_yml
     assert "--stage-embedded-dir" in release_yml
     assert "--verify-distribution-permission" in release_yml
+    assert "--target-channel" in release_yml
+    assert "--repo-private" in release_yml
+    assert "--evidence-sha256-env" in release_yml
+    assert "--require-evidence-hash" in release_yml
+    assert "DISTRIBUTION_EVIDENCE_SHA256" in release_yml
+    assert "steps.embedded.outputs.upload_allowed == 'true'" in release_yml
+    assert "steps.embedded.outputs.public_release_allowed == 'true'" in release_yml
+    assert 'gh api "repos/${{ github.repository }}"' in release_yml
+    assert "if: always()" in release_yml
     assert "scripts/build_backend_sidecar.py" in release_yml
     assert "tauri.standalone.conf.json" in release_yml
     assert "NOTICE" in release_yml
@@ -127,13 +141,11 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "vars.MODEL_ARTIFACT_RUN_ID" in release_yml
     assert "vars.ALLOW_EMBEDDED_MODEL_REDISTRIBUTION" in release_yml
     assert "vars.COMPANION_BUNDLE_URL" in release_yml
-    assert "if ($isStableRelease)" in release_yml
     assert '$isPrerelease = "${{ steps.meta.outputs.is_prerelease }}" -eq "true"' in release_yml
     assert "gh release view $tagName" in release_yml
-    assert "if: steps.meta.outputs.is_tag_push == 'true'" in release_yml
     assert "SHA256SUMS.txt" in release_yml
     assert "*_${desktopVer}_x64-setup.exe" in release_yml
-    assert release_yml.count("$global:LASTEXITCODE = 0") >= 3
+    assert release_yml.count("$global:LASTEXITCODE = 0") >= 2
     assert "\npermissions:\n  contents: read\n" in release_yml
     assert "    permissions:\n      contents: write\n      actions: read\n" in release_yml
     assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in release_yml
@@ -156,3 +168,7 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     assert "Isolation Forest" in rel_notes
     assert "Autoencoder" in rel_notes
     assert "454104" in rel_notes
+    assert "DISTRIBUTION_AUTHORIZATION.json" in rel_notes
+    assert "non-commercial-academic-approved" not in release_yml
+    assert "non-commercial-academic-approved" not in desktop_readme
+    assert "non-commercial-academic-approved" not in rel_notes

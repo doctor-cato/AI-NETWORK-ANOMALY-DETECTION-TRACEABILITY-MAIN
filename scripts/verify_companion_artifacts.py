@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
+import hmac
 import json
 import math
 import os
@@ -26,6 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -96,10 +98,28 @@ EMBEDDED_EXTRA_FILES_REL: Tuple[Path, ...] = (
     Path("THIRD_PARTY_NOTICES.md"),
     Path("LICENSE"),
 )
+DISTRIBUTION_AUTH_MANIFEST_REL = Path("reports/governance/DISTRIBUTION_AUTHORIZATION.json")
 APPROVED_DISTRIBUTION_SCOPES = frozenset(
     {
-        "non-commercial-academic-approved",
+        "research-only",
         "private-build-only",
+        "non-commercial-controlled",
+        "public-release-approved",
+    }
+)
+TARGET_DISTRIBUTION_CHANNELS = frozenset(
+    {
+        "local_offline",
+        "private_ci_artifact",
+        "public_ci_artifact",
+        "public_github_release",
+    }
+)
+APPROVED_PUBLIC_LEGAL_BASES = frozenset(
+    {
+        "written-publisher-authorization",
+        "independent-clean-room-license",
+        "verified-open-redistribution-license",
     }
 )
 SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
@@ -342,15 +362,53 @@ def stage_companion_bundle(
     }
 
 
+def _check_git_tree_clean(root: Path) -> Optional[bool]:
+    if not (root / ".git").exists():
+        return None
+    proc = subprocess.run(  # noqa: S603 - fixed local git status query
+        ["git", "status", "--porcelain"],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip() == ""
+
+
 def verify_distribution_permission(
     scope: str,
     *,
     is_public_release: bool = False,
+    target_channel: Optional[str] = None,
+    repo_is_private: Optional[bool] = None,
     root: Path = PROJECT_ROOT,
+    expected_evidence_sha256: Optional[str] = None,
+    require_evidence_hash: bool = False,
 ) -> Dict[str, Any]:
-    """Enforce UQ NF-UNSW-NB15-v3 non-commercial attribution & redistribution gate."""
+    """Enforce evidence-based distribution & repository visibility gates fail-closed.
+
+    Distinguishes 4 tiers:
+    - research-only: local academic research only (no CI upload, no release)
+    - private-build-only: local offline or strictly private repository/runner CI testing
+    - non-commercial-controlled: private controlled channels only (no public upload/release)
+    - public-release-approved: public Actions artifact or GitHub Release ONLY when backed
+      by verifiable evidence in reports/governance/DISTRIBUTION_AUTHORIZATION.json.
+    """
     resolved_root = Path(root).resolve()
     norm_scope = (scope or "").strip().lower()
+    effective_channel = (
+        (target_channel or "").strip().lower()
+        if target_channel is not None
+        else ("public_github_release" if is_public_release else "local_offline")
+    )
+    if effective_channel not in TARGET_DISTRIBUTION_CHANNELS:
+        raise RuntimeError(
+            "BLOCKED — DISTRIBUTION PERMISSION: Invalid target_channel "
+            f"{effective_channel!r}; expected one of {sorted(TARGET_DISTRIBUTION_CHANNELS)}."
+        )
+
     missing_notices = [
         rel.as_posix()
         for rel in (Path("NOTICE"), Path("THIRD_PARTY_NOTICES.md"), Path("LICENSE"))
@@ -362,13 +420,24 @@ def verify_distribution_permission(
             f"{missing_notices}"
         )
 
-    if is_public_release and norm_scope != "non-commercial-academic-approved":
+    auth_manifest_path = resolved_root / DISTRIBUTION_AUTH_MANIFEST_REL
+    if not auth_manifest_path.is_file():
         raise RuntimeError(
-            "BLOCKED — DISTRIBUTION PERMISSION: Public release embedding NF-UNSW-NB15-v3 "
-            "derived models and demo CSV requires explicit non-commercial academic distribution "
-            "authorization (scope='non-commercial-academic-approved', UQ License ID 454104, "
-            "DOI: 10.48610/6E0EDA1, full citation in NOTICE). "
-            f"Got distribution_scope={scope!r}."
+            "BLOCKED — DISTRIBUTION PERMISSION: Missing governance authorization manifest "
+            f"{DISTRIBUTION_AUTH_MANIFEST_REL.as_posix()}."
+        )
+    auth_doc = _read_json_dict(auth_manifest_path, "DISTRIBUTION_AUTHORIZATION.json")
+    if auth_doc.get("schema_version") != 1 or auth_doc.get("dataset") != "NF-UNSW-NB15-v3":
+        raise RuntimeError(
+            "BLOCKED — DISTRIBUTION PERMISSION: Invalid DISTRIBUTION_AUTHORIZATION.json header."
+        )
+
+    if norm_scope == "non-commercial-academic-approved":
+        raise RuntimeError(
+            "BLOCKED — DISTRIBUTION PERMISSION: Legacy string 'non-commercial-academic-approved' "
+            "is NOT legal evidence for public redistribution of derived models/demo CSV. "
+            "Use 'private-build-only' on a verified private repository/runner for internal builds, "
+            "or provide verifiable authorization evidence for 'public-release-approved'."
         )
 
     if norm_scope not in APPROVED_DISTRIBUTION_SCOPES:
@@ -377,13 +446,151 @@ def verify_distribution_permission(
             f"{scope!r}. Expected one of {sorted(APPROVED_DISTRIBUTION_SCOPES)}."
         )
 
+    is_public_channel = is_public_release or effective_channel in {
+        "public_ci_artifact",
+        "public_github_release",
+    }
+
+    if norm_scope == "research-only" and effective_channel != "local_offline":
+        raise RuntimeError(
+            "BLOCKED — DISTRIBUTION PERMISSION: Scope 'research-only' is restricted to "
+            f"target_channel='local_offline', cannot target {effective_channel!r}."
+        )
+
+    if norm_scope in {"private-build-only", "non-commercial-controlled"}:
+        if is_public_channel:
+            raise RuntimeError(
+                f"BLOCKED — DISTRIBUTION PERMISSION: Scope {norm_scope!r} forbids public "
+                f"channel {effective_channel!r} (no public workflow artifact upload, cache, or release)."
+            )
+        if effective_channel == "private_ci_artifact" and repo_is_private is not True:
+            raise RuntimeError(
+                f"BLOCKED — DISTRIBUTION PERMISSION: Refusing {norm_scope!r} artifact upload "
+                f"because repository privacy is not verified private (repo_is_private={repo_is_private!r})."
+            )
+
+    evidence_verified = False
+    public_release_allowed = False
+    evidence_ref: Optional[str] = None
+    maintainer_approver: Optional[str] = None
+    legal_basis: Optional[str] = None
+
+    if norm_scope == "public-release-approved" or is_public_channel:
+        pub_auth = auth_doc.get("public_release_authorization")
+        if not isinstance(pub_auth, dict):
+            raise RuntimeError(
+                "BLOCKED — DISTRIBUTION PERMISSION: Missing public_release_authorization block."
+            )
+        if pub_auth.get("approved") is not True or pub_auth.get("status") != "APPROVED":
+            raise RuntimeError(
+                "BLOCKED — DISTRIBUTION PERMISSION: Public distribution of NF-UNSW-NB15-v3 "
+                "derived models/demo CSV is NOT authorized "
+                f"(status={pub_auth.get('status')!r}, approved={pub_auth.get('approved')!r}). "
+                "UQ License ID 454104 forbids commercial use and does not auto-authorize public "
+                "binary redistribution without verifiable authorization evidence."
+            )
+        legal_basis = pub_auth.get("legal_basis")
+        if not isinstance(legal_basis, str) or legal_basis not in APPROVED_PUBLIC_LEGAL_BASES:
+            raise RuntimeError(
+                "BLOCKED — DISTRIBUTION PERMISSION: Invalid public authorization legal_basis: "
+                f"{legal_basis!r}"
+            )
+        maintainer_approver = pub_auth.get("maintainer_approver")
+        approved_at_utc = pub_auth.get("approved_at_utc")
+        evidence_ref = pub_auth.get("evidence_ref")
+        evidence_sha = pub_auth.get("evidence_sha256")
+        if (
+            not isinstance(maintainer_approver, str)
+            or not maintainer_approver.strip()
+            or not isinstance(approved_at_utc, str)
+            or not approved_at_utc.strip()
+            or not isinstance(evidence_ref, str)
+            or not evidence_ref.strip()
+            or not _is_hex_sha256(evidence_sha)
+        ):
+            raise RuntimeError(
+                "BLOCKED — DISTRIBUTION PERMISSION: Incomplete public authorization metadata "
+                "(requires maintainer_approver, approved_at_utc, evidence_ref, and 64-hex evidence_sha256)."
+            )
+        try:
+            datetime.fromisoformat(approved_at_utc.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"BLOCKED — DISTRIBUTION PERMISSION: Invalid approved_at_utc timestamp: {approved_at_utc!r}"
+            ) from exc
+
+        if (
+            pub_auth.get("requires_attribution_notices") is not True
+            or pub_auth.get("forbids_commercial_use") is not True
+        ):
+            raise RuntimeError(
+                "BLOCKED — DISTRIBUTION PERMISSION: Authorization must preserve attribution and "
+                "non-commercial constraints."
+            )
+
+        covered = pub_auth.get("covered_artifacts")
+        required_covered = {
+            PREPROCESSOR_REL.as_posix(),
+            *(spec[0].as_posix() for spec in MODEL_SPECS.values()),
+            *(rel.as_posix() for rel in DEMO_FILES_REL),
+        }
+        if not isinstance(covered, list) or not required_covered.issubset(set(covered)):
+            raise RuntimeError(
+                "BLOCKED — DISTRIBUTION PERMISSION: public_release_authorization.covered_artifacts "
+                "does not cover all embedded models, preprocessor, and demo files."
+            )
+
+        norm_expected = (
+            expected_evidence_sha256.strip().lower()
+            if isinstance(expected_evidence_sha256, str) and expected_evidence_sha256.strip()
+            else None
+        )
+        if require_evidence_hash and norm_expected is None:
+            raise RuntimeError(
+                "BLOCKED — DISTRIBUTION PERMISSION: Missing expected evidence SHA-256 secret "
+                "(DISTRIBUTION_EVIDENCE_SHA256) for CI public release verification."
+            )
+        if norm_expected is not None:
+            if not _is_hex_sha256(norm_expected) or not hmac.compare_digest(
+                norm_expected, str(evidence_sha).lower()
+            ):
+                raise RuntimeError(
+                    "BLOCKED — DISTRIBUTION PERMISSION: Authorization evidence SHA-256 verification failed."
+                )
+            evidence_verified = True
+        else:
+            evidence_verified = True
+
+        public_release_allowed = True
+
+    upload_allowed = (
+        effective_channel == "private_ci_artifact"
+        and repo_is_private is True
+        and norm_scope
+        in {"private-build-only", "non-commercial-controlled", "public-release-approved"}
+    ) or (
+        effective_channel in {"public_ci_artifact", "public_github_release"}
+        and public_release_allowed
+    )
+
     return {
         "status": "APPROVED",
         "distribution_scope": norm_scope,
-        "is_public_release": is_public_release,
+        "target_channel": effective_channel,
+        "repo_is_private": repo_is_private,
+        "is_public_release": bool(
+            is_public_release or effective_channel == "public_github_release"
+        ),
+        "upload_allowed": upload_allowed,
+        "public_release_allowed": public_release_allowed,
+        "evidence_verified": evidence_verified,
+        "legal_basis": legal_basis,
+        "maintainer_approver": maintainer_approver,
+        "evidence_ref": evidence_ref,
         "dataset_license": "UQ-454104-Permitted-Re-Use-NonCommercial",
         "citation_doi": "10.48610/6E0EDA1",
         "notices_verified": ["NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSE"],
+        "governance_manifest": DISTRIBUTION_AUTH_MANIFEST_REL.as_posix(),
     }
 
 
@@ -392,14 +599,20 @@ def stage_embedded_bundle(
     root: Path = PROJECT_ROOT,
     *,
     runtime_dir: Optional[Path] = None,
-    distribution_scope: str = "non-commercial-academic-approved",
+    distribution_scope: str = "private-build-only",
+    target_channel: str = "local_offline",
+    repo_is_private: Optional[bool] = None,
+    expected_evidence_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Stage all 4 verified models, preprocessor, manifests, demo CSV, and notices for NSIS embedding."""
     resolved_root = Path(root).resolve()
     perm = verify_distribution_permission(
         distribution_scope,
-        is_public_release=False,
+        is_public_release=(target_channel == "public_github_release"),
+        target_channel=target_channel,
+        repo_is_private=repo_is_private,
         root=resolved_root,
+        expected_evidence_sha256=expected_evidence_sha256,
     )
     dest_dir = Path(destination).resolve()
     if dest_dir.exists():
@@ -2156,6 +2369,25 @@ def _execute_four_model_api_suite(
     demo_flows = demo_root / "data/demo/demo_flows.csv"
     demo_labels = demo_root / "data/demo/demo_labels.csv"
 
+    session_auth_fail_closed = False
+    if headers and headers.get("X-Sentinel-Session-Token"):
+        for label, bad_headers in (
+            ("missing_token", {}),
+            ("invalid_token", {"X-Sentinel-Session-Token": "invalid-" + "0" * 56}),
+        ):
+            try:
+                _http_json(f"{base_url}/api/v1/models", headers=bad_headers, timeout=5.0)
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (401, 403):
+                    raise RuntimeError(
+                        f"Session auth check ({label}) expected HTTP 401/403, got {exc.code}"
+                    ) from exc
+            else:
+                raise RuntimeError(
+                    f"SECURITY REGRESSION: Loopback API accepted unauthenticated request ({label})!"
+                )
+        session_auth_fail_closed = True
+
     _, models_payload = _http_json(f"{base_url}/api/v1/models", headers=headers, timeout=10.0)
     models_by_key = {item["model_key"]: item for item in models_payload}
     for key in MODEL_SPECS:
@@ -2418,6 +2650,7 @@ def _execute_four_model_api_suite(
         "port": port,
         "models": per_model_results,
         "export_verified": True,
+        "session_auth_fail_closed": session_auth_fail_closed,
         "client_spoof_fail_closed": {
             "provenance_verification": spoof_check["provenance_verification"],
             "critical_downgraded_action": spoof_check["recommendations"][0]["action"],
@@ -2436,6 +2669,8 @@ def run_four_model_e2e_verification(
     compiled_exe_path: Optional[Path] = None,
     standalone_embedded: bool = False,
     expected_sidecar_sha256: Optional[str] = None,
+    clean_machine_e2e: bool = False,
+    require_clean_git: bool = False,
 ) -> Dict[str, Any]:
     """Fail-closed live loopback E2E verification across all 4 models on demo_flows.csv."""
     resolved_root = Path(root).resolve()
@@ -2452,6 +2687,12 @@ def run_four_model_e2e_verification(
         )
 
     source_commit = _get_git_head_commit(resolved_root)
+    source_tree_clean = _check_git_tree_clean(resolved_root)
+    if require_clean_git and source_tree_clean is not True:
+        raise RuntimeError(
+            "E2E attestation BLOCKED: git working tree is dirty or unavailable; "
+            "attestation requires clean committed HEAD."
+        )
     desktop_version = _read_desktop_version(resolved_root)
     split_manifest_path = resolved_root / SPLIT_MANIFEST_REL
     if not split_manifest_path.is_file():
@@ -2561,6 +2802,7 @@ def run_four_model_e2e_verification(
             tmp_dir.cleanup()
         backend_origin = "api_only_run_api"
 
+    is_clean_runner = bool(clean_machine_e2e)
     report: Dict[str, Any] = {
         "e2e_status": "PASS",
         "e2e_backend_origin": backend_origin,
@@ -2575,7 +2817,19 @@ def run_four_model_e2e_verification(
         "companion_status": summary["overall_status"],
         "ready_models": summary["ready_models"],
         "models": suite_result["models"],
+        "session_auth_fail_closed": bool(suite_result.get("session_auth_fail_closed")),
         "client_spoof_fail_closed": suite_result["client_spoof_fail_closed"],
+        "attestation_environment": {
+            "execution_context": (
+                "clean_ci_runner" if is_clean_runner else "local_developer_machine"
+            ),
+            "source_tree_clean": source_tree_clean,
+            "system_python_used": not standalone_embedded,
+            "clean_machine_verified": is_clean_runner,
+            "standalone_verified": bool(
+                standalone_embedded and is_clean_runner and source_tree_clean is not False
+            ),
+        },
     }
     if nsis_report is not None:
         report["nsis_e2e"] = nsis_report
@@ -2697,10 +2951,12 @@ def verify_e2e_attestation(
     *,
     expect_commit: Optional[str] = None,
     expect_installer_sha256: Optional[str] = None,
+    expect_sidecar_sha256: Optional[str] = None,
     require_nsis_e2e: bool = False,
     require_demo_files: bool = False,
     require_bundled_resources: bool = False,
     require_standalone_embedded: bool = False,
+    require_clean_machine_e2e: bool = False,
 ) -> Dict[str, Any]:
     """Verify a 4-model E2E attestation JSON against tracked manifests, commit, demo, and NSIS E2E."""
     resolved_root = Path(root).resolve()
@@ -3051,6 +3307,36 @@ def verify_e2e_attestation(
                     f"E2E attestation nsis_e2e.installer_sha256 mismatch: "
                     f"{inst_sha} != {expected_inst}"
                 )
+        if expect_sidecar_sha256 is not None:
+            expected_sidecar = expect_sidecar_sha256.strip().lower()
+            recorded_sidecar = nsis.get("sidecar_sha256")
+            if (
+                not _is_hex_sha256(expected_sidecar)
+                or not _is_hex_sha256(recorded_sidecar)
+                or str(recorded_sidecar).lower() != expected_sidecar
+            ):
+                raise RuntimeError(
+                    f"E2E attestation nsis_e2e.sidecar_sha256 mismatch: "
+                    f"{recorded_sidecar!r} != {expected_sidecar!r}"
+                )
+
+    if require_standalone_embedded and report.get("session_auth_fail_closed") is not True:
+        raise RuntimeError(
+            "E2E attestation missing required session_auth_fail_closed=True verification."
+        )
+
+    att_env = report.get("attestation_environment")
+    clean_machine_verified = isinstance(att_env, dict) and (
+        att_env.get("clean_machine_verified") is True
+        and att_env.get("execution_context") == "clean_ci_runner"
+        and att_env.get("source_tree_clean") is True
+        and att_env.get("standalone_verified") is True
+    )
+    if require_clean_machine_e2e and not clean_machine_verified:
+        raise RuntimeError(
+            "E2E attestation failed strict --require-clean-machine-e2e gate: "
+            f"attestation_environment={att_env!r} (local developer E2E cannot assert clean-machine STANDALONE VERIFIED)."
+        )
 
     return {
         "attestation_status": "PASS",
@@ -3065,6 +3351,7 @@ def verify_e2e_attestation(
         in {"installed_nsis_desktop", "installed_standalone_nsis"},
         "bundled_resources_verified": bundled_resources_verified,
         "standalone_embedded_verified": standalone_embedded_verified,
+        "clean_machine_verified": clean_machine_verified,
         "demo_files_verified_on_disk": demo_files_verified_on_disk,
     }
 
@@ -3113,7 +3400,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--distribution-scope",
         type=str,
-        default="non-commercial-academic-approved",
+        default="private-build-only",
         help="Distribution permission scope for embedded NF-UNSW-NB15-v3 artifacts.",
     )
     parser.add_argument(
@@ -3123,9 +3410,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify distribution permission gate for embedded NF-UNSW-NB15-v3 artifacts.",
     )
     parser.add_argument(
+        "--target-channel",
+        type=str,
+        default=None,
+        help="Target channel: local_offline, private_ci_artifact, public_ci_artifact, or public_github_release.",
+    )
+    parser.add_argument(
+        "--repo-private",
+        type=str,
+        default=None,
+        help="Repository privacy flag from GitHub API ('true', 'false', or 'unknown').",
+    )
+    parser.add_argument(
+        "--evidence-sha256-env",
+        type=str,
+        default=None,
+        help="Name of environment variable holding expected 64-hex SHA-256 of distribution authorization evidence.",
+    )
+    parser.add_argument(
+        "--require-evidence-hash",
+        action="store_true",
+        help="Require non-empty --evidence-sha256-env digest for public release authorization.",
+    )
+    parser.add_argument(
         "--public-release",
         action="store_true",
         help="Enforce public release distribution permission checks.",
+    )
+    parser.add_argument(
+        "--clean-machine-e2e",
+        action="store_true",
+        help="Mark E2E execution context as clean CI runner (only set by clean CI runner workflows).",
+    )
+    parser.add_argument(
+        "--require-clean-git",
+        action="store_true",
+        help="Refuse --verify-e2e if git working tree is dirty.",
     )
     parser.add_argument(
         "--standalone-embedded",
@@ -3265,6 +3585,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Require standalone embedded NSIS + PyInstaller sidecar + 4 embedded models when verifying an E2E attestation.",
     )
     parser.add_argument(
+        "--require-clean-machine-e2e",
+        action="store_true",
+        help="Require clean CI runner attestation_environment and standalone_verified=True.",
+    )
+    parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
@@ -3273,15 +3598,37 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse_repo_private_flag(raw: Optional[str]) -> Optional[bool]:
+    if raw is None:
+        return None
+    norm = raw.strip().lower()
+    if norm == "true":
+        return True
+    if norm == "false":
+        return False
+    return None
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    evidence_sha = (
+        os.environ.get(args.evidence_sha256_env.strip(), "")
+        if args.evidence_sha256_env and args.evidence_sha256_env.strip()
+        else None
+    )
+    repo_is_private = _parse_repo_private_flag(args.repo_private)
+
     if args.verify_distribution_permission is not None:
         try:
             perm_report = verify_distribution_permission(
                 args.verify_distribution_permission,
                 is_public_release=args.public_release,
+                target_channel=args.target_channel,
+                repo_is_private=repo_is_private,
                 root=args.root,
+                expected_evidence_sha256=evidence_sha,
+                require_evidence_hash=args.require_evidence_hash,
             )
         except Exception as exc:
             sys.stderr.write(f"[DISTRIBUTION PERMISSION BLOCKED] {exc}\n")
@@ -3296,6 +3643,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 root=args.root,
                 runtime_dir=args.runtime_dir,
                 distribution_scope=args.distribution_scope,
+                target_channel=args.target_channel or "local_offline",
+                repo_is_private=repo_is_private,
+                expected_evidence_sha256=evidence_sha,
             )
         except Exception as exc:
             sys.stderr.write(f"[EMBEDDED ARTIFACTS BLOCKED] {exc}\n")
@@ -3365,10 +3715,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                 root=args.root,
                 expect_commit=args.expect_commit,
                 expect_installer_sha256=args.expect_installer_sha256,
+                expect_sidecar_sha256=args.expect_sidecar_sha256,
                 require_nsis_e2e=args.require_nsis_e2e,
                 require_demo_files=args.require_demo_files,
                 require_bundled_resources=args.require_bundled_resources,
                 require_standalone_embedded=args.require_standalone_embedded,
+                require_clean_machine_e2e=args.require_clean_machine_e2e,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E ATTESTATION VERIFICATION FAILED] {exc}\n")
@@ -3408,6 +3760,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 compiled_exe_path=args.compiled_exe,
                 standalone_embedded=args.standalone_embedded,
                 expected_sidecar_sha256=args.expect_sidecar_sha256,
+                clean_machine_e2e=args.clean_machine_e2e,
+                require_clean_git=args.require_clean_git,
             )
         except Exception as exc:
             sys.stderr.write(f"[E2E VERIFICATION BLOCKED/FAILED] {exc}\n")

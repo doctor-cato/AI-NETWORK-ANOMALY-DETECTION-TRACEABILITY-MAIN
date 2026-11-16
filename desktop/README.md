@@ -45,8 +45,8 @@ cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
 ### Đóng gói PyInstaller Sidecar & Standalone NSIS Installer
 
 ```powershell
-# 1. Stage 4 mô hình thật, preprocessor, demo CSV và thông báo bản quyền
-python scripts/verify_companion_artifacts.py --stage-embedded-dir desktop/src-tauri/staged_bundle --distribution-scope non-commercial-academic-approved
+# 1. Stage 4 mô hình thật, preprocessor, demo CSV và thông báo bản quyền (chỉ build cục bộ / private runner)
+python scripts/verify_companion_artifacts.py --stage-embedded-dir desktop/src-tauri/staged_bundle --distribution-scope private-build-only --target-channel local_offline
 
 # 2. Build PyInstaller sidecar tại desktop/src-tauri/binaries/netflow-sentinel-backend-x86_64-pc-windows-msvc.exe
 python scripts/build_backend_sidecar.py --output-json dist/release-assets/sidecar_build.json

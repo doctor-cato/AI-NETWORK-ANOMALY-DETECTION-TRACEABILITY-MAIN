@@ -141,9 +141,10 @@ def _build_valid_attestation_payload(
     if all((root / rel).is_file() for rel in demo_rels):
         demo_sha256 = {rel: _sha256_path(root / rel) for rel in demo_rels}
     else:
-        tracked_att_path = root / "reports/releases/v1.0.0_e2e_verification.json"
+        # Demo CSV files are .gitignored on clean CI checkouts; reuse historical demo_sha256 only
+        tracked_att_path = root / "reports/releases/v0.6.0_e2e_verification.json"
         if not tracked_att_path.is_file():
-            tracked_att_path = REPO_ROOT / "reports/releases/v1.0.0_e2e_verification.json"
+            tracked_att_path = REPO_ROOT / "reports/releases/v0.6.0_e2e_verification.json"
         tracked_att = json.loads(tracked_att_path.read_text(encoding="utf-8"))
         demo_sha256 = dict(tracked_att["demo_sha256"])
 
@@ -990,18 +991,40 @@ def test_package_and_install_companion_bundle_security_and_provenance(
     assert (target_ws / "artifacts/models/autoencoder/autoencoder_model.joblib").is_file()
 
 
-def test_verify_shipped_v100_e2e_attestation_passes():
-    att_path = REPO_ROOT / "reports" / "releases" / "v1.0.0_e2e_verification.json"
-    result = verify_e2e_attestation(
-        att_path,
-        root=REPO_ROOT,
-        require_nsis_e2e=True,
-        require_bundled_resources=True,
-        require_standalone_embedded=True,
+def test_repo_governance_manifest_blocks_unapproved_public_model_release():
+    res_local = vca.verify_distribution_permission(
+        "research-only", target_channel="local_offline", root=REPO_ROOT
     )
-    assert result["attestation_status"] == "PASS"
-    assert result["standalone_embedded_verified"] is True
-    assert len(result["verified_models"]) == 4
+    assert res_local["status"] == "APPROVED"
+    assert res_local["upload_allowed"] is False
+    assert res_local["public_release_allowed"] is False
+
+    # Actual repo governance state has approved=False; public channels & private-build on public repo MUST fail closed
+    for channel in ("public_ci_artifact", "public_github_release"):
+        with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
+            vca.verify_distribution_permission(
+                "public-release-approved",
+                target_channel=channel,
+                repo_is_private=False,
+                root=REPO_ROOT,
+            )
+        with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
+            vca.verify_distribution_permission(
+                "private-build-only",
+                target_channel=channel,
+                repo_is_private=False,
+                root=REPO_ROOT,
+            )
+
+    # Even private-build-only on private_ci_artifact MUST fail closed when repo_is_private is False or None
+    for non_private in (False, None):
+        with pytest.raises(RuntimeError, match="repository privacy is not verified private"):
+            vca.verify_distribution_permission(
+                "private-build-only",
+                target_channel="private_ci_artifact",
+                repo_is_private=non_private,
+                root=REPO_ROOT,
+            )
 
 
 def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_demo_flag(
@@ -1609,11 +1632,8 @@ def test_extract_safe_companion_zip_rejects_zip_bomb_entry_and_byte_limits(
 
 
 def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mode(tmp_path: Path):
-    import scripts.verify_companion_artifacts as vca
-
-    att_path = Path(__file__).resolve().parents[2] / "reports/releases/v1.0.0_e2e_verification.json"
-    base = json.loads(att_path.read_text(encoding="utf-8"))
-    base["verify_script_sha256"] = vca._sha256_file(Path(vca.__file__)).lower()
+    ws = _copy_attestation_workspace(tmp_path)
+    base = _build_valid_attestation_payload(ws, include_nsis=True, commit="a" * 40)
 
     # Legacy or repo-root-env attestation must fail when bundled resources mode is strictly required
     bad_repo_env = json.loads(json.dumps(base))
@@ -1626,6 +1646,7 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
     with pytest.raises(RuntimeError, match="bundled resources"):
         vca.verify_e2e_attestation(
             bad_path,
+            root=ws,
             require_nsis_e2e=True,
             require_bundled_resources=True,
         )
@@ -1639,38 +1660,123 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
 
     res = vca.verify_e2e_attestation(
         good_path,
+        root=ws,
         require_nsis_e2e=True,
         require_bundled_resources=True,
     )
     assert res["bundled_resources_verified"] is True
 
 
-def test_verify_distribution_permission_enforces_uq_noncommercial_gate(tmp_path: Path):
-    import scripts.verify_companion_artifacts as vca
-
+def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: Path):
     for name in ("NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSE"):
         (tmp_path / name).write_text(f"{name}\n", encoding="utf-8")
 
-    res_private = vca.verify_distribution_permission(
-        "private-build-only", is_public_release=False, root=tmp_path
+    gov_dir = tmp_path / "reports" / "governance"
+    gov_dir.mkdir(parents=True, exist_ok=True)
+    auth_path = gov_dir / "DISTRIBUTION_AUTHORIZATION.json"
+    auth_base = json.loads(
+        (REPO_ROOT / "reports/governance/DISTRIBUTION_AUTHORIZATION.json").read_text(
+            encoding="utf-8"
+        )
     )
-    assert res_private["status"] == "APPROVED"
+    auth_path.write_text(json.dumps(auth_base, indent=2), encoding="utf-8")
 
-    # Public release must fail closed unless scope is non-commercial-academic-approved
-    with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
+    # Legacy variable string alone must be rejected
+    with pytest.raises(RuntimeError, match="NOT legal evidence"):
         vca.verify_distribution_permission(
-            "private-build-only", is_public_release=True, root=tmp_path
+            "non-commercial-academic-approved",
+            target_channel="public_github_release",
+            root=tmp_path,
+        )
+
+    # Private build on verified private repo/runner is approved for private_ci_artifact (but never public release)
+    res_priv_ci = vca.verify_distribution_permission(
+        "private-build-only",
+        target_channel="private_ci_artifact",
+        repo_is_private=True,
+        root=tmp_path,
+    )
+    assert res_priv_ci["status"] == "APPROVED"
+    assert res_priv_ci["upload_allowed"] is True
+    assert res_priv_ci["public_release_allowed"] is False
+
+    # research-only cannot upload CI artifacts
+    with pytest.raises(RuntimeError, match="research-only"):
+        vca.verify_distribution_permission(
+            "research-only",
+            target_channel="private_ci_artifact",
+            repo_is_private=True,
+            root=tmp_path,
+        )
+
+    # Unapproved public_release_authorization blocks public-release-approved fail-closed
+    with pytest.raises(RuntimeError, match="NOT authorized"):
+        vca.verify_distribution_permission(
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            repo_is_private=False,
+            root=tmp_path,
+        )
+
+    # Populating valid verifiable evidence unlocks public release only when evidence hash matches
+    evidence_sha = "d" * 64
+    auth_approved = copy.deepcopy(auth_base)
+    auth_approved["public_release_authorization"].update(
+        {
+            "approved": True,
+            "status": "APPROVED",
+            "legal_basis": "written-publisher-authorization",
+            "maintainer_approver": "maintainer@example.org",
+            "approved_at_utc": "2026-11-16T12:00:00Z",
+            "evidence_ref": "UQ-AUTH-RECORD-001",
+            "evidence_sha256": evidence_sha,
+        }
+    )
+    auth_path.write_text(json.dumps(auth_approved, indent=2), encoding="utf-8")
+
+    # Missing or wrong secret evidence hash fails closed when require_evidence_hash=True
+    with pytest.raises(RuntimeError, match="Missing expected evidence SHA-256"):
+        vca.verify_distribution_permission(
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            root=tmp_path,
+            require_evidence_hash=True,
+        )
+    with pytest.raises(RuntimeError, match="evidence SHA-256 verification failed"):
+        vca.verify_distribution_permission(
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            root=tmp_path,
+            expected_evidence_sha256="e" * 64,
+            require_evidence_hash=True,
         )
 
     res_public = vca.verify_distribution_permission(
-        "non-commercial-academic-approved", is_public_release=True, root=tmp_path
+        "public-release-approved",
+        is_public_release=True,
+        target_channel="public_github_release",
+        root=tmp_path,
+        expected_evidence_sha256=evidence_sha,
+        require_evidence_hash=True,
     )
+    assert res_public["public_release_allowed"] is True
+    assert res_public["upload_allowed"] is True
+    assert res_public["evidence_verified"] is True
     assert res_public["citation_doi"] == "10.48610/6E0EDA1"
 
+    # Attribution notices remain mandatory even when authorization exists
     (tmp_path / "NOTICE").unlink()
     with pytest.raises(RuntimeError, match="NOTICE"):
         vca.verify_distribution_permission(
-            "non-commercial-academic-approved", is_public_release=True, root=tmp_path
+            "public-release-approved",
+            is_public_release=True,
+            target_channel="public_github_release",
+            root=tmp_path,
+            expected_evidence_sha256=evidence_sha,
+            require_evidence_hash=True,
         )
 
 
@@ -1724,7 +1830,8 @@ def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
         stage_dir,
         root=REPO_ROOT,
         runtime_dir=REPO_ROOT,
-        distribution_scope="non-commercial-academic-approved",
+        distribution_scope="private-build-only",
+        target_channel="local_offline",
     )
     assert staged["stage_status"] == "READY"
     assert (stage_dir / "EMBEDDED_SHA256SUMS.txt").is_file()
@@ -1758,11 +1865,9 @@ def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
 
 
 def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
-    import scripts.verify_companion_artifacts as vca
-
-    att_path = Path(__file__).resolve().parents[2] / "reports/releases/v1.0.0_e2e_verification.json"
-    base = json.loads(att_path.read_text(encoding="utf-8"))
-    base["verify_script_sha256"] = vca._sha256_file(Path(vca.__file__)).lower()
+    ws = _copy_attestation_workspace(tmp_path)
+    head_commit = "a" * 40
+    base = _build_valid_attestation_payload(ws, include_nsis=True, commit=head_commit)
 
     # Non-standalone attestation must fail --require-standalone-embedded
     legacy_payload = json.loads(json.dumps(base))
@@ -1774,13 +1879,14 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
     with pytest.raises(RuntimeError, match="standalone embedded NSIS"):
         vca.verify_e2e_attestation(
             legacy_path,
+            root=ws,
             require_nsis_e2e=True,
             require_standalone_embedded=True,
         )
 
     standalone_att = json.loads(json.dumps(base))
-    standalone_att["desktop_version"] = vca._read_desktop_version(REPO_ROOT)
     standalone_att["e2e_backend_origin"] = "installed_standalone_nsis"
+    standalone_att["session_auth_fail_closed"] = False
     standalone_att["nsis_e2e"].update(
         {
             "bundled_resources_mode": True,
@@ -1788,20 +1894,96 @@ def test_verify_e2e_attestation_require_standalone_embedded(tmp_path: Path):
             "runtime_dir_isolated": True,
             "standalone_embedded_mode": True,
             "sidecar_exe_verified": True,
-            "sidecar_sha256": "a" * 64,
+            "sidecar_sha256": "f" * 64,
             "system_python_used": False,
             "external_companion_used": False,
             "restart_persistence_verified": True,
             "export_verified": True,
         }
     )
+    standalone_att["attestation_environment"] = {
+        "execution_context": "local_developer_machine",
+        "source_tree_clean": True,
+        "system_python_used": False,
+        "clean_machine_verified": False,
+        "standalone_verified": False,
+    }
     standalone_path = tmp_path / "standalone_att.json"
     standalone_path.write_text(json.dumps(standalone_att), encoding="utf-8")
 
-    res = vca.verify_e2e_attestation(
+    # Missing session_auth_fail_closed=True fails standalone verification
+    with pytest.raises(RuntimeError, match="session_auth_fail_closed"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+
+    standalone_att["session_auth_fail_closed"] = True
+    standalone_path.write_text(json.dumps(standalone_att), encoding="utf-8")
+
+    # F-03: stale source_commit != HEAD or mismatched sidecar_sha256 fails closed
+    with pytest.raises(RuntimeError, match="source_commit mismatch"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit="9" * 40,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+    with pytest.raises(RuntimeError, match="sidecar_sha256 mismatch"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="e" * 64,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+        )
+
+    # F-03: local developer machine attestation passes local standalone check,
+    # NOT --require-clean-machine-e2e
+    res_local = vca.verify_e2e_attestation(
         standalone_path,
+        root=ws,
+        expect_commit=head_commit,
+        expect_sidecar_sha256="f" * 64,
         require_nsis_e2e=True,
         require_bundled_resources=True,
         require_standalone_embedded=True,
     )
-    assert res["standalone_embedded_verified"] is True
+    assert res_local["standalone_embedded_verified"] is True
+    assert res_local["clean_machine_verified"] is False
+
+    with pytest.raises(RuntimeError, match="require-clean-machine-e2e"):
+        vca.verify_e2e_attestation(
+            standalone_path,
+            root=ws,
+            expect_commit=head_commit,
+            expect_sidecar_sha256="f" * 64,
+            require_nsis_e2e=True,
+            require_standalone_embedded=True,
+            require_clean_machine_e2e=True,
+        )
+
+    # Clean CI runner attestation passes all strict gates
+    standalone_att["attestation_environment"] = {
+        "execution_context": "clean_ci_runner",
+        "source_tree_clean": True,
+        "system_python_used": False,
+        "clean_machine_verified": True,
+        "standalone_verified": True,
+    }
+    standalone_path.write_text(json.dumps(standalone_att), encoding="utf-8")
+    res_clean = vca.verify_e2e_attestation(
+        standalone_path,
+        root=ws,
+        expect_commit=head_commit,
+        expect_sidecar_sha256="f" * 64,
+        require_nsis_e2e=True,
+        require_bundled_resources=True,
+        require_standalone_embedded=True,
+        require_clean_machine_e2e=True,
+    )
+    assert res_clean["clean_machine_verified"] is True
