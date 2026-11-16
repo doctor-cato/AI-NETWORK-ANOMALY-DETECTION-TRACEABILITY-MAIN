@@ -408,6 +408,13 @@ mod tests {
     use super::verify_loopback_url;
 
     #[test]
+    fn test_ipc_preserves_prediction_numbers_for_verified_export() {
+        let payload = r#"{"results":[{"raw_anomaly_score":51.248178375505404}]}"#;
+        let parsed: serde_json::Value = serde_json::from_str(payload).unwrap();
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), payload);
+    }
+
+    #[test]
     fn test_loopback_guard_accepts_local_only() {
         assert!(verify_loopback_url("http://127.0.0.1:8000/health").is_ok());
         assert!(verify_loopback_url("http://localhost:8000/api/v1/models").is_ok());
