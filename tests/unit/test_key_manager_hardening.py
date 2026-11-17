@@ -134,7 +134,12 @@ class TestMasterKeyProtection:
             "WINDOWS_DPAPI",
             "POSIX_FILE_PERMISSIONS",
         }
-        assert PLAINTEXT_MASTER not in (keystore / "master.key").read_bytes()
+        master_bytes = (keystore / "master.key").read_bytes()
+        assert master_bytes.startswith(_protected_prefix())
+        if sys.platform == "win32":
+            assert PLAINTEXT_MASTER not in master_bytes
+        else:
+            assert (keystore / "master.key").stat().st_mode & 0o777 == 0o600
         for key_file in keystore.glob("*.key"):
             if key_file.name == "master.key":
                 continue
