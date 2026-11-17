@@ -4,10 +4,10 @@ Provides entity relationship graph, cross-source event correlation, alert dedupl
 graph traversal, multi-stage attack timeline reconstruction, and investigation reports. (Milestone M6.4).
 """
 
-from .graph import EntityNode, RelationEdge, EntityRelationshipGraph, AlertDeduplicator
 from .engine import TraceEngine, TraceResult
-from .timeline import AttackTimeline, AttackStage, AttackPhase
-from .investigation import InvestigationReportGenerator, InvestigationReport
+from .graph import AlertDeduplicator, EntityNode, EntityRelationshipGraph, RelationEdge
+from .investigation import InvestigationReport, InvestigationReportGenerator
+from .timeline import AttackPhase, AttackStage, AttackTimeline
 
 __all__ = [
     "EntityNode",

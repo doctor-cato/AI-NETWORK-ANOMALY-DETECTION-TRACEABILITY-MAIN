@@ -4,14 +4,18 @@
   "release_year": 2021,
   "official_source": {
     "publisher": "AIT Austrian Institute of Technology GmbH",
-    "doi": "10.5281/zenodo.4269411",
-    "landing_page": "https://zenodo.org/record/4269411",
+    "doi_netflow": "10.5281/zenodo.13168643",
+    "doi_log": "10.5281/zenodo.19483937",
+    "landing_page_netflow": "https://zenodo.org/records/13168643",
+    "landing_page_log": "https://zenodo.org/records/19483937",
+    "doi": "10.5281/zenodo.13168643",
+    "landing_page": "https://zenodo.org/records/13168643",
     "access_type": "OPEN",
     "license_title": "Creative Commons Attribution-ShareAlike 4.0 International",
     "license_url": "https://creativecommons.org/licenses/by-sa/4.0/"
   },
-  "generated_at_utc": "2026-11-17T08:04:27.138342+00:00",
-  "clean_source_url": "https://zenodo.org/record/4269411",
+  "generated_at_utc": "2026-11-17T13:39:18.538434+00:00",
+  "clean_source_url": "https://zenodo.org/records/13168643",
   "files": [
     {
       "file": "ait_netflow_v2.1_sample.csv",

@@ -4,10 +4,11 @@ Provides strict feature boundary validation, detects missing features,
 and guarantees that no missing features are ever silently imputed.
 """
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
 import math
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 
@@ -49,7 +50,7 @@ class FeatureContract(BaseModel):
         if not is_valid:
             raise ValueError(
                 f"FeatureContract '{self.contract_id}' violation: missing/invalid features: {errors[:5]}"
-                + (f" (and {len(errors)-5} more)" if len(errors) > 5 else "")
+                + (f" (and {len(errors) - 5} more)" if len(errors) > 5 else "")
                 + ". Implicit imputation is strictly prohibited."
             )
         return np.array([float(record[f]) for f in self.feature_names], dtype=np.float32)

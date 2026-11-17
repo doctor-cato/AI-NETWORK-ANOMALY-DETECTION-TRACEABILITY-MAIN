@@ -5,7 +5,7 @@ Implements Issue #108 for NetFlow Sentinel v2.0.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -45,10 +45,10 @@ class RiskScorer:
     MEDIUM_SEVERITY_THRESHOLD = 30.0
 
     # Sensitivity weights
-    W_AI_CONFIDENCE = 50.0       # Up to 50 pts from multi-model AI ensemble
-    W_BEHAVIORAL_DEV = 25.0      # Up to 25 pts from behavioral deviation / session anomaly
-    W_PORT_PROTOCOL = 15.0       # Up to 15 pts from sensitive ports / critical services
-    W_AUTH_FAILURES = 10.0       # Up to 10 pts from authentication failure bursts
+    W_AI_CONFIDENCE = 50.0  # Up to 50 pts from multi-model AI ensemble
+    W_BEHAVIORAL_DEV = 25.0  # Up to 25 pts from behavioral deviation / session anomaly
+    W_PORT_PROTOCOL = 15.0  # Up to 15 pts from sensitive ports / critical services
+    W_AUTH_FAILURES = 10.0  # Up to 10 pts from authentication failure bursts
 
     SENSITIVE_PORTS = {22, 23, 88, 389, 445, 1433, 3389, 5985, 5986}
 
@@ -73,13 +73,17 @@ class RiskScorer:
         c_ai = ai_prob * self.W_AI_CONFIDENCE
         breakdown["ai_confidence"] = c_ai
         if ai_prob >= 0.8:
-            reasons.append(f"AI Model Ensemble indicated strong anomaly probability ({ai_prob:.2f})")
+            reasons.append(
+                f"AI Model Ensemble indicated strong anomaly probability ({ai_prob:.2f})"
+            )
 
         # 2. Behavioral Component (0 .. 25)
         c_beh = beh_score * self.W_BEHAVIORAL_DEV
         breakdown["behavioral_deviation"] = c_beh
         if beh_score >= 0.7:
-            reasons.append(f"Behavioral vector showed marked deviation from baseline ({beh_score:.2f})")
+            reasons.append(
+                f"Behavioral vector showed marked deviation from baseline ({beh_score:.2f})"
+            )
 
         # 3. Port / Protocol Sensitivity (0 .. 15)
         c_port = 0.0
@@ -101,7 +105,9 @@ class RiskScorer:
 
         # OOD handling: Out-of-distribution events should not get false CRITICAL without confirmation
         if is_ood:
-            reasons.append("Out-of-Distribution (OOD) sample: capped at 65.0 to prevent false-alarm key rotation")
+            reasons.append(
+                "Out-of-Distribution (OOD) sample: capped at 65.0 to prevent false-alarm key rotation"
+            )
             raw_score = min(raw_score, 65.0)
 
         total_score = max(0.0, min(100.0, raw_score))
@@ -116,7 +122,7 @@ class RiskScorer:
         else:
             sev = SeverityLevel.LOW
 
-        trigger_rotation = (sev == SeverityLevel.CRITICAL and not is_ood)
+        trigger_rotation = sev == SeverityLevel.CRITICAL and not is_ood
 
         return RiskScoreOutput(
             score=total_score,

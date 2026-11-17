@@ -84,8 +84,7 @@ def extract_fp_fn_samples(
 
     if y_t.ndim != 1 or y_p.ndim != 1 or len(y_t) != n_samples or len(y_p) != n_samples:
         raise ValueError(
-            f"Length mismatch: X has {n_samples} rows, "
-            f"y_true has {len(y_t)}, y_pred has {len(y_p)}"
+            f"Length mismatch: X has {n_samples} rows, y_true has {len(y_t)}, y_pred has {len(y_p)}"
         )
     if not set(np.unique(y_t)).issubset({0, 1}) or not set(np.unique(y_p)).issubset({0, 1}):
         raise ValueError("y_true and y_pred must contain only binary labels 0 and 1.")

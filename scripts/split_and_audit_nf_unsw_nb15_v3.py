@@ -260,8 +260,7 @@ def main() -> None:
     audit_results = audit_split_leakage(df, split_result)
     audit_time = time.time() - t2
     print(
-        f"[split_and_audit] Audit completed in {audit_time:.2f}s. "
-        f"Status: {audit_results['status']}"
+        f"[split_and_audit] Audit completed in {audit_time:.2f}s. Status: {audit_results['status']}"
     )
 
     for pair_name, p_audit in audit_results["pair_audits"].items():

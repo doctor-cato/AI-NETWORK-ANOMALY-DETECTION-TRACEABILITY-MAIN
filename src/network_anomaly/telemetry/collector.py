@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import socket
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from network_anomaly.canonical.event import (
     CanonicalSecurityEvent,
@@ -18,7 +18,6 @@ from network_anomaly.canonical.event import (
     RawProvenance,
     ValidationStatus,
 )
-
 
 # Standard NetFlow v9 & IPFIX Information Element Field Types
 FIELD_IN_BYTES = 1
@@ -98,7 +97,9 @@ class NetFlowIPFIXDecoder:
                 self._parse_v9_templates(flowset_data, exporter_ip)
             elif flowset_id >= 256:
                 # Data FlowSet
-                evs = self._parse_data_flowset(flowset_id, flowset_data, exporter_ip, unix_secs, "NetFlow-v9")
+                evs = self._parse_data_flowset(
+                    flowset_id, flowset_data, exporter_ip, unix_secs, "NetFlow-v9"
+                )
                 events.extend(evs)
 
             offset += length
@@ -227,7 +228,9 @@ class NetFlowIPFIXDecoder:
                 result["dst_port"] = int.from_bytes(chunk, "big")
             elif ftype == FIELD_PROTOCOL:
                 proto_num = int.from_bytes(chunk, "big")
-                result["protocol"] = "TCP" if proto_num == 6 else ("UDP" if proto_num == 17 else str(proto_num))
+                result["protocol"] = (
+                    "TCP" if proto_num == 6 else ("UDP" if proto_num == 17 else str(proto_num))
+                )
             elif ftype == FIELD_IN_BYTES:
                 result["bytes_in"] = int.from_bytes(chunk, "big")
             elif ftype == FIELD_OUT_BYTES:

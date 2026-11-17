@@ -1134,7 +1134,7 @@ def fetch_dataset_sample(
     with open(manifest_path, "w", encoding="utf-8") as mf:
         json.dump(manifest_data, mf, indent=2)
 
-    print(f"Successfully extracted {len(lines)-1:,} rows to {target_csv} in {dt:.2f}s")
+    print(f"Successfully extracted {len(lines) - 1:,} rows to {target_csv} in {dt:.2f}s")
     print(f"SHA-256: {sha256}")
     print(f"Manifest saved: {manifest_path}")
 

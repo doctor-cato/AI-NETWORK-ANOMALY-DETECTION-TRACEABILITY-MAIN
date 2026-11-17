@@ -6,10 +6,10 @@ Implements Issue #111 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Set, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, Set
 
-from .graph import EntityKind, EntityNode, EntityRelationshipGraph, RelationEdge
+from .graph import EntityNode, EntityRelationshipGraph, RelationEdge
 
 
 @dataclass

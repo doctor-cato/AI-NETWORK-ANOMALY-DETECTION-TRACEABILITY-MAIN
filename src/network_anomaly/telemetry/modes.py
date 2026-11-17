@@ -6,11 +6,11 @@ Implements Issue #136 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.streaming.live_orchestrator import LiveProcessingResult, LiveSystemOrchestrator

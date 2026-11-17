@@ -4,10 +4,11 @@ Preserves raw data provenance, supports Flow, DNS, Web, Auth, and System logs,
 and enforces explicit validation boundaries without silent data corruption.
 """
 
+import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
-import uuid
+from typing import Dict, List, Optional
+
 from pydantic import BaseModel, Field, field_validator
 
 

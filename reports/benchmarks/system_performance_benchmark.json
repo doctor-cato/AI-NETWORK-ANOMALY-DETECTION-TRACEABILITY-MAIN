@@ -1,6 +1,6 @@
 {
   "benchmark_title": "NetFlow Sentinel v2.0 System-Wide Performance Benchmark",
-  "benchmark_executed_at_utc": "2026-11-17T09:08:45.909670+00:00",
+  "benchmark_executed_at_utc": "2026-11-17T13:39:20.177186+00:00",
   "hardware_environment": {
     "os": "Microsoft Windows x64",
     "python_runtime": "Python 3.12 (CPython)",
@@ -9,28 +9,28 @@
   "mode_performance": {
     "offline_batch": {
       "total_events": 1000,
-      "elapsed_seconds": 0.0675,
-      "throughput_events_per_sec": 14824.26,
-      "latency_per_event_us": 67.46
+      "elapsed_seconds": 0.1328,
+      "throughput_events_per_sec": 7531.6,
+      "latency_per_event_us": 132.77
     },
     "replay_mode": {
       "total_events": 1000,
-      "elapsed_seconds": 0.089,
-      "throughput_events_per_sec": 11225.28
+      "elapsed_seconds": 0.1,
+      "throughput_events_per_sec": 10001.89
     },
     "live_mode_projection": {
-      "max_sustainable_network_load_mbps": 177.89,
-      "ring_buffer_headroom_pct": 82.5,
+      "max_sustainable_network_load_mbps": 90.38,
+      "ring_buffer_headroom_pct": 90.0,
       "peak_ingestion_capacity_flows_sec": 75000
     }
   },
   "subsystem_latency_breakdown_us": {
-    "collector_decoding": 4.5,
-    "feature_extraction_and_contract_validation": 8.2,
-    "multi_model_ai_inference": 24.5,
-    "behavioral_sessionizer_and_vector": 16.0,
-    "aes_256_gcm_vector_encryption": 25.24,
-    "risk_scoring_and_deduplication": 6.8,
-    "total_pipeline_latency_us": 85.24
+    "collector_decoding": 0.5,
+    "feature_extraction_and_contract_validation": 4.94,
+    "multi_model_ai_inference": 8.08,
+    "behavioral_sessionizer_and_vector": 19.02,
+    "aes_256_gcm_vector_encryption": 18.67,
+    "risk_scoring_and_deduplication": 2.6,
+    "total_pipeline_latency_us": 53.81
   }
 }

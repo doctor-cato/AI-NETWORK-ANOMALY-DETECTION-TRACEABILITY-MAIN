@@ -6,6 +6,7 @@ Validates Issue #138 for NetFlow Sentinel v2.0.
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
 import pytest
 
 from network_anomaly.canonical.event import (
@@ -13,16 +14,18 @@ from network_anomaly.canonical.event import (
     EventKind,
     FlowMetrics,
     RawProvenance,
-    ValidationStatus,
 )
 from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
 from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
 from network_anomaly.crypto.key_manager import KeyManager
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
+from network_anomaly.streaming.pipeline import StreamingEventPipeline
 from network_anomaly.telemetry.modes import ModeOrchestrator, MonitoringMode
 
 
-def create_e2e_event(src_ip: str, out_bytes: int = 1000, dst_port: int = 80) -> CanonicalSecurityEvent:
+def create_e2e_event(
+    src_ip: str, out_bytes: int = 1000, dst_port: int = 80
+) -> CanonicalSecurityEvent:
     contract = get_baseline_47_feature_contract()
     fm = FlowMetrics(
         duration_ms=100.0,
@@ -85,21 +88,43 @@ class TestFullSystemE2E:
 
             km = KeyManager(keystore_dir=keys_dir)
             vault = EncryptedStorageVault(key_manager=km, db_path=db_path)
+            pipeline = StreamingEventPipeline(capacity=100, batch_size=4)
+            orchestrator = LiveSystemOrchestrator(
+                db_path=tmp_path / "alerts.db", keystore_dir=keys_dir
+            )
 
-            # Store sensitive behavioral vector into vault
-            sensitive_vector = [0.123, 0.456, 0.789, 0.999]
+            # Enqueue live streaming events into bounded ring buffer
+            live_events = [
+                create_e2e_event("192.168.1.100", out_bytes=123456, dst_port=445),
+                create_e2e_event("192.168.1.105", out_bytes=1500, dst_port=80),
+            ]
+            assert pipeline.enqueue_batch(live_events) == 2
+
+            # Drain micro-batch from live pipeline and run full orchestrator
+            batch = pipeline.fetch_micro_batch(timeout_sec=0.2)
+            assert len(batch) == 2
+            results = orchestrator.process_batch(batch)
+            assert len(results) == 2
+            assert results[0].behavioral_vector is not None
+            assert len(results[0].behavioral_vector.features) == 16
+
+            # Persist produced behavioral vector + sensitive marker into encrypted vault
+            sensitive_vector = [
+                round(v + 0.12345, 5) for v in results[0].behavioral_vector.features
+            ]
             vector_id = vault.store_behavioral_vector(
-                entity_id="host:192.168.1.100",
-                window_start="2026-11-17T10:00:00Z",
-                window_end="2026-11-17T10:05:00Z",
+                entity_id=results[0].entity_id,
+                window_start=results[0].behavioral_vector.window_start,
+                window_end=results[0].behavioral_vector.window_end,
                 vector=sensitive_vector,
                 encrypt=True,
             )
 
-            # Read raw SQLite DB file bytes and assert ZERO PLAINTEXT presence
+            # Read raw SQLite DB file bytes and assert ZERO PLAINTEXT vector presence
             db_bytes = db_path.read_bytes()
-            assert b"0.123" not in db_bytes
-            assert b"0.789" not in db_bytes
+            marker = f"{sensitive_vector[0]}".encode("ascii")
+            assert marker not in db_bytes
+            assert results[0].entity_id.encode("ascii") in db_bytes
 
             # Successfully decrypted record using authorized key lookup
             decrypted = vault.load_behavioral_vector(vector_id)
@@ -109,4 +134,6 @@ class TestFullSystemE2E:
         """Ensure missing external benchmark dataset triggers explicit clean SKIPPED without failing."""
         missing_dataset = Path("data/raw/non_existent_huge_dataset.csv")
         if not missing_dataset.exists():
-            pytest.skip("Benchmark artifact non_existent_huge_dataset.csv not present (expected in clean CI)")
+            pytest.skip(
+                "Benchmark artifact non_existent_huge_dataset.csv not present (expected in clean CI)"
+            )

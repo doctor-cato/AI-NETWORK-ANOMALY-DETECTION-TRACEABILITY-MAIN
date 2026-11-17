@@ -8,10 +8,9 @@ from __future__ import annotations
 import collections
 import threading
 import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import List, Tuple
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
 
@@ -47,7 +46,9 @@ class StreamingEventPipeline:
         self.max_batch_latency_ms = max_batch_latency_ms
         self.backpressure_policy = backpressure_policy
 
-        self._queue: collections.deque[Tuple[CanonicalSecurityEvent, float]] = collections.deque(maxlen=capacity)
+        self._queue: collections.deque[Tuple[CanonicalSecurityEvent, float]] = collections.deque(
+            maxlen=capacity
+        )
         self._lock = threading.Lock()
         self._not_empty = threading.Condition(self._lock)
         self._is_running = False
@@ -126,8 +127,14 @@ class StreamingEventPipeline:
 
         elapsed = max(0.001, time.perf_counter() - self._start_time)
         throughput = round(self.total_processed / elapsed, 2)
-        avg_batch = round(sum(self._batch_sizes) / len(self._batch_sizes), 1) if self._batch_sizes else 0.0
-        avg_lat = round(sum(self._latencies[-1000:]) / len(self._latencies[-1000:]), 2) if self._latencies else 0.0
+        avg_batch = (
+            round(sum(self._batch_sizes) / len(self._batch_sizes), 1) if self._batch_sizes else 0.0
+        )
+        avg_lat = (
+            round(sum(self._latencies[-1000:]) / len(self._latencies[-1000:]), 2)
+            if self._latencies
+            else 0.0
+        )
 
         return StreamingPipelineMetrics(
             total_enqueued=self.total_enqueued,

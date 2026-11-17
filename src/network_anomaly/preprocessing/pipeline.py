@@ -849,8 +849,7 @@ def verify_zero_duration_retention(
         return {
             "status": "FAIL",
             "reason": (
-                f"Row count changed after transform: before={len(X_before)}, "
-                f"after={len(X_after)}"
+                f"Row count changed after transform: before={len(X_before)}, after={len(X_after)}"
             ),
             "zero_duration_flows_count": zero_count,
             "zero_duration_retained": False,

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fetchIncidents } from "../api";
+  import type { IncidentItem } from "../types";
 
   export let isLiveActive: boolean = false;
 
@@ -38,6 +40,33 @@
   let avgLatencyMs = 12.4;
   let queueUtilization = 8.5;
   let filterSeverity = "ALL";
+  let isLoading = false;
+
+  async function loadAlerts() {
+    try {
+      isLoading = true;
+      const resp = await fetchIncidents({ limit: 50 });
+      if (resp && resp.items && resp.items.length > 0) {
+        alerts = resp.items.map((item: IncidentItem) => ({
+          alert_id: item.incident_id,
+          entity_id: item.source_ip ? `host:${item.source_ip}` : "host:unknown",
+          risk_score: item.anomaly_score <= 1.0 ? item.anomaly_score * 100 : item.anomaly_score,
+          risk_level: item.severity,
+          trigger_reason: item.title,
+          status: item.status,
+          last_seen_utc: item.created_at,
+        }));
+      }
+    } catch {
+      // Retain fallback data when backend is not actively running
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  onMount(() => {
+    loadAlerts();
+  });
 
   $: filteredAlerts = alerts.filter(
     (a) => filterSeverity === "ALL" || a.risk_level === filterSeverity

@@ -4,9 +4,13 @@ Validates Issues #134, #135, #136, #137 for NetFlow Sentinel v2.0.
 """
 
 from datetime import datetime, timezone
-import pytest
 
-from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, FlowMetrics, RawProvenance
+from network_anomaly.canonical.event import (
+    CanonicalSecurityEvent,
+    EventKind,
+    FlowMetrics,
+    RawProvenance,
+)
 from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
 from network_anomaly.telemetry.modes import ModeOrchestrator, MonitoringMode
@@ -56,14 +60,18 @@ class TestLiveTelemetryFlow:
                 event_kind=EventKind.FLOW,
                 source_id="replay_source",
                 source_ip="192.168.1.100",
-                raw_provenance=RawProvenance(source_file="replay.pcap", adapter_name="ReplayAdapter"),
+                raw_provenance=RawProvenance(
+                    source_file="replay.pcap", adapter_name="ReplayAdapter"
+                ),
                 is_ml_complete=True,
                 ml_features={k: 1.0 for k in contract.feature_names},
             )
             for _ in range(5)
         ]
 
-        summary = mode_mgr.run_replay_scenario(events, source_name="test_replay", speed_factor=float("inf"))
+        summary = mode_mgr.run_replay_scenario(
+            events, source_name="test_replay", speed_factor=float("inf")
+        )
         assert summary.mode == MonitoringMode.REPLAY
         assert summary.total_events_processed == 5
         assert summary.throughput_events_per_sec > 0.0
@@ -79,7 +87,9 @@ class TestLiveTelemetryFlow:
                 event_kind=EventKind.FLOW,
                 source_id="stress_test",
                 source_ip=f"10.0.{(i // 256)}.{i % 256}",
-                raw_provenance=RawProvenance(source_file="stress.pcap", adapter_name="StressAdapter"),
+                raw_provenance=RawProvenance(
+                    source_file="stress.pcap", adapter_name="StressAdapter"
+                ),
                 is_ml_complete=True,
                 ml_features={k: 1.0 for k in contract.feature_names},
             )

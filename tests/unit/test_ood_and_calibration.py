@@ -87,7 +87,9 @@ class TestThresholdCalibration:
     def test_calibration_budget_fpr_policy(self):
         calibrator = ThresholdCalibrator(partition_name="validation_split")
         y_true = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
-        y_scores = np.array([0.05, 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.45, 0.6, 0.7, 0.8, 0.9])
+        y_scores = np.array(
+            [0.05, 0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.45, 0.6, 0.7, 0.8, 0.9]
+        )
 
         manifest = calibrator.calibrate(
             y_true=y_true,

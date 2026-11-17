@@ -7,22 +7,24 @@ from __future__ import annotations
 
 import collections
 import time
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
-from network_anomaly.behavioral.sessionizer import EventSessionizer, SessionSummary
+from network_anomaly.behavioral.sessionizer import EventSessionizer
 from network_anomaly.behavioral.vector import BehavioralVector, BehavioralVectorBuilder
-from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind
+from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.crypto.key_manager import KeyManager
 from network_anomaly.crypto.rotation import KeyRotationPolicy
 from network_anomaly.risk.scoring import RiskScorer
 from network_anomaly.streaming.alert_manager import LiveAlertManager, LiveSecurityAlert
 from network_anomaly.streaming.feature_extractor import RealtimeFeatureExtractor
-from network_anomaly.streaming.realtime_inference import LiveInferenceDecision, RealtimeInferenceEngine
+from network_anomaly.streaming.realtime_inference import (
+    LiveInferenceDecision,
+    RealtimeInferenceEngine,
+)
 from network_anomaly.trace.graph import EntityRelationshipGraph
-from network_anomaly.trace.timeline import AttackTimeline, AttackTimelineReconstructor
+from network_anomaly.trace.timeline import AttackTimelineReconstructor
 
 
 @dataclass
@@ -46,14 +48,17 @@ class LiveSystemOrchestrator:
         self,
         db_path: Optional[Path] = None,
         max_active_entities: int = 5_000,
+        keystore_dir: Optional[Path] = None,
     ):
         self.max_active_entities = max_active_entities
 
         # Subsystems
         self.feature_extractor = RealtimeFeatureExtractor()
         self.inference_engine = RealtimeInferenceEngine()
-        self.key_manager = KeyManager()
-        self.key_rotator = KeyRotationPolicy(key_manager=self.key_manager, adaptive_risk_threshold=85.0)
+        self.key_manager = KeyManager(keystore_dir=keystore_dir)
+        self.key_rotator = KeyRotationPolicy(
+            key_manager=self.key_manager, adaptive_risk_threshold=85.0
+        )
         self.risk_scorer = RiskScorer()
         self.alert_manager = LiveAlertManager(
             db_path=db_path,

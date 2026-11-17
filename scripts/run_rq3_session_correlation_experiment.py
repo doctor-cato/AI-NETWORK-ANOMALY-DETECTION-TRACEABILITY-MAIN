@@ -9,11 +9,17 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
-from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, FlowMetrics, RawProvenance
+from network_anomaly.behavioral.correlation import IPSpoofingSessionCorrelator
 from network_anomaly.behavioral.sessionizer import EventSessionizer
 from network_anomaly.behavioral.vector import BehavioralVectorBuilder
-from network_anomaly.behavioral.correlation import IPSpoofingSessionCorrelator
+from network_anomaly.canonical.event import (
+    CanonicalSecurityEvent,
+    EventKind,
+    FlowMetrics,
+    RawProvenance,
+)
 
 
 def run_rq3_experiment(output_dir: Optional[Path] = None) -> dict:
@@ -30,13 +36,13 @@ def run_rq3_experiment(output_dir: Optional[Path] = None) -> dict:
     all_vectors = []
 
     for c_idx in range(5):
-        campaign_name = f"campaign_{c_idx+1}"
+        campaign_name = f"campaign_{c_idx + 1}"
         ground_truth[campaign_name] = []
         base_bytes = (c_idx + 1) * 3000
 
         # Each campaign runs 4 sessions from 4 rotating IP addresses
         for s_idx in range(4):
-            ip = f"198.51.{c_idx+10}.{s_idx+1}"
+            ip = f"198.51.{c_idx + 10}.{s_idx + 1}"
             ts = now + timedelta(minutes=(c_idx * 60) + (s_idx * 15))
             evs = []
             for ev_idx in range(5):
@@ -81,8 +87,8 @@ def run_rq3_experiment(output_dir: Optional[Path] = None) -> dict:
         "strategy_a_ip_matching": bench_results["strategy_a_ip_matching"],
         "strategy_b_behavioral_vector": bench_results["strategy_b_behavioral_vector"],
         "conclusion": (
-            f"Under IP rotation / spoofing, Strategy A (IP-matching) collapsed to {bench_results['strategy_a_ip_matching']['correlation_recall']*100:.1f}% recall. "
-            f"In contrast, Strategy B (Behavioral Vector Cosine similarity) maintained {bench_results['strategy_b_behavioral_vector']['correlation_recall']*100:.1f}% correlation recall, "
+            f"Under IP rotation / spoofing, Strategy A (IP-matching) collapsed to {bench_results['strategy_a_ip_matching']['correlation_recall'] * 100:.1f}% recall. "
+            f"In contrast, Strategy B (Behavioral Vector Cosine similarity) maintained {bench_results['strategy_b_behavioral_vector']['correlation_recall'] * 100:.1f}% correlation recall, "
             "empirically validating Hypothesis H3."
         ),
     }
@@ -97,23 +103,23 @@ def run_rq3_experiment(output_dir: Optional[Path] = None) -> dict:
     md_path = docs_exp_dir / "EXP5_SESSION_CORRELATION.md"
     md_content = f"""# Experiment 5 (RQ3): IP-Independent Session Correlation Benchmark
 
-> **Experiment ID:** {results['experiment_id']}  
-> **Evaluation Date:** {results['timestamp']}  
-> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: {results['hypothesis_confirmed']})
+> **Experiment ID:** {results["experiment_id"]}
+> **Evaluation Date:** {results["timestamp"]}
+> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: {results["hypothesis_confirmed"]})
 
 ## 1. Executive Summary
-- **Hypothesis (H3):** {results['hypothesis']}
-- **Outcome:** **CONFIRMED**. Chiến lược so khớp vector hành vi đạt độ thu hồi **{bench_results['strategy_b_behavioral_vector']['correlation_recall']*100:.1f}%**, trong khi phương pháp IP truyền thống sụp đổ về **0.0%** khi kẻ tấn công thay đổi IP.
+- **Hypothesis (H3):** {results["hypothesis"]}
+- **Outcome:** **CONFIRMED**. Chiến lược so khớp vector hành vi đạt độ thu hồi **{bench_results["strategy_b_behavioral_vector"]["correlation_recall"] * 100:.1f}%**, trong khi phương pháp IP truyền thống sụp đổ về **0.0%** khi kẻ tấn công thay đổi IP.
 
 ## 2. Kết quả Đối sánh Thực nghiệm
 
 | Chiến lược Liên kết Phiên | Cặp Liên kết Đúng | Độ thu hồi (Recall) | Đánh giá Khả năng Kháng IP Spoofing |
 |---|:---:|:---:|:---:|
-| **Strategy A: IP Tuple Exact Matching** | {bench_results['strategy_a_ip_matching']['correct_matches']} / {results['total_same_entity_pairs']} | **{bench_results['strategy_a_ip_matching']['correlation_recall']*100:.1f}%** | **Thất bại hoàn toàn khi đổi IP** |
-| **Strategy B: Behavioral Vector Cosine ($\\ge 0.85$)** | {bench_results['strategy_b_behavioral_vector']['correct_matches']} / {results['total_same_entity_pairs']} | **{bench_results['strategy_b_behavioral_vector']['correlation_recall']*100:.1f}%** | **Thành công (Đạt giả thuyết $\\ge 85\\%$)** |
+| **Strategy A: IP Tuple Exact Matching** | {bench_results["strategy_a_ip_matching"]["correct_matches"]} / {results["total_same_entity_pairs"]} | **{bench_results["strategy_a_ip_matching"]["correlation_recall"] * 100:.1f}%** | **Thất bại hoàn toàn khi đổi IP** |
+| **Strategy B: Behavioral Vector Cosine ($\\ge 0.85$)** | {bench_results["strategy_b_behavioral_vector"]["correct_matches"]} / {results["total_same_entity_pairs"]} | **{bench_results["strategy_b_behavioral_vector"]["correlation_recall"] * 100:.1f}%** | **Thành công (Đạt giả thuyết $\\ge 85\\%$)** |
 
 ## 3. Kết luận
-{results['conclusion']}
+{results["conclusion"]}
 """
     md_path.write_text(md_content, encoding="utf-8")
     print(f"[+] RQ3 Experiment completed: {json_path} and {md_path}")

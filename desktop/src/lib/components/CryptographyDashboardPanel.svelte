@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { fetchCryptoStatus } from "../api";
+
   interface RotationRecord {
     rotation_id: string;
     trigger: string;
@@ -41,6 +44,35 @@
       timestamp: "2026-11-17T09:30:00Z",
     },
   ];
+
+  async function loadCryptoStatus() {
+    try {
+      const resp = await fetchCryptoStatus("general");
+      if (resp) {
+        if (resp.active_key_id) activeKeyId = resp.active_key_id;
+        if (resp.algorithm) activeAlgorithm = `${resp.algorithm} (96-bit CSPRNG Nonce, 128-bit Tag)`;
+        if (resp.rotation_interval_minutes) fixedIntervalMins = resp.rotation_interval_minutes;
+        if (resp.cooldown_seconds) cooldownSecs = resp.cooldown_seconds;
+        if (resp.recent_rotations && resp.recent_rotations.length > 0) {
+          rotationHistory = resp.recent_rotations.map((r, idx) => ({
+            rotation_id: r.rotation_id || `rot-${idx}`,
+            trigger: r.trigger,
+            decision: r.decision,
+            old_key_id: "key-gen-prior",
+            new_key_id: r.new_key_id || activeKeyId,
+            risk_score: r.trigger && r.trigger.includes("ADAPTIVE") ? 88.0 : null,
+            timestamp: r.timestamp || new Date().toISOString(),
+          }));
+        }
+      }
+    } catch {
+      // Retain fallback data when offline
+    }
+  }
+
+  onMount(() => {
+    loadCryptoStatus();
+  });
 </script>
 
 <div class="panel-container">

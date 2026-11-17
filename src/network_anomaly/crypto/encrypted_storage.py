@@ -11,9 +11,9 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from .aead import AESGCMCipher, AuthenticationError, CiphertextEnvelope
+from .aead import AESGCMCipher, CiphertextEnvelope
 from .key_manager import KeyManager
 
 
@@ -29,8 +29,7 @@ class EncryptedStorageVault:
         """Ensure vault and behavioral tables exist."""
         conn = sqlite3.connect(str(self.db_path))
         with conn:
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS behavioral_vectors (
                     vector_id TEXT PRIMARY KEY,
                     entity_id TEXT NOT NULL,
@@ -46,10 +45,8 @@ class EncryptedStorageVault:
                     tag BLOB,
                     created_at TEXT NOT NULL
                 );
-                """
-            )
-            conn.execute(
-                """
+                """)
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS encrypted_vault (
                     vault_id TEXT PRIMARY KEY,
                     item_type TEXT NOT NULL,
@@ -59,8 +56,7 @@ class EncryptedStorageVault:
                     ciphertext BLOB NOT NULL,
                     created_at TEXT NOT NULL
                 );
-                """
-            )
+                """)
         conn.close()
 
     def store_behavioral_vector(
@@ -165,7 +161,9 @@ class EncryptedStorageVault:
         # Look up key by key_id
         raw_key = self.key_manager.get_key(key_id)
         if not raw_key:
-            raise KeyError(f"Decryption key '{key_id}' not found in keystore. Cannot decrypt vector '{vector_id}'.")
+            raise KeyError(
+                f"Decryption key '{key_id}' not found in keystore. Cannot decrypt vector '{vector_id}'."
+            )
 
         cipher = AESGCMCipher(raw_key, key_id=key_id)
         envelope = CiphertextEnvelope(

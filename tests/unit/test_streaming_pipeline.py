@@ -4,7 +4,6 @@ Validates Issue #131 for NetFlow Sentinel v2.0.
 """
 
 from datetime import datetime, timezone
-import pytest
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, RawProvenance
 from network_anomaly.streaming.pipeline import BackpressurePolicy, StreamingEventPipeline
@@ -41,7 +40,9 @@ class TestStreamingPipeline:
 
     def test_backpressure_drop_oldest(self):
         # Small capacity buffer
-        pipeline = StreamingEventPipeline(capacity=5, backpressure_policy=BackpressurePolicy.DROP_OLDEST)
+        pipeline = StreamingEventPipeline(
+            capacity=5, backpressure_policy=BackpressurePolicy.DROP_OLDEST
+        )
         # Push 10 events
         for i in range(10):
             pipeline.enqueue(make_dummy_event(i))

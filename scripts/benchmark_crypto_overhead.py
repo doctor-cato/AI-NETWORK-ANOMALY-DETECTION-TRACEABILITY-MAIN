@@ -16,6 +16,7 @@ import time
 import tracemalloc
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from network_anomaly.crypto.aead import AESGCMCipher
 
@@ -30,7 +31,24 @@ def run_benchmark(iterations: int = 10000, output_dir: Optional[Path] = None) ->
     # Sample behavioral vector payload (16 floating point numbers + metadata ~ 256 bytes)
     sample_payload = {
         "entity_id": "host-192.168.1.100",
-        "vector_16d": [0.12, 0.45, 0.88, 0.05, 0.67, 0.92, 0.33, 0.14, 0.77, 0.44, 0.19, 0.81, 0.65, 0.28, 0.39, 0.52],
+        "vector_16d": [
+            0.12,
+            0.45,
+            0.88,
+            0.05,
+            0.67,
+            0.92,
+            0.33,
+            0.14,
+            0.77,
+            0.44,
+            0.19,
+            0.81,
+            0.65,
+            0.28,
+            0.39,
+            0.52,
+        ],
         "window_start": "2026-11-17T14:00:00Z",
     }
     sample_bytes = json.dumps(sample_payload).encode("utf-8")
@@ -99,14 +117,14 @@ def run_benchmark(iterations: int = 10000, output_dir: Optional[Path] = None) ->
     md_path = output_dir / "crypto_benchmark_report.md"
     md_content = f"""# Cryptographic Performance & Resource Overhead Benchmark (RQ6)
 
-> **Benchmark ID:** {results['benchmark_id']}  
-> **Iterations:** {iterations:,} operations  
-> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: {results['hypothesis_confirmed']})
+> **Benchmark ID:** {results["benchmark_id"]}
+> **Iterations:** {iterations:,} operations
+> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: {results["hypothesis_confirmed"]})
 
 ## 1. Executive Summary
-- **Hypothesis (H6):** {results['hypothesis']}
+- **Hypothesis (H6):** {results["hypothesis"]}
 - **Outcome:** **CONFIRMED**. Độ trễ mã hóa trung bình chỉ **{enc_latency_us:.2f} $\\mu s$** (thấp hơn ngưỡng cho phép 500 $\\mu s$ gấp 10+ lần), thông lượng đạt **{enc_throughput:,.0f} sự kiện/giây** (vượt xa yêu cầu 5.000 events/sec).
-- **Bộ nhớ (Memory Footprint):** Mức chiếm dụng bộ nhớ đỉnh (Peak RAM) chỉ **{results['metrics']['peak_memory_mb']} MB**.
+- **Bộ nhớ (Memory Footprint):** Mức chiếm dụng bộ nhớ đỉnh (Peak RAM) chỉ **{results["metrics"]["peak_memory_mb"]} MB**.
 
 ## 2. Bảng Kết quả Đo lường Chi tiết
 
@@ -116,10 +134,10 @@ def run_benchmark(iterations: int = 10000, output_dir: Optional[Path] = None) ->
 | **Độ trễ Giải mã (Decryption Latency)** | **{dec_latency_us:.2f} $\\mu s$** (0.0{int(dec_latency_us)} ms) | $\\le 500\\ \\mu s$ (0.5 ms) | **ĐẠT (VƯỢT TRỘI)** |
 | **Thông lượng Mã hóa (Throughput)** | **{enc_throughput:,.0f} events/s** | $\\ge 5.000\\ events/s$ | **ĐẠT (GẤP ~10 LẦN)** |
 | **Thông lượng Giải mã (Throughput)** | **{dec_throughput:,.0f} events/s** | $\\ge 5.000\\ events/s$ | **ĐẠT** |
-| **Bộ nhớ Đỉnh (Peak RAM)** | **{results['metrics']['peak_memory_mb']} MB** | $\\le 100\\ MB$ | **ĐẠT** |
+| **Bộ nhớ Đỉnh (Peak RAM)** | **{results["metrics"]["peak_memory_mb"]} MB** | $\\le 100\\ MB$ | **ĐẠT** |
 
 ## 3. Kết luận
-{results['conclusion']}
+{results["conclusion"]}
 """
     md_path.write_text(md_content, encoding="utf-8")
     print(f"[+] Crypto benchmark completed: {json_path} and {md_path}")

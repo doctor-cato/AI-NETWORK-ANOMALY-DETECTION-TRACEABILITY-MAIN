@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 class EntityKind(str, Enum):
@@ -81,10 +81,16 @@ class EntityRelationshipGraph:
     def __init__(self):
         self.nodes: Dict[str, EntityNode] = {}
         self.edges: Dict[str, RelationEdge] = {}
-        self._adj: Dict[str, Set[str]] = {}       # node_id -> set of edge_ids (outgoing)
-        self._rev_adj: Dict[str, Set[str]] = {}   # node_id -> set of edge_ids (incoming)
+        self._adj: Dict[str, Set[str]] = {}  # node_id -> set of edge_ids (outgoing)
+        self._rev_adj: Dict[str, Set[str]] = {}  # node_id -> set of edge_ids (incoming)
 
-    def add_node(self, node_id: str, kind: EntityKind, label: str, properties: Optional[Dict[str, Any]] = None) -> EntityNode:
+    def add_node(
+        self,
+        node_id: str,
+        kind: EntityKind,
+        label: str,
+        properties: Optional[Dict[str, Any]] = None,
+    ) -> EntityNode:
         if node_id in self.nodes:
             self.nodes[node_id].last_seen = datetime.now(timezone.utc).isoformat()
             if properties:
@@ -161,7 +167,9 @@ class EntityRelationshipGraph:
                     evidence_id=getattr(event, "event_id", None),
                 )
 
-    def get_neighbors(self, node_id: str, direction: str = "both") -> List[Tuple[EntityNode, RelationEdge]]:
+    def get_neighbors(
+        self, node_id: str, direction: str = "both"
+    ) -> List[Tuple[EntityNode, RelationEdge]]:
         results = []
         if direction in ("out", "both"):
             for eid in self._adj.get(node_id, set()):
@@ -190,7 +198,13 @@ class AlertDeduplicator:
         self._seen: Dict[str, float] = {}
         self._counts: Dict[str, int] = {}
 
-    def should_emit(self, source_ip: str, dest_ip: str, attack_type: str, current_timestamp: Optional[float] = None) -> Tuple[bool, int]:
+    def should_emit(
+        self,
+        source_ip: str,
+        dest_ip: str,
+        attack_type: str,
+        current_timestamp: Optional[float] = None,
+    ) -> Tuple[bool, int]:
         """Return (should_emit, duplicate_count). If duplicate within window, suppress emission."""
         key = f"{source_ip}->{dest_ip}|{attack_type}"
         now = current_timestamp or datetime.now(timezone.utc).timestamp()

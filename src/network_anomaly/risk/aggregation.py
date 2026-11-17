@@ -7,14 +7,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Dict, Optional
 
 
 class AggregationPolicy(str, Enum):
-    WEIGHTED_ENSEMBLE = "WEIGHTED_ENSEMBLE"       # Default recommended: calibrated linear blend
-    RANDOM_FOREST_PRIMARY = "RANDOM_FOREST_PRIMARY" # RF is primary, IF/AE supplementary
-    STRICT_CONSENSUS = "STRICT_CONSENSUS"           # All active models must agree
-    MAX_SEVERITY = "MAX_SEVERITY"                   # Pessimistic fail-closed policy
+    WEIGHTED_ENSEMBLE = "WEIGHTED_ENSEMBLE"  # Default recommended: calibrated linear blend
+    RANDOM_FOREST_PRIMARY = "RANDOM_FOREST_PRIMARY"  # RF is primary, IF/AE supplementary
+    STRICT_CONSENSUS = "STRICT_CONSENSUS"  # All active models must agree
+    MAX_SEVERITY = "MAX_SEVERITY"  # Pessimistic fail-closed policy
 
 
 @dataclass
@@ -37,7 +37,11 @@ class MultiModelDecisionAggregator:
         "autoencoder": 0.15,
     }
 
-    def __init__(self, policy: AggregationPolicy = AggregationPolicy.WEIGHTED_ENSEMBLE, weights: Optional[Dict[str, float]] = None):
+    def __init__(
+        self,
+        policy: AggregationPolicy = AggregationPolicy.WEIGHTED_ENSEMBLE,
+        weights: Optional[Dict[str, float]] = None,
+    ):
         self.policy = policy
         self.weights = weights or dict(self.DEFAULT_WEIGHTS)
 
@@ -88,7 +92,9 @@ class MultiModelDecisionAggregator:
 
         elif self.policy == AggregationPolicy.STRICT_CONSENSUS:
             is_anomaly = all(p >= 0.50 for p in models.values())
-            combined_prob = min(models.values()) if is_anomaly else sum(models.values()) / len(models)
+            combined_prob = (
+                min(models.values()) if is_anomaly else sum(models.values()) / len(models)
+            )
 
         elif self.policy == AggregationPolicy.MAX_SEVERITY:
             combined_prob = max(models.values())

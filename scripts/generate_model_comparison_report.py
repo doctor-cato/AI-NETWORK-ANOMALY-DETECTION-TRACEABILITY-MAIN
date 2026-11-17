@@ -9,8 +9,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
-
+from typing import Any, Dict
 
 OUTPUT_JSON = Path("reports/experiments/ml/model_comparison_report.json")
 OUTPUT_MD = Path("docs/experiments/FOUR_MODEL_COMPARISON.md")
@@ -43,11 +42,31 @@ def generate_comparison_data() -> Dict[str, Any]:
                 "explainability": {
                     "method": "Gini Impurity & Permutation Importance",
                     "top_features": [
-                        {"feature": "MIN_TTL", "importance": 0.284, "warning": "Identified as network-hop shortcut feature."},
-                        {"feature": "OUT_BYTES", "importance": 0.142, "description": "Outbound byte volume indicates exfiltration or flood."},
-                        {"feature": "FLOW_DURATION_MILLISECONDS", "importance": 0.118, "description": "Short burst vs long persistent session."},
-                        {"feature": "TCP_FLAGS", "importance": 0.095, "description": "SYN scans, RST terminations, unusual flag combinations."},
-                        {"feature": "IN_PKTS", "importance": 0.076, "description": "Incoming packet volume."},
+                        {
+                            "feature": "MIN_TTL",
+                            "importance": 0.284,
+                            "warning": "Identified as network-hop shortcut feature.",
+                        },
+                        {
+                            "feature": "OUT_BYTES",
+                            "importance": 0.142,
+                            "description": "Outbound byte volume indicates exfiltration or flood.",
+                        },
+                        {
+                            "feature": "FLOW_DURATION_MILLISECONDS",
+                            "importance": 0.118,
+                            "description": "Short burst vs long persistent session.",
+                        },
+                        {
+                            "feature": "TCP_FLAGS",
+                            "importance": 0.095,
+                            "description": "SYN scans, RST terminations, unusual flag combinations.",
+                        },
+                        {
+                            "feature": "IN_PKTS",
+                            "importance": 0.076,
+                            "description": "Incoming packet volume.",
+                        },
                     ],
                 },
             },
@@ -70,11 +89,31 @@ def generate_comparison_data() -> Dict[str, Any]:
                 "explainability": {
                     "method": "Tree Gain / Cover Contribution",
                     "top_features": [
-                        {"feature": "MIN_TTL", "importance": 0.312, "warning": "Identified as network-hop shortcut feature."},
-                        {"feature": "OUT_BYTES", "importance": 0.165, "description": "High gradient gain on payload exfiltration boundaries."},
-                        {"feature": "TCP_WIN_MAX_IN", "importance": 0.104, "description": "TCP window size modulation during exploit delivery."},
-                        {"feature": "IN_BYTES", "importance": 0.088, "description": "Inbound server payload size."},
-                        {"feature": "FLOW_DURATION_MILLISECONDS", "importance": 0.079, "description": "Connection duration dynamics."},
+                        {
+                            "feature": "MIN_TTL",
+                            "importance": 0.312,
+                            "warning": "Identified as network-hop shortcut feature.",
+                        },
+                        {
+                            "feature": "OUT_BYTES",
+                            "importance": 0.165,
+                            "description": "High gradient gain on payload exfiltration boundaries.",
+                        },
+                        {
+                            "feature": "TCP_WIN_MAX_IN",
+                            "importance": 0.104,
+                            "description": "TCP window size modulation during exploit delivery.",
+                        },
+                        {
+                            "feature": "IN_BYTES",
+                            "importance": 0.088,
+                            "description": "Inbound server payload size.",
+                        },
+                        {
+                            "feature": "FLOW_DURATION_MILLISECONDS",
+                            "importance": 0.079,
+                            "description": "Connection duration dynamics.",
+                        },
                     ],
                 },
             },
@@ -97,10 +136,26 @@ def generate_comparison_data() -> Dict[str, Any]:
                 "explainability": {
                     "method": "Average Isolation Depth Attribution",
                     "top_features": [
-                        {"feature": "OUT_BYTES", "importance": 0.220, "description": "Outlier isolation driven by abnormal payload spikes."},
-                        {"feature": "NUM_PKTS_UP_TO_128_BYTES", "importance": 0.185, "description": "Small packet flooding anomalies."},
-                        {"feature": "SRC_TO_DST_SECOND_BYTES", "importance": 0.140, "description": "Rapid initial payload transfer."},
-                        {"feature": "TCP_FLAGS", "importance": 0.115, "description": "Rare or malformed flag combinations."},
+                        {
+                            "feature": "OUT_BYTES",
+                            "importance": 0.220,
+                            "description": "Outlier isolation driven by abnormal payload spikes.",
+                        },
+                        {
+                            "feature": "NUM_PKTS_UP_TO_128_BYTES",
+                            "importance": 0.185,
+                            "description": "Small packet flooding anomalies.",
+                        },
+                        {
+                            "feature": "SRC_TO_DST_SECOND_BYTES",
+                            "importance": 0.140,
+                            "description": "Rapid initial payload transfer.",
+                        },
+                        {
+                            "feature": "TCP_FLAGS",
+                            "importance": 0.115,
+                            "description": "Rare or malformed flag combinations.",
+                        },
                     ],
                 },
             },
@@ -123,10 +178,26 @@ def generate_comparison_data() -> Dict[str, Any]:
                 "explainability": {
                     "method": "Per-feature Mean Squared Reconstruction Error (MSE Loss Contribution)",
                     "top_features": [
-                        {"feature": "OUT_BYTES", "importance": 0.245, "description": "Highest reconstruction error on volumetric anomalies."},
-                        {"feature": "IN_BYTES", "importance": 0.198, "description": "Deviation from learned benign response sizes."},
-                        {"feature": "FLOW_DURATION_MILLISECONDS", "importance": 0.155, "description": "Anomalous temporal duration."},
-                        {"feature": "CLIENT_TCP_FLAGS", "importance": 0.110, "description": "Reconstruction failure on scanning flags."},
+                        {
+                            "feature": "OUT_BYTES",
+                            "importance": 0.245,
+                            "description": "Highest reconstruction error on volumetric anomalies.",
+                        },
+                        {
+                            "feature": "IN_BYTES",
+                            "importance": 0.198,
+                            "description": "Deviation from learned benign response sizes.",
+                        },
+                        {
+                            "feature": "FLOW_DURATION_MILLISECONDS",
+                            "importance": 0.155,
+                            "description": "Anomalous temporal duration.",
+                        },
+                        {
+                            "feature": "CLIENT_TCP_FLAGS",
+                            "importance": 0.110,
+                            "description": "Reconstruction failure on scanning flags.",
+                        },
                     ],
                 },
             },
@@ -148,12 +219,12 @@ def main():
         json.dump(data, f, indent=2)
 
     # Markdown comparison report
-    md_content = f"""# Báo cáo So sánh Thực nghiệm 4 Họ Mô hình AI & Diễn giải Đặc trưng (Explainability)
+    md_content = """# Báo cáo So sánh Thực nghiệm 4 Họ Mô hình AI & Diễn giải Đặc trưng (Explainability)
 
-**Mã tài liệu:** `REPORT-ML-4MODEL-001`  
-**Milestone:** `M6.3 (AI Research)`  
-**Issue:** `#105`  
-**Trạng thái:** `COMPLETED & RIGOROUSLY BENCHMARKED`  
+**Mã tài liệu:** `REPORT-ML-4MODEL-001`
+**Milestone:** `M6.3 (AI Research)`
+**Issue:** `#105`
+**Trạng thái:** `COMPLETED & RIGOROUSLY BENCHMARKED`
 
 ---
 
@@ -188,7 +259,7 @@ Hệ thống NetFlow Sentinel v2.0 tích hợp và đánh giá đồng bộ 4 tr
 ## 3. Diễn giải Đặc trưng (Model Explainability)
 
 ### 3.1 Random Forest & XGBoost (Tree Feature Importance)
-- `MIN_TTL`: Chiếm ~28.4% - 31.2% điểm quan trọng.  
+- `MIN_TTL`: Chiếm ~28.4% - 31.2% điểm quan trọng.
   > **Cảnh báo Shortcut:** Đây là đặc trưng bước nhảy mạng phụ thuộc topology phòng lab, không phải bản chất hành vi độc hại.
 - `OUT_BYTES` & `IN_BYTES`: Chiếm ~23% - 25% điểm quan trọng. Thể hiện dung lượng tải bất thường (exfiltration, DoS, brute force).
 - `FLOW_DURATION_MILLISECONDS`: Phân biệt các đợt quét cổng chớp nhoáng (scan) với kết nối C2 bền bỉ.
@@ -203,7 +274,7 @@ Hệ thống NetFlow Sentinel v2.0 tích hợp và đánh giá đồng bộ 4 tr
 
 ## 4. Tuyên bố Giới hạn Khoa học (Scientific Disclaimer)
 
-Các chỉ số tầm quan trọng của đặc trưng (Feature Importance / MSE Contribution) chỉ thể hiện **mối tương quan thống kê thực nghiệm (empirical statistical associations)** trong phạm vi phân bố của tập dữ liệu kiểm chuẩn NF-UNSW-NB15-v3.  
+Các chỉ số tầm quan trọng của đặc trưng (Feature Importance / MSE Contribution) chỉ thể hiện **mối tương quan thống kê thực nghiệm (empirical statistical associations)** trong phạm vi phân bố của tập dữ liệu kiểm chuẩn NF-UNSW-NB15-v3.
 **Tuyệt đối không suy diễn các giá trị này thành tuyên bố nhân quả (causal attribution)** đối với hành vi tấn công mạng trong thực tế.
 """
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)

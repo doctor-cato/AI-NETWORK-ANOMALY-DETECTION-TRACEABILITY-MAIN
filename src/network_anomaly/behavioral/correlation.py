@@ -7,10 +7,11 @@ enabling tracking of attackers rotating or spoofing IP addresses.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
-from .similarity import BehavioralSimilarityCalculator, SimilarityMetric
+from .similarity import BehavioralSimilarityCalculator
 from .vector import BehavioralVector
 
 
@@ -53,7 +54,7 @@ class IPSpoofingSessionCorrelator:
 
             assigned.add(vec_i.vector_id)
 
-            for j, vec_j in enumerate(vectors[i + 1:], start=i + 1):
+            for j, vec_j in enumerate(vectors[i + 1 :], start=i + 1):
                 if vec_j.vector_id in assigned:
                     continue
 
@@ -77,7 +78,12 @@ class IPSpoofingSessionCorrelator:
                     member_session_ids=current_members,
                     centroid_vector=[round(float(x), 4) for x in centroid],
                     average_similarity=round(
-                        float(np.mean([self.calc.cosine_similarity(centroid, v) for v in current_vectors])), 4
+                        float(
+                            np.mean(
+                                [self.calc.cosine_similarity(centroid, v) for v in current_vectors]
+                            )
+                        ),
+                        4,
                     ),
                     ip_addresses_observed=list(observed_ips),
                 )
@@ -117,8 +123,12 @@ class IPSpoofingSessionCorrelator:
                     if sim >= self.match_threshold:
                         strategy_b_matches += 1
 
-        recall_a = (strategy_a_matches / total_same_entity_pairs) if total_same_entity_pairs > 0 else 0.0
-        recall_b = (strategy_b_matches / total_same_entity_pairs) if total_same_entity_pairs > 0 else 0.0
+        recall_a = (
+            (strategy_a_matches / total_same_entity_pairs) if total_same_entity_pairs > 0 else 0.0
+        )
+        recall_b = (
+            (strategy_b_matches / total_same_entity_pairs) if total_same_entity_pairs > 0 else 0.0
+        )
 
         return {
             "total_same_entity_pairs": total_same_entity_pairs,

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Set
 
 
 class AttackPhase(str, Enum):
@@ -118,10 +118,14 @@ class AttackTimelineReconstructor:
             elif any(k in attack_type for k in ["reconnaissance", "scan", "probe"]):
                 phase = AttackPhase.RECONNAISSANCE
                 title = f"Port scanning and service reconnaissance from {src}"
-            elif any(k in attack_type for k in ["lateral", "internal", "worm", "smb"]) or (dst_port in (445, 139, 3389, 22) and src.startswith("10.") and dst.startswith("10.")):
+            elif any(k in attack_type for k in ["lateral", "internal", "worm", "smb"]) or (
+                dst_port in (445, 139, 3389, 22) and src.startswith("10.") and dst.startswith("10.")
+            ):
                 phase = AttackPhase.LATERAL_MOVEMENT
                 title = f"Internal lateral traversal from {src} to {dst}"
-            elif any(k in attack_type for k in ["exfiltration", "dos", "ddos"]) or bytes_out > 500000:
+            elif (
+                any(k in attack_type for k in ["exfiltration", "dos", "ddos"]) or bytes_out > 500000
+            ):
                 phase = AttackPhase.EXFILTRATION_IMPACT
                 title = f"Data exfiltration / high impact traffic from {src}"
             elif dst_port in (21, 23, 80, 443, 8080) and bytes_out < 500:
@@ -132,7 +136,7 @@ class AttackTimelineReconstructor:
                 title = f"Suspicious activity detected between {src} and {dst}"
 
             stage = AttackStage(
-                stage_id=f"stg-{idx+1}",
+                stage_id=f"stg-{idx + 1}",
                 phase=phase,
                 timestamp=ev.get("timestamp", datetime.now(timezone.utc).isoformat()),
                 source_entity=src,

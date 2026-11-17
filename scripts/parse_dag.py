@@ -14,14 +14,14 @@ milestones = {}
 for num in range(76, 156):
     iss = issues[str(num)]
     titles[num] = iss["title"]
-    prio = "P0" if any("priority:high" in l["name"] for l in iss.get("labels", [])) else "P1"
+    prio = "P0" if any("priority:high" in lbl["name"] for lbl in iss.get("labels", [])) else "P1"
     priorities[num] = prio
     milestones[num] = iss.get("milestone", {}).get("title", "")
-    
+
     body = iss.get("body", "")
     m = re.search(r"## 7\. Dependencies.*?\n(.*?)(?=\n## |\Z)", body, re.DOTALL)
     dep_text = m.group(1).strip() if m else ""
-    
+
     # Special case: #155 declares dependency on #76-154, but user prompt clarifies:
     # "#155 khai báo phụ thuộc toàn bộ #76–154. Chuyển thành phạm vi tham chiếu để lập DAG, không phải dependency yêu cầu hoàn thành toàn bộ Issue trước."
     if num == 155:
@@ -108,26 +108,26 @@ dag = {
     # "#137 yêu cầu nghiệm thu trên giao diện, trong khi #138, #139 và #140 có dependency khiến UI có thể chờ #137. Tách điều kiện backend-ready, UI-ready và full E2E acceptance để loại bỏ bế tắc mà không giảm Acceptance Criteria."
     # 137 backend-ready depends on 127..136. UI verification happens when UI is available.
     137: [127, 128, 129, 130, 131, 132, 133, 134, 135, 136],
-    138: [106, 115, 118, 136], # backend integration, unblocks early UI
+    138: [106, 115, 118, 136],  # backend integration, unblocks early UI
     139: [138],
     140: [139],
     141: [139],
     142: [139],
     143: [139],
     144: [139],
-    145: [77, 94, 98, 104, 114, 125, 126, 96], # added 96 as required by user prompt
+    145: [77, 94, 98, 104, 114, 125, 126, 96],  # added 96 as required by user prompt
     146: [81, 117, 124, 127],
     147: [126, 133, 134, 138],
     # User prompt note: "#149 tham chiếu G11 (#145), trong khi G11 là #148."
     148: [71, 73, 138, 139],
-    149: [148], # fixed G11 reference to #148
+    149: [148],  # fixed G11 reference to #148
     150: [136, 137, 140, 141, 142, 143],
     151: [78, 79, 93, 118, 137, 18],
     152: [148, 150, 18],
     153: [144, 145, 147, 19],
     # User prompt note: "#154 phải bao phủ toàn bộ deliverables bàn giao, bao gồm #151–153."
     154: [138, 145, 146, 147, 148, 149, 150, 151, 152, 153, 20],
-    155: [76] # Can start immediately with 76
+    155: [76],  # Can start immediately with 76
 }
 
 # Verify DAG has no cycles and compute topological sort
@@ -198,4 +198,3 @@ path.reverse()
 
 print(f"Longest Critical Path length: {len(path)} steps")
 print(" -> ".join(f"#{x}" for x in path))
-

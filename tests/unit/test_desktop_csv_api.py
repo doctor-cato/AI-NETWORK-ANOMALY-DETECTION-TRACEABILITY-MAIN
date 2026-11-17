@@ -1290,7 +1290,7 @@ def test_evaluate_handles_float_upcast_row_id_and_all_nan_attack_column(
     """P2 regression: Ground truth with float columns or all-NaN Attack must align integer row_ids."""
     labels_csv = tmp_path / "labels_all_nan_attack_and_float.csv"
     labels_csv.write_text(
-        "row_id,Label,Attack,weight\n" "2393,0,,1.5\n" "2394,1,,0.75\n" "2395,0,,2.25\n",
+        "row_id,Label,Attack,weight\n2393,0,,1.5\n2394,1,,0.75\n2395,0,,2.25\n",
         encoding="utf-8",
     )
     preds = [

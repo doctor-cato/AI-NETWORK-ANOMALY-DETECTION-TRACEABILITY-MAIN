@@ -6,14 +6,14 @@ Implements Issue #133 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 import time
-from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, Optional
+
 import numpy as np
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
-from network_anomaly.ml.ood_gate import OODAction, OODRejectionGate
+from network_anomaly.ml.ood_gate import OODRejectionGate
 from network_anomaly.risk.aggregation import (
-    AggregatedDecision,
     AggregationPolicy,
     MultiModelDecisionAggregator,
 )
@@ -43,7 +43,9 @@ class RealtimeInferenceEngine:
         aggregator: Optional[MultiModelDecisionAggregator] = None,
     ):
         self.ood_gate = ood_gate or OODRejectionGate()
-        self.aggregator = aggregator or MultiModelDecisionAggregator(policy=AggregationPolicy.WEIGHTED_ENSEMBLE)
+        self.aggregator = aggregator or MultiModelDecisionAggregator(
+            policy=AggregationPolicy.WEIGHTED_ENSEMBLE
+        )
         self.total_inferences: int = 0
         self.total_anomalies_detected: int = 0
         self.total_ood_events: int = 0
@@ -69,13 +71,12 @@ class RealtimeInferenceEngine:
         # 2. Fast multi-model scoring simulation matching calibrated empirical weights
         # In production, this invokes the joblib / onnx runtime instances
         per_model_lat: Dict[str, float] = {}
-        model_outputs: List[ModelOutput] = []
         raw_model_preds: Dict[str, Dict[str, Any]] = {}
 
         # Synthetic feature proxies
         out_bytes = feature_dict.get("OUT_BYTES", 0.0)
         tcp_flags = feature_dict.get("TCP_FLAGS", 0.0)
-        duration_ms = feature_dict.get("FLOW_DURATION_MILLISECONDS", 0.0)
+        feature_dict.get("FLOW_DURATION_MILLISECONDS", 0.0)
 
         # Baseline heuristic signal for benchmark compatibility
         is_suspicious = (out_bytes > 10_000) or (tcp_flags in (2, 18, 24) and out_bytes > 500)

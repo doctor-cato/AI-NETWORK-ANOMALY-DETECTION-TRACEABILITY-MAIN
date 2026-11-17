@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -64,19 +64,27 @@ class InvestigationReport:
         ]
         for s in self.timeline.stages:
             ev_ref = ", ".join(s.evidence_ids) or "N/A"
-            lines.append(f"| `{s.stage_id}` | **{s.phase.value}** | {s.timestamp} | `{s.source_entity}` | `{s.target_entity}` | {s.title} | `{ev_ref}` |")
+            lines.append(
+                f"| `{s.stage_id}` | **{s.phase.value}** | {s.timestamp} | `{s.source_entity}` | `{s.target_entity}` | {s.title} | `{ev_ref}` |"
+            )
 
-        lines.extend([
-            "",
-            "## 3. Evidence Provenance",
-        ])
+        lines.extend(
+            [
+                "",
+                "## 3. Evidence Provenance",
+            ]
+        )
         for p in self.evidence_provenance:
-            lines.append(f"- Evidence `{p.get('evidence_id')}`: source file `{p.get('source_file')}` (line {p.get('line')}), SHA-256 `{p.get('sha256')}`")
+            lines.append(
+                f"- Evidence `{p.get('evidence_id')}`: source file `{p.get('source_file')}` (line {p.get('line')}), SHA-256 `{p.get('sha256')}`"
+            )
 
-        lines.extend([
-            "",
-            "## 4. Recommended Incident Response Actions",
-        ])
+        lines.extend(
+            [
+                "",
+                "## 4. Recommended Incident Response Actions",
+            ]
+        )
         for act in self.recommended_actions:
             lines.append(f"- [ ] {act}")
 

@@ -1,44 +1,51 @@
 """Unit tests for Trace Engine, Graph, Timeline, and Investigation Report (Issues #110, #111, #112, #113)."""
 
-from datetime import datetime, timezone
-import pytest
-
+from network_anomaly.trace.engine import TraceEngine
 from network_anomaly.trace.graph import (
     AlertDeduplicator,
     EntityKind,
     EntityRelationshipGraph,
     RelationType,
 )
-from network_anomaly.trace.engine import TraceEngine
-from network_anomaly.trace.timeline import AttackPhase, AttackTimelineReconstructor
 from network_anomaly.trace.investigation import InvestigationReportGenerator
+from network_anomaly.trace.timeline import AttackPhase, AttackTimelineReconstructor
 
 
 def test_entity_graph_and_deduplication():
     graph = EntityRelationshipGraph()
-    n_attacker = graph.add_node("198.51.100.10", EntityKind.IP, "Attacker IP")
-    n_victim = graph.add_node("10.0.0.5", EntityKind.IP, "Web Server")
-    n_port = graph.add_node("port:443", EntityKind.PORT, "HTTPS Port")
+    graph.add_node("198.51.100.10", EntityKind.IP, "Attacker IP")
+    graph.add_node("10.0.0.5", EntityKind.IP, "Web Server")
+    graph.add_node("port:443", EntityKind.PORT, "HTTPS Port")
 
-    edge1 = graph.add_edge("198.51.100.10", "10.0.0.5", RelationType.CONNECTS_TO, confidence=1.0, is_observed=True)
-    edge2 = graph.add_edge("10.0.0.5", "port:443", RelationType.CONNECTS_TO, confidence=1.0, is_observed=True)
+    graph.add_edge(
+        "198.51.100.10", "10.0.0.5", RelationType.CONNECTS_TO, confidence=1.0, is_observed=True
+    )
+    graph.add_edge(
+        "10.0.0.5", "port:443", RelationType.CONNECTS_TO, confidence=1.0, is_observed=True
+    )
 
     assert len(graph.nodes) == 3
     assert len(graph.edges) == 2
 
     # Deduplicator
     dedup = AlertDeduplicator(window_seconds=10.0)
-    emit1, count1 = dedup.should_emit("198.51.100.10", "10.0.0.5", "Exploit", current_timestamp=100.0)
+    emit1, count1 = dedup.should_emit(
+        "198.51.100.10", "10.0.0.5", "Exploit", current_timestamp=100.0
+    )
     assert emit1 is True
     assert count1 == 1
 
     # Immediate second alert within 10s: suppressed
-    emit2, count2 = dedup.should_emit("198.51.100.10", "10.0.0.5", "Exploit", current_timestamp=105.0)
+    emit2, count2 = dedup.should_emit(
+        "198.51.100.10", "10.0.0.5", "Exploit", current_timestamp=105.0
+    )
     assert emit2 is False
     assert count2 == 2
 
     # Alert after window: emitted
-    emit3, count3 = dedup.should_emit("198.51.100.10", "10.0.0.5", "Exploit", current_timestamp=115.0)
+    emit3, count3 = dedup.should_emit(
+        "198.51.100.10", "10.0.0.5", "Exploit", current_timestamp=115.0
+    )
     assert emit3 is True
     assert count3 == 3
 
@@ -48,7 +55,9 @@ def test_trace_engine_traversal():
     # Chain: A -> B -> C -> D
     graph.add_edge("host-A", "host-B", RelationType.CONNECTS_TO, is_observed=True)
     graph.add_edge("host-B", "host-C", RelationType.CONNECTS_TO, is_observed=True)
-    graph.add_edge("host-C", "host-D", RelationType.SIMILAR_BEHAVIOR, is_observed=False, confidence=0.88)
+    graph.add_edge(
+        "host-C", "host-D", RelationType.SIMILAR_BEHAVIOR, is_observed=False, confidence=0.88
+    )
 
     engine = TraceEngine(graph, max_depth=3)
     trace_res = engine.trace("host-A")
@@ -129,7 +138,12 @@ def test_investigation_report_generation():
         root_cause_summary="SQL injection attempt exploited unauthenticated endpoint.",
         timeline=timeline,
         evidence_records=[
-            {"evidence_id": "ev-01", "source_file": "flows.csv", "line": 42, "sha256": "abcdef123456"}
+            {
+                "evidence_id": "ev-01",
+                "source_file": "flows.csv",
+                "line": 42,
+                "sha256": "abcdef123456",
+            }
         ],
     )
 

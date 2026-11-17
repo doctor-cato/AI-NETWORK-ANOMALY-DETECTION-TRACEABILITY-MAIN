@@ -1,11 +1,10 @@
 """Unit tests for Risk Scoring and Multi-Model Aggregation (Issues #108, #109)."""
 
-import pytest
-from network_anomaly.risk.scoring import RiskScorer, SeverityLevel
 from network_anomaly.risk.aggregation import (
     AggregationPolicy,
     MultiModelDecisionAggregator,
 )
+from network_anomaly.risk.scoring import RiskScorer, SeverityLevel
 
 
 def test_risk_scoring_severity_calibration():

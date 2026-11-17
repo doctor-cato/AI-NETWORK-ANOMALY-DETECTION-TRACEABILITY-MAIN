@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import socket
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,7 +19,6 @@ from network_anomaly.canonical.event import (
     RawProvenance,
     ValidationStatus,
 )
-
 
 PCAP_MAGIC_MICROSECONDS = 0xA1B2C3D4
 PCAP_MAGIC_NANOSECONDS = 0xA1B23C4D
@@ -90,7 +89,10 @@ class LocalPCAPReader:
             with open(pcap_path, "rb") as f:
                 header = f.read(24)
                 if len(header) < 24:
-                    return [], {"status": "ERROR", "reason": "PCAP file smaller than 24-byte global header"}
+                    return [], {
+                        "status": "ERROR",
+                        "reason": "PCAP file smaller than 24-byte global header",
+                    }
 
                 magic = struct.unpack("!I", header[:4])[0]
                 is_little_endian = magic in (PCAP_MAGIC_SWAPPED, 0x4D3CB2A1)
@@ -118,7 +120,11 @@ class LocalPCAPReader:
                         summary["valid_ip_packets"] += 1
 
         except Exception as e:
-            return [], {"status": "CORRUPT_PCAP", "reason": str(e), "packets_recovered": len(packets)}
+            return [], {
+                "status": "CORRUPT_PCAP",
+                "reason": str(e),
+                "packets_recovered": len(packets),
+            }
 
         # Aggregate packets into flows by 5-tuple
         flow_table: Dict[Tuple, FlowAccumulator] = {}
@@ -181,7 +187,9 @@ class LocalPCAPReader:
         summary["status"] = "SUCCESS"
         return events, summary
 
-    def _parse_ethernet_ip_packet(self, data: bytes, timestamp_sec: float) -> Optional[PacketMetadata]:
+    def _parse_ethernet_ip_packet(
+        self, data: bytes, timestamp_sec: float
+    ) -> Optional[PacketMetadata]:
         # Minimal Ethernet (14B) + IPv4 (20B) parser
         if len(data) < 34:
             return None

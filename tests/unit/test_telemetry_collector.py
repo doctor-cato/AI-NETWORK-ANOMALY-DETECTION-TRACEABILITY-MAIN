@@ -3,13 +3,10 @@
 Validates Issues #128, #129, #130 for NetFlow Sentinel v2.0.
 """
 
-import json
 import struct
 import tempfile
 from pathlib import Path
-import pytest
 
-from network_anomaly.canonical.event import EventKind
 from network_anomaly.telemetry.collector import NetFlowIPFIXDecoder
 from network_anomaly.telemetry.log_tailer import LiveLogTailer
 from network_anomaly.telemetry.pcap_reader import LocalPCAPReader
@@ -61,8 +58,12 @@ class TestLocalPCAPReader:
 
 class TestLiveLogTailer:
     def test_tail_and_offset_persistence(self):
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".log", delete=False, encoding="utf-8") as tmp:
-            tmp.write('192.168.1.100 - - [05/Nov/2020:08:00:00 +0000] "GET /test HTTP/1.1" 200 120 "-" "-"\n')
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".log", delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp.write(
+                '192.168.1.100 - - [05/Nov/2020:08:00:00 +0000] "GET /test HTTP/1.1" 200 120 "-" "-"\n'
+            )
             tmp_path = Path(tmp.name)
 
         state_path = tmp_path.with_suffix(".state.json")
@@ -79,7 +80,9 @@ class TestLiveLogTailer:
 
             # Append new line
             with open(tmp_path, "a", encoding="utf-8") as f:
-                f.write('192.168.1.105 - - [05/Nov/2020:08:00:05 +0000] "POST /api HTTP/1.1" 200 450 "-" "-"\n')
+                f.write(
+                    '192.168.1.105 - - [05/Nov/2020:08:00:05 +0000] "POST /api HTTP/1.1" 200 450 "-" "-"\n'
+                )
 
             events_3 = tailer.tail_available_events()
             assert len(events_3) == 1

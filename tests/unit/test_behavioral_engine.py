@@ -1,22 +1,22 @@
 """Unit and benchmark tests for Behavioral Vector Engine (Issues #101, #102, #103, #104)."""
 
 from datetime import datetime, timedelta, timezone
-import pytest
-import numpy as np
 
+import numpy as np
+import pytest
+
+from network_anomaly.behavioral.correlation import IPSpoofingSessionCorrelator
+from network_anomaly.behavioral.sessionizer import EventSessionizer
+from network_anomaly.behavioral.similarity import (
+    BehavioralSimilarityCalculator,
+)
+from network_anomaly.behavioral.vector import BehavioralVectorBuilder
 from network_anomaly.canonical.event import (
     CanonicalSecurityEvent,
     EventKind,
     FlowMetrics,
     RawProvenance,
 )
-from network_anomaly.behavioral.sessionizer import EventSessionizer
-from network_anomaly.behavioral.vector import BehavioralVectorBuilder
-from network_anomaly.behavioral.similarity import (
-    BehavioralSimilarityCalculator,
-    SimilarityMetric,
-)
-from network_anomaly.behavioral.correlation import IPSpoofingSessionCorrelator
 
 
 def test_sessionization_and_vector_construction():

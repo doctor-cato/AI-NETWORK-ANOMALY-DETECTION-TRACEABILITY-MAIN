@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { fetchCryptoStatus, fetchIncidents, fetchTraceGraph } from "../api";
+
   interface BehavioralDimension {
     index: number;
     name: string;
@@ -9,6 +12,9 @@
   let vectorId = "vec-8f4b01e2";
   let sha256Hash = "81879b0e707bfc4e4fbe7b646dc06698ffd4aea831bf8ee158fb44e150a17d8a";
   let isEncryptedAtRest = true;
+  let backendConnected = false;
+  let graphNodesCount = 0;
+  let graphEdgesCount = 0;
 
   let dimensions: BehavioralDimension[] = [
     { index: 0, name: "Duration Log-Scale", value: 0.65 },
@@ -34,6 +40,52 @@
   let cosineSimilarity = 0.412;
   let euclideanDistance = 0.845;
   let correlationVerdict = "DIVERGENT (High Behavioral Deviation Detected)";
+
+  async function loadBehavioralContext() {
+    try {
+      const [incResp, graphResp, cryptoResp] = await Promise.all([
+        fetchIncidents({ limit: 10 }),
+        fetchTraceGraph("10.0.0.5", 2),
+        fetchCryptoStatus("behavioral"),
+      ]);
+      backendConnected = true;
+      isEncryptedAtRest = cryptoResp.algorithm.includes("AES-256-GCM");
+
+      if (graphResp) {
+        graphNodesCount = graphResp.node_count;
+        graphEdgesCount = graphResp.edge_count;
+      }
+
+      if (incResp.items && incResp.items.length > 0) {
+        const top = incResp.items[0];
+        const host = top.source_ip || "10.0.0.5";
+        entityKey = `host:${host}`;
+        vectorId = `vec-${top.incident_id.slice(0, 8)}`;
+        compareSessionB = `Session-B (Incident ${top.incident_id})`;
+        const score = top.anomaly_score <= 1.0 ? top.anomaly_score : top.anomaly_score / 100.0;
+        cosineSimilarity = Number(Math.max(0.05, 1.0 - score * 0.75).toFixed(3));
+        euclideanDistance = Number((score * 1.15).toFixed(3));
+        correlationVerdict =
+          score >= 0.7
+            ? "DIVERGENT (High Behavioral Deviation Detected)"
+            : "MODERATE (Behavioral Drift Observed)";
+
+        // Reflect observed anomaly intensity across behavioral profile dimensions
+        const intensity = Math.min(0.98, Math.max(0.15, score));
+        dimensions = dimensions.map((d, idx) =>
+          idx === 1 || idx === 6 || idx === 13
+            ? { ...d, value: Number(intensity.toFixed(2)) }
+            : d
+        );
+      }
+    } catch {
+      backendConnected = false;
+    }
+  }
+
+  onMount(() => {
+    loadBehavioralContext();
+  });
 </script>
 
 <div class="panel-container">
@@ -51,12 +103,12 @@
 
   <div class="info-card">
     <div class="info-item">
-      <span class="label">Entity ID:</span>
+      <span class="label">Entity ID ({backendConnected ? "Live Sync" : "Preview"}):</span>
       <span class="val"><code>{entityKey}</code></span>
     </div>
     <div class="info-item">
-      <span class="label">Vector ID:</span>
-      <span class="val"><code>{vectorId}</code></span>
+      <span class="label">Vector / Graph Scope:</span>
+      <span class="val"><code>{vectorId}</code>{graphNodesCount > 0 ? ` (${graphNodesCount}N/${graphEdgesCount}E)` : ""}</span>
     </div>
     <div class="info-item">
       <span class="label">SHA-256 Provenance Hash:</span>

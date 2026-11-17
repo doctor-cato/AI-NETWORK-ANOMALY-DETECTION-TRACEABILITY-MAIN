@@ -7,102 +7,190 @@ Implements Issue #137 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 import json
+import socket
+import struct
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, FlowMetrics, RawProvenance
+from network_anomaly.canonical.event import (
+    CanonicalSecurityEvent,
+    RawProvenance,
+)
 from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
-from network_anomaly.telemetry.modes import ModeOrchestrator, MonitoringMode
-
+from network_anomaly.telemetry.collector import NetFlowIPFIXDecoder
+from network_anomaly.telemetry.modes import ModeOrchestrator
 
 OUTPUT_JSON = Path("reports/acceptance/lab_acceptance_report.json")
 OUTPUT_MD = Path("docs/telemetry/AUTHORIZED_LAB_ACCEPTANCE.md")
 
 
+def _build_netflow_v9_packet(flows: List[Dict[str, Any]], template_id: int = 256) -> bytes:
+    """Construct real NetFlow v9 binary packet containing Template FlowSet and Data FlowSet."""
+    fields = [
+        (8, 4),  # IPV4_SRC_ADDR
+        (12, 4),  # IPV4_DST_ADDR
+        (7, 2),  # L4_SRC_PORT
+        (11, 2),  # L4_DST_PORT
+        (4, 1),  # PROTOCOL
+        (1, 4),  # IN_BYTES
+        (23, 4),  # OUT_BYTES
+        (2, 4),  # IN_PKTS
+        (24, 4),  # OUT_PKTS
+        (6, 1),  # TCP_FLAGS
+    ]
+    template_data = struct.pack("!HH", template_id, len(fields))
+    for ftype, flen in fields:
+        template_data += struct.pack("!HH", ftype, flen)
+    tmpl_flowset = struct.pack("!HH", 0, 4 + len(template_data)) + template_data
+
+    record_bytes = bytearray()
+    for f in flows:
+        src_ip_bytes = socket.inet_aton(f["src_ip"])
+        dst_ip_bytes = socket.inet_aton(f["dst_ip"])
+        proto_num = 6 if f.get("protocol") == "TCP" else (17 if f.get("protocol") == "UDP" else 6)
+        record = (
+            src_ip_bytes
+            + dst_ip_bytes
+            + struct.pack(
+                "!HHBIIIIB",
+                f["src_port"],
+                f["dest_port"],
+                proto_num,
+                f["bytes_in"],
+                f["bytes_out"],
+                f["pkts_in"],
+                f["pkts_out"],
+                f["tcp_flags"],
+            )
+        )
+        record_bytes.extend(record)
+
+    pad_len = (4 - (len(record_bytes) % 4)) % 4
+    if pad_len:
+        record_bytes.extend(b"\x00" * pad_len)
+
+    data_flowset = struct.pack("!HH", template_id, 4 + len(record_bytes)) + bytes(record_bytes)
+    hdr = struct.pack("!HHIIII", 9, 2, 1000, 1700000000, 1, 1)
+    return hdr + tmpl_flowset + data_flowset
+
+
 def run_lab_acceptance_scenario() -> Dict[str, Any]:
-    """Execute end-to-end multi-source scenario verifying all live telemetry subsystems."""
+    """Execute end-to-end multi-source scenario verifying all live telemetry subsystems over loopback UDP."""
     print("Initializing Live System Orchestrator in Authorized Lab Scope...")
     orchestrator = LiveSystemOrchestrator()
     contract = get_baseline_47_feature_contract()
+    decoder = NetFlowIPFIXDecoder()
 
-    # Synthetic Multi-Stage APT Attack in Authorized Lab Subnet (192.168.1.0/24)
-    # Stage 1: Port Scan (Reconnaissance)
-    # Stage 2: Web Exploit on Apache (Initial Access)
-    # Stage 3: SSH Brute-force & Privilege Escalation (Lateral Movement)
-    # Stage 4: DNS Tunneling Exfiltration (Exfiltration) -> Critical Risk >= 85
-
-    base_time = datetime(2026, 11, 17, 10, 0, 0, tzinfo=timezone.utc)
-    scenarios = [
-        # 1. Benign background flow
-        CanonicalSecurityEvent(
-            event_timestamp=base_time,
-            event_kind=EventKind.FLOW,
-            source_id="lab:collector:192.168.1.100",
-            entity_id="host:192.168.1.100",
-            source_ip="192.168.1.100",
-            source_port=52341,
-            dest_ip="192.168.1.10",
-            dest_port=80,
-            protocol="TCP",
-            flow_metrics=FlowMetrics(duration_ms=120.0, bytes_in=1500, bytes_out=4200, pkts_in=10, pkts_out=12, tcp_flags=24),
-            raw_provenance=RawProvenance(source_file="lab_netflow.dat", adapter_name="LabNetFlowCollector"),
-            is_ml_complete=True,
-            ml_features={k: 1.0 for k in contract.feature_names},
-        ),
-        # 2. Stage 1: Reconnaissance Scan
-        CanonicalSecurityEvent(
-            event_timestamp=datetime(2026, 11, 17, 10, 0, 5, tzinfo=timezone.utc),
-            event_kind=EventKind.FLOW,
-            source_id="lab:collector:192.168.1.105",
-            entity_id="host:192.168.1.105",
-            source_ip="192.168.1.105",
-            source_port=44122,
-            dest_ip="192.168.1.10",
-            dest_port=80,
-            protocol="TCP",
-            flow_metrics=FlowMetrics(duration_ms=15.0, bytes_in=350, bytes_out=120, pkts_in=4, pkts_out=3, tcp_flags=2),
-            raw_provenance=RawProvenance(source_file="lab_netflow.dat", adapter_name="LabNetFlowCollector"),
-            is_ml_complete=True,
-            ml_features={k: 2.0 for k in contract.feature_names},
-        ),
-        # 3. Stage 2: Web Exploit on Apache
-        CanonicalSecurityEvent(
-            event_timestamp=datetime(2026, 11, 17, 10, 0, 10, tzinfo=timezone.utc),
-            event_kind=EventKind.FLOW,
-            source_id="lab:collector:192.168.1.105",
-            entity_id="host:192.168.1.105",
-            source_ip="192.168.1.105",
-            source_port=44124,
-            dest_ip="192.168.1.10",
-            dest_port=80,
-            protocol="TCP",
-            flow_metrics=FlowMetrics(duration_ms=50.0, bytes_in=8900, bytes_out=25000, pkts_in=25, pkts_out=30, tcp_flags=24),
-            raw_provenance=RawProvenance(source_file="lab_netflow.dat", adapter_name="LabNetFlowCollector"),
-            is_ml_complete=True,
-            ml_features={k: 1000.0 for k in contract.feature_names},
-        ),
-        # 4. Stage 4: Critical Data Exfiltration (> 85 Risk -> Triggers Adaptive Key Rotation)
-        CanonicalSecurityEvent(
-            event_timestamp=datetime(2026, 11, 17, 10, 0, 20, tzinfo=timezone.utc),
-            event_kind=EventKind.FLOW,
-            source_id="lab:collector:192.168.1.10",
-            entity_id="host:192.168.1.10",
-            source_ip="192.168.1.10",
-            source_port=51234,
-            dest_ip="198.51.100.5",
-            dest_port=445,
-            protocol="TCP",
-            flow_metrics=FlowMetrics(duration_ms=300.0, bytes_in=5000, bytes_out=150000, pkts_in=20, pkts_out=200, tcp_flags=24),
-            raw_provenance=RawProvenance(source_file="lab_netflow.dat", adapter_name="LabNetFlowCollector"),
-            is_ml_complete=True,
-            ml_features={k: 50000.0 for k in contract.feature_names},
-        ),
+    # Define 4-stage APT attack scenario in Authorized Lab Subnet (192.168.1.0/24)
+    lab_flows = [
+        {
+            "src_ip": "192.168.1.100",
+            "dst_ip": "192.168.1.10",
+            "src_port": 52341,
+            "dest_port": 80,
+            "protocol": "TCP",
+            "bytes_in": 1500,
+            "bytes_out": 4200,
+            "pkts_in": 10,
+            "pkts_out": 12,
+            "tcp_flags": 24,
+            "ml_scale": 1.0,
+        },
+        {
+            "src_ip": "192.168.1.105",
+            "dst_ip": "192.168.1.10",
+            "src_port": 44122,
+            "dest_port": 80,
+            "protocol": "TCP",
+            "bytes_in": 350,
+            "bytes_out": 120,
+            "pkts_in": 4,
+            "pkts_out": 3,
+            "tcp_flags": 2,
+            "ml_scale": 2.0,
+        },
+        {
+            "src_ip": "192.168.1.105",
+            "dst_ip": "192.168.1.10",
+            "src_port": 44124,
+            "dest_port": 80,
+            "protocol": "TCP",
+            "bytes_in": 8900,
+            "bytes_out": 25000,
+            "pkts_in": 25,
+            "pkts_out": 30,
+            "tcp_flags": 24,
+            "ml_scale": 1000.0,
+        },
+        {
+            "src_ip": "192.168.1.10",
+            "dst_ip": "198.51.100.5",
+            "src_port": 51234,
+            "dest_port": 445,
+            "protocol": "TCP",
+            "bytes_in": 5000,
+            "bytes_out": 150000,
+            "pkts_in": 20,
+            "pkts_out": 200,
+            "tcp_flags": 24,
+            "ml_scale": 50000.0,
+        },
     ]
 
+    # Transmit over real OS UDP socket on loopback
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_sock.bind(("127.0.0.1", 0))
+    server_sock.settimeout(2.0)
+    server_port = server_sock.getsockname()[1]
+
+    client_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    t_start = time.perf_counter()
+    packet = _build_netflow_v9_packet(lab_flows)
+    client_sock.sendto(packet, ("127.0.0.1", server_port))
+
+    raw_data, addr = server_sock.recvfrom(65535)
+    server_sock.close()
+    client_sock.close()
+
+    # Decode binary NetFlow v9 datagram
+    decoded_events = decoder.decode_datagram(raw_data, exporter_ip=addr[0], exporter_port=addr[1])
+    assert len(decoded_events) == 4, f"Expected 4 decoded flows from UDP, got {len(decoded_events)}"
+
+    # Enrich ML features and map scales
+    enriched_events: List[CanonicalSecurityEvent] = []
+    for ev, flow_spec in zip(decoded_events, lab_flows):
+        enriched = CanonicalSecurityEvent(
+            event_timestamp=datetime.now(timezone.utc),
+            event_kind=ev.event_kind,
+            source_id=ev.source_id,
+            entity_id=ev.entity_id,
+            source_ip=ev.source_ip,
+            source_port=ev.source_port,
+            dest_ip=ev.dest_ip,
+            dest_port=ev.dest_port,
+            protocol=ev.protocol,
+            flow_metrics=ev.flow_metrics,
+            raw_provenance=RawProvenance(
+                source_file=f"udp://{addr[0]}:{addr[1]}",
+                adapter_name="NetFlowUDPCollector",
+            ),
+            is_ml_complete=True,
+            ml_features={k: flow_spec["ml_scale"] for k in contract.feature_names},
+        )
+        enriched_events.append(enriched)
+
+    # Process through LiveSystemOrchestrator
     mode_orchestrator = ModeOrchestrator(orchestrator=orchestrator)
-    summary = mode_orchestrator.run_replay_scenario(scenarios, source_name="authorized_lab_scenario")
+    summary = mode_orchestrator.run_replay_scenario(
+        enriched_events, source_name="authorized_lab_udp_loopback"
+    )
+    t_end = time.perf_counter()
+    elapsed_total = round(max(0.001, t_end - t_start), 4)
+    throughput = round(len(enriched_events) / elapsed_total, 2)
 
     results = {
         "acceptance_title": "NetFlow Sentinel v2.0 Authorized Lab E2E Acceptance",
@@ -120,8 +208,9 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
         },
         "performance_metrics": {
             "total_events_processed": summary.total_events_processed,
-            "throughput_events_per_sec": summary.throughput_events_per_sec,
-            "elapsed_seconds": summary.elapsed_seconds,
+            "throughput_events_per_sec": throughput,
+            "elapsed_seconds": elapsed_total,
+            "udp_socket_loopback_verified": True,
             "status": "ACCEPTED",
         },
         "governance_compliance": {
@@ -138,10 +227,10 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
     # Markdown Report
     md_content = f"""# Biên Bản Nghiệm Thu Mạng Lab Được Cấp Phép (Authorized Lab E2E Acceptance)
 
-**Mã tài liệu:** `ACCEPTANCE-LAB-V2-001`  
-**Milestone:** `M6.6 (Real-world Network Telemetry & Live Streaming)`  
-**Issue:** `#137`  
-**Trạng thái:** **`ACCEPTED & FULLY VERIFIED`**  
+**Mã tài liệu:** `ACCEPTANCE-LAB-V2-001`
+**Milestone:** `M6.6 (Real-world Network Telemetry & Live Streaming)`
+**Issue:** `#137`
+**Trạng thái:** **`ACCEPTED & FULLY VERIFIED`**
 
 ---
 
@@ -150,7 +239,7 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
 - **Hệ thống:** NetFlow Sentinel v2.0.0
 - **Phạm vi mạng Lab:** Dải địa chỉ mạng riêng RFC 1918 (`192.168.1.0/24`) và Loopback ảo hóa.
 - **Kịch bản kiểm chuẩn:** Tái hiện đợt tấn công nhiều giai đoạn (Multi-stage APT Attack): Quét cổng $\to$ Tấn công dịch vụ Web $\to$ Leo thang đặc quyền $\to$ Trích xuất dữ liệu dung lượng lớn qua DNS tunneling.
-- **Ngày nghiệm thu:** `{results['tested_at_utc']}`
+- **Ngày nghiệm thu:** `{results["tested_at_utc"]}`
 
 ---
 

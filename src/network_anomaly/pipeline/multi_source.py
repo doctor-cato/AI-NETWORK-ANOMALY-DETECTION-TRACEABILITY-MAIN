@@ -5,15 +5,11 @@ Implements Issue #93 for NetFlow Sentinel v2.0.
 
 from __future__ import annotations
 
-import csv
-import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, ValidationStatus
-from network_anomaly.data.quality_gate import MultiSourceQualityGate, QualityReport
+from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind
+from network_anomaly.data.quality_gate import MultiSourceQualityGate
 from network_anomaly.ingestion.adapters.v2_adapter import (
     ApplicationDNSAdapter,
     ApplicationWebAdapter,
@@ -83,7 +79,9 @@ class MultiSourcePipeline:
         # 1. Adapt Flow records
         if flow_records:
             for idx, r in enumerate(flow_records):
-                ev = self.netflow_adapter.adapt_record(r, filename="netflow_source.csv", line_idx=idx + 1)
+                ev = self.netflow_adapter.adapt_record(
+                    r, filename="netflow_source.csv", line_idx=idx + 1
+                )
                 all_events.append(ev)
                 flow_events.append(ev)
 
@@ -118,7 +116,9 @@ class MultiSourcePipeline:
                 log_events.append(ev)
 
         # Quality Gate validation
-        q_report = self.quality_gate.evaluate_events(all_events, source_id="multi_source_orchestration")
+        q_report = self.quality_gate.evaluate_events(
+            all_events, source_id="multi_source_orchestration"
+        )
         if q_report.status == "FAIL" and fail_closed:
             raise ValueError(f"Multi-source Quality Gate REJECTED: {q_report.rejection_reason}")
 

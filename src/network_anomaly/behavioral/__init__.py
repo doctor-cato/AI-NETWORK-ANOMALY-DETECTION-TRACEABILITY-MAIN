@@ -4,10 +4,10 @@ Provides sessionization, 16-D behavioral vector construction, profiling,
 and IP-independent session correlation. (Milestone M6.3).
 """
 
-from .sessionizer import EventSessionizer, SessionSummary
-from .vector import BehavioralVector, BehavioralVectorBuilder
-from .similarity import BehavioralSimilarityCalculator, SimilarityMetric
 from .correlation import IPSpoofingSessionCorrelator
+from .sessionizer import EventSessionizer, SessionSummary
+from .similarity import BehavioralSimilarityCalculator, SimilarityMetric
+from .vector import BehavioralVector, BehavioralVectorBuilder
 
 __all__ = [
     "EventSessionizer",

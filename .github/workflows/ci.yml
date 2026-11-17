@@ -2,13 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, feat/v2-integration]
+    branches: [main]
   pull_request:
     branches: [main, feat/v2-integration]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/feat/v2-integration' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   lint:
@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install quality tools
-        run: python -m pip install --prefer-binary ruff black
+        run: python -m pip install --prefer-binary "ruff==0.17.5" "black==26.10.1"
       - name: Ruff
         run: python -m ruff check src scripts tests
       - name: Black
@@ -70,8 +70,10 @@ jobs:
       - name: Check environment
         run: python scripts/check_environment.py
       - name: Check OpenAPI & API contract sync
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/export_openapi_spec.py --check
       - name: Verify distribution governance & attribution notices
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
       - name: Check syntax
         run: python -m compileall -q src scripts tests
@@ -81,18 +83,25 @@ jobs:
       - name: Unit + integration tests
         run: python -m pytest tests -q --tb=short
       - name: Verify AIT multi-source dataset manifest & checksums
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/fetch_multi_source_dataset.py --verify-only
       - name: Validate live telemetry & authorized lab acceptance
+        if: matrix.python-version == '3.12'
         run: python scripts/run_live_lab_acceptance.py
       - name: Verify full system performance benchmark
+        if: matrix.python-version == '3.12'
         run: python scripts/benchmark_full_system.py
       - name: Validate NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/validate_data.py
       - name: Exploratory analysis of NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/eda_nf_unsw_nb15_v3.py
       - name: EDA reproducibility check — SKIPPED if raw package is absent
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/verify_eda_reproducibility.py
       - name: Preprocess NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/preprocess_nf_unsw_nb15_v3.py
 
   desktop-frontend:

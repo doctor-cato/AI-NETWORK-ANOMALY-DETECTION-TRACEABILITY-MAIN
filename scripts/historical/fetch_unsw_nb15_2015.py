@@ -161,8 +161,7 @@ def cache_is_valid(target, expected):
         print(f"[fetch_unsw_nb15] CACHE_INVALID: {target.name}: {error}")
         return False
     print(
-        f"[fetch_unsw_nb15] CACHE_HIT: {target.name} "
-        f"bytes={expected['size_bytes']} sha256={digest}"
+        f"[fetch_unsw_nb15] CACHE_HIT: {target.name} bytes={expected['size_bytes']} sha256={digest}"
     )
     return True
 
@@ -448,7 +447,7 @@ def destination_lock(destination, timeout=None, poll=None):
                     announced = True
                 if time.monotonic() >= deadline:
                     raise OSError(
-                        f"gave up waiting {timeout}s for {lock.name}; " f"another fetch is running"
+                        f"gave up waiting {timeout}s for {lock.name}; another fetch is running"
                     ) from None
                 time.sleep(poll)
         yield lock

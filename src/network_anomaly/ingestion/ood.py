@@ -202,7 +202,7 @@ class OODValidator:
                 zero_ttl_indices = [int(i) for i in np.where(zero_mask.values)[0]]
                 flags.append(
                     f"Domain telemetry shift: {zero_ttl_count}/{n_rows} rows "
-                    f"({zero_ttl_ratio*100:.1f}%) have MIN_TTL=0 (unobserved initial TTL). "
+                    f"({zero_ttl_ratio * 100:.1f}%) have MIN_TTL=0 (unobserved initial TTL). "
                     "Anti-imputation policy: Synthetic filling prohibited."
                 )
                 if self.reject_zero_ttl:
@@ -219,7 +219,7 @@ class OODValidator:
                     drift_idx = valid_ttl.index[drift_mask_series]
                     drift_indices = [int(i) for i in drift_idx]
                     flags.append(
-                        f"Shortcut shift: {drift_count}/{n_rows} rows ({drift_ratio*100:.1f}%) "
+                        f"Shortcut shift: {drift_count}/{n_rows} rows ({drift_ratio * 100:.1f}%) "
                         f"have MIN_TTL outside UNSW-NB15 lab generator shortcuts (31/62/254/255). "
                         "Heuristic drift indicator; not an RFC 791 violation."
                     )

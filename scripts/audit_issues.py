@@ -4,6 +4,7 @@ import sys
 with open("docs/v2_issues_audit.json", "r", encoding="utf-8") as f:
     issues = json.load(f)
 
+
 def print_issue(num):
     iss = issues.get(str(num))
     if not iss:
@@ -11,7 +12,7 @@ def print_issue(num):
         return
     print("=" * 60)
     print(f"ISSUE #{num}: {iss['title']}")
-    print(f"Labels: {[l['name'] for l in iss.get('labels', [])]}")
+    print(f"Labels: {[lbl['name'] for lbl in iss.get('labels', [])]}")
     print(f"Milestone: {iss.get('milestone', {}).get('title') if iss.get('milestone') else None}")
     print("-" * 60)
     body = iss.get("body", "")
@@ -20,7 +21,16 @@ def print_issue(num):
     for line in lines:
         if line.startswith("## "):
             sec = line.strip()
-            if any(k in sec.lower() for k in ["mục tiêu", "expected deliverables", "acceptance criteria", "dependencies", "thiết kế"]):
+            if any(
+                k in sec.lower()
+                for k in [
+                    "mục tiêu",
+                    "expected deliverables",
+                    "acceptance criteria",
+                    "dependencies",
+                    "thiết kế",
+                ]
+            ):
                 in_section = True
                 print(f"\n{line}")
             else:
@@ -29,8 +39,8 @@ def print_issue(num):
             print(line)
     print("\n")
 
+
 if __name__ == "__main__":
     ids = [int(x) for x in sys.argv[1:]] if len(sys.argv) > 1 else [76, 77, 78, 79, 80, 81, 155]
     for i in ids:
         print_issue(i)
-

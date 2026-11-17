@@ -10,7 +10,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict
 
 import numpy as np
 
@@ -79,7 +79,9 @@ class ThresholdCalibrator:
 
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-            f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+            f1 = (
+                (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+            )
             fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
             tpr = recall
             youden_j = tpr - fpr

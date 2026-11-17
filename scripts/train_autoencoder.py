@@ -1521,7 +1521,7 @@ def generate_markdown_report(
             f"- Target FPR: `{threshold_meta.get('target_fpr')}` "
             f"(Empirical Val FPR: `{threshold_meta.get('empirical_val_fpr'):.4f}`)"
         ),
-        ("- Configured unknown attack categories: " f"`{configured_unknown}`"),
+        (f"- Configured unknown attack categories: `{configured_unknown}`"),
         f"- Dataset SHA-256: `{training_meta.get('dataset_sha256', 'N/A')}`",
         f"- Split manifest SHA-256: `{training_meta.get('split_manifest_sha256', 'N/A')}`",
         f"- Train partition indices SHA-256: `{part_hashes.get('train', 'N/A')}`",

@@ -184,7 +184,7 @@ class StreamingChunkParser:
                     except json.JSONDecodeError as err:
                         if self.fail_on_malformed:
                             raise FormatInvalidError(
-                                f"Malformed JSONL at line {record_idx+1}: {err}"
+                                f"Malformed JSONL at line {record_idx + 1}: {err}"
                             )
                     if len(chunk_records) >= self.chunk_size:
                         yield [

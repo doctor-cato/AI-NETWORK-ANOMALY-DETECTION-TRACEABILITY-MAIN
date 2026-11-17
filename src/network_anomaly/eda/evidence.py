@@ -536,13 +536,13 @@ def render_comparison_report(comparison: dict, left: dict, right: dict) -> str:
     ]
     return f"""# NF-UNSW-NB15-v3 EDA reproducibility comparison
 
-**Overall result: {summary_comparison['overall']}** (summary content) /
-{evidence_comparison['overall']} (run evidence)
+**Overall result: {summary_comparison["overall"]}** (summary content) /
+{evidence_comparison["overall"]} (run evidence)
 Two independent executions of `scripts/eda_nf_unsw_nb15_v3.py` on the same verified
 source file are compared here. The comparison walks both machine-readable summaries and
 reports PASS or FAIL per metric. Only the metadata that is allowed to differ between two
 runs of the same command is excluded: the run timestamp
-(`{', '.join(EXCLUDED_COMPARISON_PATHS)}`) and the environment description.
+(`{", ".join(EXCLUDED_COMPARISON_PATHS)}`) and the environment description.
 
 ## Run identity
 
@@ -570,7 +570,7 @@ runs of the same command is excluded: the run timestamp
 
 ## Key aggregates observed in both runs
 
-| Aggregate | {left['label']} | {right['label']} |
+| Aggregate | {left["label"]} | {right["label"]} |
 |---|---|---|
 {chr(10).join(aggregate_rows)}
 

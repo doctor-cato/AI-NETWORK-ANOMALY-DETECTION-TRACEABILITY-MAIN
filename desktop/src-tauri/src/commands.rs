@@ -403,6 +403,93 @@ pub async fn export_security_simulation(
     .await
 }
 
+fn encode_query_component(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", byte)),
+        }
+    }
+    out
+}
+
+#[tauri::command]
+pub async fn fetch_crypto_status(
+    backend: State<'_, BackendManager>,
+    domain: Option<String>,
+) -> Result<Value, String> {
+    let dom = domain.unwrap_or_else(|| "general".to_string());
+    let path = format!(
+        "/api/v1/crypto/status?domain={}",
+        encode_query_component(&dom)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_trace_timeline(
+    backend: State<'_, BackendManager>,
+    campaign_name: Option<String>,
+) -> Result<Value, String> {
+    let camp = campaign_name.unwrap_or_else(|| "APT-Campaign-01".to_string());
+    let path = format!(
+        "/api/v1/trace/timeline?campaign_name={}",
+        encode_query_component(&camp)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_trace_graph(
+    backend: State<'_, BackendManager>,
+    entity_id: Option<String>,
+    depth: Option<u32>,
+) -> Result<Value, String> {
+    let ent = entity_id.unwrap_or_else(|| "10.0.0.5".to_string());
+    let d = depth.unwrap_or(2).clamp(1, 5);
+    let path = format!(
+        "/api/v1/trace/graph?entity_id={}&depth={d}",
+        encode_query_component(&ent)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn generate_investigation_report(
+    backend: State<'_, BackendManager>,
+    payload: Value,
+) -> Result<Value, String> {
+    post_json(
+        backend.inner(),
+        "/api/v1/trace/investigation/generate",
+        payload,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn fetch_incidents(
+    backend: State<'_, BackendManager>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+    severity: Option<String>,
+) -> Result<Value, String> {
+    let mut path = format!(
+        "/api/v1/incidents?limit={}&offset={}",
+        limit.unwrap_or(50),
+        offset.unwrap_or(0)
+    );
+    if let Some(sev) = severity {
+        if !sev.is_empty() && sev != "ALL" {
+            path.push_str(&format!("&severity={}", encode_query_component(&sev)));
+        }
+    }
+    get_json(backend.inner(), &path).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::verify_loopback_url;

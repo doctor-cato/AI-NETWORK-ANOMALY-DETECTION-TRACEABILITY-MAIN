@@ -17,7 +17,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -871,12 +871,12 @@ def render_leakage_audit_report(manifest: Dict[str, Any]) -> str:
 
     report_md = f"""# Báo cáo kiểm toán Data Leakage và Phân chia Dữ liệu NF-UNSW-NB15-v3
 
-**Trạng thái kiểm toán:** `{audit['status']}`
+**Trạng thái kiểm toán:** `{audit["status"]}`
 **Sẵn sàng ML (ML Readiness):** `ML_READY: BLOCKED` (Chờ tiền xử lý train-only ở Issue #8)
-**Mã giao thức phân chia:** `{manifest['split_protocol_version']}`
-**Phiên bản Fingerprint Schema:** `{manifest['fingerprint_schema_version']}`
-**Dataset SHA-256:** `{manifest['dataset_sha256']}`
-**Ngày thực hiện kiểm toán:** `{manifest['generated_at_utc']}`
+**Mã giao thức phân chia:** `{manifest["split_protocol_version"]}`
+**Phiên bản Fingerprint Schema:** `{manifest["fingerprint_schema_version"]}`
+**Dataset SHA-256:** `{manifest["dataset_sha256"]}`
+**Ngày thực hiện kiểm toán:** `{manifest["generated_at_utc"]}`
 
 ---
 
@@ -925,7 +925,7 @@ trong phân vùng trước nhưng kéo dài và kết thúc trong khoảng thờ
 
 ## 2. Kết quả phân bổ phân vùng và xử lý bản ghi Purge
 
-Tổng số dòng nguồn: **{manifest['total_source_rows']:,} dòng** (100.00% được gán minh bạch,
+Tổng số dòng nguồn: **{manifest["total_source_rows"]:,} dòng** (100.00% được gán minh bạch,
 không bản ghi nào bị drop ngầm).
 
 {part_table_md}
@@ -1055,7 +1055,7 @@ trong cả ba phân vùng Train, Validation, Test:
 
 Issue #8 có thể tiêu thụ phân vùng này thông qua hàm `load_split_for_modeling()` trong
 `src/network_anomaly/data/split.py`:
-1. **Kiểm tra checksum dataset:** Đảm bảo CSV khớp SHA-256 `{manifest['dataset_sha256']}`.
+1. **Kiểm tra checksum dataset:** Đảm bảo CSV khớp SHA-256 `{manifest["dataset_sha256"]}`.
 2. **Kiểm tra hash chỉ mục:** Kiểm tra toàn vẹn mảng chỉ mục phân vùng
    (`index_sha256`) trước khi nạp.
 3. **Quy tắc huấn luyện tiền xử lý:** Toàn bộ bộ biến đổi (Imputer, Scaler, One-Hot Encoder,
@@ -1291,8 +1291,7 @@ def verify_split_artifacts(
         expected_sha = p_info.get("index_sha256")
         if expected_sha is not None and actual_sha != expected_sha:
             errors.append(
-                f"SHA-256 mismatch for {idx_path.name}: "
-                f"expected {expected_sha}, got {actual_sha}"
+                f"SHA-256 mismatch for {idx_path.name}: expected {expected_sha}, got {actual_sha}"
             )
 
         try:
@@ -1421,6 +1420,7 @@ def load_split_for_modeling(
 # Multi-Source Temporal Splitter (Issue #92 for NetFlow Sentinel v2.0)
 # ==============================================================================
 
+
 @dataclass
 class MultiSourceSplitResult:
     train_indices: List[int]
@@ -1467,8 +1467,8 @@ class MultiSourceTemporalSplitter:
         train_end_idx = int(total_rows * self.train_ratio)
         val_end_idx = int(total_rows * (self.train_ratio + self.val_ratio))
 
-        train_cutoff_ts = df_sorted.iloc[train_end_idx - 1][timestamp_col] if train_end_idx > 0 else 0
-        val_cutoff_ts = df_sorted.iloc[val_end_idx - 1][timestamp_col] if val_end_idx > 0 else 0
+        df_sorted.iloc[train_end_idx - 1][timestamp_col] if train_end_idx > 0 else 0
+        df_sorted.iloc[val_end_idx - 1][timestamp_col] if val_end_idx > 0 else 0
 
         # Purge window gaps
         train_indices: List[int] = []
@@ -1507,7 +1507,11 @@ class MultiSourceTemporalSplitter:
                 continue
 
             # Group overlap check against train
-            grp = df_sorted.iloc[idx].get(self.group_key_col) if self.group_key_col in df_sorted.columns else None
+            grp = (
+                df_sorted.iloc[idx].get(self.group_key_col)
+                if self.group_key_col in df_sorted.columns
+                else None
+            )
             if grp and grp in train_groups:
                 purged_overlap.append(idx)
             else:
@@ -1523,7 +1527,11 @@ class MultiSourceTemporalSplitter:
                 continue
 
             # Group overlap check against train and val
-            grp = df_sorted.iloc[idx].get(self.group_key_col) if self.group_key_col in df_sorted.columns else None
+            grp = (
+                df_sorted.iloc[idx].get(self.group_key_col)
+                if self.group_key_col in df_sorted.columns
+                else None
+            )
             if grp and (grp in train_groups or grp in val_groups):
                 purged_overlap.append(idx)
             else:
@@ -1539,9 +1547,15 @@ class MultiSourceTemporalSplitter:
             train_test_overlap = final_train_groups.intersection(final_test_groups)
             val_test_overlap = final_val_groups.intersection(final_test_groups)
 
-            assert len(train_val_overlap) == 0, f"Train-Val group overlap detected: {len(train_val_overlap)}"
-            assert len(train_test_overlap) == 0, f"Train-Test group overlap detected: {len(train_test_overlap)}"
-            assert len(val_test_overlap) == 0, f"Val-Test group overlap detected: {len(val_test_overlap)}"
+            assert len(train_val_overlap) == 0, (
+                f"Train-Val group overlap detected: {len(train_val_overlap)}"
+            )
+            assert len(train_test_overlap) == 0, (
+                f"Train-Test group overlap detected: {len(train_test_overlap)}"
+            )
+            assert len(val_test_overlap) == 0, (
+                f"Val-Test group overlap detected: {len(val_test_overlap)}"
+            )
 
         manifest = {
             "protocol_version": "multi-source-temporal-group-purged-v2",

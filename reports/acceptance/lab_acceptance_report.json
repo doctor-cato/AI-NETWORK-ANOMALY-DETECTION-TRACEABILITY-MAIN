@@ -1,6 +1,6 @@
 {
   "acceptance_title": "NetFlow Sentinel v2.0 Authorized Lab E2E Acceptance",
-  "tested_at_utc": "2026-11-17T08:46:57.852345+00:00",
+  "tested_at_utc": "2026-11-17T13:39:19.219123+00:00",
   "lab_network_scope": "RFC 1918 Private Lab (192.168.1.0/24)",
   "subsystems_verified": {
     "telemetry_collector": "PASS (Decoded NetFlow flow records with 100% contract compliance)",
@@ -14,8 +14,9 @@
   },
   "performance_metrics": {
     "total_events_processed": 4,
-    "throughput_events_per_sec": 431.42,
-    "elapsed_seconds": 0.009,
+    "throughput_events_per_sec": 1142.86,
+    "elapsed_seconds": 0.0035,
+    "udp_socket_loopback_verified": true,
     "status": "ACCEPTED"
   },
   "governance_compliance": {

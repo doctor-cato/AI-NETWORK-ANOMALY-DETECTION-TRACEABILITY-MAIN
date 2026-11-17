@@ -303,11 +303,11 @@ def generate_markdown_report(results: Dict[str, Any], output_path: Path) -> str:
     delta_str = r"$\Delta$"
     report = f"""# Báo cáo Đánh giá Tổng quát hóa Cross-Dataset (Issue #46)
 
-**Tập dữ liệu Kiểm định Ngoại vi:** `{results['dataset_name']}`
-**Mô hình Đánh giá:** Canonical Random Forest (`{results['canonical_model_provenance']['configuration_id']}`)
-**Thời gian Đánh giá:** `{results['evaluation_timestamp_utc']}`
-**Số dòng Đánh giá:** `{results['rows_evaluated']:,}` dòng
-**Thời gian Thực thi:** `{results['evaluation_duration_seconds']}` giây
+**Tập dữ liệu Kiểm định Ngoại vi:** `{results["dataset_name"]}`
+**Mô hình Đánh giá:** Canonical Random Forest (`{results["canonical_model_provenance"]["configuration_id"]}`)
+**Thời gian Đánh giá:** `{results["evaluation_timestamp_utc"]}`
+**Số dòng Đánh giá:** `{results["rows_evaluated"]:,}` dòng
+**Thời gian Thực thi:** `{results["evaluation_duration_seconds"]}` giây
 **Trạng thái Tương thích:** `MODEL_VALIDATED`
 
 ---
@@ -316,12 +316,12 @@ def generate_markdown_report(results: Dict[str, Any], output_path: Path) -> str:
 
 | Chỉ số (Metric) | Nội bộ `NF-UNSW-NB15-v3` (Validation) | Ngoại vi `NF-CSE-CIC-IDS2018-v3` (Generalization) | Độ Lệch ({delta_str}) | Nhận xét & Đánh giá Khoa học |
 |---|:---:|:---:|:---:|---|
-| **Accuracy** | `{internal.get('accuracy', 0.999977):.6f}` | `{m['accuracy']:.6f}` | `{m['accuracy'] - internal.get('accuracy', 0.999977):+.6f}` | Tổng quan độ chính xác phân loại toàn cục. |
-| **Precision** | `{internal.get('precision', 0.999836):.6f}` | `{m['precision']:.6f}` | `{m['precision'] - internal.get('precision', 0.999836):+.6f}` | Tỷ lệ dự đoán Attack thực sự là tấn công. |
-| **Recall** | `{internal.get('recall', 0.999902):.6f}` | `{m['recall']:.6f}` | `{m['recall'] - internal.get('recall', 0.999902):+.6f}` | Tỷ lệ bắt giữ tấn công thực tế trên môi trường mạng mới. |
-| **F1-Score** | `{internal.get('f1', 0.999869):.6f}` | `{m['f1']:.6f}` | `{m['f1'] - internal.get('f1', 0.999869):+.6f}` | Đo lường cân bằng giữa Precision và Recall. |
-| **Macro-F1** | `{internal.get('macro_f1', 0.999928):.6f}` | `{m['macro_f1']:.6f}` | `{m['macro_f1'] - internal.get('macro_f1', 0.999928):+.6f}` | Trung bình không trọng số giữa Benign và Attack. |
-| **False Positive Rate (FPR)** | `{internal.get('false_positive_rate', 0.000016):.6f}` | `{m['false_positive_rate']:.6f}` | `{m['false_positive_rate'] - internal.get('false_positive_rate', 0.000016):+.6f}` | Tỷ lệ báo động giả trên lưu lượng bình thường. |
+| **Accuracy** | `{internal.get("accuracy", 0.999977):.6f}` | `{m["accuracy"]:.6f}` | `{m["accuracy"] - internal.get("accuracy", 0.999977):+.6f}` | Tổng quan độ chính xác phân loại toàn cục. |
+| **Precision** | `{internal.get("precision", 0.999836):.6f}` | `{m["precision"]:.6f}` | `{m["precision"] - internal.get("precision", 0.999836):+.6f}` | Tỷ lệ dự đoán Attack thực sự là tấn công. |
+| **Recall** | `{internal.get("recall", 0.999902):.6f}` | `{m["recall"]:.6f}` | `{m["recall"] - internal.get("recall", 0.999902):+.6f}` | Tỷ lệ bắt giữ tấn công thực tế trên môi trường mạng mới. |
+| **F1-Score** | `{internal.get("f1", 0.999869):.6f}` | `{m["f1"]:.6f}` | `{m["f1"] - internal.get("f1", 0.999869):+.6f}` | Đo lường cân bằng giữa Precision và Recall. |
+| **Macro-F1** | `{internal.get("macro_f1", 0.999928):.6f}` | `{m["macro_f1"]:.6f}` | `{m["macro_f1"] - internal.get("macro_f1", 0.999928):+.6f}` | Trung bình không trọng số giữa Benign và Attack. |
+| **False Positive Rate (FPR)** | `{internal.get("false_positive_rate", 0.000016):.6f}` | `{m["false_positive_rate"]:.6f}` | `{m["false_positive_rate"] - internal.get("false_positive_rate", 0.000016):+.6f}` | Tỷ lệ báo động giả trên lưu lượng bình thường. |
 
 ---
 
@@ -331,14 +331,14 @@ Trục tung: Nhãn Thực tế (Ground Truth) — Trục hoành: Mô hình Dự 
 
 ```text
                   Predicted Benign (0)    Predicted Attack (1)
-Actual Benign (0)        {cm['tn']:>12,d}            {cm['fp']:>12,d}   (TN / FP)
-Actual Attack (1)        {cm['fn']:>12,d}            {cm['tp']:>12,d}   (FN / TP)
+Actual Benign (0)        {cm["tn"]:>12,d}            {cm["fp"]:>12,d}   (TN / FP)
+Actual Attack (1)        {cm["fn"]:>12,d}            {cm["tp"]:>12,d}   (FN / TP)
 ```
 
-- **True Negatives (TN):** `{cm['tn']:,}`
-- **False Positives (FP):** `{cm['fp']:,}` (Báo động giả)
-- **False Negatives (FN):** `{cm['fn']:,}` (Bỏ lọt tấn công)
-- **True Positives (TP):** `{cm['tp']:,}`
+- **True Negatives (TN):** `{cm["tn"]:,}`
+- **False Positives (FP):** `{cm["fp"]:,}` (Báo động giả)
+- **False Negatives (FN):** `{cm["fn"]:,}` (Bỏ lọt tấn công)
+- **True Positives (TP):** `{cm["tp"]:,}`
 
 ---
 
@@ -363,7 +363,7 @@ Kiểm toán thực nghiệm xác nhận kết luận chẩn đoán tại `rf_ba
 
 1. **Sự sụp đổ của Shortcut `MIN_TTL`:**
    - Trong tập dữ liệu phòng lab `NF-UNSW-NB15-v3` (IXIA PerfectStorm), `MIN_TTL` là một đường tắt phân loại gần như tuyệt đối (`MIN_TTL=31` là 100% Benign; `MIN_TTL ∈ {{62, 254, 255}}` là 99.997% Attack).
-   - Khi chuyển sang môi trường AWS thực tế của `NF-CSE-CIC-IDS2018-v3`, có tới **`{results['ood_summary']['total_shortcut_drift_rows']:,}` dòng ({results['ood_summary']['shortcut_drift_pct']}%)** có `MIN_TTL` hoàn toàn nằm ngoài 4 giá trị lab này (chủ yếu là `MIN_TTL=0` hoặc các bước nhảy định tuyến Internet thực tế).
+   - Khi chuyển sang môi trường AWS thực tế của `NF-CSE-CIC-IDS2018-v3`, có tới **`{results["ood_summary"]["total_shortcut_drift_rows"]:,}` dòng ({results["ood_summary"]["shortcut_drift_pct"]}%)** có `MIN_TTL` hoàn toàn nằm ngoài 4 giá trị lab này (chủ yếu là `MIN_TTL=0` hoặc các bước nhảy định tuyến Internet thực tế).
    - Điều này giải thích định lượng lý do tại sao hiệu năng trên miền dữ liệu mới thay đổi và minh chứng tính tất yếu của **Cổng OOD (Out-of-Distribution Gate)** nhằm cảnh báo người vận hành khi dữ liệu mạng không còn tuân theo phân phối huấn luyện ban đầu.
 
 2. **Khuyến nghị Vận hành Sản phẩm (Milestone M6):**

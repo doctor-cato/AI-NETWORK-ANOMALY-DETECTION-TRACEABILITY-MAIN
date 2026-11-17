@@ -7,13 +7,12 @@ dry-run preview, and integrity verification. (Issue #80).
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-
+from typing import Union
 
 V2_MIGRATION_SQL = """
 PRAGMA foreign_keys = ON;
@@ -92,7 +91,9 @@ def backup_database(db_path: Path) -> Path:
     return backup_path
 
 
-def migrate_database(db_path: Union[str, Path], dry_run: bool = False, create_backup: bool = True) -> bool:
+def migrate_database(
+    db_path: Union[str, Path], dry_run: bool = False, create_backup: bool = True
+) -> bool:
     """Execute v1.0.0 -> v2.0.0 migration idempotently."""
     path = Path(db_path)
     if not path.exists():
@@ -133,7 +134,9 @@ def migrate_database(db_path: Union[str, Path], dry_run: bool = False, create_ba
         print("  - Will add table: unified_security_events")
         print("  - Will add table: behavioral_vectors")
         print("  - Will add table: encrypted_vault")
-        print("  - Will preserve existing tables: events, sessions, incidents, evidences, key_metadata, etc.")
+        print(
+            "  - Will preserve existing tables: events, sessions, incidents, evidences, key_metadata, etc."
+        )
         conn.close()
         return True
 
@@ -165,7 +168,9 @@ def migrate_database(db_path: Union[str, Path], dry_run: bool = False, create_ba
 def main():
     parser = argparse.ArgumentParser(description="NetFlow Sentinel v1.0.0 -> v2.0.0 DB Migration")
     parser.add_argument("--db-path", type=str, required=True, help="Path to SQLite database")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate migration without modifying DB")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Simulate migration without modifying DB"
+    )
     parser.add_argument("--no-backup", action="store_true", help="Skip creating backup")
     args = parser.parse_args()
 

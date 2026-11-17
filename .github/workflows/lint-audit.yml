@@ -11,14 +11,10 @@ on:
         description: "Branch, tag or SHA to audit"
         required: false
         default: feat/v2-integration
-  pull_request:
-    paths:
-      - "**/*.py"
-      - ".github/workflows/lint-audit.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/feat/v2-integration' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   audit:
@@ -88,27 +84,27 @@ jobs:
             "tests/unit/test_xgb_copilot_remediation.py"
             "tests/unit/test_xgb_model_structure.py"
             "tests/unit/test_xgb_training.py"
-            "src/network_anomaly/canonical",
-            "src/network_anomaly/crypto",
-            "src/network_anomaly/behavioral",
-            "src/network_anomaly/risk",
-            "src/network_anomaly/trace",
-            "src/network_anomaly/telemetry",
-            "src/network_anomaly/streaming",
-            "src/network_anomaly/ml",
-            "src/network_anomaly/pipeline/multi_source.py",
-            "src/network_anomaly/data/quality_gate.py",
-            "src/network_anomaly/data/taxonomy.py",
-            "src/network_anomaly/ingestion/adapters/v2_adapter.py",
-            "tests/integration/test_full_system_e2e.py",
-            "tests/integration/test_live_telemetry_flow.py",
-            "tests/unit/test_telemetry_collector.py",
-            "tests/unit/test_streaming_pipeline.py",
-            "tests/unit/test_quality_gate.py",
-            "tests/unit/test_multi_source_split.py",
-            "tests/unit/test_multi_source_pipeline.py",
-            "tests/unit/test_v2_adapters.py",
-            "tests/unit/test_ood_and_calibration.py",
+            "src/network_anomaly/canonical"
+            "src/network_anomaly/crypto"
+            "src/network_anomaly/behavioral"
+            "src/network_anomaly/risk"
+            "src/network_anomaly/trace"
+            "src/network_anomaly/telemetry"
+            "src/network_anomaly/streaming"
+            "src/network_anomaly/ml"
+            "src/network_anomaly/pipeline/multi_source.py"
+            "src/network_anomaly/data/quality_gate.py"
+            "src/network_anomaly/data/taxonomy.py"
+            "src/network_anomaly/ingestion/adapters/v2_adapter.py"
+            "tests/integration/test_full_system_e2e.py"
+            "tests/integration/test_live_telemetry_flow.py"
+            "tests/unit/test_telemetry_collector.py"
+            "tests/unit/test_streaming_pipeline.py"
+            "tests/unit/test_quality_gate.py"
+            "tests/unit/test_multi_source_split.py"
+            "tests/unit/test_multi_source_pipeline.py"
+            "tests/unit/test_v2_adapters.py"
+            "tests/unit/test_ood_and_calibration.py"
             "tests/unit/test_xgboost.py"
           )
 

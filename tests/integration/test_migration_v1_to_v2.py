@@ -2,6 +2,7 @@
 
 import sqlite3
 from pathlib import Path
+
 from network_anomaly.api.db import SCHEMA_SQL
 from scripts.migrate_v1_to_v2 import migrate_database
 
@@ -21,7 +22,14 @@ def test_v1_to_v2_migration_lifecycle(tmp_path: Path):
         conn.execute(
             "INSERT INTO incidents (incident_id, title, severity, anomaly_score, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?);",
-            ("inc-1", "DDoS Detected", "HIGH", 0.95, "2026-11-16T10:00:00Z", "2026-11-16T10:00:00Z"),
+            (
+                "inc-1",
+                "DDoS Detected",
+                "HIGH",
+                0.95,
+                "2026-11-16T10:00:00Z",
+                "2026-11-16T10:00:00Z",
+            ),
         )
         conn.execute(
             "INSERT INTO key_metadata (key_id, algorithm, version, status, created_at) "
@@ -35,7 +43,9 @@ def test_v1_to_v2_migration_lifecycle(tmp_path: Path):
     assert res_dry is True
 
     conn = sqlite3.connect(str(db_path))
-    tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()]
+    tables = [
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+    ]
     conn.close()
     assert "schema_version" not in tables
     assert "unified_security_events" not in tables
@@ -54,7 +64,10 @@ def test_v1_to_v2_migration_lifecycle(tmp_path: Path):
     cursor.execute("PRAGMA integrity_check;")
     assert cursor.fetchone()[0] == "ok"
 
-    tables = [r[0] for r in cursor.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()]
+    tables = [
+        r[0]
+        for r in cursor.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+    ]
     assert "schema_version" in tables
     assert "unified_security_events" in tables
     assert "behavioral_vectors" in tables

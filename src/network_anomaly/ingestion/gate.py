@@ -534,9 +534,9 @@ class InferenceEligibilityGate:
                 ood_report=ood_report,
                 compatibility_report=comp_report,
                 abstention_reasons=[
-                    f"Strict OOD shortcut abstention: {ood_report.shortcut_drift_ratio*100:.1f}% "
+                    f"Strict OOD shortcut abstention: {ood_report.shortcut_drift_ratio * 100:.1f}% "
                     "rows exhibit critical MIN_TTL shift (>= "
-                    f"{self.max_allowed_shortcut_drift_ratio*100:.0f}%). "
+                    f"{self.max_allowed_shortcut_drift_ratio * 100:.0f}%). "
                     "Fail-closed prediction abstention engaged to prevent false alert flood."
                 ],
                 warning_flags=warning_flags,

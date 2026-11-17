@@ -399,3 +399,105 @@ export interface SecuritySimulationExportResponse {
   metadata_sha256: string;
   exported_at_utc: string;
 }
+
+export interface TimelineStageItem {
+  stage_id: string;
+  phase: string;
+  timestamp: string;
+  source_entity: string;
+  target_entity: string;
+  title: string;
+  description: string;
+  confidence: number;
+  is_observed: boolean;
+  evidence_ids: string[];
+  indicators: string[];
+}
+
+export interface TraceTimelineResponse {
+  timeline_id: string;
+  campaign_name: string;
+  overall_confidence: number;
+  start_time: string;
+  end_time: string;
+  entities_involved: string[];
+  total_stages: number;
+  stages: TimelineStageItem[];
+}
+
+export interface InvestigationReportResponse {
+  report_id: string;
+  incident_id: string;
+  title: string;
+  generated_at: string;
+  severity: string;
+  root_cause_summary: string;
+  artifact_hash: string;
+  timeline: TraceTimelineResponse;
+  evidence_provenance: Array<Record<string, unknown>>;
+  recommended_actions: string[];
+  markdown_content: string;
+}
+
+export interface CryptoStatusResponse {
+  active_key_id: string;
+  algorithm: string;
+  rotation_interval_minutes: number;
+  adaptive_risk_threshold: number;
+  cooldown_seconds: number;
+  total_rotations: number;
+  total_records_encrypted: number;
+  recent_rotations: Array<{
+    rotation_id: string;
+    trigger: string;
+    decision: string;
+    new_key_id?: string;
+    timestamp: string;
+    reason?: string;
+  }>;
+}
+
+export interface IncidentItem {
+  incident_id: string;
+  title: string;
+  severity: string;
+  status: string;
+  anomaly_score: number;
+  attack_type: string | null;
+  created_at: string;
+  updated_at: string;
+  source_ip?: string;
+  dest_ip?: string;
+}
+
+export interface PaginatedIncidentsResponse {
+  items: IncidentItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface EntityGraphNodeItem {
+  node_id: string;
+  kind: string;
+  label: string;
+  properties: Record<string, unknown>;
+}
+
+export interface EntityGraphEdgeItem {
+  edge_id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: string;
+  confidence: number;
+  is_observed: boolean;
+  evidence_id: string | null;
+}
+
+export interface TraceGraphResponse {
+  node_count: number;
+  edge_count: number;
+  nodes: EntityGraphNodeItem[];
+  edges: EntityGraphEdgeItem[];
+}

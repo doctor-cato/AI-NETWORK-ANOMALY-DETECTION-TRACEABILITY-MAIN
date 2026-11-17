@@ -7,10 +7,9 @@ windows and compromised records between fixed 30-min schedule and risk-based rot
 from __future__ import annotations
 
 import json
-import time
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-import tempfile
 
 from network_anomaly.crypto.key_manager import KeyManager
 from network_anomaly.crypto.rotation import KeyRotationPolicy, RotationDecision, RotationTrigger
@@ -65,7 +64,9 @@ def run_rq5_experiment(output_dir: Path) -> dict:
             risk = 88.0 + (i % 10)  # High risk burst: 88.0 to 97.0
 
         if risk >= 85.0:
-            dec, kid = policy_adapt.evaluate_adaptive_rotation(risk_score=risk, context={"event_idx": i})
+            dec, kid = policy_adapt.evaluate_adaptive_rotation(
+                risk_score=risk, context={"event_idx": i}
+            )
             if dec == RotationDecision.EXECUTED:
                 adaptive_rotations += 1
                 adaptive_rotation_timestamps.append(i * 36)
@@ -77,7 +78,10 @@ def run_rq5_experiment(output_dir: Path) -> dict:
 
     # In adaptive rotation, key was rotated at the onset of burst (event 41), isolating subsequent traffic
     adaptive_exposure_window_minutes = 0.5  # < 1 minute to rotate upon anomaly detection
-    exposure_reduction_pct = ((fixed_exposure_window_minutes - adaptive_exposure_window_minutes) / fixed_exposure_window_minutes) * 100.0
+    exposure_reduction_pct = (
+        (fixed_exposure_window_minutes - adaptive_exposure_window_minutes)
+        / fixed_exposure_window_minutes
+    ) * 100.0
 
     results = {
         "experiment_id": "EXP-RQ5-ROTATION-01",
@@ -115,26 +119,26 @@ def run_rq5_experiment(output_dir: Path) -> dict:
     report_path = output_dir / "rq5_rotation_report.md"
     report_md = f"""# Research Experiment RQ5: Fixed vs. Adaptive Key Rotation Report
 
-> **Experiment ID:** {results['experiment_id']}  
-> **Evaluation Date:** {results['timestamp']}  
-> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: {results['hypothesis_confirmed']})
+> **Experiment ID:** {results["experiment_id"]}
+> **Evaluation Date:** {results["timestamp"]}
+> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: {results["hypothesis_confirmed"]})
 
 ## 1. Executive Summary
-- **Hypothesis:** {results['hypothesis']}
-- **Outcome:** **CONFIRMED**. Cửa sổ phơi nhiễm khóa giảm từ {results['fixed_schedule']['exposure_window_minutes']} phút xuống {results['adaptive_rotation']['exposure_window_minutes']} phút (giảm **{results['adaptive_rotation']['exposure_reduction_percentage']}%**).
+- **Hypothesis:** {results["hypothesis"]}
+- **Outcome:** **CONFIRMED**. Cửa sổ phơi nhiễm khóa giảm từ {results["fixed_schedule"]["exposure_window_minutes"]} phút xuống {results["adaptive_rotation"]["exposure_window_minutes"]} phút (giảm **{results["adaptive_rotation"]["exposure_reduction_percentage"]}%**).
 - **Phân tách rủi ro:** Kẻ tấn công nếu thỏa hiệp một khóa phiên chỉ giải mã được tập bản ghi nhỏ trước thời điểm kích hoạt xoay khóa, không thể giải mã các phiên sau khi hệ thống chuyển sang khóa mới.
 
 ## 2. Số liệu So sánh Thực nghiệm
 
 | Chỉ số Đánh giá | Fixed Key Rotation (30 phút) | Risk-based Adaptive Key Rotation | Cải thiện / Ý nghĩa |
 |---|:---:|:---:|:---:|
-| **Thời gian phơi nhiễm khóa (Exposure Window)** | **30.0 phút** | **< 1.0 phút (0.5 phút)** | **Giảm {results['adaptive_rotation']['exposure_reduction_percentage']}%** |
-| **Số lần xoay khóa trong phiên 60 phút** | 1 lần | {results['adaptive_rotation']['total_rotations']} lần | Phản ứng tức thời theo rủi ro |
-| **Số khóa sử dụng riêng trong đợt tấn công** | 1 khóa | {results['adaptive_rotation']['burst_keys_used']} khóa | Cách ly dữ liệu tấn công |
+| **Thời gian phơi nhiễm khóa (Exposure Window)** | **30.0 phút** | **< 1.0 phút (0.5 phút)** | **Giảm {results["adaptive_rotation"]["exposure_reduction_percentage"]}%** |
+| **Số lần xoay khóa trong phiên 60 phút** | 1 lần | {results["adaptive_rotation"]["total_rotations"]} lần | Phản ứng tức thời theo rủi ro |
+| **Số khóa sử dụng riêng trong đợt tấn công** | 1 khóa | {results["adaptive_rotation"]["burst_keys_used"]} khóa | Cách ly dữ liệu tấn công |
 | **Bảo vệ chống DoS (Cooldown & Rate limit)** | Cố định theo giờ | Cooldown 10s, Rate limit 10/h | Ngăn ngừa cạn kiệt tài nguyên CPU |
 
 ## 3. Kết luận
-{results['conclusion']}
+{results["conclusion"]}
 """
     report_path.write_text(report_md, encoding="utf-8")
     temp_dir.cleanup()

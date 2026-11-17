@@ -6,7 +6,8 @@ Implements Issue #132 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, ValidationStatus
@@ -49,7 +50,10 @@ class RealtimeFeatureExtractor:
         if event.ml_features and event.is_ml_complete:
             is_valid, missing = self.contract.validate_features(event.ml_features)
             if is_valid:
-                vec = np.array([float(event.ml_features[k]) for k in self.contract.feature_names], dtype=np.float64)
+                vec = np.array(
+                    [float(event.ml_features[k]) for k in self.contract.feature_names],
+                    dtype=np.float64,
+                )
                 self.total_ml_ready += 1
                 return ExtractionResult(
                     event_id=event.event_id,
@@ -70,7 +74,9 @@ class RealtimeFeatureExtractor:
             synth_features["TCP_FLAGS"] = float(fm.tcp_flags)
             synth_features["L4_SRC_PORT"] = float(event.source_port or 0)
             synth_features["L4_DST_PORT"] = float(event.dest_port or 0)
-            synth_features["PROTOCOL"] = 6.0 if event.protocol == "TCP" else (17.0 if event.protocol == "UDP" else 0.0)
+            synth_features["PROTOCOL"] = (
+                6.0 if event.protocol == "TCP" else (17.0 if event.protocol == "UDP" else 0.0)
+            )
 
         # Check completeness against all 47 features
         is_complete, missing = self.contract.validate_features(synth_features)
@@ -94,7 +100,9 @@ class RealtimeFeatureExtractor:
             feature_dict=synth_features,
         )
 
-    def extract_batch(self, events: List[CanonicalSecurityEvent]) -> Tuple[List[ExtractionResult], List[CanonicalSecurityEvent]]:
+    def extract_batch(
+        self, events: List[CanonicalSecurityEvent]
+    ) -> Tuple[List[ExtractionResult], List[CanonicalSecurityEvent]]:
         """Batch extract: returns extraction results and the list of route_only events."""
         results: List[ExtractionResult] = []
         route_only_events: List[CanonicalSecurityEvent] = []

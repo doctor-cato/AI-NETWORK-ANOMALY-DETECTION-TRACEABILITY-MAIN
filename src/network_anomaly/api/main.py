@@ -33,6 +33,7 @@ from network_anomaly.api.response_policy import (
 from network_anomaly.api.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    CryptoStatusResponse,
     CsvAnalyzeRequest,
     CsvAnalyzeResponse,
     CsvEvaluateRequest,
@@ -41,12 +42,16 @@ from network_anomaly.api.schemas import (
     CsvExportResponse,
     CsvInspectRequest,
     CsvInspectResponse,
+    EntityGraphEdgeItem,
+    EntityGraphNodeItem,
+    GenerateInvestigationReportRequest,
     HealthResponse,
     IncidentCreateRequest,
     IncidentResponse,
     IncidentUpdateRequest,
     IngestBatchRequest,
     IngestResponse,
+    InvestigationReportResponse,
     KeyMetadataResponse,
     KeyRotationRequest,
     KeyRotationResponse,
@@ -59,26 +64,21 @@ from network_anomaly.api.schemas import (
     SecurityResponseSimulationResponse,
     SecuritySimulationExportRequest,
     SecuritySimulationExportResponse,
-    CryptoStatusResponse,
-    EntityGraphEdgeItem,
-    EntityGraphNodeItem,
-    GenerateInvestigationReportRequest,
-    InvestigationReportResponse,
     TimelineStageItem,
     TraceGraphResponse,
     TraceTimelineResponse,
 )
+from network_anomaly.api.service import ApiService
+from network_anomaly.crypto.key_manager import KeyManager
+from network_anomaly.crypto.rotation import KeyRotationPolicy
+from network_anomaly.trace.engine import TraceEngine
 from network_anomaly.trace.graph import (
     EntityKind,
     EntityRelationshipGraph,
     RelationType,
 )
-from network_anomaly.trace.engine import TraceEngine
-from network_anomaly.trace.timeline import AttackTimelineReconstructor
 from network_anomaly.trace.investigation import InvestigationReportGenerator
-from network_anomaly.crypto.key_manager import KeyManager
-from network_anomaly.crypto.rotation import KeyRotationPolicy
-from network_anomaly.api.service import ApiService
+from network_anomaly.trace.timeline import AttackTimelineReconstructor
 
 
 def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
@@ -507,16 +507,18 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
         paginated = svc.list_incidents(limit=limit, offset=offset)
         events_data = []
         for inc in paginated.items:
-            events_data.append({
-                "event_id": inc.incident_id,
-                "timestamp": inc.created_at,
-                "source_ip": "198.51.100.10",
-                "dest_ip": "10.0.0.5",
-                "attack_type": inc.attack_type or "Suspicious",
-                "risk_score": inc.anomaly_score * 100.0,
-                "dest_port": 443,
-                "confidence": 0.95,
-            })
+            events_data.append(
+                {
+                    "event_id": inc.incident_id,
+                    "timestamp": inc.created_at,
+                    "source_ip": "198.51.100.10",
+                    "dest_ip": "10.0.0.5",
+                    "attack_type": inc.attack_type or "Suspicious",
+                    "risk_score": inc.anomaly_score * 100.0,
+                    "dest_port": 443,
+                    "confidence": 0.95,
+                }
+            )
 
         if not events_data:
             events_data = [
@@ -590,15 +592,27 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
         graph.add_node("port:443", EntityKind.PORT, "Web HTTPS")
         graph.add_node("user:admin", EntityKind.USER, "Target User")
 
-        graph.add_edge("198.51.100.10", entity_id, RelationType.CONNECTS_TO, confidence=1.0, is_observed=True)
-        graph.add_edge(entity_id, "port:443", RelationType.CONNECTS_TO, confidence=1.0, is_observed=True)
-        graph.add_edge(entity_id, "user:admin", RelationType.AUTHENTICATES_AS, confidence=0.85, is_observed=True)
+        graph.add_edge(
+            "198.51.100.10", entity_id, RelationType.CONNECTS_TO, confidence=1.0, is_observed=True
+        )
+        graph.add_edge(
+            entity_id, "port:443", RelationType.CONNECTS_TO, confidence=1.0, is_observed=True
+        )
+        graph.add_edge(
+            entity_id,
+            "user:admin",
+            RelationType.AUTHENTICATES_AS,
+            confidence=0.85,
+            is_observed=True,
+        )
 
         engine = TraceEngine(graph, max_depth=depth)
         res = engine.trace(entity_id)
 
         node_items = [
-            EntityGraphNodeItem(node_id=n.node_id, kind=n.kind.value, label=n.label, properties=n.properties)
+            EntityGraphNodeItem(
+                node_id=n.node_id, kind=n.kind.value, label=n.label, properties=n.properties
+            )
             for n in res.nodes_visited
         ]
         edge_items = [

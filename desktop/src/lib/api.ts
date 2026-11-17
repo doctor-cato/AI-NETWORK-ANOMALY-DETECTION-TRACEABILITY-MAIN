@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   BackendLogSnapshot,
   BackendStatus,
+  CryptoStatusResponse,
   CsvAnalyzeResponse,
   CsvEvaluateResponse,
   CsvExportResponse,
@@ -9,11 +10,17 @@ import type {
   CsvInspectResponse,
   DemoPaths,
   HealthResponse,
+  IncidentItem,
+  InvestigationReportResponse,
   ModelStatusItem,
+  PaginatedIncidentsResponse,
   PaginatedSecuritySimulationsResponse,
   RuntimeDiagnostics,
   SecurityResponseSimulationResponse,
   SecuritySimulationExportResponse,
+  TimelineStageItem,
+  TraceGraphResponse,
+  TraceTimelineResponse,
 } from "./types";
 
 export function isTauriRuntime(): boolean {
@@ -338,4 +345,67 @@ export async function reportFrontendReady(summary: {
   } catch {
     // Non-fatal diagnostics hook; ignore errors during normal interactive runs
   }
+}
+
+export async function fetchCryptoStatus(domain = "general"): Promise<CryptoStatusResponse> {
+  if (isTauriRuntime()) {
+    return invoke<CryptoStatusResponse>("fetch_crypto_status", { domain });
+  }
+  return httpJson<CryptoStatusResponse>(`/api/v1/crypto/status?domain=${encodeURIComponent(domain)}`);
+}
+
+export async function fetchTraceTimeline(campaignName = "APT-Campaign-01"): Promise<TraceTimelineResponse> {
+  if (isTauriRuntime()) {
+    return invoke<TraceTimelineResponse>("fetch_trace_timeline", { campaignName });
+  }
+  return httpJson<TraceTimelineResponse>(`/api/v1/trace/timeline?campaign_name=${encodeURIComponent(campaignName)}`);
+}
+
+export async function fetchTraceGraph(
+  entityId = "10.0.0.5",
+  depth = 2,
+): Promise<TraceGraphResponse> {
+  if (isTauriRuntime()) {
+    return invoke<TraceGraphResponse>("fetch_trace_graph", { entityId, depth });
+  }
+  return httpJson<TraceGraphResponse>(
+    `/api/v1/trace/graph?entity_id=${encodeURIComponent(entityId)}&depth=${depth}`,
+  );
+}
+
+export async function generateInvestigationReport(payload: {
+  incident_id: string;
+  title: string;
+  severity?: string;
+  root_cause_summary?: string;
+  events?: Array<Record<string, unknown>>;
+  evidence_records?: Array<Record<string, unknown>>;
+}): Promise<InvestigationReportResponse> {
+  if (isTauriRuntime()) {
+    return invoke<InvestigationReportResponse>("generate_investigation_report", { payload });
+  }
+  return httpJson<InvestigationReportResponse>("/api/v1/trace/investigation/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchIncidents(params?: {
+  limit?: number;
+  offset?: number;
+  severity?: string;
+}): Promise<PaginatedIncidentsResponse> {
+  if (isTauriRuntime()) {
+    return invoke<PaginatedIncidentsResponse>("fetch_incidents", {
+      limit: params?.limit ?? 50,
+      offset: params?.offset ?? 0,
+      severity: params?.severity ?? null,
+    });
+  }
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.offset) query.set("offset", String(params.offset));
+  if (params?.severity && params.severity !== "ALL") query.set("severity", params.severity);
+  const qStr = query.toString();
+  return httpJson<PaginatedIncidentsResponse>(`/api/v1/incidents${qStr ? `?${qStr}` : ""}`);
 }

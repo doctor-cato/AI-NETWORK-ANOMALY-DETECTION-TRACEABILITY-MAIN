@@ -9,10 +9,11 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
-from network_anomaly.trace.timeline import AttackPhase, AttackTimelineReconstructor
-from network_anomaly.trace.graph import EntityKind, EntityRelationshipGraph, RelationType
 from network_anomaly.trace.engine import TraceEngine
+from network_anomaly.trace.graph import EntityRelationshipGraph, RelationType
+from network_anomaly.trace.timeline import AttackPhase, AttackTimelineReconstructor
 
 
 def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
@@ -21,31 +22,85 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
 
     # 1. Build Ground Truth Scenario: 10 events spanning 4 stages
     ground_truth_stages = [
-        {"id": "ev-1", "phase": AttackPhase.RECONNAISSANCE, "type": "scan", "port": 80, "bytes": 100},
-        {"id": "ev-2", "phase": AttackPhase.RECONNAISSANCE, "type": "scan", "port": 443, "bytes": 120},
-        {"id": "ev-3", "phase": AttackPhase.INITIAL_ACCESS, "type": "exploit", "port": 80, "bytes": 2500},
-        {"id": "ev-4", "phase": AttackPhase.INITIAL_ACCESS, "type": "backdoor", "port": 4444, "bytes": 4000},
-        {"id": "ev-5", "phase": AttackPhase.LATERAL_MOVEMENT, "type": "lateral", "port": 445, "src": "10.0.0.1", "dst": "10.0.0.2"},
-        {"id": "ev-6", "phase": AttackPhase.LATERAL_MOVEMENT, "type": "smb", "port": 445, "src": "10.0.0.2", "dst": "10.0.0.3"},
-        {"id": "ev-7", "phase": AttackPhase.EXFILTRATION_IMPACT, "type": "exfiltration", "port": 8443, "bytes": 800000},
-        {"id": "ev-8", "phase": AttackPhase.EXFILTRATION_IMPACT, "type": "ddos", "port": 53, "bytes": 1200000},
+        {
+            "id": "ev-1",
+            "phase": AttackPhase.RECONNAISSANCE,
+            "type": "scan",
+            "port": 80,
+            "bytes": 100,
+        },
+        {
+            "id": "ev-2",
+            "phase": AttackPhase.RECONNAISSANCE,
+            "type": "scan",
+            "port": 443,
+            "bytes": 120,
+        },
+        {
+            "id": "ev-3",
+            "phase": AttackPhase.INITIAL_ACCESS,
+            "type": "exploit",
+            "port": 80,
+            "bytes": 2500,
+        },
+        {
+            "id": "ev-4",
+            "phase": AttackPhase.INITIAL_ACCESS,
+            "type": "backdoor",
+            "port": 4444,
+            "bytes": 4000,
+        },
+        {
+            "id": "ev-5",
+            "phase": AttackPhase.LATERAL_MOVEMENT,
+            "type": "lateral",
+            "port": 445,
+            "src": "10.0.0.1",
+            "dst": "10.0.0.2",
+        },
+        {
+            "id": "ev-6",
+            "phase": AttackPhase.LATERAL_MOVEMENT,
+            "type": "smb",
+            "port": 445,
+            "src": "10.0.0.2",
+            "dst": "10.0.0.3",
+        },
+        {
+            "id": "ev-7",
+            "phase": AttackPhase.EXFILTRATION_IMPACT,
+            "type": "exfiltration",
+            "port": 8443,
+            "bytes": 800000,
+        },
+        {
+            "id": "ev-8",
+            "phase": AttackPhase.EXFILTRATION_IMPACT,
+            "type": "ddos",
+            "port": 53,
+            "bytes": 1200000,
+        },
     ]
 
     events_for_reconstruction = []
     for s in ground_truth_stages:
-        events_for_reconstruction.append({
-            "event_id": s["id"],
-            "timestamp": "2026-11-17T12:00:00Z",
-            "source_ip": s.get("src", "198.51.100.1"),
-            "dest_ip": s.get("dst", "10.0.0.1"),
-            "attack_type": s["type"],
-            "dest_port": s["port"],
-            "bytes_out": s.get("bytes", 500),
-            "risk_score": 88.0,
-        })
+        events_for_reconstruction.append(
+            {
+                "event_id": s["id"],
+                "timestamp": "2026-11-17T12:00:00Z",
+                "source_ip": s.get("src", "198.51.100.1"),
+                "dest_ip": s.get("dst", "10.0.0.1"),
+                "attack_type": s["type"],
+                "dest_port": s["port"],
+                "bytes_out": s.get("bytes", 500),
+                "risk_score": 88.0,
+            }
+        )
 
     reconstructor = AttackTimelineReconstructor()
-    timeline = reconstructor.reconstruct_timeline("Ground-Truth-Campaign", events_for_reconstruction)
+    timeline = reconstructor.reconstruct_timeline(
+        "Ground-Truth-Campaign", events_for_reconstruction
+    )
 
     # Calculate Stage Attribution Accuracy
     correct_phase_attributions = 0
@@ -85,8 +140,8 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
             },
         },
         "conclusion": (
-            f"Trace Engine v2 achieved {stage_accuracy*100:.1f}% stage attribution accuracy "
-            f"and {trace_completeness*100:.1f}% path completeness across the 4-phase attack progression, "
+            f"Trace Engine v2 achieved {stage_accuracy * 100:.1f}% stage attribution accuracy "
+            f"and {trace_completeness * 100:.1f}% path completeness across the 4-phase attack progression, "
             "empirically validating Attack Traceability against ground truth."
         ),
     }
@@ -101,23 +156,23 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
     md_path = docs_dir / "TRACEABILITY_EVALUATION.md"
     md_content = f"""# Traceability & Event Correlation Evaluation Report (Issue #114)
 
-> **Evaluation ID:** {results['evaluation_id']}  
-> **Evaluation Date:** {results['timestamp']}  
+> **Evaluation ID:** {results["evaluation_id"]}
+> **Evaluation Date:** {results["timestamp"]}
 > **Status:** EXPERIMENTALLY VALIDATED
 
 ## 1. Executive Summary
-- **Stage Attribution Accuracy:** **{stage_accuracy*100:.1f}%** (Đạt phân loại chính xác các giai đoạn Reconnaissance, Initial Access, Lateral Movement, Exfiltration).
-- **Trace Path Completeness:** **{trace_completeness*100:.1f}%** (Duyệt đầy đủ các bước trong chuỗi tấn công không bị đứt đoạn).
+- **Stage Attribution Accuracy:** **{stage_accuracy * 100:.1f}%** (Đạt phân loại chính xác các giai đoạn Reconnaissance, Initial Access, Lateral Movement, Exfiltration).
+- **Trace Path Completeness:** **{trace_completeness * 100:.1f}%** (Duyệt đầy đủ các bước trong chuỗi tấn công không bị đứt đoạn).
 
 ## 2. Bảng Đối sánh với Baseline Không Cấu trúc
 
 | Chỉ số Đo lường | Baseline Log Grep Truyền thống | Trace Engine v2 (Entity Graph + Timeline) | Mức độ Cải thiện |
 |---|:---:|:---:|:---:|
-| **Độ chính xác Gán giai đoạn (Stage Attribution)** | 25.0% | **{stage_accuracy*100:.1f}%** | **+65.0%** |
-| **Độ hoàn chỉnh Chuỗi vết (Path Completeness)** | 30.0% | **{trace_completeness*100:.1f}%** | **+70.0%** |
+| **Độ chính xác Gán giai đoạn (Stage Attribution)** | 25.0% | **{stage_accuracy * 100:.1f}%** | **+65.0%** |
+| **Độ hoàn chỉnh Chuỗi vết (Path Completeness)** | 30.0% | **{trace_completeness * 100:.1f}%** | **+70.0%** |
 
 ## 3. Kết luận
-{results['conclusion']}
+{results["conclusion"]}
 """
     md_path.write_text(md_content, encoding="utf-8")
     print(f"[+] Traceability evaluation completed: {json_path} and {md_path}")

@@ -1,6 +1,5 @@
 """Contract and API security tests for Trace & Crypto endpoints (Issue #115)."""
 
-import os
 import pytest
 from fastapi.testclient import TestClient
 
@@ -21,7 +20,9 @@ def test_auth_guard_fail_closed(client):
     resp = client.get("/api/v1/trace/timeline")
     assert resp.status_code == 401
 
-    resp_bad = client.get("/api/v1/trace/timeline", headers={"X-Sentinel-Session-Token": "wrong-token"})
+    resp_bad = client.get(
+        "/api/v1/trace/timeline", headers={"X-Sentinel-Session-Token": "wrong-token"}
+    )
     assert resp_bad.status_code == 401
 
 
@@ -63,7 +64,12 @@ def test_generate_investigation_report_endpoint(client):
             }
         ],
         "evidence_records": [
-            {"evidence_id": "ev-01", "source_file": "auth.log", "line": 102, "sha256": "1234567890abcdef"}
+            {
+                "evidence_id": "ev-01",
+                "source_file": "auth.log",
+                "line": 102,
+                "sha256": "1234567890abcdef",
+            }
         ],
     }
     resp = client.post("/api/v1/trace/investigation/generate", json=payload, headers=headers)

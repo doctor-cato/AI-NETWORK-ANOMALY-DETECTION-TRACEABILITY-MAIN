@@ -1,9 +1,9 @@
 # Biên Bản Nghiệm Thu Mạng Lab Được Cấp Phép (Authorized Lab E2E Acceptance)
 
-**Mã tài liệu:** `ACCEPTANCE-LAB-V2-001`  
-**Milestone:** `M6.6 (Real-world Network Telemetry & Live Streaming)`  
-**Issue:** `#137`  
-**Trạng thái:** **`ACCEPTED & FULLY VERIFIED`**  
+**Mã tài liệu:** `ACCEPTANCE-LAB-V2-001`
+**Milestone:** `M6.6 (Real-world Network Telemetry & Live Streaming)`
+**Issue:** `#137`
+**Trạng thái:** **`ACCEPTED & FULLY VERIFIED`**
 
 ---
 
@@ -12,7 +12,7 @@
 - **Hệ thống:** NetFlow Sentinel v2.0.0
 - **Phạm vi mạng Lab:** Dải địa chỉ mạng riêng RFC 1918 (`192.168.1.0/24`) và Loopback ảo hóa.
 - **Kịch bản kiểm chuẩn:** Tái hiện đợt tấn công nhiều giai đoạn (Multi-stage APT Attack): Quét cổng $	o$ Tấn công dịch vụ Web $	o$ Leo thang đặc quyền $	o$ Trích xuất dữ liệu dung lượng lớn qua DNS tunneling.
-- **Ngày nghiệm thu:** `2026-11-17T08:46:57.852345+00:00`
+- **Ngày nghiệm thu:** `2026-11-17T13:39:19.219123+00:00`
 
 ---
 
@@ -34,6 +34,6 @@
 ## 3. Chỉ số Hiệu năng Thực nghiệm (Performance Evidence)
 
 - **Tổng số sự kiện kiểm thử:** `4` sự kiện.
-- **Thời gian xử lý toàn trình:** `0.009` giây.
-- **Thông lượng thời gian thực:** `431.42` sự kiện/giây.
+- **Thời gian xử lý toàn trình:** `0.002` giây.
+- **Thông lượng thời gian thực:** `1631.59` sự kiện/giây.
 - **Kết luận:** Hệ thống đạt đầy đủ các tiêu chuẩn nghiệm thu của Milestone M6.6, sẵn sàng cho đóng gói phát hành và bàn giao chính thức.

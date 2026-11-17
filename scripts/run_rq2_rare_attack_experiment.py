@@ -11,9 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-import numpy as np
-
-
 OUTPUT_JSON = Path("reports/experiments/imbalance/rq2_imbalance_report.json")
 OUTPUT_MD = Path("reports/experiments/imbalance/rq2_imbalance_report.md")
 
@@ -30,10 +27,26 @@ def run_rq2_experiment() -> Dict[str, Any]:
                 "sample_count_test": 44,
                 "prevalence_pct": 0.02,
                 "models": {
-                    "RandomForest_Unweighted": {"precision": 0.583, "recall": 0.477, "f1_score": 0.525},
-                    "RandomForest_CostSensitive": {"precision": 0.786, "recall": 0.750, "f1_score": 0.767},
-                    "XGBoost_ScalePosWeight": {"precision": 0.810, "recall": 0.773, "f1_score": 0.791},
-                    "Autoencoder_Reconstruction": {"precision": 0.735, "recall": 0.818, "f1_score": 0.774},
+                    "RandomForest_Unweighted": {
+                        "precision": 0.583,
+                        "recall": 0.477,
+                        "f1_score": 0.525,
+                    },
+                    "RandomForest_CostSensitive": {
+                        "precision": 0.786,
+                        "recall": 0.750,
+                        "f1_score": 0.767,
+                    },
+                    "XGBoost_ScalePosWeight": {
+                        "precision": 0.810,
+                        "recall": 0.773,
+                        "f1_score": 0.791,
+                    },
+                    "Autoencoder_Reconstruction": {
+                        "precision": 0.735,
+                        "recall": 0.818,
+                        "f1_score": 0.774,
+                    },
                     "IsolationForest": {"precision": 0.620, "recall": 0.705, "f1_score": 0.660},
                 },
             },
@@ -42,10 +55,26 @@ def run_rq2_experiment() -> Dict[str, Any]:
                 "sample_count_test": 490,
                 "prevalence_pct": 0.23,
                 "models": {
-                    "RandomForest_Unweighted": {"precision": 0.692, "recall": 0.510, "f1_score": 0.587},
-                    "RandomForest_CostSensitive": {"precision": 0.825, "recall": 0.784, "f1_score": 0.804},
-                    "XGBoost_ScalePosWeight": {"precision": 0.841, "recall": 0.802, "f1_score": 0.821},
-                    "Autoencoder_Reconstruction": {"precision": 0.760, "recall": 0.835, "f1_score": 0.796},
+                    "RandomForest_Unweighted": {
+                        "precision": 0.692,
+                        "recall": 0.510,
+                        "f1_score": 0.587,
+                    },
+                    "RandomForest_CostSensitive": {
+                        "precision": 0.825,
+                        "recall": 0.784,
+                        "f1_score": 0.804,
+                    },
+                    "XGBoost_ScalePosWeight": {
+                        "precision": 0.841,
+                        "recall": 0.802,
+                        "f1_score": 0.821,
+                    },
+                    "Autoencoder_Reconstruction": {
+                        "precision": 0.760,
+                        "recall": 0.835,
+                        "f1_score": 0.796,
+                    },
                     "IsolationForest": {"precision": 0.684, "recall": 0.745, "f1_score": 0.713},
                 },
             },
@@ -54,10 +83,26 @@ def run_rq2_experiment() -> Dict[str, Any]:
                 "sample_count_test": 537,
                 "prevalence_pct": 0.25,
                 "models": {
-                    "RandomForest_Unweighted": {"precision": 0.640, "recall": 0.490, "f1_score": 0.555},
-                    "RandomForest_CostSensitive": {"precision": 0.774, "recall": 0.728, "f1_score": 0.750},
-                    "XGBoost_ScalePosWeight": {"precision": 0.792, "recall": 0.745, "f1_score": 0.768},
-                    "Autoencoder_Reconstruction": {"precision": 0.710, "recall": 0.790, "f1_score": 0.748},
+                    "RandomForest_Unweighted": {
+                        "precision": 0.640,
+                        "recall": 0.490,
+                        "f1_score": 0.555,
+                    },
+                    "RandomForest_CostSensitive": {
+                        "precision": 0.774,
+                        "recall": 0.728,
+                        "f1_score": 0.750,
+                    },
+                    "XGBoost_ScalePosWeight": {
+                        "precision": 0.792,
+                        "recall": 0.745,
+                        "f1_score": 0.768,
+                    },
+                    "Autoencoder_Reconstruction": {
+                        "precision": 0.710,
+                        "recall": 0.790,
+                        "f1_score": 0.748,
+                    },
                     "IsolationForest": {"precision": 0.645, "recall": 0.680, "f1_score": 0.662},
                 },
             },
@@ -70,12 +115,12 @@ def run_rq2_experiment() -> Dict[str, Any]:
         json.dump(results, f, indent=2)
 
     # Markdown Report
-    md_content = f"""# Báo cáo Thực nghiệm RQ2: Đánh Giá Phát Hiện Tấn Công Hiếm và Mất Cân Bằng Dữ Liệu
+    md_content = """# Báo cáo Thực nghiệm RQ2: Đánh Giá Phát Hiện Tấn Công Hiếm và Mất Cân Bằng Dữ Liệu
 
-**Mã tài liệu:** `EXP-RQ2-IMBALANCE-001`  
-**Milestone:** `M6.3 (AI Research)`  
-**Issue:** `#96`  
-**Trạng thái:** `HYPOTHESIS CONFIRMED`  
+**Mã tài liệu:** `EXP-RQ2-IMBALANCE-001`
+**Milestone:** `M6.3 (AI Research)`
+**Issue:** `#96`
+**Trạng thái:** `HYPOTHESIS CONFIRMED`
 
 ---
 
@@ -83,7 +128,7 @@ def run_rq2_experiment() -> Dict[str, Any]:
 
 Trong môi trường mạng thực tế, các cuộc tấn công nguy hiểm nhất (Worms, Backdoors, Port Analysis) thường chỉ chiếm tỷ lệ cực nhỏ (<0.5% tổng số luồng mạng). Khi huấn luyện mô hình học máy thông thường, hiện tượng đa số áp đảo (majority dominance) khiến mô hình tối ưu hóa metric tổng thể (Accuracy) nhưng bỏ sót hoàn toàn các cuộc tấn công hiếm.
 
-**Giả thuyết H2:**  
+**Giả thuyết H2:**
 > Áp dụng trọng số phạt mất cân bằng (Cost-sensitive weighting / Scale Pos Weight) và cơ chế tái tạo bất thường (Autoencoder Reconstruction Error) cho phép đạt F1 >= 0.70 trên mọi lớp tấn công hiếm mà không cần resample làm sai lệch phân bố thực tế của tập Validation và Test.
 
 ---
@@ -115,11 +160,11 @@ Trong môi trường mạng thực tế, các cuộc tấn công nguy hiểm nh�
 
 ## 3. Kết luận & Giới hạn Khoa học
 
-1. **Khẳng định Giả thuyết H2:**  
+1. **Khẳng định Giả thuyết H2:**
    Các giải pháp tiếp cận dựa trên trọng số phạt và phát hiện bất thường không giám sát đều vượt ngưỡng F1 >= 0.70 (thực tế đạt từ 75% đến 82%), khắc phục triệt để hiện tượng bỏ sót mẫu hiếm mà không làm tăng báo động giả trên lớp Benign.
-2. **Bảo toàn tính chân thực của phân bố:**  
+2. **Bảo toàn tính chân thực của phân bố:**
    Tuyệt đối không áp dụng kỹ thuật SMOTE hoặc Random Oversampling trên tập Test/Validation, đảm bảo các chỉ số phản ánh chính xác rủi ro vận hành thực tế.
-3. **Giới hạn mẫu:**  
+3. **Giới hạn mẫu:**
    Do lớp Worms có số lượng mẫu rất hạn chế (chỉ 44 mẫu trong tập test), khoảng tin cậy thống kê có độ biến thiên cao hơn so với các lớp tấn công diện rộng.
 """
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)

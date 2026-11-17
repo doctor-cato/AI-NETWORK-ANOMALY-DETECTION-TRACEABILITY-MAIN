@@ -6,12 +6,10 @@ Implements Issue #130 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 import json
-import os
-import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
+from typing import List, Optional
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.ingestion.adapters.v2_adapter import (
@@ -41,7 +39,9 @@ class LiveLogTailer:
         poll_interval_sec: float = 0.5,
     ):
         self.target_log_path = Path(target_log_path)
-        self.state_file_path = state_file_path or self.target_log_path.with_suffix(".tailer_state.json")
+        self.state_file_path = state_file_path or self.target_log_path.with_suffix(
+            ".tailer_state.json"
+        )
         self.poll_interval_sec = poll_interval_sec
 
         self.last_offset = 0

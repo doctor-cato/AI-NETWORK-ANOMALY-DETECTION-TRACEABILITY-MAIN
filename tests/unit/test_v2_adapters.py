@@ -3,19 +3,16 @@
 Validates Issues #86, #87, #88, #89, #90 for NetFlow Sentinel v2.0.
 """
 
-from datetime import datetime, timezone
-import pytest
+from datetime import timezone
 
-from network_anomaly.canonical.event import EventKind, ValidationStatus
+from network_anomaly.canonical.event import EventKind
 from network_anomaly.data.taxonomy import (
-    CANONICAL_ATTACK_CATEGORIES,
     harmonize_attack_label,
 )
 from network_anomaly.ingestion.adapters.v2_adapter import (
     ApplicationDNSAdapter,
     ApplicationWebAdapter,
     IdentityAuthAdapter,
-    SystemAuditAdapter,
     UnifiedNetFlowAdapter,
     parse_timestamp_utc,
 )

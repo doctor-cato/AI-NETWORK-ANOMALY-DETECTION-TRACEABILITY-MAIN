@@ -4,7 +4,6 @@ Validates Issue #91 for NetFlow Sentinel v2.0.
 """
 
 from datetime import datetime, timezone
-import pytest
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, RawProvenance
 from network_anomaly.data.quality_gate import MultiSourceQualityGate
@@ -28,7 +27,9 @@ def create_sample_event(
         dest_port=dst_port,
         protocol="TCP",
         attack_category=label,
-        raw_provenance=RawProvenance(source_file="test_sample.csv", adapter_name="TestQualityGateAdapter"),
+        raw_provenance=RawProvenance(
+            source_file="test_sample.csv", adapter_name="TestQualityGateAdapter"
+        ),
     )
 
 
@@ -36,8 +37,7 @@ class TestQualityGate:
     def test_valid_data_passes(self):
         gate = MultiSourceQualityGate()
         events = [
-            create_sample_event(src_ip=f"192.168.1.{i}", ts_sec=1600000000 + i)
-            for i in range(10)
+            create_sample_event(src_ip=f"192.168.1.{i}", ts_sec=1600000000 + i) for i in range(10)
         ]
         report = gate.evaluate_events(events, source_id="test_pass")
         assert report.status == "PASS"
@@ -71,20 +71,14 @@ class TestQualityGate:
 
     def test_missing_required_fields_rejection(self):
         gate = MultiSourceQualityGate(max_missing_rate=0.05)
-        events = [
-            create_sample_event(src_ip="0.0.0.0", ts_sec=1600000000 + i)
-            for i in range(10)
-        ]
+        events = [create_sample_event(src_ip="0.0.0.0", ts_sec=1600000000 + i) for i in range(10)]
         report = gate.evaluate_events(events, source_id="test_missing")
         assert report.metrics.missing_required_fields == 10
         assert report.status == "FAIL"
 
     def test_allow_degraded_mode(self):
         gate = MultiSourceQualityGate(max_missing_rate=0.05, allow_degraded=True)
-        events = [
-            create_sample_event(src_ip="0.0.0.0", ts_sec=1600000000 + i)
-            for i in range(10)
-        ]
+        events = [create_sample_event(src_ip="0.0.0.0", ts_sec=1600000000 + i) for i in range(10)]
         report = gate.evaluate_events(events, source_id="test_degraded")
         assert report.status == "PASS_DEGRADED"
         assert "Degraded mode permitted" in report.rejection_reason

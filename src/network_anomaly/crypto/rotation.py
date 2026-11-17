@@ -13,7 +13,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .key_manager import KeyManager, KeyMetadata, KeyStatus
+from .key_manager import KeyManager
 
 
 class RotationTrigger(str, Enum):
@@ -47,9 +47,9 @@ class KeyRotationPolicy:
     """Enforces rotation rules: fixed 30-min schedule, risk-based adaptive, cooldown, rate-limit."""
 
     DEFAULT_FIXED_INTERVAL_SECONDS = 1800  # 30 minutes
-    DEFAULT_COOLDOWN_SECONDS = 60          # 1 minute between consecutive rotations
-    DEFAULT_MAX_ROTATIONS_PER_HOUR = 10    # Max 10 rotations per hour
-    DEFAULT_ADAPTIVE_RISK_THRESHOLD = 85.0 # High risk threshold triggers rotation
+    DEFAULT_COOLDOWN_SECONDS = 60  # 1 minute between consecutive rotations
+    DEFAULT_MAX_ROTATIONS_PER_HOUR = 10  # Max 10 rotations per hour
+    DEFAULT_ADAPTIVE_RISK_THRESHOLD = 85.0  # High risk threshold triggers rotation
 
     def __init__(
         self,
@@ -80,18 +80,28 @@ class KeyRotationPolicy:
         elapsed = now - last_time
         if elapsed < self.cooldown_seconds:
             remaining = int(self.cooldown_seconds - elapsed)
-            return False, RotationDecision.REJECTED_COOLDOWN, f"Rotation cooldown active: wait {remaining}s"
+            return (
+                False,
+                RotationDecision.REJECTED_COOLDOWN,
+                f"Rotation cooldown active: wait {remaining}s",
+            )
 
         # 2. Check Rate Limit (rotations in past 3600 seconds)
         one_hour_ago = now - 3600.0
         recent_count = sum(
-            1 for rec in self._history
-            if rec.domain == domain and rec.decision == RotationDecision.EXECUTED
+            1
+            for rec in self._history
+            if rec.domain == domain
+            and rec.decision == RotationDecision.EXECUTED
             and datetime.fromisoformat(rec.timestamp).timestamp() >= one_hour_ago
         )
 
         if recent_count >= self.max_rotations_per_hour:
-            return False, RotationDecision.REJECTED_RATE_LIMIT, f"Rate limit reached ({recent_count}/{self.max_rotations_per_hour} per hour)"
+            return (
+                False,
+                RotationDecision.REJECTED_RATE_LIMIT,
+                f"Rate limit reached ({recent_count}/{self.max_rotations_per_hour} per hour)",
+            )
 
         return True, None, "Rotation permitted"
 
@@ -167,7 +177,10 @@ class KeyRotationPolicy:
     ) -> Tuple[RotationDecision, Optional[str]]:
         """Evaluate adaptive rotation triggered by high risk anomaly."""
         if risk_score < self.adaptive_risk_threshold:
-            return RotationDecision.SKIPPED_BELOW_THRESHOLD, f"Risk score {risk_score:.1f} < threshold {self.adaptive_risk_threshold:.1f}"
+            return (
+                RotationDecision.SKIPPED_BELOW_THRESHOLD,
+                f"Risk score {risk_score:.1f} < threshold {self.adaptive_risk_threshold:.1f}",
+            )
 
         reason = f"High Risk Anomaly Detected (Risk Score={risk_score:.1f} >= {self.adaptive_risk_threshold:.1f})"
         if context:
@@ -180,15 +193,25 @@ class KeyRotationPolicy:
             reason=reason,
         )
 
-    def check_fixed_schedule(self, domain: str = "general") -> Tuple[RotationDecision, Optional[str]]:
+    def check_fixed_schedule(
+        self, domain: str = "general"
+    ) -> Tuple[RotationDecision, Optional[str]]:
         """Check if 30-minute interval has elapsed for fixed schedule rotation."""
         active_id = self.key_manager._active_key_ids.get(domain)
         if not active_id:
-            return self.execute_rotation(trigger=RotationTrigger.FIXED_SCHEDULE, domain=domain, reason="Initial key generation")
+            return self.execute_rotation(
+                trigger=RotationTrigger.FIXED_SCHEDULE,
+                domain=domain,
+                reason="Initial key generation",
+            )
 
         km = self.key_manager.get_metadata(active_id)
         if not km:
-            return self.execute_rotation(trigger=RotationTrigger.FIXED_SCHEDULE, domain=domain, reason="Missing active metadata")
+            return self.execute_rotation(
+                trigger=RotationTrigger.FIXED_SCHEDULE,
+                domain=domain,
+                reason="Missing active metadata",
+            )
 
         created = datetime.fromisoformat(km.created_at)
         elapsed = (datetime.now(timezone.utc) - created).total_seconds()
@@ -199,7 +222,10 @@ class KeyRotationPolicy:
                 domain=domain,
                 reason=f"Fixed 30-min schedule expired (elapsed {int(elapsed)}s)",
             )
-        return RotationDecision.SKIPPED_BELOW_THRESHOLD, f"Schedule active: elapsed {int(elapsed)}s < {self.fixed_interval_seconds}s"
+        return (
+            RotationDecision.SKIPPED_BELOW_THRESHOLD,
+            f"Schedule active: elapsed {int(elapsed)}s < {self.fixed_interval_seconds}s",
+        )
 
     def _persist_audit_record(self, record: RotationAuditRecord) -> None:
         """Persist audit record into SQLite rotation_audit table if db is provided."""

@@ -5,10 +5,10 @@ Implements Issue #101 for NetFlow Sentinel v2.0.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-import math
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List
+
 import numpy as np
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind
@@ -81,7 +81,9 @@ class EventSessionizer:
         # Group by entity_key (entity_id if available, else fingerprint from source/service)
         entity_groups: Dict[str, List[CanonicalSecurityEvent]] = {}
         for ev in sorted_events:
-            key = ev.entity_id or f"flow:{ev.source_ip}:{ev.source_port}->{ev.dest_ip}:{ev.dest_port}"
+            key = (
+                ev.entity_id or f"flow:{ev.source_ip}:{ev.source_port}->{ev.dest_ip}:{ev.dest_port}"
+            )
             entity_groups.setdefault(key, []).append(ev)
 
         summaries: List[SessionSummary] = []
@@ -121,7 +123,9 @@ class EventSessionizer:
         # Compute Inter-Arrival Times (IAT)
         iats = []
         for i in range(1, len(events)):
-            iat = (events[i].event_timestamp - events[i - 1].event_timestamp).total_seconds() * 1000.0
+            iat = (
+                events[i].event_timestamp - events[i - 1].event_timestamp
+            ).total_seconds() * 1000.0
             iats.append(iat)
 
         mean_iat = float(np.mean(iats)) if iats else 0.0

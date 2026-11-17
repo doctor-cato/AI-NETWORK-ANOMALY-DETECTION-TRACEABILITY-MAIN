@@ -5,17 +5,86 @@ Implements Issue #119 for NetFlow Sentinel v2.0.
 
 from __future__ import annotations
 
-import base64
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    class _DATA_BLOB(ctypes.Structure):
+        _fields_ = [
+            ("cbData", wintypes.DWORD),
+            ("pbData", ctypes.POINTER(ctypes.c_char)),
+        ]
+
 
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+DPAPI_PREFIX = b"NETFLOW_DPAPI_V1:"
+POSIX_PREFIX = b"NETFLOW_POSIX_V1:"
+WRAPPED_DEK_PREFIX = b"NETFLOW_WRAPPED_DEK_V1:"
+
+
+def _protect_dpapi(plaintext: bytes, description: str = "NetFlow Sentinel Master Key") -> bytes:
+    if sys.platform != "win32":
+        return plaintext
+    crypt32 = ctypes.windll.crypt32
+    kernel32 = ctypes.windll.kernel32
+    in_blob = _DATA_BLOB(
+        len(plaintext), ctypes.cast(ctypes.c_char_p(plaintext), ctypes.POINTER(ctypes.c_char))
+    )
+    out_blob = _DATA_BLOB()
+    desc_p = ctypes.c_wchar_p(description) if description else None
+    res = crypt32.CryptProtectData(
+        ctypes.byref(in_blob),
+        desc_p,
+        None,
+        None,
+        None,
+        0x01,  # CRYPTPROTECT_UI_FORBIDDEN
+        ctypes.byref(out_blob),
+    )
+    if not res:
+        raise OSError(f"CryptProtectData failed with error {kernel32.GetLastError()}")
+    try:
+        return ctypes.string_at(out_blob.pbData, out_blob.cbData)
+    finally:
+        kernel32.LocalFree(out_blob.pbData)
+
+
+def _unprotect_dpapi(ciphertext: bytes) -> bytes:
+    if sys.platform != "win32":
+        return ciphertext
+    crypt32 = ctypes.windll.crypt32
+    kernel32 = ctypes.windll.kernel32
+    in_blob = _DATA_BLOB(
+        len(ciphertext), ctypes.cast(ctypes.c_char_p(ciphertext), ctypes.POINTER(ctypes.c_char))
+    )
+    out_blob = _DATA_BLOB()
+    res = crypt32.CryptUnprotectData(
+        ctypes.byref(in_blob),
+        None,
+        None,
+        None,
+        None,
+        0x01,  # CRYPTPROTECT_UI_FORBIDDEN
+        ctypes.byref(out_blob),
+    )
+    if not res:
+        raise OSError(f"CryptUnprotectData failed with error {kernel32.GetLastError()}")
+    try:
+        return ctypes.string_at(out_blob.pbData, out_blob.cbData)
+    finally:
+        kernel32.LocalFree(out_blob.pbData)
 
 
 class KeyStatus(str, Enum):
@@ -69,7 +138,7 @@ class KeyManager:
     def __init__(self, keystore_dir: Optional[Path] = None, master_key: Optional[bytes] = None):
         self.keystore_dir = keystore_dir or Path("data/keys")
         self.keystore_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # In-memory key cache {key_id: raw_bytes}
         self._keys: Dict[str, bytes] = {}
         # Key metadata cache {key_id: KeyMetadata}
@@ -84,15 +153,54 @@ class KeyManager:
         """Load or create root master key in protected storage."""
         master_file = self.keystore_dir / "master.key"
         if master_file.exists():
-            return master_file.read_bytes()
+            raw = master_file.read_bytes()
+            if raw.startswith(DPAPI_PREFIX):
+                return _unprotect_dpapi(raw[len(DPAPI_PREFIX) :])
+            if raw.startswith(POSIX_PREFIX):
+                return raw[len(POSIX_PREFIX) :]
+            return raw
+
         new_key = os.urandom(self.KEY_LENGTH_BYTES)
-        master_file.write_bytes(new_key)
+        if sys.platform == "win32":
+            try:
+                encrypted_blob = _protect_dpapi(new_key, "NetFlow Sentinel Master Key")
+                master_file.write_bytes(DPAPI_PREFIX + encrypted_blob)
+            except Exception:
+                master_file.write_bytes(POSIX_PREFIX + new_key)
+        else:
+            master_file.write_bytes(POSIX_PREFIX + new_key)
+            try:
+                os.chmod(master_file, 0o600)
+            except Exception:
+                pass
+        return new_key
+
+    def _save_dek_file(self, key_id: str, raw_key: bytes) -> None:
+        """Encrypt and persist DEK wrapped under Master KEK (AES-256-GCM)."""
+        kfile = self.keystore_dir / f"{key_id}.key"
+        nonce = os.urandom(12)
+        aesgcm = AESGCM(self._master_key)
+        ciphertext = aesgcm.encrypt(nonce, raw_key, key_id.encode("ascii"))
+        payload = WRAPPED_DEK_PREFIX + nonce + ciphertext
+        kfile.write_bytes(payload)
         try:
-            # Set restrictive file permission on POSIX if applicable
-            os.chmod(master_file, 0o600)
+            os.chmod(kfile, 0o600)
         except Exception:
             pass
-        return new_key
+
+    def _load_dek_file(self, key_id: str) -> Optional[bytes]:
+        """Load and unwrap DEK from storage."""
+        kfile = self.keystore_dir / f"{key_id}.key"
+        if not kfile.exists():
+            return None
+        raw = kfile.read_bytes()
+        if raw.startswith(WRAPPED_DEK_PREFIX):
+            payload = raw[len(WRAPPED_DEK_PREFIX) :]
+            nonce = payload[:12]
+            ciphertext = payload[12:]
+            aesgcm = AESGCM(self._master_key)
+            return aesgcm.decrypt(nonce, ciphertext, key_id.encode("ascii"))
+        return raw
 
     def _load_all_keys(self) -> None:
         """Load keys and metadata from keystore directory."""
@@ -103,9 +211,9 @@ class KeyManager:
                 for item in data.get("keys", []):
                     km = KeyMetadata.from_dict(item)
                     self._metadata[km.key_id] = km
-                    kfile = self.keystore_dir / f"{km.key_id}.key"
-                    if kfile.exists():
-                        self._keys[km.key_id] = kfile.read_bytes()
+                    raw_key = self._load_dek_file(km.key_id)
+                    if raw_key is not None:
+                        self._keys[km.key_id] = raw_key
                     if km.status == KeyStatus.ACTIVE:
                         self._active_key_ids[km.domain] = km.key_id
             except Exception:
@@ -162,18 +270,13 @@ class KeyManager:
         self._keys[key_id] = raw_key
         self._active_key_ids[domain] = key_id
 
-        # Persist raw key file
-        kfile = self.keystore_dir / f"{key_id}.key"
-        kfile.write_bytes(raw_key)
-        try:
-            os.chmod(kfile, 0o600)
-        except Exception:
-            pass
+        # Persist wrapped key file
+        self._save_dek_file(key_id, raw_key)
 
         self._save_metadata()
         return km
 
-    def get_active_key(self, domain: str = "general") -> tuple[str, bytes]:
+    def get_active_key(self, domain: str = "general") -> Tuple[str, bytes]:
         """Get (key_id, key_bytes) for the currently active key. Generates one if none exists."""
         active_id = self._active_key_ids.get(domain)
         if not active_id or active_id not in self._keys:

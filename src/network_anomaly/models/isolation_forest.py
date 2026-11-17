@@ -571,7 +571,7 @@ class IsolationForestModel:
         elif hasattr(payload, "decision_function"):
             if not isinstance(payload, IsolationForest):
                 raise ValueError(
-                    "Artifact payload must be IsolationForest, " f"got {type(payload).__name__}"
+                    f"Artifact payload must be IsolationForest, got {type(payload).__name__}"
                 )
             config = payload.get_params() if hasattr(payload, "get_params") else {}
             model = cls(config=config)

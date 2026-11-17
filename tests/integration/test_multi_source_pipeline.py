@@ -4,11 +4,9 @@ Validates Issue #93 for NetFlow Sentinel v2.0.
 """
 
 from pathlib import Path
-import pytest
 
 from network_anomaly.canonical.event import EventKind, ValidationStatus
 from network_anomaly.pipeline.multi_source import MultiSourcePipeline
-
 
 AIT_SAMPLE_DIR = Path("data/raw/ait")
 
@@ -97,7 +95,12 @@ class TestMultiSourcePipelineIntegration:
             if ev.event_kind == EventKind.FLOW:
                 assert ev.validation_status == ValidationStatus.FEATURE_INCOMPLETE
             else:
-                assert ev.event_kind in (EventKind.DNS, EventKind.WEB, EventKind.AUTH, EventKind.SYSTEM)
+                assert ev.event_kind in (
+                    EventKind.DNS,
+                    EventKind.WEB,
+                    EventKind.AUTH,
+                    EventKind.SYSTEM,
+                )
 
     def test_pipeline_determinism(self):
         pipeline = MultiSourcePipeline(time_window_sec=2.0)

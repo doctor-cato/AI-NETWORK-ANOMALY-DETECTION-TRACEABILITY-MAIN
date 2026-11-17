@@ -10,7 +10,9 @@ Covers:
 """
 
 from pathlib import Path
+
 import pytest
+
 from network_anomaly.crypto.aead import AESGCMCipher, AuthenticationError
 from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
 from network_anomaly.crypto.key_manager import KeyManager, KeyStatus
@@ -69,6 +71,7 @@ def test_encrypted_storage_zero_plaintext_at_rest(tmp_path: Path):
 
     # 1. Read directly from DB file bytes and SQLite columns
     import sqlite3
+
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
     cursor.execute(
@@ -150,7 +153,9 @@ def test_adaptive_rotation_triggered_by_risk(tmp_path: Path):
     assert dec_low == RotationDecision.SKIPPED_BELOW_THRESHOLD
 
     # Risk 92: executed
-    dec_high, key_id = policy.evaluate_adaptive_rotation(risk_score=92.0, context={"event_id": "evt-attack-01"})
+    dec_high, key_id = policy.evaluate_adaptive_rotation(
+        risk_score=92.0, context={"event_id": "evt-attack-01"}
+    )
     assert dec_high == RotationDecision.EXECUTED
     assert key_id is not None
 
@@ -197,3 +202,25 @@ def test_unauthorized_key_revocation_denied(tmp_path: Path):
     assert res is True
     meta = km.get_metadata(key_id)
     assert meta.status == KeyStatus.REVOKED
+
+
+def test_key_wrapping_and_zero_plaintext_key_on_disk(tmp_path: Path):
+    """Verify that DEK key files on disk are wrapped with KEK and do not contain plaintext."""
+    keystore = tmp_path / "keys"
+    km = KeyManager(keystore_dir=keystore)
+    key_id, raw_key = km.get_active_key(domain="behavioral")
+
+    # Read physical key file from disk
+    kfile = keystore / f"{key_id}.key"
+    assert kfile.exists()
+    disk_bytes = kfile.read_bytes()
+
+    # Must start with wrapped DEK header
+    assert disk_bytes.startswith(b"NETFLOW_WRAPPED_DEK_V1:")
+    # Must NOT contain raw key bytes anywhere
+    assert raw_key not in disk_bytes
+
+    # A fresh KeyManager instance reading from the same directory must load and unwrap successfully
+    km2 = KeyManager(keystore_dir=keystore)
+    loaded_raw = km2.get_key(key_id)
+    assert loaded_raw == raw_key

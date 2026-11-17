@@ -8,21 +8,17 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict
 
-from network_anomaly.canonical.event import EventKind
 from network_anomaly.ingestion.adapters.v2_adapter import (
-    IdentityAuthAdapter,
     ApplicationDNSAdapter,
     ApplicationWebAdapter,
+    IdentityAuthAdapter,
     UnifiedNetFlowAdapter,
-    parse_timestamp_utc,
 )
-
 
 AIT_DATA_DIR = Path("data/raw/ait")
 REPORT_JSON_PATH = Path("reports/datasets/ait_profile.json")
@@ -189,23 +185,31 @@ def evaluate_linkage_feasibility(
     flow_events = []
     with open(netflow_path, "r", encoding="utf-8") as f:
         for idx, row in enumerate(csv.DictReader(f)):
-            flow_events.append(flow_adapter.adapt_record(row, filename=netflow_path.name, line_idx=idx + 1))
+            flow_events.append(
+                flow_adapter.adapt_record(row, filename=netflow_path.name, line_idx=idx + 1)
+            )
 
     log_events = []
     if dns_path.exists():
         with open(dns_path, "r", encoding="utf-8") as f:
             for idx, row in enumerate(csv.DictReader(f)):
-                log_events.append(dns_adapter.adapt_record(row, filename=dns_path.name, line_idx=idx + 1))
+                log_events.append(
+                    dns_adapter.adapt_record(row, filename=dns_path.name, line_idx=idx + 1)
+                )
     if web_path.exists():
         with open(web_path, "r", encoding="utf-8") as f:
             for idx, line in enumerate(f):
                 if line.strip():
-                    log_events.append(web_adapter.adapt_line(line, filename=web_path.name, line_idx=idx + 1))
+                    log_events.append(
+                        web_adapter.adapt_line(line, filename=web_path.name, line_idx=idx + 1)
+                    )
     if auth_path.exists():
         with open(auth_path, "r", encoding="utf-8") as f:
             for idx, line in enumerate(f):
                 if line.strip():
-                    log_events.append(auth_adapter.adapt_line(line, filename=auth_path.name, line_idx=idx + 1))
+                    log_events.append(
+                        auth_adapter.adapt_line(line, filename=auth_path.name, line_idx=idx + 1)
+                    )
 
     total_flow_events = len(flow_events)
     matched_flow_ids = set()
@@ -225,17 +229,23 @@ def evaluate_linkage_feasibility(
 
             if ip_match and time_match:
                 matched_flow_ids.add(f_ev.event_id)
-                links.append({
-                    "flow_event_id": f_ev.event_id,
-                    "log_event_id": l_ev.event_id,
-                    "flow_kind": f_ev.event_kind.value,
-                    "log_kind": l_ev.event_kind.value,
-                    "ip": f_ev.source_ip,
-                    "delta_sec": round(abs(f_time - l_time), 3),
-                })
+                links.append(
+                    {
+                        "flow_event_id": f_ev.event_id,
+                        "log_event_id": l_ev.event_id,
+                        "flow_kind": f_ev.event_kind.value,
+                        "log_kind": l_ev.event_kind.value,
+                        "ip": f_ev.source_ip,
+                        "delta_sec": round(abs(f_time - l_time), 3),
+                    }
+                )
                 break
 
-    match_rate_pct = round((len(matched_flow_ids) / total_flow_events) * 100.0, 2) if total_flow_events > 0 else 0.0
+    match_rate_pct = (
+        round((len(matched_flow_ids) / total_flow_events) * 100.0, 2)
+        if total_flow_events > 0
+        else 0.0
+    )
 
     return {
         "strategy": "IP_AND_TEMPORAL_WINDOW_JOIN",
@@ -262,7 +272,9 @@ def main():
     auth_prof = profile_auth(auth_log)
 
     print("Evaluating Linkage Feasibility...")
-    feasibility = evaluate_linkage_feasibility(flow_csv, dns_log, web_log, auth_log, time_window_sec=3.0)
+    feasibility = evaluate_linkage_feasibility(
+        flow_csv, dns_log, web_log, auth_log, time_window_sec=3.0
+    )
 
     report_payload = {
         "profiled_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -282,9 +294,9 @@ def main():
     # Generate Markdown Profile
     md_content = f"""# AIT Multi-Source Dataset Profiling Report
 
-**Milestone:** `M6.2 (Multi-source Data Engineering)`  
-**Issue:** `#84`  
-**Status:** `VERIFIED & DETERMINISTIC`  
+**Milestone:** `M6.2 (Multi-source Data Engineering)`
+**Issue:** `#84`
+**Status:** `VERIFIED & DETERMINISTIC`
 
 ## 1. Overview
 Hệ thống NetFlow Sentinel v2.0 hỗ trợ giám sát đa nguồn kết hợp Network Flow và Application/Host Logs. Dữ liệu mẫu chuẩn hóa từ AIT Dataset Suite v2.1 được dùng để đánh giá tính chất thống kê.
@@ -292,32 +304,32 @@ Hệ thống NetFlow Sentinel v2.0 hỗ trợ giám sát đa nguồn kết hợp
 ## 2. Statistical Profiles by Source
 
 ### 2.1 NetFlow (AIT NetFlow v2.1)
-- **Tệp nguồn:** `{flow_prof.get('file')}`
-- **Số bản ghi:** `{flow_prof.get('total_records')}`
-- **Trường thời gian:** `{flow_prof.get('time_field')}`
-- **Khoảng thời gian:** `{flow_prof.get('time_range', {}).get('min')}` đến `{flow_prof.get('time_range', {}).get('max')}`
-- **Thực thể nhận diện:** `{', '.join(flow_prof.get('entity_identifiers', []))}`
+- **Tệp nguồn:** `{flow_prof.get("file")}`
+- **Số bản ghi:** `{flow_prof.get("total_records")}`
+- **Trường thời gian:** `{flow_prof.get("time_field")}`
+- **Khoảng thời gian:** `{flow_prof.get("time_range", {}).get("min")}` đến `{flow_prof.get("time_range", {}).get("max")}`
+- **Thực thể nhận diện:** `{", ".join(flow_prof.get("entity_identifiers", []))}`
 - **Phân bố nhãn:**
 ```json
-{json.dumps(flow_prof.get('class_distribution', {}), indent=2)}
+{json.dumps(flow_prof.get("class_distribution", {}), indent=2)}
 ```
 
 ### 2.2 DNS Logs (Bind9 / Zeek)
-- **Tệp nguồn:** `{dns_prof.get('file')}`
-- **Số bản ghi:** `{dns_prof.get('total_records')}`
-- **Trường thời gian:** `{dns_prof.get('time_field')}`
-- **Khoảng thời gian:** `{dns_prof.get('time_range', {}).get('min')}` đến `{dns_prof.get('time_range', {}).get('max')}`
-- **Loại truy vấn:** `{json.dumps(dns_prof.get('query_types', {}))}`
+- **Tệp nguồn:** `{dns_prof.get("file")}`
+- **Số bản ghi:** `{dns_prof.get("total_records")}`
+- **Trường thời gian:** `{dns_prof.get("time_field")}`
+- **Khoảng thời gian:** `{dns_prof.get("time_range", {}).get("min")}` đến `{dns_prof.get("time_range", {}).get("max")}`
+- **Loại truy vấn:** `{json.dumps(dns_prof.get("query_types", {}))}`
 
 ### 2.3 Web Logs (Apache Access Log)
-- **Tệp nguồn:** `{web_prof.get('file')}`
-- **Số bản ghi:** `{web_prof.get('total_records')}`
-- **Mã phản hồi HTTP:** `{json.dumps(web_prof.get('response_codes', {}))}`
+- **Tệp nguồn:** `{web_prof.get("file")}`
+- **Số bản ghi:** `{web_prof.get("total_records")}`
+- **Mã phản hồi HTTP:** `{json.dumps(web_prof.get("response_codes", {}))}`
 
 ### 2.4 Auth & Audit Logs (OpenSSH / PAM / Sudo)
-- **Tệp nguồn:** `{auth_prof.get('file')}`
-- **Số bản ghi:** `{auth_prof.get('total_records')}`
-- **Kết quả xác thực:** `{json.dumps(auth_prof.get('auth_results', {}))}`
+- **Tệp nguồn:** `{auth_prof.get("file")}`
+- **Số bản ghi:** `{auth_prof.get("total_records")}`
+- **Kết quả xác thực:** `{json.dumps(auth_prof.get("auth_results", {}))}`
 """
     REPORT_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_MD_PATH.write_text(md_content, encoding="utf-8")
@@ -325,34 +337,36 @@ Hệ thống NetFlow Sentinel v2.0 hỗ trợ giám sát đa nguồn kết hợp
     # Generate Linkage Feasibility Markdown
     feasibility_md = f"""# AIT NetFlow ↔ AIT Log v2.1 Linkage Feasibility Study
 
-**Milestone:** `M6.2 (Multi-source Data Engineering)`  
-**Issue:** `#85`  
-**Status:** `EMPIRICALLY VALIDATED`  
+**Milestone:** `M6.2 (Multi-source Data Engineering)`
+**Issue:** `#85`
+**Status:** `EMPIRICALLY VALIDATED`
 
 ## 1. Nghiên cứu thực nghiệm
 Thử nghiệm khả năng liên kết sự kiện mạng (Network Flow) với các sự kiện tầng ứng dụng và hệ thống (DNS, Web HTTP, SSH Auth) trong cùng một môi trường mạng doanh nghiệp mô phỏng.
 
 ## 2. Chiến lược Join & Tiêu chí tương quan
 - **Khóa liên kết:** Địa chỉ IP nguồn (`source_ip`) hoặc IP đích (`dest_ip`).
-- **Cửa sổ thời gian:** `|timestamp_flow - timestamp_log| <= {feasibility['time_window_sec']}s`.
+- **Cửa sổ thời gian:** `|timestamp_flow - timestamp_log| <= {feasibility["time_window_sec"]}s`.
 - **Ranh giới an toàn:**
   - Không tự suy diễn định danh người dùng nếu log không ghi nhận rõ ràng.
   - Không thực hiện liên kết ngoài cửa sổ giám sát được ủy quyền.
 
 ## 3. Kết quả thực nghiệm
-- **Tổng số Flow kiểm thử:** `{feasibility['total_flows_tested']}`
-- **Tổng số Log kiểm thử:** `{feasibility['total_logs_tested']}`
-- **Số Flow tìm thấy tương quan Log:** `{feasibility['matched_flows_count']}`
-- **Tỷ lệ khớp thực tế (Match Rate):** `{feasibility['match_rate_pct']}%`
-- **Kết luận:** **`{feasibility['feasibility_conclusion']}`**
+- **Tổng số Flow kiểm thử:** `{feasibility["total_flows_tested"]}`
+- **Tổng số Log kiểm thử:** `{feasibility["total_logs_tested"]}`
+- **Số Flow tìm thấy tương quan Log:** `{feasibility["matched_flows_count"]}`
+- **Tỷ lệ khớp thực tế (Match Rate):** `{feasibility["match_rate_pct"]}%`
+- **Kết luận:** **`{feasibility["feasibility_conclusion"]}`**
 
-> **Khẳng định cho M6.4 (Risk & Traceability):**  
+> **Khẳng định cho M6.4 (Risk & Traceability):**
 > Việc liên kết đa nguồn theo cặp khóa `(IP, timestamp_window)` là hoàn toàn khả thi và cung cấp cơ sở vững chắc để xây dựng Entity Relationship Graph và Attack Timeline Reconstructor mà không cần giả định thiếu căn cứ.
 """
     FEASIBILITY_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
     FEASIBILITY_MD_PATH.write_text(feasibility_md, encoding="utf-8")
 
-    print(f"Profiling completed successfully. Reports written to:\n  - {REPORT_JSON_PATH}\n  - {REPORT_MD_PATH}\n  - {FEASIBILITY_MD_PATH}")
+    print(
+        f"Profiling completed successfully. Reports written to:\n  - {REPORT_JSON_PATH}\n  - {REPORT_MD_PATH}\n  - {FEASIBILITY_MD_PATH}"
+    )
 
 
 if __name__ == "__main__":

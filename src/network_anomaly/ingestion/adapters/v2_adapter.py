@@ -6,8 +6,7 @@ Implements Issues #86, #88, #89, #90.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-import math
+from typing import Any, Dict, Optional
 
 from network_anomaly.canonical.event import (
     AuthData,
@@ -21,7 +20,6 @@ from network_anomaly.canonical.event import (
     ValidationStatus,
 )
 from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
-from network_anomaly.data.taxonomy import harmonize_attack_label
 
 
 def parse_timestamp_utc(raw_ts: Any) -> datetime:
@@ -62,7 +60,9 @@ class UnifiedNetFlowAdapter:
         self.source_id = source_id
         self.contract = get_baseline_47_feature_contract()
 
-    def adapt_record(self, raw: Dict[str, Any], filename: str = "flow.csv", line_idx: Optional[int] = None) -> CanonicalSecurityEvent:
+    def adapt_record(
+        self, raw: Dict[str, Any], filename: str = "flow.csv", line_idx: Optional[int] = None
+    ) -> CanonicalSecurityEvent:
         ts_raw = raw.get("FLOW_START_MILLISECONDS") or raw.get("timestamp") or raw.get("flow_start")
         dt = parse_timestamp_utc(ts_raw)
 
@@ -105,7 +105,9 @@ class UnifiedNetFlowAdapter:
             raw_provenance=provenance,
             ml_features=ml_feats,
             is_ml_complete=is_complete,
-            validation_status=ValidationStatus.VALID if is_complete else ValidationStatus.FEATURE_INCOMPLETE,
+            validation_status=(
+                ValidationStatus.VALID if is_complete else ValidationStatus.FEATURE_INCOMPLETE
+            ),
         )
 
 
@@ -115,7 +117,9 @@ class ApplicationDNSAdapter:
     def __init__(self, source_id: str = "source:zeek-dns"):
         self.source_id = source_id
 
-    def adapt_record(self, raw: Dict[str, Any], filename: str = "dns.log", line_idx: Optional[int] = None) -> CanonicalSecurityEvent:
+    def adapt_record(
+        self, raw: Dict[str, Any], filename: str = "dns.log", line_idx: Optional[int] = None
+    ) -> CanonicalSecurityEvent:
         dt = parse_timestamp_utc(raw.get("ts") or raw.get("timestamp"))
         src_ip = str(raw.get("id.orig_h") or raw.get("source_ip") or "0.0.0.0")
         dst_ip = str(raw.get("id.resp_h") or raw.get("dest_ip") or "0.0.0.0")
@@ -140,7 +144,9 @@ class ApplicationDNSAdapter:
             dest_port=dst_port,
             protocol="UDP",
             dns_data=dns_data,
-            raw_provenance=RawProvenance(source_file=filename, line_or_offset=line_idx, adapter_name="ApplicationDNSAdapter"),
+            raw_provenance=RawProvenance(
+                source_file=filename, line_or_offset=line_idx, adapter_name="ApplicationDNSAdapter"
+            ),
             is_ml_complete=False,  # NO IMPUTATION FOR APPLICATION LOGS
         )
 
@@ -151,15 +157,22 @@ class ApplicationWebAdapter:
     def __init__(self, source_id: str = "source:nginx-web"):
         self.source_id = source_id
 
-    def adapt_line(self, line: str, filename: str = "access.log", line_idx: Optional[int] = None) -> CanonicalSecurityEvent:
+    def adapt_line(
+        self, line: str, filename: str = "access.log", line_idx: Optional[int] = None
+    ) -> CanonicalSecurityEvent:
         """Parse Common Log Format or Combined Log Format line."""
         # 192.168.1.100 - - [05/Nov/2020:08:00:00 +0000] "GET /index.html HTTP/1.1" 200 4520 "-" "Mozilla/5.0"
         import re
+
         pattern = r'^(\S+) \S+ \S+ \[([^\]]+)\] "(\S+) ([^"]*) \S+" (\d{3}) (\d+|-)'
         m = re.match(pattern, line.strip())
         if m:
             src_ip, ts_str, method, url, status, bytes_str = m.groups()
-            dt = parse_timestamp_utc(datetime.strptime(ts_str.split()[0], "%d/%b/%Y:%H:%M:%S").replace(tzinfo=timezone.utc))
+            dt = parse_timestamp_utc(
+                datetime.strptime(ts_str.split()[0], "%d/%b/%Y:%H:%M:%S").replace(
+                    tzinfo=timezone.utc
+                )
+            )
             return self.adapt_record(
                 {
                     "time_local": dt,
@@ -173,7 +186,9 @@ class ApplicationWebAdapter:
             )
         return self.adapt_record({"remote_addr": "0.0.0.0"}, filename=filename, line_idx=line_idx)
 
-    def adapt_record(self, raw: Dict[str, Any], filename: str = "access.log", line_idx: Optional[int] = None) -> CanonicalSecurityEvent:
+    def adapt_record(
+        self, raw: Dict[str, Any], filename: str = "access.log", line_idx: Optional[int] = None
+    ) -> CanonicalSecurityEvent:
         dt = parse_timestamp_utc(raw.get("time_local") or raw.get("timestamp"))
         src_ip = str(raw.get("remote_addr") or raw.get("source_ip") or "0.0.0.0")
         dst_ip = str(raw.get("server_addr") or raw.get("dest_ip") or "0.0.0.0")
@@ -195,7 +210,9 @@ class ApplicationWebAdapter:
             dest_port=80,
             protocol="TCP",
             http_data=http_data,
-            raw_provenance=RawProvenance(source_file=filename, line_or_offset=line_idx, adapter_name="ApplicationWebAdapter"),
+            raw_provenance=RawProvenance(
+                source_file=filename, line_or_offset=line_idx, adapter_name="ApplicationWebAdapter"
+            ),
             is_ml_complete=False,
         )
 
@@ -206,19 +223,22 @@ class IdentityAuthAdapter:
     def __init__(self, source_id: str = "source:auth-audit"):
         self.source_id = source_id
 
-    def adapt_line(self, line: str, filename: str = "auth.log", line_idx: Optional[int] = None) -> CanonicalSecurityEvent:
+    def adapt_line(
+        self, line: str, filename: str = "auth.log", line_idx: Optional[int] = None
+    ) -> CanonicalSecurityEvent:
         """Parse Linux auth.log / sshd line."""
         # Nov  5 08:00:00 server01 sshd[1234]: Accepted publickey for alice from 192.168.1.100 port 52314 ssh2
         import re
+
         line_clean = line.strip()
         dt = datetime(2020, 11, 5, 8, 0, 0, tzinfo=timezone.utc)
-        
+
         # IP match
-        ip_m = re.search(r'from (\d+\.\d+\.\d+\.\d+)', line_clean)
+        ip_m = re.search(r"from (\d+\.\d+\.\d+\.\d+)", line_clean)
         src_ip = ip_m.group(1) if ip_m else "0.0.0.0"
 
         # User match
-        user_m = re.search(r'for (?:invalid user )?([a-zA-Z0-9_\-]+)', line_clean)
+        user_m = re.search(r"for (?:invalid user )?([a-zA-Z0-9_\-]+)", line_clean)
         user = user_m.group(1) if user_m else "unknown"
 
         # Status
@@ -236,11 +256,18 @@ class IdentityAuthAdapter:
             line_idx=line_idx,
         )
 
-    def adapt_record(self, raw: Dict[str, Any], filename: str = "auth.log", line_idx: Optional[int] = None) -> CanonicalSecurityEvent:
+    def adapt_record(
+        self, raw: Dict[str, Any], filename: str = "auth.log", line_idx: Optional[int] = None
+    ) -> CanonicalSecurityEvent:
         dt = parse_timestamp_utc(raw.get("timestamp") or raw.get("date"))
         src_ip = str(raw.get("source_ip") or raw.get("rhost") or "0.0.0.0")
         user = str(raw.get("user") or raw.get("username") or "unknown_user")
-        res = "SUCCESS" if str(raw.get("result") or raw.get("status") or "").lower() in ("accepted", "success", "0") else "FAILURE"
+        res = (
+            "SUCCESS"
+            if str(raw.get("result") or raw.get("status") or "").lower()
+            in ("accepted", "success", "0")
+            else "FAILURE"
+        )
 
         auth_data = AuthData(
             username=user,
@@ -256,7 +283,9 @@ class IdentityAuthAdapter:
             entity_id=f"user:{user}",
             source_ip=src_ip,
             auth_data=auth_data,
-            raw_provenance=RawProvenance(source_file=filename, line_or_offset=line_idx, adapter_name="IdentityAuthAdapter"),
+            raw_provenance=RawProvenance(
+                source_file=filename, line_or_offset=line_idx, adapter_name="IdentityAuthAdapter"
+            ),
             is_ml_complete=False,
         )
 
@@ -267,7 +296,9 @@ class SystemAuditAdapter:
     def __init__(self, source_id: str = "source:sysmon"):
         self.source_id = source_id
 
-    def adapt_record(self, raw: Dict[str, Any], filename: str = "sysmon.json", line_idx: Optional[int] = None) -> CanonicalSecurityEvent:
+    def adapt_record(
+        self, raw: Dict[str, Any], filename: str = "sysmon.json", line_idx: Optional[int] = None
+    ) -> CanonicalSecurityEvent:
         dt = parse_timestamp_utc(raw.get("UtcTime") or raw.get("timestamp"))
         host = str(raw.get("Computer") or raw.get("hostname") or "local_host")
 
@@ -284,6 +315,8 @@ class SystemAuditAdapter:
             source_id=self.source_id,
             entity_id=f"host:{host}",
             system_data=sys_data,
-            raw_provenance=RawProvenance(source_file=filename, line_or_offset=line_idx, adapter_name="SystemAuditAdapter"),
+            raw_provenance=RawProvenance(
+                source_file=filename, line_or_offset=line_idx, adapter_name="SystemAuditAdapter"
+            ),
             is_ml_complete=False,
         )

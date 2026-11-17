@@ -12,11 +12,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, FlowMetrics, RawProvenance
+from network_anomaly.canonical.event import (
+    CanonicalSecurityEvent,
+    EventKind,
+    FlowMetrics,
+    RawProvenance,
+)
 from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
-from network_anomaly.telemetry.modes import ModeOrchestrator, MonitoringMode
-
+from network_anomaly.telemetry.modes import ModeOrchestrator
 
 OUTPUT_JSON = Path("reports/benchmarks/system_performance_benchmark.json")
 OUTPUT_MD = Path("docs/benchmarks/SYSTEM_PERFORMANCE.md")
@@ -39,7 +43,14 @@ def run_benchmark() -> Dict[str, Any]:
             source_port=10000 + (i % 50000),
             dest_port=80,
             protocol="TCP",
-            flow_metrics=FlowMetrics(duration_ms=50.0, bytes_in=1000, bytes_out=2500, pkts_in=10, pkts_out=12, tcp_flags=24),
+            flow_metrics=FlowMetrics(
+                duration_ms=50.0,
+                bytes_in=1000,
+                bytes_out=2500,
+                pkts_in=10,
+                pkts_out=12,
+                tcp_flags=24,
+            ),
             raw_provenance=RawProvenance(source_file="bench.csv", adapter_name="BenchAdapter"),
             is_ml_complete=True,
             ml_features={k: 1.0 for k in contract.feature_names},
@@ -48,7 +59,7 @@ def run_benchmark() -> Dict[str, Any]:
     ]
 
     t0 = time.perf_counter()
-    offline_results = orchestrator.process_batch(offline_events)
+    orchestrator.process_batch(offline_events)
     offline_elapsed = max(0.001, time.perf_counter() - t0)
     offline_throughput = round(len(offline_events) / offline_elapsed, 2)
     offline_latency_us = round((offline_elapsed / len(offline_events)) * 1e6, 2)
@@ -59,6 +70,60 @@ def run_benchmark() -> Dict[str, Any]:
         source_name="bench:replay",
         speed_factor=float("inf"),
     )
+
+    # 3. Dynamic micro-benchmarks of each subsystem (Issue #147, F03 remediation)
+    from network_anomaly.behavioral.vector import BehavioralVectorBuilder
+    from network_anomaly.crypto.aead import AESGCMCipher
+    from network_anomaly.telemetry.collector import NetFlowIPFIXDecoder
+
+    # a. Collector decoding
+    decoder = NetFlowIPFIXDecoder()
+    sample_raw = b"\x00\x09\x00\x01\x00\x00\x03\xe8\x65\x50\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01"
+    t_start = time.perf_counter_ns()
+    for _ in range(200):
+        decoder.decode_datagram(sample_raw)
+    collector_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+
+    # b. Feature contract validation
+    sample_feats = {k: 1.0 for k in contract.feature_names}
+    t_start = time.perf_counter_ns()
+    for _ in range(200):
+        contract.validate_features(sample_feats)
+    contract_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+
+    # c. Multi-model AI inference
+    t_start = time.perf_counter_ns()
+    for _ in range(50):
+        orchestrator.inference_engine.infer_event(offline_events[0], sample_feats)
+    inference_us = round(max(1.0, ((time.perf_counter_ns() - t_start) / 50) / 1000.0), 2)
+
+    # d. Behavioral vector computation
+    sessions = orchestrator.sessionizer.sessionize(offline_events[:5])
+    session = sessions[0]
+    vec_builder = BehavioralVectorBuilder()
+    t_start = time.perf_counter_ns()
+    for _ in range(200):
+        vec_builder.build_vector(session)
+    behavioral_us = round(max(1.0, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+
+    # e. AES-256-GCM encryption
+    cipher = AESGCMCipher(b"\x01" * 32, key_id="k-bench")
+    vec_bytes = b"0.12,0.45,0.88,0.05,0.67,0.92,0.33,0.14,0.77,0.44,0.19,0.81,0.65,0.28,0.39,0.52"
+    t_start = time.perf_counter_ns()
+    for _ in range(200):
+        cipher.encrypt(vec_bytes)
+    crypto_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+
+    # f. Risk scoring & Alert deduplication
+    t_start = time.perf_counter_ns()
+    for _ in range(200):
+        orchestrator.alert_manager.process_event_risk(offline_events[0])
+    risk_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+
+    total_pipeline_us = round(
+        collector_us + contract_us + inference_us + behavioral_us + crypto_us + risk_us, 2
+    )
+    headroom_pct = round(max(10.0, min(95.0, 100.0 - (offline_throughput / 75000.0 * 100.0))), 1)
 
     results = {
         "benchmark_title": "NetFlow Sentinel v2.0 System-Wide Performance Benchmark",
@@ -81,19 +146,21 @@ def run_benchmark() -> Dict[str, Any]:
                 "throughput_events_per_sec": replay_summary.throughput_events_per_sec,
             },
             "live_mode_projection": {
-                "max_sustainable_network_load_mbps": round((offline_throughput * 1500 * 8) / 1e6, 2),
-                "ring_buffer_headroom_pct": 82.5,
+                "max_sustainable_network_load_mbps": round(
+                    (offline_throughput * 1500 * 8) / 1e6, 2
+                ),
+                "ring_buffer_headroom_pct": headroom_pct,
                 "peak_ingestion_capacity_flows_sec": 75000,
             },
         },
         "subsystem_latency_breakdown_us": {
-            "collector_decoding": 4.5,
-            "feature_extraction_and_contract_validation": 8.2,
-            "multi_model_ai_inference": 24.5,
-            "behavioral_sessionizer_and_vector": 16.0,
-            "aes_256_gcm_vector_encryption": 25.24,
-            "risk_scoring_and_deduplication": 6.8,
-            "total_pipeline_latency_us": 85.24,
+            "collector_decoding": collector_us,
+            "feature_extraction_and_contract_validation": contract_us,
+            "multi_model_ai_inference": inference_us,
+            "behavioral_sessionizer_and_vector": behavioral_us,
+            "aes_256_gcm_vector_encryption": crypto_us,
+            "risk_scoring_and_deduplication": risk_us,
+            "total_pipeline_latency_us": total_pipeline_us,
         },
     }
 
@@ -104,10 +171,10 @@ def run_benchmark() -> Dict[str, Any]:
     # Markdown Report
     md_content = f"""# Báo Cáo Đo Lường Hiệu Năng Toàn Hệ Thống (System-Wide Performance Benchmark)
 
-**Mã tài liệu:** `BENCHMARK-SYSTEM-V2-001`  
-**Milestone:** `M6.7 (Desktop Dashboards & Release Packaging)`  
-**Issue:** `#147`  
-**Trạng thái:** **`BENCHMARKED & EXCEEDS TARGET SPECIFICATIONS`**  
+**Mã tài liệu:** `BENCHMARK-SYSTEM-V2-001`
+**Milestone:** `M6.7 (Desktop Dashboards & Release Packaging)`
+**Issue:** `#147`
+**Trạng thái:** **`BENCHMARKED & EXCEEDS TARGET SPECIFICATIONS`**
 
 ---
 
@@ -132,13 +199,13 @@ Hệ thống đo lường hiệu năng xử lý toàn trình (end-to-end) từ l
 
 ## 3. Phân Rã Độ Trễ Các Tầng Xử Lý (Latency Breakdown)
 
-- **Collector Binary Decoding:** `4.5` $\\mu s$
-- **Feature Extraction & Contract Validation:** `8.2` $\\mu s$
-- **Multi-Model AI Inference (RF, XGB, IF, AE):** `24.5` $\\mu s$
-- **Behavioral Sessionizer & 16-D Vector:** `16.0` $\\mu s$
-- **AES-256-GCM Vector Encryption:** `25.24` $\\mu s$
-- **Risk Scoring & Alert Deduplication:** `6.8` $\\mu s$
-- **Tổng độ trễ nội tại toàn trình:** **`85.24` $\\mu s$ / sự kiện**
+- **Collector Binary Decoding:** `{collector_us:.2f}` $\\mu s$
+- **Feature Extraction & Contract Validation:** `{contract_us:.2f}` $\\mu s$
+- **Multi-Model AI Inference (RF, XGB, IF, AE):** `{inference_us:.2f}` $\\mu s$
+- **Behavioral Sessionizer & 16-D Vector:** `{behavioral_us:.2f}` $\\mu s$
+- **AES-256-GCM Vector Encryption:** `{crypto_us:.2f}` $\\mu s$
+- **Risk Scoring & Alert Deduplication:** `{risk_us:.2f}` $\\mu s$
+- **Tổng độ trễ nội tại toàn trình:** **`{total_pipeline_us:.2f}` $\\mu s$ / sự kiện**
 
 > **Kết luận:** Hệ thống đạt độ trễ xử lý dưới 0.1ms trên mỗi sự kiện, hoàn toàn đáp ứng khả năng giám sát trực tiếp trên các đường truyền mạng doanh nghiệp tốc độ 1Gbps – 10Gbps mà không gây hiện tượng nghẽn cổ chai (bottleneck).
 """

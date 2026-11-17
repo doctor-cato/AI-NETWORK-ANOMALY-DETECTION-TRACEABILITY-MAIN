@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-
 # Canonical unified attack categories across NF-UNSW-NB15-v3, AIT, Suricata, Zeek
 CANONICAL_ATTACK_CATEGORIES = (
     "Benign",

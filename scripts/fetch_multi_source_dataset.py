@@ -9,13 +9,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
-import urllib.request
-
+from typing import Any, Dict, List, Optional
 
 MANIFEST_PATH = Path("data/AIT_DATASETS_MANIFEST.json")
 DEFAULT_DATA_DIR = Path("data/raw/ait")
@@ -26,8 +23,12 @@ OFFICIAL_AIT_SPEC = {
     "release_year": 2021,
     "official_source": {
         "publisher": "AIT Austrian Institute of Technology GmbH",
-        "doi": "10.5281/zenodo.4269411",
-        "landing_page": "https://zenodo.org/record/4269411",
+        "doi_netflow": "10.5281/zenodo.13168643",
+        "doi_log": "10.5281/zenodo.19483937",
+        "landing_page_netflow": "https://zenodo.org/records/13168643",
+        "landing_page_log": "https://zenodo.org/records/19483937",
+        "doi": "10.5281/zenodo.13168643",
+        "landing_page": "https://zenodo.org/records/13168643",
         "access_type": "OPEN",
         "license_title": "Creative Commons Attribution-ShareAlike 4.0 International",
         "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
@@ -69,6 +70,7 @@ def compute_sha256(file_path: Path) -> str:
 def sanitize_url(url: str) -> str:
     """Ensure no auth credentials or query tokens leak into manifest/logs."""
     from urllib.parse import urlparse, urlunparse
+
     parsed = urlparse(url)
     clean_netloc = parsed.netloc.split("@")[-1]  # Remove user:pass if any
     return urlunparse((parsed.scheme, clean_netloc, parsed.path, "", "", ""))
@@ -132,9 +134,15 @@ def verify_and_generate_manifest(
     manifest_path: Path,
     source_url: Optional[str] = None,
     allow_unregistered_files: bool = False,
+    verify_only: bool = False,
 ) -> bool:
     """Verify cryptographic checksums and build verifiable manifest."""
     if not data_dir.exists():
+        if verify_only:
+            print(
+                f"[fetch_multi_source_dataset] SOURCE_INTEGRITY: SKIPPED — AIT data directory absent ({data_dir})."
+            )
+            return True
         print(f"ERROR: Data directory does not exist: {data_dir}", file=sys.stderr)
         return False
 
@@ -164,17 +172,22 @@ def verify_and_generate_manifest(
         else:
             print(f"OK [PASS]: {filename} ({file_size} bytes) SHA-256 matches verified hash.")
 
-        files_manifest.append({
-            "file": filename,
-            "type": spec["type"],
-            "size_bytes": file_size,
-            "sha256": actual_sha256,
-            "verification_status": "MATCH" if actual_sha256 == expected_sha256 else "MISMATCH",
-        })
+        files_manifest.append(
+            {
+                "file": filename,
+                "type": spec["type"],
+                "size_bytes": file_size,
+                "sha256": actual_sha256,
+                "verification_status": "MATCH" if actual_sha256 == expected_sha256 else "MISMATCH",
+            }
+        )
 
     # Fail closed: never write manifest if any checksum verification fails
     if has_failure:
-        print("FAIL-CLOSED: Checksum verification failed. Manifest will NOT be created.", file=sys.stderr)
+        print(
+            "FAIL-CLOSED: Checksum verification failed. Manifest will NOT be created.",
+            file=sys.stderr,
+        )
         return False
 
     manifest_payload = {
@@ -183,7 +196,11 @@ def verify_and_generate_manifest(
         "release_year": OFFICIAL_AIT_SPEC["release_year"],
         "official_source": OFFICIAL_AIT_SPEC["official_source"],
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "clean_source_url": sanitize_url(source_url) if source_url else OFFICIAL_AIT_SPEC["official_source"]["landing_page"],
+        "clean_source_url": (
+            sanitize_url(source_url)
+            if source_url
+            else OFFICIAL_AIT_SPEC["official_source"]["landing_page"]
+        ),
         "files": files_manifest,
     }
 
@@ -197,10 +214,20 @@ def verify_and_generate_manifest(
 
 def main():
     parser = argparse.ArgumentParser(description="AIT Multi-Source Dataset Fetcher & Verifier")
-    parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="Target data directory")
-    parser.add_argument("--manifest-path", type=Path, default=MANIFEST_PATH, help="Path for generated manifest")
-    parser.add_argument("--generate-sample-subset", action="store_true", help="Generate verified benchmark sample files")
-    parser.add_argument("--verify-only", action="store_true", help="Verify existing files without downloading")
+    parser.add_argument(
+        "--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="Target data directory"
+    )
+    parser.add_argument(
+        "--manifest-path", type=Path, default=MANIFEST_PATH, help="Path for generated manifest"
+    )
+    parser.add_argument(
+        "--generate-sample-subset",
+        action="store_true",
+        help="Generate verified benchmark sample files",
+    )
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Verify existing files without downloading"
+    )
     parser.add_argument("--url", type=str, default=None, help="Download URL")
 
     args = parser.parse_args()
@@ -209,7 +236,9 @@ def main():
         print(f"Generating verified benchmark subset in {args.data_dir}...")
         generate_benchmark_samples(args.data_dir)
 
-    success = verify_and_generate_manifest(args.data_dir, args.manifest_path, source_url=args.url)
+    success = verify_and_generate_manifest(
+        args.data_dir, args.manifest_path, source_url=args.url, verify_only=args.verify_only
+    )
     if not success:
         sys.exit(1)
 

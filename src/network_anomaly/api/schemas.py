@@ -1116,6 +1116,7 @@ class SecuritySimulationExportResponse(BaseModel):
 # NetFlow Sentinel v2.0 Trace & Crypto API Schemas (Issue #115)
 # ============================================================================
 
+
 class TimelineStageItem(BaseModel):
     stage_id: str
     phase: str

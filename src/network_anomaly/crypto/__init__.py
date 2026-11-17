@@ -5,9 +5,9 @@ fixed and adaptive key rotation, and secure at-rest persistence. (Milestone M6.5
 """
 
 from .aead import AESGCMCipher, CiphertextEnvelope
+from .encrypted_storage import EncryptedStorageVault
 from .key_manager import KeyManager, KeyMetadata, KeyStatus
 from .rotation import KeyRotationPolicy, RotationDecision, RotationTrigger
-from .encrypted_storage import EncryptedStorageVault
 
 __all__ = [
     "AESGCMCipher",

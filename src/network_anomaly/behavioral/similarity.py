@@ -6,7 +6,8 @@ Implements Issue #103 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Tuple
+
 import numpy as np
 
 from .vector import BehavioralVector

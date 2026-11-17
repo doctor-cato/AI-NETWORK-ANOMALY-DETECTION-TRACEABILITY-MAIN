@@ -6,8 +6,8 @@
     {
       "name": "AIT-NetFlow-v2.1",
       "publisher": "AIT Austrian Institute of Technology GmbH",
-      "doi": "10.5281/zenodo.4269411",
-      "landing_page": "https://zenodo.org/record/4269411",
+      "doi": "10.5281/zenodo.13168643",
+      "landing_page": "https://zenodo.org/records/13168643",
       "license": "Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)",
       "total_rows": 1500000,
       "class_distribution": {
@@ -32,8 +32,8 @@
     {
       "name": "AIT-Log-v2.1",
       "publisher": "AIT Austrian Institute of Technology GmbH",
-      "doi": "10.5281/zenodo.4269411",
-      "landing_page": "https://zenodo.org/record/4269411",
+      "doi": "10.5281/zenodo.19483937",
+      "landing_page": "https://zenodo.org/records/19483937",
       "license": "Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)",
       "total_rows": 2450000,
       "class_distribution": {

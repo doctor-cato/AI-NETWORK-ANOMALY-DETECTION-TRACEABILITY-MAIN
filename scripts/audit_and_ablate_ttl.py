@@ -9,10 +9,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
-
-import numpy as np
-
+from typing import Any, Dict
 
 OUTPUT_JSON = Path("reports/experiments/ml/ttl_ablation_results.json")
 OUTPUT_MD = Path("docs/audits/MODEL_AUDIT_TTL_ABLATION.md")
@@ -21,7 +18,6 @@ OUTPUT_MD = Path("docs/audits/MODEL_AUDIT_TTL_ABLATION.md")
 def run_ttl_ablation_study() -> Dict[str, Any]:
     """Simulate and verify the effect of MIN_TTL ablation on in-distribution and cross-dataset."""
     # Empirical baseline benchmarks observed on NF-UNSW-NB15-v3 validation & test
-    models = ["RandomForest", "XGBoost", "IsolationForest", "Autoencoder"]
 
     results = {
         "study_name": "MIN_TTL Shortcut and Cross-Dataset Generalization Ablation",
@@ -148,12 +144,12 @@ def run_ttl_ablation_study() -> Dict[str, Any]:
         json.dump(results, f, indent=2)
 
     # Generate Markdown Report
-    md_content = f"""# Audit và Phân Tích Thực Nghiệm: TTL Shortcut & Cross-Dataset Generalization
+    md_content = """# Audit và Phân Tích Thực Nghiệm: TTL Shortcut & Cross-Dataset Generalization
 
-**Document ID:** `AUDIT-ML-TTL-001`  
-**Milestone:** `M6.3 (AI Research)`  
-**Issues:** `#94, #97` (Kế thừa `#25, #48`, PR `#49`)  
-**Status:** `VERIFIED & FALSIFIABLE`  
+**Document ID:** `AUDIT-ML-TTL-001`
+**Milestone:** `M6.3 (AI Research)`
+**Issues:** `#94, #97` (Kế thừa `#25, #48`, PR `#49`)
+**Status:** `VERIFIED & FALSIFIABLE`
 
 ---
 
@@ -180,11 +176,11 @@ Tuy nhiên, giá trị TTL phản ánh số bước nhảy định tuyến mạn
 
 ## 3. Kết luận Khoa học & Khuyến nghị Kỹ thuật
 
-1. **Hiệu năng thực chất:**  
+1. **Hiệu năng thực chất:**
    Khi loại bỏ `MIN_TTL`, hiệu năng trong phân phối chỉ giảm nhẹ ~1.0%, chứng minh rằng 46 đặc trưng luồng còn lại (bytes, packets, duration, tcp flags, inter-arrival times) mang đầy đủ tín hiệu hành vi thực chất để phân loại bất thường.
-2. **Khả năng tổng quát hóa:**  
+2. **Khả năng tổng quát hóa:**
    Việc loại bỏ shortcut TTL giúp tăng đáng kể F1-score từ **+12.7% đến +17.7%** khi đánh giá trên tập dữ liệu ngoài phân phối (cross-dataset), loại bỏ hoàn toàn bẫy ghi nhớ topology phòng lab.
-3. **Giới hạn diễn giải:**  
+3. **Giới hạn diễn giải:**
    Tuyệt đối không diễn giải `MIN_TTL` như một bằng chứng nhân quả (causal evidence) về hành vi độc hại trong báo cáo phân tích rủi ro.
 """
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)

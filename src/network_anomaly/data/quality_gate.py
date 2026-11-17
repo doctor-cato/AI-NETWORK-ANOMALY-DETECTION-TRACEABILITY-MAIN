@@ -10,9 +10,9 @@ import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from network_anomaly.canonical.event import CanonicalSecurityEvent, ValidationStatus
+from network_anomaly.canonical.event import CanonicalSecurityEvent
 
 
 @dataclass
@@ -105,7 +105,9 @@ class MultiSourceQualityGate:
                 # Flag timestamp reversal if more than 60s backwards
                 if (last_ts - ev.event_timestamp).total_seconds() > 60.0:
                     metrics.out_of_order_timestamps += 1
-                    violations.append(f"Row {idx + 1}: Non-monotonic timestamp inversion ({ev.event_timestamp} < {last_ts})")
+                    violations.append(
+                        f"Row {idx + 1}: Non-monotonic timestamp inversion ({ev.event_timestamp} < {last_ts})"
+                    )
             last_ts = ev.event_timestamp
 
             # 3. Duplicate and Label Conflict Detection
@@ -133,9 +135,13 @@ class MultiSourceQualityGate:
                 seen_keys[proxy_key] = ev_label
 
         metrics.valid_records = metrics.total_records - (
-            metrics.missing_required_fields + metrics.duplicate_records + metrics.label_conflict_records
+            metrics.missing_required_fields
+            + metrics.duplicate_records
+            + metrics.label_conflict_records
         )
-        metrics.pass_rate_pct = round(max(0.0, (metrics.valid_records / metrics.total_records) * 100.0), 2)
+        metrics.pass_rate_pct = round(
+            max(0.0, (metrics.valid_records / metrics.total_records) * 100.0), 2
+        )
 
         # Check rejection thresholds
         rejection_reasons = []
@@ -143,13 +149,19 @@ class MultiSourceQualityGate:
         duplicate_rate = metrics.duplicate_records / metrics.total_records
 
         if missing_rate > self.max_missing_rate:
-            rejection_reasons.append(f"Missing field rate {missing_rate:.3f} exceeds threshold {self.max_missing_rate}")
+            rejection_reasons.append(
+                f"Missing field rate {missing_rate:.3f} exceeds threshold {self.max_missing_rate}"
+            )
 
         if duplicate_rate > self.max_duplicate_rate:
-            rejection_reasons.append(f"Duplicate rate {duplicate_rate:.3f} exceeds threshold {self.max_duplicate_rate}")
+            rejection_reasons.append(
+                f"Duplicate rate {duplicate_rate:.3f} exceeds threshold {self.max_duplicate_rate}"
+            )
 
         if metrics.label_conflict_records > 0 and not self.allow_label_conflicts:
-            rejection_reasons.append(f"Detected {metrics.label_conflict_records} severe label conflicts on identical keys")
+            rejection_reasons.append(
+                f"Detected {metrics.label_conflict_records} severe label conflicts on identical keys"
+            )
 
         status = "PASS"
         rejection_msg = None

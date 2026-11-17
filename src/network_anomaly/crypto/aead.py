@@ -17,11 +17,13 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 class CryptoError(Exception):
     """Base exception for cryptographic operations."""
+
     pass
 
 
 class AuthenticationError(CryptoError):
     """Raised when authentication tag or ciphertext integrity check fails (tamper detected)."""
+
     pass
 
 
@@ -72,7 +74,9 @@ class AESGCMCipher:
 
     def __init__(self, key: bytes, key_id: str):
         if len(key) != self.KEY_LENGTH_BYTES:
-            raise ValueError(f"AES-256-GCM key must be exactly {self.KEY_LENGTH_BYTES} bytes, got {len(key)}")
+            raise ValueError(
+                f"AES-256-GCM key must be exactly {self.KEY_LENGTH_BYTES} bytes, got {len(key)}"
+            )
         self._key = key
         self.key_id = key_id
         self._aesgcm = AESGCM(self._key)
@@ -80,10 +84,10 @@ class AESGCMCipher:
     def encrypt(self, plaintext: bytes, aad: Optional[bytes] = None) -> CiphertextEnvelope:
         """Encrypt plaintext bytes and return a verified CiphertextEnvelope."""
         nonce = os.urandom(self.NONCE_LENGTH_BYTES)
-        
+
         # AESGCM.encrypt appends 16-byte tag to the ciphertext
         raw_ciphertext = self._aesgcm.encrypt(nonce, plaintext, aad)
-        
+
         ciphertext = raw_ciphertext[:-16]
         tag = raw_ciphertext[-16:]
 
@@ -108,7 +112,9 @@ class AESGCMCipher:
             AuthenticationError: If ciphertext, tag, or AAD has been tampered with or is invalid.
         """
         if envelope.version != self.ENVELOPE_VERSION:
-            raise CryptoError(f"Unsupported envelope version '{envelope.version}', expected '{self.ENVELOPE_VERSION}'")
+            raise CryptoError(
+                f"Unsupported envelope version '{envelope.version}', expected '{self.ENVELOPE_VERSION}'"
+            )
 
         try:
             nonce = base64.b64decode(envelope.nonce_b64)
@@ -132,7 +138,9 @@ class AESGCMCipher:
                 raise
             raise CryptoError(f"Decryption failed: malformed envelope payload: {e}") from e
 
-    def decrypt_json(self, envelope: CiphertextEnvelope, expected_aad: Optional[bytes] = None) -> Any:
+    def decrypt_json(
+        self, envelope: CiphertextEnvelope, expected_aad: Optional[bytes] = None
+    ) -> Any:
         """Decrypt and deserialize JSON payload."""
         plaintext_bytes = self.decrypt(envelope, expected_aad=expected_aad)
         return json.loads(plaintext_bytes.decode("utf-8"))

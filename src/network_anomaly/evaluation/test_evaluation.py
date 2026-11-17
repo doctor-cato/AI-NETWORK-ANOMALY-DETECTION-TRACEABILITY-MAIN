@@ -958,8 +958,7 @@ def stream_test_partition_data(
             )
         if int_lbl not in (0, 1):
             raise ValueError(
-                f"Out-of-domain Label value at test position {idx_pos}: {int_lbl} "
-                f"(expected 0 or 1)"
+                f"Out-of-domain Label value at test position {idx_pos}: {int_lbl} (expected 0 or 1)"
             )
         validated_labels.append(int_lbl)
 
@@ -1232,8 +1231,7 @@ def evaluate_loaded_random_forest_on_test(
         classes_list = [int(c) if isinstance(c, (int, np.integer)) else c for c in model_classes]
         if classes_list != [0, 1]:
             raise ValueError(
-                f"Model classes_ must follow canonical binary ordering [0, 1], "
-                f"got {classes_list!r}"
+                f"Model classes_ must follow canonical binary ordering [0, 1], got {classes_list!r}"
             )
 
     # 1. Transform features with train-only preprocessor
@@ -1243,8 +1241,7 @@ def evaluate_loaded_random_forest_on_test(
     probas = np.asarray(model.predict_proba(X_test_trans), dtype=np.float64)
     if probas.ndim != 2 or probas.shape != (test_data.num_rows, 2):
         raise ValueError(
-            f"predict_proba output must have shape ({test_data.num_rows}, 2), "
-            f"got {probas.shape}"
+            f"predict_proba output must have shape ({test_data.num_rows}, 2), got {probas.shape}"
         )
     if not np.all(np.isfinite(probas)):
         raise ValueError("predict_proba output contains non-finite values (NaN or Inf)")

@@ -4,8 +4,8 @@ Provides deterministic multi-criteria risk scoring (0-100), severity calibration
 and multi-model decision aggregation. (Milestone M6.4).
 """
 
-from .scoring import RiskScorer, RiskScoreOutput, SeverityLevel
-from .aggregation import MultiModelDecisionAggregator, AggregationPolicy
+from .aggregation import AggregationPolicy, MultiModelDecisionAggregator
+from .scoring import RiskScoreOutput, RiskScorer, SeverityLevel
 
 __all__ = [
     "RiskScorer",

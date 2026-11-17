@@ -1,6 +1,7 @@
 """Contract tests for CanonicalSecurityEvent v2 and FeatureContract (Issue #79)."""
 
 from datetime import datetime, timezone
+
 import numpy as np
 import pytest
 
@@ -16,7 +17,6 @@ from network_anomaly.canonical.event import (
     ValidationStatus,
 )
 from network_anomaly.canonical.feature_contract import (
-    FeatureContract,
     get_baseline_47_feature_contract,
 )
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
@@ -89,7 +89,9 @@ def test_canonical_security_event_v2_other_kinds():
         event_timestamp=now,
         event_kind=EventKind.SYSTEM,
         source_id="source:sysmon",
-        system_data=SystemData(process_name="powershell.exe", action="PROCESS_CREATE", process_id=4012),
+        system_data=SystemData(
+            process_name="powershell.exe", action="PROCESS_CREATE", process_id=4012
+        ),
         raw_provenance=RawProvenance(source_file="sysmon.json", adapter_name="SysmonAdapter"),
     )
     assert sys_event.system_data.process_id == 4012
@@ -163,7 +165,9 @@ def test_v1_legacy_row_compatibility():
         dest_ip=dummy_row["IPV4_DST_ADDR"],
         dest_port=dummy_row["L4_DST_PORT"],
         protocol="TCP",
-        raw_provenance=RawProvenance(source_file="v1_sample.csv", adapter_name="LegacyNetFlowV3Adapter"),
+        raw_provenance=RawProvenance(
+            source_file="v1_sample.csv", adapter_name="LegacyNetFlowV3Adapter"
+        ),
         ml_features={k: float(dummy_row[k]) for k in ML_FEATURE_COLUMNS},
         is_ml_complete=True,
     )

@@ -52,6 +52,11 @@ pub fn run() {
             commands::simulate_security_response,
             commands::list_security_simulations,
             commands::export_security_simulation,
+            commands::fetch_crypto_status,
+            commands::fetch_trace_timeline,
+            commands::fetch_trace_graph,
+            commands::generate_investigation_report,
+            commands::fetch_incidents,
         ])
         .build(tauri::generate_context!())
         .expect("Failed to build Tauri desktop application");
