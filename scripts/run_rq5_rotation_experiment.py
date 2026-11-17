@@ -1,151 +1,281 @@
-"""Research Experiment RQ5: Fixed vs Adaptive Key Rotation Evaluation.
+#!/usr/bin/env python3
+"""Research Experiment RQ5: Fixed vs Adaptive Key Rotation Simulation (Issue #125).
 
-Simulates an attack burst scenario with varying risk scores, comparing exposure
-windows and compromised records between fixed 30-min schedule and risk-based rotation. (Issue #125).
+Labeled explicitly as SIMULATION. Computes all exposure windows, per-key record
+counts, detection-to-rotation durations, and blast radius dynamically from the
+recorded simulated event timeline and rotation history (never hardcoded).
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
-from datetime import datetime, timezone
+from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from network_anomaly.crypto.key_manager import KeyManager
-from network_anomaly.crypto.rotation import KeyRotationPolicy, RotationDecision, RotationTrigger
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPTS_DIR.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+if str(_PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT / "src"))
+
+from _rq_common import collect_environment_metadata  # noqa: E402
+
+from network_anomaly.crypto.key_manager import KeyManager  # noqa: E402
+from network_anomaly.crypto.rotation import (  # noqa: E402
+    KeyRotationPolicy,
+    RotationDecision,
+    RotationTrigger,
+)
 
 
-def run_rq5_experiment(output_dir: Path) -> dict:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    temp_dir = tempfile.TemporaryDirectory()
-    keystore_dir = Path(temp_dir.name) / "keys"
+def _compute_exposure_metrics(
+    timeline: List[Dict[str, Any]],
+    rotations: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Derive exposure window, per-key counts, blast radius, and detection-to-rotation time."""
+    records_per_key: Counter[str] = Counter()
+    attack_records_per_key: Counter[str] = Counter()
+    key_first_attack_sec: Dict[str, float] = {}
+    key_last_attack_or_end_sec: Dict[str, float] = {}
 
-    # Simulation workload: 100 consecutive events over a simulated 60-minute timeline
-    # Normal background traffic: events 1-40 (risk 10-35)
-    # Attack burst: events 41-70 (risk spikes to 88-98)
-    # Post-attack: events 71-100 (risk 20-40)
+    for rec in timeline:
+        kid = rec["key_id"]
+        t_sec = float(rec["sim_elapsed_s"])
+        records_per_key[kid] += 1
+        if rec["is_attack"]:
+            attack_records_per_key[kid] += 1
+            if kid not in key_first_attack_sec:
+                key_first_attack_sec[kid] = t_sec
+            key_last_attack_or_end_sec[kid] = t_sec
 
-    # 1. FIXED ROTATION SIMULATION (30-min fixed interval, risk ignored)
-    km_fixed = KeyManager(keystore_dir=keystore_dir / "fixed")
-    policy_fixed = KeyRotationPolicy(km_fixed, fixed_interval_seconds=1800, cooldown_seconds=0)
-
-    fixed_rotations = 0
-    fixed_keys_used = set()
-    compromised_under_fixed = 0
-
-    # Let's track keys used during the attack burst (events 41..70)
-    for i in range(1, 101):
-        # Simulate time passing (36 seconds per event -> 3600 seconds total = 60 mins)
-        simulated_elapsed = i * 36
-        if simulated_elapsed == 1800:
-            policy_fixed.execute_rotation(trigger=RotationTrigger.FIXED_SCHEDULE)
-            fixed_rotations += 1
-
-        active_id, _ = km_fixed.get_active_key()
-        fixed_keys_used.add(active_id)
-        if 41 <= i <= 70:
-            compromised_under_fixed += 1
-
-    # In fixed rotation, all 30 attack events fall under at most 1 or 2 keys (exposure window ~30 mins)
-    fixed_exposure_window_minutes = 30.0
-
-    # 2. ADAPTIVE ROTATION SIMULATION (Rotates immediately when risk >= 85)
-    km_adapt = KeyManager(keystore_dir=keystore_dir / "adaptive")
-    policy_adapt = KeyRotationPolicy(km_adapt, cooldown_seconds=10, adaptive_risk_threshold=85.0)
-
-    adaptive_rotations = 0
-    adaptive_keys_used = set()
-    burst_keys_used = set()
-    adaptive_rotation_timestamps = []
-
-    for i in range(1, 101):
-        risk = 20.0
-        if 41 <= i <= 70:
-            risk = 88.0 + (i % 10)  # High risk burst: 88.0 to 97.0
-
-        if risk >= 85.0:
-            dec, kid = policy_adapt.evaluate_adaptive_rotation(
-                risk_score=risk, context={"event_idx": i}
-            )
-            if dec == RotationDecision.EXECUTED:
-                adaptive_rotations += 1
-                adaptive_rotation_timestamps.append(i * 36)
-
-        active_id, _ = km_adapt.get_active_key()
-        adaptive_keys_used.add(active_id)
-        if 41 <= i <= 70:
-            burst_keys_used.add(active_id)
-
-    # In adaptive rotation, key was rotated at the onset of burst (event 41), isolating subsequent traffic
-    adaptive_exposure_window_minutes = 0.5  # < 1 minute to rotate upon anomaly detection
-    exposure_reduction_pct = (
-        (fixed_exposure_window_minutes - adaptive_exposure_window_minutes)
-        / fixed_exposure_window_minutes
-    ) * 100.0
-
-    results = {
-        "experiment_id": "EXP-RQ5-ROTATION-01",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "hypothesis": "H5: Adaptive Key Rotation reduces exposure window by >= 70% under burst attack",
-        "hypothesis_confirmed": exposure_reduction_pct >= 70.0,
-        "fixed_schedule": {
-            "rotation_interval_minutes": 30.0,
-            "total_rotations": fixed_rotations,
-            "distinct_keys_used": len(fixed_keys_used),
-            "exposure_window_minutes": fixed_exposure_window_minutes,
-            "attack_records_exposed": compromised_under_fixed,
-        },
-        "adaptive_rotation": {
-            "adaptive_risk_threshold": 85.0,
-            "cooldown_seconds": 10,
-            "total_rotations": adaptive_rotations,
-            "distinct_keys_used": len(adaptive_keys_used),
-            "burst_keys_used": len(burst_keys_used),
-            "exposure_window_minutes": adaptive_exposure_window_minutes,
-            "exposure_reduction_percentage": round(exposure_reduction_pct, 2),
-        },
-        "conclusion": (
-            f"Adaptive Key Rotation achieved a {exposure_reduction_pct:.1f}% reduction in exposure window "
-            f"(from {fixed_exposure_window_minutes} mins to {adaptive_exposure_window_minutes} mins), "
-            "successfully isolating attack records under freshly generated ephemeral keys."
-        ),
+    # If a key used during an attack rotated later, its exposure lasted until rotation completed;
+    # otherwise until the last attack event observed under that key.
+    rotation_by_old_key = {
+        r["old_key_id"]: float(r["sim_completed_s"])
+        for r in rotations
+        if r.get("old_key_id") and r.get("decision") == RotationDecision.EXECUTED.value
     }
 
-    # Save JSON manifest
+    exposure_windows_s: List[float] = []
+    for kid, first_atk_s in key_first_attack_sec.items():
+        end_s = rotation_by_old_key.get(kid, key_last_attack_or_end_sec[kid])
+        exposure_windows_s.append(max(0.0, end_s - first_atk_s))
+
+    max_exposure_s = max(exposure_windows_s) if exposure_windows_s else 0.0
+    max_blast_radius = max(attack_records_per_key.values(), default=0)
+
+    first_attack_s = min((r["sim_elapsed_s"] for r in timeline if r["is_attack"]), default=None)
+    first_attack_rot_s = next(
+        (
+            r["sim_completed_s"]
+            for r in rotations
+            if r["decision"] == RotationDecision.EXECUTED.value
+            and first_attack_s is not None
+            and r["sim_elapsed_s"] >= first_attack_s
+        ),
+        None,
+    )
+    detection_to_rotation_s = (
+        round(first_attack_rot_s - first_attack_s, 3)
+        if (first_attack_s is not None and first_attack_rot_s is not None)
+        else None
+    )
+
+    return {
+        "records_per_key": dict(records_per_key),
+        "attack_records_per_key": dict(attack_records_per_key),
+        "max_attack_key_exposure_seconds": round(max_exposure_s, 3),
+        "max_attack_key_exposure_minutes": round(max_exposure_s / 60.0, 4),
+        "blast_radius_max_attack_records_single_key": int(max_blast_radius),
+        "detection_to_rotation_seconds": detection_to_rotation_s,
+    }
+
+
+def run_rq5_experiment(output_dir: Optional[Path] = None) -> Dict[str, Any]:
+    output_dir = output_dir or Path("reports/experiments/crypto")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    env = collect_environment_metadata()
+
+    t0 = datetime(2026, 11, 17, 10, 0, 0, tzinfo=timezone.utc)
+    step_seconds = 30.0  # 120 events * 30s = 60 simulated minutes
+    total_events = 120
+
+    def _event_spec(idx: int) -> tuple[bool, float]:
+        # Attack burst occurs during events 20..79 (minutes 10..40, crossing the 30-min boundary)
+        if 20 <= idx < 80:
+            return True, 88.0 + float(idx % 10)
+        return False, 20.0 + float(idx % 10)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        keystore_root = Path(tmp) / "keys"
+
+        # 1. FIXED ROTATION BASELINE (30-minute = 1800s fixed schedule)
+        km_fixed = KeyManager(keystore_dir=keystore_root / "fixed")
+        policy_fixed = KeyRotationPolicy(km_fixed, fixed_interval_seconds=1800, cooldown_seconds=0)
+        fixed_timeline: List[Dict[str, Any]] = []
+        fixed_rotations: List[Dict[str, Any]] = []
+        last_fixed_rot_s = 0.0
+
+        for i in range(total_events):
+            sim_s = i * step_seconds
+            ts_iso = (t0 + timedelta(seconds=sim_s)).isoformat()
+            is_atk, risk = _event_spec(i)
+
+            if sim_s - last_fixed_rot_s >= 1800.0:
+                old_id, _ = km_fixed.get_active_key()
+                dec, detail = policy_fixed.execute_rotation(
+                    trigger=RotationTrigger.FIXED_SCHEDULE,
+                    reason=f"Fixed 30m schedule at sim_s={sim_s}",
+                )
+                last_fixed_rot_s = sim_s
+                fixed_rotations.append(
+                    {
+                        "sim_elapsed_s": sim_s,
+                        "sim_completed_s": sim_s,
+                        "timestamp_utc": ts_iso,
+                        "trigger": RotationTrigger.FIXED_SCHEDULE.value,
+                        "decision": dec.value,
+                        "old_key_id": old_id,
+                        "new_key_id": detail if dec == RotationDecision.EXECUTED else None,
+                    }
+                )
+
+            active_id, _ = km_fixed.get_active_key()
+            fixed_timeline.append(
+                {
+                    "event_index": i,
+                    "sim_elapsed_s": sim_s,
+                    "timestamp_utc": ts_iso,
+                    "is_attack": is_atk,
+                    "risk_score": risk,
+                    "key_id": active_id,
+                }
+            )
+
+        # 2. ADAPTIVE RISK ROTATION (Threshold >= 85.0, 180s sim cooldown)
+        km_adapt = KeyManager(keystore_dir=keystore_root / "adaptive")
+        policy_adapt = KeyRotationPolicy(km_adapt, cooldown_seconds=0, adaptive_risk_threshold=85.0)
+        adapt_timeline: List[Dict[str, Any]] = []
+        adapt_rotations: List[Dict[str, Any]] = []
+        last_adapt_rot_s = -1e9
+        sim_cooldown_s = 180.0
+
+        for i in range(total_events):
+            sim_s = i * step_seconds
+            ts_iso = (t0 + timedelta(seconds=sim_s)).isoformat()
+            is_atk, risk = _event_spec(i)
+
+            active_before, _ = km_adapt.get_active_key()
+            # Record event with current key first, then trigger adaptive rotation if risk >= 85
+            adapt_timeline.append(
+                {
+                    "event_index": i,
+                    "sim_elapsed_s": sim_s,
+                    "timestamp_utc": ts_iso,
+                    "is_attack": is_atk,
+                    "risk_score": risk,
+                    "key_id": active_before,
+                }
+            )
+
+            if risk >= 85.0 and (sim_s - last_adapt_rot_s) >= sim_cooldown_s:
+                dec, detail = policy_adapt.evaluate_adaptive_rotation(
+                    risk_score=risk, context={"event_index": i}
+                )
+                if dec == RotationDecision.EXECUTED:
+                    last_adapt_rot_s = sim_s
+                    # Key rotation completion occurs within the event processing step
+                    adapt_rotations.append(
+                        {
+                            "sim_elapsed_s": sim_s,
+                            "sim_completed_s": sim_s + 0.01,
+                            "timestamp_utc": ts_iso,
+                            "trigger": RotationTrigger.ADAPTIVE_RISK.value,
+                            "decision": dec.value,
+                            "old_key_id": active_before,
+                            "new_key_id": detail,
+                        }
+                    )
+
+        fixed_metrics = _compute_exposure_metrics(fixed_timeline, fixed_rotations)
+        adapt_metrics = _compute_exposure_metrics(adapt_timeline, adapt_rotations)
+
+    fixed_exp_m = fixed_metrics["max_attack_key_exposure_minutes"]
+    adapt_exp_m = adapt_metrics["max_attack_key_exposure_minutes"]
+    reduction_pct = ((fixed_exp_m - adapt_exp_m) / fixed_exp_m) * 100.0 if fixed_exp_m > 0 else 0.0
+
+    blast_fixed = fixed_metrics["blast_radius_max_attack_records_single_key"]
+    blast_adapt = adapt_metrics["blast_radius_max_attack_records_single_key"]
+    blast_reduction_pct = (
+        ((blast_fixed - blast_adapt) / blast_fixed) * 100.0 if blast_fixed > 0 else 0.0
+    )
+
+    results: Dict[str, Any] = {
+        "experiment_id": "EXP-RQ5-ROTATION-01",
+        "execution_mode": "SIMULATION",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "hypothesis": "H5: Adaptive Key Rotation reduces attack-key exposure window >= 70% vs fixed 30-min schedule",
+        "environment": env,
+        "simulation_config": {
+            "total_events": total_events,
+            "step_seconds": step_seconds,
+            "simulated_duration_minutes": (total_events * step_seconds) / 60.0,
+            "attack_window_events": "20..79",
+            "fixed_interval_minutes": 30.0,
+            "adaptive_risk_threshold": 85.0,
+            "adaptive_cooldown_seconds": sim_cooldown_s,
+        },
+        "fixed_schedule": {
+            "total_rotations": len(fixed_rotations),
+            "rotations": fixed_rotations,
+            **fixed_metrics,
+        },
+        "adaptive_rotation": {
+            "total_rotations": len(adapt_rotations),
+            "rotations": adapt_rotations,
+            **adapt_metrics,
+            "exposure_reduction_percentage": round(reduction_pct, 2),
+            "blast_radius_reduction_percentage": round(blast_reduction_pct, 2),
+        },
+        "hypothesis_confirmed": reduction_pct >= 70.0,
+        "event_timeline_sample": adapt_timeline[18:25],
+        "limitations": [
+            "Results come from a deterministic 60-minute discrete-time lab simulation using real KeyManager/KeyRotationPolicy objects, not long-duration production traffic.",
+        ],
+    }
+
     manifest_path = output_dir / "rq5_rotation_experiment.json"
-    manifest_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    manifest_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
 
-    # Save Markdown report
     report_path = output_dir / "rq5_rotation_report.md"
-    report_md = f"""# Research Experiment RQ5: Fixed vs. Adaptive Key Rotation Report
-
-> **Experiment ID:** {results["experiment_id"]}
-> **Evaluation Date:** {results["timestamp"]}
-> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: {results["hypothesis_confirmed"]})
-
-## 1. Executive Summary
-- **Hypothesis:** {results["hypothesis"]}
-- **Outcome:** **CONFIRMED**. Cửa sổ phơi nhiễm khóa giảm từ {results["fixed_schedule"]["exposure_window_minutes"]} phút xuống {results["adaptive_rotation"]["exposure_window_minutes"]} phút (giảm **{results["adaptive_rotation"]["exposure_reduction_percentage"]}%**).
-- **Phân tách rủi ro:** Kẻ tấn công nếu thỏa hiệp một khóa phiên chỉ giải mã được tập bản ghi nhỏ trước thời điểm kích hoạt xoay khóa, không thể giải mã các phiên sau khi hệ thống chuyển sang khóa mới.
-
-## 2. Số liệu So sánh Thực nghiệm
-
-| Chỉ số Đánh giá | Fixed Key Rotation (30 phút) | Risk-based Adaptive Key Rotation | Cải thiện / Ý nghĩa |
-|---|:---:|:---:|:---:|
-| **Thời gian phơi nhiễm khóa (Exposure Window)** | **30.0 phút** | **< 1.0 phút (0.5 phút)** | **Giảm {results["adaptive_rotation"]["exposure_reduction_percentage"]}%** |
-| **Số lần xoay khóa trong phiên 60 phút** | 1 lần | {results["adaptive_rotation"]["total_rotations"]} lần | Phản ứng tức thời theo rủi ro |
-| **Số khóa sử dụng riêng trong đợt tấn công** | 1 khóa | {results["adaptive_rotation"]["burst_keys_used"]} khóa | Cách ly dữ liệu tấn công |
-| **Bảo vệ chống DoS (Cooldown & Rate limit)** | Cố định theo giờ | Cooldown 10s, Rate limit 10/h | Ngăn ngừa cạn kiệt tài nguyên CPU |
-
-## 3. Kết luận
-{results["conclusion"]}
-"""
-    report_path.write_text(report_md, encoding="utf-8")
-    temp_dir.cleanup()
-    print(f"[+] RQ5 Experiment completed: {manifest_path} and {report_path}")
+    md_lines = [
+        "# Research Experiment RQ5: Fixed vs Adaptive Key Rotation (SIMULATION)",
+        "",
+        f"- **Execution Mode:** `{results['execution_mode']}`",
+        f"- **Timestamp (UTC):** `{results['timestamp']}`",
+        f"- **Hypothesis Confirmed (>= 70% exposure reduction):** `{results['hypothesis_confirmed']}`",
+        "",
+        "## Computed Metrics from Recorded Timeline",
+        "",
+        "| Metric | Fixed 30m Schedule | Adaptive Risk (>= 85) | Delta / Reduction |",
+        "|---|---:|---:|---:|",
+        f"| Total Key Rotations | {len(fixed_rotations)} | {len(adapt_rotations)} | - |",
+        f"| Max Attack-Key Exposure (min) | {fixed_exp_m:.4f} | {adapt_exp_m:.4f} | {reduction_pct:.2f}% |",
+        f"| Blast Radius (max attack records / key) | {blast_fixed} | {blast_adapt} | {blast_reduction_pct:.2f}% |",
+        f"| Detection-to-Rotation (s) | {fixed_metrics['detection_to_rotation_seconds']} | {adapt_metrics['detection_to_rotation_seconds']} | - |",
+        "",
+        "## Limitations",
+        *[f"- {lim}" for lim in results["limitations"]],
+    ]
+    report_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    print(f"RQ5 simulation report written: {manifest_path} and {report_path}")
     return results
 
 
 if __name__ == "__main__":
-    out = Path("reports/experiments/crypto")
-    run_rq5_experiment(out)
+    run_rq5_experiment(Path("reports/experiments/crypto"))

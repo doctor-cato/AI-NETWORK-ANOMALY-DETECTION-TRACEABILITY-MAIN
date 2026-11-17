@@ -1140,6 +1140,9 @@ class TraceTimelineResponse(BaseModel):
     entities_involved: List[str]
     total_stages: int
     stages: List[TimelineStageItem]
+    available_campaigns: List[str] = Field(default_factory=list)
+    data_status: str = "OK"
+    provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class EntityGraphNodeItem(BaseModel):
@@ -1164,6 +1167,8 @@ class TraceGraphResponse(BaseModel):
     edge_count: int
     nodes: List[EntityGraphNodeItem]
     edges: List[EntityGraphEdgeItem]
+    data_status: str = "OK"
+    provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class GenerateInvestigationReportRequest(BaseModel):
@@ -1195,6 +1200,112 @@ class CryptoStatusResponse(BaseModel):
     rotation_interval_minutes: float
     adaptive_risk_threshold: float
     cooldown_seconds: int
+    max_rotations_per_hour: int = 10
+    rotations_this_hour: int = 0
     total_rotations: int
     total_records_encrypted: int
+    master_key_fingerprint: Optional[str] = None
     recent_rotations: List[Dict[str, Any]]
+    storage_protection_status: Dict[str, Any] = Field(default_factory=dict)
+    data_status: str = "CONNECTED"
+
+
+class LiveStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = Field(default="127.0.0.1", min_length=1, max_length=128)
+    port: int = Field(default=0, ge=0, le=65535)
+    demo_heuristics: bool = False
+    queue_capacity: int = Field(default=10_000, ge=1, le=500_000)
+    batch_size: int = Field(default=32, ge=1, le=2048)
+
+
+class LiveStatusResponse(BaseModel):
+    mode: str
+    running: bool
+    data_status: str
+    bound_port: Optional[int] = None
+    started_at_utc: Optional[str] = None
+    collector: Dict[str, Any] = Field(default_factory=dict)
+    pipeline: Dict[str, Any] = Field(default_factory=dict)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    inference: Dict[str, Any] = Field(default_factory=dict)
+    alerts_buffered: int = 0
+    demo_mode: bool = False
+    persistence_enabled: bool = False
+    last_error: Optional[str] = None
+
+
+class LiveResultsResponse(BaseModel):
+    data_status: str
+    total: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class LiveAlertsResponse(BaseModel):
+    data_status: str
+    total: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class BehavioralVectorListItem(BaseModel):
+    vector_id: str
+    entity_id: str
+    window_start: str
+    window_end: str
+    dimensions: int
+    is_encrypted: bool
+    key_id: Optional[str] = None
+    created_at: str
+
+
+class BehavioralVectorListResponse(BaseModel):
+    data_status: str
+    total: int
+    items: List[BehavioralVectorListItem] = Field(default_factory=list)
+    reason: Optional[str] = None
+
+
+class BehavioralVectorDetailResponse(BaseModel):
+    vector_id: str
+    entity_id: str
+    window_start: str
+    window_end: str
+    dimensions: int
+    features: List[float]
+    feature_names: Optional[List[str]] = None
+    feature_name_status: str
+    sha256_hash: Optional[str] = None
+    is_encrypted_at_rest: bool
+    key_id: Optional[str] = None
+    created_at: str
+    data_status: str = "CONNECTED"
+
+
+class BehavioralSimilarityResponse(BaseModel):
+    vector_a: str
+    vector_b: str
+    dimensions: Optional[int] = None
+    cosine_similarity: Optional[float] = None
+    euclidean_distance: Optional[float] = None
+    manhattan_distance: Optional[float] = None
+    interpretation: Optional[str] = None
+    interpretation_semantics: Optional[str] = None
+    comparable: bool = True
+    reason: Optional[str] = None
+    data_status: str = "CONNECTED"
+
+
+class BehavioralCorrelationClusterItem(BaseModel):
+    cluster_id: str
+    member_vector_ids: List[str] = Field(default_factory=list)
+    average_similarity: float
+    ip_addresses_observed: List[str] = Field(default_factory=list)
+
+
+class BehavioralCorrelationResponse(BaseModel):
+    data_status: str
+    match_threshold: float
+    total_vectors_evaluated: int
+    clusters: List[BehavioralCorrelationClusterItem] = Field(default_factory=list)
+    reason: Optional[str] = None

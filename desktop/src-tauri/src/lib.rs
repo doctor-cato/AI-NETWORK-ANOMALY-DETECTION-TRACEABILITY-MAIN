@@ -57,6 +57,16 @@ pub fn run() {
             commands::fetch_trace_graph,
             commands::generate_investigation_report,
             commands::fetch_incidents,
+            commands::start_live_telemetry,
+            commands::stop_live_telemetry,
+            commands::fetch_live_status,
+            commands::fetch_live_results,
+            commands::fetch_live_alerts,
+            commands::fetch_live_graph,
+            commands::fetch_behavioral_vectors,
+            commands::fetch_behavioral_vector_detail,
+            commands::fetch_behavioral_similarity,
+            commands::fetch_behavioral_correlation,
         ])
         .build(tauri::generate_context!())
         .expect("Failed to build Tauri desktop application");

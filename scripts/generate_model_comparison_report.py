@@ -1,286 +1,244 @@
 #!/usr/bin/env python3
-"""Comprehensive 4-Model Comparison and Explainability Report Generator.
+"""Empirical 4-Model Comparison Report Generator (RQ1 / Issue #105).
 
-Implements Issue #105 for NetFlow Sentinel v2.0.
+Evaluates the four verified model artifacts (Random Forest, XGBoost, Isolation
+Forest, Autoencoder) on the same NF-UNSW-NB15-v3 test partition using the same
+train-only preprocessor. Fails closed to BLOCKED status if raw data or model
+artifacts are missing; never outputs hardcoded performance metrics.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPTS_DIR.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+if str(_PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT / "src"))
+
+from _rq_common import (  # noqa: E402
+    check_nf_unsw_prerequisites,
+    collect_environment_metadata,
+    compute_binary_metrics,
+    dataset_provenance_summary,
+    load_partition_raw,
+    load_verified_preprocessor,
+)
+
+from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.models.registry import MODEL_KEYS, ModelRegistry  # noqa: E402
 
 OUTPUT_JSON = Path("reports/experiments/ml/model_comparison_report.json")
 OUTPUT_MD = Path("docs/experiments/FOUR_MODEL_COMPARISON.md")
 
 
-def generate_comparison_data() -> Dict[str, Any]:
-    """Compile comparative performance, explainability, and resource metrics across 4 models."""
-    return {
-        "report_title": "NetFlow Sentinel v2.0 — 4-Model Family Empirical Comparison & Explainability",
+def _extract_top_features(model_key: str, model_obj: Any, top_k: int = 5) -> List[Dict[str, Any]]:
+    if model_obj is None:
+        return []
+    importances = getattr(model_obj, "feature_importances_", None)
+    if importances is None and hasattr(model_obj, "estimator"):
+        importances = getattr(model_obj.estimator, "feature_importances_", None)
+    if importances is None:
+        return []
+    arr = np.asarray(importances, dtype=float)
+    if len(arr) != len(ML_FEATURE_COLUMNS):
+        return []
+    order = np.argsort(arr)[::-1][:top_k]
+    return [
+        {
+            "feature": ML_FEATURE_COLUMNS[int(idx)],
+            "importance": round(float(arr[int(idx)]), 6),
+        }
+        for idx in order
+    ]
+
+
+def generate_comparison_report(
+    max_rows: Optional[int] = None,
+    output_json: Path = OUTPUT_JSON,
+    output_md: Path = OUTPUT_MD,
+) -> Dict[str, Any]:
+    """Run empirical 4-model evaluation on NF-UNSW-NB15-v3 test split."""
+    env = collect_environment_metadata()
+    provenance = dataset_provenance_summary()
+    ok_data, missing_paths = check_nf_unsw_prerequisites()
+    registry = ModelRegistry(warmup=True)
+
+    missing_models = [st.model_key for st in registry.statuses() if not st.decision_ready]
+
+    if not ok_data or missing_models:
+        blocked = {
+            "experiment_id": "EXP-RQ1-4MODEL-COMPARISON",
+            "status": "BLOCKED",
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "dataset_provenance": provenance,
+            "environment": env,
+            "blocked_reasons": {
+                "missing_data_files": missing_paths,
+                "unready_models": missing_models,
+            },
+            "models": {},
+            "limitations": [
+                "Cannot compute empirical 4-model comparison without raw NF-UNSW-NB15-v3 dataset and all 4 verified model artifacts."
+            ],
+        }
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8")
+        output_md.parent.mkdir(parents=True, exist_ok=True)
+        output_md.write_text(
+            "# RQ1 — 4-Model Empirical Comparison (BLOCKED)\n\n"
+            f"- Missing data files: `{missing_paths}`\n"
+            f"- Unready models: `{missing_models}`\n",
+            encoding="utf-8",
+        )
+        return blocked
+
+    preprocessor = load_verified_preprocessor()
+    X_test_raw, y_test, attack_test = load_partition_raw("test", max_rows=max_rows)
+    X_test_df = preprocessor.transform(X_test_raw, partition_name="test")
+    X_test_np = X_test_df.to_numpy(dtype=float)
+
+    models_payload: Dict[str, Any] = {}
+    for key in MODEL_KEYS:
+        st = registry.status(key)
+        assert st is not None
+        t0 = time.perf_counter()
+        raw_scores, y_pred = registry.score_batch(key, X_test_np)
+        elapsed_s = max(1e-9, time.perf_counter() - t0)
+        metrics = compute_binary_metrics(y_test, y_pred, y_score=raw_scores)
+        disk_mb = round(Path(st.artifact_path).stat().st_size / (1024 * 1024), 4)
+        top_feats = _extract_top_features(key, registry.model_object(key))
+        protocol = (
+            "supervised_binary_classification (trained on Train Ben+Attack; threshold on probability)"
+            if key in ("random_forest", "xgboost")
+            else (
+                "unsupervised_anomaly_detection (trained on Train Benign-only; "
+                f"threshold_source={st.threshold_source})"
+            )
+        )
+        models_payload[key] = {
+            "display_name": st.display_name,
+            "model_type": st.model_type,
+            "evaluation_protocol": protocol,
+            "artifact_path": st.artifact_path,
+            "artifact_sha256": st.artifact_sha256,
+            "model_disk_size_mb": disk_mb,
+            "decision_threshold": st.threshold,
+            "threshold_source": st.threshold_source,
+            "score_semantics": st.score_semantics,
+            "metrics": metrics,
+            "operational_characteristics": {
+                "batch_elapsed_seconds": round(elapsed_s, 4),
+                "avg_inference_latency_us": round((elapsed_s / len(y_test)) * 1e6, 3),
+                "throughput_flows_sec": round(len(y_test) / elapsed_s, 2),
+            },
+            "explainability": {
+                "top_features": top_feats,
+            },
+        }
+
+    # Rank supervised and unsupervised empirically from measured results
+    best_sup = max(
+        ("random_forest", "xgboost"),
+        key=lambda k: models_payload[k]["metrics"]["f1"],
+    )
+    best_unsup = max(
+        ("isolation_forest", "autoencoder"),
+        key=lambda k: models_payload[k]["metrics"]["f1"],
+    )
+
+    results: Dict[str, Any] = {
+        "experiment_id": "EXP-RQ1-4MODEL-COMPARISON",
+        "status": "COMPLETED",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "evaluation_partition": "NF-UNSW-NB15-v3 Verified Chronological Test Partition",
-        "feature_baseline": "47 nProbe v3 Flow Features",
-        "models": {
-            "RandomForest": {
-                "family": "Supervised Tree Ensemble",
-                "metrics": {
-                    "accuracy": 0.9824,
-                    "precision": 0.9615,
-                    "recall": 0.9742,
-                    "f1_score": 0.9678,
-                    "auc_roc": 0.9912,
-                    "false_positive_rate": 0.0142,
-                },
-                "operational_characteristics": {
-                    "inference_latency_us": 14.2,
-                    "throughput_flows_sec": 70420,
-                    "model_disk_size_mb": 42.5,
-                    "optimal_calibrated_threshold": 0.52,
-                },
-                "explainability": {
-                    "method": "Gini Impurity & Permutation Importance",
-                    "top_features": [
-                        {
-                            "feature": "MIN_TTL",
-                            "importance": 0.284,
-                            "warning": "Identified as network-hop shortcut feature.",
-                        },
-                        {
-                            "feature": "OUT_BYTES",
-                            "importance": 0.142,
-                            "description": "Outbound byte volume indicates exfiltration or flood.",
-                        },
-                        {
-                            "feature": "FLOW_DURATION_MILLISECONDS",
-                            "importance": 0.118,
-                            "description": "Short burst vs long persistent session.",
-                        },
-                        {
-                            "feature": "TCP_FLAGS",
-                            "importance": 0.095,
-                            "description": "SYN scans, RST terminations, unusual flag combinations.",
-                        },
-                        {
-                            "feature": "IN_PKTS",
-                            "importance": 0.076,
-                            "description": "Incoming packet volume.",
-                        },
-                    ],
-                },
-            },
-            "XGBoost": {
-                "family": "Supervised Gradient Boosted Trees",
-                "metrics": {
-                    "accuracy": 0.9856,
-                    "precision": 0.9680,
-                    "recall": 0.9785,
-                    "f1_score": 0.9732,
-                    "auc_roc": 0.9945,
-                    "false_positive_rate": 0.0118,
-                },
-                "operational_characteristics": {
-                    "inference_latency_us": 8.5,
-                    "throughput_flows_sec": 117600,
-                    "model_disk_size_mb": 8.2,
-                    "optimal_calibrated_threshold": 0.48,
-                },
-                "explainability": {
-                    "method": "Tree Gain / Cover Contribution",
-                    "top_features": [
-                        {
-                            "feature": "MIN_TTL",
-                            "importance": 0.312,
-                            "warning": "Identified as network-hop shortcut feature.",
-                        },
-                        {
-                            "feature": "OUT_BYTES",
-                            "importance": 0.165,
-                            "description": "High gradient gain on payload exfiltration boundaries.",
-                        },
-                        {
-                            "feature": "TCP_WIN_MAX_IN",
-                            "importance": 0.104,
-                            "description": "TCP window size modulation during exploit delivery.",
-                        },
-                        {
-                            "feature": "IN_BYTES",
-                            "importance": 0.088,
-                            "description": "Inbound server payload size.",
-                        },
-                        {
-                            "feature": "FLOW_DURATION_MILLISECONDS",
-                            "importance": 0.079,
-                            "description": "Connection duration dynamics.",
-                        },
-                    ],
-                },
-            },
-            "IsolationForest": {
-                "family": "Unsupervised Tree-based Anomaly Isolation",
-                "metrics": {
-                    "accuracy": 0.9120,
-                    "precision": 0.8240,
-                    "recall": 0.8520,
-                    "f1_score": 0.8378,
-                    "auc_roc": 0.8950,
-                    "false_positive_rate": 0.0450,
-                },
-                "operational_characteristics": {
-                    "inference_latency_us": 18.0,
-                    "throughput_flows_sec": 55500,
-                    "model_disk_size_mb": 18.4,
-                    "optimal_calibrated_threshold": -0.12,
-                },
-                "explainability": {
-                    "method": "Average Isolation Depth Attribution",
-                    "top_features": [
-                        {
-                            "feature": "OUT_BYTES",
-                            "importance": 0.220,
-                            "description": "Outlier isolation driven by abnormal payload spikes.",
-                        },
-                        {
-                            "feature": "NUM_PKTS_UP_TO_128_BYTES",
-                            "importance": 0.185,
-                            "description": "Small packet flooding anomalies.",
-                        },
-                        {
-                            "feature": "SRC_TO_DST_SECOND_BYTES",
-                            "importance": 0.140,
-                            "description": "Rapid initial payload transfer.",
-                        },
-                        {
-                            "feature": "TCP_FLAGS",
-                            "importance": 0.115,
-                            "description": "Rare or malformed flag combinations.",
-                        },
-                    ],
-                },
-            },
-            "Autoencoder": {
-                "family": "Unsupervised Deep Reconstruction Anomaly Detector",
-                "metrics": {
-                    "accuracy": 0.9240,
-                    "precision": 0.8410,
-                    "recall": 0.8650,
-                    "f1_score": 0.8528,
-                    "auc_roc": 0.9120,
-                    "false_positive_rate": 0.0380,
-                },
-                "operational_characteristics": {
-                    "inference_latency_us": 24.5,
-                    "throughput_flows_sec": 40800,
-                    "model_disk_size_mb": 1.5,
-                    "optimal_calibrated_threshold": 0.0384,
-                },
-                "explainability": {
-                    "method": "Per-feature Mean Squared Reconstruction Error (MSE Loss Contribution)",
-                    "top_features": [
-                        {
-                            "feature": "OUT_BYTES",
-                            "importance": 0.245,
-                            "description": "Highest reconstruction error on volumetric anomalies.",
-                        },
-                        {
-                            "feature": "IN_BYTES",
-                            "importance": 0.198,
-                            "description": "Deviation from learned benign response sizes.",
-                        },
-                        {
-                            "feature": "FLOW_DURATION_MILLISECONDS",
-                            "importance": 0.155,
-                            "description": "Anomalous temporal duration.",
-                        },
-                        {
-                            "feature": "CLIENT_TCP_FLAGS",
-                            "importance": 0.110,
-                            "description": "Reconstruction failure on scanning flags.",
-                        },
-                    ],
-                },
-            },
-        },
+        "dataset_provenance": provenance,
+        "evaluation_partition": "test",
+        "sample_count": int(len(y_test)),
+        "max_rows_cap": max_rows,
+        "attack_class_support": {str(k): int(v) for k, v in attack_test.value_counts().items()},
+        "environment": env,
+        "models": models_payload,
         "synthesis": {
-            "best_supervised_model": "XGBoost (Highest F1: 97.32%, Lowest Latency: 8.5us, Compact Size: 8.2MB)",
-            "best_anomaly_detection_model": "Autoencoder (Highest Unknown Attack Recall: 83.6%, Low Memory: 1.5MB)",
-            "architectural_recommendation": "Deploy XGBoost as the frontline high-throughput classifier and Autoencoder in parallel to flag novel zero-day and OOD anomalies.",
-            "scientific_disclaimer": "Feature importance metrics represent empirical statistical associations within the benchmark dataset distribution. They do not constitute causal claims of attack attribution.",
+            "best_supervised_by_f1": best_sup,
+            "best_unsupervised_by_f1": best_unsup,
         },
+        "limitations": [
+            "NF-UNSW-NB15-v3 contains strong MIN_TTL separation between benign and attack traffic; high supervised F1 partially reflects testbed topology.",
+            "Supervised and unsupervised models follow different training and threshold calibration protocols and must be compared with protocol awareness.",
+            "Batch throughput reflects offline vectorized inference on this host and does not directly measure live network line-rate capacity.",
+        ],
     }
 
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
 
-def main():
-    data = generate_comparison_data()
+    # Render Markdown directly from computed results
+    rows = []
+    for key in MODEL_KEYS:
+        m = models_payload[key]
+        met = m["metrics"]
+        op = m["operational_characteristics"]
+        roc = f"{met['roc_auc']:.4f}" if met["roc_auc"] is not None else "N/A"
+        pr = f"{met['pr_auc']:.4f}" if met["pr_auc"] is not None else "N/A"
+        rows.append(
+            f"| {m['display_name']} | {met['precision']:.4f} | {met['recall']:.4f} | "
+            f"{met['f1']:.4f} | {met['macro_f1']:.4f} | {met['false_positive_rate']:.6f} | "
+            f"{roc} | {pr} | {op['avg_inference_latency_us']:.2f} us | {op['throughput_flows_sec']:,.1f} flow/s |"
+        )
 
-    OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    md_lines = [
+        "# RQ1 — 4-Model Empirical Comparison Report (NF-UNSW-NB15-v3)",
+        "",
+        f"- **Status:** `{results['status']}`",
+        f"- **Generated At (UTC):** `{results['generated_at_utc']}`",
+        f"- **Dataset:** `{provenance['dataset_id']}` (SHA-256: `{provenance['dataset_sha256']}`)",
+        f"- **Split Protocol:** `{provenance['split_protocol']}` (`test`, N={results['sample_count']:,})",
+        f"- **Random Seed:** `{env['random_seed']}`",
+        "",
+        "## 1. Empirical Test Metrics (Same Preprocessing & Split)",
+        "",
+        "| Model | Precision | Recall | F1 | Macro-F1 | FPR | ROC-AUC | PR-AUC | Avg Latency | Throughput |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        *rows,
+        "",
+        "## 2. Evaluation Protocols & Artifact Hashes",
+        "",
+    ]
+    for key in MODEL_KEYS:
+        m = models_payload[key]
+        md_lines.append(
+            f"- **{m['display_name']}**: `{m['evaluation_protocol']}`, "
+            f"threshold=`{m['decision_threshold']}`, sha256=`{m['artifact_sha256']}`"
+        )
+    md_lines.extend(["", "## 3. Limitations", ""])
+    for lim in results["limitations"]:
+        md_lines.append(f"- {lim}")
 
-    # Markdown comparison report
-    md_content = """# Báo cáo So sánh Thực nghiệm 4 Họ Mô hình AI & Diễn giải Đặc trưng (Explainability)
+    output_md.parent.mkdir(parents=True, exist_ok=True)
+    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    print(f"RQ1 model comparison generated: {output_json} and {output_md}")
+    return results
 
-**Mã tài liệu:** `REPORT-ML-4MODEL-001`
-**Milestone:** `M6.3 (AI Research)`
-**Issue:** `#105`
-**Trạng thái:** `COMPLETED & RIGOROUSLY BENCHMARKED`
 
----
-
-## 1. Tổng quan Đánh giá 4 Họ Mô hình AI
-
-Hệ thống NetFlow Sentinel v2.0 tích hợp và đánh giá đồng bộ 4 trường phái học máy trên cùng một phân vùng kiểm thử (NF-UNSW-NB15-v3 Verified Chronological Split) với 47 đặc trưng chuẩn hóa nProbe v3:
-1. **Random Forest (RF):** Supervised Decision Tree Ensemble (Baseline chính thức của đề tài).
-2. **XGBoost (XGB):** Supervised Gradient Boosted Decision Trees (Tối ưu tốc độ và độ chính xác).
-3. **Isolation Forest (IF):** Unsupervised Tree Isolation (Phát hiện cô lập điểm bất thường).
-4. **Autoencoder (AE):** Unsupervised Deep Neural Network Reconstruction (Phát hiện bất thường qua sai số tái tạo).
-
----
-
-## 2. Bảng So sánh Hiệu năng Tổng hợp
-
-| Chỉ số / Đặc tính | Random Forest (P0 Core) | XGBoost (High-Perf) | Isolation Forest | Autoencoder (Deep Anomaly) |
-| :--- | :---: | :---: | :---: | :---: |
-| **Accuracy** | 98.24% | **98.56%** | 91.20% | 92.40% |
-| **Precision** | 96.15% | **96.80%** | 82.40% | 84.10% |
-| **Recall (Known Attacks)** | 97.42% | **97.85%** | 85.20% | 86.50% |
-| **F1-Score** | 96.78% | **97.32%** | 83.78% | 85.28% |
-| **AUC-ROC** | 0.9912 | **0.9945** | 0.8950 | 0.9120 |
-| **False Positive Rate (FPR)** | 1.42% | **1.18%** | 4.50% | 3.80% |
-| **Recall Tấn công mới (RQ4)** | 34.2% | 36.8% | 78.4% | **83.6%** |
-| **Độ trễ suy luận (Latency)** | 14.2 $\\mu s$ | **8.5 $\\mu s$** | 18.0 $\\mu s$ | 24.5 $\\mu s$ |
-| **Thông lượng (Throughput)** | 70,420 flow/s | **117,600 flow/s** | 55,500 flow/s | 40,800 flow/s |
-| **Kích thước mô hình trên đĩa** | 42.5 MB | 8.2 MB | 18.4 MB | **1.5 MB** |
-| **Ngưỡng tối ưu (Calibrated)** | 0.52 | 0.48 | -0.12 | 0.0384 |
-
----
-
-## 3. Diễn giải Đặc trưng (Model Explainability)
-
-### 3.1 Random Forest & XGBoost (Tree Feature Importance)
-- `MIN_TTL`: Chiếm ~28.4% - 31.2% điểm quan trọng.
-  > **Cảnh báo Shortcut:** Đây là đặc trưng bước nhảy mạng phụ thuộc topology phòng lab, không phải bản chất hành vi độc hại.
-- `OUT_BYTES` & `IN_BYTES`: Chiếm ~23% - 25% điểm quan trọng. Thể hiện dung lượng tải bất thường (exfiltration, DoS, brute force).
-- `FLOW_DURATION_MILLISECONDS`: Phân biệt các đợt quét cổng chớp nhoáng (scan) với kết nối C2 bền bỉ.
-- `TCP_FLAGS`: Đóng vai trò quan trọng trong phát hiện SYN flood, RST attacks và FIN scans.
-
-### 3.2 Autoencoder (Reconstruction Error Contribution)
-- Autoencoder diễn giải điểm bất thường bằng sai số tái tạo bình phương trung bình (MSE) trên từng đặc trưng:
-  - Khi luồng mạng bình thường đi qua, mọi đặc trưng đều được tái tạo với MSE $\approx 0$.
-  - Khi luồng tấn công lạ (Zero-Day) xuất hiện, các trường `OUT_BYTES`, `IN_BYTES` và `TCP_FLAGS` có sai số tái tạo tăng vọt (>200%), kích hoạt cảnh báo bất thường mà không cần biết trước chữ ký tấn công.
-
----
-
-## 4. Tuyên bố Giới hạn Khoa học (Scientific Disclaimer)
-
-Các chỉ số tầm quan trọng của đặc trưng (Feature Importance / MSE Contribution) chỉ thể hiện **mối tương quan thống kê thực nghiệm (empirical statistical associations)** trong phạm vi phân bố của tập dữ liệu kiểm chuẩn NF-UNSW-NB15-v3.
-**Tuyệt đối không suy diễn các giá trị này thành tuyên bố nhân quả (causal attribution)** đối với hành vi tấn công mạng trong thực tế.
-"""
-    OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_MD.write_text(md_content, encoding="utf-8")
-
-    print(f"Model comparison report generated successfully:\n  - {OUTPUT_JSON}\n  - {OUTPUT_MD}")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="RQ1 4-Model Comparison on NF-UNSW-NB15-v3")
+    parser.add_argument(
+        "--max-rows", type=int, default=None, help="Optional row cap for quick test"
+    )
+    args = parser.parse_args()
+    res = generate_comparison_report(max_rows=args.max_rows)
+    if res["status"] != "COMPLETED":
+        sys.exit(1)
 
 
 if __name__ == "__main__":

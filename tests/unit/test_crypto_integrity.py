@@ -215,8 +215,8 @@ def test_key_wrapping_and_zero_plaintext_key_on_disk(tmp_path: Path):
     assert kfile.exists()
     disk_bytes = kfile.read_bytes()
 
-    # Must start with wrapped DEK header
-    assert disk_bytes.startswith(b"NETFLOW_WRAPPED_DEK_V1:")
+    # Must start with the wrapped DEK v2 header (AAD = key_id|domain|version)
+    assert disk_bytes.startswith(b"NETFLOW_WRAPPED_DEK_V2:")
     # Must NOT contain raw key bytes anywhere
     assert raw_key not in disk_bytes
 

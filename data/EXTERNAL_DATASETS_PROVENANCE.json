@@ -27,7 +27,8 @@
       "role": "PRIMARY_MULTI_SOURCE_FLOW_BENCHMARK",
       "domain": "Simulated Enterprise IT Infrastructure",
       "independence_from_train": "VERY_HIGH",
-      "audit_decision": "ACCEPTED"
+      "audit_decision": "ACCEPTED_CATALOG_ONLY",
+      "local_raw_status": "ABSENT"
     },
     {
       "name": "AIT-Log-v2.1",
@@ -53,7 +54,8 @@
       "role": "PRIMARY_MULTI_SOURCE_LOG_BENCHMARK",
       "domain": "Multi-host Linux/Windows Enterprise Environment",
       "independence_from_train": "VERY_HIGH",
-      "audit_decision": "ACCEPTED"
+      "audit_decision": "ACCEPTED_CATALOG_ONLY",
+      "local_raw_status": "ABSENT"
     },
     {
       "name": "NF-CSE-CIC-IDS2018-v3",

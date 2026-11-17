@@ -1,146 +1,317 @@
 #!/usr/bin/env python3
-"""Empirical Experiment for RQ4: Unknown / Zero-Day Attack Holdout Evaluation.
+"""Empirical Experiment for RQ4: Unknown Attack Family Holdout Evaluation.
 
 Implements Issue #98 for NetFlow Sentinel v2.0.
+Protocol:
+- Holdout attack family: {"Backdoor", "Worms"} (0 instances in Train or Validation).
+- Supervised models (RF, XGBoost) are trained strictly on Train (Benign + Known Attacks)
+  and threshold-calibrated strictly on Validation (Benign + Known Attacks).
+- Unsupervised models (Isolation Forest, Autoencoder) are loaded from verified
+  artifacts (trained Benign-only, thresholds calibrated on Validation with
+  Backdoor & Worms excluded).
+- All 4 models are evaluated on real Test split (Known Attacks vs Benign AND
+  Unseen Holdout Attacks vs Benign).
+- Explicitly states that holdout benchmark evaluation does not prove zero-day
+  detection in real-world production networks.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Optional, Tuple
+
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPTS_DIR.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+if str(_PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT / "src"))
+
+from _rq_common import (  # noqa: E402
+    check_nf_unsw_prerequisites,
+    collect_environment_metadata,
+    compute_binary_metrics,
+    dataset_provenance_summary,
+    load_partition_raw,
+    load_verified_preprocessor,
+)
+
+from network_anomaly.config import RANDOM_SEED  # noqa: E402
+from network_anomaly.models.registry import ModelRegistry  # noqa: E402
 
 OUTPUT_JSON = Path("reports/experiments/ml/rq4_unknown_attack_report.json")
 OUTPUT_MD = Path("docs/experiments/EXP4_UNKNOWN_ATTACK.md")
+HOLDOUT_FAMILIES = frozenset({"Backdoor", "Worms"})
 
 
-def run_rq4_experiment() -> Dict[str, Any]:
-    """Evaluate detection capabilities of 4 models when an attack family is held out from training."""
-    results = {
-        "experiment_name": "RQ4 Unknown Attack Holdout Evaluation",
-        "hypothesis": "H4: Unsupervised anomaly detection models (Autoencoder and Isolation Forest) maintain significantly higher detection recall (Recall >= 0.75) on novel, unobserved attack families compared to supervised classifiers (Random Forest, XGBoost), which exhibit severe blind spots (Recall < 0.40).",
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "holdout_protocol": {
-            "held_out_attack_family": "Backdoors & Exfiltration",
-            "training_set": "Benign + Known Attacks (DoS, Reconnaissance, Exploits, Fuzzers)",
-            "validation_set": "Benign + Known Attacks (Threshold calibrated on Known Attacks only)",
-            "test_set": "Unseen Holdout Attacks (Backdoors & Exfiltration) + Benign test flows",
-            "zero_leakage_guarantee": "0 instances of the holdout family present in training or validation splits.",
-        },
-        "model_performance_on_unknown_attacks": {
-            "RandomForest_Supervised": {
-                "paradigm": "Supervised Decision Forest",
-                "known_attacks_recall": 0.974,
-                "unknown_holdout_recall": 0.342,
-                "recall_degradation_pct": -64.89,
-                "unknown_precision": 0.812,
-                "unknown_f1": 0.481,
-                "failure_mode": "Misclassifies novel attack patterns as Benign due to closed-world decision boundaries.",
+def _calibrate_f1_threshold_on_val(
+    val_scores: np.ndarray,
+    val_labels: np.ndarray,
+) -> float:
+    """Select binary threshold strictly on Validation maximizing F1 over quantiles."""
+    best_thresh = 0.5
+    best_f1 = -1.0
+    for q in np.linspace(0.10, 0.90, 17):
+        preds = (val_scores >= q).astype(np.int64)
+        met = compute_binary_metrics(val_labels, preds)
+        if met["f1"] > best_f1:
+            best_f1 = met["f1"]
+            best_thresh = float(q)
+    return best_thresh
+
+
+def run_rq4_experiment(
+    max_train_rows: Optional[int] = None,
+    max_val_rows: Optional[int] = None,
+    max_test_rows: Optional[int] = None,
+    holdout_families: Iterable[str] = HOLDOUT_FAMILIES,
+    output_json: Path = OUTPUT_JSON,
+    output_md: Path = OUTPUT_MD,
+) -> Dict[str, Any]:
+    holdout_set = frozenset(holdout_families)
+    env = collect_environment_metadata()
+    provenance = dataset_provenance_summary()
+    ok_data, missing_paths = check_nf_unsw_prerequisites()
+    registry = ModelRegistry(warmup=True)
+
+    if not ok_data or not registry.preprocessor_ready:
+        blocked = {
+            "experiment_id": "EXP-RQ4-UNKNOWN-001",
+            "status": "BLOCKED",
+            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "dataset_provenance": provenance,
+            "environment": env,
+            "blocked_reasons": {"missing_data_files": missing_paths},
+        }
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8")
+        output_md.parent.mkdir(parents=True, exist_ok=True)
+        output_md.write_text(
+            f"# RQ4 Unknown Attack Holdout (BLOCKED)\n\nMissing: `{missing_paths}`\n",
+            encoding="utf-8",
+        )
+        return blocked
+
+    preprocessor = load_verified_preprocessor()
+    X_train_raw, y_train, atk_train = load_partition_raw("train", max_rows=max_train_rows)
+    X_val_raw, y_val, atk_val = load_partition_raw("validation", max_rows=max_val_rows)
+    X_test_raw, y_test, atk_test = load_partition_raw("test", max_rows=max_test_rows)
+
+    # Zero-leakage holdout filter: exclude holdout families from Train & Validation
+    tr_keep = ~atk_train.isin(holdout_set).to_numpy()
+    va_keep = ~atk_val.isin(holdout_set).to_numpy()
+
+    X_train_np = preprocessor.transform(X_train_raw.loc[tr_keep], partition_name="train").to_numpy(
+        dtype=float
+    )
+    y_train_known = y_train[tr_keep]
+    X_val_np = preprocessor.transform(X_val_raw.loc[va_keep], partition_name="validation").to_numpy(
+        dtype=float
+    )
+    y_val_known = y_val[va_keep]
+    X_test_np = preprocessor.transform(X_test_raw, partition_name="test").to_numpy(dtype=float)
+
+    assert int(np.sum(atk_train.loc[tr_keep].isin(holdout_set))) == 0
+    assert int(np.sum(atk_val.loc[va_keep].isin(holdout_set))) == 0
+
+    # Train supervised holdout models without seeing holdout attack families
+    rf_holdout = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=16,
+        random_state=RANDOM_SEED,
+        n_jobs=-1,
+    )
+    rf_holdout.fit(X_train_np, y_train_known)
+    rf_val_scores = rf_holdout.predict_proba(X_val_np)[:, 1]
+    rf_thresh = _calibrate_f1_threshold_on_val(rf_val_scores, y_val_known)
+
+    xgb_holdout = XGBClassifier(
+        n_estimators=150,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        tree_method="hist",
+        eval_metric="logloss",
+        random_state=RANDOM_SEED,
+        n_jobs=-1,
+    )
+    xgb_holdout.fit(X_train_np, y_train_known)
+    xgb_val_scores = xgb_holdout.predict_proba(X_val_np)[:, 1]
+    xgb_thresh = _calibrate_f1_threshold_on_val(xgb_val_scores, y_val_known)
+
+    test_atk_arr = atk_test.to_numpy()
+    is_unknown = np.isin(test_atk_arr, list(holdout_set))
+    is_benign = y_test == 0
+    is_known_attack = (y_test == 1) & (~is_unknown)
+
+    known_mask = is_benign | is_known_attack
+    unknown_mask = is_benign | is_unknown
+
+    model_scores_and_preds: Dict[str, Tuple[np.ndarray, np.ndarray, Dict[str, Any]]] = {
+        "random_forest": (
+            rf_holdout.predict_proba(X_test_np)[:, 1],
+            (rf_holdout.predict_proba(X_test_np)[:, 1] >= rf_thresh).astype(np.int64),
+            {
+                "paradigm": "Supervised Decision Forest (Holdout-Trained)",
+                "threshold": rf_thresh,
+                "threshold_source": "validation_known_only_f1_calibrated",
+                "artifact_sha256": "trained_in_rq4_holdout_experiment",
             },
-            "XGBoost_Supervised": {
-                "paradigm": "Gradient Boosted Trees",
-                "known_attacks_recall": 0.978,
-                "unknown_holdout_recall": 0.368,
-                "recall_degradation_pct": -62.37,
-                "unknown_precision": 0.825,
-                "unknown_f1": 0.509,
-                "failure_mode": "Overfits to known attack signatures; unable to generalize to radically distinct payload profiles.",
+        ),
+        "xgboost": (
+            xgb_holdout.predict_proba(X_test_np)[:, 1],
+            (xgb_holdout.predict_proba(X_test_np)[:, 1] >= xgb_thresh).astype(np.int64),
+            {
+                "paradigm": "Gradient Boosted Trees (Holdout-Trained)",
+                "threshold": xgb_thresh,
+                "threshold_source": "validation_known_only_f1_calibrated",
+                "artifact_sha256": "trained_in_rq4_holdout_experiment",
             },
-            "IsolationForest_Unsupervised": {
-                "paradigm": "Unsupervised Tree Isolation",
-                "known_attacks_recall": 0.852,
-                "unknown_holdout_recall": 0.784,
-                "recall_degradation_pct": -7.98,
-                "unknown_precision": 0.695,
-                "unknown_f1": 0.737,
-                "success_mechanism": "Isolates anomalous feature density deviations regardless of whether the attack family was previously labeled.",
-            },
-            "Autoencoder_Unsupervised": {
-                "paradigm": "Deep Reconstruction Error",
-                "known_attacks_recall": 0.865,
-                "unknown_holdout_recall": 0.836,
-                "recall_degradation_pct": -3.35,
-                "unknown_precision": 0.742,
-                "unknown_f1": 0.786,
-                "success_mechanism": "High reconstruction error on novel attack flows that deviate from learned normal manifold.",
-            },
-        },
-        "hybrid_ensemble_decision": {
-            "paradigm": "NetFlow Sentinel v2.0 Multi-Model Aggregator",
-            "policy": "Weighted Risk Aggregation with Anomaly Dominance",
-            "unknown_holdout_recall": 0.845,
-            "unknown_holdout_precision": 0.760,
-            "unknown_holdout_f1": 0.800,
-            "benefit": "Maintains high precision on known attacks while leveraging Autoencoder anomaly scores to trigger alerts on novel zero-day attacks.",
-        },
-        "scientific_limitations": [
-            "Holdout testing on benchmark dataset partitions simulates novel attack signatures but does not fully capture polymorphic, evasion-crafted zero-day exploits in the wild.",
-            "Unsupervised models exhibit higher False Positive Rates on benign outliers compared to supervised classifiers.",
-        ],
-        "conclusion": "CONFIRMED: H4 is strongly supported. Autoencoder and Isolation Forest detect over 78-83% of unknown attacks, whereas supervised models miss over 63% of held-out attack flows.",
+        ),
     }
 
-    OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
+    for unsup_key, paradigm in (
+        ("isolation_forest", "Unsupervised Isolation Forest (Benign-Only)"),
+        ("autoencoder", "Unsupervised Autoencoder MSE (Benign-Only)"),
+    ):
+        st = registry.status(unsup_key)
+        if st is not None and st.decision_ready:
+            raw_s, pred_s = registry.score_batch(unsup_key, X_test_np)
+            model_scores_and_preds[unsup_key] = (
+                raw_s,
+                pred_s,
+                {
+                    "paradigm": paradigm,
+                    "threshold": st.threshold,
+                    "threshold_source": st.threshold_source,
+                    "artifact_sha256": st.artifact_sha256,
+                },
+            )
 
-    # Markdown Report
-    md_content = """# Báo cáo Thực nghiệm RQ4: Đánh Giá Phát Hiện Tấn Công Mới Chưa Từng Thấy (Unknown Attack Holdout)
+    model_eval: Dict[str, Any] = {}
+    for mkey, (raw_s, pred_s, meta) in model_scores_and_preds.items():
+        known_met = compute_binary_metrics(
+            y_test[known_mask], pred_s[known_mask], y_score=raw_s[known_mask]
+        )
+        unknown_met = compute_binary_metrics(
+            y_test[unknown_mask], pred_s[unknown_mask], y_score=raw_s[unknown_mask]
+        )
+        known_rec = known_met["recall"]
+        unk_rec = unknown_met["recall"]
+        delta_pct = ((unk_rec - known_rec) / known_rec) * 100.0 if known_rec > 0 else 0.0
+        model_eval[mkey] = {
+            **meta,
+            "known_attacks_vs_benign": known_met,
+            "unknown_holdout_vs_benign": unknown_met,
+            "known_attacks_recall": round(known_rec, 6),
+            "unknown_holdout_recall": round(unk_rec, 6),
+            "unknown_holdout_precision": round(unknown_met["precision"], 6),
+            "unknown_holdout_f1": round(unknown_met["f1"], 6),
+            "unknown_holdout_fpr": round(unknown_met["false_positive_rate"], 6),
+            "recall_degradation_pct": round(delta_pct, 2),
+        }
 
-**Mã tài liệu:** `EXP-RQ4-UNKNOWN-001`
-**Milestone:** `M6.3 (AI Research)`
-**Issue:** `#98`
-**Trạng thái:** `HYPOTHESIS CONFIRMED`
+    if_rec = model_eval.get("isolation_forest", {}).get("unknown_holdout_recall", 0.0)
+    ae_rec = model_eval.get("autoencoder", {}).get("unknown_holdout_recall", 0.0)
+    rf_rec = model_eval["random_forest"]["unknown_holdout_recall"]
+    xgb_rec = model_eval["xgboost"]["unknown_holdout_recall"]
 
----
+    results: Dict[str, Any] = {
+        "experiment_id": "EXP-RQ4-UNKNOWN-001",
+        "status": "COMPLETED",
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "hypothesis": (
+            "H4: Unsupervised anomaly models maintain higher recall on unseen holdout "
+            "attack families than closed-world supervised classifiers (benchmark holdout only; "
+            "does not prove real-world zero-day detection)."
+        ),
+        "dataset_provenance": provenance,
+        "split_manifest": {
+            "held_out_attack_families": sorted(holdout_set),
+            "train_rows_after_holdout_filter": int(np.sum(tr_keep)),
+            "train_holdout_rows_removed": int(np.sum(~tr_keep)),
+            "validation_rows_after_holdout_filter": int(np.sum(va_keep)),
+            "validation_holdout_rows_removed": int(np.sum(~va_keep)),
+            "test_benign_rows": int(np.sum(is_benign)),
+            "test_known_attack_rows": int(np.sum(is_known_attack)),
+            "test_unknown_holdout_rows": int(np.sum(is_unknown)),
+            "zero_leakage_verified": True,
+        },
+        "environment": env,
+        "model_performance_on_unknown_attacks": model_eval,
+        "hypothesis_evaluation": {
+            "supervised_min_unknown_recall": round(min(rf_rec, xgb_rec), 6),
+            "supervised_max_unknown_recall": round(max(rf_rec, xgb_rec), 6),
+            "isolation_forest_unknown_recall": round(if_rec, 6),
+            "autoencoder_unknown_recall": round(ae_rec, 6),
+            "unsupervised_ge_0_75_both": (if_rec >= 0.75 and ae_rec >= 0.75),
+            "isolation_forest_ge_0_75": (if_rec >= 0.75),
+            "autoencoder_ge_0_75": (ae_rec >= 0.75),
+        },
+        "limitations": [
+            "Holdout evaluation on NF-UNSW-NB15-v3 simulates unseen attack categories within the same testbed distribution and does NOT guarantee detection of real-world zero-day or adversarial evasion attacks.",
+            "Supervised models trained on NF-UNSW-NB15-v3 may still exploit shared testbed artifacts (such as MIN_TTL) that correlate across both known and held-out attack categories.",
+        ],
+    }
 
-## 1. Giả thuyết Khoa học (Hypothesis H4)
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
 
-Các hệ thống phòng thủ truyền thống dựa trên phân loại có giám sát (Supervised Learning) thường gặp hiện tượng "điểm mù thế giới đóng" (closed-world assumption): khi gặp một họ tấn công mới (Zero-Day hoặc Novel Variant), mô hình có xu hướng gán nhãn luồng tấn công đó thành Bình thường (Benign).
-
-**Giả thuyết H4:**
-> Các mô hình phát hiện bất thường không giám sát (Autoencoder Reconstruction Error và Isolation Forest) duy trì tỷ lệ phát hiện cao (Recall >= 0.75) trên các họ tấn công hoàn toàn chưa từng quan sát trong tập huấn luyện, trong khi các mô hình có giám sát (Random Forest, XGBoost) bị suy giảm độ nhạy nghiêm trọng (Recall < 0.40).
-
----
-
-## 2. Giao thức Thực nghiệm Holdout (Strict Protocol)
-
-- **Họ tấn công bị giữ lại (Holdout Family):** `Backdoors & Exfiltration` bị loại bỏ 100% khỏi tập Huấn luyện (Train) và tập Thẩm định (Validation).
-- **Tập Train/Validation:** Chỉ chứa lưu lượng Benign và các họ tấn công đã biết (DoS, Reconnaissance, Exploits, Fuzzers).
-- **Tập Test:** Đánh giá trên các mẫu `Backdoors & Exfiltration` chưa từng thấy cùng lưu lượng Benign kiểm thử.
-- **Cam kết không rò rỉ:** 0 mẫu của họ Backdoors xuất hiện trong quá trình huấn luyện hoặc hiệu chuẩn ngưỡng.
-
----
-
-## 3. Bảng So sánh Hiệu năng Phát hiện Tấn công Mới
-
-| Mô hình | Trường phái (Paradigm) | Recall Tấn công đã biết | Recall Tấn công mới (Holdout) | Mức độ suy giảm (Delta Recall) | F1 Tấn công mới |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Random Forest** | Có giám sát (Tree Ensemble) | 97.4% | **34.2%** | **-64.89%** | 48.1% |
-| **XGBoost** | Có giám sát (Gradient Boosting) | 97.8% | **36.8%** | **-62.37%** | 50.9% |
-| **Isolation Forest** | Không giám sát (Anomaly Isolation) | 85.2% | **78.4%** | **-7.98%** | 73.7% |
-| **Autoencoder** | Không giám sát (Reconstruction Loss) | 86.5% | **83.6%** | **-3.35%** | **78.6%** |
-| **Sentinel v2 Ensemble** | **Tập hợp đa mô hình thích ứng** | **96.8%** | **84.5%** | **-12.70%** | **80.0%** |
-
----
-
-## 4. Kết luận Khoa học & Cơ sở Thiết kế Kiến trúc
-
-1. **Khẳng định Giả thuyết H4:**
-   - Mô hình có giám sát bị bỏ sót hơn 63-65% các cuộc tấn công mới do ranh giới quyết định bị bó hẹp trong các mẫu đã thấy.
-   - Autoencoder duy trì Recall **83.6%** (chỉ suy giảm 3.35%) nhờ cơ chế đo lường độ lệch khỏi phân bố bình thường (normal manifold).
-2. **Minh chứng cho Kiến trúc Tập hợp Đa Mô hình (Multi-Model Aggregator #109):**
-   Kết quả này chứng minh rằng việc kết hợp Supervised (độ chính xác cao trên tấn công phổ biến) với Anomaly Detection (cảnh báo sớm tấn công lạ) là kiến trúc tối ưu cho NetFlow Sentinel v2.0.
-3. **Giới hạn thực nghiệm:**
-   Holdout trong benchmark mô phỏng sự vắng mặt của chữ ký tấn công nhưng chưa bao quát toàn bộ các kỹ thuật che giấu payload (polymorphism / adversarial evasion) của tấn công APT trong thực tế.
-"""
-    OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_MD.write_text(md_content, encoding="utf-8")
-
-    print(f"RQ4 experiment completed successfully:\n  - {OUTPUT_JSON}\n  - {OUTPUT_MD}")
+    rows = []
+    for mkey, vals in model_eval.items():
+        rows.append(
+            f"| {mkey} | {vals['paradigm']} | {vals['known_attacks_recall']:.4f} | "
+            f"{vals['unknown_holdout_recall']:.4f} | {vals['recall_degradation_pct']:+.2f}% | "
+            f"{vals['unknown_holdout_precision']:.4f} | {vals['unknown_holdout_f1']:.4f} | "
+            f"{vals['unknown_holdout_fpr']:.4f} |"
+        )
+    md_lines = [
+        "# RQ4 — Unknown Attack Family Holdout Evaluation (Empirical NF-UNSW-NB15-v3)",
+        "",
+        f"- **Status:** `{results['status']}`",
+        f"- **Timestamp (UTC):** `{results['timestamp_utc']}`",
+        f"- **Held-out Families:** `{', '.join(sorted(holdout_set))}` (0 rows in Train & Validation)",
+        f"- **Dataset:** `{provenance['dataset_id']}` (`{provenance['dataset_sha256']}`)",
+        f"- **Test Counts:** Benign=`{results['split_manifest']['test_benign_rows']:,}`, "
+        f"Known Attack=`{results['split_manifest']['test_known_attack_rows']:,}`, "
+        f"Unknown Holdout=`{results['split_manifest']['test_unknown_holdout_rows']:,}`",
+        "",
+        "| Model | Paradigm | Known Recall | Holdout Recall | Delta | Holdout Precision | Holdout F1 | Benign FPR |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+        *rows,
+        "",
+        "## Limitations",
+        *[f"- {lim}" for lim in results["limitations"]],
+    ]
+    output_md.parent.mkdir(parents=True, exist_ok=True)
+    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    print(f"RQ4 experiment completed: {output_json} and {output_md}")
     return results
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="RQ4 Unknown Attack Holdout Experiment")
+    parser.add_argument("--max-train-rows", type=int, default=None)
+    parser.add_argument("--max-val-rows", type=int, default=None)
+    parser.add_argument("--max-test-rows", type=int, default=None)
+    args = parser.parse_args()
+    res = run_rq4_experiment(
+        max_train_rows=args.max_train_rows,
+        max_val_rows=args.max_val_rows,
+        max_test_rows=args.max_test_rows,
+    )
+    if res["status"] != "COMPLETED":
+        sys.exit(1)
+
+
 if __name__ == "__main__":
-    run_rq4_experiment()
+    main()

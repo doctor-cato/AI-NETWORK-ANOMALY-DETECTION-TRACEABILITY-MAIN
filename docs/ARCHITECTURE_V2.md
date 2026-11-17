@@ -11,7 +11,7 @@
 Hệ thống được thiết kế theo mô hình **Hybrid Desktop-Sidecar Architecture**:
 - **Frontend / Client Layer:** Desktop application phát triển bằng **Tauri 2 + Svelte 5 + Tailwind CSS**, giao tiếp bất đồng bộ qua IPC và HTTP loopback.
 - **Backend / Sidecar Layer:** **FastAPI + Python 3.12** chạy dưới dạng tiến trình độc lập (loopback authentication qua `X-Sentinel-Session-Token`), tích hợp SQLite bảo mật cho lưu trữ metadata và encrypted at-rest storage.
-- **Telemetry Layer:** **Rust Collector** hiệu năng cao xử lý packet / NetFlow v9 / IPFIX và tail logs, đẩy vào streaming pipeline qua kênh nội bộ có backpressure.
+- **Telemetry Layer:** **Python UDP Collector & Decoder** (`NetFlowIPFIXDecoder` + `UDPFlowCollector` trong `src/network_anomaly/telemetry/collector.py`) xử lý NetFlow v9 / IPFIX và đẩy sự kiện vào `StreamingEventPipeline` -> `LiveSystemOrchestrator` qua `LiveTelemetryService` (crate Rust độc lập tại #128 được hoãn sau v2.0.0).
 
 ```mermaid
 flowchart TB
@@ -84,7 +84,7 @@ flowchart TB
 ### 2.3. Chế độ 3: Live Monitoring Mode (Giám sát Lab Được Cấp phép)
 - **Mục đích:** Thu thập trực tiếp lưu lượng mạng thực tế trong môi trường lab ủy quyền, phát hiện bất thường tức thời và kích hoạt tự vệ mật mã.
 - **Luồng dữ liệu:**  
-  `Rust Collector (UDP:2055 / Raw socket) → Bounded Ring Buffer → Missing-feature Validator / Rejection Gate → Streaming Inference → Live Anomaly Alert → Dynamic Key Rotation`.
+  `UDP Exporter → UDPFlowCollector / NetFlowIPFIXDecoder → CanonicalSecurityEvent → StreamingEventPipeline → RealtimeFeatureExtractor (strict 47-feature) → RealtimeInferenceEngine (4 real models via ModelRegistry) → RiskScorer & LiveAlertManager → BehavioralVector & AES-256-GCM Vault → TraceEngine`.
 
 ```mermaid
 sequenceDiagram

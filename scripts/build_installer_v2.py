@@ -44,24 +44,45 @@ def inspect_packaging_prerequisites(project_root: Path = PROJECT_ROOT) -> Dict[s
         "makensis": shutil.which("makensis") is not None,
     }
 
+    staged_manifest_path = staged_bundle / "EMBEDDED_ARTIFACTS_MANIFEST.json"
+    dist_auth_path = project_root / "reports" / "governance" / "DISTRIBUTION_AUTHORIZATION.json"
+
     required_files = {
         "run_api": (project_root / "scripts" / "run_api.py").is_file(),
         "build_backend_sidecar": (project_root / "scripts" / "build_backend_sidecar.py").is_file(),
         "tauri_conf": (tauri_dir / "tauri.conf.json").is_file(),
         "tauri_standalone_conf": (tauri_dir / "tauri.standalone.conf.json").is_file(),
         "package_json": (desktop_dir / "package.json").is_file(),
-        "staged_bundle_manifest": (staged_bundle / "EMBEDDED_ARTIFACTS_MANIFEST.json").is_file(),
+        "staged_bundle_manifest": staged_manifest_path.is_file(),
+        "distribution_authorization": dist_auth_path.is_file(),
     }
 
-    can_build_sidecar = bool(tools["pyinstaller"] and required_files["run_api"])
+    can_build_sidecar = bool(
+        tools["pyinstaller"]
+        and required_files["run_api"]
+        and required_files["build_backend_sidecar"]
+    )
     can_build_frontend = bool(tools["node"] and tools["npm"] and required_files["package_json"])
     can_build_nsis = bool(
         can_build_sidecar
         and can_build_frontend
         and tools["cargo"]
         and tools["rustc"]
+        and tools["makensis"]
         and required_files["tauri_standalone_conf"]
+        and required_files["staged_bundle_manifest"]
     )
+
+    if can_build_nsis:
+        readiness_tier = "INSTALLER_READY"
+    elif can_build_sidecar and can_build_frontend:
+        readiness_tier = "SIDECAR_AND_FRONTEND_READY"
+    elif can_build_sidecar:
+        readiness_tier = "SIDECAR_READY"
+    elif can_build_frontend:
+        readiness_tier = "FRONTEND_READY"
+    else:
+        readiness_tier = "NOT_READY"
 
     return {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -73,7 +94,11 @@ def inspect_packaging_prerequisites(project_root: Path = PROJECT_ROOT) -> Dict[s
             "frontend_build_ready": can_build_frontend,
             "full_nsis_installer_ready": can_build_nsis,
             "staged_models_present": required_files["staged_bundle_manifest"],
+            "readiness_tier": readiness_tier,
         },
+        "limitations": [
+            "Clean Windows VM install/upgrade/uninstall runtime acceptance must be executed on an independent clean Windows VM after an NSIS .exe is produced."
+        ],
     }
 
 
@@ -102,7 +127,7 @@ def build_installer_v2(
     report = inspect_packaging_prerequisites(PROJECT_ROOT)
     if check_only:
         report["mode"] = "check_only"
-        report["status"] = "READY" if report["readiness"]["frontend_build_ready"] else "PARTIAL"
+        report["status"] = report["readiness"]["readiness_tier"]
         return report
 
     if not report["readiness"]["sidecar_build_ready"]:
@@ -136,14 +161,19 @@ def build_installer_v2(
     installer_sha256: Optional[str] = None
 
     if not skip_nsis:
-        if not report["readiness"]["full_nsis_installer_ready"]:
-            raise RuntimeError(
-                "Rust / Cargo toolchain is required to bundle the Tauri NSIS installer."
-            )
         if not report["readiness"]["staged_models_present"]:
             raise RuntimeError(
                 "Missing desktop/src-tauri/staged_bundle/EMBEDDED_ARTIFACTS_MANIFEST.json. "
                 "Stage authorized model artifacts first via scripts/verify_companion_artifacts.py."
+            )
+        if not report["readiness"]["full_nsis_installer_ready"]:
+            missing_tools = [
+                k
+                for k in ("pyinstaller", "node", "npm", "cargo", "rustc", "makensis")
+                if not report["tools"].get(k)
+            ]
+            raise RuntimeError(
+                f"Full NSIS installer prerequisites incomplete (missing tools: {missing_tools})."
             )
 
         npx_cmd = "npx.cmd" if sys.platform == "win32" else "npx"

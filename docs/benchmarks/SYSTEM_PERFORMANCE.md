@@ -1,39 +1,26 @@
-# Báo Cáo Đo Lường Hiệu Năng Toàn Hệ Thống (System-Wide Performance Benchmark)
+# System Performance Benchmark Report (Dynamic Measurement)
 
-**Mã tài liệu:** `BENCHMARK-SYSTEM-V2-001`
-**Milestone:** `M6.7 (Desktop Dashboards & Release Packaging)`
-**Issue:** `#147`
-**Trạng thái:** **`BENCHMARKED & EXCEEDS TARGET SPECIFICATIONS`**
+- **Executed At (UTC):** `2026-11-17T15:52:01.441243+00:00`
+- **Host OS / CPU / RAM:** `Windows-11-10.0.26200-SP0` / `12 vCPU` / `15.27 GB`
+- **Python:** `3.12.10` | **AI Readiness:** `4/4 (REAL_MODELS)`
 
----
+## 1. End-to-End Orchestrator Measurement
+- **Events Processed:** `200`
+- **Throughput:** `12.30 flow/s`
+- **E2E Latency (Med / P95 / P99):** `78423.3 / 99766.7 / 175674.9 us`
+- **Ring Buffer Peak Utilization:** `10.0%` (`dropped=0`)
 
-## 1. Môi trường Thực nghiệm & Phạm vi Đo lường
+## 2. Isolated Component Microbenchmarks (Separate from E2E)
 
-Hệ thống đo lường hiệu năng xử lý toàn trình (end-to-end) từ lúc nạp dữ liệu telemetry thô, giải mã gói tin, trích xuất đặc trưng, suy luận AI qua 4 mô hình, tính điểm rủi ro, mã hóa vector hành vi AES-256-GCM và cập nhật đồ thị truy vết.
+| Component | Median (us) | P95 (us) | P99 (us) |
+|---|---:|---:|---:|
+| collector_decoding | 1.0 | 1.2 | 2.0 |
+| feature_contract_validation | 8.7 | 9.6 | 12.3 |
+| multi_model_ai_inference | 79346.35 | 159022.0 | 244357.6 |
+| behavioral_vector_build | 41.45 | 87.1 | 149.1 |
+| aes_256_gcm_encrypt | 4.5 | 13.2 | 71.6 |
+| risk_scoring_dedup | 4.1 | 7.8 | 9.4 |
 
-- **Nền tảng kiểm thử:** Windows 10/11 x64, Python 3.12 (.venv).
-- **Quy mô tập kiểm thử:** 1,000 sự kiện luồng đầy đủ 47 đặc trưng chuẩn hóa.
-
----
-
-## 2. Kết quả Hiệu Năng Theo Chế Độ Hoạt Động
-
-| Chế độ Hoạt động (Mode) | Số sự kiện xử lý | Thời gian toàn trình (s) | Thông lượng (Throughput) | Độ trễ trung bình / sự kiện |
-| :--- | :---: | :---: | :---: | :---: |
-| **Offline Batch Mode** | 1,000 | `0.1328`s | **`7,531.6` flow/s** | `132.8` $\mu s$ |
-| **Replay Scenario Mode** | 1,000 | `0.1000`s | **`10,001.9` flow/s** | ~`100.0` $\mu s$ |
-| **Live Streaming Capacity** | Bounded Buffer | Vận hành liên tục | **Tối đa 75,000 flow/s** | $< 100$ ms micro-batch |
-
----
-
-## 3. Phân Rã Độ Trễ Các Tầng Xử Lý (Latency Breakdown)
-
-- **Collector Binary Decoding:** `0.50` $\mu s$
-- **Feature Extraction & Contract Validation:** `4.94` $\mu s$
-- **Multi-Model AI Inference (RF, XGB, IF, AE):** `8.08` $\mu s$
-- **Behavioral Sessionizer & 16-D Vector:** `19.02` $\mu s$
-- **AES-256-GCM Vector Encryption:** `18.67` $\mu s$
-- **Risk Scoring & Alert Deduplication:** `2.60` $\mu s$
-- **Tổng độ trễ nội tại toàn trình:** **`53.81` $\mu s$ / sự kiện**
-
-> **Kết luận:** Hệ thống đạt độ trễ xử lý dưới 0.1ms trên mỗi sự kiện, hoàn toàn đáp ứng khả năng giám sát trực tiếp trên các đường truyền mạng doanh nghiệp tốc độ 1Gbps – 10Gbps mà không gây hiện tượng nghẽn cổ chai (bottleneck).
+## 3. Limitations
+- Measurements reflect in-process synthetic event workloads on this specific host and do not constitute 1-10 Gbps physical NIC line-rate certification.
+- Component microbenchmarks and full end-to-end event processing latency are reported separately because Python loop/dispatch and SQLite/sessionizer overhead are not additive across isolated microbenchmarks.

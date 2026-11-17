@@ -6,14 +6,25 @@ Implements Issues #84 and #85 for NetFlow Sentinel v2.0.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import json
+import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
-from network_anomaly.ingestion.adapters.v2_adapter import (
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from fetch_multi_source_dataset import (  # noqa: E402
+    SYNTHETIC_FIXTURE_DIR,
+    _is_official_data_present,
+)
+
+from network_anomaly.ingestion.adapters.v2_adapter import (  # noqa: E402
     ApplicationDNSAdapter,
     ApplicationWebAdapter,
     IdentityAuthAdapter,
@@ -259,13 +270,42 @@ def evaluate_linkage_feasibility(
     }
 
 
-def main():
-    flow_csv = AIT_DATA_DIR / "ait_netflow_v2.1_sample.csv"
-    dns_log = AIT_DATA_DIR / "ait_dns_v2.1_sample.log"
-    web_log = AIT_DATA_DIR / "ait_web_v2.1_sample.log"
-    auth_log = AIT_DATA_DIR / "ait_auth_v2.1_sample.log"
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Profile AIT or Synthetic Multi-Source Fixtures")
+    parser.add_argument(
+        "--synthetic-fixture-smoke",
+        action="store_true",
+        help="Profile synthetic schema fixtures in tests/fixtures/ait_synthetic/ instead of official data/raw/ait",
+    )
+    args = parser.parse_args()
 
-    print("Profiling AIT Multi-Source Datasets...")
+    if not args.synthetic_fixture_smoke and not _is_official_data_present(AIT_DATA_DIR):
+        blocked = {
+            "status": "BLOCKED",
+            "synthetic": False,
+            "profiled_at_utc": datetime.now(timezone.utc).isoformat(),
+            "reason": (
+                f"Official AIT-Suite-v2.1 raw files absent in {AIT_DATA_DIR}. "
+                "Use --synthetic-fixture-smoke for schema-only fixture checks."
+            ),
+        }
+        REPORT_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+        REPORT_JSON_PATH.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8")
+        print(f"AIT profiling BLOCKED (raw data absent): {REPORT_JSON_PATH}")
+        return
+
+    if args.synthetic_fixture_smoke:
+        flow_csv = SYNTHETIC_FIXTURE_DIR / "synthetic_netflow_fixture.csv"
+        dns_log = SYNTHETIC_FIXTURE_DIR / "synthetic_dns_fixture.log"
+        web_log = SYNTHETIC_FIXTURE_DIR / "synthetic_web_fixture.log"
+        auth_log = SYNTHETIC_FIXTURE_DIR / "synthetic_auth_fixture.log"
+    else:
+        flow_csv = AIT_DATA_DIR / "ait_netflow_v2.1_sample.csv"
+        dns_log = AIT_DATA_DIR / "ait_dns_v2.1_sample.log"
+        web_log = AIT_DATA_DIR / "ait_web_v2.1_sample.log"
+        auth_log = AIT_DATA_DIR / "ait_auth_v2.1_sample.log"
+
+    print("Profiling Multi-Source Datasets...")
     flow_prof = profile_netflow(flow_csv)
     dns_prof = profile_dns(dns_log)
     web_prof = profile_web(web_log)
@@ -277,6 +317,10 @@ def main():
     )
 
     report_payload = {
+        "status": (
+            "SYNTHETIC_FIXTURE_SMOKE" if args.synthetic_fixture_smoke else "OFFICIAL_PROFILED"
+        ),
+        "synthetic": bool(args.synthetic_fixture_smoke),
         "profiled_at_utc": datetime.now(timezone.utc).isoformat(),
         "sources": {
             "netflow": flow_prof,

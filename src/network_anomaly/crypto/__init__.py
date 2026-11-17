@@ -6,7 +6,14 @@ fixed and adaptive key rotation, and secure at-rest persistence. (Milestone M6.5
 
 from .aead import AESGCMCipher, CiphertextEnvelope
 from .encrypted_storage import EncryptedStorageVault
-from .key_manager import KeyManager, KeyMetadata, KeyStatus
+from .key_manager import (
+    KeyManager,
+    KeyMetadata,
+    KeyStatus,
+    KeyStorageError,
+    LegacyKeyMigrationRequired,
+    NonceRegistry,
+)
 from .rotation import KeyRotationPolicy, RotationDecision, RotationTrigger
 
 __all__ = [
@@ -15,6 +22,9 @@ __all__ = [
     "KeyManager",
     "KeyMetadata",
     "KeyStatus",
+    "KeyStorageError",
+    "LegacyKeyMigrationRequired",
+    "NonceRegistry",
     "KeyRotationPolicy",
     "RotationDecision",
     "RotationTrigger",

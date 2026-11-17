@@ -11,17 +11,22 @@ from network_anomaly.canonical.event import (
     FlowMetrics,
     RawProvenance,
 )
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
 from network_anomaly.telemetry.modes import ModeOrchestrator, MonitoringMode
 
 
+class _NoInferenceEngine:
+    """Stub used by memory/bounds tests that do not exercise model inference."""
+
+    def infer_event(self, event, feature_dict, feature_vector=None):
+        return None
+
+
 class TestLiveTelemetryFlow:
-    def test_live_orchestrator_complete_pipeline(self):
-        contract = get_baseline_47_feature_contract()
+    def test_live_orchestrator_complete_pipeline(self, baseline_features):
+        features = baseline_features()
         orchestrator = LiveSystemOrchestrator()
 
-        # Regular flow event
         event = CanonicalSecurityEvent(
             event_timestamp=datetime.now(timezone.utc),
             event_kind=EventKind.FLOW,
@@ -38,21 +43,30 @@ class TestLiveTelemetryFlow:
                 pkts_out=10,
                 tcp_flags=24,
             ),
-            raw_provenance=RawProvenance(source_file="live.pcap", adapter_name="LiveAdapter"),
+            raw_provenance=RawProvenance(source_file="probe.pcap", adapter_name="ProbeAdapter"),
             is_ml_complete=True,
-            ml_features={k: 1.0 for k in contract.feature_names},
+            ml_features=features,
         )
 
         res = orchestrator.process_event(event)
         assert res.event_id == event.event_id
         assert res.is_ml_flow is True
+        assert res.feature_status == "MODEL_READY"
         assert res.inference_decision is not None
-        assert res.risk_score >= 0.0
+        assert res.inference_decision.inference_mode in {"REAL_MODELS", "UNAVAILABLE"}
+        if res.inference_decision.inference_mode == "REAL_MODELS":
+            assert len(res.inference_decision.model_predictions) == 4
+        else:
+            # No artifact means no fabricated score.
+            assert res.inference_decision.model_predictions == {}
+            assert res.inference_decision.participating_models == []
+        assert 0.0 <= res.risk_score <= 100.0
+        assert res.behavioral_vector is not None
 
-    def test_mode_orchestrator_replay(self):
-        contract = get_baseline_47_feature_contract()
+    def test_mode_orchestrator_replay(self, baseline_features):
         orchestrator = LiveSystemOrchestrator()
         mode_mgr = ModeOrchestrator(orchestrator=orchestrator)
+        features = baseline_features()
 
         events = [
             CanonicalSecurityEvent(
@@ -64,7 +78,7 @@ class TestLiveTelemetryFlow:
                     source_file="replay.pcap", adapter_name="ReplayAdapter"
                 ),
                 is_ml_complete=True,
-                ml_features={k: 1.0 for k in contract.feature_names},
+                ml_features=features,
             )
             for _ in range(5)
         ]
@@ -76,10 +90,13 @@ class TestLiveTelemetryFlow:
         assert summary.total_events_processed == 5
         assert summary.throughput_events_per_sec > 0.0
 
-    def test_memory_stability_under_volume(self):
-        # Process 500 events across distinct entities with bounded LRU eviction
-        orchestrator = LiveSystemOrchestrator(max_active_entities=50)
-        contract = get_baseline_47_feature_contract()
+    def test_memory_stability_under_volume(self, baseline_features):
+        # Process 500 events across distinct entities with bounded LRU eviction.
+        # A stub engine keeps this a memory-bound test rather than a benchmark.
+        orchestrator = LiveSystemOrchestrator(
+            max_active_entities=50, inference_engine=_NoInferenceEngine()
+        )
+        features = baseline_features()
 
         for i in range(500):
             ev = CanonicalSecurityEvent(
@@ -91,7 +108,7 @@ class TestLiveTelemetryFlow:
                     source_file="stress.pcap", adapter_name="StressAdapter"
                 ),
                 is_ml_complete=True,
-                ml_features={k: 1.0 for k in contract.feature_names},
+                ml_features=features,
             )
             orchestrator.process_event(ev)
 

@@ -28,7 +28,7 @@ Mọi thực nghiệm trong đề tài tuân thủ các nguyên tắc:
 - **Metrics chính:** Macro-F1, Binary F1, Precision, Recall, FPR, Training Time, Inference Latency.
 - **Mã thực nghiệm:** `Exp1` (Huấn luyện & Benchmark 4 Model).
 - **Issue ánh xạ:** Triển khai: #94, #95; Đánh giá: #105, #145.
-- **Trạng thái:** `IMPLEMENTED & VALIDATED` (v1.0 baseline RF & IF), `PLANNED` (XGBoost/Autoencoder cross-check).
+- **Trạng thái:** `EXPERIMENTALLY VALIDATED` trên `NF-UNSW-NB15-v3` `test` (`345,953` dòng) qua `scripts/generate_model_comparison_report.py` (`docs/experiments/FOUR_MODEL_COMPARISON.md`).
 
 ---
 
@@ -40,7 +40,7 @@ Mọi thực nghiệm trong đề tài tuân thủ các nguyên tắc:
 - **Metrics chính:** Per-category Recall, Per-category Precision, Macro-F1, False Positive Rate (FPR).
 - **Mã thực nghiệm:** `Exp2` (Class Imbalance & Cost-sensitive Evaluation).
 - **Issue ánh xạ:** Triển khai: #96; Đánh giá: #145.
-- **Trạng thái:** `PLANNED` (v2.0 protocol).
+- **Trạng thái:** `EXPERIMENTALLY VALIDATED` trên `NF-UNSW-NB15-v3` (`1,655,797` train / `345,953` test) qua `scripts/run_rq2_rare_attack_experiment.py` (`reports/experiments/imbalance/rq2_imbalance_report.md`): cost-sensitive RF/XGB đạt detection rate >= 0.70 trên cả 5 lớp hiếm, trong khi Autoencoder không đạt ngưỡng 0.70 (`Full H2 confirmed: False`).
 
 ---
 
@@ -52,7 +52,7 @@ Mọi thực nghiệm trong đề tài tuân thủ các nguyên tắc:
 - **Metrics chính:** Session Correlation Accuracy, Cosine Similarity Score, False Link Rate, Silhouette Score.
 - **Mã thực nghiệm:** `Exp3` (IP-Independent Session Tracking via Behavioral Vectors).
 - **Issue ánh xạ:** Triển khai: #101, #102, #103, #104; Đánh giá: #145.
-- **Trạng thái:** `PLANNED` (v2.0 engine).
+- **Trạng thái:** `SIMULATION` verified qua `scripts/run_rq3_session_correlation_experiment.py` (`docs/experiments/EXP5_SESSION_CORRELATION.md`); đánh giá thực nghiệm trên AIT-Suite-v2.1 thực tế hiện `BLOCKED` do thiếu dữ liệu raw AIT cục bộ.
 
 ---
 
@@ -67,7 +67,7 @@ Mọi thực nghiệm trong đề tài tuân thủ các nguyên tắc:
 - **Metrics chính:** Unknown Attack Recall, Benign FPR, AUC-ROC, Reconstruction Error Threshold.
 - **Mã thực nghiệm:** `Exp4` (Holdout Novel Attack Generalization).
 - **Issue ánh xạ:** Triển khai: #98, #99, #100; Đánh giá: #145.
-- **Trạng thái:** `PLANNED` (v2.0 protocol).
+- **Trạng thái:** `EXPERIMENTALLY VALIDATED` (holdout `Backdoor, Worms` loại 100% khỏi Train/Val) qua `scripts/run_rq4_unknown_attack_experiment.py` (`docs/experiments/EXP4_UNKNOWN_ATTACK.md`): Isolation Forest đạt holdout recall `0.8657`, Autoencoder đạt `0.0625`, trong khi supervised RF/XGB vẫn đạt `1.0000` do shortcut `MIN_TTL` trong dữ liệu benchmark.
 
 ---
 
@@ -79,7 +79,7 @@ Mọi thực nghiệm trong đề tài tuân thủ các nguyên tắc:
 - **Metrics chính:** Exposure Window Duration (phút), Compromise Blast Radius (số bản ghi bị ảnh hưởng khi lộ khóa), Rotation Latency (ms), Số lần xoay khóa trong phiên.
 - **Mã thực nghiệm:** `Exp5` (Fixed vs. Adaptive Key Rotation Under Attack Simulation).
 - **Issue ánh xạ:** Triển khai: #120, #121, #122, #123; Đánh giá: #125, #145.
-- **Trạng thái:** `PLANNED` (v2.0 crypto).
+- **Trạng thái:** `SIMULATION` verified qua `scripts/run_rq5_rotation_experiment.py` (`reports/experiments/crypto/rq5_rotation_report.md`): tính động từ timeline mô phỏng đạt giảm `87.50%` cửa sổ phơi nhiễm (`20.0m -> 2.50m`) và giảm `85.00%` blast radius (`40 -> 6` records/key).
 
 ---
 
@@ -91,7 +91,7 @@ Mọi thực nghiệm trong đề tài tuân thủ các nguyên tắc:
 - **Metrics chính:** Encryption Latency ($\mu s$), Decryption Latency ($\mu s$), Memory Footprint (MB), CPU Utilization (%), Throughput (events/sec).
 - **Mã thực nghiệm:** `Exp6` (Cryptographic Overhead & Hardware Performance Benchmark).
 - **Issue ánh xạ:** Triển khai: #117, #118, #124; Đánh giá: #126, #145, #147.
-- **Trạng thái:** `PLANNED` (v2.0 benchmark).
+- **Trạng thái:** `BENCHMARKED` qua `scripts/benchmark_crypto_overhead.py` (`reports/benchmarks/crypto_benchmark_report.md`): đo đa kích thước payload (256 B / 1024 B / 4096 B) với warm-up, median/P95/P99 và Peak Traced RAM.
 
 ---
 

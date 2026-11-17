@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import hmac
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +25,8 @@ from network_anomaly.api.desktop_csv import (
     inspect_csv_file,
 )
 from network_anomaly.api.errors import register_error_handlers
-from network_anomaly.api.repositories import IncidentRepository
+from network_anomaly.api.live_runtime import CONNECTED, DISCONNECTED, EMPTY, LiveRuntime
+from network_anomaly.api.repositories import EventRepository, IncidentRepository
 from network_anomaly.api.response_policy import (
     export_security_simulation_evidence,
     list_security_simulations,
@@ -33,6 +35,12 @@ from network_anomaly.api.response_policy import (
 from network_anomaly.api.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    BehavioralCorrelationClusterItem,
+    BehavioralCorrelationResponse,
+    BehavioralSimilarityResponse,
+    BehavioralVectorDetailResponse,
+    BehavioralVectorListItem,
+    BehavioralVectorListResponse,
     CryptoStatusResponse,
     CsvAnalyzeRequest,
     CsvAnalyzeResponse,
@@ -55,6 +63,10 @@ from network_anomaly.api.schemas import (
     KeyMetadataResponse,
     KeyRotationRequest,
     KeyRotationResponse,
+    LiveAlertsResponse,
+    LiveResultsResponse,
+    LiveStartRequest,
+    LiveStatusResponse,
     ModelStatusItem,
     PaginatedIncidentsResponse,
     PaginatedRotationAuditResponse,
@@ -69,12 +81,12 @@ from network_anomaly.api.schemas import (
     TraceTimelineResponse,
 )
 from network_anomaly.api.service import ApiService
-from network_anomaly.crypto.key_manager import KeyManager
-from network_anomaly.crypto.rotation import KeyRotationPolicy
 from network_anomaly.trace.engine import TraceEngine
 from network_anomaly.trace.graph import (
     EntityKind,
+    EntityNode,
     EntityRelationshipGraph,
+    RelationEdge,
     RelationType,
 )
 from network_anomaly.trace.investigation import InvestigationReportGenerator
@@ -91,6 +103,15 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
     """
     db_manager = DatabaseManager(db_path=db_path)
     service = ApiService(db=db_manager)
+    keystore_dir = None if db_path == ":memory:" else db_manager.db_path.parent / "keys"
+    live_runtime = LiveRuntime(db_path=db_path, keystore_dir=keystore_dir)
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        try:
+            yield
+        finally:
+            live_runtime.shutdown()
 
     app = FastAPI(
         title="AI Network Anomaly Detection & Traceability API",
@@ -103,11 +124,13 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=_lifespan,
     )
 
-    # Attach db_manager and service to app state for lifecycle/test inspection
+    # Attach db_manager, service, and live_runtime to app state for lifecycle/test inspection
     app.state.db_manager = db_manager
     app.state.service = service
+    app.state.live_runtime = live_runtime
 
     # Register error sanitization handlers
     register_error_handlers(app)
@@ -152,6 +175,9 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
     # Dependency getters
     def get_service() -> ApiService:
         return app.state.service
+
+    def get_live_runtime() -> LiveRuntime:
+        return app.state.live_runtime
 
     # --- Endpoints ---
 
@@ -487,63 +513,358 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
         return export_security_simulation_evidence(svc, request)
 
     # ========================================================================
+    # NetFlow Sentinel v2.0 Live Telemetry & Behavioral Endpoints
+    # ========================================================================
+
+    @app.post(
+        "/api/v1/live/start",
+        response_model=LiveStatusResponse,
+        tags=["Live Telemetry"],
+        summary="Start real UDP NetFlow/IPFIX collector and streaming worker",
+    )
+    def start_live_telemetry(
+        request: LiveStartRequest = LiveStartRequest(),
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> LiveStatusResponse:
+        try:
+            payload = rt.start(
+                host=request.host,
+                port=request.port,
+                demo_heuristics=request.demo_heuristics,
+                queue_capacity=request.queue_capacity,
+                batch_size=request.batch_size,
+            )
+            return LiveStatusResponse(**payload)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed starting live telemetry collector: {exc}",
+            ) from exc
+
+    @app.post(
+        "/api/v1/live/stop",
+        response_model=LiveStatusResponse,
+        tags=["Live Telemetry"],
+        summary="Stop live UDP collector and flush buffered events",
+    )
+    def stop_live_telemetry(
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> LiveStatusResponse:
+        return LiveStatusResponse(**rt.stop())
+
+    @app.get(
+        "/api/v1/live/status",
+        response_model=LiveStatusResponse,
+        tags=["Live Telemetry"],
+        summary="Get live collector, pipeline, and 4-model readiness status",
+    )
+    def get_live_status(
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> LiveStatusResponse:
+        return LiveStatusResponse(**rt.status())
+
+    @app.get(
+        "/api/v1/live/results",
+        response_model=LiveResultsResponse,
+        tags=["Live Telemetry"],
+        summary="Get recent live processed telemetry results",
+    )
+    def get_live_results(
+        limit: int = Query(50, ge=1, le=500),
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> LiveResultsResponse:
+        st = rt.status()
+        items = rt.recent_results(limit=limit)
+        data_status = st["data_status"] if items or not st["running"] else EMPTY
+        return LiveResultsResponse(data_status=data_status, total=len(items), items=items)
+
+    @app.get(
+        "/api/v1/live/alerts",
+        response_model=LiveAlertsResponse,
+        tags=["Live Telemetry"],
+        summary="Get recent live alerts raised by Risk Engine & Alert Manager",
+    )
+    def get_live_alerts(
+        limit: int = Query(50, ge=1, le=500),
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> LiveAlertsResponse:
+        st = rt.status()
+        items = rt.recent_alerts(limit=limit)
+        data_status = st["data_status"] if items or not st["running"] else EMPTY
+        return LiveAlertsResponse(data_status=data_status, total=len(items), items=items)
+
+    @app.get(
+        "/api/v1/live/graph",
+        response_model=TraceGraphResponse,
+        tags=["Live Telemetry"],
+        summary="Get live entity relationship graph from active telemetry",
+    )
+    def get_live_graph(
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> TraceGraphResponse:
+        st = rt.status()
+        raw_graph = rt.entity_graph()
+        if not raw_graph or not raw_graph.get("nodes"):
+            return TraceGraphResponse(
+                node_count=0,
+                edge_count=0,
+                nodes=[],
+                edges=[],
+                data_status=DISCONNECTED if not st["running"] else EMPTY,
+                provenance={"source": "live_runtime", "running": st["running"]},
+            )
+        nodes = [
+            EntityGraphNodeItem(
+                node_id=n["node_id"],
+                kind=n["kind"],
+                label=n["label"],
+                properties=n.get("properties", {}),
+            )
+            for n in raw_graph.get("nodes", [])
+        ]
+        edges = [
+            EntityGraphEdgeItem(
+                edge_id=e["edge_id"],
+                source_id=e["source_id"],
+                target_id=e["target_id"],
+                relation_type=e["relation_type"],
+                confidence=e["confidence"],
+                is_observed=e.get("is_observed", True),
+                evidence_id=e.get("evidence_id"),
+            )
+            for e in raw_graph.get("edges", [])
+        ]
+        return TraceGraphResponse(
+            node_count=len(nodes),
+            edge_count=len(edges),
+            nodes=nodes,
+            edges=edges,
+            data_status=CONNECTED,
+            provenance={"source": "live_runtime", "running": st["running"]},
+        )
+
+    @app.get(
+        "/api/v1/behavioral/vectors",
+        response_model=BehavioralVectorListResponse,
+        tags=["Behavioral Intelligence"],
+        summary="List persisted 16-D behavioral vector metadata (ciphertext stays at rest)",
+    )
+    def list_behavioral_vectors(
+        entity_id: Optional[str] = Query(None),
+        limit: int = Query(50, ge=1, le=200),
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> BehavioralVectorListResponse:
+        payload = rt.list_behavioral_vectors(entity_id=entity_id, limit=limit)
+        items = [BehavioralVectorListItem(**item) for item in payload["items"]]
+        return BehavioralVectorListResponse(
+            data_status=payload["data_status"],
+            total=payload["total"],
+            items=items,
+            reason=payload.get("reason"),
+        )
+
+    @app.get(
+        "/api/v1/behavioral/vectors/{vector_id}",
+        response_model=BehavioralVectorDetailResponse,
+        tags=["Behavioral Intelligence"],
+        summary="Decrypt and inspect a stored 16-D behavioral vector by ID",
+    )
+    def get_behavioral_vector_detail(
+        vector_id: str,
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> BehavioralVectorDetailResponse:
+        detail = rt.load_behavioral_vector(vector_id)
+        if detail is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Behavioral vector '{vector_id}' not found.",
+            )
+        return BehavioralVectorDetailResponse(**detail)
+
+    @app.get(
+        "/api/v1/behavioral/similarity",
+        response_model=BehavioralSimilarityResponse,
+        tags=["Behavioral Intelligence"],
+        summary="Compute real Cosine/Euclidean/Manhattan similarity between two stored vectors",
+    )
+    def get_behavioral_similarity(
+        vector_a_id: str = Query(..., min_length=1),
+        vector_b_id: str = Query(..., min_length=1),
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> BehavioralSimilarityResponse:
+        result = rt.behavioral_similarity(vector_a_id=vector_a_id, vector_b_id=vector_b_id)
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="One or both behavioral vectors were not found.",
+            )
+        return BehavioralSimilarityResponse(**result)
+
+    @app.get(
+        "/api/v1/behavioral/correlate",
+        response_model=BehavioralCorrelationResponse,
+        tags=["Behavioral Intelligence"],
+        summary="Run IPSpoofingSessionCorrelator over stored behavioral vectors",
+    )
+    def correlate_behavioral_vectors(
+        match_threshold: float = Query(0.85, ge=0.0, le=1.0),
+        limit: int = Query(20, ge=1, le=100),
+        rt: LiveRuntime = Depends(get_live_runtime),
+    ) -> BehavioralCorrelationResponse:
+        payload = rt.behavioral_correlation(match_threshold=match_threshold, limit=limit)
+        clusters = [BehavioralCorrelationClusterItem(**c) for c in payload["clusters"]]
+        return BehavioralCorrelationResponse(
+            data_status=payload["data_status"],
+            match_threshold=payload["match_threshold"],
+            total_vectors_evaluated=payload["total_vectors_evaluated"],
+            clusters=clusters,
+            reason=payload.get("reason"),
+        )
+
+    # ========================================================================
     # NetFlow Sentinel v2.0 Trace & Cryptography Endpoints (Issue #115)
     # ========================================================================
+
+    def _collect_real_trace_events(
+        svc: ApiService, rt: LiveRuntime, limit: int
+    ) -> tuple[List[Dict[str, Any]], List[str]]:
+        events_data: List[Dict[str, Any]] = []
+        campaigns: List[str] = []
+        seen_ids: set[str] = set()
+
+        for res in rt.recent_results(limit=limit):
+            ev_id = str(res.get("event_id") or "")
+            if not ev_id or ev_id in seen_ids:
+                continue
+            src_ip = res.get("source_ip")
+            dst_ip = res.get("dest_ip")
+            if not src_ip and not dst_ip:
+                continue
+            seen_ids.add(ev_id)
+            ent = str(res.get("entity_id") or "")
+            if ent and ent not in campaigns:
+                campaigns.append(ent)
+            events_data.append(
+                {
+                    "event_id": ev_id,
+                    "timestamp": res.get("timestamp") or "",
+                    "source_ip": src_ip or ent.replace("host:", ""),
+                    "dest_ip": dst_ip or "unknown",
+                    "attack_type": res.get("attack_type") or res.get("risk_level") or "Suspicious",
+                    "risk_score": float(res.get("risk_score", 0.0)),
+                    "dest_port": res.get("dest_port"),
+                    "confidence": min(1.0, max(0.0, float(res.get("risk_score", 50.0)) / 100.0)),
+                    "campaign_key": ent,
+                }
+            )
+
+        with svc.db.transaction() as conn:
+            incidents = IncidentRepository.list_incidents(conn, limit=limit, offset=0)
+            for inc in incidents:
+                inc_id = str(inc["incident_id"])
+                if inc_id not in campaigns:
+                    campaigns.append(inc_id)
+                ev_id = inc.get("event_id")
+                linked_ev = EventRepository.get_by_id(conn, str(ev_id)) if ev_id else None
+                row_key = str(ev_id or inc_id)
+                if row_key in seen_ids:
+                    continue
+                seen_ids.add(row_key)
+                score = float(inc.get("anomaly_score", 0.0))
+                risk_score = score * 100.0 if score <= 1.0 else score
+                events_data.append(
+                    {
+                        "event_id": row_key,
+                        "incident_id": inc_id,
+                        "session_id": inc.get("session_id"),
+                        "timestamp": (linked_ev or {}).get("timestamp") or inc["created_at"],
+                        "source_ip": (linked_ev or {}).get("source_ip") or "unknown",
+                        "dest_ip": (linked_ev or {}).get("dest_ip") or "unknown",
+                        "attack_type": inc.get("attack_type") or "Suspicious",
+                        "risk_score": risk_score,
+                        "dest_port": (linked_ev or {}).get("dest_port"),
+                        "confidence": min(1.0, max(0.0, risk_score / 100.0)),
+                        "campaign_key": inc_id,
+                    }
+                )
+            for ev in EventRepository.list_events(conn, limit=limit, offset=0):
+                ev_id = str(ev["event_id"])
+                if ev_id in seen_ids:
+                    continue
+                seen_ids.add(ev_id)
+                sess_id = ev.get("session_id")
+                if sess_id and str(sess_id) not in campaigns:
+                    campaigns.append(str(sess_id))
+                events_data.append(
+                    {
+                        "event_id": ev_id,
+                        "session_id": sess_id,
+                        "timestamp": ev.get("timestamp") or ev.get("created_at") or "",
+                        "source_ip": ev.get("source_ip") or "unknown",
+                        "dest_ip": ev.get("dest_ip") or "unknown",
+                        "attack_type": "ObservedFlow",
+                        "dest_port": ev.get("dest_port"),
+                        "confidence": 1.0,
+                        "campaign_key": str(sess_id or ev_id),
+                    }
+                )
+
+        return events_data, campaigns
 
     @app.get(
         "/api/v1/trace/timeline",
         response_model=TraceTimelineResponse,
         tags=["Trace & Investigation"],
-        summary="Get reconstructed multi-stage attack timeline",
+        summary="Get reconstructed multi-stage attack timeline from real events/incidents",
     )
     def get_attack_timeline(
-        campaign_name: str = Query("APT-Campaign-01", min_length=1),
+        campaign_name: Optional[str] = Query(None, min_length=1),
         limit: int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
         svc: ApiService = Depends(get_service),
+        rt: LiveRuntime = Depends(get_live_runtime),
     ) -> TraceTimelineResponse:
-        """Reconstruct multi-stage attack timeline from correlated security events."""
-        # Query incidents or events from repository
-        paginated = svc.list_incidents(limit=limit, offset=offset)
-        events_data = []
-        for inc in paginated.items:
-            events_data.append(
-                {
-                    "event_id": inc.incident_id,
-                    "timestamp": inc.created_at,
-                    "source_ip": "198.51.100.10",
-                    "dest_ip": "10.0.0.5",
-                    "attack_type": inc.attack_type or "Suspicious",
-                    "risk_score": inc.anomaly_score * 100.0,
-                    "dest_port": 443,
-                    "confidence": 0.95,
+        """Reconstruct multi-stage attack timeline from real stored/live security events."""
+        all_events, campaigns = _collect_real_trace_events(svc, rt, limit=limit)
+        effective_campaign = campaign_name or (campaigns[0] if campaigns else "ALL")
+
+        if campaign_name and campaign_name != "ALL":
+            filtered = [
+                ev
+                for ev in all_events
+                if campaign_name
+                in {
+                    ev.get("campaign_key"),
+                    ev.get("incident_id"),
+                    ev.get("session_id"),
+                    ev.get("event_id"),
+                    ev.get("source_ip"),
+                    ev.get("dest_ip"),
                 }
-            )
+            ]
+            events_data = filtered if filtered else all_events
+            filter_mode = "matched_campaign" if filtered else "all_real_events"
+        else:
+            events_data = all_events
+            filter_mode = "all_real_events"
 
         if not events_data:
-            events_data = [
-                {
-                    "event_id": "seed-01",
-                    "timestamp": "2026-11-17T10:00:00Z",
-                    "source_ip": "198.51.100.10",
-                    "dest_ip": "10.0.0.5",
-                    "attack_type": "Reconnaissance",
-                    "dest_port": 80,
-                    "confidence": 0.92,
-                },
-                {
-                    "event_id": "seed-02",
-                    "timestamp": "2026-11-17T10:15:00Z",
-                    "source_ip": "198.51.100.10",
-                    "dest_ip": "10.0.0.5",
-                    "attack_type": "Exploits",
-                    "dest_port": 80,
-                    "confidence": 0.98,
-                },
-            ]
+            return TraceTimelineResponse(
+                timeline_id=f"tl-{effective_campaign}",
+                campaign_name=effective_campaign,
+                overall_confidence=0.0,
+                start_time="",
+                end_time="",
+                entities_involved=[],
+                total_stages=0,
+                stages=[],
+                available_campaigns=[],
+                data_status=EMPTY,
+                provenance={"source": "none", "events_count": 0, "filter": filter_mode},
+            )
 
         reconstructor = AttackTimelineReconstructor()
-        timeline = reconstructor.reconstruct_timeline(campaign_name, events_data)
+        timeline = reconstructor.reconstruct_timeline(effective_campaign, events_data)
 
         stage_items = [
             TimelineStageItem(
@@ -571,43 +892,100 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
             entities_involved=timeline.entities_involved,
             total_stages=len(stage_items),
             stages=stage_items,
+            available_campaigns=campaigns,
+            data_status=CONNECTED if stage_items else EMPTY,
+            provenance={
+                "source": "live_and_sqlite",
+                "events_count": len(events_data),
+                "filter": filter_mode,
+            },
         )
 
     @app.get(
         "/api/v1/trace/graph",
         response_model=TraceGraphResponse,
         tags=["Trace & Investigation"],
-        summary="Query entity relationship graph around an entity or incident",
+        summary="Query entity relationship graph from real live or stored telemetry",
     )
     def get_entity_graph(
-        entity_id: str = Query("10.0.0.5", min_length=1),
+        entity_id: Optional[str] = Query(None, min_length=1),
         depth: int = Query(2, ge=1, le=5),
         svc: ApiService = Depends(get_service),
+        rt: LiveRuntime = Depends(get_live_runtime),
     ) -> TraceGraphResponse:
-        """Query and traverse entity relationship graph around target entity."""
+        """Query and traverse entity relationship graph built from real telemetry."""
         graph = EntityRelationshipGraph()
-        # Seed graph with observed topology
-        graph.add_node(entity_id, EntityKind.IP, f"Target Entity ({entity_id})")
-        graph.add_node("198.51.100.10", EntityKind.IP, "External Threat Actor")
-        graph.add_node("port:443", EntityKind.PORT, "Web HTTPS")
-        graph.add_node("user:admin", EntityKind.USER, "Target User")
+        live_raw = rt.entity_graph()
+        if live_raw:
+            for node_dict in live_raw.get("nodes", []):
+                graph.nodes[node_dict["node_id"]] = EntityNode(
+                    node_id=node_dict["node_id"],
+                    kind=EntityKind(node_dict["kind"]),
+                    label=node_dict["label"],
+                    properties=dict(node_dict.get("properties", {})),
+                )
+            for edge_dict in live_raw.get("edges", []):
+                edge = RelationEdge(
+                    edge_id=edge_dict["edge_id"],
+                    source_id=edge_dict["source_id"],
+                    target_id=edge_dict["target_id"],
+                    relation_type=RelationType(edge_dict["relation_type"]),
+                    confidence=float(edge_dict.get("confidence", 1.0)),
+                    is_observed=bool(edge_dict.get("is_observed", True)),
+                    evidence_id=edge_dict.get("evidence_id"),
+                )
+                graph.edges.append(edge)
+                graph._edge_signatures.add(
+                    f"{edge.source_id}->{edge.target_id}:{edge.relation_type.value}"
+                )
 
-        graph.add_edge(
-            "198.51.100.10", entity_id, RelationType.CONNECTS_TO, confidence=1.0, is_observed=True
-        )
-        graph.add_edge(
-            entity_id, "port:443", RelationType.CONNECTS_TO, confidence=1.0, is_observed=True
-        )
-        graph.add_edge(
-            entity_id,
-            "user:admin",
-            RelationType.AUTHENTICATES_AS,
-            confidence=0.85,
-            is_observed=True,
-        )
+        with svc.db.transaction() as conn:
+            for ev in EventRepository.list_events(conn, limit=100, offset=0):
+                src = ev.get("source_ip")
+                dst = ev.get("dest_ip")
+                dport = ev.get("dest_port")
+                ev_id = ev.get("event_id")
+                if src:
+                    graph.add_node(str(src), EntityKind.IP, str(src))
+                if dst:
+                    graph.add_node(str(dst), EntityKind.IP, str(dst))
+                if src and dst:
+                    graph.add_edge(
+                        str(src),
+                        str(dst),
+                        RelationType.CONNECTS_TO,
+                        confidence=1.0,
+                        is_observed=True,
+                        evidence_id=str(ev_id) if ev_id else None,
+                    )
+                if dst and dport is not None:
+                    port_node = f"port:{dport}"
+                    graph.add_node(port_node, EntityKind.PORT, f"Port {dport}")
+                    graph.add_edge(
+                        str(dst),
+                        port_node,
+                        RelationType.CONNECTS_TO,
+                        confidence=1.0,
+                        is_observed=True,
+                        evidence_id=str(ev_id) if ev_id else None,
+                    )
+
+        target_entity = entity_id
+        if target_entity is None and graph.nodes:
+            target_entity = next(iter(graph.nodes))
+
+        if not target_entity or target_entity not in graph.nodes:
+            return TraceGraphResponse(
+                node_count=0,
+                edge_count=0,
+                nodes=[],
+                edges=[],
+                data_status=EMPTY,
+                provenance={"source": "live_and_sqlite", "entity_found": False},
+            )
 
         engine = TraceEngine(graph, max_depth=depth)
-        res = engine.trace(entity_id)
+        res = engine.trace(target_entity)
 
         node_items = [
             EntityGraphNodeItem(
@@ -633,6 +1011,8 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
             edge_count=len(edge_items),
             nodes=node_items,
             edges=edge_items,
+            data_status=CONNECTED,
+            provenance={"source": "live_and_sqlite", "entity_found": True},
         )
 
     @app.post(
@@ -644,10 +1024,25 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
     def generate_investigation_report(
         request: GenerateInvestigationReportRequest,
         svc: ApiService = Depends(get_service),
+        rt: LiveRuntime = Depends(get_live_runtime),
     ) -> InvestigationReportResponse:
         """Generate full reproducible markdown investigation report."""
+        events = list(request.events)
+        if not events:
+            real_events, _ = _collect_real_trace_events(svc, rt, limit=50)
+            events = [
+                ev
+                for ev in real_events
+                if request.incident_id
+                in {
+                    ev.get("incident_id"),
+                    ev.get("campaign_key"),
+                    ev.get("session_id"),
+                }
+            ] or real_events
+
         reconstructor = AttackTimelineReconstructor()
-        timeline = reconstructor.reconstruct_timeline(request.incident_id, request.events)
+        timeline = reconstructor.reconstruct_timeline(request.incident_id, events)
 
         gen = InvestigationReportGenerator()
         rep = gen.generate_report(
@@ -685,6 +1080,7 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
             entities_involved=rep.timeline.entities_involved,
             total_stages=len(stage_items),
             stages=stage_items,
+            data_status=CONNECTED if stage_items else EMPTY,
         )
 
         return InvestigationReportResponse(
@@ -705,41 +1101,18 @@ def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
         "/api/v1/crypto/status",
         response_model=CryptoStatusResponse,
         tags=["Cryptography & Keys"],
-        summary="Get active cryptographic key metadata and rotation policies",
+        summary="Get active cryptographic key metadata, protection mode, and rotation history",
     )
     def get_crypto_status(
         domain: str = Query("general"),
         svc: ApiService = Depends(get_service),
+        rt: LiveRuntime = Depends(get_live_runtime),
     ) -> CryptoStatusResponse:
-        """Get live cryptographic status, active AES-GCM key, and rotation history."""
-        km = KeyManager()
-        policy = KeyRotationPolicy(km)
-        active_id, _ = km.get_active_key(domain=domain)
-        km_meta = km.get_metadata(active_id)
-        records_enc = km_meta.records_encrypted_count if km_meta else 0
-
-        audit_history = [
-            {
-                "rotation_id": r.rotation_id,
-                "trigger": r.trigger.value,
-                "decision": r.decision.value,
-                "new_key_id": r.new_key_id,
-                "timestamp": r.timestamp,
-                "reason": r.reason,
-            }
-            for r in policy.get_audit_history()[-10:]
-        ]
-
-        return CryptoStatusResponse(
-            active_key_id=active_id,
-            algorithm="AES-256-GCM",
-            rotation_interval_minutes=30.0,
-            adaptive_risk_threshold=85.0,
-            cooldown_seconds=60,
-            total_rotations=len(km.list_keys()),
-            total_records_encrypted=records_enc,
-            recent_rotations=audit_history,
-        )
+        """Get live cryptographic status, DPAPI/POSIX protection, and real rotation history."""
+        persisted = svc.list_rotation_audits(limit=20, offset=0)
+        persisted_rows = [item.model_dump() for item in persisted.items]
+        payload = rt.crypto_status(domain=domain, persisted_rotations=persisted_rows)
+        return CryptoStatusResponse(**payload)
 
     return app
 

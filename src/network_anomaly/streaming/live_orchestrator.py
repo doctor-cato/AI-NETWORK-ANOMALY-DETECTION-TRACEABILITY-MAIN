@@ -7,13 +7,14 @@ from __future__ import annotations
 
 import collections
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from network_anomaly.behavioral.sessionizer import EventSessionizer
 from network_anomaly.behavioral.vector import BehavioralVector, BehavioralVectorBuilder
 from network_anomaly.canonical.event import CanonicalSecurityEvent
+from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
 from network_anomaly.crypto.key_manager import KeyManager
 from network_anomaly.crypto.rotation import KeyRotationPolicy
 from network_anomaly.risk.scoring import RiskScorer
@@ -37,8 +38,46 @@ class LiveProcessingResult:
     risk_level: str = "LOW"
     alert_generated: Optional[LiveSecurityAlert] = None
     behavioral_vector: Optional[BehavioralVector] = None
+    behavioral_vector_id: Optional[str] = None
+    behavioral_vector_encrypted: bool = False
     timeline_updated: bool = False
     key_rotated: bool = False
+    feature_status: str = "NOT_MODEL_READY"
+    missing_features: List[str] = field(default_factory=list)
+    provenance: Dict[str, str] = field(default_factory=dict)
+    timestamp: Optional[str] = None
+    source_ip: Optional[str] = None
+    dest_ip: Optional[str] = None
+    dest_port: Optional[int] = None
+    attack_type: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, object]:
+        payload: Dict[str, object] = {
+            "event_id": self.event_id,
+            "entity_id": self.entity_id,
+            "is_ml_flow": self.is_ml_flow,
+            "risk_score": self.risk_score,
+            "risk_level": self.risk_level,
+            "timeline_updated": self.timeline_updated,
+            "key_rotated": self.key_rotated,
+            "feature_status": self.feature_status,
+            "missing_features": list(self.missing_features),
+            "provenance": dict(self.provenance),
+            "timestamp": self.timestamp,
+            "source_ip": self.source_ip,
+            "dest_ip": self.dest_ip,
+            "dest_port": self.dest_port,
+            "attack_type": self.attack_type,
+            "behavioral_vector_id": self.behavioral_vector_id,
+            "behavioral_vector_encrypted": self.behavioral_vector_encrypted,
+        }
+        if self.behavioral_vector is not None:
+            payload["behavioral_vector"] = self.behavioral_vector.to_dict()
+        if self.inference_decision is not None:
+            payload["inference"] = self.inference_decision.to_dict()
+        if self.alert_generated is not None:
+            payload["alert"] = self.alert_generated.to_dict()
+        return payload
 
 
 class LiveSystemOrchestrator:
@@ -49,15 +88,21 @@ class LiveSystemOrchestrator:
         db_path: Optional[Path] = None,
         max_active_entities: int = 5_000,
         keystore_dir: Optional[Path] = None,
+        inference_engine: Optional[RealtimeInferenceEngine] = None,
+        demo_heuristics: bool = False,
     ):
         self.max_active_entities = max_active_entities
 
         # Subsystems
         self.feature_extractor = RealtimeFeatureExtractor()
-        self.inference_engine = RealtimeInferenceEngine()
+        self.inference_engine = inference_engine or RealtimeInferenceEngine(
+            demo_heuristics=demo_heuristics
+        )
         self.key_manager = KeyManager(keystore_dir=keystore_dir)
         self.key_rotator = KeyRotationPolicy(
-            key_manager=self.key_manager, adaptive_risk_threshold=85.0
+            key_manager=self.key_manager,
+            db_path=Path(db_path) if db_path else None,
+            adaptive_risk_threshold=85.0,
         )
         self.risk_scorer = RiskScorer()
         self.alert_manager = LiveAlertManager(
@@ -69,6 +114,9 @@ class LiveSystemOrchestrator:
         self.vector_builder = BehavioralVectorBuilder()
         self.entity_graph = EntityRelationshipGraph()
         self.timeline_reconstructor = AttackTimelineReconstructor()
+        self.vault: Optional[EncryptedStorageVault] = (
+            EncryptedStorageVault(self.key_manager, Path(db_path)) if db_path else None
+        )
 
         # Bounded LRU-style entity eviction tracking for zero-leak memory stability
         self._entity_access_times: collections.OrderedDict[str, float] = collections.OrderedDict()
@@ -124,9 +172,20 @@ class LiveSystemOrchestrator:
 
         # 8. Behavioral Vector computation if session is active
         b_vec: Optional[BehavioralVector] = None
+        vector_id: Optional[str] = None
+        vector_encrypted = False
         sessions = self.sessionizer.sessionize(self._entity_events[entity])
         if sessions:
             b_vec = self.vector_builder.build_vector(sessions[-1])
+            if self.vault is not None and b_vec.features is not None:
+                vector_id = self.vault.store_behavioral_vector(
+                    entity_id=b_vec.entity_key,
+                    window_start=b_vec.window_start,
+                    window_end=b_vec.window_end,
+                    vector=list(b_vec.features),
+                    encrypt=True,
+                )
+                vector_encrypted = True
 
         return LiveProcessingResult(
             event_id=event.event_id,
@@ -137,8 +196,23 @@ class LiveSystemOrchestrator:
             risk_level=risk_assess.severity.value,
             alert_generated=alert,
             behavioral_vector=b_vec,
+            behavioral_vector_id=vector_id,
+            behavioral_vector_encrypted=vector_encrypted,
             timeline_updated=timeline_updated,
             key_rotated=alert.adaptive_key_rotated if alert else False,
+            feature_status=feat_res.status,
+            missing_features=list(feat_res.missing_features),
+            provenance={
+                "source_id": event.source_id,
+                "source_file": event.raw_provenance.source_file,
+                "adapter_name": event.raw_provenance.adapter_name,
+                "source_checksum": event.raw_provenance.source_checksum or "",
+            },
+            timestamp=event.event_timestamp.isoformat(),
+            source_ip=event.source_ip,
+            dest_ip=event.dest_ip,
+            dest_port=event.dest_port,
+            attack_type=event.attack_category,
         )
 
     def process_batch(self, events: List[CanonicalSecurityEvent]) -> List[LiveProcessingResult]:

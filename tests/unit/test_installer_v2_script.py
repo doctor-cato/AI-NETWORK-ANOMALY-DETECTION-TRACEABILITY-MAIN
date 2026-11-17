@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from scripts.build_backend_sidecar import HIDDEN_IMPORTS
-from scripts.build_installer_v2 import build_installer_v2, inspect_packaging_prerequisites, main
+from scripts.build_installer_v2 import build_installer_v2, main
 
 
 def test_sidecar_hidden_imports_include_v2_subsystems():
@@ -44,11 +44,15 @@ def test_installer_v2_check_only_reports_structured_readiness(tmp_path: Path):
     assert out_json.is_file()
     parsed = json.loads(out_json.read_text(encoding="utf-8"))
     assert parsed["mode"] == "check_only"
-    assert parsed == inspect_packaging_prerequisites() or set(parsed.keys()) >= {
-        "checked_at_utc",
-        "tools",
-        "required_files",
-        "readiness",
-        "mode",
-        "status",
+    assert parsed["status"] in {
+        "INSTALLER_READY",
+        "SIDECAR_AND_FRONTEND_READY",
+        "SIDECAR_READY",
+        "FRONTEND_READY",
+        "NOT_READY",
     }
+    assert parsed["status"] == parsed["readiness"]["readiness_tier"]
+    # full_nsis_installer_ready must require makensis and staged_models_present
+    if not parsed["tools"]["makensis"] or not parsed["readiness"]["staged_models_present"]:
+        assert parsed["readiness"]["full_nsis_installer_ready"] is False
+        assert parsed["status"] != "INSTALLER_READY"

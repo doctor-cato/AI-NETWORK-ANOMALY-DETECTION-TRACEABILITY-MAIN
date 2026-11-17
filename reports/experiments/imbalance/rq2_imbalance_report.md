@@ -1,51 +1,46 @@
-# Báo cáo Thực nghiệm RQ2: Đánh Giá Phát Hiện Tấn Công Hiếm và Mất Cân Bằng Dữ Liệu
+# RQ2 — Class Imbalance & Rare Attack Evaluation (Empirical NF-UNSW-NB15-v3)
 
-**Mã tài liệu:** `EXP-RQ2-IMBALANCE-001`  
-**Milestone:** `M6.3 (AI Research)`  
-**Issue:** `#96`  
-**Trạng thái:** `HYPOTHESIS CONFIRMED`  
+- **Status:** `COMPLETED`
+- **Timestamp (UTC):** `2026-11-17T15:55:28.904002+00:00`
+- **Dataset:** `NF-UNSW-NB15-v3` (`None`)
+- **Train Rows:** `1,655,797` (`scale_pos_weight=24.40`) | **Test Rows:** `345,953`
+- **Rare Categories (Test < 0.5%):** `Analysis, Backdoor, DoS, Shellcode, Worms`
 
----
+## Rare Attack Category Results
 
-## 1. Mục tiêu & Giả thuyết Khoa học (Hypothesis H2)
+| Category | Test Count | Prevalence | Model | Detection Rate (Recall) | One-vs-Benign F1 | Benign FPR |
+|---|---:|---:|---|---:|---:|---:|
+| Analysis | 294 | 0.0850% | RandomForest_Unweighted | 1.0000 | 0.9916 | 0.000016 |
+| Analysis | 294 | 0.0850% | RandomForest_CostSensitive | 1.0000 | 0.9899 | 0.000019 |
+| Analysis | 294 | 0.0850% | XGBoost_ScalePosWeight | 1.0000 | 0.9966 | 0.000006 |
+| Analysis | 294 | 0.0850% | IsolationForest | 0.9320 | 0.0107 | 0.160459 |
+| Analysis | 294 | 0.0850% | Autoencoder_Reconstruction | 0.0000 | 0.0000 | 0.048161 |
+| Backdoor | 1260 | 0.3642% | RandomForest_Unweighted | 1.0000 | 0.9980 | 0.000016 |
+| Backdoor | 1260 | 0.3642% | RandomForest_CostSensitive | 1.0000 | 0.9976 | 0.000019 |
+| Backdoor | 1260 | 0.3642% | XGBoost_ScalePosWeight | 1.0000 | 0.9992 | 0.000006 |
+| Backdoor | 1260 | 0.3642% | IsolationForest | 0.8675 | 0.0413 | 0.160459 |
+| Backdoor | 1260 | 0.3642% | Autoencoder_Reconstruction | 0.0627 | 0.0096 | 0.048161 |
+| DoS | 1193 | 0.3448% | RandomForest_Unweighted | 0.9983 | 0.9971 | 0.000016 |
+| DoS | 1193 | 0.3448% | RandomForest_CostSensitive | 0.9983 | 0.9967 | 0.000019 |
+| DoS | 1193 | 0.3448% | XGBoost_ScalePosWeight | 1.0000 | 0.9992 | 0.000006 |
+| DoS | 1193 | 0.3448% | IsolationForest | 0.8156 | 0.0369 | 0.160459 |
+| DoS | 1193 | 0.3448% | Autoencoder_Reconstruction | 0.1140 | 0.0165 | 0.048161 |
+| Shellcode | 396 | 0.1145% | RandomForest_Unweighted | 1.0000 | 0.9937 | 0.000016 |
+| Shellcode | 396 | 0.1145% | RandomForest_CostSensitive | 1.0000 | 0.9925 | 0.000019 |
+| Shellcode | 396 | 0.1145% | XGBoost_ScalePosWeight | 1.0000 | 0.9975 | 0.000006 |
+| Shellcode | 396 | 0.1145% | IsolationForest | 0.8864 | 0.0137 | 0.160459 |
+| Shellcode | 396 | 0.1145% | Autoencoder_Reconstruction | 0.0025 | 0.0001 | 0.048161 |
+| Worms | 36 | 0.0104% | RandomForest_Unweighted | 1.0000 | 0.9351 | 0.000016 |
+| Worms | 36 | 0.0104% | RandomForest_CostSensitive | 1.0000 | 0.9231 | 0.000019 |
+| Worms | 36 | 0.0104% | XGBoost_ScalePosWeight | 1.0000 | 0.9730 | 0.000006 |
+| Worms | 36 | 0.0104% | IsolationForest | 0.8056 | 0.0011 | 0.160459 |
+| Worms | 36 | 0.0104% | Autoencoder_Reconstruction | 0.0556 | 0.0003 | 0.048161 |
 
-Trong môi trường mạng thực tế, các cuộc tấn công nguy hiểm nhất (Worms, Backdoors, Port Analysis) thường chỉ chiếm tỷ lệ cực nhỏ (<0.5% tổng số luồng mạng). Khi huấn luyện mô hình học máy thông thường, hiện tượng đa số áp đảo (majority dominance) khiến mô hình tối ưu hóa metric tổng thể (Accuracy) nhưng bỏ sót hoàn toàn các cuộc tấn công hiếm.
+## Hypothesis Evaluation
+- Cost-sensitive RF/XGB detection rate >= 0.70 across all rare classes: `True`
+- Autoencoder one-vs-benign F1 >= 0.70 across all rare classes: `False`
+- Full H2 confirmed: `False`
 
-**Giả thuyết H2:**  
-> Áp dụng trọng số phạt mất cân bằng (Cost-sensitive weighting / Scale Pos Weight) và cơ chế tái tạo bất thường (Autoencoder Reconstruction Error) cho phép đạt F1 $\ge 0.70$ trên mọi lớp tấn công hiếm mà không cần resample làm sai lệch phân bố thực tế của tập Validation và Test.
-
----
-
-## 2. Kết quả Thực nghiệm chi tiết theo từng Lớp Hiếm
-
-### 2.1 Lớp Worms (Tỷ lệ: 0.02% — 44 mẫu kiểm thử)
-- **Random Forest (Không trọng số):** Precision 58.3%, Recall 47.7%, F1: **52.5%**
-- **Random Forest (Cost-Sensitive):** Precision 78.6%, Recall 75.0%, F1: **76.7%** (+24.2%)
-- **XGBoost (Scale Pos Weight):** Precision 81.0%, Recall 77.3%, F1: **79.1%** (+26.6%)
-- **Autoencoder (Reconstruction Error):** Precision 73.5%, Recall 81.8%, F1: **77.4%**
-- **Isolation Forest:** Precision 62.0%, Recall 70.5%, F1: **66.0%**
-
-### 2.2 Lớp Backdoors (Tỷ lệ: 0.23% — 490 mẫu kiểm thử)
-- **Random Forest (Không trọng số):** F1: **58.7%**
-- **Random Forest (Cost-Sensitive):** F1: **80.4%** (+21.7%)
-- **XGBoost (Scale Pos Weight):** F1: **82.1%** (+23.4%)
-- **Autoencoder:** F1: **79.6%**
-- **Isolation Forest:** F1: **71.3%**
-
-### 2.3 Lớp Analysis (Tỷ lệ: 0.25% — 537 mẫu kiểm thử)
-- **Random Forest (Không trọng số):** F1: **55.5%**
-- **Random Forest (Cost-Sensitive):** F1: **75.0%** (+19.5%)
-- **XGBoost (Scale Pos Weight):** F1: **76.8%** (+21.3%)
-- **Autoencoder:** F1: **74.8%**
-- **Isolation Forest:** F1: **66.2%**
-
----
-
-## 3. Kết luận & Giới hạn Khoa học
-
-1. **Khẳng định Giả thuyết H2:**  
-   Các giải pháp tiếp cận dựa trên trọng số phạt và phát hiện bất thường không giám sát đều vượt ngưỡng F1 $\ge 0.70$ (thực tế đạt từ 75% đến 82%), khắc phục triệt để hiện tượng bỏ sót mẫu hiếm mà không làm tăng báo động giả trên lớp Benign.
-2. **Bảo toàn tính chân thực của phân bố:**  
-   Tuyệt đối không áp dụng kỹ thuật SMOTE hoặc Random Oversampling trên tập Test/Validation, đảm bảo các chỉ số phản ánh chính xác rủi ro vận hành thực tế.
-3. **Giới hạn mẫu:**  
-   Do lớp Worms có số lượng mẫu rất hạn chế (chỉ 44 mẫu trong tập test), khoảng tin cậy thống kê có độ biến thiên cao hơn so với các lớp tấn công diện rộng.
+## Limitations
+- One-vs-benign rare-class precision/F1 treats all Benign false positives as denominator against a single rare attack class, making F1 sensitive to benign FPR when category support is tiny (e.g., Worms).
+- No SMOTE or synthetic oversampling was applied to Train, Validation, or Test.

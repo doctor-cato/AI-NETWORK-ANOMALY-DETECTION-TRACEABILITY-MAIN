@@ -1,19 +1,17 @@
 # Experiment 5 (RQ3): IP-Independent Session Correlation Benchmark
 
-> **Experiment ID:** EXP-RQ3-CORRELATION-01  
-> **Evaluation Date:** 2026-11-17T07:47:30.157985+00:00  
-> **Status:** EXPERIMENTALLY VALIDATED (Hypothesis Confirmed: True)
+- **Execution Mode:** `SIMULATION` (Synthetic IP-rotation simulation)
+- **Empirical AIT Dataset Status:** `BLOCKED` — Official AIT-Suite-v2.1 raw dataset absent in data\raw\ait; empirical real-dataset validation cannot be claimed from simulation alone.
+- **Timestamp (UTC):** `2026-11-17T16:00:50.068442+00:00`
 
-## 1. Executive Summary
-- **Hypothesis (H3):** H3: Behavioral Vector achieves >= 85% session correlation accuracy independent of IP
-- **Outcome:** **CONFIRMED**. Chiến lược so khớp vector hành vi đạt độ thu hồi **100.0%**, trong khi phương pháp IP truyền thống sụp đổ về **0.0%** khi kẻ tấn công thay đổi IP.
+## Simulation Ablation: IP Exact Match vs 16-D Behavioral Vector
 
-## 2. Kết quả Đối sánh Thực nghiệm
+| Strategy | Pairwise Precision | Pairwise Recall | Pairwise F1 | False Link Rate | Match Accuracy |
+|---|---:|---:|---:|---:|---:|
+| Strategy A: IP Exact Match | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.8421 |
+| Strategy B: 16-D Behavioral Vector (cos >= 0.85) | 0.1899 | 1.0000 | 0.3191 | 0.8000 | 0.3263 |
+| Strategy B (Strict cos >= 0.95) | 0.3846 | 1.0000 | 0.5556 | 0.3000 | 0.7474 |
 
-| Chiến lược Liên kết Phiên | Cặp Liên kết Đúng | Độ thu hồi (Recall) | Đánh giá Khả năng Kháng IP Spoofing |
-|---|:---:|:---:|:---:|
-| **Strategy A: IP Tuple Exact Matching** | 0 / 30 | **0.0%** | **Thất bại hoàn toàn khi đổi IP** |
-| **Strategy B: Behavioral Vector Cosine ($\ge 0.85$)** | 30 / 30 | **100.0%** | **Thành công (Đạt giả thuyết $\ge 85\%$)** |
-
-## 3. Kết luận
-Under IP rotation / spoofing, Strategy A (IP-matching) collapsed to 0.0% recall. In contrast, Strategy B (Behavioral Vector Cosine similarity) maintained 100.0% correlation recall, empirically validating Hypothesis H3.
+## Limitations
+- Synthetic IP-rotation simulation tests algorithmic behavior only and MUST NOT be treated as empirical validation on real enterprise datasets.
+- Official AIT-Suite-v2.1 raw dataset absent in data\raw\ait; empirical real-dataset validation cannot be claimed from simulation alone.

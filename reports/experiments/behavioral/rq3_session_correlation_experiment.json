@@ -1,18 +1,92 @@
 {
   "experiment_id": "EXP-RQ3-CORRELATION-01",
-  "timestamp": "2026-11-17T07:47:30.157985+00:00",
-  "hypothesis": "H3: Behavioral Vector achieves >= 85% session correlation accuracy independent of IP",
-  "hypothesis_confirmed": true,
-  "campaigns_evaluated": 5,
-  "total_sessions": 20,
-  "total_same_entity_pairs": 30,
-  "strategy_a_ip_matching": {
-    "correct_matches": 0,
-    "correlation_recall": 0.0
+  "execution_mode": "SIMULATION",
+  "empirical_dataset_status": "BLOCKED",
+  "timestamp": "2026-11-17T16:00:50.068442+00:00",
+  "hypothesis": "H3: Behavioral Vector achieves >= 85% session correlation F1/recall independent of IP",
+  "dataset_provenance": {
+    "simulation_source": "synthetic_ip_rotation_benchmark (synthetic: true)",
+    "official_ait_source_doi": "10.5281/zenodo.13168643",
+    "official_ait_status": {
+      "status": "BLOCKED",
+      "reason": "Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.",
+      "files_detected": 0
+    }
   },
-  "strategy_b_behavioral_vector": {
-    "correct_matches": 30,
-    "correlation_recall": 1.0
+  "configuration": {
+    "campaigns": 5,
+    "sessions_per_campaign": 4,
+    "total_sessions": 20,
+    "cosine_match_threshold": 0.85,
+    "vector_dimensions": 16
   },
-  "conclusion": "Under IP rotation / spoofing, Strategy A (IP-matching) collapsed to 0.0% recall. In contrast, Strategy B (Behavioral Vector Cosine similarity) maintained 100.0% correlation recall, empirically validating Hypothesis H3."
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 124 Stepping 0, AuthenticAMD",
+    "cpu_count": 12,
+    "total_ram_gb": 15.27,
+    "python_version": "3.12.10",
+    "python_implementation": "CPython",
+    "packages": {
+      "numpy": "2.5.5",
+      "pandas": "3.1.1",
+      "scikit_learn": "1.9.1",
+      "xgboost": "3.4.1",
+      "joblib": "1.6.0",
+      "cryptography": "50.0.2"
+    },
+    "random_seed": 42,
+    "captured_at_utc": "2026-11-17T16:00:50.060652+00:00"
+  },
+  "ablation": {
+    "strategy_a_ip_exact_matching": {
+      "total_pairs": 190,
+      "tp": 0,
+      "fp": 0,
+      "fn": 30,
+      "tn": 160,
+      "pairwise_precision": 0.0,
+      "pairwise_recall": 0.0,
+      "pairwise_f1": 0.0,
+      "false_link_rate": 0.0,
+      "match_accuracy": 0.842105
+    },
+    "strategy_b_behavioral_vector_cosine": {
+      "total_pairs": 190,
+      "tp": 30,
+      "fp": 128,
+      "fn": 0,
+      "tn": 32,
+      "pairwise_precision": 0.189873,
+      "pairwise_recall": 1.0,
+      "pairwise_f1": 0.319149,
+      "false_link_rate": 0.8,
+      "match_accuracy": 0.326316
+    },
+    "strategy_b_strict_cosine_0_95": {
+      "total_pairs": 190,
+      "tp": 30,
+      "fp": 48,
+      "fn": 0,
+      "tn": 112,
+      "pairwise_precision": 0.384615,
+      "pairwise_recall": 1.0,
+      "pairwise_f1": 0.555556,
+      "false_link_rate": 0.3,
+      "match_accuracy": 0.747368
+    }
+  },
+  "simulation_hypothesis_met": false,
+  "empirical_ait_evaluation": {
+    "status": "BLOCKED",
+    "reason": "Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.",
+    "files_detected": 0
+  },
+  "conclusion": "SIMULATION ONLY: Strategy B achieved pairwise F1=0.3191 (precision=0.1899, recall=1.0000, false_link_rate=0.8000) vs Strategy A IP-matching recall=0.0000. Empirical validation on real AIT dataset is BLOCKED (Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.).",
+  "limitations": [
+    "Synthetic IP-rotation simulation tests algorithmic behavior only and MUST NOT be treated as empirical validation on real enterprise datasets.",
+    "Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone."
+  ]
 }

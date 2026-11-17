@@ -949,13 +949,426 @@
         }
       }
     },
+    "/api/v1/live/start": {
+      "post": {
+        "tags": [
+          "Live Telemetry"
+        ],
+        "summary": "Start real UDP NetFlow/IPFIX collector and streaming worker",
+        "operationId": "start_live_telemetry_api_v1_live_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LiveStartRequest",
+                "default": {
+                  "host": "127.0.0.1",
+                  "port": 0,
+                  "demo_heuristics": false,
+                  "queue_capacity": 10000,
+                  "batch_size": 32
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/stop": {
+      "post": {
+        "tags": [
+          "Live Telemetry"
+        ],
+        "summary": "Stop live UDP collector and flush buffered events",
+        "operationId": "stop_live_telemetry_api_v1_live_stop_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/status": {
+      "get": {
+        "tags": [
+          "Live Telemetry"
+        ],
+        "summary": "Get live collector, pipeline, and 4-model readiness status",
+        "operationId": "get_live_status_api_v1_live_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/results": {
+      "get": {
+        "tags": [
+          "Live Telemetry"
+        ],
+        "summary": "Get recent live processed telemetry results",
+        "operationId": "get_live_results_api_v1_live_results_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveResultsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/alerts": {
+      "get": {
+        "tags": [
+          "Live Telemetry"
+        ],
+        "summary": "Get recent live alerts raised by Risk Engine & Alert Manager",
+        "operationId": "get_live_alerts_api_v1_live_alerts_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveAlertsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/live/graph": {
+      "get": {
+        "tags": [
+          "Live Telemetry"
+        ],
+        "summary": "Get live entity relationship graph from active telemetry",
+        "operationId": "get_live_graph_api_v1_live_graph_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceGraphResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/behavioral/vectors": {
+      "get": {
+        "tags": [
+          "Behavioral Intelligence"
+        ],
+        "summary": "List persisted 16-D behavioral vector metadata (ciphertext stays at rest)",
+        "operationId": "list_behavioral_vectors_api_v1_behavioral_vectors_get",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BehavioralVectorListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/behavioral/vectors/{vector_id}": {
+      "get": {
+        "tags": [
+          "Behavioral Intelligence"
+        ],
+        "summary": "Decrypt and inspect a stored 16-D behavioral vector by ID",
+        "operationId": "get_behavioral_vector_detail_api_v1_behavioral_vectors__vector_id__get",
+        "parameters": [
+          {
+            "name": "vector_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Vector Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BehavioralVectorDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/behavioral/similarity": {
+      "get": {
+        "tags": [
+          "Behavioral Intelligence"
+        ],
+        "summary": "Compute real Cosine/Euclidean/Manhattan similarity between two stored vectors",
+        "operationId": "get_behavioral_similarity_api_v1_behavioral_similarity_get",
+        "parameters": [
+          {
+            "name": "vector_a_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Vector A Id"
+            }
+          },
+          {
+            "name": "vector_b_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Vector B Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BehavioralSimilarityResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/behavioral/correlate": {
+      "get": {
+        "tags": [
+          "Behavioral Intelligence"
+        ],
+        "summary": "Run IPSpoofingSessionCorrelator over stored behavioral vectors",
+        "operationId": "correlate_behavioral_vectors_api_v1_behavioral_correlate_get",
+        "parameters": [
+          {
+            "name": "match_threshold",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "default": 0.85,
+              "title": "Match Threshold"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BehavioralCorrelationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/trace/timeline": {
       "get": {
         "tags": [
           "Trace & Investigation"
         ],
-        "summary": "Get reconstructed multi-stage attack timeline",
-        "description": "Reconstruct multi-stage attack timeline from correlated security events.",
+        "summary": "Get reconstructed multi-stage attack timeline from real events/incidents",
+        "description": "Reconstruct multi-stage attack timeline from real stored/live security events.",
         "operationId": "get_attack_timeline_api_v1_trace_timeline_get",
         "parameters": [
           {
@@ -963,9 +1376,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "minLength": 1,
-              "default": "APT-Campaign-01",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Campaign Name"
             }
           },
@@ -1022,8 +1441,8 @@
         "tags": [
           "Trace & Investigation"
         ],
-        "summary": "Query entity relationship graph around an entity or incident",
-        "description": "Query and traverse entity relationship graph around target entity.",
+        "summary": "Query entity relationship graph from real live or stored telemetry",
+        "description": "Query and traverse entity relationship graph built from real telemetry.",
         "operationId": "get_entity_graph_api_v1_trace_graph_get",
         "parameters": [
           {
@@ -1031,9 +1450,15 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "minLength": 1,
-              "default": "10.0.0.5",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Entity Id"
             }
           },
@@ -1121,8 +1546,8 @@
         "tags": [
           "Cryptography & Keys"
         ],
-        "summary": "Get active cryptographic key metadata and rotation policies",
-        "description": "Get live cryptographic status, active AES-GCM key, and rotation history.",
+        "summary": "Get active cryptographic key metadata, protection mode, and rotation history",
+        "description": "Get live cryptographic status, DPAPI/POSIX protection, and real rotation history.",
         "operationId": "get_crypto_status_api_v1_crypto_status_get",
         "parameters": [
           {
@@ -1674,6 +2099,184 @@
         "title": "AttackBreakdownRow",
         "description": "Per-attack detection breakdown when ground-truth Attack categories exist."
       },
+      "BehavioralCorrelationClusterItem": {
+        "properties": {
+          "cluster_id": {
+            "type": "string",
+            "title": "Cluster Id"
+          },
+          "member_vector_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Member Vector Ids"
+          },
+          "average_similarity": {
+            "type": "number",
+            "title": "Average Similarity"
+          },
+          "ip_addresses_observed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ip Addresses Observed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cluster_id",
+          "average_similarity"
+        ],
+        "title": "BehavioralCorrelationClusterItem"
+      },
+      "BehavioralCorrelationResponse": {
+        "properties": {
+          "data_status": {
+            "type": "string",
+            "title": "Data Status"
+          },
+          "match_threshold": {
+            "type": "number",
+            "title": "Match Threshold"
+          },
+          "total_vectors_evaluated": {
+            "type": "integer",
+            "title": "Total Vectors Evaluated"
+          },
+          "clusters": {
+            "items": {
+              "$ref": "#/components/schemas/BehavioralCorrelationClusterItem"
+            },
+            "type": "array",
+            "title": "Clusters"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_status",
+          "match_threshold",
+          "total_vectors_evaluated"
+        ],
+        "title": "BehavioralCorrelationResponse"
+      },
+      "BehavioralSimilarityResponse": {
+        "properties": {
+          "vector_a": {
+            "type": "string",
+            "title": "Vector A"
+          },
+          "vector_b": {
+            "type": "string",
+            "title": "Vector B"
+          },
+          "dimensions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dimensions"
+          },
+          "cosine_similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cosine Similarity"
+          },
+          "euclidean_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Euclidean Distance"
+          },
+          "manhattan_distance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manhattan Distance"
+          },
+          "interpretation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interpretation"
+          },
+          "interpretation_semantics": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interpretation Semantics"
+          },
+          "comparable": {
+            "type": "boolean",
+            "title": "Comparable",
+            "default": true
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "data_status": {
+            "type": "string",
+            "title": "Data Status",
+            "default": "CONNECTED"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vector_a",
+          "vector_b"
+        ],
+        "title": "BehavioralSimilarityResponse"
+      },
       "BehavioralSummarySchema": {
         "properties": {
           "total_flows": {
@@ -1815,6 +2418,193 @@
         "title": "BehavioralTopItem",
         "description": "Descriptive frequency entry for non-ML NetFlow behavioral statistics (#28)."
       },
+      "BehavioralVectorDetailResponse": {
+        "properties": {
+          "vector_id": {
+            "type": "string",
+            "title": "Vector Id"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "window_start": {
+            "type": "string",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "title": "Window End"
+          },
+          "dimensions": {
+            "type": "integer",
+            "title": "Dimensions"
+          },
+          "features": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "feature_names": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Names"
+          },
+          "feature_name_status": {
+            "type": "string",
+            "title": "Feature Name Status"
+          },
+          "sha256_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256 Hash"
+          },
+          "is_encrypted_at_rest": {
+            "type": "boolean",
+            "title": "Is Encrypted At Rest"
+          },
+          "key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "data_status": {
+            "type": "string",
+            "title": "Data Status",
+            "default": "CONNECTED"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vector_id",
+          "entity_id",
+          "window_start",
+          "window_end",
+          "dimensions",
+          "features",
+          "feature_name_status",
+          "is_encrypted_at_rest",
+          "created_at"
+        ],
+        "title": "BehavioralVectorDetailResponse"
+      },
+      "BehavioralVectorListItem": {
+        "properties": {
+          "vector_id": {
+            "type": "string",
+            "title": "Vector Id"
+          },
+          "entity_id": {
+            "type": "string",
+            "title": "Entity Id"
+          },
+          "window_start": {
+            "type": "string",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "title": "Window End"
+          },
+          "dimensions": {
+            "type": "integer",
+            "title": "Dimensions"
+          },
+          "is_encrypted": {
+            "type": "boolean",
+            "title": "Is Encrypted"
+          },
+          "key_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "vector_id",
+          "entity_id",
+          "window_start",
+          "window_end",
+          "dimensions",
+          "is_encrypted",
+          "created_at"
+        ],
+        "title": "BehavioralVectorListItem"
+      },
+      "BehavioralVectorListResponse": {
+        "properties": {
+          "data_status": {
+            "type": "string",
+            "title": "Data Status"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BehavioralVectorListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_status",
+          "total"
+        ],
+        "title": "BehavioralVectorListResponse"
+      },
       "CompatibilityGateSummarySchema": {
         "properties": {
           "source_id": {
@@ -1909,6 +2699,16 @@
             "type": "integer",
             "title": "Cooldown Seconds"
           },
+          "max_rotations_per_hour": {
+            "type": "integer",
+            "title": "Max Rotations Per Hour",
+            "default": 10
+          },
+          "rotations_this_hour": {
+            "type": "integer",
+            "title": "Rotations This Hour",
+            "default": 0
+          },
           "total_rotations": {
             "type": "integer",
             "title": "Total Rotations"
@@ -1917,6 +2717,17 @@
             "type": "integer",
             "title": "Total Records Encrypted"
           },
+          "master_key_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Master Key Fingerprint"
+          },
           "recent_rotations": {
             "items": {
               "additionalProperties": true,
@@ -1924,6 +2735,16 @@
             },
             "type": "array",
             "title": "Recent Rotations"
+          },
+          "storage_protection_status": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Storage Protection Status"
+          },
+          "data_status": {
+            "type": "string",
+            "title": "Data Status",
+            "default": "CONNECTED"
           }
         },
         "type": "object",
@@ -3843,6 +4664,189 @@
         "title": "KeyRotationResponse",
         "description": "Response returned upon key rotation action."
       },
+      "LiveAlertsResponse": {
+        "properties": {
+          "data_status": {
+            "type": "string",
+            "title": "Data Status"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_status",
+          "total"
+        ],
+        "title": "LiveAlertsResponse"
+      },
+      "LiveResultsResponse": {
+        "properties": {
+          "data_status": {
+            "type": "string",
+            "title": "Data Status"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data_status",
+          "total"
+        ],
+        "title": "LiveResultsResponse"
+      },
+      "LiveStartRequest": {
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Host",
+            "default": "127.0.0.1"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 0.0,
+            "title": "Port",
+            "default": 0
+          },
+          "demo_heuristics": {
+            "type": "boolean",
+            "title": "Demo Heuristics",
+            "default": false
+          },
+          "queue_capacity": {
+            "type": "integer",
+            "maximum": 500000.0,
+            "minimum": 1.0,
+            "title": "Queue Capacity",
+            "default": 10000
+          },
+          "batch_size": {
+            "type": "integer",
+            "maximum": 2048.0,
+            "minimum": 1.0,
+            "title": "Batch Size",
+            "default": 32
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "LiveStartRequest"
+      },
+      "LiveStatusResponse": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "running": {
+            "type": "boolean",
+            "title": "Running"
+          },
+          "data_status": {
+            "type": "string",
+            "title": "Data Status"
+          },
+          "bound_port": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bound Port"
+          },
+          "started_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At Utc"
+          },
+          "collector": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Collector"
+          },
+          "pipeline": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Pipeline"
+          },
+          "metrics": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metrics"
+          },
+          "inference": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Inference"
+          },
+          "alerts_buffered": {
+            "type": "integer",
+            "title": "Alerts Buffered",
+            "default": 0
+          },
+          "demo_mode": {
+            "type": "boolean",
+            "title": "Demo Mode",
+            "default": false
+          },
+          "persistence_enabled": {
+            "type": "boolean",
+            "title": "Persistence Enabled",
+            "default": false
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mode",
+          "running",
+          "data_status"
+        ],
+        "title": "LiveStatusResponse"
+      },
       "ModelStatusItem": {
         "properties": {
           "model_key": {
@@ -5142,6 +6146,16 @@
             },
             "type": "array",
             "title": "Edges"
+          },
+          "data_status": {
+            "type": "string",
+            "title": "Data Status",
+            "default": "OK"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provenance"
           }
         },
         "type": "object",
@@ -5192,6 +6206,23 @@
             },
             "type": "array",
             "title": "Stages"
+          },
+          "available_campaigns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Available Campaigns"
+          },
+          "data_status": {
+            "type": "string",
+            "title": "Data Status",
+            "default": "OK"
+          },
+          "provenance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Provenance"
           }
         },
         "type": "object",

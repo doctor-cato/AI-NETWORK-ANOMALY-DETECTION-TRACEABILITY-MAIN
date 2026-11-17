@@ -672,3 +672,61 @@ Kiểm toán giai đoạn AUDIT đã hoàn thành với đầy đủ bằng ch�
 
 > **KẾT THÚC BÁO CÁO KIỂM TOÁN HỆ THỐNG NETFLOW SENTINEL V2.0.0.**  
 > *Hồ sơ kiểm toán được lưu trữ chính thức tại `.agents/reports/V2_CURRENT_AUDIT.md`.*
+
+
+---
+
+<a name="o-post-remediation-audit"></a>
+## O. POST-REMEDIATION AUDIT (PR #156 — `feat/v2-integration`)
+
+> **Thời điểm kiểm toán hậu khắc phục:** 2026-11-17T23:36:00+07:00 (ICT)
+>
+> **Base Commit đã kiểm toán trước đó:** `6a4193a0072261bf960ff7dd98e42623cee4502f` (trên nhánh `feat/v2-integration`, PR #156 `DRAFT`)
+>
+> **Trạng thái hiện tại:** Đã hoàn tất sửa lỗi P0/P1 trong working tree trên `feat/v2-integration` và chạy kiểm chứng lại toàn diện trước khi commit lên remote. Phần lịch sử Mục A–N phía trên được giữ nguyên làm snapshot trước remediation.
+
+### 1. Ma trận Trạng thái Khắc phục F01–F08 & Các Hạng mục P0/P1
+
+| Mã | Hạng mục | Trạng thái | Bằng chứng & Phạm vi Kiểm chứng Thực tế | Giới hạn còn lại |
+|---|---|---|---|---|
+| **F01** | AIT Provenance/DOI & `--verify-only` CI Gate | **FIXED** | `data/AIT_DATASETS_MANIFEST.json`, `data/EXTERNAL_DATASETS_PROVENANCE.json`, `scripts/fetch_multi_source_dataset.py`; synthetic fixtures tách về `tests/fixtures/ait_synthetic/` (`synthetic: true`); `--verify-only` thoát `0` (`SKIPPED`); `tests/unit/test_dataset_manifest_separation.py` PASS. | Raw AIT-Suite-v2.1 chưa tải cục bộ (`local_raw_status: ABSENT`). |
+| **F02** | Live Lab Acceptance vs Replay RAM | **FIXED** | `scripts/run_live_lab_acceptance.py` chạy qua UDP loopback `127.0.0.1`, cache 2 template (v9 + IPFIX), kiểm tra malformed packet, chạy đủ 4 mô hình AI thật và lưu vault AES-256-GCM (`docs/telemetry/SYNTHETIC_UDP_LOOPBACK_ACCEPTANCE.md`). | Là **Synthetic UDP Loopback Integration Acceptance**, không phải switch/router vật lý; chưa có alert vượt ngưỡng 70.0 trong fixture mặc định. |
+| **F03** | Hardcoded Benchmark Metrics (`75,000 flow/s`, `82.5%`) | **FIXED** | `scripts/benchmark_full_system.py` đo động phần cứng thực, tách E2E (`12.30 flow/s`, median `78.4 ms/event` trên CPU với 4 mô hình thật) khỏi component microbenchmarks (`docs/benchmarks/SYSTEM_PERFORMANCE.md`). | Chỉ đo in-process synthetic workload trên host dev; không chứng nhận line-rate 1–10 Gbps. |
+| **F04** | 4 Panel Svelte Mock Data & Hash rỗng | **FIXED** | 4 panel (`LiveMonitoringPanel`, `BehavioralAnalysisPanel`, `AttackTimelinePanel`, `CryptographyDashboardPanel`) dùng `PanelDataState` (`LOADING`/`CONNECTED`/`DISCONNECTED`/`EMPTY`/`ERROR`/`DEMO`), kết nối 10 Tauri IPC commands + FastAPI endpoints mới, tính SHA-256 động; `V2Panels.test.ts` (10 tests) và tổng 33/33 Vitest PASS. | Cần runtime backend Python sống khi mở app Tauri; chưa kiểm thử UI trên clean VM. |
+| **F05** | Plaintext `master.key` & DEK Storage | **FIXED** | `src/network_anomaly/crypto/key_manager.py`: Windows DPAPI fail-closed (không fallback plaintext), DEK wrapping v2 AES-256-GCM với AAD `key_id\|domain\|version`, `NonceRegistry`, `_atomic_write`, `icacls` ACL hardening, di trú có kiểm soát `scripts/migrate_keystore.py`. `data/keys` hiện xác nhận `DPAPI_PROTECTED` & `WRAPPED_V2`; `test_key_manager_hardening.py` & `test_crypto_integrity.py` PASS. | Trên POSIX không có DPAPI, chỉ bảo vệ bằng quyền file `0600` (đã ghi rõ trong `storage_protection()`). |
+| **F06** | Live E2E Test chỉ ghi SQLite Vault | **FIXED** | `tests/integration/test_live_telemetry_flow.py`, `test_live_service.py`, `test_live_behavioral_api.py`, `test_full_system_e2e.py` kiểm thử full luồng UDP -> Decoder -> Feature Extractor -> Pipeline -> Orchestrator -> 4-Model Inference -> Behavioral Vector -> AES-256-GCM -> Trace/API. | Vẫn dùng datagram/payload tổng hợp trong pytest. |
+| **F07** | 260 Lỗi Ruff Linter | **FIXED** | `py -3.12 -m ruff check src scripts tests` -> **0 errors**; `py -3.12 -m black --check src scripts tests` -> **239 files unchanged**. | Không còn. |
+| **F08** | CI Matrix Trùng Lặp | **FIXED** | `.github/workflows/ci.yml` & `.github/workflows/lint-audit.yml` tách `lint` 1 lần trên `ubuntu-latest`, giữ fast PR gates và `--verify-only` an toàn. | Cần xác nhận lần chạy CI mới nhất sau khi push commit remediation. |
+| **P0-AI** | Real 4-Model Inference & 47-Feature Contract | **FIXED** | `src/network_anomaly/models/registry.py`, `scoring.py`, `realtime_inference.py`, `feature_extractor.py`: load và warm-up cả 4 artifact thật (`VALIDATED` 4/4 với preprocessor `nf-unsw-nb15-v3-baseline-47`), không heuristic giả, từ chối thiếu feature bằng `NOT_MODEL_READY`. | `OODRejectionGate` ở live service mặc định ở trạng thái `NOT_FITTED` nếu chưa nạp reference stats. |
+| **P0-RQ** | RQ1–RQ6 Động Không Hardcode | **PARTIAL / FIXED** | RQ1, RQ2 (`H2 full = False`), RQ4 (`RF/XGB=1.0` do `MIN_TTL`, `IF=0.8657`, `AE=0.0625`) chạy trên `NF-UNSW-NB15-v3` thật (`N=345,953`); RQ5 tính động từ simulation (`SIMULATION`); RQ6 benchmark đa payload có warm-up. `docs/audits/RESEARCH_QUESTIONS_VALIDATION.md` đã đồng bộ số liệu thật. | **RQ3 trên AIT-Suite-v2.1 `BLOCKED`** (thiếu raw dataset, chỉ có `SIMULATION`); **46-feat cross-dataset TTL ablation trên NF-CSE-CIC-IDS2018-v3 `BLOCKED`** (thiếu raw CSV). |
+| **P1-PKG** | Windows NSIS Installer v2.0 (`#148`, `#149`) | **PARTIAL / BLOCKED LOCALLY** | `scripts/build_installer_v2.py --check-only` báo trung thực `readiness_tier: FRONTEND_READY` (phân biệt `sidecar_build_ready: false`, `frontend_build_ready: true`, `full_nsis_installer_ready: false`). | Thiếu `PyInstaller` và `makensis` trên máy dev; chưa sinh `.exe` thật và chưa kiểm thử clean Windows VM (`#73`). |
+
+### 2. Phân định Trung thực Cấp độ Kiểm chứng
+
+1. **Code Implemented vs Runtime Verified:**
+   - **Runtime Verified cục bộ:** Full Python test suite (`1,321 passed, 9 skipped`), Ruff/Black/Compileall, OpenAPI contract check, ModelRegistry 4/4 `VALIDATED`, DPAPI keystore verification (`DPAPI_PROTECTED` + `WRAPPED_V2`), Svelte check/Vitest (33/33)/Vite build, Cargo fmt/clippy/test (9/9), UDP loopback acceptance, và các script RQ1/RQ2/RQ4/RQ5/RQ6 + system benchmark.
+   - **Code Implemented (chưa nghiệm thu phần cứng/môi trường ngoài):** Physical router/switch NetFlow export, clean Windows VM install/upgrade/uninstall (`.exe` NSIS), và AIT-Suite-v2.1 empirical linkage.
+2. **Synthetic Tests vs Official Dataset Experiments:**
+   - Loopback acceptance (`SYNTHETIC_UDP_LOOPBACK_ACCEPTANCE.md`), full-system benchmark (`SYSTEM_PERFORMANCE.md`), RQ3 simulation (`EXP5_SESSION_CORRELATION.md`), và RQ5 timeline (`rq5_rotation_report.md`) là kiểm thử tổng hợp/mô phỏng (`SIMULATION` / `synthetic: true`).
+   - RQ1 (`FOUR_MODEL_COMPARISON.md`), RQ2 (`rq2_imbalance_report.md`), RQ4 (`EXP4_UNKNOWN_ATTACK.md`), và in-distribution TTL ablation (`MODEL_AUDIT_TTL_ABLATION.md`) là thực nghiệm chạy trực tiếp trên tập `NF-UNSW-NB15-v3` thật.
+3. **UDP Loopback vs Physical Exporter:** Loopback test gửi NetFlow v9 / IPFIX (kèm private lab IE `PEN 50000` / `50000+i`) qua `127.0.0.1` UDP; chưa kết nối exporter router/switch vật lý.
+4. **Installer Script vs Installer Artifact:** `scripts/build_installer_v2.py` kiểm tra điều kiện tiên quyết trung thực (`FRONTEND_READY`), chưa tạo ra file cài đặt NSIS `.exe` hoàn chỉnh trên máy dev do thiếu `PyInstaller` và `makensis`.
+5. **Functional Prototype vs Production-Ready Product:** Hệ thống đạt mức **Functional Prototype / Academic & Controlled Lab Ready**; **KHÔNG tuyên bố Production-Ready** khi còn các điều kiện chặn phát hành (`#148`, `#73`, `#137` phần cứng thật, `#152` website `site-source`, `#153` slide bảo vệ v2.0).
+
+### 3. Cập nhật Traceability Issues (`Closes` vs `Refs`) cho PR #156
+
+- **Đủ điều kiện `Closes` (Acceptance Criteria đã đạt và có bằng chứng code + test):**
+  - M6.1: `#76, #77, #78, #79, #80, #81, #155`
+  - M6.2: `#82, #83, #86, #87, #88, #89, #90, #91, #92, #93`
+  - M6.3: `#95, #96, #98, #99, #100, #101, #102, #103, #105, #106`
+  - M6.4: `#107, #108, #109, #110, #111, #112, #113, #115`
+  - M6.5: `#116, #117, #118, #119, #120, #121, #122, #123, #124, #126`
+  - M6.6: `#127, #129, #130, #131, #132, #133, #134, #135, #136`
+  - M6.7: `#138, #139, #140, #141, #142, #143, #146, #147, #151`
+- **Phải giữ `Refs` (Mở, không tự động đóng):**
+  - Thiếu raw dataset ngoài / cross-dataset / APT: `#84, #85, #94, #97, #104, #114`
+  - Simulation-only / chưa xác thực thực nghiệm dài hạn hoặc AIT: `#125, #145`
+  - Rust collector crate hoãn sau v2.0 (dùng Python collector): `#128`
+  - Nghiệm thu thiết bị mạng vật lý & UI alert live thực tế: `#137`
+  - Dashboard so sánh 4-model v2.0 từ RQ JSON / Demo playbook / Website `site-source` / Slide bảo vệ v2.0 / Installer NSIS & Clean VM / Release gate: `#144, #148, #149, #150, #152, #153, #154`
+  - Issue kế thừa M7: `#18, #19, #20, #25, #48, #60, #71, #73`

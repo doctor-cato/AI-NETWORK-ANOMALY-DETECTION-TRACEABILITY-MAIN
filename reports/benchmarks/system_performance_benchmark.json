@@ -1,36 +1,87 @@
 {
-  "benchmark_title": "NetFlow Sentinel v2.0 System-Wide Performance Benchmark",
-  "benchmark_executed_at_utc": "2026-11-17T13:39:20.177186+00:00",
+  "benchmark_title": "NetFlow Sentinel v2.0 Dynamic System Performance Benchmark",
+  "benchmark_executed_at_utc": "2026-11-17T15:52:01.441243+00:00",
   "hardware_environment": {
-    "os": "Microsoft Windows x64",
-    "python_runtime": "Python 3.12 (CPython)",
-    "acceleration": "Native SIMD / Vectorized NumPy"
+    "os": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 124 Stepping 0, AuthenticAMD",
+    "cpu_count": 12,
+    "total_ram_gb": 15.27,
+    "python_version": "3.12.10",
+    "python_implementation": "CPython",
+    "packages": {
+      "numpy": "2.5.5",
+      "pandas": "3.1.1",
+      "scikit_learn": "1.9.1",
+      "xgboost": "3.4.1",
+      "joblib": "1.6.0",
+      "cryptography": "50.0.2"
+    },
+    "random_seed": 42,
+    "captured_at_utc": "2026-11-17T15:51:23.687557+00:00"
   },
-  "mode_performance": {
-    "offline_batch": {
-      "total_events": 1000,
-      "elapsed_seconds": 0.1328,
-      "throughput_events_per_sec": 7531.6,
-      "latency_per_event_us": 132.77
-    },
-    "replay_mode": {
-      "total_events": 1000,
-      "elapsed_seconds": 0.1,
-      "throughput_events_per_sec": 10001.89
-    },
-    "live_mode_projection": {
-      "max_sustainable_network_load_mbps": 90.38,
-      "ring_buffer_headroom_pct": 90.0,
-      "peak_ingestion_capacity_flows_sec": 75000
+  "inference_readiness": {
+    "inference_mode": "REAL_MODELS",
+    "ready_count": 4,
+    "validated_count": 4
+  },
+  "end_to_end_measured": {
+    "events_processed": 200,
+    "elapsed_seconds": 16.2646,
+    "throughput_events_per_sec": 12.3,
+    "latency_us": {
+      "median_us": 78423.3,
+      "p95_us": 99766.7,
+      "p99_us": 175674.9
     }
   },
-  "subsystem_latency_breakdown_us": {
-    "collector_decoding": 0.5,
-    "feature_extraction_and_contract_validation": 4.94,
-    "multi_model_ai_inference": 8.08,
-    "behavioral_sessionizer_and_vector": 19.02,
-    "aes_256_gcm_vector_encryption": 18.67,
-    "risk_scoring_and_deduplication": 2.6,
-    "total_pipeline_latency_us": 53.81
-  }
+  "replay_mode_measured": {
+    "events_processed": 200,
+    "elapsed_seconds": 15.002,
+    "throughput_events_per_sec": 13.33
+  },
+  "ring_buffer_measured": {
+    "capacity": 2000,
+    "events_enqueued": 200,
+    "events_drained": 200,
+    "peak_utilization_pct": 10.0,
+    "dropped_events": 0
+  },
+  "component_microbenchmarks_us": {
+    "collector_decoding": {
+      "median_us": 1.0,
+      "p95_us": 1.2,
+      "p99_us": 2.0
+    },
+    "feature_contract_validation": {
+      "median_us": 8.7,
+      "p95_us": 9.6,
+      "p99_us": 12.3
+    },
+    "multi_model_ai_inference": {
+      "median_us": 79346.35,
+      "p95_us": 159022.0,
+      "p99_us": 244357.6
+    },
+    "behavioral_vector_build": {
+      "median_us": 41.45,
+      "p95_us": 87.1,
+      "p99_us": 149.1
+    },
+    "aes_256_gcm_encrypt": {
+      "median_us": 4.5,
+      "p95_us": 13.2,
+      "p99_us": 71.6
+    },
+    "risk_scoring_dedup": {
+      "median_us": 4.1,
+      "p95_us": 7.8,
+      "p99_us": 9.4
+    }
+  },
+  "limitations": [
+    "Measurements reflect in-process synthetic event workloads on this specific host and do not constitute 1-10 Gbps physical NIC line-rate certification.",
+    "Component microbenchmarks and full end-to-end event processing latency are reported separately because Python loop/dispatch and SQLite/sessionizer overhead are not additive across isolated microbenchmarks."
+  ]
 }

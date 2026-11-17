@@ -1,44 +1,81 @@
 #!/usr/bin/env python3
-"""End-to-End System Performance Benchmark Suite across All Three Modes.
+"""Dynamic End-to-End & Subsystem System Benchmark (Issue #147).
 
-Implements Issue #147 for NetFlow Sentinel v2.0.
+Measures real throughput, median/P95/P99 latency, and ring-buffer utilization
+with warm-up and multiple iterations on the actual runtime environment.
+Contains zero hardcoded capacity targets, OS strings, or line-rate claims.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import statistics
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from network_anomaly.canonical.event import (
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPTS_DIR.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+if str(_PROJECT_ROOT / "src") not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT / "src"))
+
+from _rq_common import collect_environment_metadata  # noqa: E402
+
+from network_anomaly.behavioral.vector import BehavioralVectorBuilder  # noqa: E402
+from network_anomaly.canonical.event import (  # noqa: E402
     CanonicalSecurityEvent,
     EventKind,
     FlowMetrics,
     RawProvenance,
 )
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
-from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
-from network_anomaly.telemetry.modes import ModeOrchestrator
+from network_anomaly.canonical.feature_contract import (  # noqa: E402
+    get_baseline_47_feature_contract,
+)
+from network_anomaly.crypto.aead import AESGCMCipher  # noqa: E402
+from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator  # noqa: E402
+from network_anomaly.streaming.pipeline import StreamingEventPipeline  # noqa: E402
+from network_anomaly.telemetry.collector import NetFlowIPFIXDecoder  # noqa: E402
+from network_anomaly.telemetry.modes import ModeOrchestrator  # noqa: E402
 
 OUTPUT_JSON = Path("reports/benchmarks/system_performance_benchmark.json")
 OUTPUT_MD = Path("docs/benchmarks/SYSTEM_PERFORMANCE.md")
 
 
-def run_benchmark() -> Dict[str, Any]:
-    print("Executing End-to-End System Performance Benchmark...")
+def _percentile(sorted_vals: List[float], pct: float) -> float:
+    if not sorted_vals:
+        return 0.0
+    idx = min(len(sorted_vals) - 1, max(0, int(round((pct / 100.0) * (len(sorted_vals) - 1)))))
+    return sorted_vals[idx]
+
+
+def _summary_us(samples_us: List[float]) -> Dict[str, float]:
+    s = sorted(samples_us)
+    return {
+        "median_us": round(statistics.median(s), 2),
+        "p95_us": round(_percentile(s, 95.0), 2),
+        "p99_us": round(_percentile(s, 99.0), 2),
+    }
+
+
+def run_benchmark(batch_events: int = 200, micro_iters: int = 100) -> Dict[str, Any]:
+    env = collect_environment_metadata()
     contract = get_baseline_47_feature_contract()
     orchestrator = LiveSystemOrchestrator()
     mode_mgr = ModeOrchestrator(orchestrator=orchestrator)
 
-    # 1. Benchmark Offline Batch Processing (1,000 events)
-    offline_events = [
+    base_feats = {k: float((idx % 10) + 1) for idx, k in enumerate(ML_FEATURE_COLUMNS)}
+    events = [
         CanonicalSecurityEvent(
             event_timestamp=datetime.now(timezone.utc),
             event_kind=EventKind.FLOW,
             source_id="bench:offline",
-            source_ip=f"10.0.{i // 256}.{i % 256}",
+            source_ip=f"10.0.{(i // 250) % 256}.{(i % 250) + 1}",
             dest_ip="192.168.1.1",
             source_port=10000 + (i % 50000),
             dest_port=80,
@@ -53,168 +90,167 @@ def run_benchmark() -> Dict[str, Any]:
             ),
             raw_provenance=RawProvenance(source_file="bench.csv", adapter_name="BenchAdapter"),
             is_ml_complete=True,
-            ml_features={k: 1.0 for k in contract.feature_names},
+            ml_features=dict(base_feats),
         )
-        for i in range(1000)
+        for i in range(batch_events)
     ]
 
-    t0 = time.perf_counter()
-    orchestrator.process_batch(offline_events)
-    offline_elapsed = max(0.001, time.perf_counter() - t0)
-    offline_throughput = round(len(offline_events) / offline_elapsed, 2)
-    offline_latency_us = round((offline_elapsed / len(offline_events)) * 1e6, 2)
+    # Warm-up
+    for ev in events[:10]:
+        orchestrator.process_event(ev)
 
-    # 2. Benchmark Replay Mode (1,000 events with speed_factor=inf)
+    # 1. End-to-End single-event latency distribution (separate from component microbenchmarks)
+    e2e_latencies_us: List[float] = []
+    t0_batch = time.perf_counter()
+    for ev in events:
+        t_s = time.perf_counter_ns()
+        orchestrator.process_event(ev)
+        e2e_latencies_us.append((time.perf_counter_ns() - t_s) / 1000.0)
+    e2e_elapsed = max(1e-9, time.perf_counter() - t0_batch)
+    e2e_throughput = round(len(events) / e2e_elapsed, 2)
+
+    # 2. Replay mode throughput
     replay_summary = mode_mgr.run_replay_scenario(
-        events=offline_events,
+        events=events,
         source_name="bench:replay",
         speed_factor=float("inf"),
     )
 
-    # 3. Dynamic micro-benchmarks of each subsystem (Issue #147, F03 remediation)
-    from network_anomaly.behavioral.vector import BehavioralVectorBuilder
-    from network_anomaly.crypto.aead import AESGCMCipher
-    from network_anomaly.telemetry.collector import NetFlowIPFIXDecoder
+    # 3. Ring-buffer pipeline metrics measured directly from StreamingEventPipeline
+    ring_pipeline = StreamingEventPipeline(capacity=2000, batch_size=32)
+    ring_pipeline.enqueue_batch(events)
+    peak_util_pct = ring_pipeline.get_metrics().queue_utilization_pct
+    drained = ring_pipeline.flush_all()
+    ring_metrics = ring_pipeline.get_metrics()
 
-    # a. Collector decoding
+    # 4. Separate component microbenchmarks (with warm-up)
     decoder = NetFlowIPFIXDecoder()
     sample_raw = b"\x00\x09\x00\x01\x00\x00\x03\xe8\x65\x50\x00\x00\x00\x00\x00\x01\x00\x00\x00\x01"
-    t_start = time.perf_counter_ns()
-    for _ in range(200):
+    for _ in range(20):
         decoder.decode_datagram(sample_raw)
-    collector_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+    dec_us = []
+    for _ in range(micro_iters):
+        t_s = time.perf_counter_ns()
+        decoder.decode_datagram(sample_raw)
+        dec_us.append((time.perf_counter_ns() - t_s) / 1000.0)
 
-    # b. Feature contract validation
-    sample_feats = {k: 1.0 for k in contract.feature_names}
-    t_start = time.perf_counter_ns()
-    for _ in range(200):
-        contract.validate_features(sample_feats)
-    contract_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+    contract_us = []
+    for _ in range(micro_iters):
+        t_s = time.perf_counter_ns()
+        contract.validate_features(base_feats)
+        contract_us.append((time.perf_counter_ns() - t_s) / 1000.0)
 
-    # c. Multi-model AI inference
-    t_start = time.perf_counter_ns()
-    for _ in range(50):
-        orchestrator.inference_engine.infer_event(offline_events[0], sample_feats)
-    inference_us = round(max(1.0, ((time.perf_counter_ns() - t_start) / 50) / 1000.0), 2)
+    inf_us = []
+    for _ in range(min(micro_iters, 40)):
+        t_s = time.perf_counter_ns()
+        orchestrator.inference_engine.infer_event(events[0], base_feats)
+        inf_us.append((time.perf_counter_ns() - t_s) / 1000.0)
 
-    # d. Behavioral vector computation
-    sessions = orchestrator.sessionizer.sessionize(offline_events[:5])
-    session = sessions[0]
+    sessions = orchestrator.sessionizer.sessionize(events[:5])
     vec_builder = BehavioralVectorBuilder()
-    t_start = time.perf_counter_ns()
-    for _ in range(200):
-        vec_builder.build_vector(session)
-    behavioral_us = round(max(1.0, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+    beh_us = []
+    for _ in range(micro_iters):
+        t_s = time.perf_counter_ns()
+        vec_builder.build_vector(sessions[0])
+        beh_us.append((time.perf_counter_ns() - t_s) / 1000.0)
 
-    # e. AES-256-GCM encryption
     cipher = AESGCMCipher(b"\x01" * 32, key_id="k-bench")
     vec_bytes = b"0.12,0.45,0.88,0.05,0.67,0.92,0.33,0.14,0.77,0.44,0.19,0.81,0.65,0.28,0.39,0.52"
-    t_start = time.perf_counter_ns()
-    for _ in range(200):
+    cry_us = []
+    for _ in range(micro_iters):
+        t_s = time.perf_counter_ns()
         cipher.encrypt(vec_bytes)
-    crypto_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+        cry_us.append((time.perf_counter_ns() - t_s) / 1000.0)
 
-    # f. Risk scoring & Alert deduplication
-    t_start = time.perf_counter_ns()
-    for _ in range(200):
-        orchestrator.alert_manager.process_event_risk(offline_events[0])
-    risk_us = round(max(0.5, ((time.perf_counter_ns() - t_start) / 200) / 1000.0), 2)
+    risk_us = []
+    for _ in range(micro_iters):
+        t_s = time.perf_counter_ns()
+        orchestrator.alert_manager.process_event_risk(events[0])
+        risk_us.append((time.perf_counter_ns() - t_s) / 1000.0)
 
-    total_pipeline_us = round(
-        collector_us + contract_us + inference_us + behavioral_us + crypto_us + risk_us, 2
-    )
-    headroom_pct = round(max(10.0, min(95.0, 100.0 - (offline_throughput / 75000.0 * 100.0))), 1)
+    readiness = orchestrator.inference_engine.readiness()
 
-    results = {
-        "benchmark_title": "NetFlow Sentinel v2.0 System-Wide Performance Benchmark",
+    results: Dict[str, Any] = {
+        "benchmark_title": "NetFlow Sentinel v2.0 Dynamic System Performance Benchmark",
         "benchmark_executed_at_utc": datetime.now(timezone.utc).isoformat(),
-        "hardware_environment": {
-            "os": "Microsoft Windows x64",
-            "python_runtime": "Python 3.12 (CPython)",
-            "acceleration": "Native SIMD / Vectorized NumPy",
+        "hardware_environment": env,
+        "inference_readiness": {
+            "inference_mode": readiness["inference_mode"],
+            "ready_count": readiness["ready_count"],
+            "validated_count": readiness["validated_count"],
         },
-        "mode_performance": {
-            "offline_batch": {
-                "total_events": len(offline_events),
-                "elapsed_seconds": round(offline_elapsed, 4),
-                "throughput_events_per_sec": offline_throughput,
-                "latency_per_event_us": offline_latency_us,
-            },
-            "replay_mode": {
-                "total_events": replay_summary.total_events_processed,
-                "elapsed_seconds": replay_summary.elapsed_seconds,
-                "throughput_events_per_sec": replay_summary.throughput_events_per_sec,
-            },
-            "live_mode_projection": {
-                "max_sustainable_network_load_mbps": round(
-                    (offline_throughput * 1500 * 8) / 1e6, 2
-                ),
-                "ring_buffer_headroom_pct": headroom_pct,
-                "peak_ingestion_capacity_flows_sec": 75000,
-            },
+        "end_to_end_measured": {
+            "events_processed": len(events),
+            "elapsed_seconds": round(e2e_elapsed, 4),
+            "throughput_events_per_sec": e2e_throughput,
+            "latency_us": _summary_us(e2e_latencies_us),
         },
-        "subsystem_latency_breakdown_us": {
-            "collector_decoding": collector_us,
-            "feature_extraction_and_contract_validation": contract_us,
-            "multi_model_ai_inference": inference_us,
-            "behavioral_sessionizer_and_vector": behavioral_us,
-            "aes_256_gcm_vector_encryption": crypto_us,
-            "risk_scoring_and_deduplication": risk_us,
-            "total_pipeline_latency_us": total_pipeline_us,
+        "replay_mode_measured": {
+            "events_processed": replay_summary.total_events_processed,
+            "elapsed_seconds": replay_summary.elapsed_seconds,
+            "throughput_events_per_sec": replay_summary.throughput_events_per_sec,
         },
+        "ring_buffer_measured": {
+            "capacity": 2000,
+            "events_enqueued": len(events),
+            "events_drained": len(drained),
+            "peak_utilization_pct": peak_util_pct,
+            "dropped_events": ring_metrics.total_dropped,
+        },
+        "component_microbenchmarks_us": {
+            "collector_decoding": _summary_us(dec_us),
+            "feature_contract_validation": _summary_us(contract_us),
+            "multi_model_ai_inference": _summary_us(inf_us),
+            "behavioral_vector_build": _summary_us(beh_us),
+            "aes_256_gcm_encrypt": _summary_us(cry_us),
+            "risk_scoring_dedup": _summary_us(risk_us),
+        },
+        "limitations": [
+            "Measurements reflect in-process synthetic event workloads on this specific host and do not constitute 1-10 Gbps physical NIC line-rate certification.",
+            "Component microbenchmarks and full end-to-end event processing latency are reported separately because Python loop/dispatch and SQLite/sessionizer overhead are not additive across isolated microbenchmarks.",
+        ],
     }
 
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
+    OUTPUT_JSON.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
 
-    # Markdown Report
-    md_content = f"""# Báo Cáo Đo Lường Hiệu Năng Toàn Hệ Thống (System-Wide Performance Benchmark)
-
-**Mã tài liệu:** `BENCHMARK-SYSTEM-V2-001`
-**Milestone:** `M6.7 (Desktop Dashboards & Release Packaging)`
-**Issue:** `#147`
-**Trạng thái:** **`BENCHMARKED & EXCEEDS TARGET SPECIFICATIONS`**
-
----
-
-## 1. Môi trường Thực nghiệm & Phạm vi Đo lường
-
-Hệ thống đo lường hiệu năng xử lý toàn trình (end-to-end) từ lúc nạp dữ liệu telemetry thô, giải mã gói tin, trích xuất đặc trưng, suy luận AI qua 4 mô hình, tính điểm rủi ro, mã hóa vector hành vi AES-256-GCM và cập nhật đồ thị truy vết.
-
-- **Nền tảng kiểm thử:** Windows 10/11 x64, Python 3.12 (.venv).
-- **Quy mô tập kiểm thử:** 1,000 sự kiện luồng đầy đủ 47 đặc trưng chuẩn hóa.
-
----
-
-## 2. Kết quả Hiệu Năng Theo Chế Độ Hoạt Động
-
-| Chế độ Hoạt động (Mode) | Số sự kiện xử lý | Thời gian toàn trình (s) | Thông lượng (Throughput) | Độ trễ trung bình / sự kiện |
-| :--- | :---: | :---: | :---: | :---: |
-| **Offline Batch Mode** | 1,000 | `{offline_elapsed:.4f}`s | **`{offline_throughput:,.1f}` flow/s** | `{offline_latency_us:.1f}` $\\mu s$ |
-| **Replay Scenario Mode** | 1,000 | `{replay_summary.elapsed_seconds:.4f}`s | **`{replay_summary.throughput_events_per_sec:,.1f}` flow/s** | ~`{1e6 / max(1, replay_summary.throughput_events_per_sec):.1f}` $\\mu s$ |
-| **Live Streaming Capacity** | Bounded Buffer | Vận hành liên tục | **Tối đa 75,000 flow/s** | $< 100$ ms micro-batch |
-
----
-
-## 3. Phân Rã Độ Trễ Các Tầng Xử Lý (Latency Breakdown)
-
-- **Collector Binary Decoding:** `{collector_us:.2f}` $\\mu s$
-- **Feature Extraction & Contract Validation:** `{contract_us:.2f}` $\\mu s$
-- **Multi-Model AI Inference (RF, XGB, IF, AE):** `{inference_us:.2f}` $\\mu s$
-- **Behavioral Sessionizer & 16-D Vector:** `{behavioral_us:.2f}` $\\mu s$
-- **AES-256-GCM Vector Encryption:** `{crypto_us:.2f}` $\\mu s$
-- **Risk Scoring & Alert Deduplication:** `{risk_us:.2f}` $\\mu s$
-- **Tổng độ trễ nội tại toàn trình:** **`{total_pipeline_us:.2f}` $\\mu s$ / sự kiện**
-
-> **Kết luận:** Hệ thống đạt độ trễ xử lý dưới 0.1ms trên mỗi sự kiện, hoàn toàn đáp ứng khả năng giám sát trực tiếp trên các đường truyền mạng doanh nghiệp tốc độ 1Gbps – 10Gbps mà không gây hiện tượng nghẽn cổ chai (bottleneck).
-"""
+    e2e_lat = results["end_to_end_measured"]["latency_us"]
+    md_lines = [
+        "# System Performance Benchmark Report (Dynamic Measurement)",
+        "",
+        f"- **Executed At (UTC):** `{results['benchmark_executed_at_utc']}`",
+        f"- **Host OS / CPU / RAM:** `{env['os']}` / `{env['cpu_count']} vCPU` / `{env['total_ram_gb']} GB`",
+        f"- **Python:** `{env['python_version']}` | **AI Readiness:** `{readiness['ready_count']}/4 ({readiness['inference_mode']})`",
+        "",
+        "## 1. End-to-End Orchestrator Measurement",
+        f"- **Events Processed:** `{len(events)}`",
+        f"- **Throughput:** `{e2e_throughput:,.2f} flow/s`",
+        f"- **E2E Latency (Med / P95 / P99):** `{e2e_lat['median_us']} / {e2e_lat['p95_us']} / {e2e_lat['p99_us']} us`",
+        f"- **Ring Buffer Peak Utilization:** `{peak_util_pct}%` (`dropped={ring_metrics.total_dropped}`)",
+        "",
+        "## 2. Isolated Component Microbenchmarks (Separate from E2E)",
+        "",
+        "| Component | Median (us) | P95 (us) | P99 (us) |",
+        "|---|---:|---:|---:|",
+    ]
+    for cname, cstats in results["component_microbenchmarks_us"].items():
+        md_lines.append(
+            f"| {cname} | {cstats['median_us']} | {cstats['p95_us']} | {cstats['p99_us']} |"
+        )
+    md_lines.extend(["", "## 3. Limitations", *[f"- {lim}" for lim in results["limitations"]]])
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_MD.write_text(md_content, encoding="utf-8")
-
-    print(f"System benchmark completed successfully:\n  - {OUTPUT_JSON}\n  - {OUTPUT_MD}")
+    OUTPUT_MD.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    print(f"Dynamic system benchmark written: {OUTPUT_JSON} and {OUTPUT_MD}")
     return results
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Dynamic System Performance Benchmark")
+    parser.add_argument("--events", type=int, default=200)
+    parser.add_argument("--micro-iters", type=int, default=100)
+    args = parser.parse_args()
+    run_benchmark(batch_events=args.events, micro_iters=args.micro_iters)
+
+
 if __name__ == "__main__":
-    run_benchmark()
+    main()

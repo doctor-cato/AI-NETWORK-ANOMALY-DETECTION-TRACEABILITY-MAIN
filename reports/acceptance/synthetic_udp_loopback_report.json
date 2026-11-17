@@ -1,0 +1,1044 @@
+{
+  "acceptance_title": "Synthetic UDP Loopback Integration Acceptance",
+  "synthetic": true,
+  "dataset_provenance": "synthetic_lab_exporter (not an official dataset)",
+  "issue": "#137",
+  "tested_at_utc": "2026-11-17T16:25:44.674072+00:00",
+  "scope": {
+    "transport": "UDP over 127.0.0.1 loopback",
+    "exporter": "in-process synthetic NetFlow v9 / IPFIX exporter",
+    "real_device_tested": false,
+    "production_readiness_claimed": false
+  },
+  "environment": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.10",
+    "pid": 30252
+  },
+  "packets": {
+    "netflow_v9_sha256": "6a3ee628f0f79039d7b6dd79e4f3f95c43fc3c641aeb01ed1925d45822d857f7",
+    "netflow_v9_data_only_sha256": "bcfbc6952a221cf242535e6b8e9ab3d86ef4f4a197aa03dfa04e143642859600",
+    "ipfix_sha256": "108ad0c966883af9311ed73f8ac7d50262df9ecae3adf378b2bba56ec31f4e2a"
+  },
+  "expected_events": 6,
+  "events_processed": 6,
+  "elapsed_seconds": 0.908,
+  "stages": {
+    "udp_transport": {
+      "status": "PASS",
+      "evidence": "4 datagrams received on UDP port 57697"
+    },
+    "decoder": {
+      "status": "PASS",
+      "evidence": "6 flows decoded (NetFlow v9 + IPFIX; 0 unresolved)"
+    },
+    "template_cache": {
+      "status": "PASS",
+      "evidence": "2 templates cached; data-only packet decoded"
+    },
+    "malformed_packet_handling": {
+      "status": "PASS",
+      "evidence": "malformed_packet_count=1, datagrams_rejected=1"
+    },
+    "streaming_pipeline": {
+      "status": "PASS",
+      "evidence": "6 processed, 0 dropped, queue=0.0%"
+    },
+    "feature_contract": {
+      "status": "PASS",
+      "evidence": "6/6 events satisfied all 47 non-imputed features"
+    },
+    "ai_inference": {
+      "status": "PASS",
+      "evidence": "mode=REAL_MODELS, participating=['autoencoder', 'isolation_forest', 'random_forest', 'xgboost'], avg_latency_us=76414.733, ood_gate=NOT_FITTED"
+    },
+    "model_readiness": {
+      "status": "PASS",
+      "evidence": "random_forest=VALIDATED; xgboost=VALIDATED; isolation_forest=VALIDATED; autoencoder=VALIDATED"
+    },
+    "risk_scoring": {
+      "status": "PASS",
+      "evidence": "risk scores: 6904fc23=8.0, 0bcee19a=28.3, fde776b9=54.8, 9c00ae4b=7.8, 25b7f4df=7.9, 2cf54936=7.8"
+    },
+    "alerts": {
+      "status": "NOT_TRIGGERED",
+      "evidence": "0 alerts raised above the 70.0 risk threshold"
+    },
+    "behavioral_vector": {
+      "status": "PASS",
+      "evidence": "6/6 events produced a 16-D session vector"
+    },
+    "vector_encryption": {
+      "status": "PASS",
+      "evidence": "6/6 vectors stored as AES-256-GCM ciphertext in the vault (plaintext column NULL)"
+    },
+    "trace_graph": {
+      "status": "PASS",
+      "evidence": "8 entity nodes / 6 relations"
+    }
+  },
+  "collector": {
+    "datagrams_received": 4,
+    "datagrams_rejected": 1,
+    "flows_decoded": 6,
+    "events_dropped": 0,
+    "queue_depth": 0,
+    "queue_capacity": 2048,
+    "last_datagram_at_utc": "2026-11-17T16:25:44.147929+00:00",
+    "last_error": null,
+    "running": false,
+    "bound_port": 57697,
+    "decoder": {
+      "malformed_packet_count": 1,
+      "unresolved_template_count": 0,
+      "unsupported_template_count": 0,
+      "total_flows_decoded": 6,
+      "templates_cached": 2
+    }
+  },
+  "pipeline": {
+    "total_enqueued": 6,
+    "total_processed": 6,
+    "total_dropped": 0,
+    "queue_utilization_pct": 0.0,
+    "avg_batch_size": 6.0,
+    "throughput_events_per_sec": 1.91,
+    "avg_latency_ms": 0.01
+  },
+  "metrics": {
+    "events_received": 6,
+    "events_processed": 6,
+    "ml_ready_events": 6,
+    "inference_errors": 0,
+    "alerts_raised": 0,
+    "avg_inference_latency_us": 76414.733,
+    "max_inference_latency_us": 91197.2,
+    "last_event_at_utc": "2026-11-17T16:25:44.146213+00:00"
+  },
+  "inference": {
+    "preprocessor": {
+      "ready": true,
+      "path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\preprocessing\\nf_unsw_nb15_v3_preprocessor.joblib",
+      "sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+      "error": null,
+      "feature_contract_version": "nf-unsw-nb15-v3-baseline-47"
+    },
+    "models": [
+      {
+        "model_key": "random_forest",
+        "display_name": "Random Forest",
+        "model_type": "RandomForest",
+        "readiness": "VALIDATED",
+        "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\random_forest\\random_forest_baseline.joblib",
+        "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\models\\random_forest_manifest.json",
+        "artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+        "threshold": 0.5,
+        "threshold_source": "default_binary_decision_0.5",
+        "score_semantics": "calibrated_binary_probability",
+        "reason": null,
+        "loaded_at_utc": "2026-11-17T16:25:41.842836+00:00",
+        "inference_count": 6,
+        "error_count": 0,
+        "last_latency_us": 58618.4,
+        "validated": true
+      },
+      {
+        "model_key": "xgboost",
+        "display_name": "XGBoost",
+        "model_type": "XGBoost",
+        "readiness": "VALIDATED",
+        "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\xgboost\\xgboost_baseline.joblib",
+        "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\models\\xgboost_manifest.json",
+        "artifact_sha256": "3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e",
+        "threshold": 0.5,
+        "threshold_source": "default_binary_decision_0.5",
+        "score_semantics": "calibrated_binary_probability",
+        "reason": null,
+        "loaded_at_utc": "2026-11-17T16:25:43.345861+00:00",
+        "inference_count": 6,
+        "error_count": 0,
+        "last_latency_us": 1537.9,
+        "validated": true
+      },
+      {
+        "model_key": "isolation_forest",
+        "display_name": "Isolation Forest",
+        "model_type": "IsolationForest",
+        "readiness": "VALIDATED",
+        "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\isolation_forest\\isolation_forest.joblib",
+        "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\models\\isolation_forest_manifest.json",
+        "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
+        "threshold": -0.033526858092757406,
+        "threshold_source": "manifest.threshold",
+        "score_semantics": "empirical_percentile_vs_validation_benign",
+        "reason": null,
+        "loaded_at_utc": "2026-11-17T16:25:43.382115+00:00",
+        "inference_count": 6,
+        "error_count": 0,
+        "last_latency_us": 8693.0,
+        "validated": true
+      },
+      {
+        "model_key": "autoencoder",
+        "display_name": "Autoencoder",
+        "model_type": "Autoencoder",
+        "readiness": "VALIDATED",
+        "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\autoencoder\\autoencoder_model.joblib",
+        "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\autoencoder\\autoencoder_manifest.json",
+        "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
+        "threshold": 17234985.792475585,
+        "threshold_source": "manifest.threshold",
+        "score_semantics": "empirical_percentile_vs_validation_benign",
+        "reason": null,
+        "loaded_at_utc": "2026-11-17T16:25:43.388725+00:00",
+        "inference_count": 6,
+        "error_count": 0,
+        "last_latency_us": 675.2,
+        "validated": true
+      }
+    ],
+    "ready_count": 4,
+    "validated_count": 4,
+    "total_models": 4,
+    "ai_ready": true,
+    "demo_heuristics_enabled": false,
+    "ood_gate_status": "NOT_FITTED",
+    "inference_mode": "REAL_MODELS",
+    "total_inferences": 6,
+    "total_unavailable_events": 0,
+    "total_inference_errors": 0
+  },
+  "alerts": [],
+  "event_results": [
+    {
+      "event_id": "6904fc23-5de6-4b63-95f8-3ef9b44a3414",
+      "entity_id": "host:192.0.2.100",
+      "is_ml_flow": true,
+      "risk_score": 8.015,
+      "risk_level": "LOW",
+      "timeline_updated": false,
+      "key_rotated": false,
+      "feature_status": "MODEL_READY",
+      "missing_features": [],
+      "provenance": {
+        "source_id": "collector:netflow-v9:127.0.0.1",
+        "source_file": "udp://127.0.0.1:57698",
+        "adapter_name": "NetFlow-v9Collector",
+        "source_checksum": ""
+      },
+      "timestamp": "2026-11-17T16:24:53+00:00",
+      "source_ip": "192.0.2.100",
+      "dest_ip": "192.0.2.10",
+      "dest_port": 80,
+      "attack_type": null,
+      "behavioral_vector_id": "2cd8a18e-34d0-4d9f-9204-d493a59e1baf",
+      "behavioral_vector_encrypted": true,
+      "behavioral_vector": {
+        "vector_id": "bv-sess-217149-1794932693-1f6f71c7",
+        "entity_key": "host:192.0.2.100",
+        "window_start": "2026-11-17T16:24:53+00:00",
+        "window_end": "2026-11-17T16:24:53+00:00",
+        "dimensions": 16,
+        "version": "2.0.0",
+        "features": [
+          0.000117,
+          0.685224,
+          0.560708,
+          0.341011,
+          0.18817,
+          0.162081,
+          0.155885,
+          0.001169,
+          0.011692,
+          0.116917,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "feature_names": [
+          "log_duration",
+          "log_bytes_in",
+          "log_bytes_out",
+          "bytes_ratio_clipped",
+          "log_pkts_in",
+          "log_pkts_out",
+          "pkts_ratio_clipped",
+          "unique_ports_norm",
+          "unique_protocols_norm",
+          "syn_flag_ratio",
+          "rst_flag_ratio",
+          "dns_intensity",
+          "http_intensity",
+          "auth_failure_ratio",
+          "log_mean_iat",
+          "log_std_iat"
+        ],
+        "sha256_hash": "1f6f71c73e974ae1094b61fa835063e6642b90796e0464587f93cda3dd847295"
+      },
+      "inference": {
+        "event_id": "6904fc23-5de6-4b63-95f8-3ef9b44a3414",
+        "inference_mode": "REAL_MODELS",
+        "ensemble_is_anomaly": false,
+        "ensemble_score": 0.0403,
+        "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
+        "is_ood": false,
+        "ood_reason": null,
+        "model_predictions": {
+          "random_forest": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 29889.9
+          },
+          "xgboost": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 5343.3
+          },
+          "isolation_forest": {
+            "raw_score": -0.113222,
+            "score": 0.126982,
+            "normalized_score": 0.126982,
+            "is_anomaly": false,
+            "threshold": -0.033526858092757406,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 9397.5
+          },
+          "autoencoder": {
+            "raw_score": 329771.660683,
+            "score": 0.141385,
+            "normalized_score": 0.141385,
+            "is_anomaly": false,
+            "threshold": 17234985.792475585,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 755.4
+          }
+        },
+        "total_inference_latency_us": 64350.6,
+        "per_model_latency_us": {
+          "random_forest": 29889.9,
+          "xgboost": 5343.3,
+          "isolation_forest": 9397.5,
+          "autoencoder": 755.4
+        },
+        "participating_models": [
+          "random_forest",
+          "xgboost",
+          "isolation_forest",
+          "autoencoder"
+        ],
+        "unavailable_models": [],
+        "abstained_due_to_ood": false,
+        "ood_gate_status": "NOT_FITTED",
+        "ensemble_policy": "WEIGHTED_ENSEMBLE"
+      }
+    },
+    {
+      "event_id": "0bcee19a-811a-461a-ad09-9b002483afbc",
+      "entity_id": "host:192.0.2.105",
+      "is_ml_flow": true,
+      "risk_score": 28.285,
+      "risk_level": "LOW",
+      "timeline_updated": false,
+      "key_rotated": false,
+      "feature_status": "MODEL_READY",
+      "missing_features": [],
+      "provenance": {
+        "source_id": "collector:netflow-v9:127.0.0.1",
+        "source_file": "udp://127.0.0.1:57698",
+        "adapter_name": "NetFlow-v9Collector",
+        "source_checksum": ""
+      },
+      "timestamp": "2026-11-17T16:24:52+00:00",
+      "source_ip": "192.0.2.105",
+      "dest_ip": "192.0.2.10",
+      "dest_port": 80,
+      "attack_type": null,
+      "behavioral_vector_id": "4c6dd7a9-e03a-4d71-982d-3bfca4b7719a",
+      "behavioral_vector_encrypted": true,
+      "behavioral_vector": {
+        "vector_id": "bv-sess-292841-1794932692-a2c55ddc",
+        "entity_key": "host:192.0.2.105",
+        "window_start": "2026-11-17T16:24:52+00:00",
+        "window_end": "2026-11-17T16:24:52+00:00",
+        "dimensions": 16,
+        "version": "2.0.0",
+        "features": [
+          6.9e-05,
+          0.629812,
+          0.701337,
+          0.024655,
+          0.225644,
+          0.237826,
+          0.057711,
+          0.000693,
+          0.006926,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "feature_names": [
+          "log_duration",
+          "log_bytes_in",
+          "log_bytes_out",
+          "bytes_ratio_clipped",
+          "log_pkts_in",
+          "log_pkts_out",
+          "pkts_ratio_clipped",
+          "unique_ports_norm",
+          "unique_protocols_norm",
+          "syn_flag_ratio",
+          "rst_flag_ratio",
+          "dns_intensity",
+          "http_intensity",
+          "auth_failure_ratio",
+          "log_mean_iat",
+          "log_std_iat"
+        ],
+        "sha256_hash": "a2c55ddcc642ef59b98aa6cf6d56a5e05145c1eb6e66c623ebdc725021545816"
+      },
+      "inference": {
+        "event_id": "0bcee19a-811a-461a-ad09-9b002483afbc",
+        "inference_mode": "REAL_MODELS",
+        "ensemble_is_anomaly": false,
+        "ensemble_score": 0.1457,
+        "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
+        "is_ood": false,
+        "ood_reason": null,
+        "model_predictions": {
+          "random_forest": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 43586.1
+          },
+          "xgboost": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 1263.6
+          },
+          "isolation_forest": {
+            "raw_score": -0.106881,
+            "score": 0.1798,
+            "normalized_score": 0.1798,
+            "is_anomaly": false,
+            "threshold": -0.033526858092757406,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 8092.6
+          },
+          "autoencoder": {
+            "raw_score": 4653997.958996,
+            "score": 0.791352,
+            "normalized_score": 0.791352,
+            "is_anomaly": false,
+            "threshold": 17234985.792475585,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 528.3
+          }
+        },
+        "total_inference_latency_us": 76870.5,
+        "per_model_latency_us": {
+          "random_forest": 43586.1,
+          "xgboost": 1263.6,
+          "isolation_forest": 8092.6,
+          "autoencoder": 528.3
+        },
+        "participating_models": [
+          "random_forest",
+          "xgboost",
+          "isolation_forest",
+          "autoencoder"
+        ],
+        "unavailable_models": [],
+        "abstained_due_to_ood": false,
+        "ood_gate_status": "NOT_FITTED",
+        "ensemble_policy": "WEIGHTED_ENSEMBLE"
+      }
+    },
+    {
+      "event_id": "fde776b9-a887-40d9-851b-23fb00d5e8e4",
+      "entity_id": "host:192.0.2.10",
+      "is_ml_flow": true,
+      "risk_score": 54.825,
+      "risk_level": "MEDIUM",
+      "timeline_updated": false,
+      "key_rotated": false,
+      "feature_status": "MODEL_READY",
+      "missing_features": [],
+      "provenance": {
+        "source_id": "collector:netflow-v9:127.0.0.1",
+        "source_file": "udp://127.0.0.1:57698",
+        "adapter_name": "NetFlow-v9Collector",
+        "source_checksum": ""
+      },
+      "timestamp": "2026-11-17T16:24:51+00:00",
+      "source_ip": "192.0.2.10",
+      "dest_ip": "198.51.100.5",
+      "dest_port": 445,
+      "attack_type": null,
+      "behavioral_vector_id": "6ddb5ecf-e7cb-43b6-82ae-18bf3ac05588",
+      "behavioral_vector_encrypted": true,
+      "behavioral_vector": {
+        "vector_id": "bv-sess-582031-1794932691-e8824120",
+        "entity_key": "host:192.0.2.10",
+        "window_start": "2026-11-17T16:24:51+00:00",
+        "window_end": "2026-11-17T16:24:51+00:00",
+        "dimensions": 16,
+        "version": "2.0.0",
+        "features": [
+          6.3e-05,
+          0.536535,
+          0.750774,
+          0.002098,
+          0.191783,
+          0.33407,
+          0.006299,
+          0.00063,
+          0.006299,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "feature_names": [
+          "log_duration",
+          "log_bytes_in",
+          "log_bytes_out",
+          "bytes_ratio_clipped",
+          "log_pkts_in",
+          "log_pkts_out",
+          "pkts_ratio_clipped",
+          "unique_ports_norm",
+          "unique_protocols_norm",
+          "syn_flag_ratio",
+          "rst_flag_ratio",
+          "dns_intensity",
+          "http_intensity",
+          "auth_failure_ratio",
+          "log_mean_iat",
+          "log_std_iat"
+        ],
+        "sha256_hash": "e8824120fbef0191baa73ac0a2c576f84207e9864dbd4e982f7457ab7379296c"
+      },
+      "inference": {
+        "event_id": "fde776b9-a887-40d9-851b-23fb00d5e8e4",
+        "inference_mode": "REAL_MODELS",
+        "ensemble_is_anomaly": false,
+        "ensemble_score": 0.2465,
+        "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
+        "is_ood": false,
+        "ood_reason": null,
+        "model_predictions": {
+          "random_forest": {
+            "raw_score": 0.125,
+            "score": 0.125,
+            "normalized_score": 0.125,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 41413.6
+          },
+          "xgboost": {
+            "raw_score": 8.4e-05,
+            "score": 8.4e-05,
+            "normalized_score": 8.4e-05,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 1627.5
+          },
+          "isolation_forest": {
+            "raw_score": -0.093019,
+            "score": 0.319624,
+            "normalized_score": 0.319624,
+            "is_anomaly": false,
+            "threshold": -0.033526858092757406,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 9027.8
+          },
+          "autoencoder": {
+            "raw_score": 156919456.827895,
+            "score": 0.99,
+            "normalized_score": 0.99,
+            "is_anomaly": true,
+            "threshold": 17234985.792475585,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 716.3
+          }
+        },
+        "total_inference_latency_us": 74964.4,
+        "per_model_latency_us": {
+          "random_forest": 41413.6,
+          "xgboost": 1627.5,
+          "isolation_forest": 9027.8,
+          "autoencoder": 716.3
+        },
+        "participating_models": [
+          "random_forest",
+          "xgboost",
+          "isolation_forest",
+          "autoencoder"
+        ],
+        "unavailable_models": [],
+        "abstained_due_to_ood": false,
+        "ood_gate_status": "NOT_FITTED",
+        "ensemble_policy": "WEIGHTED_ENSEMBLE"
+      }
+    },
+    {
+      "event_id": "9c00ae4b-03d3-479c-9b80-d213adfe10ef",
+      "entity_id": "host:192.0.2.77",
+      "is_ml_flow": true,
+      "risk_score": 7.8100000000000005,
+      "risk_level": "LOW",
+      "timeline_updated": false,
+      "key_rotated": false,
+      "feature_status": "MODEL_READY",
+      "missing_features": [],
+      "provenance": {
+        "source_id": "collector:netflow-v9:127.0.0.1",
+        "source_file": "udp://127.0.0.1:57698",
+        "adapter_name": "NetFlow-v9Collector",
+        "source_checksum": ""
+      },
+      "timestamp": "2026-11-17T16:24:50+00:00",
+      "source_ip": "192.0.2.77",
+      "dest_ip": "192.0.2.20",
+      "dest_port": 443,
+      "attack_type": null,
+      "behavioral_vector_id": "9cadf2d4-802f-4dd9-b2e9-a8f177b0bb34",
+      "behavioral_vector_encrypted": true,
+      "behavioral_vector": {
+        "vector_id": "bv-sess-686294-1794932690-b345164d",
+        "entity_key": "host:192.0.2.77",
+        "window_start": "2026-11-17T16:24:50+00:00",
+        "window_end": "2026-11-17T16:24:50+00:00",
+        "dimensions": 16,
+        "version": "2.0.0",
+        "features": [
+          8.7e-05,
+          0.641368,
+          0.672519,
+          0.060873,
+          0.246698,
+          0.256383,
+          0.0774,
+          0.000871,
+          0.008707,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "feature_names": [
+          "log_duration",
+          "log_bytes_in",
+          "log_bytes_out",
+          "bytes_ratio_clipped",
+          "log_pkts_in",
+          "log_pkts_out",
+          "pkts_ratio_clipped",
+          "unique_ports_norm",
+          "unique_protocols_norm",
+          "syn_flag_ratio",
+          "rst_flag_ratio",
+          "dns_intensity",
+          "http_intensity",
+          "auth_failure_ratio",
+          "log_mean_iat",
+          "log_std_iat"
+        ],
+        "sha256_hash": "b345164d94f4a406220b6d2e0cb924fd174aa423816e4035e959b29238e18523"
+      },
+      "inference": {
+        "event_id": "9c00ae4b-03d3-479c-9b80-d213adfe10ef",
+        "inference_mode": "REAL_MODELS",
+        "ensemble_is_anomaly": false,
+        "ensemble_score": 0.0362,
+        "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
+        "is_ood": false,
+        "ood_reason": null,
+        "model_predictions": {
+          "random_forest": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 46260.6
+          },
+          "xgboost": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 934.5
+          },
+          "isolation_forest": {
+            "raw_score": -0.114324,
+            "score": 0.11878,
+            "normalized_score": 0.11878,
+            "is_anomaly": false,
+            "threshold": -0.033526858092757406,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 6477.3
+          },
+          "autoencoder": {
+            "raw_score": 254980.436025,
+            "score": 0.122776,
+            "normalized_score": 0.122776,
+            "is_anomaly": false,
+            "threshold": 17234985.792475585,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 332.0
+          }
+        },
+        "total_inference_latency_us": 75461.2,
+        "per_model_latency_us": {
+          "random_forest": 46260.6,
+          "xgboost": 934.5,
+          "isolation_forest": 6477.3,
+          "autoencoder": 332.0
+        },
+        "participating_models": [
+          "random_forest",
+          "xgboost",
+          "isolation_forest",
+          "autoencoder"
+        ],
+        "unavailable_models": [],
+        "abstained_due_to_ood": false,
+        "ood_gate_status": "NOT_FITTED",
+        "ensemble_policy": "WEIGHTED_ENSEMBLE"
+      }
+    },
+    {
+      "event_id": "25b7f4df-0bc4-404d-bff8-d5e9a6600281",
+      "entity_id": "host:192.0.2.88",
+      "is_ml_flow": true,
+      "risk_score": 7.865,
+      "risk_level": "LOW",
+      "timeline_updated": false,
+      "key_rotated": false,
+      "feature_status": "MODEL_READY",
+      "missing_features": [],
+      "provenance": {
+        "source_id": "collector:netflow-v9:127.0.0.1",
+        "source_file": "udp://127.0.0.1:57698",
+        "adapter_name": "NetFlow-v9Collector",
+        "source_checksum": ""
+      },
+      "timestamp": "2026-11-17T16:24:53+00:00",
+      "source_ip": "192.0.2.88",
+      "dest_ip": "192.0.2.20",
+      "dest_port": 443,
+      "attack_type": null,
+      "behavioral_vector_id": "f5f4c35c-b4ec-45ca-8911-b993032219de",
+      "behavioral_vector_encrypted": true,
+      "behavioral_vector": {
+        "vector_id": "bv-sess-221741-1794932693-d3444eb5",
+        "entity_key": "host:192.0.2.88",
+        "window_start": "2026-11-17T16:24:53+00:00",
+        "window_end": "2026-11-17T16:24:53+00:00",
+        "dimensions": 16,
+        "version": "2.0.0",
+        "features": [
+          9.3e-05,
+          0.635458,
+          0.662302,
+          0.070051,
+          0.264627,
+          0.275015,
+          0.083025,
+          0.000934,
+          0.00934,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "feature_names": [
+          "log_duration",
+          "log_bytes_in",
+          "log_bytes_out",
+          "bytes_ratio_clipped",
+          "log_pkts_in",
+          "log_pkts_out",
+          "pkts_ratio_clipped",
+          "unique_ports_norm",
+          "unique_protocols_norm",
+          "syn_flag_ratio",
+          "rst_flag_ratio",
+          "dns_intensity",
+          "http_intensity",
+          "auth_failure_ratio",
+          "log_mean_iat",
+          "log_std_iat"
+        ],
+        "sha256_hash": "d3444eb5305e0a1acfd087694239f0e2a66968ada2411e8676d43083b2d092b4"
+      },
+      "inference": {
+        "event_id": "25b7f4df-0bc4-404d-bff8-d5e9a6600281",
+        "inference_mode": "REAL_MODELS",
+        "ensemble_is_anomaly": false,
+        "ensemble_score": 0.0373,
+        "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
+        "is_ood": false,
+        "ood_reason": null,
+        "model_predictions": {
+          "random_forest": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 44620.3
+          },
+          "xgboost": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 1571.0
+          },
+          "isolation_forest": {
+            "raw_score": -0.114324,
+            "score": 0.11878,
+            "normalized_score": 0.11878,
+            "is_anomaly": false,
+            "threshold": -0.033526858092757406,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 8755.0
+          },
+          "autoencoder": {
+            "raw_score": 279756.31008,
+            "score": 0.12958,
+            "normalized_score": 0.12958,
+            "is_anomaly": false,
+            "threshold": 17234985.792475585,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 794.3
+          }
+        },
+        "total_inference_latency_us": 75644.5,
+        "per_model_latency_us": {
+          "random_forest": 44620.3,
+          "xgboost": 1571.0,
+          "isolation_forest": 8755.0,
+          "autoencoder": 794.3
+        },
+        "participating_models": [
+          "random_forest",
+          "xgboost",
+          "isolation_forest",
+          "autoencoder"
+        ],
+        "unavailable_models": [],
+        "abstained_due_to_ood": false,
+        "ood_gate_status": "NOT_FITTED",
+        "ensemble_policy": "WEIGHTED_ENSEMBLE"
+      }
+    },
+    {
+      "event_id": "2cf54936-da97-4822-a905-2540708063ba",
+      "entity_id": "host:192.0.2.99",
+      "is_ml_flow": true,
+      "risk_score": 7.825,
+      "risk_level": "LOW",
+      "timeline_updated": false,
+      "key_rotated": false,
+      "feature_status": "MODEL_READY",
+      "missing_features": [],
+      "provenance": {
+        "source_id": "collector:ipfix:127.0.0.1",
+        "source_file": "udp://127.0.0.1:57698",
+        "adapter_name": "IPFIXCollector",
+        "source_checksum": ""
+      },
+      "timestamp": "2026-11-17T16:25:43.541000+00:00",
+      "source_ip": "192.0.2.99",
+      "dest_ip": "192.0.2.20",
+      "dest_port": 443,
+      "attack_type": null,
+      "behavioral_vector_id": "39bb45a0-e1f8-40d1-aaa7-7b4ae2c99da8",
+      "behavioral_vector_encrypted": true,
+      "behavioral_vector": {
+        "vector_id": "bv-sess-496421-1794932743-1bbd6c55",
+        "entity_key": "host:192.0.2.99",
+        "window_start": "2026-11-17T16:25:43.541000+00:00",
+        "window_end": "2026-11-17T16:25:43.541000+00:00",
+        "dimensions": 16,
+        "version": "2.0.0",
+        "features": [
+          9e-05,
+          0.635722,
+          0.672048,
+          0.059772,
+          0.254006,
+          0.263978,
+          0.079693,
+          0.000897,
+          0.008965,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "feature_names": [
+          "log_duration",
+          "log_bytes_in",
+          "log_bytes_out",
+          "bytes_ratio_clipped",
+          "log_pkts_in",
+          "log_pkts_out",
+          "pkts_ratio_clipped",
+          "unique_ports_norm",
+          "unique_protocols_norm",
+          "syn_flag_ratio",
+          "rst_flag_ratio",
+          "dns_intensity",
+          "http_intensity",
+          "auth_failure_ratio",
+          "log_mean_iat",
+          "log_std_iat"
+        ],
+        "sha256_hash": "1bbd6c5541d1eb8f101c6e615b37f990515f808e9c32f3cdf6bdd7e101416648"
+      },
+      "inference": {
+        "event_id": "2cf54936-da97-4822-a905-2540708063ba",
+        "inference_mode": "REAL_MODELS",
+        "ensemble_is_anomaly": false,
+        "ensemble_score": 0.0365,
+        "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
+        "is_ood": false,
+        "ood_reason": null,
+        "model_predictions": {
+          "random_forest": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 58618.4
+          },
+          "xgboost": {
+            "raw_score": 0.0,
+            "score": 0.0,
+            "normalized_score": 0.0,
+            "is_anomaly": false,
+            "threshold": 0.5,
+            "score_semantics": "calibrated_binary_probability",
+            "normalization_note": null,
+            "latency_us": 1537.9
+          },
+          "isolation_forest": {
+            "raw_score": -0.114324,
+            "score": 0.11878,
+            "normalized_score": 0.11878,
+            "is_anomaly": false,
+            "threshold": -0.033526858092757406,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 8693.0
+          },
+          "autoencoder": {
+            "raw_score": 262081.547552,
+            "score": 0.124726,
+            "normalized_score": 0.124726,
+            "is_anomaly": false,
+            "threshold": 17234985.792475585,
+            "score_semantics": "empirical_percentile_vs_validation_benign",
+            "normalization_note": null,
+            "latency_us": 675.2
+          }
+        },
+        "total_inference_latency_us": 91197.2,
+        "per_model_latency_us": {
+          "random_forest": 58618.4,
+          "xgboost": 1537.9,
+          "isolation_forest": 8693.0,
+          "autoencoder": 675.2
+        },
+        "participating_models": [
+          "random_forest",
+          "xgboost",
+          "isolation_forest",
+          "autoencoder"
+        ],
+        "unavailable_models": [],
+        "abstained_due_to_ood": false,
+        "ood_gate_status": "NOT_FITTED",
+        "ensemble_policy": "WEIGHTED_ENSEMBLE"
+      }
+    }
+  ],
+  "limitations": [
+    "Loopback UDP with a synthetic Python exporter; no physical router or switch was tested.",
+    "The 47 model features use a private lab IE convention (PEN 50000 / IE 50000+i, float64).",
+    "Synthetic feature values are fixtures, not benchmark samples from NF-UNSW-NB15-v3.",
+    "No alert reached the 70.0 risk threshold with the synthetic fixture; alert production is implemented but not exercised by this run."
+  ],
+  "hard_failures": [],
+  "overall_status": "ACCEPTED"
+}

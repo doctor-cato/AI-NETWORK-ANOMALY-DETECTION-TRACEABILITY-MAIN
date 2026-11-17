@@ -15,7 +15,6 @@ from network_anomaly.canonical.event import (
     FlowMetrics,
     RawProvenance,
 )
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
 from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
 from network_anomaly.crypto.key_manager import KeyManager
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
@@ -24,9 +23,11 @@ from network_anomaly.telemetry.modes import ModeOrchestrator, MonitoringMode
 
 
 def create_e2e_event(
-    src_ip: str, out_bytes: int = 1000, dst_port: int = 80
+    src_ip: str,
+    features,
+    out_bytes: int = 1000,
+    dst_port: int = 80,
 ) -> CanonicalSecurityEvent:
-    contract = get_baseline_47_feature_contract()
     fm = FlowMetrics(
         duration_ms=100.0,
         bytes_in=1000,
@@ -47,27 +48,32 @@ def create_e2e_event(
         flow_metrics=fm,
         raw_provenance=RawProvenance(source_file="e2e.pcap", adapter_name="E2ETestAdapter"),
         is_ml_complete=True,
-        ml_features={k: float(out_bytes) for k in contract.feature_names},
+        ml_features=features,
     )
 
 
 class TestFullSystemE2E:
-    def test_e2e_offline_mode(self):
+    def test_e2e_offline_mode(self, baseline_features):
         """Verify Mode 1: Offline Batch Ingestion & Analysis."""
         orchestrator = LiveSystemOrchestrator()
-        events = [create_e2e_event(f"192.168.1.{10 + i}", out_bytes=1000 * i) for i in range(5)]
+        features = baseline_features()
+        events = [
+            create_e2e_event(f"192.168.1.{10 + i}", features, out_bytes=1000 * i) for i in range(5)
+        ]
 
         results = orchestrator.process_batch(events)
         assert len(results) == 5
         for res in results:
             assert res.is_ml_flow is True
             assert res.inference_decision is not None
+            assert res.inference_decision.inference_mode in {"REAL_MODELS", "UNAVAILABLE"}
 
-    def test_e2e_replay_mode(self):
+    def test_e2e_replay_mode(self, baseline_features):
         """Verify Mode 2: Real-time Replay of Recorded Benchmarks."""
         orchestrator = LiveSystemOrchestrator()
         mode_orchestrator = ModeOrchestrator(orchestrator=orchestrator)
-        events = [create_e2e_event(f"192.168.2.{i}", out_bytes=5000) for i in range(5)]
+        features = baseline_features()
+        events = [create_e2e_event(f"192.168.2.{i}", features, out_bytes=5000) for i in range(5)]
 
         summary = mode_orchestrator.run_replay_scenario(
             events=events,
@@ -79,12 +85,13 @@ class TestFullSystemE2E:
         assert summary.total_events_processed == 5
         assert summary.elapsed_seconds > 0.0
 
-    def test_e2e_live_mode_and_zero_plaintext_in_db(self):
+    def test_e2e_live_mode_and_zero_plaintext_in_db(self, baseline_features):
         """Verify Mode 3: Live Streaming and Assert Zero Plaintext Vectors in at-rest Storage."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
             db_path = tmp_path / "test_encrypted_vault.db"
             keys_dir = tmp_path / "keys"
+            features = baseline_features()
 
             km = KeyManager(keystore_dir=keys_dir)
             vault = EncryptedStorageVault(key_manager=km, db_path=db_path)
@@ -95,8 +102,13 @@ class TestFullSystemE2E:
 
             # Enqueue live streaming events into bounded ring buffer
             live_events = [
-                create_e2e_event("192.168.1.100", out_bytes=123456, dst_port=445),
-                create_e2e_event("192.168.1.105", out_bytes=1500, dst_port=80),
+                create_e2e_event(
+                    "192.168.1.100",
+                    baseline_features(OUT_BYTES=123456),
+                    out_bytes=123456,
+                    dst_port=445,
+                ),
+                create_e2e_event("192.168.1.105", features, out_bytes=1500, dst_port=80),
             ]
             assert pipeline.enqueue_batch(live_events) == 2
 

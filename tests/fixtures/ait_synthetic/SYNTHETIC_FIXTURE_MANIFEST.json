@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "provenance_note": "Hand-crafted schema-compatible synthetic fixtures for offline unit tests. NOT observed telemetry from AIT-Suite-v2.1.",
+  "generated_at_utc": "2026-11-17T15:46:23.785503+00:00",
+  "files": [
+    {
+      "file": "synthetic_netflow_fixture.csv",
+      "size_bytes": 597,
+      "sha256": "81879b0e707bfc4e4fbe7b646dc06698ffd4aea831bf8ee158fb44e150a17d8a",
+      "synthetic": true
+    },
+    {
+      "file": "synthetic_dns_fixture.log",
+      "size_bytes": 293,
+      "sha256": "97485becd5251bb4f881f6735743069ac7dc72994358c9dd02f1e9207f7e60c0",
+      "synthetic": true
+    },
+    {
+      "file": "synthetic_web_fixture.log",
+      "size_bytes": 313,
+      "sha256": "3560afae84d70370864cbc6a532277575db09d352c79d2d04405f1718f30f873",
+      "synthetic": true
+    },
+    {
+      "file": "synthetic_auth_fixture.log",
+      "size_bytes": 315,
+      "sha256": "01ee7505593a13e60e8d0cc767a8aee569937162067fc3e4d01a35b5e877c874",
+      "synthetic": true
+    }
+  ]
+}

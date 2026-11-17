@@ -11,7 +11,7 @@ Môi trường pilot tiêu chuẩn gồm:
 - **Windows Host chạy NetFlow Sentinel v2.0:**
   - Giao diện Desktop Tauri 2 + WebView2.
   - Backend Sidecar FastAPI lắng nghe **chỉ trên loopback `127.0.0.1`** với session token CSPRNG 256-bit (`NETWORK_ANOMALY_API_TOKEN`).
-  - Kho khóa cục bộ tại `data/keys/` (hoặc `%LOCALAPPDATA%\NetFlowSentinel\keys\`): `master.key` bảo vệ bằng **Windows DPAPI** (`CryptProtectData`), các DEK `k-*.key` được bọc bằng **AES-256-GCM** dưới Master KEK (`NETFLOW_WRAPPED_DEK_V1:`).
+  - Kho khóa cục bộ tại `data/keys/` (hoặc `%LOCALAPPDATA%\NetFlowSentinel\keys\`): `master.key` bảo vệ bằng **Windows DPAPI** (`CryptProtectData`, fail-closed không ghi plaintext fallback), các DEK `k-*.key` được bọc bằng **AES-256-GCM** dưới Master KEK (`NETFLOW_WRAPPED_DEK_V2:` gắn AAD `key_id|domain|version`), và kiểm tra/di trú khóa cũ qua `python scripts/migrate_keystore.py --verify-only`.
   - CSDL SQLite cục bộ lưu vector hành vi ở dạng bản mã AES-256-GCM (`is_encrypted=1`, `vector_json=NULL`).
 
 ---

@@ -1,7 +1,10 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "dataset": "AIT-Suite-v2.1",
   "release_year": 2021,
+  "synthetic": false,
+  "local_raw_status": "ABSENT",
+  "note": "Official dataset source manifest only. Raw AIT dataset files are not committed to Git; synthetic unit-test fixtures live separately in tests/fixtures/ait_synthetic/.",
   "official_source": {
     "publisher": "AIT Austrian Institute of Technology GmbH",
     "doi_netflow": "10.5281/zenodo.13168643",
@@ -14,36 +17,6 @@
     "license_title": "Creative Commons Attribution-ShareAlike 4.0 International",
     "license_url": "https://creativecommons.org/licenses/by-sa/4.0/"
   },
-  "generated_at_utc": "2026-11-17T13:39:18.538434+00:00",
   "clean_source_url": "https://zenodo.org/records/13168643",
-  "files": [
-    {
-      "file": "ait_netflow_v2.1_sample.csv",
-      "type": "netflow",
-      "size_bytes": 597,
-      "sha256": "81879b0e707bfc4e4fbe7b646dc06698ffd4aea831bf8ee158fb44e150a17d8a",
-      "verification_status": "MATCH"
-    },
-    {
-      "file": "ait_dns_v2.1_sample.log",
-      "type": "dns_log",
-      "size_bytes": 293,
-      "sha256": "97485becd5251bb4f881f6735743069ac7dc72994358c9dd02f1e9207f7e60c0",
-      "verification_status": "MATCH"
-    },
-    {
-      "file": "ait_web_v2.1_sample.log",
-      "type": "web_log",
-      "size_bytes": 313,
-      "sha256": "3560afae84d70370864cbc6a532277575db09d352c79d2d04405f1718f30f873",
-      "verification_status": "MATCH"
-    },
-    {
-      "file": "ait_auth_v2.1_sample.log",
-      "type": "auth_log",
-      "size_bytes": 315,
-      "sha256": "01ee7505593a13e60e8d0cc767a8aee569937162067fc3e4d01a35b5e877c874",
-      "verification_status": "MATCH"
-    }
-  ]
+  "files": []
 }

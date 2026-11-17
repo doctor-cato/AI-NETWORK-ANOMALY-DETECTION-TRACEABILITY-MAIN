@@ -1,167 +1,347 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fetchCryptoStatus, fetchIncidents, fetchTraceGraph } from "../api";
+  import {
+    fetchBehavioralCorrelation,
+    fetchBehavioralSimilarity,
+    fetchBehavioralVectorDetail,
+    fetchBehavioralVectors,
+  } from "../api";
+  import type {
+    BehavioralCorrelationClusterItem,
+    BehavioralSimilarityResponse,
+    BehavioralVectorDetailResponse,
+    BehavioralVectorListItem,
+    PanelDataState,
+  } from "../types";
 
-  interface BehavioralDimension {
-    index: number;
-    name: string;
-    value: number;
-  }
+  export let initialDemoMode: boolean = false;
 
-  let entityKey = "host:192.168.1.10";
-  let vectorId = "vec-8f4b01e2";
-  let sha256Hash = "81879b0e707bfc4e4fbe7b646dc06698ffd4aea831bf8ee158fb44e150a17d8a";
-  let isEncryptedAtRest = true;
-  let backendConnected = false;
-  let graphNodesCount = 0;
-  let graphEdgesCount = 0;
-
-  let dimensions: BehavioralDimension[] = [
-    { index: 0, name: "Duration Log-Scale", value: 0.65 },
-    { index: 1, name: "Bytes Out Ratio", value: 0.88 },
-    { index: 2, name: "Bytes In Ratio", value: 0.12 },
-    { index: 3, name: "Packet Asymmetry", value: 0.74 },
-    { index: 4, name: "SYN Ratio", value: 0.42 },
-    { index: 5, name: "RST Ratio", value: 0.05 },
-    { index: 6, name: "Unique Ports Ratio", value: 0.85 },
-    { index: 7, name: "Inter-Arrival Time Mean", value: 0.31 },
-    { index: 8, name: "Inter-Arrival Time Std", value: 0.45 },
-    { index: 9, name: "DNS Query Density", value: 0.10 },
-    { index: 10, name: "HTTP Request Density", value: 0.90 },
-    { index: 11, name: "Auth Failure Count", value: 0.00 },
-    { index: 12, name: "TCP Window Modulation", value: 0.28 },
-    { index: 13, name: "Payload Entropy Proxy", value: 0.79 },
-    { index: 14, name: "Service Diversity", value: 0.18 },
-    { index: 15, name: "Session Persistence", value: 0.55 },
+  const DEMO_DIMENSIONS = [
+    { index: 0, name: "log_duration", value: 0.42 },
+    { index: 1, name: "log_bytes_in", value: 0.25 },
+    { index: 2, name: "log_bytes_out", value: 0.68 },
+    { index: 3, name: "bytes_ratio_clipped", value: 0.35 },
+    { index: 4, name: "log_pkts_in", value: 0.18 },
+    { index: 5, name: "log_pkts_out", value: 0.39 },
+    { index: 6, name: "pkts_ratio_clipped", value: 0.21 },
+    { index: 7, name: "unique_ports_norm", value: 0.08 },
+    { index: 8, name: "unique_protocols_norm", value: 0.05 },
+    { index: 9, name: "syn_flag_ratio", value: 0.12 },
+    { index: 10, name: "rst_flag_ratio", value: 0.01 },
+    { index: 11, name: "dns_intensity", value: 0.0 },
+    { index: 12, name: "http_intensity", value: 0.0 },
+    { index: 13, name: "auth_failure_ratio", value: 0.0 },
+    { index: 14, name: "log_mean_iat", value: 0.19 },
+    { index: 15, name: "log_std_iat", value: 0.04 },
   ];
 
-  let compareSessionA = "Session-A (Normal Workstation)";
-  let compareSessionB = "Session-B (Target Incident host:192.168.1.10)";
-  let cosineSimilarity = 0.412;
-  let euclideanDistance = 0.845;
-  let correlationVerdict = "DIVERGENT (High Behavioral Deviation Detected)";
+  let dataState: PanelDataState = initialDemoMode ? "DEMO" : "LOADING";
+  let errorMessage: string | null = null;
+  let demoEnabled = initialDemoMode;
+  let vectors: BehavioralVectorListItem[] = [];
+  let selectedVectorId: string = "";
+  let compareVectorId: string = "";
+  let selectedDetail: BehavioralVectorDetailResponse | null = null;
+  let similarity: BehavioralSimilarityResponse | null = null;
+  let clusters: BehavioralCorrelationClusterItem[] = [];
+  let correlationVectorsCount = 0;
+  let lastUpdatedAt: string | null = null;
 
-  async function loadBehavioralContext() {
+  export async function loadBehavioralData() {
+    if (demoEnabled) {
+      dataState = "DEMO";
+      errorMessage = null;
+      lastUpdatedAt = new Date().toISOString();
+      return;
+    }
+
+    dataState = "LOADING";
+    errorMessage = null;
+
     try {
-      const [incResp, graphResp, cryptoResp] = await Promise.all([
-        fetchIncidents({ limit: 10 }),
-        fetchTraceGraph("10.0.0.5", 2),
-        fetchCryptoStatus("behavioral"),
+      const listResp = await fetchBehavioralVectors({ limit: 50 });
+      vectors = listResp.items ?? [];
+      lastUpdatedAt = new Date().toISOString();
+
+      if (listResp.data_status === "DISCONNECTED") {
+        dataState = "DISCONNECTED";
+        selectedDetail = null;
+        similarity = null;
+        clusters = [];
+        return;
+      }
+
+      if (vectors.length === 0 || listResp.data_status === "EMPTY") {
+        dataState = "EMPTY";
+        selectedDetail = null;
+        similarity = null;
+        clusters = [];
+        return;
+      }
+
+      if (!selectedVectorId || !vectors.some((v) => v.vector_id === selectedVectorId)) {
+        selectedVectorId = vectors[0].vector_id;
+      }
+      if (
+        !compareVectorId ||
+        !vectors.some((v) => v.vector_id === compareVectorId) ||
+        (vectors.length > 1 && compareVectorId === selectedVectorId)
+      ) {
+        compareVectorId = vectors.length > 1 ? vectors[1].vector_id : vectors[0].vector_id;
+      }
+
+      const [detailResp, corrResp] = await Promise.all([
+        fetchBehavioralVectorDetail(selectedVectorId),
+        fetchBehavioralCorrelation({ matchThreshold: 0.85, limit: 20 }),
       ]);
-      backendConnected = true;
-      isEncryptedAtRest = cryptoResp.algorithm.includes("AES-256-GCM");
+      selectedDetail = detailResp;
+      clusters = corrResp.clusters ?? [];
+      correlationVectorsCount = corrResp.total_vectors_evaluated ?? 0;
 
-      if (graphResp) {
-        graphNodesCount = graphResp.node_count;
-        graphEdgesCount = graphResp.edge_count;
+      if (selectedVectorId && compareVectorId && vectors.length >= 2) {
+        similarity = await fetchBehavioralSimilarity(selectedVectorId, compareVectorId);
+      } else {
+        similarity = null;
       }
-
-      if (incResp.items && incResp.items.length > 0) {
-        const top = incResp.items[0];
-        const host = top.source_ip || "10.0.0.5";
-        entityKey = `host:${host}`;
-        vectorId = `vec-${top.incident_id.slice(0, 8)}`;
-        compareSessionB = `Session-B (Incident ${top.incident_id})`;
-        const score = top.anomaly_score <= 1.0 ? top.anomaly_score : top.anomaly_score / 100.0;
-        cosineSimilarity = Number(Math.max(0.05, 1.0 - score * 0.75).toFixed(3));
-        euclideanDistance = Number((score * 1.15).toFixed(3));
-        correlationVerdict =
-          score >= 0.7
-            ? "DIVERGENT (High Behavioral Deviation Detected)"
-            : "MODERATE (Behavioral Drift Observed)";
-
-        // Reflect observed anomaly intensity across behavioral profile dimensions
-        const intensity = Math.min(0.98, Math.max(0.15, score));
-        dimensions = dimensions.map((d, idx) =>
-          idx === 1 || idx === 6 || idx === 13
-            ? { ...d, value: Number(intensity.toFixed(2)) }
-            : d
-        );
-      }
-    } catch {
-      backendConnected = false;
+      dataState = "CONNECTED";
+    } catch (err) {
+      dataState = "ERROR";
+      errorMessage = err instanceof Error ? err.message : String(err);
+      selectedDetail = null;
+      similarity = null;
+      clusters = [];
     }
   }
 
+  async function onSelectionChange() {
+    if (demoEnabled || !selectedVectorId) return;
+    try {
+      selectedDetail = await fetchBehavioralVectorDetail(selectedVectorId);
+      if (compareVectorId) {
+        similarity = await fetchBehavioralSimilarity(selectedVectorId, compareVectorId);
+      }
+      dataState = "CONNECTED";
+    } catch (err) {
+      dataState = "ERROR";
+      errorMessage = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  function toggleDemoMode() {
+    demoEnabled = !demoEnabled;
+    void loadBehavioralData();
+  }
+
   onMount(() => {
-    loadBehavioralContext();
+    void loadBehavioralData();
   });
+
+  $: dimensions = demoEnabled
+    ? DEMO_DIMENSIONS
+    : selectedDetail
+      ? selectedDetail.features.map((val, idx) => ({
+          index: idx,
+          name: selectedDetail?.feature_names?.[idx] ?? `dim_${idx}`,
+          value: val,
+        }))
+      : [];
 </script>
 
 <div class="panel-container">
   <div class="panel-header">
     <div class="title-row">
-      <h2>16-Dimensional Behavioral Intelligence & Vector Profiling</h2>
-      <span class="badge badge-crypto">
-        {isEncryptedAtRest ? "AES-256-GCM ENCRYPTED VAULT" : "PLAINTEXT"}
-      </span>
-    </div>
-    <p class="subtitle">
-      IP-independent behavioral characterization for host profiling, anomaly detection, and session correlation.
-    </p>
-  </div>
-
-  <div class="info-card">
-    <div class="info-item">
-      <span class="label">Entity ID ({backendConnected ? "Live Sync" : "Preview"}):</span>
-      <span class="val"><code>{entityKey}</code></span>
-    </div>
-    <div class="info-item">
-      <span class="label">Vector / Graph Scope:</span>
-      <span class="val"><code>{vectorId}</code>{graphNodesCount > 0 ? ` (${graphNodesCount}N/${graphEdgesCount}E)` : ""}</span>
-    </div>
-    <div class="info-item">
-      <span class="label">SHA-256 Provenance Hash:</span>
-      <span class="val"><code class="hash">{sha256Hash.substring(0, 32)}...</code></span>
-    </div>
-  </div>
-
-  <h3>Normalized 16-D Feature Space (L2 Normalized)</h3>
-  <div class="vector-bars-grid">
-    {#each dimensions as dim}
-      <div class="dim-row">
-        <span class="dim-name">{dim.name}</span>
-        <div class="bar-track">
-          <div class="bar-fill" style="width: {dim.value * 100}%"></div>
-        </div>
-        <span class="dim-val">{dim.value.toFixed(2)}</span>
+      <div>
+        <h2>16-Dimensional Behavioral Intelligence &amp; Vector Profiling</h2>
+        <p class="subtitle">
+          Encrypted-at-rest 16-D behavioral vectors decrypted on demand, similarity metrics, and IP-independent session correlation.
+        </p>
       </div>
-    {/each}
-  </div>
-
-  <div class="comparison-section">
-    <h3>Cross-Session Behavioral Similarity (RQ3 Verification)</h3>
-    <div class="comp-card">
-      <div class="comp-row">
-        <span>Reference Baseline: <strong>{compareSessionA}</strong></span>
-        <span>Investigated Session: <strong>{compareSessionB}</strong></span>
-      </div>
-      <div class="comp-metrics">
-        <div class="metric">
-          <span class="m-label">Cosine Similarity:</span>
-          <span class="m-val">{cosineSimilarity}</span>
-        </div>
-        <div class="metric">
-          <span class="m-label">Euclidean Distance:</span>
-          <span class="m-val">{euclideanDistance}</span>
-        </div>
-        <div class="metric">
-          <span class="m-label">Classification Verdict:</span>
-          <span class="m-val verdict-alert">{correlationVerdict}</span>
-        </div>
+      <div class="controls-row">
+        <span class="badge state-badge state-{dataState.toLowerCase()}">STATE: {dataState}</span>
+        <span class="badge badge-crypto">
+          {#if demoEnabled}
+            DEMO PREVIEW
+          {:else if selectedDetail?.is_encrypted_at_rest}
+            AES-256-GCM ENCRYPTED AT REST
+          {:else}
+            NO VECTOR LOADED
+          {/if}
+        </span>
+        <button type="button" class="btn-ctl" on:click={loadBehavioralData}>Refresh</button>
+        <button type="button" class="btn-ctl btn-demo" on:click={toggleDemoMode}>
+          {demoEnabled ? "Exit Demo" : "Demo Mode"}
+        </button>
       </div>
     </div>
+    <div class="meta-strip">
+      <span>Last updated: <code>{lastUpdatedAt ?? "Never"}</code></span>
+      <span>Stored vectors: <code>{demoEnabled ? 2 : vectors.length}</code></span>
+      <span>Correlated clusters: <code>{demoEnabled ? 1 : clusters.length}</code></span>
+    </div>
   </div>
+
+  {#if dataState === "LOADING"}
+    <div class="state-banner banner-loading">Loading persisted behavioral vectors from backend...</div>
+  {:else if dataState === "DEMO"}
+    <div class="state-banner banner-demo">DEMO MODE ACTIVE — Displaying synthetic 16-D preview data. Exit Demo for real backend vectors.</div>
+  {:else if dataState === "ERROR"}
+    <div class="state-banner banner-error">Failed loading behavioral intelligence: {errorMessage ?? "Unknown error"}</div>
+  {:else if dataState === "DISCONNECTED"}
+    <div class="state-banner banner-disconnected">Behavioral vector database is disconnected (no persistent SQLite store attached).</div>
+  {:else if dataState === "EMPTY"}
+    <div class="state-banner banner-empty">No behavioral vectors persisted yet. Start Live Telemetry or ingest flows to generate 16-D session vectors.</div>
+  {/if}
+
+  {#if demoEnabled || selectedDetail}
+    <div class="selector-bar">
+      {#if !demoEnabled && vectors.length > 0}
+        <label>
+          Primary Vector:
+          <select bind:value={selectedVectorId} on:change={onSelectionChange}>
+            {#each vectors as v}
+              <option value={v.vector_id}>{v.vector_id} ({v.entity_id})</option>
+            {/each}
+          </select>
+        </label>
+        <label>
+          Compare With:
+          <select bind:value={compareVectorId} on:change={onSelectionChange}>
+            {#each vectors as v}
+              <option value={v.vector_id}>{v.vector_id} ({v.entity_id})</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
+    </div>
+
+    <div class="info-card">
+      <div class="info-item">
+        <span class="label">Entity ID:</span>
+        <span class="val"><code>{demoEnabled ? "host:192.0.2.10 (DEMO)" : selectedDetail?.entity_id}</code></span>
+      </div>
+      <div class="info-item">
+        <span class="label">Vector &amp; Key ID:</span>
+        <span class="val">
+          <code>{demoEnabled ? "bv-demo-01" : selectedDetail?.vector_id}</code>
+          ({demoEnabled ? "k-demo-1" : selectedDetail?.key_id ?? "N/A"})
+        </span>
+      </div>
+      <div class="info-item">
+        <span class="label">Vector SHA-256 Digest:</span>
+        <span class="val">
+          <code class="hash">
+            {demoEnabled
+              ? "DEMO_DIGEST_NOT_REAL"
+              : selectedDetail?.sha256_hash
+                ? `${selectedDetail.sha256_hash.substring(0, 32)}...`
+                : "N/A"}
+          </code>
+        </span>
+      </div>
+    </div>
+
+    <h3>Normalized 16-D Feature Space (BehavioralVectorBuilder)</h3>
+    <div class="vector-bars-grid">
+      {#each dimensions as dim}
+        <div class="dim-row">
+          <span class="dim-name">{dim.name}</span>
+          <div class="bar-track">
+            <div class="bar-fill" style="width: {Math.min(100, Math.max(0, dim.value * 100))}%"></div>
+          </div>
+          <span class="dim-val">{dim.value.toFixed(3)}</span>
+        </div>
+      {/each}
+    </div>
+
+    <div class="comparison-section">
+      <h3>Behavioral Similarity &amp; IPSpoofingSessionCorrelator</h3>
+      {#if demoEnabled}
+        <div class="comp-card">
+          <div class="comp-metrics">
+            <div class="metric">
+              <span class="m-label">Cosine Similarity (DEMO):</span>
+              <span class="m-val">0.892</span>
+            </div>
+            <div class="metric">
+              <span class="m-label">Euclidean Distance (DEMO):</span>
+              <span class="m-val">0.464</span>
+            </div>
+          </div>
+        </div>
+      {:else if similarity}
+        <div class="comp-card">
+          <div class="comp-row">
+            <span>Vector A: <strong><code>{similarity.vector_a}</code></strong></span>
+            <span>Vector B: <strong><code>{similarity.vector_b}</code></strong></span>
+          </div>
+          <div class="comp-metrics">
+            <div class="metric">
+              <span class="m-label">Cosine Similarity:</span>
+              <span class="m-val">{similarity.cosine_similarity ?? "N/A"}</span>
+            </div>
+            <div class="metric">
+              <span class="m-label">Euclidean Distance:</span>
+              <span class="m-val">{similarity.euclidean_distance ?? "N/A"}</span>
+            </div>
+            <div class="metric">
+              <span class="m-label">Manhattan Distance:</span>
+              <span class="m-val">{similarity.manhattan_distance ?? "N/A"}</span>
+            </div>
+            <div class="metric">
+              <span class="m-label">Interpretation:</span>
+              <span class="m-val">{similarity.interpretation ?? "N/A"}</span>
+            </div>
+          </div>
+        </div>
+      {:else}
+        <div class="state-banner banner-empty">At least 2 stored behavioral vectors are needed for pairwise similarity comparison.</div>
+      {/if}
+
+      {#if !demoEnabled && clusters.length > 0}
+        <div class="comp-card" style="margin-top: 0.75rem;">
+          <div class="comp-row">
+            <span>Evaluated Vectors: <strong>{correlationVectorsCount}</strong></span>
+            <span>Detected Correlation Clusters: <strong>{clusters.length}</strong></span>
+          </div>
+          {#each clusters as cl}
+            <div class="cluster-row">
+              <code>{cl.cluster_id}</code>
+              <span>Members: {cl.member_vector_ids.length}</span>
+              <span>Avg Similarity: <strong>{cl.average_similarity.toFixed(4)}</strong></span>
+              <span>Observed IPs: <code>{cl.ip_addresses_observed.join(", ") || "N/A"}</code></span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
   .panel-container { padding: 1.5rem; background: #0f172a; color: #f8fafc; border-radius: 8px; }
-  .panel-header { margin-bottom: 1.5rem; border-bottom: 1px solid #1e293b; padding-bottom: 1rem; }
-  .title-row { display: flex; justify-content: space-between; align-items: center; }
+  .panel-header { margin-bottom: 1.25rem; border-bottom: 1px solid #1e293b; padding-bottom: 1rem; }
+  .title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+  .controls-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .meta-strip { display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.75rem; color: #94a3b8; margin-top: 0.75rem; }
   h2 { margin: 0; font-size: 1.25rem; font-weight: 700; color: #a855f7; }
-  h3 { font-size: 1rem; color: #cbd5e1; margin: 1.5rem 0 1rem; }
+  h3 { font-size: 1rem; color: #cbd5e1; margin: 1.5rem 0 0.75rem; }
   .subtitle { color: #94a3b8; font-size: 0.875rem; margin-top: 0.25rem; }
-  .badge-crypto { background: #581c87; color: #d8b4fe; border: 1px solid #7e22ce; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; }
+  .btn-ctl { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 0.35rem 0.75rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer; font-weight: 600; }
+  .btn-demo { border-color: #854d0e; color: #fde047; }
+  .badge { padding: 0.25rem 0.65rem; border-radius: 9999px; font-size: 0.72rem; font-weight: 700; }
+  .badge-crypto { background: #581c87; color: #d8b4fe; border: 1px solid #7e22ce; }
+  .state-connected { background: #064e3b; color: #6ee7b7; }
+  .state-loading { background: #1e3a8a; color: #93c5fd; }
+  .state-disconnected, .state-empty { background: #334155; color: #cbd5e1; }
+  .state-error { background: #7f1d1d; color: #fca5a5; }
+  .state-demo { background: #713f12; color: #fde047; }
+  .state-banner { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; font-weight: 600; }
+  .banner-loading { background: #1e3a8a; color: #bfdbfe; }
+  .banner-demo { background: #713f12; color: #fef08a; }
+  .banner-error { background: #7f1d1d; color: #fecaca; }
+  .banner-disconnected, .banner-empty { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; }
+  .selector-bar { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; font-size: 0.8rem; color: #cbd5e1; }
+  select { background: #1e293b; color: #f8fafc; border: 1px solid #334155; padding: 0.25rem 0.5rem; border-radius: 4px; margin-left: 0.4rem; }
   .info-card { background: #1e293b; padding: 1rem; border-radius: 6px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; font-size: 0.85rem; }
   .info-item .label { color: #94a3b8; display: block; margin-bottom: 0.25rem; }
   .info-item .val { color: #f8fafc; font-weight: 600; }
@@ -171,12 +351,12 @@
   .dim-name { width: 180px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .bar-track { flex: 1; height: 8px; background: #334155; border-radius: 4px; overflow: hidden; }
   .bar-fill { height: 100%; background: #c084fc; border-radius: 4px; }
-  .dim-val { width: 40px; text-align: right; color: #f8fafc; font-family: monospace; }
+  .dim-val { width: 48px; text-align: right; color: #f8fafc; font-family: monospace; }
   .comp-card { background: #1e293b; padding: 1rem; border-radius: 6px; }
-  .comp-row { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 1rem; color: #cbd5e1; }
-  .comp-metrics { display: flex; gap: 2rem; }
+  .comp-row { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 1rem; color: #cbd5e1; flex-wrap: wrap; gap: 0.5rem; }
+  .comp-metrics { display: flex; gap: 2rem; flex-wrap: wrap; }
   .metric { display: flex; flex-direction: column; }
   .m-label { font-size: 0.75rem; color: #94a3b8; }
-  .m-val { font-size: 1.1rem; font-weight: 700; color: #f8fafc; }
-  .verdict-alert { color: #f43f5e; }
+  .m-val { font-size: 1.05rem; font-weight: 700; color: #f8fafc; }
+  .cluster-row { display: flex; gap: 1.25rem; flex-wrap: wrap; font-size: 0.8rem; padding: 0.4rem 0; border-top: 1px solid #334155; }
 </style>
