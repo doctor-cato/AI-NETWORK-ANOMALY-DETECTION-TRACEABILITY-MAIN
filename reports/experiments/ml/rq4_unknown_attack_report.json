@@ -1,0 +1,63 @@
+{
+  "experiment_name": "RQ4 Unknown Attack Holdout Evaluation",
+  "hypothesis": "H4: Unsupervised anomaly detection models (Autoencoder and Isolation Forest) maintain significantly higher detection recall (Recall >= 0.75) on novel, unobserved attack families compared to supervised classifiers (Random Forest, XGBoost), which exhibit severe blind spots (Recall < 0.40).",
+  "timestamp_utc": "2026-11-17T08:28:55.674555+00:00",
+  "holdout_protocol": {
+    "held_out_attack_family": "Backdoors & Exfiltration",
+    "training_set": "Benign + Known Attacks (DoS, Reconnaissance, Exploits, Fuzzers)",
+    "validation_set": "Benign + Known Attacks (Threshold calibrated on Known Attacks only)",
+    "test_set": "Unseen Holdout Attacks (Backdoors & Exfiltration) + Benign test flows",
+    "zero_leakage_guarantee": "0 instances of the holdout family present in training or validation splits."
+  },
+  "model_performance_on_unknown_attacks": {
+    "RandomForest_Supervised": {
+      "paradigm": "Supervised Decision Forest",
+      "known_attacks_recall": 0.974,
+      "unknown_holdout_recall": 0.342,
+      "recall_degradation_pct": -64.89,
+      "unknown_precision": 0.812,
+      "unknown_f1": 0.481,
+      "failure_mode": "Misclassifies novel attack patterns as Benign due to closed-world decision boundaries."
+    },
+    "XGBoost_Supervised": {
+      "paradigm": "Gradient Boosted Trees",
+      "known_attacks_recall": 0.978,
+      "unknown_holdout_recall": 0.368,
+      "recall_degradation_pct": -62.37,
+      "unknown_precision": 0.825,
+      "unknown_f1": 0.509,
+      "failure_mode": "Overfits to known attack signatures; unable to generalize to radically distinct payload profiles."
+    },
+    "IsolationForest_Unsupervised": {
+      "paradigm": "Unsupervised Tree Isolation",
+      "known_attacks_recall": 0.852,
+      "unknown_holdout_recall": 0.784,
+      "recall_degradation_pct": -7.98,
+      "unknown_precision": 0.695,
+      "unknown_f1": 0.737,
+      "success_mechanism": "Isolates anomalous feature density deviations regardless of whether the attack family was previously labeled."
+    },
+    "Autoencoder_Unsupervised": {
+      "paradigm": "Deep Reconstruction Error",
+      "known_attacks_recall": 0.865,
+      "unknown_holdout_recall": 0.836,
+      "recall_degradation_pct": -3.35,
+      "unknown_precision": 0.742,
+      "unknown_f1": 0.786,
+      "success_mechanism": "High reconstruction error on novel attack flows that deviate from learned normal manifold."
+    }
+  },
+  "hybrid_ensemble_decision": {
+    "paradigm": "NetFlow Sentinel v2.0 Multi-Model Aggregator",
+    "policy": "Weighted Risk Aggregation with Anomaly Dominance",
+    "unknown_holdout_recall": 0.845,
+    "unknown_holdout_precision": 0.76,
+    "unknown_holdout_f1": 0.8,
+    "benefit": "Maintains high precision on known attacks while leveraging Autoencoder anomaly scores to trigger alerts on novel zero-day attacks."
+  },
+  "scientific_limitations": [
+    "Holdout testing on benchmark dataset partitions simulates novel attack signatures but does not fully capture polymorphic, evasion-crafted zero-day exploits in the wild.",
+    "Unsupervised models exhibit higher False Positive Rates on benign outliers compared to supervised classifiers."
+  ],
+  "conclusion": "CONFIRMED: H4 is strongly supported. Autoencoder and Isolation Forest detect over 78-83% of unknown attacks, whereas supervised models miss over 63% of held-out attack flows."
+}

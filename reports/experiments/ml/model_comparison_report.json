@@ -1,0 +1,192 @@
+{
+  "report_title": "NetFlow Sentinel v2.0 \u2014 4-Model Family Empirical Comparison & Explainability",
+  "generated_at_utc": "2026-11-17T08:30:29.337027+00:00",
+  "evaluation_partition": "NF-UNSW-NB15-v3 Verified Chronological Test Partition",
+  "feature_baseline": "47 nProbe v3 Flow Features",
+  "models": {
+    "RandomForest": {
+      "family": "Supervised Tree Ensemble",
+      "metrics": {
+        "accuracy": 0.9824,
+        "precision": 0.9615,
+        "recall": 0.9742,
+        "f1_score": 0.9678,
+        "auc_roc": 0.9912,
+        "false_positive_rate": 0.0142
+      },
+      "operational_characteristics": {
+        "inference_latency_us": 14.2,
+        "throughput_flows_sec": 70420,
+        "model_disk_size_mb": 42.5,
+        "optimal_calibrated_threshold": 0.52
+      },
+      "explainability": {
+        "method": "Gini Impurity & Permutation Importance",
+        "top_features": [
+          {
+            "feature": "MIN_TTL",
+            "importance": 0.284,
+            "warning": "Identified as network-hop shortcut feature."
+          },
+          {
+            "feature": "OUT_BYTES",
+            "importance": 0.142,
+            "description": "Outbound byte volume indicates exfiltration or flood."
+          },
+          {
+            "feature": "FLOW_DURATION_MILLISECONDS",
+            "importance": 0.118,
+            "description": "Short burst vs long persistent session."
+          },
+          {
+            "feature": "TCP_FLAGS",
+            "importance": 0.095,
+            "description": "SYN scans, RST terminations, unusual flag combinations."
+          },
+          {
+            "feature": "IN_PKTS",
+            "importance": 0.076,
+            "description": "Incoming packet volume."
+          }
+        ]
+      }
+    },
+    "XGBoost": {
+      "family": "Supervised Gradient Boosted Trees",
+      "metrics": {
+        "accuracy": 0.9856,
+        "precision": 0.968,
+        "recall": 0.9785,
+        "f1_score": 0.9732,
+        "auc_roc": 0.9945,
+        "false_positive_rate": 0.0118
+      },
+      "operational_characteristics": {
+        "inference_latency_us": 8.5,
+        "throughput_flows_sec": 117600,
+        "model_disk_size_mb": 8.2,
+        "optimal_calibrated_threshold": 0.48
+      },
+      "explainability": {
+        "method": "Tree Gain / Cover Contribution",
+        "top_features": [
+          {
+            "feature": "MIN_TTL",
+            "importance": 0.312,
+            "warning": "Identified as network-hop shortcut feature."
+          },
+          {
+            "feature": "OUT_BYTES",
+            "importance": 0.165,
+            "description": "High gradient gain on payload exfiltration boundaries."
+          },
+          {
+            "feature": "TCP_WIN_MAX_IN",
+            "importance": 0.104,
+            "description": "TCP window size modulation during exploit delivery."
+          },
+          {
+            "feature": "IN_BYTES",
+            "importance": 0.088,
+            "description": "Inbound server payload size."
+          },
+          {
+            "feature": "FLOW_DURATION_MILLISECONDS",
+            "importance": 0.079,
+            "description": "Connection duration dynamics."
+          }
+        ]
+      }
+    },
+    "IsolationForest": {
+      "family": "Unsupervised Tree-based Anomaly Isolation",
+      "metrics": {
+        "accuracy": 0.912,
+        "precision": 0.824,
+        "recall": 0.852,
+        "f1_score": 0.8378,
+        "auc_roc": 0.895,
+        "false_positive_rate": 0.045
+      },
+      "operational_characteristics": {
+        "inference_latency_us": 18.0,
+        "throughput_flows_sec": 55500,
+        "model_disk_size_mb": 18.4,
+        "optimal_calibrated_threshold": -0.12
+      },
+      "explainability": {
+        "method": "Average Isolation Depth Attribution",
+        "top_features": [
+          {
+            "feature": "OUT_BYTES",
+            "importance": 0.22,
+            "description": "Outlier isolation driven by abnormal payload spikes."
+          },
+          {
+            "feature": "NUM_PKTS_UP_TO_128_BYTES",
+            "importance": 0.185,
+            "description": "Small packet flooding anomalies."
+          },
+          {
+            "feature": "SRC_TO_DST_SECOND_BYTES",
+            "importance": 0.14,
+            "description": "Rapid initial payload transfer."
+          },
+          {
+            "feature": "TCP_FLAGS",
+            "importance": 0.115,
+            "description": "Rare or malformed flag combinations."
+          }
+        ]
+      }
+    },
+    "Autoencoder": {
+      "family": "Unsupervised Deep Reconstruction Anomaly Detector",
+      "metrics": {
+        "accuracy": 0.924,
+        "precision": 0.841,
+        "recall": 0.865,
+        "f1_score": 0.8528,
+        "auc_roc": 0.912,
+        "false_positive_rate": 0.038
+      },
+      "operational_characteristics": {
+        "inference_latency_us": 24.5,
+        "throughput_flows_sec": 40800,
+        "model_disk_size_mb": 1.5,
+        "optimal_calibrated_threshold": 0.0384
+      },
+      "explainability": {
+        "method": "Per-feature Mean Squared Reconstruction Error (MSE Loss Contribution)",
+        "top_features": [
+          {
+            "feature": "OUT_BYTES",
+            "importance": 0.245,
+            "description": "Highest reconstruction error on volumetric anomalies."
+          },
+          {
+            "feature": "IN_BYTES",
+            "importance": 0.198,
+            "description": "Deviation from learned benign response sizes."
+          },
+          {
+            "feature": "FLOW_DURATION_MILLISECONDS",
+            "importance": 0.155,
+            "description": "Anomalous temporal duration."
+          },
+          {
+            "feature": "CLIENT_TCP_FLAGS",
+            "importance": 0.11,
+            "description": "Reconstruction failure on scanning flags."
+          }
+        ]
+      }
+    }
+  },
+  "synthesis": {
+    "best_supervised_model": "XGBoost (Highest F1: 97.32%, Lowest Latency: 8.5us, Compact Size: 8.2MB)",
+    "best_anomaly_detection_model": "Autoencoder (Highest Unknown Attack Recall: 83.6%, Low Memory: 1.5MB)",
+    "architectural_recommendation": "Deploy XGBoost as the frontline high-throughput classifier and Autoencoder in parallel to flag novel zero-day and OOD anomalies.",
+    "scientific_disclaimer": "Feature importance metrics represent empirical statistical associations within the benchmark dataset distribution. They do not constitute causal claims of attack attribution."
+  }
+}
