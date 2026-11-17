@@ -48,6 +48,24 @@ Mỗi đặc trưng trong số 47 đặc trưng ML chuẩn hóa (`nf-unsw-nb15-v
 | Source ID | Tên Nguồn | Định dạng Vật lý | Số đặc trưng ML khả dụng (trên 47) | Tầng Đạt Được | Trạng thái ML | Hướng Xử lý trong Hệ thống M6 |
 |---|---|---|:---:|---|---|---|
 | `source:nf-v3-canonical` | NetFlow v3 Nội bộ (`NF-UNSW-NB15-v3`) | CSV | **47/47 (100%)** | `MODEL_VALIDATED` | `PREDICTION_AVAILABLE` | **Cho phép Inference trực tiếp.** Đã kiểm nghiệm đạt Recall 99.98%, FPR 0.0016%. |
+
+---
+
+## 4. Tích hợp Hợp đồng Dữ liệu Đa nguồn v2.0 (Issue #79)
+
+Trong kiến trúc NetFlow Sentinel v2.0, các nguồn dữ liệu đa nguồn (AIT NetFlow, Zeek DNS, Nginx Web, Auth/Syslog) được phân luồng xử lý theo `CanonicalSecurityEvent` v2:
+
+| Event Kind | Khả năng Suy luận 47-feature Baseline | Quy tắc Xử lý v2.0 | Routing Engine |
+|---|:---:|---|---|
+| **Flow (NF-UNSW-NB15-v3 & AIT NetFlow)** | **Có (47/47)** | Nếu đủ 47 đặc trưng $\to$ `is_ml_complete=True`, gửi đến AI Detection Engine. | `AI Engine` + `Behavioral Engine` |
+| **DNS (Zeek DNS logs)** | **Không (Chuyên biệt)** | Trích xuất domain, query type, TTL; `is_ml_complete=False` (không impute ngầm). | `Behavioral Engine` + `Trace Engine` |
+| **Web (HTTP/Nginx logs)** | **Không (Chuyên biệt)** | Trích xuất URL, status code, method; `is_ml_complete=False`. | `Behavioral Engine` + `Trace Engine` |
+| **Auth / Identity logs** | **Không (Chuyên biệt)** | Trích xuất username, auth outcome, failure count; `is_ml_complete=False`. | `Risk Engine` + `Trace Engine` |
+| **System / Sysmon logs** | **Không (Chuyên biệt)** | Trích xuất process name, action, pid; `is_ml_complete=False`. | `Trace Engine` + `Investigation API` |
+
+> [!IMPORTANT]
+> **Nguyên tắc No-Imputation:** Tuyệt đối không nội suy (impute) các trường NetFlow vào log DNS/Web/Auth để chạy 4 mô hình NetFlow. Các nguồn phi NetFlow chỉ phục vụ tính toán Behavioral Vector, suy luận Risk Score và xâu chuỗi Trace Timeline.
+
 | `source:nf-v3-external` | NetFlow v3 Ngoại vi (`NF-CSE-CIC-IDS2018-v3`, AWS) | CSV | **47/47 (100%)** | `BENCHMARK_FAILED` | `BENCHMARK_UNSATISFACTORY` | **Chặn Inference fail-closed.** Benchmark thực nghiệm thất bại (Recall 0.0, FPR 38.02%) do sụp đổ phím tắt và lệch miền. |
 | `source:netflow-v5` | Cisco NetFlow v5 | Binary / Flow-tools | **6/47 (12.8%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Từ chối Inference (Abstain).** Trích xuất 5-tuple, byte, packet cho Trace Engine (#24). |
 | `source:netflow-v9-ipfix` | Enterprise NetFlow v9 / IPFIX (Cisco, Juniper) | Binary / JSON | **9/47 (19.1%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Từ chối Inference.** Thiếu IAT vi mô và histogram; chuyển sang Risk Engine để tính Volume Anomaly. |

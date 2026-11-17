@@ -3,14 +3,19 @@
 ## Giả thuyết
 
 - H1: Random Forest là supervised baseline trên NF-UNSW-NB15-v3 sau khi quality findings được xử
-  lý bằng transform fit trên train và split temporal/group-aware được audit.
-- H2: Isolation Forest có thể phát hiện bất thường không cần nhãn, nhưng đánh giá cần chọn threshold và cho profile metric khác đánh giá giám sát.
+  lý bằng transform fit trên train và split temporal/group-aware được audit (RQ1).
+- H2: Isolation Forest và Autoencoder có thể phát hiện bất thường không cần nhãn, và duy trì khả năng phát hiện novel attacks khi áp dụng holdout protocol tốt hơn mô hình có giám sát (RQ1, RQ4).
+- H3: Phân bố dữ liệu mất cân bằng cực đoan làm giảm per-class recall của tấn công hiếm; cost-sensitive weighting và calibration trên validation khắc phục được độ suy giảm này (RQ2).
+- H4: Behavioral Vector chuẩn hóa cho phép liên kết các phiên kết nối của cùng thực thể tấn công độc lập với IP với độ chính xác $\ge 85\%$ (RQ3).
+- H5: Adaptive Key Rotation kích hoạt theo Risk Score giảm cửa sổ phơi nhiễm khóa $>70\%$ so với Fixed 30-min rotation mà không quá tải hệ thống (RQ5).
+- H6: Mã hóa AES-256-GCM trên Behavioral Vector bổ sung độ trễ $\le 0.5$ ms/sự kiện, duy trì thông lượng $\ge 5.000$ events/s (RQ6).
 
 ## Biến số
 
-- Độc lập: loại mô hình (RF, XGBoost, Isolation Forest hoặc Autoencoder), preprocessing,
-  duplicate policy, temporal/group split và seed.
-- Phụ thuộc: Precision, Recall, F1, Macro-F1, confusion matrix, FPR, per-attack-category recall.
+- Độc lập: loại mô hình (RF, XGBoost, Isolation Forest, Autoencoder), preprocessing,
+  duplicate policy, temporal/group split, behavioral vector windowing, rotation policy (Fixed vs Adaptive), crypto mode (Plaintext vs AES-256-GCM).
+- Phụ thuộc: Precision, Recall, F1, Macro-F1, confusion matrix, FPR, per-attack-category recall,
+  session correlation accuracy, key exposure window, encryption latency, system throughput.
 
 ## Baseline
 
@@ -43,4 +48,13 @@
 - Mỗi lượt chạy lưu seed, phiên bản dataset, danh sách feature, cấu hình model, metric theo lớp và macro, confusion matrix dạng CSV/PNG, thời gian và thông tin môi trường.
 - Kết quả đặt tại `reports/models/`, `reports/evaluation/`, `reports/experiments/` và `artifacts/` (không commit artifact nhị phân lớn; lưu manifest và báo cáo kiểm chứng).
 
-Cập nhật: 2026-11-15 (hoàn tất thực nghiệm Isolation Forest Issue #11 và clean reproduction M3 Issue #14 trên NF-UNSW-NB15-v3)
+## Danh mục Thực nghiệm Mở rộng v2.0 (RQ1–RQ6)
+
+- **Exp1 (4-Model Benchmark):** So sánh toàn diện 4 mô hình (RF, XGBoost, IF, AE) trên NF-UNSW-NB15-v3. (Issue #94, #95, #105).
+- **Exp2 (Class Imbalance & Rare Attacks):** Đánh giá tác động mất cân bằng lớp và tối ưu hóa chi phí cho các lớp tấn công hiếm (Worms, Backdoors). (Issue #96).
+- **Exp3 (IP-Independent Session Correlation):** Khảo sát năng lực liên kết phiên bất thường đa nguồn sử dụng khoảng cách Cosine trên Behavioral Vector. (Issue #101-#104).
+- **Exp4 (Unknown Attack Holdout):** Giao thức giữ lại họ tấn công chưa biết trong huấn luyện để kiểm chứng tính tổng quát của Autoencoder và Isolation Forest. (Issue #98-#100).
+- **Exp5 (Adaptive Key Rotation Evaluation):** So sánh cửa sổ phơi nhiễm (exposure window) giữa Fixed Rotation (30 phút) và Adaptive Rotation dưới kịch bản bùng phát tấn công. (Issue #120-#125).
+- **Exp6 (Cryptographic Performance & Overhead Benchmark):** Đo lường độ trễ ($\mu s$), mức chiếm dụng CPU/RAM và thông lượng của module AES-256-GCM. (Issue #126, #147).
+
+Cập nhật: 2026-11-17 (Mở rộng kế hoạch thực nghiệm đáp ứng chuẩn 6 Research Questions cho v2.0 — Issue #77)

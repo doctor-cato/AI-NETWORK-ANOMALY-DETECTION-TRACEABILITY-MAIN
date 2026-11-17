@@ -88,3 +88,6 @@ Workflow `.github/workflows/release.yml` thực hiện fail-closed theo trình t
    - Upload bộ cài ứng viên từ lần chạy `workflow_dispatch` khi gate phân phối trả về `upload_allowed == 'true'`. Tên asset giữ nguyên phiên bản desktop. `tag_label` đặt tên cho artifact của lần chạy.
    - Sau khi nghiệm thu, cung cấp run ID qua `VERIFIED_WINDOWS_CANDIDATE_RUN_ID`, báo cáo Controller đã ký qua `VERIFIED_WINDOWS_VM_ATTESTATION` và khóa xác minh qua `NETFLOW_VM_ATTESTATION_HMAC_KEY`. Tag job tải lại đúng ứng viên cùng commit. Bước publish kiểm tra lại quyền phân phối, SHA-256 installer/sidecar và `--require-stable-windows-e2e` trước khi gọi `gh release create`. Bộ cài ứng viên có thời hạn lưu 7 ngày.
 7. **Always Cleanup:** dọn các tệp build, staging, ứng viên và release assets khỏi workspace của runner ở cuối job.
+8. **Database & Artifact Migration for v2.0 (Issue #80):**
+   - Khi cài đặt đè hoặc nâng cấp từ v1.0.0 lên v2.0.0, bộ cài tự động gọi `scripts/migrate_v1_to_v2.py --db-path <db_path>` để cập nhật schema SQLite idempotent và tạo backup.
+   - Các artifact mô hình và preprocessor từ v1.0.0 tiếp tục được tái sử dụng trực tiếp nếu SHA-256 không đổi.
