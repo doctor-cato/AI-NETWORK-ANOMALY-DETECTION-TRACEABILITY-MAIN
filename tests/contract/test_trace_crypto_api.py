@@ -8,10 +8,10 @@ from network_anomaly.api.main import create_app
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     db_path = tmp_path / "test_api.db"
-    # Set session token in env for loopback auth
-    os.environ["NETWORK_ANOMALY_API_TOKEN"] = "test-session-secret-token-12345"
+    # Set session token in env for loopback auth via monkeypatch so it cleans up
+    monkeypatch.setenv("NETWORK_ANOMALY_API_TOKEN", "test-session-secret-token-12345")
     app = create_app(db_path=db_path)
     return TestClient(app)
 

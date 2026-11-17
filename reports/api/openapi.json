@@ -948,6 +948,217 @@
           }
         }
       }
+    },
+    "/api/v1/trace/timeline": {
+      "get": {
+        "tags": [
+          "Trace & Investigation"
+        ],
+        "summary": "Get reconstructed multi-stage attack timeline",
+        "description": "Reconstruct multi-stage attack timeline from correlated security events.",
+        "operationId": "get_attack_timeline_api_v1_trace_timeline_get",
+        "parameters": [
+          {
+            "name": "campaign_name",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "default": "APT-Campaign-01",
+              "title": "Campaign Name"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trace/graph": {
+      "get": {
+        "tags": [
+          "Trace & Investigation"
+        ],
+        "summary": "Query entity relationship graph around an entity or incident",
+        "description": "Query and traverse entity relationship graph around target entity.",
+        "operationId": "get_entity_graph_api_v1_trace_graph_get",
+        "parameters": [
+          {
+            "name": "entity_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "default": "10.0.0.5",
+              "title": "Entity Id"
+            }
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 5,
+              "minimum": 1,
+              "default": 2,
+              "title": "Depth"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TraceGraphResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trace/investigation/generate": {
+      "post": {
+        "tags": [
+          "Trace & Investigation"
+        ],
+        "summary": "Generate verifiable investigation report with provenance hash",
+        "description": "Generate full reproducible markdown investigation report.",
+        "operationId": "generate_investigation_report_api_v1_trace_investigation_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateInvestigationReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvestigationReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/crypto/status": {
+      "get": {
+        "tags": [
+          "Cryptography & Keys"
+        ],
+        "summary": "Get active cryptographic key metadata and rotation policies",
+        "description": "Get live cryptographic status, active AES-GCM key, and rotation history.",
+        "operationId": "get_crypto_status_api_v1_crypto_status_get",
+        "parameters": [
+          {
+            "name": "domain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "general",
+              "title": "Domain"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CryptoStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1675,6 +1886,58 @@
         ],
         "title": "CompatibilityGateSummarySchema",
         "description": "Feature compatibility and inference eligibility gate decision (#46)."
+      },
+      "CryptoStatusResponse": {
+        "properties": {
+          "active_key_id": {
+            "type": "string",
+            "title": "Active Key Id"
+          },
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm"
+          },
+          "rotation_interval_minutes": {
+            "type": "number",
+            "title": "Rotation Interval Minutes"
+          },
+          "adaptive_risk_threshold": {
+            "type": "number",
+            "title": "Adaptive Risk Threshold"
+          },
+          "cooldown_seconds": {
+            "type": "integer",
+            "title": "Cooldown Seconds"
+          },
+          "total_rotations": {
+            "type": "integer",
+            "title": "Total Rotations"
+          },
+          "total_records_encrypted": {
+            "type": "integer",
+            "title": "Total Records Encrypted"
+          },
+          "recent_rotations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Recent Rotations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active_key_id",
+          "algorithm",
+          "rotation_interval_minutes",
+          "adaptive_risk_threshold",
+          "cooldown_seconds",
+          "total_rotations",
+          "total_records_encrypted",
+          "recent_rotations"
+        ],
+        "title": "CryptoStatusResponse"
       },
       "CsvAnalyzeRequest": {
         "properties": {
@@ -2711,6 +2974,83 @@
         "title": "CsvTimelineItem",
         "description": "Deterministic forensic timeline event ordered by (flow_start_ms asc, row_id asc) (#24)."
       },
+      "EntityGraphEdgeItem": {
+        "properties": {
+          "edge_id": {
+            "type": "string",
+            "title": "Edge Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "target_id": {
+            "type": "string",
+            "title": "Target Id"
+          },
+          "relation_type": {
+            "type": "string",
+            "title": "Relation Type"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "is_observed": {
+            "type": "boolean",
+            "title": "Is Observed"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "edge_id",
+          "source_id",
+          "target_id",
+          "relation_type",
+          "confidence",
+          "is_observed"
+        ],
+        "title": "EntityGraphEdgeItem"
+      },
+      "EntityGraphNodeItem": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "title": "Node Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "properties": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Properties"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "kind",
+          "label"
+        ],
+        "title": "EntityGraphNodeItem"
+      },
       "FlowEventInput": {
         "properties": {
           "event_id": {
@@ -2840,6 +3180,53 @@
         "type": "object",
         "title": "FlowEventInput",
         "description": "Input representation of a network flow event."
+      },
+      "GenerateInvestigationReportRequest": {
+        "properties": {
+          "incident_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Incident Id"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Title"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity",
+            "default": "HIGH"
+          },
+          "root_cause_summary": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Root Cause Summary"
+          },
+          "events": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Events"
+          },
+          "evidence_records": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Evidence Records"
+          }
+        },
+        "type": "object",
+        "required": [
+          "incident_id",
+          "title",
+          "root_cause_summary"
+        ],
+        "title": "GenerateInvestigationReportRequest"
       },
       "HTTPValidationError": {
         "properties": {
@@ -3244,6 +3631,75 @@
         ],
         "title": "IngestResponse",
         "description": "Response returned upon successful ingestion."
+      },
+      "InvestigationReportResponse": {
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "incident_id": {
+            "type": "string",
+            "title": "Incident Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "root_cause_summary": {
+            "type": "string",
+            "title": "Root Cause Summary"
+          },
+          "artifact_hash": {
+            "type": "string",
+            "title": "Artifact Hash"
+          },
+          "timeline": {
+            "$ref": "#/components/schemas/TraceTimelineResponse"
+          },
+          "evidence_provenance": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Evidence Provenance"
+          },
+          "recommended_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommended Actions"
+          },
+          "markdown_content": {
+            "type": "string",
+            "title": "Markdown Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_id",
+          "incident_id",
+          "title",
+          "generated_at",
+          "severity",
+          "root_cause_summary",
+          "artifact_hash",
+          "timeline",
+          "evidence_provenance",
+          "recommended_actions",
+          "markdown_content"
+        ],
+        "title": "InvestigationReportResponse"
       },
       "KeyMetadataResponse": {
         "properties": {
@@ -4597,6 +5053,159 @@
         ],
         "title": "TimelineItemResponse",
         "description": "Unified timeline entry combining events, alerts, and key rotations."
+      },
+      "TimelineStageItem": {
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "title": "Stage Id"
+          },
+          "phase": {
+            "type": "string",
+            "title": "Phase"
+          },
+          "timestamp": {
+            "type": "string",
+            "title": "Timestamp"
+          },
+          "source_entity": {
+            "type": "string",
+            "title": "Source Entity"
+          },
+          "target_entity": {
+            "type": "string",
+            "title": "Target Entity"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "is_observed": {
+            "type": "boolean",
+            "title": "Is Observed"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          },
+          "indicators": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Indicators"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage_id",
+          "phase",
+          "timestamp",
+          "source_entity",
+          "target_entity",
+          "title",
+          "description",
+          "confidence",
+          "is_observed"
+        ],
+        "title": "TimelineStageItem"
+      },
+      "TraceGraphResponse": {
+        "properties": {
+          "node_count": {
+            "type": "integer",
+            "title": "Node Count"
+          },
+          "edge_count": {
+            "type": "integer",
+            "title": "Edge Count"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/EntityGraphNodeItem"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/EntityGraphEdgeItem"
+            },
+            "type": "array",
+            "title": "Edges"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_count",
+          "edge_count",
+          "nodes",
+          "edges"
+        ],
+        "title": "TraceGraphResponse"
+      },
+      "TraceTimelineResponse": {
+        "properties": {
+          "timeline_id": {
+            "type": "string",
+            "title": "Timeline Id"
+          },
+          "campaign_name": {
+            "type": "string",
+            "title": "Campaign Name"
+          },
+          "overall_confidence": {
+            "type": "number",
+            "title": "Overall Confidence"
+          },
+          "start_time": {
+            "type": "string",
+            "title": "Start Time"
+          },
+          "end_time": {
+            "type": "string",
+            "title": "End Time"
+          },
+          "entities_involved": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entities Involved"
+          },
+          "total_stages": {
+            "type": "integer",
+            "title": "Total Stages"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineStageItem"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "timeline_id",
+          "campaign_name",
+          "overall_confidence",
+          "start_time",
+          "end_time",
+          "entities_involved",
+          "total_stages",
+          "stages"
+        ],
+        "title": "TraceTimelineResponse"
       },
       "ValidationError": {
         "properties": {

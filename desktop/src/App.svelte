@@ -32,6 +32,10 @@
   import ModelReadinessPanel from "./lib/components/ModelReadinessPanel.svelte";
   import OnboardingGuidePanel from "./lib/components/OnboardingGuidePanel.svelte";
   import PredictionsTable from "./lib/components/PredictionsTable.svelte";
+  import LiveMonitoringPanel from "./lib/components/LiveMonitoringPanel.svelte";
+  import BehavioralAnalysisPanel from "./lib/components/BehavioralAnalysisPanel.svelte";
+  import AttackTimelinePanel from "./lib/components/AttackTimelinePanel.svelte";
+  import CryptographyDashboardPanel from "./lib/components/CryptographyDashboardPanel.svelte";
   import {
     createInitialComparisonState,
     evaluateAllModelsWorkflow,
@@ -65,7 +69,15 @@
   } from "./lib/types";
   import { formatUserFriendlyError, getDroppedCsvPath, shortDigest } from "./lib/utils";
 
-  type TabId = "overview" | "predictions" | "evaluation" | "forensics";
+  type TabId =
+    | "overview"
+    | "predictions"
+    | "evaluation"
+    | "forensics"
+    | "live"
+    | "behavioral"
+    | "attack_timeline"
+    | "crypto";
 
   let theme = $state<"dark" | "light">("dark");
   let activeTab = $state<TabId>("overview");
@@ -680,9 +692,9 @@
         <Icons name="shield" size={20} />
       </div>
       <div>
-        <h1 class="brand-title">NetFlow Sentinel v1.0.0 — Phân tích Bất thường Lưu lượng Mạng</h1>
+        <h1 class="brand-title">NetFlow Sentinel v2.0.0 — Hệ thống AI Phát hiện, Phân tích &amp; Truy vết Kết nối Mạng Bất thường</h1>
         <p class="brand-subtitle">
-          Ứng dụng Windows Độc lập (Offline) • 4 Mô hình AI Tích hợp Sẵn • Dữ liệu chuẩn NF-UNSW-NB15-v3
+          Phiên bản v2.0.0 • 4 Mô hình AI (RF/XGB/IF/AE) • Mã hóa Vector Hành vi &amp; Xoay vòng Khóa Thích ứng (AES-256-GCM)
         </p>
       </div>
     </div>
@@ -919,6 +931,46 @@
         <Icons name="clock" size={15} />
         4. Dòng thời gian &amp; Mô phỏng Phản ứng
       </button>
+      <button
+        type="button"
+        role="tab"
+        class="tab-btn"
+        aria-selected={activeTab === "live"}
+        onclick={() => (activeTab = "live")}
+      >
+        <Icons name="refresh" size={15} />
+        5. Giám sát Trực tiếp (Live)
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tab-btn"
+        aria-selected={activeTab === "behavioral"}
+        onclick={() => (activeTab = "behavioral")}
+      >
+        <Icons name="chart" size={15} />
+        6. Vector Hành vi (Behavioral)
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tab-btn"
+        aria-selected={activeTab === "attack_timeline"}
+        onclick={() => (activeTab = "attack_timeline")}
+      >
+        <Icons name="shield" size={15} />
+        7. Truy vết Tấn công (Trace)
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="tab-btn"
+        aria-selected={activeTab === "crypto"}
+        onclick={() => (activeTab = "crypto")}
+      >
+        <Icons name="cpu" size={15} />
+        8. Mã hóa &amp; Xoay vòng Khóa
+      </button>
     </div>
 
     {#key activeTab}
@@ -1020,6 +1072,14 @@
             onRefreshHistory={refreshSimulationHistory}
             onExportSimulation={handleExportSecuritySimulation}
           />
+        {:else if activeTab === "live"}
+          <LiveMonitoringPanel />
+        {:else if activeTab === "behavioral"}
+          <BehavioralAnalysisPanel />
+        {:else if activeTab === "attack_timeline"}
+          <AttackTimelinePanel />
+        {:else if activeTab === "crypto"}
+          <CryptographyDashboardPanel />
         {/if}
       </div>
     {/key}

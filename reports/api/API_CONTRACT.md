@@ -2,13 +2,14 @@
 
 **API Title**: AI Network Anomaly Detection & Traceability API
 **Version**: 0.1.0
-**Total Endpoints**: 18
+**Total Endpoints**: 22
 
 ## Endpoints Specification
 
 | Method | Path | Summary | Tags |
 |---|---|---|---|
 | `POST` | `/api/v1/analyze` | Run anomaly detection on network flows | Analysis |
+| `GET` | `/api/v1/crypto/status` | Get active cryptographic key metadata and rotation policies | Cryptography & Keys |
 | `POST` | `/api/v1/csv/analyze` | Run verified batch inference on local NetFlow CSV with OOD, timeline, and risk scoring | Models & CSV |
 | `POST` | `/api/v1/csv/evaluate` | Evaluate CSV predictions against a separate Ground Truth CSV | Models & CSV |
 | `POST` | `/api/v1/csv/export` | Export predictions CSV and companion SHA-256 provenance JSON | Models & CSV |
@@ -27,6 +28,9 @@
 | `GET` | `/api/v1/security/simulations` | List persisted Issue #27 dry-run security response simulations | Security Dry-Run |
 | `POST` | `/api/v1/security/simulations/export` | Export Issue #27 dry-run simulation evidence JSON and metadata | Security Dry-Run |
 | `GET` | `/api/v1/timeline` | Chronological timeline of events, alerts, and key rotations | Timeline |
+| `GET` | `/api/v1/trace/graph` | Query entity relationship graph around an entity or incident | Trace & Investigation |
+| `POST` | `/api/v1/trace/investigation/generate` | Generate verifiable investigation report with provenance hash | Trace & Investigation |
+| `GET` | `/api/v1/trace/timeline` | Get reconstructed multi-stage attack timeline | Trace & Investigation |
 | `GET` | `/health` | System and artifact health check | System |
 
 ## Key Deliverables & Design Rules

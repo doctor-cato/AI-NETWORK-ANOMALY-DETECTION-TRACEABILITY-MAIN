@@ -16,6 +16,8 @@ PACKAGES = (
     "joblib",
     "matplotlib",
     "seaborn",
+    "cryptography",
+    "pydantic",
     "network_anomaly",
 )
 

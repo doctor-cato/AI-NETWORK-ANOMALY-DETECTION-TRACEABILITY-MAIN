@@ -105,18 +105,18 @@ def run_benchmark(iterations: int = 10000, output_dir: Optional[Path] = None) ->
 
 ## 1. Executive Summary
 - **Hypothesis (H6):** {results['hypothesis']}
-- **Outcome:** **CONFIRMED**. Độ trễ mã hóa trung bình chỉ **{enc_latency_us:.2f} $\mu s$** (thấp hơn ngưỡng cho phép 500 $\mu s$ gấp 10+ lần), thông lượng đạt **{enc_throughput:,.0f} sự kiện/giây** (vượt xa yêu cầu 5.000 events/sec).
+- **Outcome:** **CONFIRMED**. Độ trễ mã hóa trung bình chỉ **{enc_latency_us:.2f} $\\mu s$** (thấp hơn ngưỡng cho phép 500 $\\mu s$ gấp 10+ lần), thông lượng đạt **{enc_throughput:,.0f} sự kiện/giây** (vượt xa yêu cầu 5.000 events/sec).
 - **Bộ nhớ (Memory Footprint):** Mức chiếm dụng bộ nhớ đỉnh (Peak RAM) chỉ **{results['metrics']['peak_memory_mb']} MB**.
 
 ## 2. Bảng Kết quả Đo lường Chi tiết
 
 | Chỉ số Đo lường | Giá trị Thực nghiệm | Ngưỡng Yêu cầu Đề tài (RQ6) | Đánh giá |
 |---|:---:|:---:|:---:|
-| **Độ trễ Mã hóa (Encryption Latency)** | **{enc_latency_us:.2f} $\mu s$** (0.0{int(enc_latency_us)} ms) | $\le 500\ \mu s$ (0.5 ms) | **ĐẠT (VƯỢT TRỘI)** |
-| **Độ trễ Giải mã (Decryption Latency)** | **{dec_latency_us:.2f} $\mu s$** (0.0{int(dec_latency_us)} ms) | $\le 500\ \mu s$ (0.5 ms) | **ĐẠT (VƯỢT TRỘI)** |
-| **Thông lượng Mã hóa (Throughput)** | **{enc_throughput:,.0f} events/s** | $\ge 5.000\ events/s$ | **ĐẠT (GẤP ~10 LẦN)** |
-| **Thông lượng Giải mã (Throughput)** | **{dec_throughput:,.0f} events/s** | $\ge 5.000\ events/s$ | **ĐẠT** |
-| **Bộ nhớ Đỉnh (Peak RAM)** | **{results['metrics']['peak_memory_mb']} MB** | $\le 100\ MB$ | **ĐẠT** |
+| **Độ trễ Mã hóa (Encryption Latency)** | **{enc_latency_us:.2f} $\\mu s$** (0.0{int(enc_latency_us)} ms) | $\\le 500\\ \\mu s$ (0.5 ms) | **ĐẠT (VƯỢT TRỘI)** |
+| **Độ trễ Giải mã (Decryption Latency)** | **{dec_latency_us:.2f} $\\mu s$** (0.0{int(dec_latency_us)} ms) | $\\le 500\\ \\mu s$ (0.5 ms) | **ĐẠT (VƯỢT TRỘI)** |
+| **Thông lượng Mã hóa (Throughput)** | **{enc_throughput:,.0f} events/s** | $\\ge 5.000\\ events/s$ | **ĐẠT (GẤP ~10 LẦN)** |
+| **Thông lượng Giải mã (Throughput)** | **{dec_throughput:,.0f} events/s** | $\\ge 5.000\\ events/s$ | **ĐẠT** |
+| **Bộ nhớ Đỉnh (Peak RAM)** | **{results['metrics']['peak_memory_mb']} MB** | $\\le 100\\ MB$ | **ĐẠT** |
 
 ## 3. Kết luận
 {results['conclusion']}

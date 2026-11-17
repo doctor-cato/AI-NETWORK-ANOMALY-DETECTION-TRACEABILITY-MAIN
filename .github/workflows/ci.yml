@@ -2,13 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/v2-integration]
   pull_request:
-    branches: [main]
+    branches: [main, feat/v2-integration]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/feat/v2-integration' }}
 
 jobs:
   lint:
@@ -77,9 +77,15 @@ jobs:
         run: python -m compileall -q src scripts tests
       - name: Check imports (core modules, not just syntax)
         run: |
-          python -c "import network_anomaly, network_anomaly.config, network_anomaly.data, network_anomaly.data.nf_unsw_nb15_v3, network_anomaly.eda, network_anomaly.eda.evidence, network_anomaly.eda.figures, network_anomaly.eda.profiling, network_anomaly.eda.report, network_anomaly.evaluation.metrics, network_anomaly.features, network_anomaly.inference.pipeline, network_anomaly.ingestion, network_anomaly.models.autoencoder, network_anomaly.models.isolation_forest, network_anomaly.models.random_forest, network_anomaly.models.xgboost_model, network_anomaly.models.xgboost_protocol, network_anomaly.preprocessing, network_anomaly.visualization.plots"
+          python -c "import network_anomaly, network_anomaly.config, network_anomaly.data, network_anomaly.data.nf_unsw_nb15_v3, network_anomaly.data.taxonomy, network_anomaly.data.quality_gate, network_anomaly.canonical.event, network_anomaly.canonical.feature_contract, network_anomaly.crypto.aead, network_anomaly.crypto.key_manager, network_anomaly.crypto.rotation, network_anomaly.crypto.encrypted_storage, network_anomaly.behavioral.vector, network_anomaly.behavioral.sessionizer, network_anomaly.behavioral.similarity, network_anomaly.risk.scoring, network_anomaly.risk.aggregation, network_anomaly.trace.graph, network_anomaly.trace.engine, network_anomaly.trace.timeline, network_anomaly.trace.investigation, network_anomaly.telemetry.collector, network_anomaly.telemetry.pcap_reader, network_anomaly.telemetry.log_tailer, network_anomaly.telemetry.modes, network_anomaly.streaming.pipeline, network_anomaly.streaming.feature_extractor, network_anomaly.streaming.realtime_inference, network_anomaly.streaming.alert_manager, network_anomaly.streaming.live_orchestrator, network_anomaly.ml.ood_gate, network_anomaly.ml.threshold_calibration, network_anomaly.pipeline.multi_source, network_anomaly.ingestion.adapters.v2_adapter, network_anomaly.eda, network_anomaly.evaluation.metrics, network_anomaly.features, network_anomaly.inference.pipeline, network_anomaly.ingestion, network_anomaly.models.autoencoder, network_anomaly.models.isolation_forest, network_anomaly.models.random_forest, network_anomaly.models.xgboost_model, network_anomaly.preprocessing"
       - name: Unit + integration tests
         run: python -m pytest tests -q --tb=short
+      - name: Verify AIT multi-source dataset manifest & checksums
+        run: python scripts/fetch_multi_source_dataset.py --verify-only
+      - name: Validate live telemetry & authorized lab acceptance
+        run: python scripts/run_live_lab_acceptance.py
+      - name: Verify full system performance benchmark
+        run: python scripts/benchmark_full_system.py
       - name: Validate NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
         run: python scripts/validate_data.py
       - name: Exploratory analysis of NF-UNSW-NB15-v3 — SKIPPED if raw package is absent

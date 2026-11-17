@@ -110,7 +110,7 @@ def run_rq3_experiment(output_dir: Optional[Path] = None) -> dict:
 | Chiến lược Liên kết Phiên | Cặp Liên kết Đúng | Độ thu hồi (Recall) | Đánh giá Khả năng Kháng IP Spoofing |
 |---|:---:|:---:|:---:|
 | **Strategy A: IP Tuple Exact Matching** | {bench_results['strategy_a_ip_matching']['correct_matches']} / {results['total_same_entity_pairs']} | **{bench_results['strategy_a_ip_matching']['correlation_recall']*100:.1f}%** | **Thất bại hoàn toàn khi đổi IP** |
-| **Strategy B: Behavioral Vector Cosine ($\ge 0.85$)** | {bench_results['strategy_b_behavioral_vector']['correct_matches']} / {results['total_same_entity_pairs']} | **{bench_results['strategy_b_behavioral_vector']['correlation_recall']*100:.1f}%** | **Thành công (Đạt giả thuyết $\ge 85\%$)** |
+| **Strategy B: Behavioral Vector Cosine ($\\ge 0.85$)** | {bench_results['strategy_b_behavioral_vector']['correct_matches']} / {results['total_same_entity_pairs']} | **{bench_results['strategy_b_behavioral_vector']['correlation_recall']*100:.1f}%** | **Thành công (Đạt giả thuyết $\\ge 85\\%$)** |
 
 ## 3. Kết luận
 {results['conclusion']}
