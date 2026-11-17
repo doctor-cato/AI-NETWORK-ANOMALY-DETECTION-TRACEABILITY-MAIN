@@ -98,6 +98,9 @@ class CanonicalSecurityEvent(BaseModel):
     # Provenance tracking
     raw_provenance: RawProvenance
 
+    # Ground truth & classification
+    attack_category: Optional[str] = None
+
     # ML & Behavioral integration
     ml_features: Optional[Dict[str, float]] = None
     is_ml_complete: bool = False

@@ -1,0 +1,128 @@
+{
+  "profiled_at_utc": "2026-11-17T08:07:51.525055+00:00",
+  "sources": {
+    "netflow": {
+      "file": "ait_netflow_v2.1_sample.csv",
+      "total_records": 5,
+      "time_field": "FLOW_START_MILLISECONDS",
+      "time_range": {
+        "min": "2020-11-05T08:00:00+00:00",
+        "max": "2020-11-05T08:00:20+00:00"
+      },
+      "entity_identifiers": [
+        "IPV4_SRC_ADDR",
+        "IPV4_DST_ADDR",
+        "L4_SRC_PORT",
+        "L4_DST_PORT"
+      ],
+      "unique_entities_observed": 5,
+      "class_distribution": {
+        "Benign": 1,
+        "Reconnaissance": 1,
+        "Exploits": 1,
+        "Backdoors": 1,
+        "Exfiltration": 1
+      }
+    },
+    "dns": {
+      "file": "ait_dns_v2.1_sample.log",
+      "total_records": 3,
+      "time_field": "ts",
+      "time_range": {
+        "min": "2020-11-05T08:00:00.100000+00:00",
+        "max": "2020-11-05T08:00:20.150000+00:00"
+      },
+      "entity_identifiers": [
+        "id.orig_h",
+        "id.resp_h",
+        "query"
+      ],
+      "unique_entities_observed": 3,
+      "query_types": {
+        "A": 2,
+        "TXT": 1
+      }
+    },
+    "web": {
+      "file": "ait_web_v2.1_sample.log",
+      "total_records": 3,
+      "time_field": "HTTP Common Log Format Timestamp",
+      "time_range": {
+        "min": "2020-11-05T08:00:00+00:00",
+        "max": "2020-11-05T08:00:10+00:00"
+      },
+      "entity_identifiers": [
+        "client_ip",
+        "request_path",
+        "user_agent"
+      ],
+      "unique_entities_observed": 2,
+      "response_codes": {
+        "200": 2,
+        "404": 1
+      }
+    },
+    "auth": {
+      "file": "ait_auth_v2.1_sample.log",
+      "total_records": 3,
+      "time_field": "Syslog standard timestamp",
+      "time_range": {
+        "min": "2020-11-05T08:00:00+00:00",
+        "max": "2020-11-05T08:00:00+00:00"
+      },
+      "entity_identifiers": [
+        "client_ip",
+        "username",
+        "hostname"
+      ],
+      "unique_entities_observed": 3,
+      "auth_results": {
+        "SUCCESS": 1,
+        "FAILURE": 2
+      }
+    }
+  },
+  "linkage_feasibility": {
+    "strategy": "IP_AND_TEMPORAL_WINDOW_JOIN",
+    "time_window_sec": 3.0,
+    "total_flows_tested": 5,
+    "total_logs_tested": 9,
+    "matched_flows_count": 4,
+    "match_rate_pct": 80.0,
+    "feasibility_conclusion": "FEASIBLE",
+    "sample_links": [
+      {
+        "flow_event_id": "d2bee5df-4033-460c-a499-9e4a9be4746e",
+        "log_event_id": "d2bad6c3-9d54-4ec5-bfee-7222768e9357",
+        "flow_kind": "flow",
+        "log_kind": "dns",
+        "ip": "192.168.1.100",
+        "delta_sec": 0.1
+      },
+      {
+        "flow_event_id": "894c3f70-630e-4787-bc7c-6e32e779bb63",
+        "log_event_id": "f32411fa-7c86-4560-b332-6dc72cab52ee",
+        "flow_kind": "flow",
+        "log_kind": "dns",
+        "ip": "192.168.1.105",
+        "delta_sec": 0.2
+      },
+      {
+        "flow_event_id": "2d096253-ac31-4c74-80bd-f45fa52b1d40",
+        "log_event_id": "5458f843-ff8e-4f54-9861-97b380893ef5",
+        "flow_kind": "flow",
+        "log_kind": "web",
+        "ip": "192.168.1.105",
+        "delta_sec": 0.0
+      },
+      {
+        "flow_event_id": "0a33bee7-3aa1-4471-9137-c0bb7df09a22",
+        "log_event_id": "4c872cda-0513-4b73-8d56-1446409d3c64",
+        "flow_kind": "flow",
+        "log_kind": "dns",
+        "ip": "192.168.1.10",
+        "delta_sec": 0.15
+      }
+    ]
+  }
+}

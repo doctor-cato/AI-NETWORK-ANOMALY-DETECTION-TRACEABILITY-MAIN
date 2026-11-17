@@ -1,7 +1,60 @@
 {
-  "schema_version": 1,
-  "last_audited_utc": "2026-11-08T14:30:00Z",
+  "schema_version": 2,
+  "last_audited_utc": "2026-11-17T15:00:00Z",
+  "audit_reference": "docs/dataset/V2_SOURCE_AUDIT.md",
   "surveyed_datasets": [
+    {
+      "name": "AIT-NetFlow-v2.1",
+      "publisher": "AIT Austrian Institute of Technology GmbH",
+      "doi": "10.5281/zenodo.4269411",
+      "landing_page": "https://zenodo.org/record/4269411",
+      "license": "Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)",
+      "total_rows": 1500000,
+      "class_distribution": {
+        "benign_pct": 92.4,
+        "attack_pct": 7.6
+      },
+      "attack_categories": [
+        "Benign",
+        "Reconnaissance",
+        "Exploits",
+        "DoS",
+        "Backdoors",
+        "Exfiltration"
+      ],
+      "feature_count": 28,
+      "ml_feature_compatibility": "FLOW_METRICS_ALIGNED (Flow-level duration, bytes, packets, flags; ML complete for NetFlow subset)",
+      "role": "PRIMARY_MULTI_SOURCE_FLOW_BENCHMARK",
+      "domain": "Simulated Enterprise IT Infrastructure",
+      "independence_from_train": "VERY_HIGH",
+      "audit_decision": "ACCEPTED"
+    },
+    {
+      "name": "AIT-Log-v2.1",
+      "publisher": "AIT Austrian Institute of Technology GmbH",
+      "doi": "10.5281/zenodo.4269411",
+      "landing_page": "https://zenodo.org/record/4269411",
+      "license": "Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)",
+      "total_rows": 2450000,
+      "class_distribution": {
+        "benign_pct": 94.1,
+        "attack_pct": 5.9
+      },
+      "attack_categories": [
+        "Benign",
+        "Reconnaissance",
+        "Web_Exploits",
+        "Privilege_Escalation",
+        "Lateral_Movement",
+        "Data_Exfiltration"
+      ],
+      "feature_count": 20,
+      "ml_feature_compatibility": "ROUTE_ONLY (Application & System Log Adapters: DNS, Web, Auth, Audit)",
+      "role": "PRIMARY_MULTI_SOURCE_LOG_BENCHMARK",
+      "domain": "Multi-host Linux/Windows Enterprise Environment",
+      "independence_from_train": "VERY_HIGH",
+      "audit_decision": "ACCEPTED"
+    },
     {
       "name": "NF-CSE-CIC-IDS2018-v3",
       "publisher": "The University of Queensland / Communications Security Establishment & CIC",

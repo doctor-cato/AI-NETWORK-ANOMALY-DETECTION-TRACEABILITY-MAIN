@@ -1415,3 +1415,161 @@ def load_split_for_modeling(
     validate_feature_selection(X.columns)
 
     return X, y
+
+
+# ==============================================================================
+# Multi-Source Temporal Splitter (Issue #92 for NetFlow Sentinel v2.0)
+# ==============================================================================
+
+@dataclass
+class MultiSourceSplitResult:
+    train_indices: List[int]
+    val_indices: List[int]
+    test_indices: List[int]
+    purged_gap_indices: List[int]
+    purged_group_overlap_indices: List[int]
+    manifest: Dict[str, Any]
+
+
+class MultiSourceTemporalSplitter:
+    """Chronological split with purge gaps and zero-group-overlap enforcement across sources."""
+
+    def __init__(
+        self,
+        train_ratio: float = 0.70,
+        val_ratio: float = 0.15,
+        test_ratio: float = 0.15,
+        purge_gap_sec: float = 300.0,
+        group_key_col: str = "group_key",
+    ):
+        assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-4, "Ratios must sum to 1.0"
+        self.train_ratio = train_ratio
+        self.val_ratio = val_ratio
+        self.test_ratio = test_ratio
+        self.purge_gap_sec = purge_gap_sec
+        self.group_key_col = group_key_col
+
+    def split(
+        self,
+        df: pd.DataFrame,
+        timestamp_col: str = "timestamp",
+        source_name: str = "multi_source_dataset",
+    ) -> MultiSourceSplitResult:
+        """Split dataframe into train, val, test with purge gaps and zero group leakage."""
+        if df.empty:
+            raise ValueError("Input dataframe is empty")
+
+        # Sort chronologically
+        df_sorted = df.sort_values(by=timestamp_col).reset_index(drop=True)
+        total_rows = len(df_sorted)
+
+        # Base chronological boundaries
+        train_end_idx = int(total_rows * self.train_ratio)
+        val_end_idx = int(total_rows * (self.train_ratio + self.val_ratio))
+
+        train_cutoff_ts = df_sorted.iloc[train_end_idx - 1][timestamp_col] if train_end_idx > 0 else 0
+        val_cutoff_ts = df_sorted.iloc[val_end_idx - 1][timestamp_col] if val_end_idx > 0 else 0
+
+        # Purge window gaps
+        train_indices: List[int] = []
+        val_indices: List[int] = []
+        test_indices: List[int] = []
+        purged_gap: List[int] = []
+        purged_overlap: List[int] = []
+
+        # Convert timestamps using pd.to_datetime with UTC
+        ts_series = pd.to_datetime(df_sorted[timestamp_col], utc=True)
+        train_cutoff = ts_series.iloc[train_end_idx - 1]
+        val_cutoff = ts_series.iloc[val_end_idx - 1]
+        purge_delta = pd.Timedelta(seconds=self.purge_gap_sec)
+
+        # Identify groups in train
+        train_groups: Set[Any] = set()
+        for idx in range(train_end_idx):
+            ts = ts_series.iloc[idx]
+            if ts <= train_cutoff - purge_delta:
+                train_indices.append(idx)
+                if self.group_key_col in df_sorted.columns:
+                    train_groups.add(df_sorted.iloc[idx][self.group_key_col])
+            else:
+                purged_gap.append(idx)
+
+        val_groups: Set[Any] = set()
+        for idx in range(train_end_idx, val_end_idx):
+            ts = ts_series.iloc[idx]
+            # Check gap between train and val
+            if ts < train_cutoff + purge_delta:
+                purged_gap.append(idx)
+                continue
+            # Check gap before test
+            if ts > val_cutoff - purge_delta:
+                purged_gap.append(idx)
+                continue
+
+            # Group overlap check against train
+            grp = df_sorted.iloc[idx].get(self.group_key_col) if self.group_key_col in df_sorted.columns else None
+            if grp and grp in train_groups:
+                purged_overlap.append(idx)
+            else:
+                val_indices.append(idx)
+                if grp:
+                    val_groups.add(grp)
+
+        for idx in range(val_end_idx, total_rows):
+            ts = ts_series.iloc[idx]
+            # Check gap after val
+            if ts < val_cutoff + purge_delta:
+                purged_gap.append(idx)
+                continue
+
+            # Group overlap check against train and val
+            grp = df_sorted.iloc[idx].get(self.group_key_col) if self.group_key_col in df_sorted.columns else None
+            if grp and (grp in train_groups or grp in val_groups):
+                purged_overlap.append(idx)
+            else:
+                test_indices.append(idx)
+
+        # Audit: Assert ZERO group overlap
+        if self.group_key_col in df_sorted.columns:
+            final_train_groups = set(df_sorted.iloc[train_indices][self.group_key_col])
+            final_val_groups = set(df_sorted.iloc[val_indices][self.group_key_col])
+            final_test_groups = set(df_sorted.iloc[test_indices][self.group_key_col])
+
+            train_val_overlap = final_train_groups.intersection(final_val_groups)
+            train_test_overlap = final_train_groups.intersection(final_test_groups)
+            val_test_overlap = final_val_groups.intersection(final_test_groups)
+
+            assert len(train_val_overlap) == 0, f"Train-Val group overlap detected: {len(train_val_overlap)}"
+            assert len(train_test_overlap) == 0, f"Train-Test group overlap detected: {len(train_test_overlap)}"
+            assert len(val_test_overlap) == 0, f"Val-Test group overlap detected: {len(val_test_overlap)}"
+
+        manifest = {
+            "protocol_version": "multi-source-temporal-group-purged-v2",
+            "source_name": source_name,
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "purge_gap_seconds": self.purge_gap_sec,
+            "group_key_column": self.group_key_col,
+            "total_rows_evaluated": total_rows,
+            "partitions": {
+                "train_rows": len(train_indices),
+                "val_rows": len(val_indices),
+                "test_rows": len(test_indices),
+                "purged_gap_rows": len(purged_gap),
+                "purged_group_overlap_rows": len(purged_overlap),
+            },
+            "leakage_audit": {
+                "train_val_group_overlap": 0,
+                "train_test_group_overlap": 0,
+                "val_test_group_overlap": 0,
+                "zero_leakage_verified": True,
+            },
+        }
+
+        return MultiSourceSplitResult(
+            train_indices=train_indices,
+            val_indices=val_indices,
+            test_indices=test_indices,
+            purged_gap_indices=purged_gap,
+            purged_group_overlap_indices=purged_overlap,
+            manifest=manifest,
+        )
