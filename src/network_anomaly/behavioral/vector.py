@@ -1,0 +1,123 @@
+"""16-Dimensional Behavioral Vector schema and builder.
+
+Implements Issue #102 for NetFlow Sentinel v2.0.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+import numpy as np
+
+from .sessionizer import SessionSummary
+
+
+@dataclass
+class BehavioralVector:
+    vector_id: str
+    entity_key: str
+    window_start: str
+    window_end: str
+    dimensions: int = 16
+    version: str = "2.0.0"
+    features: List[float] = None
+    feature_names: List[str] = None
+    sha256_hash: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "vector_id": self.vector_id,
+            "entity_key": self.entity_key,
+            "window_start": self.window_start,
+            "window_end": self.window_end,
+            "dimensions": self.dimensions,
+            "version": self.version,
+            "features": self.features,
+            "feature_names": self.feature_names,
+            "sha256_hash": self.sha256_hash,
+        }
+
+    def to_numpy(self) -> np.ndarray:
+        return np.array(self.features, dtype=np.float32)
+
+
+class BehavioralVectorBuilder:
+    """Builds a standardized, L2-normalized 16-D behavioral vector from a SessionSummary."""
+
+    FEATURE_NAMES = [
+        "log_duration",
+        "log_bytes_in",
+        "log_bytes_out",
+        "bytes_ratio_clipped",
+        "log_pkts_in",
+        "log_pkts_out",
+        "pkts_ratio_clipped",
+        "unique_ports_norm",
+        "unique_protocols_norm",
+        "syn_flag_ratio",
+        "rst_flag_ratio",
+        "dns_intensity",
+        "http_intensity",
+        "auth_failure_ratio",
+        "log_mean_iat",
+        "log_std_iat",
+    ]
+
+    def build_vector(self, session: SessionSummary) -> BehavioralVector:
+        dur = max(session.duration_seconds, 0.001)
+        cnt = max(session.event_count, 1)
+
+        raw = [
+            math.log1p(session.duration_seconds),
+            math.log1p(session.bytes_in),
+            math.log1p(session.bytes_out),
+            min(session.bytes_ratio, 10.0),
+            math.log1p(session.pkts_in),
+            math.log1p(session.pkts_out),
+            min(session.pkts_ratio, 10.0),
+            min(session.unique_ports / 100.0, 1.0),
+            min(session.unique_protocols / 10.0, 1.0),
+            session.syn_flag_count / cnt,
+            session.rst_flag_count / cnt,
+            min(session.dns_query_count / dur, 50.0),
+            min(session.http_request_count / dur, 50.0),
+            session.auth_failure_count / cnt,
+            math.log1p(max(session.mean_iat_ms, 0.0)),
+            math.log1p(max(session.std_iat_ms, 0.0)),
+        ]
+
+        # Verify no NaN or Inf
+        cleaned = []
+        for x in raw:
+            if math.isnan(x) or math.isinf(x):
+                cleaned.append(0.0)
+            else:
+                cleaned.append(float(x))
+
+        # L2-normalization for unit hypersphere projection
+        arr = np.array(cleaned, dtype=np.float32)
+        norm = np.linalg.norm(arr)
+        if norm > 1e-7:
+            arr = arr / norm
+        normalized_features = [round(float(v), 6) for v in arr]
+
+        # Deterministic SHA-256 hash of vector
+        hash_payload = json.dumps(normalized_features).encode("ascii")
+        sha256 = hashlib.sha256(hash_payload).hexdigest()
+
+        vid = f"bv-{session.session_id}-{sha256[:8]}"
+        return BehavioralVector(
+            vector_id=vid,
+            entity_key=session.entity_key,
+            window_start=session.start_time.isoformat(),
+            window_end=session.end_time.isoformat(),
+            dimensions=16,
+            version="2.0.0",
+            features=normalized_features,
+            feature_names=self.FEATURE_NAMES,
+            sha256_hash=sha256,
+        )

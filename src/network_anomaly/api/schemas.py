@@ -1110,3 +1110,90 @@ class SecuritySimulationExportResponse(BaseModel):
     json_sha256: str
     metadata_sha256: str
     exported_at_utc: str
+
+
+# ============================================================================
+# NetFlow Sentinel v2.0 Trace & Crypto API Schemas (Issue #115)
+# ============================================================================
+
+class TimelineStageItem(BaseModel):
+    stage_id: str
+    phase: str
+    timestamp: str
+    source_entity: str
+    target_entity: str
+    title: str
+    description: str
+    confidence: float
+    is_observed: bool
+    evidence_ids: List[str] = Field(default_factory=list)
+    indicators: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TraceTimelineResponse(BaseModel):
+    timeline_id: str
+    campaign_name: str
+    overall_confidence: float
+    start_time: str
+    end_time: str
+    entities_involved: List[str]
+    total_stages: int
+    stages: List[TimelineStageItem]
+
+
+class EntityGraphNodeItem(BaseModel):
+    node_id: str
+    kind: str
+    label: str
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EntityGraphEdgeItem(BaseModel):
+    edge_id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+    confidence: float
+    is_observed: bool
+    evidence_id: Optional[str] = None
+
+
+class TraceGraphResponse(BaseModel):
+    node_count: int
+    edge_count: int
+    nodes: List[EntityGraphNodeItem]
+    edges: List[EntityGraphEdgeItem]
+
+
+class GenerateInvestigationReportRequest(BaseModel):
+    incident_id: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    severity: str = "HIGH"
+    root_cause_summary: str = Field(..., min_length=1)
+    events: List[Dict[str, Any]] = Field(default_factory=list)
+    evidence_records: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class InvestigationReportResponse(BaseModel):
+    report_id: str
+    incident_id: str
+    title: str
+    generated_at: str
+    severity: str
+    root_cause_summary: str
+    artifact_hash: str
+    timeline: TraceTimelineResponse
+    evidence_provenance: List[Dict[str, Any]]
+    recommended_actions: List[str]
+    markdown_content: str
+
+
+class CryptoStatusResponse(BaseModel):
+    active_key_id: str
+    algorithm: str
+    rotation_interval_minutes: float
+    adaptive_risk_threshold: float
+    cooldown_seconds: int
+    total_rotations: int
+    total_records_encrypted: int
+    recent_rotations: List[Dict[str, Any]]

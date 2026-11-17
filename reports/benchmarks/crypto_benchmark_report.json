@@ -1,0 +1,17 @@
+{
+  "benchmark_id": "BM-CRYPTO-OVERHEAD-RQ6",
+  "timestamp": "2026-11-17T07:45:23.119654+00:00",
+  "iterations": 10000,
+  "payload_size_bytes": 187,
+  "hypothesis": "H6: AES-256-GCM adds <= 500 us latency per event, throughput >= 5,000 events/sec",
+  "hypothesis_confirmed": true,
+  "metrics": {
+    "encryption_latency_microseconds": 25.24,
+    "decryption_latency_microseconds": 4.66,
+    "encryption_throughput_events_per_second": 39623.1,
+    "decryption_throughput_events_per_second": 214526.9,
+    "peak_memory_mb": 6.15,
+    "baseline_json_serialization_seconds": 0.0805
+  },
+  "conclusion": "AES-256-GCM demonstrated an average encryption latency of 25.2 us and a sustained throughput of 39,623 events/second, fully meeting the real-time requirements of RQ6 (Latency <= 500 us, Throughput >= 5,000 evt/s)."
+}

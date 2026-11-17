@@ -1,0 +1,23 @@
+{
+  "experiment_id": "EXP-RQ5-ROTATION-01",
+  "timestamp": "2026-11-17T07:45:22.186929+00:00",
+  "hypothesis": "H5: Adaptive Key Rotation reduces exposure window by >= 70% under burst attack",
+  "hypothesis_confirmed": true,
+  "fixed_schedule": {
+    "rotation_interval_minutes": 30.0,
+    "total_rotations": 1,
+    "distinct_keys_used": 2,
+    "exposure_window_minutes": 30.0,
+    "attack_records_exposed": 30
+  },
+  "adaptive_rotation": {
+    "adaptive_risk_threshold": 85.0,
+    "cooldown_seconds": 10,
+    "total_rotations": 1,
+    "distinct_keys_used": 2,
+    "burst_keys_used": 1,
+    "exposure_window_minutes": 0.5,
+    "exposure_reduction_percentage": 98.33
+  },
+  "conclusion": "Adaptive Key Rotation achieved a 98.3% reduction in exposure window (from 30.0 mins to 0.5 mins), successfully isolating attack records under freshly generated ephemeral keys."
+}

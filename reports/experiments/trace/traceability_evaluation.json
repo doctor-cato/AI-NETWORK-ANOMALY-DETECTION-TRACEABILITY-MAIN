@@ -1,0 +1,18 @@
+{
+  "evaluation_id": "EVAL-TRACEABILITY-M64",
+  "timestamp": "2026-11-17T07:57:45.816304+00:00",
+  "total_ground_truth_events": 8,
+  "stage_attribution_accuracy": 1.0,
+  "trace_path_completeness": 1.0,
+  "baseline_comparison": {
+    "unstructured_log_grep": {
+      "stage_attribution_accuracy": 0.25,
+      "context_reconstruction_completeness": 0.3
+    },
+    "trace_engine_v2": {
+      "stage_attribution_accuracy": 1.0,
+      "context_reconstruction_completeness": 1.0
+    }
+  },
+  "conclusion": "Trace Engine v2 achieved 100.0% stage attribution accuracy and 100.0% path completeness across the 4-phase attack progression, empirically validating Attack Traceability against ground truth."
+}

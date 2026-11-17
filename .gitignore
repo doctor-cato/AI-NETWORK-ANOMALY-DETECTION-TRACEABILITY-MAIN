@@ -21,6 +21,7 @@ reports/figures/**
 .env
 .env.local
 secrets/
+data/keys/
 *.key
 *.pem
 credentials*.json

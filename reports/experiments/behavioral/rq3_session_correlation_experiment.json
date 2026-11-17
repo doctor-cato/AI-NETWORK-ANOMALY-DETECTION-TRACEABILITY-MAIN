@@ -1,0 +1,18 @@
+{
+  "experiment_id": "EXP-RQ3-CORRELATION-01",
+  "timestamp": "2026-11-17T07:47:30.157985+00:00",
+  "hypothesis": "H3: Behavioral Vector achieves >= 85% session correlation accuracy independent of IP",
+  "hypothesis_confirmed": true,
+  "campaigns_evaluated": 5,
+  "total_sessions": 20,
+  "total_same_entity_pairs": 30,
+  "strategy_a_ip_matching": {
+    "correct_matches": 0,
+    "correlation_recall": 0.0
+  },
+  "strategy_b_behavioral_vector": {
+    "correct_matches": 30,
+    "correlation_recall": 1.0
+  },
+  "conclusion": "Under IP rotation / spoofing, Strategy A (IP-matching) collapsed to 0.0% recall. In contrast, Strategy B (Behavioral Vector Cosine similarity) maintained 100.0% correlation recall, empirically validating Hypothesis H3."
+}
