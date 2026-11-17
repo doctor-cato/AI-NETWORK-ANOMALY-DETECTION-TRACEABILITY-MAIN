@@ -5,9 +5,9 @@ Separates:
 1. Synthetic simulation benchmark (Strategy A IP-tuple matching vs Strategy B
    16-D Behavioral Vector Cosine matching under simulated IP rotation), computing
    pairwise precision, pairwise recall, F1, false link rate, and match accuracy.
-2. Empirical dataset evaluation on real AIT-Suite-v2.1 ground truth, reporting
-   BLOCKED when official AIT multi-source files with campaign linkage ground truth
-   are absent.
+2. Empirical dataset evaluation on AIT multi-source ground truth, reporting
+   BLOCKED / NOT VERIFIED when official AIT cross-source campaign linkage labels
+   are absent or unverified.
 """
 
 from __future__ import annotations
@@ -234,7 +234,7 @@ def run_rq3_experiment(
         empirical_status = {
             "status": "BLOCKED",
             "reason": (
-                f"Official AIT-Suite-v2.1 raw dataset absent in {ait_data_dir}; "
+                f"Official AIT campaign-linkage ground truth absent or not verified in {ait_data_dir}; "
                 "empirical real-dataset validation cannot be claimed from simulation alone."
             ),
             "files_detected": 0,

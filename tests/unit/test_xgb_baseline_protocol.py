@@ -10,7 +10,7 @@ import json
 import pytest
 from xgboost import XGBClassifier
 
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
 )
 from network_anomaly.models.xgboost_model import (
@@ -39,11 +39,11 @@ def test_default_xgb_baseline_protocol_invariants():
 
     assert protocol.protocol_version == PROTOCOL_IDENTIFIER
     assert protocol.feature_contract_version == FEATURE_CONTRACT_VERSION
-    assert len(protocol.selected_features) == 47
+    assert len(protocol.selected_features) == 18
     assert protocol.selected_features == ML_FEATURE_COLUMNS
 
-    assert protocol.evaluation_protocol.target_column == "Label"
-    assert protocol.evaluation_protocol.stratification_column == "Attack"
+    assert protocol.evaluation_protocol.target_column == "label_binary"
+    assert protocol.evaluation_protocol.stratification_column == "attack_category"
     assert protocol.evaluation_protocol.positive_class_name == "Attack"
     assert protocol.evaluation_protocol.positive_class_label == 1
     assert protocol.evaluation_protocol.negative_class_name == "Benign"
@@ -91,7 +91,7 @@ def test_xgb_protocol_serialization_roundtrip():
     assert isinstance(p_dict, dict)
     assert p_dict["protocol_version"] == PROTOCOL_IDENTIFIER
     assert p_dict["feature_contract_version"] == FEATURE_CONTRACT_VERSION
-    assert len(p_dict["selected_features"]) == 47
+    assert len(p_dict["selected_features"]) == 18
 
     p_json = protocol.to_json()
     assert isinstance(p_json, str)
@@ -174,8 +174,8 @@ def test_xgb_protocol_custom_nested_components_roundtrip():
     )
     custom_eval = EvaluationMetricProtocol(
         task="binary_classification",
-        target_column="Label",
-        stratification_column="Attack",
+        target_column="label_binary",
+        stratification_column="attack_category",
         positive_class_name="Attack",
         positive_class_label=1,
         negative_class_name="Benign",
@@ -189,8 +189,8 @@ def test_xgb_protocol_custom_nested_components_roundtrip():
             "confusion_matrix",
         ),
         confusion_matrix_labels=(0, 1),
-        error_analysis_breakdown_column="Attack",
-        expected_attack_categories=("Analysis", "Backdoor", "DoS"),
+        error_analysis_breakdown_column="attack_category",
+        expected_attack_categories=("Reconnaissance", "Credential_Attack", "Data_Exfiltration"),
     )
     custom_cfg = XGBoostBaselineConfig(
         n_estimators=100,
@@ -216,9 +216,9 @@ def test_xgb_protocol_custom_nested_components_roundtrip():
     assert proto_after.tuning_policy.search_space_version == "custom-search-v2"
     assert "extra_forbidden_use" in proto_after.test_lock_policy.forbidden_uses
     assert proto_after.evaluation_protocol.expected_attack_categories == (
-        "Analysis",
-        "Backdoor",
-        "DoS",
+        "Reconnaissance",
+        "Credential_Attack",
+        "Data_Exfiltration",
     )
 
 
@@ -227,7 +227,7 @@ def test_xgb_model_save_load_roundtrip_preserves_protocol(tmp_path):
     import numpy as np
     import pandas as pd
 
-    X = pd.DataFrame(np.ones((20, 47)), columns=list(ML_FEATURE_COLUMNS))
+    X = pd.DataFrame(np.ones((20, 18)), columns=list(ML_FEATURE_COLUMNS))
     y = np.array([0] * 10 + [1] * 10)
 
     proto = create_xgb_baseline_protocol()
@@ -258,6 +258,6 @@ def test_xgb_protocol_from_dict_rejects_corrupted_payloads():
         XGBoostBaselineProtocol.from_dict(d2)
 
     d3 = proto.to_dict()
-    d3["selected_features"] = list(ML_FEATURE_COLUMNS)[:40]
-    with pytest.raises(ValueError, match="Expected 47 ML features"):
+    d3["selected_features"] = list(ML_FEATURE_COLUMNS)[:10]
+    with pytest.raises(ValueError, match="Expected 18 ML features"):
         XGBoostBaselineProtocol.from_dict(d3)

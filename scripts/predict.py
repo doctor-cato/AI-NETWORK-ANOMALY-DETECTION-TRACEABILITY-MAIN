@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""CLI entrypoint for NF-UNSW-NB15-v3 CSV Inference Pipeline.
+"""CLI entrypoint for NetFlow Sentinel v2 CSV Inference Pipeline.
 
 Performs verified, reproducible inference on new network flows:
-1. Validates input CSV existence, non-emptiness, and NF-UNSW-NB15-v3 contract.
-2. Loads verified train-only preprocessing artifact from Issue #8 (fail-closed).
+1. Validates input CSV existence, non-emptiness, and canonical-flow-v2-18 contract.
+2. Loads verified train-only preprocessing artifact (fail-closed).
 3. Loads verified model artifact with SHA-256 and companion manifest provenance.
 4. Executes preprocessing transform and model prediction without refitting.
 5. Exports predictions preserving input row identity.
@@ -107,7 +107,7 @@ def _resolve_model_paths(
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     parser = argparse.ArgumentParser(
-        description="NF-UNSW-NB15-v3 CSV Network Flow Inference Pipeline",
+        description="NetFlow Sentinel v2 CSV Network Flow Inference Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -150,7 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--preprocessor-artifact",
         "-p",
         type=str,
-        default=str(ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"),
+        default=str(ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"),
         help="Path to verified preprocessor artifact .joblib file",
     )
     parser.add_argument(
@@ -160,7 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
             PROJECT_ROOT
             / "reports"
             / "preprocessing"
-            / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+            / "v2_flow_preprocessing_manifest.json"
         ),
         help="Path to preprocessor companion manifest .json file",
     )

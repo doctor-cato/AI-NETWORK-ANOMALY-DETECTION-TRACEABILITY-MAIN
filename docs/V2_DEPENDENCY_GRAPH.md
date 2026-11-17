@@ -49,7 +49,7 @@
 | **#85** | M6.2 | Kiểm chứng khả năng liên kết AIT NetFlow ↔ AIT Log v2.1 | Data | P0 | **P0** | #84 | Agent 1 (Data) |
 | **#86** | M6.2 | Chuẩn hóa timestamp và entity identifiers đa nguồn | Data | P0 | **P0** | #79 | Agent 1 (Data) |
 | **#87** | M6.2 | Label harmonization và attack taxonomy thống nhất đa nguồn | Data | P0 | **P0** | #79 | Agent 1 (Data) |
-| **#88** | M6.2 | Network Flow adapter thống nhất cho NF-UNSW-NB15-v3 và AIT | Adapter | P0 | **P0** | #86 | Agent 1 (Data) |
+| **#88** | M6.2 | Network Flow adapter thống nhất cho `canonical-flow-v2-18` (AIT-NDS-v2, CTU-SME-11, NetFlow/Zeek) | Adapter | P0 | **P0** | #86 | Agent 1 (Data) |
 | **#89** | M6.2 | Adapter log lớp ứng dụng: DNS và Web/API | Adapter | P0 | **P0** | #86, #87 | Agent 1 (Data) |
 | **#90** | M6.2 | Adapter log danh tính và hệ thống: Auth/VPN và System/Audit | Adapter | P0 | **P0** | #86, #87 | Agent 1 (Data) |
 | **#91** | M6.2 | Data quality validation và rejection gate cho multi-source | Data | P0 | **P0** | #86, #87 | Agent 1 (Data) |
@@ -246,7 +246,7 @@ Nhằm đảm bảo **Maximum Safe Parallelism** và triệt tiêu xung đột m
 ## 6. Mốc Kiểm chứng Tích hợp (Integration Checkpoints)
 
 - **CP1 (Sau Wave 0 — M6.1):** v1.0.0 vẫn hoạt động nguyên trạng (`test_basic.py`, `test_pipeline.py` PASS). Canonical Security Event v2 merge thành công.
-- **CP2 (Sau Wave 1 & 2 — M6.2):** Pipeline đa nguồn nạp thành công cả NF-UNSW-NB15-v3 và AIT subsets mà không rò rỉ dữ liệu (zero leakage split test PASS).
+- **CP2 (Sau Wave 1 & 2 — M6.2):** Pipeline đa nguồn nạp thành công `AIT-NDS-v2`, `AIT-LDS-v2.1`, `AIT-ADS` và `CTU-SME-11` theo hợp đồng `canonical-flow-v2-18` mà không rò rỉ dữ liệu (zero leakage split test PASS); `NF-UNSW-NB15-v3` đã tách hoàn toàn sang historical archive.
 - **CP3 (Sau Wave 3 — M6.3, M6.4, M6.5):** 4 model AI, Behavioral Vector, Risk Scoring và AES-256-GCM hoạt động ăn khớp trên dữ liệu mẫu qua test suite tự động.
 - **CP4 (Sau Wave 4 — M6.6):** Pipeline Replay và Live Telemetry xử lý trơn tru với backpressure; kết nối thành công với Risk & Trace Engine.
 - **CP5 (Sau Wave 5 — M6.7):** Desktop Tauri 2 + Svelte 5 khởi động và giao tiếp thông suốt với FastAPI sidecar thật; installer NSIS build thành công và vượt qua kiểm thử offline.

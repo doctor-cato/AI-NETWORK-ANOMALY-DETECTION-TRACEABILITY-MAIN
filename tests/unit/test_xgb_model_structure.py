@@ -9,7 +9,7 @@ from sklearn.exceptions import NotFittedError
 from xgboost import XGBClassifier
 
 from network_anomaly.config import RANDOM_SEED
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.models.random_forest import RandomForestModel
 from network_anomaly.models.xgboost_model import (
     XGBoostModel,
@@ -26,12 +26,12 @@ def test_xgb_model_default_initialization():
 
     assert model.model_type == "XGBoost"
     assert model.task == "binary_classification"
-    assert model.target == "Label"
+    assert model.target == "label_binary"
     assert model.positive_class == "Attack"
     assert model.random_state == RANDOM_SEED
 
     assert model.feature_names == ML_FEATURE_COLUMNS
-    assert len(model.feature_names) == 47
+    assert len(model.feature_names) == 18
 
     assert model.is_fitted is False
     assert isinstance(model.estimator, XGBClassifier)
@@ -78,7 +78,7 @@ def test_xgb_model_initialization_with_protocol():
 def test_xgb_model_unfitted_guards():
     """Verify predict and predict_proba raise NotFittedError before fitting."""
     model = XGBoostModel()
-    dummy_input = [[0.0] * 47]
+    dummy_input = [[0.0] * 18]
 
     with pytest.raises(NotFittedError, match="not fitted yet"):
         model.predict(dummy_input)

@@ -34,10 +34,10 @@ from network_anomaly.canonical.event import (  # noqa: E402
     RawProvenance,
 )
 from network_anomaly.canonical.feature_contract import (  # noqa: E402
-    get_baseline_47_feature_contract,
+    get_flow_feature_contract_v2,
 )
 from network_anomaly.crypto.aead import AESGCMCipher  # noqa: E402
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS  # noqa: E402
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator  # noqa: E402
 from network_anomaly.streaming.pipeline import StreamingEventPipeline  # noqa: E402
 from network_anomaly.telemetry.collector import NetFlowIPFIXDecoder  # noqa: E402
@@ -65,7 +65,7 @@ def _summary_us(samples_us: List[float]) -> Dict[str, float]:
 
 def run_benchmark(batch_events: int = 200, micro_iters: int = 100) -> Dict[str, Any]:
     env = collect_environment_metadata()
-    contract = get_baseline_47_feature_contract()
+    contract = get_flow_feature_contract_v2()
     orchestrator = LiveSystemOrchestrator()
     mode_mgr = ModeOrchestrator(orchestrator=orchestrator)
 

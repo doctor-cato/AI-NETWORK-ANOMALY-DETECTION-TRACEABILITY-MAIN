@@ -5,32 +5,40 @@ This product includes software developed under the Apache License, Version 2.0
 (see LICENSE).
 
 ===============================================================================
-DATASET & DERIVED MODEL ARTIFACT ATTRIBUTION AND NON-COMMERCIAL RESTRICTION
+DATASET & DERIVED MODEL ARTIFACT ATTRIBUTION (v2 MULTI-SOURCE ARCHITECTURE)
 ===============================================================================
 
 The embedded demo dataset subset (data/demo/demo_flows.csv,
 data/demo/demo_labels.csv) and derived trained ML artifacts
-(artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib and the 4 model
-artifacts under artifacts/models/) are derived from:
+(artifacts/preprocessing/v2_flow_preprocessor.joblib and the 4 model artifacts
+under artifacts/models/) are trained/sampled exclusively from:
 
-  Dataset : NF-UNSW-NB15-v3
-  Publisher: The University of Queensland (UQ)
-  DOI     : 10.48610/6E0EDA1
-  UQ RDM  : abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f
-  Paper   : Majed Luay, Siamak Layeghy, Seyedehfaezeh Hosseininoorbin,
-            Mohanad Sarhan, Nour Moustafa, and Marius Portmann,
-            "Temporal Analysis of NetFlow Datasets for Network Intrusion
-            Detection Systems", arXiv:2503.04404 (2025).
-  License : Permitted Re-Use with Commercial Use Restriction (UQ License ID 454104)
-            https://guides.library.uq.edu.au/research-and-teaching-staff/data-deposit-checklist/license-reuse-noncommercial
+  1. AIT NetFlow Data Set v2 (AIT-NDS-v2)
+     Publisher: AIT Austrian Institute of Technology GmbH
+     DOI      : 10.5281/zenodo.13168643
+     Source   : NetFlow records generated from AIT-LDS-v2.0 PCAPs
+     License  : Creative Commons Attribution 4.0 International (CC BY 4.0)
+                https://creativecommons.org/licenses/by/4.0/
 
-IMPORTANT:
-- Full citation is required when using, evaluating, or referencing the dataset
-  or derived artifacts.
-- Commercial use of NF-UNSW-NB15-v3 and artifacts subject to its terms is
-  prohibited without separate written permission from the dataset copyright
-  holders / The University of Queensland.
-- The Apache-2.0 license of the NetFlow Sentinel source code does NOT relicense
-  the NF-UNSW-NB15-v3 dataset or remove its non-commercial restriction.
+Additional datasets verified and supported in NetFlow Sentinel v2 external
+benchmarks and correlation pipelines:
+
+  2. CTU-SME-11
+     Publisher: Stratosphere Laboratory, Czech Technical University in Prague
+     DOI      : 10.5281/zenodo.7958258 (record 7958259)
+     License  : Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+  3. AIT Alert Data Set (AIT-ADS)
+     Publisher: AIT Austrian Institute of Technology GmbH
+     DOI      : 10.5281/zenodo.8263181
+     License  : Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+  4. AIT Log Data Set v2.1 (AIT-LDS-v2.1 — correlation analysis only, NOT in weights)
+     Publisher: AIT Austrian Institute of Technology GmbH
+     DOI      : 10.5281/zenodo.19483937
+     License  : Creative Commons Attribution-NonCommercial-ShareAlike 4.0 (CC BY-NC-SA 4.0)
+
+Legacy v1 NF-UNSW-NB15-v3 records and reports archived under */historical/nf_unsw_nb15_v3/
+remain subject to University of Queensland License ID 454104 (DOI: 10.48610/6E0EDA1).
 
 See THIRD_PARTY_NOTICES.md for third-party software component notices.

@@ -5,7 +5,7 @@ Implements Issues #128 and #137 for NetFlow Sentinel v2.0.
 The decoder accepts standard NetFlow v9 / IPFIX templates and exposes the
 private lab enterprise convention used by the synthetic exporter in the
 acceptance test: ``PEN 50000`` (IPFIX) or IE ``50000 + index`` (NetFlow v9)
-carries the canonical 47 model features in contract order.
+carries the canonical v2 model features in contract order.
 
 Nothing is synthesised here. A standard router template yields the flow tuples
 and counters a router actually exports; the remaining model features stay
@@ -30,7 +30,7 @@ from network_anomaly.canonical.event import (
     RawProvenance,
     ValidationStatus,
 )
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 
 # Standard NetFlow v9 & IPFIX Information Element Field Types
 FIELD_IN_BYTES = 1

@@ -9,7 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.telemetry.collector import (
     LAB_ENTERPRISE_FIELD_BASE,
     LAB_ENTERPRISE_NUMBER,
@@ -64,14 +64,14 @@ def build_v9_packet(
                 "!HHBIIIIBII",
                 40000 + index,
                 443,
-                int(features["PROTOCOL"]),
-                int(features["IN_BYTES"]),
-                int(features["OUT_BYTES"]),
-                int(features["IN_PKTS"]),
-                int(features["OUT_PKTS"]),
-                int(features["TCP_FLAGS"]),
+                int(features["protocol_num"]),
+                int(features["bytes_in"]),
+                int(features["bytes_out"]),
+                int(features["pkts_in"]),
+                int(features["pkts_out"]),
+                24,
                 start,
-                start + int(features["FLOW_DURATION_MILLISECONDS"]),
+                start + int(features["duration_ms"]),
             )
         )
         records += b"".join(struct.pack("!d", features[name]) for name in ML_FEATURE_COLUMNS)
@@ -96,12 +96,12 @@ def build_ipfix_packet(features, template_id=300):
             "!HHBIIIIBQQ",
             41000,
             8443,
-            int(features["PROTOCOL"]),
-            int(features["IN_BYTES"]),
-            int(features["OUT_BYTES"]),
-            int(features["IN_PKTS"]),
-            int(features["OUT_PKTS"]),
-            int(features["TCP_FLAGS"]),
+            int(features["protocol_num"]),
+            int(features["bytes_in"]),
+            int(features["bytes_out"]),
+            int(features["pkts_in"]),
+            int(features["pkts_out"]),
+            24,
             now_ms,
             now_ms + 25,
         )
@@ -135,7 +135,7 @@ class TestNetFlowIPFIXDecoder:
 
 
 class TestEnterpriseFeatureMapping:
-    def test_v9_lab_ies_carry_all_47_features(self, baseline_features):
+    def test_v9_lab_ies_carry_all_18_features(self, baseline_features):
         features = baseline_features()
         decoder = NetFlowIPFIXDecoder()
         events = decoder.decode_datagram(build_v9_packet([features]))
@@ -150,7 +150,7 @@ class TestEnterpriseFeatureMapping:
         assert event.flow_metrics.duration_ms == 34.0
         assert event.raw_provenance.adapter_name == "NetFlow-v9Collector"
 
-    def test_ipfix_enterprise_pen_carries_all_47_features(self, baseline_features):
+    def test_ipfix_enterprise_pen_carries_all_18_features(self, baseline_features):
         features = baseline_features()
         events = NetFlowIPFIXDecoder().decode_datagram(build_ipfix_packet(features))
 
@@ -214,7 +214,7 @@ class TestUDPFlowCollector:
             events = collector.drain()
             assert len(events) == 1
             assert events[0].ml_features is not None
-            assert len(events[0].ml_features) == 47
+            assert len(events[0].ml_features) == 18
 
             stats = collector.stats()
             assert stats["datagrams_received"] == 1

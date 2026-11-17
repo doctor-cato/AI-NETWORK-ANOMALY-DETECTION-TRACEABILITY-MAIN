@@ -2,7 +2,7 @@
 """Unit tests — Isolation Forest model component (Issue #11).
 
 Synthetic fixtures only. These tests cover configuration, validation and the
-model contract; they do not fit on UNSW-NB15 and are not experimental results.
+model contract; they do not fit on AIT-NDS-v2 or CTU-SME-11 and are not experimental results.
 """
 
 import numpy as np

@@ -1,4 +1,4 @@
-"""Feature contract enforcement for NetFlow Sentinel v2.0.
+"""Feature contract enforcement for NetFlow Sentinel v2.
 
 Provides strict feature boundary validation, detects missing features,
 and guarantees that no missing features are ever silently imputed.
@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from pydantic import BaseModel
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import (
+    FEATURE_CONTRACT_ID,
+    FEATURE_CONTRACT_VERSION,
+    ML_FEATURE_COLUMNS,
+)
 
 
 class FeatureContract(BaseModel):
@@ -56,11 +60,14 @@ class FeatureContract(BaseModel):
         return np.array([float(record[f]) for f in self.feature_names], dtype=np.float32)
 
 
-def get_baseline_47_feature_contract() -> FeatureContract:
-    """Returns the canonical 47-feature contract for NF-UNSW-NB15-v3."""
+def get_flow_feature_contract_v2() -> FeatureContract:
+    """Return the canonical 18-feature v2 contract aligned across AIT-NDS-v2, CTU-SME-11, and live telemetry."""
     return FeatureContract(
-        contract_id="nf-unsw-nb15-v3-baseline-47",
-        version="2.0.0",
+        contract_id=FEATURE_CONTRACT_ID,
+        version=FEATURE_CONTRACT_VERSION,
         feature_names=list(ML_FEATURE_COLUMNS),
-        description="Canonical 47 ML feature set extracted by nProbe v3 for NF-UNSW-NB15-v3",
+        description=(
+            "Canonical 18 ML flow features derived strictly from bidirectional duration, "
+            "bytes, packets, and IANA protocol across AIT-NDS-v2, CTU-SME-11, and live NetFlow/IPFIX."
+        ),
     )

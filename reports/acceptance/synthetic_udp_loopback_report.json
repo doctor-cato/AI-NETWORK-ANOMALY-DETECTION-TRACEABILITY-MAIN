@@ -3,7 +3,7 @@
   "synthetic": true,
   "dataset_provenance": "synthetic_lab_exporter (not an official dataset)",
   "issue": "#137",
-  "tested_at_utc": "2026-11-17T16:25:44.674072+00:00",
+  "tested_at_utc": "2026-11-17T18:54:23.945396+00:00",
   "scope": {
     "transport": "UDP over 127.0.0.1 loopback",
     "exporter": "in-process synthetic NetFlow v9 / IPFIX exporter",
@@ -13,20 +13,20 @@
   "environment": {
     "platform": "Windows-11-10.0.26200-SP0",
     "python": "3.12.10",
-    "pid": 30252
+    "pid": 6692
   },
   "packets": {
-    "netflow_v9_sha256": "6a3ee628f0f79039d7b6dd79e4f3f95c43fc3c641aeb01ed1925d45822d857f7",
-    "netflow_v9_data_only_sha256": "bcfbc6952a221cf242535e6b8e9ab3d86ef4f4a197aa03dfa04e143642859600",
-    "ipfix_sha256": "108ad0c966883af9311ed73f8ac7d50262df9ecae3adf378b2bba56ec31f4e2a"
+    "netflow_v9_sha256": "b882877560d364cd86dd33ea7e9a7f4f2af62e7c6b8c40e0572b889d1966baac",
+    "netflow_v9_data_only_sha256": "02c4be7531aad284d87e8056d7eb8713f54a6b2c05c7fe1a64484fccd34f577d",
+    "ipfix_sha256": "b69b2bc87ebe48761089eefca2eb5de1013655b16513667a6c095d2aabb86801"
   },
   "expected_events": 6,
   "events_processed": 6,
-  "elapsed_seconds": 0.908,
+  "elapsed_seconds": 0.7815,
   "stages": {
     "udp_transport": {
       "status": "PASS",
-      "evidence": "4 datagrams received on UDP port 57697"
+      "evidence": "4 datagrams received on UDP port 52916"
     },
     "decoder": {
       "status": "PASS",
@@ -46,11 +46,11 @@
     },
     "feature_contract": {
       "status": "PASS",
-      "evidence": "6/6 events satisfied all 47 non-imputed features"
+      "evidence": "6/6 events satisfied all 18 non-imputed features"
     },
     "ai_inference": {
       "status": "PASS",
-      "evidence": "mode=REAL_MODELS, participating=['autoencoder', 'isolation_forest', 'random_forest', 'xgboost'], avg_latency_us=76414.733, ood_gate=NOT_FITTED"
+      "evidence": "mode=REAL_MODELS, participating=['autoencoder', 'isolation_forest', 'random_forest', 'xgboost'], avg_latency_us=59192.167, ood_gate=NOT_FITTED"
     },
     "model_readiness": {
       "status": "PASS",
@@ -58,7 +58,7 @@
     },
     "risk_scoring": {
       "status": "PASS",
-      "evidence": "risk scores: 6904fc23=8.0, 0bcee19a=28.3, fde776b9=54.8, 9c00ae4b=7.8, 25b7f4df=7.9, 2cf54936=7.8"
+      "evidence": "risk scores: 127d5ccc=20.3, 14b6fe87=35.9, adf10715=62.4, b83c38a7=20.1, 1818c448=19.8, 7920bd5f=20.2"
     },
     "alerts": {
       "status": "NOT_TRIGGERED",
@@ -84,10 +84,10 @@
     "events_dropped": 0,
     "queue_depth": 0,
     "queue_capacity": 2048,
-    "last_datagram_at_utc": "2026-11-17T16:25:44.147929+00:00",
+    "last_datagram_at_utc": "2026-11-17T18:54:23.423096+00:00",
     "last_error": null,
     "running": false,
-    "bound_port": 57697,
+    "bound_port": 52916,
     "decoder": {
       "malformed_packet_count": 1,
       "unresolved_template_count": 0,
@@ -102,8 +102,8 @@
     "total_dropped": 0,
     "queue_utilization_pct": 0.0,
     "avg_batch_size": 6.0,
-    "throughput_events_per_sec": 1.91,
-    "avg_latency_ms": 0.01
+    "throughput_events_per_sec": 4.28,
+    "avg_latency_ms": 0.02
   },
   "metrics": {
     "events_received": 6,
@@ -111,17 +111,17 @@
     "ml_ready_events": 6,
     "inference_errors": 0,
     "alerts_raised": 0,
-    "avg_inference_latency_us": 76414.733,
-    "max_inference_latency_us": 91197.2,
-    "last_event_at_utc": "2026-11-17T16:25:44.146213+00:00"
+    "avg_inference_latency_us": 59192.167,
+    "max_inference_latency_us": 63555.7,
+    "last_event_at_utc": "2026-11-17T18:54:23.420472+00:00"
   },
   "inference": {
     "preprocessor": {
       "ready": true,
-      "path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\preprocessing\\nf_unsw_nb15_v3_preprocessor.joblib",
-      "sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+      "path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\preprocessing\\v2_flow_preprocessor.joblib",
+      "sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32",
       "error": null,
-      "feature_contract_version": "nf-unsw-nb15-v3-baseline-47"
+      "feature_contract_version": "canonical-flow-v2-18"
     },
     "models": [
       {
@@ -131,16 +131,19 @@
         "readiness": "VALIDATED",
         "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\random_forest\\random_forest_baseline.joblib",
         "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\models\\random_forest_manifest.json",
-        "artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
+        "artifact_sha256": "0dd7aaafa40f351986d7f977e81d9517a3c25083e6cd4525ecdb23abac38dbf0",
         "threshold": 0.5,
-        "threshold_source": "default_binary_decision_0.5",
+        "threshold_source": "manifest.threshold",
         "score_semantics": "calibrated_binary_probability",
         "reason": null,
-        "loaded_at_utc": "2026-11-17T16:25:41.842836+00:00",
+        "loaded_at_utc": "2026-11-17T18:54:22.663464+00:00",
         "inference_count": 6,
         "error_count": 0,
-        "last_latency_us": 58618.4,
-        "validated": true
+        "last_latency_us": 41321.0,
+        "validated": true,
+        "feature_contract_version": "canonical-flow-v2-18",
+        "dataset_provenance": "AIT-NDS-v2 (10.5281/zenodo.13168643); Train={fox,harrison,santos,wardbeck,wilson}",
+        "training_run_id": "v2-rf-20261117T181745Z"
       },
       {
         "model_key": "xgboost",
@@ -149,16 +152,19 @@
         "readiness": "VALIDATED",
         "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\xgboost\\xgboost_baseline.joblib",
         "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\models\\xgboost_manifest.json",
-        "artifact_sha256": "3098b75acdd79c39605d724880f8f2ed48af6d68a0651292e27804b42a1f493e",
+        "artifact_sha256": "6bb5a6f2ac6f16fc76138c6f22c3e80cc8664d2db1ddc039819c845a97a26732",
         "threshold": 0.5,
-        "threshold_source": "default_binary_decision_0.5",
+        "threshold_source": "manifest.threshold",
         "score_semantics": "calibrated_binary_probability",
         "reason": null,
-        "loaded_at_utc": "2026-11-17T16:25:43.345861+00:00",
+        "loaded_at_utc": "2026-11-17T18:54:22.748649+00:00",
         "inference_count": 6,
         "error_count": 0,
-        "last_latency_us": 1537.9,
-        "validated": true
+        "last_latency_us": 1311.1,
+        "validated": true,
+        "feature_contract_version": "canonical-flow-v2-18",
+        "dataset_provenance": "AIT-NDS-v2 (10.5281/zenodo.13168643); Train={fox,harrison,santos,wardbeck,wilson}",
+        "training_run_id": "v2-xgb-20261117T182043Z"
       },
       {
         "model_key": "isolation_forest",
@@ -167,16 +173,19 @@
         "readiness": "VALIDATED",
         "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\isolation_forest\\isolation_forest.joblib",
         "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\models\\isolation_forest_manifest.json",
-        "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
-        "threshold": -0.033526858092757406,
+        "artifact_sha256": "aca66915e0f57433c18ebbb819f2438c75e3840a183d2e379c986f0952e1aa1c",
+        "threshold": 0.002736309694079453,
         "threshold_source": "manifest.threshold",
         "score_semantics": "empirical_percentile_vs_validation_benign",
         "reason": null,
-        "loaded_at_utc": "2026-11-17T16:25:43.382115+00:00",
+        "loaded_at_utc": "2026-11-17T18:54:22.826522+00:00",
         "inference_count": 6,
         "error_count": 0,
-        "last_latency_us": 8693.0,
-        "validated": true
+        "last_latency_us": 17943.1,
+        "validated": true,
+        "feature_contract_version": "canonical-flow-v2-18",
+        "dataset_provenance": "AIT-NDS-v2 (10.5281/zenodo.13168643); Benign-only Train={fox,harrison,santos,wardbeck,wilson}",
+        "training_run_id": "v2-if-20261117T183614Z"
       },
       {
         "model_key": "autoencoder",
@@ -185,16 +194,19 @@
         "readiness": "VALIDATED",
         "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\autoencoder\\autoencoder_model.joblib",
         "manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\autoencoder\\autoencoder_manifest.json",
-        "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
-        "threshold": 17234985.792475585,
+        "artifact_sha256": "2032f8caf37be27f12a91ca1348e85d32a718f332e151cd900dedcf082b71a1f",
+        "threshold": 0.0002279976895622908,
         "threshold_source": "manifest.threshold",
         "score_semantics": "empirical_percentile_vs_validation_benign",
         "reason": null,
-        "loaded_at_utc": "2026-11-17T16:25:43.388725+00:00",
+        "loaded_at_utc": "2026-11-17T18:54:22.832101+00:00",
         "inference_count": 6,
         "error_count": 0,
-        "last_latency_us": 675.2,
-        "validated": true
+        "last_latency_us": 656.2,
+        "validated": true,
+        "feature_contract_version": "canonical-flow-v2-18",
+        "dataset_provenance": "AIT-NDS-v2 (10.5281/zenodo.13168643); Benign-only Train={fox,harrison,santos,wardbeck,wilson}",
+        "training_run_id": "v2-ae-20261117T183534Z"
       }
     ],
     "ready_count": 4,
@@ -211,10 +223,10 @@
   "alerts": [],
   "event_results": [
     {
-      "event_id": "6904fc23-5de6-4b63-95f8-3ef9b44a3414",
+      "event_id": "127d5ccc-7daa-41db-82b2-b5bdb186f314",
       "entity_id": "host:192.0.2.100",
       "is_ml_flow": true,
-      "risk_score": 8.015,
+      "risk_score": 20.330000000000002,
       "risk_level": "LOW",
       "timeline_updated": false,
       "key_rotated": false,
@@ -222,22 +234,22 @@
       "missing_features": [],
       "provenance": {
         "source_id": "collector:netflow-v9:127.0.0.1",
-        "source_file": "udp://127.0.0.1:57698",
+        "source_file": "udp://127.0.0.1:52917",
         "adapter_name": "NetFlow-v9Collector",
         "source_checksum": ""
       },
-      "timestamp": "2026-11-17T16:24:53+00:00",
+      "timestamp": "2026-11-17T18:53:32+00:00",
       "source_ip": "192.0.2.100",
       "dest_ip": "192.0.2.10",
       "dest_port": 80,
       "attack_type": null,
-      "behavioral_vector_id": "2cd8a18e-34d0-4d9f-9204-d493a59e1baf",
+      "behavioral_vector_id": "114cf100-924d-4dd2-ab24-93cdb97a22b3",
       "behavioral_vector_encrypted": true,
       "behavioral_vector": {
-        "vector_id": "bv-sess-217149-1794932693-1f6f71c7",
+        "vector_id": "bv-sess-897275-1794941612-1f6f71c7",
         "entity_key": "host:192.0.2.100",
-        "window_start": "2026-11-17T16:24:53+00:00",
-        "window_end": "2026-11-17T16:24:53+00:00",
+        "window_start": "2026-11-17T18:53:32+00:00",
+        "window_end": "2026-11-17T18:53:32+00:00",
         "dimensions": 16,
         "version": "2.0.0",
         "features": [
@@ -279,61 +291,61 @@
         "sha256_hash": "1f6f71c73e974ae1094b61fa835063e6642b90796e0464587f93cda3dd847295"
       },
       "inference": {
-        "event_id": "6904fc23-5de6-4b63-95f8-3ef9b44a3414",
+        "event_id": "127d5ccc-7daa-41db-82b2-b5bdb186f314",
         "inference_mode": "REAL_MODELS",
         "ensemble_is_anomaly": false,
-        "ensemble_score": 0.0403,
+        "ensemble_score": 0.2866,
         "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
         "is_ood": false,
         "ood_reason": null,
         "model_predictions": {
           "random_forest": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.005576,
+            "score": 0.005576,
+            "normalized_score": 0.005576,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 29889.9
+            "latency_us": 30060.4
           },
           "xgboost": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 2.1e-05,
+            "score": 2.1e-05,
+            "normalized_score": 2.1e-05,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 5343.3
+            "latency_us": 2279.8
           },
           "isolation_forest": {
-            "raw_score": -0.113222,
-            "score": 0.126982,
-            "normalized_score": 0.126982,
+            "raw_score": -0.063255,
+            "score": 0.90749,
+            "normalized_score": 0.90749,
             "is_anomaly": false,
-            "threshold": -0.033526858092757406,
+            "threshold": 0.002736309694079453,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 9397.5
+            "latency_us": 16048.5
           },
           "autoencoder": {
-            "raw_score": 329771.660683,
-            "score": 0.141385,
-            "normalized_score": 0.141385,
-            "is_anomaly": false,
-            "threshold": 17234985.792475585,
+            "raw_score": 0.002,
+            "score": 0.987973,
+            "normalized_score": 0.987973,
+            "is_anomaly": true,
+            "threshold": 0.0002279976895622908,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 755.4
+            "latency_us": 669.2
           }
         },
-        "total_inference_latency_us": 64350.6,
+        "total_inference_latency_us": 50900.1,
         "per_model_latency_us": {
-          "random_forest": 29889.9,
-          "xgboost": 5343.3,
-          "isolation_forest": 9397.5,
-          "autoencoder": 755.4
+          "random_forest": 30060.4,
+          "xgboost": 2279.8,
+          "isolation_forest": 16048.5,
+          "autoencoder": 669.2
         },
         "participating_models": [
           "random_forest",
@@ -348,33 +360,33 @@
       }
     },
     {
-      "event_id": "0bcee19a-811a-461a-ad09-9b002483afbc",
+      "event_id": "14b6fe87-6da4-4e00-9fb4-53a86841bc18",
       "entity_id": "host:192.0.2.105",
       "is_ml_flow": true,
-      "risk_score": 28.285,
-      "risk_level": "LOW",
+      "risk_score": 35.92,
+      "risk_level": "MEDIUM",
       "timeline_updated": false,
       "key_rotated": false,
       "feature_status": "MODEL_READY",
       "missing_features": [],
       "provenance": {
         "source_id": "collector:netflow-v9:127.0.0.1",
-        "source_file": "udp://127.0.0.1:57698",
+        "source_file": "udp://127.0.0.1:52917",
         "adapter_name": "NetFlow-v9Collector",
         "source_checksum": ""
       },
-      "timestamp": "2026-11-17T16:24:52+00:00",
+      "timestamp": "2026-11-17T18:53:31+00:00",
       "source_ip": "192.0.2.105",
       "dest_ip": "192.0.2.10",
       "dest_port": 80,
       "attack_type": null,
-      "behavioral_vector_id": "4c6dd7a9-e03a-4d71-982d-3bfca4b7719a",
+      "behavioral_vector_id": "039360a2-3a1d-4d62-8ddc-c4493c979327",
       "behavioral_vector_encrypted": true,
       "behavioral_vector": {
-        "vector_id": "bv-sess-292841-1794932692-a2c55ddc",
+        "vector_id": "bv-sess-49492-1794941611-a2c55ddc",
         "entity_key": "host:192.0.2.105",
-        "window_start": "2026-11-17T16:24:52+00:00",
-        "window_end": "2026-11-17T16:24:52+00:00",
+        "window_start": "2026-11-17T18:53:31+00:00",
+        "window_end": "2026-11-17T18:53:31+00:00",
         "dimensions": 16,
         "version": "2.0.0",
         "features": [
@@ -416,61 +428,61 @@
         "sha256_hash": "a2c55ddcc642ef59b98aa6cf6d56a5e05145c1eb6e66c623ebdc725021545816"
       },
       "inference": {
-        "event_id": "0bcee19a-811a-461a-ad09-9b002483afbc",
+        "event_id": "14b6fe87-6da4-4e00-9fb4-53a86841bc18",
         "inference_mode": "REAL_MODELS",
         "ensemble_is_anomaly": false,
-        "ensemble_score": 0.1457,
+        "ensemble_score": 0.2984,
         "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
         "is_ood": false,
         "ood_reason": null,
         "model_predictions": {
           "random_forest": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.065338,
+            "score": 0.065338,
+            "normalized_score": 0.065338,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 43586.1
+            "latency_us": 41578.9
           },
           "xgboost": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.006361,
+            "score": 0.006361,
+            "normalized_score": 0.006361,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 1263.6
+            "latency_us": 970.7
           },
           "isolation_forest": {
-            "raw_score": -0.106881,
-            "score": 0.1798,
-            "normalized_score": 0.1798,
+            "raw_score": -0.042489,
+            "score": 0.931541,
+            "normalized_score": 0.931541,
             "is_anomaly": false,
-            "threshold": -0.033526858092757406,
+            "threshold": 0.002736309694079453,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 8092.6
+            "latency_us": 13627.1
           },
           "autoencoder": {
-            "raw_score": 4653997.958996,
-            "score": 0.791352,
-            "normalized_score": 0.791352,
+            "raw_score": 6.7e-05,
+            "score": 0.870549,
+            "normalized_score": 0.870549,
             "is_anomaly": false,
-            "threshold": 17234985.792475585,
+            "threshold": 0.0002279976895622908,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 528.3
+            "latency_us": 405.8
           }
         },
-        "total_inference_latency_us": 76870.5,
+        "total_inference_latency_us": 58857.3,
         "per_model_latency_us": {
-          "random_forest": 43586.1,
-          "xgboost": 1263.6,
-          "isolation_forest": 8092.6,
-          "autoencoder": 528.3
+          "random_forest": 41578.9,
+          "xgboost": 970.7,
+          "isolation_forest": 13627.1,
+          "autoencoder": 405.8
         },
         "participating_models": [
           "random_forest",
@@ -485,33 +497,33 @@
       }
     },
     {
-      "event_id": "fde776b9-a887-40d9-851b-23fb00d5e8e4",
+      "event_id": "adf10715-dd21-4214-ade9-85db3e22f697",
       "entity_id": "host:192.0.2.10",
       "is_ml_flow": true,
-      "risk_score": 54.825,
+      "risk_score": 62.39,
       "risk_level": "MEDIUM",
-      "timeline_updated": false,
+      "timeline_updated": true,
       "key_rotated": false,
       "feature_status": "MODEL_READY",
       "missing_features": [],
       "provenance": {
         "source_id": "collector:netflow-v9:127.0.0.1",
-        "source_file": "udp://127.0.0.1:57698",
+        "source_file": "udp://127.0.0.1:52917",
         "adapter_name": "NetFlow-v9Collector",
         "source_checksum": ""
       },
-      "timestamp": "2026-11-17T16:24:51+00:00",
+      "timestamp": "2026-11-17T18:53:30+00:00",
       "source_ip": "192.0.2.10",
       "dest_ip": "198.51.100.5",
       "dest_port": 445,
       "attack_type": null,
-      "behavioral_vector_id": "6ddb5ecf-e7cb-43b6-82ae-18bf3ac05588",
+      "behavioral_vector_id": "67c0f1ac-c730-4062-94f2-0f639afcae8f",
       "behavioral_vector_encrypted": true,
       "behavioral_vector": {
-        "vector_id": "bv-sess-582031-1794932691-e8824120",
+        "vector_id": "bv-sess-726212-1794941610-e8824120",
         "entity_key": "host:192.0.2.10",
-        "window_start": "2026-11-17T16:24:51+00:00",
-        "window_end": "2026-11-17T16:24:51+00:00",
+        "window_start": "2026-11-17T18:53:30+00:00",
+        "window_end": "2026-11-17T18:53:30+00:00",
         "dimensions": 16,
         "version": "2.0.0",
         "features": [
@@ -553,61 +565,61 @@
         "sha256_hash": "e8824120fbef0191baa73ac0a2c576f84207e9864dbd4e982f7457ab7379296c"
       },
       "inference": {
-        "event_id": "fde776b9-a887-40d9-851b-23fb00d5e8e4",
+        "event_id": "adf10715-dd21-4214-ade9-85db3e22f697",
         "inference_mode": "REAL_MODELS",
         "ensemble_is_anomaly": false,
-        "ensemble_score": 0.2465,
+        "ensemble_score": 0.3978,
         "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
         "is_ood": false,
         "ood_reason": null,
         "model_predictions": {
           "random_forest": {
-            "raw_score": 0.125,
-            "score": 0.125,
-            "normalized_score": 0.125,
+            "raw_score": 0.219285,
+            "score": 0.219285,
+            "normalized_score": 0.219285,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 41413.6
+            "latency_us": 41636.5
           },
           "xgboost": {
-            "raw_score": 8.4e-05,
-            "score": 8.4e-05,
-            "normalized_score": 8.4e-05,
+            "raw_score": 0.062846,
+            "score": 0.062846,
+            "normalized_score": 0.062846,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 1627.5
+            "latency_us": 2396.3
           },
           "isolation_forest": {
-            "raw_score": -0.093019,
-            "score": 0.319624,
-            "normalized_score": 0.319624,
-            "is_anomaly": false,
-            "threshold": -0.033526858092757406,
+            "raw_score": 0.004191,
+            "score": 0.951456,
+            "normalized_score": 0.951456,
+            "is_anomaly": true,
+            "threshold": 0.002736309694079453,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 9027.8
+            "latency_us": 16303.4
           },
           "autoencoder": {
-            "raw_score": 156919456.827895,
-            "score": 0.99,
-            "normalized_score": 0.99,
+            "raw_score": 0.003395,
+            "score": 0.990119,
+            "normalized_score": 0.990119,
             "is_anomaly": true,
-            "threshold": 17234985.792475585,
+            "threshold": 0.0002279976895622908,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 716.3
+            "latency_us": 595.4
           }
         },
-        "total_inference_latency_us": 74964.4,
+        "total_inference_latency_us": 63555.7,
         "per_model_latency_us": {
-          "random_forest": 41413.6,
-          "xgboost": 1627.5,
-          "isolation_forest": 9027.8,
-          "autoencoder": 716.3
+          "random_forest": 41636.5,
+          "xgboost": 2396.3,
+          "isolation_forest": 16303.4,
+          "autoencoder": 595.4
         },
         "participating_models": [
           "random_forest",
@@ -622,10 +634,10 @@
       }
     },
     {
-      "event_id": "9c00ae4b-03d3-479c-9b80-d213adfe10ef",
+      "event_id": "b83c38a7-77ae-4559-ba90-a5ee3ddfa477",
       "entity_id": "host:192.0.2.77",
       "is_ml_flow": true,
-      "risk_score": 7.8100000000000005,
+      "risk_score": 20.095,
       "risk_level": "LOW",
       "timeline_updated": false,
       "key_rotated": false,
@@ -633,22 +645,22 @@
       "missing_features": [],
       "provenance": {
         "source_id": "collector:netflow-v9:127.0.0.1",
-        "source_file": "udp://127.0.0.1:57698",
+        "source_file": "udp://127.0.0.1:52917",
         "adapter_name": "NetFlow-v9Collector",
         "source_checksum": ""
       },
-      "timestamp": "2026-11-17T16:24:50+00:00",
+      "timestamp": "2026-11-17T18:53:29+00:00",
       "source_ip": "192.0.2.77",
       "dest_ip": "192.0.2.20",
       "dest_port": 443,
       "attack_type": null,
-      "behavioral_vector_id": "9cadf2d4-802f-4dd9-b2e9-a8f177b0bb34",
+      "behavioral_vector_id": "c080e435-e1dd-4275-9794-05a82dd4f597",
       "behavioral_vector_encrypted": true,
       "behavioral_vector": {
-        "vector_id": "bv-sess-686294-1794932690-b345164d",
+        "vector_id": "bv-sess-615637-1794941609-b345164d",
         "entity_key": "host:192.0.2.77",
-        "window_start": "2026-11-17T16:24:50+00:00",
-        "window_end": "2026-11-17T16:24:50+00:00",
+        "window_start": "2026-11-17T18:53:29+00:00",
+        "window_end": "2026-11-17T18:53:29+00:00",
         "dimensions": 16,
         "version": "2.0.0",
         "features": [
@@ -690,61 +702,61 @@
         "sha256_hash": "b345164d94f4a406220b6d2e0cb924fd174aa423816e4035e959b29238e18523"
       },
       "inference": {
-        "event_id": "9c00ae4b-03d3-479c-9b80-d213adfe10ef",
+        "event_id": "b83c38a7-77ae-4559-ba90-a5ee3ddfa477",
         "inference_mode": "REAL_MODELS",
         "ensemble_is_anomaly": false,
-        "ensemble_score": 0.0362,
+        "ensemble_score": 0.2819,
         "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
         "is_ood": false,
         "ood_reason": null,
         "model_predictions": {
           "random_forest": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.046614,
+            "score": 0.046614,
+            "normalized_score": 0.046614,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 46260.6
+            "latency_us": 39849.5
           },
           "xgboost": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.000288,
+            "score": 0.000288,
+            "normalized_score": 0.000288,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 934.5
+            "latency_us": 1587.8
           },
           "isolation_forest": {
-            "raw_score": -0.114324,
-            "score": 0.11878,
-            "normalized_score": 0.11878,
+            "raw_score": -0.081097,
+            "score": 0.878484,
+            "normalized_score": 0.878484,
             "is_anomaly": false,
-            "threshold": -0.033526858092757406,
+            "threshold": 0.002736309694079453,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 6477.3
+            "latency_us": 13331.7
           },
           "autoencoder": {
-            "raw_score": 254980.436025,
-            "score": 0.122776,
-            "normalized_score": 0.122776,
+            "raw_score": 7.5e-05,
+            "score": 0.87601,
+            "normalized_score": 0.87601,
             "is_anomaly": false,
-            "threshold": 17234985.792475585,
+            "threshold": 0.0002279976895622908,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 332.0
+            "latency_us": 620.0
           }
         },
-        "total_inference_latency_us": 75461.2,
+        "total_inference_latency_us": 57563.1,
         "per_model_latency_us": {
-          "random_forest": 46260.6,
-          "xgboost": 934.5,
-          "isolation_forest": 6477.3,
-          "autoencoder": 332.0
+          "random_forest": 39849.5,
+          "xgboost": 1587.8,
+          "isolation_forest": 13331.7,
+          "autoencoder": 620.0
         },
         "participating_models": [
           "random_forest",
@@ -759,10 +771,10 @@
       }
     },
     {
-      "event_id": "25b7f4df-0bc4-404d-bff8-d5e9a6600281",
+      "event_id": "1818c448-6599-44ea-bcaf-4a5c2bcf727c",
       "entity_id": "host:192.0.2.88",
       "is_ml_flow": true,
-      "risk_score": 7.865,
+      "risk_score": 19.82,
       "risk_level": "LOW",
       "timeline_updated": false,
       "key_rotated": false,
@@ -770,22 +782,22 @@
       "missing_features": [],
       "provenance": {
         "source_id": "collector:netflow-v9:127.0.0.1",
-        "source_file": "udp://127.0.0.1:57698",
+        "source_file": "udp://127.0.0.1:52917",
         "adapter_name": "NetFlow-v9Collector",
         "source_checksum": ""
       },
-      "timestamp": "2026-11-17T16:24:53+00:00",
+      "timestamp": "2026-11-17T18:53:32+00:00",
       "source_ip": "192.0.2.88",
       "dest_ip": "192.0.2.20",
       "dest_port": 443,
       "attack_type": null,
-      "behavioral_vector_id": "f5f4c35c-b4ec-45ca-8911-b993032219de",
+      "behavioral_vector_id": "d941678b-1f24-4a89-a50d-b1bbc0747056",
       "behavioral_vector_encrypted": true,
       "behavioral_vector": {
-        "vector_id": "bv-sess-221741-1794932693-d3444eb5",
+        "vector_id": "bv-sess-294912-1794941612-d3444eb5",
         "entity_key": "host:192.0.2.88",
-        "window_start": "2026-11-17T16:24:53+00:00",
-        "window_end": "2026-11-17T16:24:53+00:00",
+        "window_start": "2026-11-17T18:53:32+00:00",
+        "window_end": "2026-11-17T18:53:32+00:00",
         "dimensions": 16,
         "version": "2.0.0",
         "features": [
@@ -827,61 +839,61 @@
         "sha256_hash": "d3444eb5305e0a1acfd087694239f0e2a66968ada2411e8676d43083b2d092b4"
       },
       "inference": {
-        "event_id": "25b7f4df-0bc4-404d-bff8-d5e9a6600281",
+        "event_id": "1818c448-6599-44ea-bcaf-4a5c2bcf727c",
         "inference_mode": "REAL_MODELS",
         "ensemble_is_anomaly": false,
-        "ensemble_score": 0.0373,
+        "ensemble_score": 0.2764,
         "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
         "is_ood": false,
         "ood_reason": null,
         "model_predictions": {
           "random_forest": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.022053,
+            "score": 0.022053,
+            "normalized_score": 0.022053,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 44620.3
+            "latency_us": 39167.5
           },
           "xgboost": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.001477,
+            "score": 0.001477,
+            "normalized_score": 0.001477,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 1571.0
+            "latency_us": 1016.1
           },
           "isolation_forest": {
-            "raw_score": -0.114324,
-            "score": 0.11878,
-            "normalized_score": 0.11878,
+            "raw_score": -0.064951,
+            "score": 0.904547,
+            "normalized_score": 0.904547,
             "is_anomaly": false,
-            "threshold": -0.033526858092757406,
+            "threshold": 0.002736309694079453,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 8755.0
+            "latency_us": 16907.5
           },
           "autoencoder": {
-            "raw_score": 279756.31008,
-            "score": 0.12958,
-            "normalized_score": 0.12958,
+            "raw_score": 7.6e-05,
+            "score": 0.876449,
+            "normalized_score": 0.876449,
             "is_anomaly": false,
-            "threshold": 17234985.792475585,
+            "threshold": 0.0002279976895622908,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 794.3
+            "latency_us": 415.0
           }
         },
-        "total_inference_latency_us": 75644.5,
+        "total_inference_latency_us": 60795.9,
         "per_model_latency_us": {
-          "random_forest": 44620.3,
-          "xgboost": 1571.0,
-          "isolation_forest": 8755.0,
-          "autoencoder": 794.3
+          "random_forest": 39167.5,
+          "xgboost": 1016.1,
+          "isolation_forest": 16907.5,
+          "autoencoder": 415.0
         },
         "participating_models": [
           "random_forest",
@@ -896,10 +908,10 @@
       }
     },
     {
-      "event_id": "2cf54936-da97-4822-a905-2540708063ba",
+      "event_id": "7920bd5f-105e-45ff-9606-59d553acc9ce",
       "entity_id": "host:192.0.2.99",
       "is_ml_flow": true,
-      "risk_score": 7.825,
+      "risk_score": 20.155,
       "risk_level": "LOW",
       "timeline_updated": false,
       "key_rotated": false,
@@ -907,22 +919,22 @@
       "missing_features": [],
       "provenance": {
         "source_id": "collector:ipfix:127.0.0.1",
-        "source_file": "udp://127.0.0.1:57698",
+        "source_file": "udp://127.0.0.1:52917",
         "adapter_name": "IPFIXCollector",
         "source_checksum": ""
       },
-      "timestamp": "2026-11-17T16:25:43.541000+00:00",
+      "timestamp": "2026-11-17T18:54:22.943000+00:00",
       "source_ip": "192.0.2.99",
       "dest_ip": "192.0.2.20",
       "dest_port": 443,
       "attack_type": null,
-      "behavioral_vector_id": "39bb45a0-e1f8-40d1-aaa7-7b4ae2c99da8",
+      "behavioral_vector_id": "f9039b96-f1c6-422b-8a6c-b1dc48344717",
       "behavioral_vector_encrypted": true,
       "behavioral_vector": {
-        "vector_id": "bv-sess-496421-1794932743-1bbd6c55",
+        "vector_id": "bv-sess-314468-1794941662-1bbd6c55",
         "entity_key": "host:192.0.2.99",
-        "window_start": "2026-11-17T16:25:43.541000+00:00",
-        "window_end": "2026-11-17T16:25:43.541000+00:00",
+        "window_start": "2026-11-17T18:54:22.943000+00:00",
+        "window_end": "2026-11-17T18:54:22.943000+00:00",
         "dimensions": 16,
         "version": "2.0.0",
         "features": [
@@ -964,61 +976,61 @@
         "sha256_hash": "1bbd6c5541d1eb8f101c6e615b37f990515f808e9c32f3cdf6bdd7e101416648"
       },
       "inference": {
-        "event_id": "2cf54936-da97-4822-a905-2540708063ba",
+        "event_id": "7920bd5f-105e-45ff-9606-59d553acc9ce",
         "inference_mode": "REAL_MODELS",
         "ensemble_is_anomaly": false,
-        "ensemble_score": 0.0365,
+        "ensemble_score": 0.2831,
         "ensemble_score_semantics": "weighted_normalized_anomaly_score_not_probability",
         "is_ood": false,
         "ood_reason": null,
         "model_predictions": {
           "random_forest": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.041121,
+            "score": 0.041121,
+            "normalized_score": 0.041121,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 58618.4
+            "latency_us": 41321.0
           },
           "xgboost": {
-            "raw_score": 0.0,
-            "score": 0.0,
-            "normalized_score": 0.0,
+            "raw_score": 0.005576,
+            "score": 0.005576,
+            "normalized_score": 0.005576,
             "is_anomaly": false,
             "threshold": 0.5,
             "score_semantics": "calibrated_binary_probability",
             "normalization_note": null,
-            "latency_us": 1537.9
+            "latency_us": 1311.1
           },
           "isolation_forest": {
-            "raw_score": -0.114324,
-            "score": 0.11878,
-            "normalized_score": 0.11878,
+            "raw_score": -0.072042,
+            "score": 0.890795,
+            "normalized_score": 0.890795,
             "is_anomaly": false,
-            "threshold": -0.033526858092757406,
+            "threshold": 0.002736309694079453,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 8693.0
+            "latency_us": 17943.1
           },
           "autoencoder": {
-            "raw_score": 262081.547552,
-            "score": 0.124726,
-            "normalized_score": 0.124726,
+            "raw_score": 7.5e-05,
+            "score": 0.875556,
+            "normalized_score": 0.875556,
             "is_anomaly": false,
-            "threshold": 17234985.792475585,
+            "threshold": 0.0002279976895622908,
             "score_semantics": "empirical_percentile_vs_validation_benign",
             "normalization_note": null,
-            "latency_us": 675.2
+            "latency_us": 656.2
           }
         },
-        "total_inference_latency_us": 91197.2,
+        "total_inference_latency_us": 63480.9,
         "per_model_latency_us": {
-          "random_forest": 58618.4,
-          "xgboost": 1537.9,
-          "isolation_forest": 8693.0,
-          "autoencoder": 675.2
+          "random_forest": 41321.0,
+          "xgboost": 1311.1,
+          "isolation_forest": 17943.1,
+          "autoencoder": 656.2
         },
         "participating_models": [
           "random_forest",
@@ -1035,8 +1047,8 @@
   ],
   "limitations": [
     "Loopback UDP with a synthetic Python exporter; no physical router or switch was tested.",
-    "The 47 model features use a private lab IE convention (PEN 50000 / IE 50000+i, float64).",
-    "Synthetic feature values are fixtures, not benchmark samples from NF-UNSW-NB15-v3.",
+    "The 18 canonical v2 model features use a private lab IE convention (PEN 50000 / IE 50000+i, float64).",
+    "Synthetic feature values are fixtures, not real benchmark samples from AIT-NDS-v2 or CTU-SME-11.",
     "No alert reached the 70.0 risk threshold with the synthetic fixture; alert production is implemented but not exercised by this run."
   ],
   "hard_failures": [],

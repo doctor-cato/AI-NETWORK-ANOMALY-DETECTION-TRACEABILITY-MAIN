@@ -1,16 +1,4 @@
-"""Unit tests for NF-UNSW-NB15-v3 CSV Inference Pipeline (Issue #15).
-
-Verifies:
-1. Input schema validation (completeness, ordering, extra/target/metadata columns, invalid tokens).
-2. Data types, missing, NaN, Inf handling.
-3. Input row identity preservation.
-4. Preprocessor artifact verified loading (fail-closed on missing or hash mismatch).
-5. Model artifact verified loading (provenance, contract, hash, preprocessor compatibility).
-6. Zero-refitting guarantee (preprocessor and model state remain frozen).
-7. Output DataFrame consistency (row counts, class probabilities, anomaly scores).
-8. Metadata generation and schema verification.
-9. Backward compatibility for legacy entrypoints.
-"""
+"""Unit tests for NetFlow Sentinel v2 CSV Inference Pipeline."""
 
 from __future__ import annotations
 
@@ -26,7 +14,7 @@ import pytest
 from sklearn.ensemble import RandomForestClassifier
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     CATEGORICAL_CODED_COLUMNS,
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
@@ -53,15 +41,19 @@ from network_anomaly.preprocessing import (
 
 @pytest.fixture
 def synthetic_features() -> pd.DataFrame:
-    """Create a synthetic DataFrame satisfying the 47-feature baseline contract."""
+    """Create a synthetic DataFrame satisfying the 18-feature v2 contract."""
     rng = np.random.default_rng(seed=42)
     n_rows = 25
     data: Dict[str, np.ndarray] = {}
     for col in ML_FEATURE_COLUMNS:
         if col in CATEGORICAL_CODED_COLUMNS:
             data[col] = rng.integers(0, 10, size=n_rows)
+        elif col in ("bytes_in_ratio", "pkts_in_ratio"):
+            data[col] = rng.uniform(0.1, 0.9, size=n_rows)
+        elif col in ("has_response", "is_tcp", "is_udp"):
+            data[col] = rng.integers(0, 2, size=n_rows).astype(float)
         else:
-            data[col] = rng.normal(loc=100.0, scale=15.0, size=n_rows)
+            data[col] = np.abs(rng.normal(loc=100.0, scale=15.0, size=n_rows)) + 1.0
     return pd.DataFrame(data, columns=list(ML_FEATURE_COLUMNS))
 
 
@@ -74,8 +66,8 @@ def synthetic_preprocessor_and_model(
     # 1. Fit preprocessor on synthetic features
     prep = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
-        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-        split_manifest_sha256="bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+        dataset_sha256="cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+        split_manifest_sha256="1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
     )
     prep.fit(synthetic_features)
 
@@ -123,7 +115,7 @@ def test_validate_inference_input_success(synthetic_features: pd.DataFrame):
     assert list(X_ordered.columns) == list(ML_FEATURE_COLUMNS)
     assert len(X_ordered) == len(synthetic_features)
     assert summary["row_count"] == len(synthetic_features)
-    assert summary["feature_count"] == 47
+    assert summary["feature_count"] == 18
     assert summary["extra_columns_count"] == 0
 
 
@@ -133,7 +125,7 @@ def test_validate_inference_input_type_error():
         validate_inference_input([1, 2, 3])  # type: ignore
 
     with pytest.raises(TypeError, match="Input must be a pandas DataFrame"):
-        validate_inference_input({"PROTOCOL": [6]})  # type: ignore
+        validate_inference_input({"protocol_num": [6]})  # type: ignore
 
 
 def test_validate_inference_input_empty_error():
@@ -145,8 +137,8 @@ def test_validate_inference_input_empty_error():
 
 def test_validate_inference_input_missing_features(synthetic_features: pd.DataFrame):
     """Test rejection when one or more required features are missing."""
-    df_missing = synthetic_features.drop(columns=["PROTOCOL", "IN_BYTES"])
-    with pytest.raises(ValueError, match="missing 2 required baseline ML feature"):
+    df_missing = synthetic_features.drop(columns=["protocol_num", "bytes_in"])
+    with pytest.raises(ValueError, match="missing 2 required v2 ML feature"):
         validate_inference_input(df_missing)
 
 
@@ -164,22 +156,23 @@ def test_validate_inference_input_reorders_columns(synthetic_features: pd.DataFr
 def test_validate_inference_input_excludes_targets_and_trace_metadata(
     synthetic_features: pd.DataFrame,
 ):
-    """Test that Label, Attack, and trace-only metadata columns are strictly excluded from X."""
+    """Test that target and trace-only metadata columns are strictly excluded from X."""
     df_with_extras = synthetic_features.copy()
     # Add target columns
-    df_with_extras["Label"] = 1
-    df_with_extras["Attack"] = "Exploits"
+    df_with_extras["label_binary"] = 1
+    df_with_extras["attack_category"] = "Exploitation_And_C2"
+    df_with_extras["raw_label"] = "webshell"
+    df_with_extras["label_status"] = "MAPPED_ATTACK"
     # Add trace metadata columns
-    df_with_extras["IPV4_SRC_ADDR"] = "192.168.1.10"
-    df_with_extras["IPV4_DST_ADDR"] = "10.0.0.1"
-    df_with_extras["L4_SRC_PORT"] = 54321
-    df_with_extras["L4_DST_PORT"] = 80
-    df_with_extras["FLOW_START_MILLISECONDS"] = 1600000000000
-    df_with_extras["FLOW_END_MILLISECONDS"] = 1600000005000
+    df_with_extras["source_ip"] = "192.168.1.10"
+    df_with_extras["dest_ip"] = "10.0.0.1"
+    df_with_extras["source_port"] = 54321
+    df_with_extras["dest_port"] = 80
+    df_with_extras["timestamp_ms"] = 1600000000000
 
     X_ordered, summary = validate_inference_input(df_with_extras)
 
-    # Feature matrix X must only contain the 47 ML features
+    # Feature matrix X must only contain the 18 v2 ML features
     assert list(X_ordered.columns) == list(ML_FEATURE_COLUMNS)
     for col in TARGET_COLUMNS:
         assert col not in X_ordered.columns
@@ -225,8 +218,8 @@ def test_validate_inference_input_rejects_unparseable_strings(
 ):
     """Test that non-numeric unparseable string tokens raise a descriptive ValueError."""
     df_corrupt = synthetic_features.copy()
-    df_corrupt["IN_BYTES"] = df_corrupt["IN_BYTES"].astype(object)
-    df_corrupt.loc[2, "IN_BYTES"] = "invalid_string_payload"
+    df_corrupt["bytes_in"] = df_corrupt["bytes_in"].astype(object)
+    df_corrupt.loc[2, "bytes_in"] = "invalid_string_payload"
 
     with pytest.raises(ValueError, match="invalid numeric token"):
         validate_inference_input(df_corrupt)
@@ -237,9 +230,9 @@ def test_validate_inference_input_accepts_valid_missing_tokens(
 ):
     """Test that standard missing/infinity tokens are accepted for preprocessor imputation."""
     df_missing = synthetic_features.copy()
-    df_missing.loc[0, "IN_BYTES"] = np.nan
-    df_missing.loc[1, "OUT_BYTES"] = float("inf")
-    df_missing.loc[2, "MIN_TTL"] = float("-inf")
+    df_missing.loc[0, "bytes_in"] = np.nan
+    df_missing.loc[1, "bytes_out"] = float("inf")
+    df_missing.loc[2, "duration_ms"] = float("-inf")
 
     X_ordered, _ = validate_inference_input(df_missing)
     assert len(X_ordered) == len(synthetic_features)
@@ -250,14 +243,14 @@ def test_validate_inference_input_accepts_valid_missing_tokens(
 # =========================================================================
 
 
-def test_load_real_issue_8_preprocessor():
-    """Verify loading the real preprocessor artifact from Issue #8 if present."""
-    art_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+def test_load_real_v2_preprocessor():
+    """Verify loading the real v2 preprocessor artifact if present."""
+    art_path = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
     man_path = (
-        PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     )
     if not art_path.is_file() or not man_path.is_file():
-        pytest.skip("Real preprocessor artifact is unavailable")
+        pytest.skip("Real v2 preprocessor artifact is unavailable")
     manifest = json.loads(man_path.read_text(encoding="utf-8"))
     if manifest.get("artifact_sha256") != _sha256_file(art_path):
         with pytest.raises(ValueError, match="SHA-256 mismatch"):
@@ -266,7 +259,7 @@ def test_load_real_issue_8_preprocessor():
     prep, meta = load_verified_preprocessor(art_path, manifest_path=man_path)
     assert prep.is_fitted_ is True
     assert meta["feature_contract_version"] == FEATURE_CONTRACT_VERSION
-    assert meta["train_row_count"] == 1655797
+    assert meta["train_row_count"] == 1930219
 
 
 def test_load_verified_preprocessor_missing_artifact(tmp_path: Path):
@@ -393,7 +386,7 @@ def test_eligibility_gate_abstains_before_model_prediction(
     assert (result["inference_status"] == "ABSTAINED").all()
 
 
-def test_eligibility_gate_abstains_on_zero_ttl_batch(
+def test_eligibility_gate_abstains_on_hard_ood_batch(
     synthetic_preprocessor_and_model: Tuple[Path, Path, Path, Path],
     synthetic_features: pd.DataFrame,
 ):
@@ -403,10 +396,10 @@ def test_eligibility_gate_abstains_on_zero_ttl_batch(
         preprocessor_artifact_path=prep_art_path,
         model_manifest_path=model_man_path,
         preprocessor_manifest_path=prep_man_path,
-        eligibility_gate=InferenceEligibilityGate(),
+        eligibility_gate=InferenceEligibilityGate(strict_ood_abstain=True),
     )
     flows = synthetic_features.copy()
-    flows["MIN_TTL"] = 0
+    flows["duration_ms"] = -10.0
     result = pipeline.predict(flows)
     assert len(result) == len(flows)
     assert result["prediction"].isna().all()
@@ -1127,9 +1120,9 @@ def test_f2_autoencoder_config_architecture_and_preprocessor_mismatch_rejected(t
     with pytest.raises(ValueError, match="hyperparameters"):
         load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)
 
-    # 2. Invalid input_dimension (!= 47)
+    # 2. Invalid input_dimension (!= 18)
     bad_dim = json.loads(json.dumps(payload))
-    bad_dim["model_architecture"]["input_dimension"] = 46
+    bad_dim["model_architecture"]["input_dimension"] = 17
     ae_man.write_text(json.dumps(bad_dim), encoding="utf-8")
     with pytest.raises(ValueError, match="dimensions"):
         load_verified_model(ae_path, manifest_path=ae_man, expected_preprocessor_sha256=prep_sha)

@@ -17,9 +17,9 @@ from network_anomaly.canonical.event import (
     ValidationStatus,
 )
 from network_anomaly.canonical.feature_contract import (
-    get_baseline_47_feature_contract,
+    get_flow_feature_contract_v2,
 )
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 
 
 def test_canonical_security_event_v2_flow():
@@ -27,7 +27,7 @@ def test_canonical_security_event_v2_flow():
     event = CanonicalSecurityEvent(
         event_timestamp=now,
         event_kind=EventKind.FLOW,
-        source_id="source:nf-v3",
+        source_id="source:ait-nds-v2",
         entity_id="entity:host-101",
         source_ip="192.168.1.10",
         source_port=54321,
@@ -38,7 +38,7 @@ def test_canonical_security_event_v2_flow():
         raw_provenance=RawProvenance(
             source_file="test_flow.csv",
             line_or_offset=15,
-            adapter_name="NetFlowV3Adapter",
+            adapter_name="CanonicalFlowV2Adapter",
         ),
     )
 
@@ -110,10 +110,10 @@ def test_port_validation():
 
 
 def test_feature_contract_validation_and_no_imputation():
-    contract = get_baseline_47_feature_contract()
-    assert len(contract.feature_names) == 47
+    contract = get_flow_feature_contract_v2()
+    assert len(contract.feature_names) == 18
 
-    # 1. Complete valid 47 features
+    # 1. Complete valid 18 features
     complete_record = {feat: float(i + 1) for i, feat in enumerate(ML_FEATURE_COLUMNS)}
     is_valid, errors = contract.validate_features(complete_record)
     assert is_valid is True
@@ -121,7 +121,7 @@ def test_feature_contract_validation_and_no_imputation():
 
     vec = contract.extract_vector(complete_record)
     assert isinstance(vec, np.ndarray)
-    assert vec.shape == (47,)
+    assert vec.shape == (18,)
     assert vec[0] == 1.0
 
     # 2. Missing feature: strictly rejected, no implicit imputation
@@ -142,31 +142,30 @@ def test_feature_contract_validation_and_no_imputation():
     assert contract.feature_names[1] in errors
 
 
-def test_v1_legacy_row_compatibility():
-    """Verify that a full 47-feature row from v1.0.0 maps cleanly to CanonicalSecurityEvent."""
-    contract = get_baseline_47_feature_contract()
+def test_v2_canonical_row_compatibility():
+    """Verify that a full 18-feature canonical v2 row maps cleanly to CanonicalSecurityEvent."""
+    contract = get_flow_feature_contract_v2()
     dummy_row = {feat: 0.5 for feat in ML_FEATURE_COLUMNS}
-    dummy_row["FLOW_START_MILLISECONDS"] = 1600000000000
-    dummy_row["FLOW_END_MILLISECONDS"] = 1600000005000
-    dummy_row["IPV4_SRC_ADDR"] = "192.168.1.100"
-    dummy_row["IPV4_DST_ADDR"] = "10.0.0.1"
-    dummy_row["L4_SRC_PORT"] = 1024
-    dummy_row["L4_DST_PORT"] = 80
-    dummy_row["Label"] = 0
-    dummy_row["Attack"] = "Benign"
+    dummy_row["timestamp_ms"] = 1600000000000
+    dummy_row["source_ip"] = "192.168.1.100"
+    dummy_row["dest_ip"] = "10.0.0.1"
+    dummy_row["source_port"] = 1024
+    dummy_row["dest_port"] = 80
+    dummy_row["label_binary"] = 0
+    dummy_row["attack_category"] = "Benign"
 
-    now = datetime.fromtimestamp(dummy_row["FLOW_START_MILLISECONDS"] / 1000.0, timezone.utc)
+    now = datetime.fromtimestamp(dummy_row["timestamp_ms"] / 1000.0, timezone.utc)
     event = CanonicalSecurityEvent(
         event_timestamp=now,
         event_kind=EventKind.FLOW,
-        source_id="source:nf-unsw-nb15-v3",
-        source_ip=dummy_row["IPV4_SRC_ADDR"],
-        source_port=dummy_row["L4_SRC_PORT"],
-        dest_ip=dummy_row["IPV4_DST_ADDR"],
-        dest_port=dummy_row["L4_DST_PORT"],
+        source_id="source:ait-nds-v2",
+        source_ip=dummy_row["source_ip"],
+        source_port=dummy_row["source_port"],
+        dest_ip=dummy_row["dest_ip"],
+        dest_port=dummy_row["dest_port"],
         protocol="TCP",
         raw_provenance=RawProvenance(
-            source_file="v1_sample.csv", adapter_name="LegacyNetFlowV3Adapter"
+            source_file="v2_sample.csv", adapter_name="CanonicalFlowV2Adapter"
         ),
         ml_features={k: float(dummy_row[k]) for k in ML_FEATURE_COLUMNS},
         is_ml_complete=True,
@@ -175,4 +174,4 @@ def test_v1_legacy_row_compatibility():
     assert event.is_ml_complete is True
     assert event.ml_features is not None
     vec = contract.extract_vector(event.ml_features)
-    assert vec.shape == (47,)
+    assert vec.shape == (18,)

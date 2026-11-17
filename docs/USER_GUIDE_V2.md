@@ -1,46 +1,32 @@
-# Hướng dẫn Sử dụng NetFlow Sentinel v2.0 (Controlled Pilot Edition)
+# Hướng dẫn Sử dụng NetFlow Sentinel v2.0
 
-Tài liệu này hướng dẫn người vận hành (Operator / SOC Analyst) sử dụng **NetFlow Sentinel v2.0** trong môi trường lab hoặc mạng nội bộ được cấp phép.
-
----
-
-## 1. Kiến trúc tổng quan cho người vận hành
-
-NetFlow Sentinel v2.0 kết hợp:
-- **Backend FastAPI + 4-Model AI Engine (`src/network_anomaly/`)**: Thu nạp sự kiện từ NetFlow v9/IPFIX UDP collector (`NetFlowIPFIXDecoder`), file PCAP (`LocalPCAPReader`), hoặc log web/auth (`LiveLogTailer`), chuẩn hóa về `CanonicalSecurityEvent` (47 đặc trưng).
-- **Behavioral & Risk Engine**: Tạo Behavioral Vector 16 chiều (chuẩn hóa L2, độc lập IP), chấm điểm rủi ro 0–100 và phát cảnh báo đã khử trùng lặp trong cửa sổ 60 giây.
-- **Cryptography & Key Lifecycle**: Bảo vệ `master.key` bằng Windows DPAPI (`CryptProtectData`, fail-closed không ghi plaintext fallback), bọc khóa DEK bằng AES-256-GCM (`NETFLOW_WRAPPED_DEK_V2:` gắn AAD `key_id|domain|version`), lưu trữ vector nhạy cảm hoàn toàn ở dạng bản mã AES-256-GCM (zero plaintext in SQLite), và kích hoạt Adaptive Key Rotation khi `risk_score >= 85.0`. Hỗ trợ di trú khóa cũ có kiểm soát qua `scripts/migrate_keystore.py`.
-- **Attack Traceability**: Dựng đồ thị thực thể (`EntityRelationshipGraph`), tái hiện `AttackTimeline` theo pha ATT&CK và xuất báo cáo điều tra kèm mã băm SHA-256 kiểm chứng (`InvestigationReportGenerator`).
-- **Desktop UI (Tauri 2 + Svelte 5)**: Giao tiếp loopback có xác thực `X-Sentinel-Session-Token` qua Tauri IPC; phân biệt minh bạch 6 trạng thái dữ liệu (`LOADING`, `CONNECTED`, `DISCONNECTED`, `EMPTY`, `ERROR`, `DEMO`).
+Tài liệu này hướng dẫn vận hành giao diện Desktop **NetFlow Sentinel v2** (4 mô hình AI `canonical-flow-v2-18`, Behavioral Vector, Attack Timeline, Cryptography Dashboard và Security Dry-Run).
 
 ---
 
-## 2. Các màn hình chức năng trên Desktop App
+## 1. Năm Màn hình Vận hành Chính
 
-| Tab | Chức năng chính | API / Dữ liệu liên kết |
+| Màn hình | Chức năng Thực tế | Endpoint Backend |
 |---|---|---|
-| **Tổng quan & CSV** | Kiểm tra sức khỏe hệ thống (`/health`), chọn/nạp CSV 47 cột, chạy 4 mô hình AI, xem cảnh báo `ABSTAINED_OOD` | `/health`, `/api/v1/models`, `/api/v1/csv/inspect`, `/api/v1/csv/analyze` |
-| **Live Monitoring** | Bật/tắt UDP collector thật, theo dõi throughput/latency/queue utilization/readiness và cảnh báo thời gian thực | `/api/v1/live/status`, `/api/v1/live/start`, `/api/v1/live/stop`, `/api/v1/live/alerts`, `/api/v1/incidents` |
-| **Behavioral Analysis** | Giải mã có kiểm soát vector hành vi 16 chiều (`BehavioralVectorBuilder`), đo tương đồng Cosine/Euclidean/Manhattan và phân cụm `IPSpoofingSessionCorrelator` | `/api/v1/behavioral/vectors`, `/api/v1/behavioral/vectors/{id}`, `/api/v1/behavioral/similarity`, `/api/v1/behavioral/correlate` |
-| **Attack Timeline** | Chọn incident/campaign thật, tách biệt giai đoạn `OBSERVED TELEMETRY` vs `INFERRED RELATIONSHIP`, xuất báo cáo kèm SHA-256 thật | `/api/v1/trace/timeline`, `/api/v1/trace/graph`, `/api/v1/trace/investigation/generate` |
-| **Cryptography Dashboard** | Giám sát `active_key_id`, chế độ bảo vệ keystore (`WINDOWS_DPAPI` / `POSIX_FILE_PERMISSIONS`), ACL, cooldown và lịch sử xoay vòng khóa thật | `/api/v1/crypto/status` |
-| **Security Dry-Run** | Mô phỏng khuyến nghị phản ứng (`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`) ở chế độ an toàn `executed=false` | `/api/v1/security/simulate-response` |
+| **Offline CSV & 4-Model Compare** | Nạp CSV 18 đặc trưng chuẩn v2 (`canonical-flow-v2-18`) hoặc mở `demo_flows.csv`, hiển thị `AI Ready 4/4` sau kiểm thực SHA-256 | `/api/v1/csv/inspect`, `/api/v1/csv/analyze` |
+| **Live Telemetry & Streaming** | Giám sát event stream, backpressure ring buffer, chế độ Replay / UDP Loopback lab | `/api/v1/telemetry/status`, `/api/v1/telemetry/events` |
+| **Behavioral Analysis** | Hiển thị `Behavioral Vector` 16-D theo sliding time-window & cosine similarity score | `/api/v1/behavioral/sessions` |
+| **Attack Timeline & Trace** | Tách biệt `OBSERVED TELEMETRY` vs `INFERRED RELATIONSHIP`, xuất investigation report kèm SHA-256 | `/api/v1/trace/timeline`, `/api/v1/trace/graph`, `/api/v1/trace/investigation/generate` |
+| **Cryptography & Security Dry-Run** | Theo dõi `active_key_id`, Windows DPAPI / KEK AES-256-GCM, lịch sử xoay vòng khóa & mô phỏng phản ứng `executed=false` | `/api/v1/crypto/status`, `/api/v1/security/simulate-response` |
 
 ---
 
-## 3. Quy trình vận hành chuẩn trong Lab được cấp phép
+## 2. Quy trình vận hành chuẩn trong Lab được cấp phép
 
-1. **Khởi động ứng dụng & kiểm tra sẵn sàng:** Mở NetFlow Sentinel, kiểm tra trạng thái Backend `Online` và mô hình `Random Forest (MODEL_VALIDATED)` sẵn sàng.
-2. **Phân tích luồng mạng hoặc kiểm thử kịch bản Lab:**
-   - Với CSV: nạp tệp theo schema 47 cột hoặc dùng dữ liệu demo chuẩn.
-   - Với kịch bản UDP Lab: chạy `python scripts/run_live_lab_acceptance.py` để xác minh nhận gói tin NetFlow v9 qua socket loopback UDP (`127.0.0.1`), giải mã và kích hoạt Adaptive Key Rotation.
-3. **Điều tra & Truy vết:** Chuyển sang tab **Attack Timeline** và **Behavioral Analysis** để rà soát các pha tấn công liên kết và tải Investigation Report có SHA-256.
-4. **Kiểm tra khóa mật mã:** Vào **Cryptography Dashboard** để xác nhận không có khóa gốc plaintext trên đĩa (`master.key` được bảo vệ bởi Windows DPAPI, các khóa `k-*.key` được bọc KEK AES-256-GCM) và kiểm tra nhật ký xoay vòng khóa.
+1. **Khởi động ứng dụng & kiểm tra sẵn sàng:** Mở NetFlow Sentinel, xác nhận Backend `Online` và `AI Ready 4/4` (`Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder` đã qua `ModelRegistry` SHA-256 verification).
+2. **Phân tích luồng mạng:**
+   - Với CSV: nạp tệp tuân thủ hợp đồng 18 đặc trưng `canonical-flow-v2-18` hoặc dùng `data/demo/demo_flows.csv` (200 dòng Validation của `AIT-NDS-v2`).
+   - Với kịch bản UDP Lab: chạy `.venv\Scripts\python.exe scripts/run_live_lab_acceptance.py` để xác minh nhận gói tin qua UDP loopback `127.0.0.1`, mã hóa AES-256-GCM và kích hoạt Adaptive Key Rotation.
+3. **Điều tra & Kiểm tra khóa:** Kiểm tra tab Behavioral / Attack Timeline và Cryptography Dashboard (`master.key` bảo vệ bởi Windows DPAPI / POSIX permissions).
 
 ---
 
-## 4. Giới hạn an toàn & phạm vi v2.0
+## 3. Giới hạn an toàn & Bản quyền Dữ liệu v2
 
-- **Chỉ giám sát mạng được cấp phép:** Không chặn hoặc chỉnh sửa firewall hệ điều hành tự động trong chế độ mặc định (`executed=false` đối với simulation).
-- **Collector v2.0:** Sử dụng `NetFlowIPFIXDecoder` bằng Python trong `src/network_anomaly/telemetry/collector.py`; phiên bản collector viết bằng Rust (#128 gốc) được hoãn ngoài phạm vi v2.0.0.
-- **Giấy phép mô hình `NF-UNSW-NB15-v3`:** Các trọng số dẫn xuất từ `NF-UNSW-NB15-v3` tuân thủ điều khoản nghiên cứu/nội bộ (`UQ License ID 454104`); xem `docs/DEPLOYMENT_GUIDE_V2.md` trước khi phân phối bộ cài ra ngoài.
+- **Chỉ giám sát mạng được cấp phép:** Không tự động chỉnh sửa tường lửa OS (`executed=false` ở Security Dry-Run).
+- **Bản quyền dữ liệu v2:** Các mô hình v2 được huấn luyện và đánh giá trên `AIT-NDS-v2` (`10.5281/zenodo.13168643`) và `CTU-SME-11` (`10.5281/zenodo.7958258`) theo giấy phép **CC BY 4.0**. Nguồn `UGR'16` đang `BLOCKED` (HTTP 403) và không sử dụng.

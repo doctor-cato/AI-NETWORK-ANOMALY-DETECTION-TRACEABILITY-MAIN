@@ -273,9 +273,10 @@ class RealtimeInferenceEngine:
     ) -> LiveInferenceDecision:
         """Explicitly labelled demo heuristic used only when requested by the operator."""
         self.total_demo_decisions += 1
-        out_bytes = float(feature_dict.get("OUT_BYTES", 0.0))
-        tcp_flags = int(float(feature_dict.get("TCP_FLAGS", 0.0)))
-        suspicious = (out_bytes > 10_000) or (tcp_flags in (2, 18, 24) and out_bytes > 500)
+        out_bytes = float(feature_dict.get("bytes_out", 0.0))
+        in_bytes = float(feature_dict.get("bytes_in", 0.0))
+        is_tcp = float(feature_dict.get("is_tcp", 0.0)) > 0.5
+        suspicious = (out_bytes > 10_000) or (is_tcp and in_bytes > 500 and out_bytes == 0.0)
         base = 0.85 if suspicious else 0.08
         predictions = {
             key: {

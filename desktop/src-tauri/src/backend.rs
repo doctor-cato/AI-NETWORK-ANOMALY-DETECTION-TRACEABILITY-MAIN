@@ -556,11 +556,11 @@ fn check_embedded_artifacts_files(base: &Path) -> Vec<String> {
     let prep = base
         .join("artifacts")
         .join("preprocessing")
-        .join("nf_unsw_nb15_v3_preprocessor.joblib");
+        .join("v2_flow_preprocessor.joblib");
     let prep_manifest = base
         .join("reports")
         .join("preprocessing")
-        .join("nf_unsw_nb15_v3_preprocessing_manifest.json");
+        .join("v2_flow_preprocessing_manifest.json");
     if !prep.is_file() || !prep_manifest.is_file() {
         return Vec::new();
     }

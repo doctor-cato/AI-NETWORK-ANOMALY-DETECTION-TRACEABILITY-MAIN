@@ -277,8 +277,9 @@ try {
         "NOTICE",
         "THIRD_PARTY_NOTICES.md",
         "LICENSE",
-        "data\NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-        "data\NF_UNSW_NB15_V3_MANIFEST.json",
+        "data\V2_SPLIT_MANIFEST.json",
+        "data\AIT_DATASETS_MANIFEST.json",
+        "data\CTU_SME_11_MANIFEST.json",
         "EMBEDDED_ARTIFACTS_MANIFEST.json",
         "EMBEDDED_SHA256SUMS.txt"
     )
@@ -311,8 +312,8 @@ try {
     }
 
     $embManifest = Get-Content -Path (Join-Path $installDir "EMBEDDED_ARTIFACTS_MANIFEST.json") -Raw -Encoding utf8 | ConvertFrom-Json
-    $splitSha = Get-LowerSha256 (Join-Path $installDir "data\NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
-    $prepSha = Get-LowerSha256 (Join-Path $installDir "artifacts\preprocessing\nf_unsw_nb15_v3_preprocessor.joblib")
+    $splitSha = Get-LowerSha256 (Join-Path $installDir "data\V2_SPLIT_MANIFEST.json")
+    $prepSha = Get-LowerSha256 (Join-Path $installDir "artifacts\preprocessing\v2_flow_preprocessor.joblib")
     $demoShaMap = @{
         "data/demo/demo_flows.csv"    = Get-LowerSha256 (Join-Path $installDir "data\demo\demo_flows.csv")
         "data/demo/demo_labels.csv"   = Get-LowerSha256 (Join-Path $installDir "data\demo\demo_labels.csv")

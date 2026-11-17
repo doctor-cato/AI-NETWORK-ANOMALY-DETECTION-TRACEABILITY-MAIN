@@ -1,31 +1,49 @@
 {
-  "artifact_type": "autoencoder-anomaly-detector",
   "schema_version": "1.0",
-  "run_id": "ae_fpr_constrained_20261115T163000Z",
+  "artifact_type": "autoencoder-anomaly-detector",
+  "model_type": "Autoencoder",
+  "training_run_id": "v2-ae-20261117T183534Z",
+  "run_id": "v2-ae-20261117T183534Z",
+  "dataset_name": "AIT-NDS-v2",
+  "dataset_provenance": "AIT-NDS-v2 (10.5281/zenodo.13168643); Benign-only Train={fox,harrison,santos,wardbeck,wilson}",
+  "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+  "split_manifest_sha256": "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
+  "feature_contract_version": "canonical-flow-v2-18",
+  "selected_features": [
+    "duration_ms",
+    "bytes_in",
+    "bytes_out",
+    "pkts_in",
+    "pkts_out",
+    "protocol_num",
+    "total_bytes",
+    "total_pkts",
+    "bytes_in_ratio",
+    "pkts_in_ratio",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_per_sec_in",
+    "bytes_per_sec_out",
+    "pkts_per_sec",
+    "has_response",
+    "is_tcp",
+    "is_udp"
+  ],
+  "preprocessor_sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32",
+  "preprocessor_artifact_sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32",
   "model_file": "autoencoder_model.joblib",
-  "model_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
+  "model_sha256": "2032f8caf37be27f12a91ca1348e85d32a718f332e151cd900dedcf082b71a1f",
+  "model_artifact_sha256": "2032f8caf37be27f12a91ca1348e85d32a718f332e151cd900dedcf082b71a1f",
+  "model_size_bytes": 25073,
   "config_file": "model_config.json",
-  "config_sha256": "eb067f317934b60e23976ca42f0bb95260a7fe6717680a1df069451f47772928",
+  "config_sha256": "9cb2d69da56af7c4deb6eee8c2b5341e6263988a3636bdbab0e45e8528fe7097",
   "threshold_file": "threshold.json",
-  "threshold_sha256": "d8718af975572e4aeb102778dd2b02100ed51832ed5586ded5b981f5121054a1",
-  "model_architecture": {
-    "class": "MLPRegressor",
-    "hidden_layer_sizes": [
-      32,
-      16,
-      32
-    ],
-    "activation": "relu",
-    "solver": "adam",
-    "loss": "squared_error (MSE)",
-    "input_dimension": 47,
-    "output_dimension": 47
-  },
+  "threshold_sha256": "abdb0e03940a8eedffd7f9a271316b18b1645bb4d68efd994bcf932a7d8f77ab",
   "hyperparameters": {
     "hidden_layer_sizes": [
-      32,
       16,
-      32
+      8,
+      16
     ],
     "activation": "relu",
     "solver": "adam",
@@ -33,93 +51,78 @@
     "batch_size": 256,
     "learning_rate_init": 0.001,
     "max_iter": 50,
+    "early_stopping": true,
+    "validation_fraction": 0.1,
+    "n_iter_no_change": 5,
+    "tol": 0.0001,
     "random_state": 42
   },
-  "threshold": 17234985.792475585,
+  "model_architecture": {
+    "class": "MLPRegressor",
+    "input_dimension": 18,
+    "output_dimension": 18,
+    "hidden_layer_sizes": [
+      16,
+      8,
+      16
+    ]
+  },
+  "threshold": 0.0002279976895622908,
+  "calibrated_threshold": 0.0002279976895622908,
+  "threshold_source": "validation_benign_quantile_0.95",
+  "threshold_provenance": {
+    "selected_on": "validation",
+    "test_touched": false,
+    "target_fpr": 0.05
+  },
   "threshold_calibration": {
-    "threshold": 17234985.792475585,
-    "calibration_method": "fpr_constrained",
+    "selected_on": "validation",
+    "calibration_partition": "validation",
+    "test_touched": false,
     "target_fpr": 0.05,
-    "empirical_val_fpr": 0.04999825325291945,
-    "n_benign_used": 314871,
-    "n_known_attack_used": 30319,
-    "n_unknown_excluded": 181,
-    "unknown_categories_excluded": [
-      "Backdoor",
-      "Worms"
-    ],
-    "threshold_frozen": true
-  },
-  "training_population": "benign-only (Label == 0)",
-  "training_row_count": 1590608,
-  "validation_row_count": 345371,
-  "unknown_attack_categories": [
-    "Backdoor",
-    "Worms"
-  ],
-  "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-  "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-  "partition_indices_sha256": {
-    "train": "a09ba1757484c65596a88fe22d5bd989a3cca60a01088364020e2f952b36c725",
-    "validation": "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf",
-    "test": "63e2e081300955fe06835b0cf7405e07e53985ca3d84164e768be09116269d03"
-  },
-  "train_indices_sha256": "a09ba1757484c65596a88fe22d5bd989a3cca60a01088364020e2f952b36c725",
-  "validation_indices_sha256": "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf",
-  "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-  "preprocessor_manifest_sha256": "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441",
-  "preprocessor_source": "TrainOnlyPreprocessor.load_verified",
-  "test_lock": {
-    "contract": "held_out_test_lock_v1",
-    "evaluate_test_flag": true,
-    "test_evaluated": true,
-    "test_rows_materialized": 345953,
-    "test_excluded_from_fit_early_stopping_calibration": true,
-    "threshold_frozen_before_test_eval": true,
-    "test_loaded_after_model_fit_and_threshold_freeze": true,
-    "unified_csv_stream_bounded_to_loaded_partitions": true
-  },
-  "provenance_complete": true,
-  "provenance": {
-    "dataset": {
-      "sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
+    "empirical_val_fpr": 0.04999612920706807,
+    "threshold": 0.0002279976895622908,
+    "threshold_frozen": true,
+    "benign_val_count": 206676,
+    "benign_score_summary": {
+      "min": 4.527567731003605e-06,
+      "p50": 3.486728175693362e-05,
+      "p95": 0.0002279897526062997,
+      "p99": 0.002227385310914056,
+      "max": 0.1005117524120464
     },
-    "split": {
-      "manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-      "partition_indices_sha256": {
-        "train": "a09ba1757484c65596a88fe22d5bd989a3cca60a01088364020e2f952b36c725",
-        "validation": "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf",
-        "test": "63e2e081300955fe06835b0cf7405e07e53985ca3d84164e768be09116269d03"
+    "quantile_sweep": [
+      {
+        "benign_quantile": 0.9,
+        "threshold": 0.00012346272944981898,
+        "val_fpr": 0.100002,
+        "val_recall": 0.905542,
+        "val_f1": 0.89375
+      },
+      {
+        "benign_quantile": 0.95,
+        "threshold": 0.0002279897526062997,
+        "val_fpr": 0.050001,
+        "val_recall": 0.905419,
+        "val_f1": 0.921151
+      },
+      {
+        "benign_quantile": 0.97,
+        "threshold": 0.0005718337238079806,
+        "val_fpr": 0.030003,
+        "val_recall": 0.90529,
+        "val_f1": 0.932545
+      },
+      {
+        "benign_quantile": 0.99,
+        "threshold": 0.002227385310914056,
+        "val_fpr": 0.010001,
+        "val_recall": 0.905162,
+        "val_f1": 0.94423
       }
-    },
-    "preprocessor": {
-      "source": "TrainOnlyPreprocessor.load_verified",
-      "artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-      "manifest_sha256": "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441"
-    },
-    "model": {
-      "file": "autoencoder_model.joblib",
-      "sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
-      "config_file": "model_config.json",
-      "config_sha256": "eb067f317934b60e23976ca42f0bb95260a7fe6717680a1df069451f47772928"
-    },
-    "calibration": {
-      "threshold_file": "threshold.json",
-      "threshold_sha256": "d8718af975572e4aeb102778dd2b02100ed51832ed5586ded5b981f5121054a1",
-      "method": "fpr_constrained",
-      "threshold_frozen": true,
-      "unknown_attack_categories": [
-        "Backdoor",
-        "Worms"
-      ]
-    },
-    "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
-    "git_commit": "aabccee4e7f60304bdb972b4b1dd49e2a79d0e80"
+    ],
+    "unknown_categories_excluded": []
   },
-  "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
-  "model_artifact_path": "artifacts/models/autoencoder/autoencoder_model.joblib",
-  "created_at_utc": "2026-11-15T16:31:28Z",
-  "git_commit": "aabccee4e7f60304bdb972b4b1dd49e2a79d0e80",
   "score_normalization": {
     "calibration_partition": "validation",
     "score_direction": "higher_is_more_anomalous",
@@ -227,300 +230,456 @@
       1.0
     ],
     "score_values": [
-      5147.864256063749,
-      9501.395036764401,
-      47714.16837557723,
-      76219.67338945107,
-      76366.6833474298,
-      99762.90447123814,
-      140884.57492148812,
-      149977.42983334692,
-      169642.50918548333,
-      184781.41827499337,
-      200919.36199099463,
-      217829.27924577106,
-      244871.0128109147,
-      281287.3630885276,
-      322622.99788107286,
-      374251.6136507558,
-      404891.1577305879,
-      425800.0775639855,
-      439541.22267667594,
-      449717.429369218,
-      463326.2581802307,
-      469102.4672341368,
-      474709.4567278779,
-      479782.3473534729,
-      483360.6189506874,
-      491796.30206881976,
-      514908.6890245751,
-      544907.4221851388,
-      578047.5486234067,
-      606179.299407858,
-      648002.1994449386,
-      678402.5801954665,
-      707671.0263709442,
-      740809.0972940468,
-      797276.7905892804,
-      816072.1839921068,
-      857058.2313857222,
-      891093.9133827494,
-      933173.4752990328,
-      979583.3875526072,
-      1035117.0584964204,
-      1078091.4381871885,
-      1124835.5265498194,
-      1185030.6038188178,
-      1251928.0137317274,
-      1300375.854517333,
-      1334138.3953328093,
-      1384742.2793253982,
-      1425488.8073232332,
-      1481338.625747597,
-      1523300.8134663333,
-      1577857.850677365,
-      1622169.3264944782,
-      1665811.1322954807,
-      1718276.5724143996,
-      1785884.208354824,
-      1860860.4108207359,
-      1943960.6109807824,
-      2022503.705104875,
-      2062824.1024862055,
-      2126439.0720346747,
-      2207825.378102606,
-      2283590.031410238,
-      2347879.3122634212,
-      2428391.423969766,
-      2516194.546918135,
-      2604063.366375217,
-      2680667.176904795,
-      2794970.669456452,
-      2921308.029610739,
-      3038387.514055576,
-      3179738.078761293,
-      3312938.945163906,
-      3462762.5000979374,
-      3545797.6359449644,
-      3677293.5803592387,
-      3874259.6100181676,
-      4106097.2986551267,
-      4309498.5819462305,
-      4606170.496088448,
-      4959889.311553625,
-      5382606.615778961,
-      5933123.157004828,
-      6543784.7718218835,
-      7145678.31633649,
-      7933735.23218563,
-      8665222.550015854,
-      9340178.197340513,
-      9986807.467404991,
-      10597107.942638407,
-      11321173.374927273,
-      12068839.470951913,
-      12762509.783645475,
-      14515026.092984933,
-      16267876.789092079,
-      18725912.10230288,
-      21549012.770253126,
-      24557801.694787715,
-      28175856.512056477,
-      31882091.42537584,
-      2.9773919549473932e+16
+      4.527567731003605e-06,
+      8.029232914049205e-06,
+      8.970989853607918e-06,
+      9.820684479616308e-06,
+      1.047409233009137e-05,
+      1.1092898498606979e-05,
+      1.1651272974545367e-05,
+      1.2072678386278622e-05,
+      1.2377197836118229e-05,
+      1.2829351849577711e-05,
+      1.3006331568331012e-05,
+      1.3378080976715111e-05,
+      1.3702065443907792e-05,
+      1.3994370144558421e-05,
+      1.405486378422544e-05,
+      1.4055909283079705e-05,
+      1.4056659352046193e-05,
+      1.4057498974236847e-05,
+      1.4060259935432514e-05,
+      1.444695638714217e-05,
+      1.4858382446893676e-05,
+      1.5405034596881765e-05,
+      1.572122752043076e-05,
+      1.6027499392668722e-05,
+      1.6196445939601854e-05,
+      1.6454221103262525e-05,
+      1.686887827530644e-05,
+      1.7186243845256112e-05,
+      1.7655208062812808e-05,
+      1.792477882194595e-05,
+      1.82440215097408e-05,
+      1.8586187875380913e-05,
+      1.9168355401957027e-05,
+      1.951116112999717e-05,
+      1.9760258468755117e-05,
+      2.015448355617716e-05,
+      2.08161405473052e-05,
+      2.156077668513495e-05,
+      2.2641990301692594e-05,
+      2.370382079947668e-05,
+      2.49775870221937e-05,
+      2.6319116593286465e-05,
+      2.7769566157475974e-05,
+      2.9645561366779713e-05,
+      3.165021499918223e-05,
+      3.391389042362385e-05,
+      3.4830414027229015e-05,
+      3.486728175693362e-05,
+      3.486728175693362e-05,
+      3.486728175693362e-05,
+      3.486728175693362e-05,
+      3.486728175693362e-05,
+      3.486728175693362e-05,
+      3.489259933251044e-05,
+      3.489259933251044e-05,
+      3.489259933251044e-05,
+      3.489259933251044e-05,
+      3.489259933251044e-05,
+      3.489259933251044e-05,
+      3.489259933251044e-05,
+      3.494508673649652e-05,
+      3.651738104155985e-05,
+      3.7383415670795e-05,
+      3.779123708439296e-05,
+      3.8239564082075494e-05,
+      3.856468950890416e-05,
+      3.916102869975898e-05,
+      3.9256446796010364e-05,
+      3.9256446796010364e-05,
+      3.9256446796010364e-05,
+      3.933541534970705e-05,
+      3.951974936577983e-05,
+      3.9905554568028535e-05,
+      4.0150113434505855e-05,
+      4.081051730195892e-05,
+      4.134593207044172e-05,
+      4.1999404849067054e-05,
+      4.233899636740877e-05,
+      4.326836819466224e-05,
+      4.3493760016265544e-05,
+      4.3497981863687984e-05,
+      4.422635460029587e-05,
+      4.528543192810318e-05,
+      4.569474401388275e-05,
+      4.8178599762643194e-05,
+      5.1604779217432545e-05,
+      5.697716778666608e-05,
+      6.582540161028473e-05,
+      8.151276921074203e-05,
+      0.00011000386663731612,
+      0.00012346272944981898,
+      0.0001436658432154877,
+      0.00016392556477246712,
+      0.00019230663970005177,
+      0.0002153544842271102,
+      0.0002279897526062997,
+      0.00031700169591873754,
+      0.0005718337238079806,
+      0.001103793609146292,
+      0.002227385310914056,
+      0.1005117524120464
     ]
   },
-  "evaluation_summary": {
-    "validation": {
-      "total_samples": 345371,
-      "tp": 3561,
-      "fp": 15743,
-      "tn": 299128,
-      "fn": 26939,
-      "accuracy": 0.8764169545213698,
-      "precision": 0.18446953999171156,
-      "recall_detection_rate": 0.11675409836065574,
-      "f1_score": 0.14300056220383905,
-      "macro_f1": 0.5382037688027581,
-      "fpr": 0.04999825325291945,
-      "fnr": 0.8832459016393442,
-      "tnr": 0.9500017467470806,
-      "roc_auc": 0.6224054535786735,
-      "pr_auc": 0.15792481699870253,
-      "confusion_matrix": {
-        "tp": 3561,
-        "fp": 15743,
-        "tn": 299128,
-        "fn": 26939
-      },
-      "per_category": {
-        "Analysis": {
-          "total": 285,
-          "detected": 1,
-          "detection_rate": 0.0035087719298245615,
-          "type": "known_attack"
-        },
-        "Backdoor": {
-          "total": 144,
-          "detected": 12,
-          "detection_rate": 0.08333333333333333,
-          "type": "unknown_attack"
-        },
-        "Benign": {
-          "total": 314871,
-          "false_positives": 15743,
-          "fpr": 0.04999825325291945,
-          "type": "benign"
-        },
-        "DoS": {
-          "total": 1445,
-          "detected": 230,
-          "detection_rate": 0.15916955017301038,
-          "type": "known_attack"
-        },
-        "Exploits": {
-          "total": 10294,
-          "detected": 1022,
-          "detection_rate": 0.09928113464153876,
-          "type": "known_attack"
-        },
-        "Fuzzers": {
-          "total": 8495,
-          "detected": 942,
-          "detection_rate": 0.11088875809299588,
-          "type": "known_attack"
-        },
-        "Generic": {
-          "total": 5137,
-          "detected": 1001,
-          "detection_rate": 0.1948608137044968,
-          "type": "known_attack"
-        },
-        "Reconnaissance": {
-          "total": 4107,
-          "detected": 264,
-          "detection_rate": 0.06428049671292914,
-          "type": "known_attack"
-        },
-        "Shellcode": {
-          "total": 556,
-          "detected": 85,
-          "detection_rate": 0.1528776978417266,
-          "type": "known_attack"
-        },
-        "Worms": {
-          "total": 37,
-          "detected": 4,
-          "detection_rate": 0.10810810810810811,
-          "type": "unknown_attack"
-        }
-      },
-      "aggregate_known_attacks": {
-        "total": 30319,
-        "detected": 3545,
-        "detection_rate": 0.11692338137801378
-      },
-      "aggregate_unknown_attacks": {
-        "total": 181,
-        "detected": 16,
-        "detection_rate": 0.08839779005524862
-      }
+  "unknown_attack_categories": [],
+  "fit_population": {
+    "partition": "ait_train",
+    "benign_only": true,
+    "total_benign_available": 1658795,
+    "fit_row_count": 400000,
+    "n_iter": 31,
+    "final_loss": 8.176968110898074e-05
+  },
+  "provenance": {
+    "model": {
+      "sha256": "2032f8caf37be27f12a91ca1348e85d32a718f332e151cd900dedcf082b71a1f",
+      "config_sha256": "9cb2d69da56af7c4deb6eee8c2b5341e6263988a3636bdbab0e45e8528fe7097"
     },
-    "test": {
-      "total_samples": 345953,
-      "tp": 3343,
-      "fp": 15188,
-      "tn": 300169,
-      "fn": 27253,
-      "accuracy": 0.8773214858665772,
-      "precision": 0.18040041012357672,
-      "recall_detection_rate": 0.10926264871224997,
-      "f1_score": 0.1360962403566267,
-      "macro_f1": 0.5350344405154743,
-      "fpr": 0.04816129022029002,
-      "fnr": 0.89073735128775,
-      "tnr": 0.95183870977971,
-      "roc_auc": 0.6303096017251912,
-      "pr_auc": 0.16146488959316813,
-      "confusion_matrix": {
-        "tp": 3343,
-        "fp": 15188,
-        "tn": 300169,
-        "fn": 27253
-      },
-      "per_category": {
-        "Analysis": {
-          "total": 294,
-          "detected": 0,
-          "detection_rate": 0.0,
-          "type": "known_attack"
-        },
-        "Backdoor": {
-          "total": 1260,
-          "detected": 79,
-          "detection_rate": 0.0626984126984127,
-          "type": "unknown_attack"
-        },
-        "Benign": {
-          "total": 315357,
-          "false_positives": 15188,
-          "fpr": 0.04816129022029002,
-          "type": "benign"
-        },
-        "DoS": {
-          "total": 1193,
-          "detected": 136,
-          "detection_rate": 0.11399832355406538,
-          "type": "known_attack"
-        },
-        "Exploits": {
-          "total": 10520,
-          "detected": 1218,
-          "detection_rate": 0.11577946768060836,
-          "type": "known_attack"
-        },
-        "Fuzzers": {
-          "total": 7322,
-          "detected": 555,
-          "detection_rate": 0.07579896203223163,
-          "type": "known_attack"
-        },
-        "Generic": {
-          "total": 5111,
-          "detected": 722,
-          "detection_rate": 0.1412639405204461,
-          "type": "known_attack"
-        },
-        "Reconnaissance": {
-          "total": 4464,
-          "detected": 630,
-          "detection_rate": 0.14112903225806453,
-          "type": "known_attack"
-        },
-        "Shellcode": {
-          "total": 396,
-          "detected": 1,
-          "detection_rate": 0.0025252525252525255,
-          "type": "known_attack"
-        },
-        "Worms": {
-          "total": 36,
-          "detected": 2,
-          "detection_rate": 0.05555555555555555,
-          "type": "unknown_attack"
-        }
-      },
-      "aggregate_known_attacks": {
-        "total": 29300,
-        "detected": 3262,
-        "detection_rate": 0.11133105802047781
-      },
-      "aggregate_unknown_attacks": {
-        "total": 1296,
-        "detected": 81,
-        "detection_rate": 0.0625
-      }
+    "calibration": {
+      "threshold_sha256": "abdb0e03940a8eedffd7f9a271316b18b1645bb4d68efd994bcf932a7d8f77ab",
+      "threshold_frozen": true
+    },
+    "preprocessor": {
+      "artifact_sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32"
     }
   },
-  "experiment_status": "EXPERIMENTALLY VALIDATED"
+  "training_duration_seconds": 15.497,
+  "shortcut_audit": {
+    "evaluated_on": "ait_val (russellmitchell)",
+    "single_feature_abs_auc_top5": [
+      {
+        "feature": "bytes_in",
+        "auc_symmetric": 0.965448
+      },
+      {
+        "feature": "total_bytes",
+        "auc_symmetric": 0.961691
+      },
+      {
+        "feature": "total_pkts",
+        "auc_symmetric": 0.946147
+      },
+      {
+        "feature": "bytes_out",
+        "auc_symmetric": 0.944251
+      },
+      {
+        "feature": "pkts_out",
+        "auc_symmetric": 0.939559
+      }
+    ],
+    "max_single_feature": "bytes_in",
+    "max_single_feature_auc": 0.965448,
+    "single_feature_shortcut_flags_gte_0_98": [],
+    "feature_importance_ranking": [],
+    "top2_importance_share": null
+  },
+  "evaluation": {
+    "ait_val": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.0002279976895622908,
+      "total_rows": 377704,
+      "accuracy": 0.9298127634338,
+      "precision": 0.9374402189047498,
+      "recall": 0.9054189957199991,
+      "f1": 0.9211514095189374,
+      "macro_f1": 0.9289555002718091,
+      "weighted_f1": 0.9296920564829118,
+      "false_positive_rate": 0.050000967698232986,
+      "true_negative_rate": 0.949999032301767,
+      "roc_auc": 0.961504183880552,
+      "pr_auc": 0.9658256546327797,
+      "confusion_matrix": {
+        "tn": 196342,
+        "fp": 10334,
+        "fn": 16176,
+        "tp": 154852
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 206676,
+          "false_positive": 10334,
+          "true_negative": 196342,
+          "false_positive_rate": 0.050000967698232986
+        },
+        "Credential_Attack": {
+          "total": 11,
+          "detected": 3,
+          "missed": 8,
+          "detection_rate": 0.2727272727272727,
+          "false_negative_rate": 0.7272727272727273
+        },
+        "Data_Exfiltration": {
+          "total": 15778,
+          "detected": 1,
+          "missed": 15777,
+          "detection_rate": 6.337938902268983e-05,
+          "false_negative_rate": 0.9999366206109773
+        },
+        "Exploitation_And_C2": {
+          "total": 2,
+          "detected": 2,
+          "missed": 0,
+          "detection_rate": 1.0,
+          "false_negative_rate": 0.0
+        },
+        "Post_Exploitation_Discovery": {
+          "total": 56,
+          "detected": 1,
+          "missed": 55,
+          "detection_rate": 0.017857142857142856,
+          "false_negative_rate": 0.9821428571428571
+        },
+        "Reconnaissance": {
+          "total": 155181,
+          "detected": 154845,
+          "missed": 336,
+          "detection_rate": 0.9978347864751483,
+          "false_negative_rate": 0.002165213524851625
+        }
+      },
+      "inference_latency_seconds": 0.1194,
+      "inference_latency_us_per_row": 0.3162,
+      "csv_sha256": "4c480ab6e25a34dd1ba83ff67682fa864370ee881ff774201c1ca24a552eba39"
+    },
+    "ait_test": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.0002279976895622908,
+      "total_rows": 923292,
+      "accuracy": 0.8703725365323213,
+      "precision": 0.7580886012941762,
+      "recall": 0.4681299165537733,
+      "f1": 0.5788266096112159,
+      "macro_f1": 0.7511123657471241,
+      "weighted_f1": 0.8578338015824803,
+      "false_positive_rate": 0.03510386431428151,
+      "true_negative_rate": 0.9648961356857185,
+      "roc_auc": 0.788561309828741,
+      "pr_auc": 0.6410646973711063,
+      "confusion_matrix": {
+        "tn": 721366,
+        "fp": 26244,
+        "fn": 93440,
+        "tp": 82242
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 747610,
+          "false_positive": 26244,
+          "true_negative": 721366,
+          "false_positive_rate": 0.03510386431428151
+        },
+        "Credential_Attack": {
+          "total": 78,
+          "detected": 5,
+          "missed": 73,
+          "detection_rate": 0.0641025641025641,
+          "false_negative_rate": 0.9358974358974359
+        },
+        "Data_Exfiltration": {
+          "total": 80075,
+          "detected": 37,
+          "missed": 80038,
+          "detection_rate": 0.0004620668123634093,
+          "false_negative_rate": 0.9995379331876366
+        },
+        "Exploitation_And_C2": {
+          "total": 5,
+          "detected": 5,
+          "missed": 0,
+          "detection_rate": 1.0,
+          "false_negative_rate": 0.0
+        },
+        "Post_Exploitation_Discovery": {
+          "total": 37,
+          "detected": 4,
+          "missed": 33,
+          "detection_rate": 0.10810810810810811,
+          "false_negative_rate": 0.8918918918918919
+        },
+        "Reconnaissance": {
+          "total": 95487,
+          "detected": 82191,
+          "missed": 13296,
+          "detection_rate": 0.8607559144176694,
+          "false_negative_rate": 0.1392440855823306
+        }
+      },
+      "inference_latency_seconds": 0.3038,
+      "inference_latency_us_per_row": 0.3291,
+      "csv_sha256": "5532fb77c35f0014f941a35386a8204eb48b5b7cbdf7480782da03d812831076"
+    },
+    "ctu_echo": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.0002279976895622908,
+      "total_rows": 76073,
+      "accuracy": 0.6218500650690784,
+      "precision": 0.565826519430161,
+      "recall": 0.9175962379702537,
+      "f1": 0.7000031285522104,
+      "macro_f1": 0.5943176250707012,
+      "weighted_f1": 0.5902595840355179,
+      "false_positive_rate": 0.6520242043699521,
+      "true_negative_rate": 0.3479757956300479,
+      "roc_auc": 0.7587621563797076,
+      "pr_auc": 0.6546928900026059,
+      "confusion_matrix": {
+        "tn": 13744,
+        "fp": 25753,
+        "fn": 3014,
+        "tp": 33562
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 39497,
+          "false_positive": 25753,
+          "true_negative": 13744,
+          "false_positive_rate": 0.6520242043699521
+        },
+        "Reconnaissance": {
+          "total": 36576,
+          "detected": 33562,
+          "missed": 3014,
+          "detection_rate": 0.9175962379702537,
+          "false_negative_rate": 0.08240376202974628
+        }
+      },
+      "inference_latency_seconds": 0.0219,
+      "inference_latency_us_per_row": 0.2885,
+      "csv_sha256": "8cdb4fb6981f6e17dc26ce1c861c0c7aa3e57d051bec393d37534c8b93d09a4d"
+    },
+    "ctu_windows7ad": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.0002279976895622908,
+      "total_rows": 175146,
+      "accuracy": 0.1544768364678611,
+      "precision": 0.012444919214848445,
+      "recall": 0.914622178606477,
+      "f1": 0.024555718030800037,
+      "macro_f1": 0.13920632319710644,
+      "weighted_f1": 0.2511887779822573,
+      "false_positive_rate": 0.8544723525198142,
+      "true_negative_rate": 0.1455276474801858,
+      "roc_auc": 0.7812984652373895,
+      "pr_auc": 0.03195997618347253,
+      "confusion_matrix": {
+        "tn": 25192,
+        "fp": 147916,
+        "fn": 174,
+        "tp": 1864
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 173108,
+          "false_positive": 147916,
+          "true_negative": 25192,
+          "false_positive_rate": 0.8544723525198142
+        },
+        "Exploitation_And_C2": {
+          "total": 2036,
+          "detected": 1863,
+          "missed": 173,
+          "detection_rate": 0.9150294695481336,
+          "false_negative_rate": 0.08497053045186641
+        },
+        "Malware_And_DoS": {
+          "total": 2,
+          "detected": 1,
+          "missed": 1,
+          "detection_rate": 0.5,
+          "false_negative_rate": 0.5
+        }
+      },
+      "inference_latency_seconds": 0.0576,
+      "inference_latency_us_per_row": 0.3288,
+      "csv_sha256": "090a454419a1d672c642b6a7d3f4d5b7451ad468f1c8339a1a9c6014b278c15c"
+    }
+  },
+  "environment": {
+    "python_version": "3.12.10",
+    "os": "Windows-11-10.0.26200-SP0",
+    "scikit_learn": "1.9.1",
+    "pandas": "3.1.1",
+    "numpy": "2.5.5",
+    "git_commit": "05240b44b2a057a9942d6297ae75f2b4cb48ea2f",
+    "git_dirty": true,
+    "git": {
+      "git_commit": "05240b44b2a057a9942d6297ae75f2b4cb48ea2f",
+      "git_dirty": true,
+      "git_clean": false,
+      "git_dirty_paths": [
+        "M NOTICE",
+        "M THIRD_PARTY_NOTICES.md",
+        "M data/AIT_DATASETS_MANIFEST.json",
+        "M data/EXTERNAL_DATASETS_PROVENANCE.json",
+        "D data/NF_CSE_CIC_IDS2018_V3_MANIFEST.json",
+        "D data/NF_UNSW_NB15_V3_MANIFEST.json",
+        "D data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
+        "M desktop/src-tauri/src/backend.rs",
+        "M desktop/src-tauri/tauri.conf.json",
+        "M desktop/src-tauri/tauri.standalone.conf.json",
+        "M desktop/src/App.svelte",
+        "M desktop/src/lib/comparison.test.ts",
+        "M desktop/src/lib/comparisonState.ts",
+        "M desktop/src/lib/components/CsvPreviewPanel.svelte",
+        "M desktop/src/lib/components/ForensicTimelinePanel.svelte",
+        "M desktop/src/lib/components/ModelReadinessPanel.svelte",
+        "M desktop/src/lib/components/OnboardingGuidePanel.svelte",
+        "M desktop/src/lib/components/PredictionsTable.svelte",
+        "M desktop/src/lib/utils.test.ts",
+        "M desktop/src/lib/utils.ts",
+        "D docs/NF_UNSW_NB15_V3_MIGRATION_ARCHITECTURE.md",
+        "D docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md",
+        "D docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md",
+        "D docs/RF_BASELINE_PROTOCOL.md",
+        "D docs/XGB_BASELINE_PROTOCOL.md",
+        "D docs/audits/MODEL_AUDIT_TTL_ABLATION.md",
+        "M docs/dataset/AIT_LINKAGE_FEASIBILITY.md",
+        "M docs/dataset/AIT_PROFILE.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_DECISION.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_EDA.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_MIGRATION_IMPACT.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_QUALITY_ANALYSIS.md",
+        "D docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md",
+        "M docs/dataset/QUALITY_GATES.md",
+        "M docs/dataset/V2_SOURCE_AUDIT.md",
+        "D docs/experiments/EXP4_UNKNOWN_ATTACK.md",
+        "D docs/experiments/FOUR_MODEL_COMPARISON.md",
+        "M pyproject.toml",
+        "D reports/data_quality/nf_unsw_nb15_v3_validation.json",
+        "D reports/eda/evidence/reproducibility_comparison.json",
+        "D reports/eda/evidence/reproducibility_comparison.md",
+        "D reports/eda/evidence/run-1/eda_report.md",
+        "D reports/eda/evidence/run-1/eda_summary.json",
+        "D reports/eda/evidence/run-1/run_metadata.json",
+        "D reports/eda/evidence/run-1/stderr.log",
+        "D reports/eda/evidence/run-1/stdout.log",
+        "D reports/eda/evidence/run-2/eda_report.md"
+      ],
+      "git_dirty_disclosure": "Trained from commit 05240b4 with uncommitted worktree changes (275 modified/untracked path(s)).",
+      "worktree_provenance": "DIRTY_DISCLOSED",
+      "provenance_complete": true,
+      "provenance_status": "VERIFIED"
+    },
+    "timestamp_utc": "2026-11-17T18:36:05.321934+00:00"
+  }
 }

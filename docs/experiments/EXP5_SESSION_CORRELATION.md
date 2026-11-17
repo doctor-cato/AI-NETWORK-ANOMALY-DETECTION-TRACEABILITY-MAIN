@@ -1,8 +1,8 @@
 # Experiment 5 (RQ3): IP-Independent Session Correlation Benchmark
 
 - **Execution Mode:** `SIMULATION` (Synthetic IP-rotation simulation)
-- **Empirical AIT Dataset Status:** `BLOCKED` — Official AIT-Suite-v2.1 raw dataset absent in data\raw\ait; empirical real-dataset validation cannot be claimed from simulation alone.
-- **Timestamp (UTC):** `2026-11-17T16:00:50.068442+00:00`
+- **Empirical AIT Dataset Status:** `BLOCKED` — Official AIT campaign-linkage ground truth absent or not verified in data\raw\ait; empirical real-dataset validation cannot be claimed from simulation alone.
+- **Timestamp (UTC):** `2026-11-17T19:04:42.720488+00:00`
 
 ## Simulation Ablation: IP Exact Match vs 16-D Behavioral Vector
 
@@ -14,4 +14,4 @@
 
 ## Limitations
 - Synthetic IP-rotation simulation tests algorithmic behavior only and MUST NOT be treated as empirical validation on real enterprise datasets.
-- Official AIT-Suite-v2.1 raw dataset absent in data\raw\ait; empirical real-dataset validation cannot be claimed from simulation alone.
+- Official AIT campaign-linkage ground truth absent or not verified in data\raw\ait; empirical real-dataset validation cannot be claimed from simulation alone.

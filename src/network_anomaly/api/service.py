@@ -162,7 +162,7 @@ class ApiService:
         from network_anomaly.inference.predict import load_verified_preprocessor
 
         artifacts_dir = self._active_artifacts_dir()
-        prep_path = artifacts_dir / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+        prep_path = artifacts_dir / "preprocessing" / "v2_flow_preprocessor.joblib"
         preprocessor_path = (
             prep_path if prep_path.is_file() else artifacts_dir / "preprocessor.joblib"
         )
@@ -170,7 +170,7 @@ class ApiService:
             PROJECT_ROOT
             / "reports"
             / "preprocessing"
-            / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+            / "v2_flow_preprocessing_manifest.json"
         )
         if not preprocessor_path.is_file():
             return False, "preprocessor artifact not found"
@@ -366,7 +366,7 @@ class ApiService:
             model_path = rf_path if rf_path.is_file() else artifacts_dir / "model.joblib"
             model_manifest = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
 
-        prep_path = artifacts_dir / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+        prep_path = artifacts_dir / "preprocessing" / "v2_flow_preprocessor.joblib"
         preprocessor_path = (
             prep_path if prep_path.is_file() else artifacts_dir / "preprocessor.joblib"
         )
@@ -374,7 +374,7 @@ class ApiService:
             PROJECT_ROOT
             / "reports"
             / "preprocessing"
-            / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+            / "v2_flow_preprocessing_manifest.json"
         )
 
         return (
@@ -817,11 +817,11 @@ class ApiService:
         items: List[AnalyzeResultItem] = []
         for idx, e in enumerate(events):
             feat = e.get("features", {})
-            # Simple flow behavior anomaly heuristic for lab/uninitialized testing
-            in_bytes = float(feat.get("IN_BYTES", 0) or 0)
-            out_bytes = float(feat.get("OUT_BYTES", 0) or 0)
-            in_pkts = float(feat.get("IN_PKTS", 0) or 0)
-            out_pkts = float(feat.get("OUT_PKTS", 0) or 0)
+            # Simple v2 flow behavior anomaly heuristic when verified artifacts are absent
+            in_bytes = float(feat.get("bytes_in", 0) or 0)
+            out_bytes = float(feat.get("bytes_out", 0) or 0)
+            in_pkts = float(feat.get("pkts_in", 0) or 0)
+            out_pkts = float(feat.get("pkts_out", 0) or 0)
 
             # Detect abnormal asymmetric throughput or extreme packet count
             score = 0.1

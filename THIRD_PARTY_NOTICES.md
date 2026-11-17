@@ -5,15 +5,13 @@
 - **License:** [Apache License, Version 2.0](LICENSE)
 - **Scope:** Application source code (`src/`, `desktop/`, `scripts/`, `docs/`, `tests/`).
 
-## 2. Dataset & Derived ML Artifacts (Non-Commercial Academic Restriction)
+## 2. v2 Datasets & Derived ML Artifacts
 
-- **Dataset:** `NF-UNSW-NB15-v3`
-- **Publisher:** The University of Queensland
-- **DOI:** `10.48610/6E0EDA1`
-- **UQ RDM UUID:** `abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f`
-- **Citation:** Majed Luay, Siamak Layeghy, Seyedehfaezeh Hosseininoorbin, Mohanad Sarhan, Nour Moustafa, and Marius Portmann, *"Temporal Analysis of NetFlow Datasets for Network Intrusion Detection Systems"*, `arXiv:2503.04404` (2025).
-- **License Terms:** *Permitted Re-Use with Commercial Use Restriction* (UQ License ID `454104`, <https://guides.library.uq.edu.au/research-and-teaching-staff/data-deposit-checklist/license-reuse-noncommercial>).
-- **Scope in Standalone Installer:** The embedded Validation demo CSV (`data/demo/demo_flows.csv`, `data/demo/demo_labels.csv`) and the pre-trained preprocessor and 4 ML models (`Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder`) are distributed strictly for **academic, educational, and non-commercial research demonstration**. Any commercial use or redistribution requires separate written authorization from The University of Queensland / dataset authors.
+- **Primary Training & Demo Dataset:** `AIT NetFlow Data Set v2` (`AIT-NDS-v2`, DOI `10.5281/zenodo.13168643`), Publisher: AIT Austrian Institute of Technology GmbH, derived from `AIT-LDS-v2.0` PCAPs. License: **CC BY 4.0** (<https://creativecommons.org/licenses/by/4.0/>).
+- **Real Captured External Benchmark:** `CTU-SME-11` (DOI `10.5281/zenodo.7958258`, record `7958259`), Publisher: Stratosphere Laboratory, CTU Prague. License: **CC BY 4.0**.
+- **Alert Correlation Dataset:** `AIT Alert Data Set` (`AIT-ADS`, DOI `10.5281/zenodo.8263181`), Publisher: AIT Austrian Institute of Technology GmbH (derived from `AIT-LDS-v2.0`). License: **CC BY 4.0**.
+- **Host/System Log Correlation Dataset (research/correlation only, not bundled into ML weights or demo CSV):** `AIT Log Data Set v2.1` (`AIT-LDS-v2.1`, DOI `10.5281/zenodo.19483937`), License: **CC BY-NC-SA 4.0**.
+- **Attribution Obligation:** Proper credit to AIT Austrian Institute of Technology and Stratosphere Laboratory (CTU Prague) must be preserved when distributing derived models (`artifacts/models/`, `artifacts/preprocessing/v2_flow_preprocessor.joblib`) and demo subsets (`data/demo/demo_flows.csv`).
 
 ## 3. Embedded Runtime & Desktop Software Components
 

@@ -1,31 +1,32 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "synthetic": true,
-  "provenance_note": "Hand-crafted schema-compatible synthetic fixtures for offline unit tests. NOT observed telemetry from AIT-Suite-v2.1.",
-  "generated_at_utc": "2026-11-17T15:46:23.785503+00:00",
+  "feature_contract_version": "canonical-flow-v2-18",
+  "provenance_note": "Hand-crafted schema-compatible v2 synthetic fixtures for offline unit tests. NOT real telemetry from AIT-NDS-v2 or CTU-SME-11.",
+  "generated_at_utc": "2026-11-17T18:01:44.569304+00:00",
   "files": [
     {
-      "file": "synthetic_netflow_fixture.csv",
-      "size_bytes": 597,
-      "sha256": "81879b0e707bfc4e4fbe7b646dc06698ffd4aea831bf8ee158fb44e150a17d8a",
+      "file": "synthetic_netflow_v2_fixture.csv",
+      "size_bytes": 606,
+      "sha256": "132fb44770d306241120e4032511c9d10b399f75e5d8868837e70f9d01a8b9f2",
       "synthetic": true
     },
     {
       "file": "synthetic_dns_fixture.log",
       "size_bytes": 293,
-      "sha256": "97485becd5251bb4f881f6735743069ac7dc72994358c9dd02f1e9207f7e60c0",
+      "sha256": "cde4cbb3f0338a5a342d4c2a09a2f67f8ce4142cc604f3e043258d0695006533",
       "synthetic": true
     },
     {
       "file": "synthetic_web_fixture.log",
       "size_bytes": 313,
-      "sha256": "3560afae84d70370864cbc6a532277575db09d352c79d2d04405f1718f30f873",
+      "sha256": "5d500f864d6cc2822be471a66fe4d7ffa6d5499ac507b9c62ffdb3f8724fadd6",
       "synthetic": true
     },
     {
       "file": "synthetic_auth_fixture.log",
       "size_bytes": 315,
-      "sha256": "01ee7505593a13e60e8d0cc767a8aee569937162067fc3e4d01a35b5e877c874",
+      "sha256": "5b0900912ade8f5ac372be26d0ef0f54018aed08d495e0f469f74a061f33b7c1",
       "synthetic": true
     }
   ]

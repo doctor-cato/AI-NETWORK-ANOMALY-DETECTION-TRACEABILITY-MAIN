@@ -42,7 +42,7 @@ class TestUnavailable:
 
     def test_demo_heuristic_is_explicitly_labelled(self, tmp_path, baseline_features):
         engine = RealtimeInferenceEngine(registry=_empty_registry(tmp_path), demo_heuristics=True)
-        decision = engine.infer_event(_Event(), baseline_features(OUT_BYTES=200_000.0))
+        decision = engine.infer_event(_Event(), baseline_features(bytes_out=200_000.0))
 
         assert decision.inference_mode == "DEMO_HEURISTIC"
         assert decision.ensemble_score_semantics == "demo_heuristic_score_not_model_output"
@@ -65,12 +65,12 @@ class TestOODGate:
     def test_fitted_gate_abstains_on_out_of_distribution_row(self, tmp_path, baseline_features):
         rng = np.random.default_rng(42)
         gate = OODRejectionGate()
-        gate.fit(rng.normal(size=(200, 47)), list(baseline_features().keys()))
+        gate.fit(rng.normal(size=(200, 18)), list(baseline_features().keys()))
 
         engine = RealtimeInferenceEngine(registry=_empty_registry(tmp_path), ood_gate=gate)
         assert engine.ood_gate_status == "FITTED"
 
-        decision = engine.infer_event(_Event(), baseline_features(OUT_BYTES=1e12, IN_BYTES=1e12))
+        decision = engine.infer_event(_Event(), baseline_features(bytes_out=1e12, bytes_in=1e12))
         assert decision.is_ood is True
         assert decision.abstained_due_to_ood is True
         assert decision.ensemble_is_anomaly is False

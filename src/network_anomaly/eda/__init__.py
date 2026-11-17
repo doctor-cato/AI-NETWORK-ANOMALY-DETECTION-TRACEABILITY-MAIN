@@ -1,27 +1,13 @@
-"""Reproducible, leakage-safe exploratory data analysis for NF-UNSW-NB15-v3.
+"""Exploratory data analysis and multi-source profiling package for NetFlow Sentinel v2.
 
-The package profiles the verified source population. It does not fit any
-preprocessing, does not select features, does not change a readiness gate and
-does not modify the raw dataset. Train-dependent conclusions stay
-``PENDING ISSUE #7`` until a verified split exists.
+The retired NF-UNSW-NB15-v3 EDA modules have been moved to
+``scripts/historical/nf_unsw_nb15_v3/eda_v1/``. Active v2 profiling is
+executed by ``scripts/profile_multi_source.py`` on raw AIT-NDS-v2,
+AIT-LDS-v2.1, AIT-ADS, and CTU-SME-11 archives.
 """
 
-from .figures import render_figures
-from .profiling import (
-    CLASS_CONDITIONAL_FEATURES,
-    EDA_SCHEMA_VERSION,
-    QUANTILE_PROBABILITIES,
-    DatasetProfiler,
-    profile_dataset,
-)
-from .report import render_report
+from __future__ import annotations
 
-__all__ = [
-    "CLASS_CONDITIONAL_FEATURES",
-    "DatasetProfiler",
-    "EDA_SCHEMA_VERSION",
-    "QUANTILE_PROBABILITIES",
-    "profile_dataset",
-    "render_figures",
-    "render_report",
-]
+EDA_SCHEMA_VERSION = "v2-multi-source-profile-v1"
+
+__all__ = ["EDA_SCHEMA_VERSION"]

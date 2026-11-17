@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from network_anomaly.api.main import create_app
 from network_anomaly.behavioral.vector import BehavioralVectorBuilder
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.telemetry.collector import LAB_ENTERPRISE_FIELD_BASE
 
 
@@ -47,12 +47,12 @@ def _build_v9_packet(features_list, src_ip: str = "192.0.2.10", template_id: int
                 "!HHBIIIIBII",
                 45000 + index,
                 443,
-                int(features["PROTOCOL"]),
-                int(features["IN_BYTES"]),
-                int(features["OUT_BYTES"]),
-                int(features["IN_PKTS"]),
-                int(features["OUT_PKTS"]),
-                int(features["TCP_FLAGS"]),
+                int(features["protocol_num"]),
+                int(features["bytes_in"]),
+                int(features["bytes_out"]),
+                int(features["pkts_in"]),
+                int(features["pkts_out"]),
+                24,
                 start,
                 start + 34,
             )
@@ -96,7 +96,7 @@ def test_live_and_behavioral_api_end_to_end(tmp_path, monkeypatch, baseline_feat
 
         # 3. Send real NetFlow v9 UDP packets from two entities
         f1 = baseline_features()
-        f2 = baseline_features(OUT_BYTES=180_000.0, IN_BYTES=4_000.0)
+        f2 = baseline_features(bytes_out=180_000.0, bytes_in=4_000.0)
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             sock.sendto(_build_v9_packet([f1], src_ip="192.0.2.10"), ("127.0.0.1", bound_port))

@@ -1,43 +1,33 @@
-# RQ2 — Class Imbalance & Rare Attack Evaluation (Empirical NF-UNSW-NB15-v3)
+# RQ2 — Class Imbalance & Rare Attack Evaluation (Empirical AIT-NDS-v2)
 
 - **Status:** `COMPLETED`
-- **Timestamp (UTC):** `2026-11-17T15:55:28.904002+00:00`
-- **Dataset:** `NF-UNSW-NB15-v3` (`None`)
-- **Train Rows:** `1,655,797` (`scale_pos_weight=24.40`) | **Test Rows:** `345,953`
-- **Rare Categories (Test < 0.5%):** `Analysis, Backdoor, DoS, Shellcode, Worms`
+- **Timestamp (UTC):** `2026-11-17T18:58:27.405613+00:00`
+- **Dataset:** `AIT-NetFlow-v2-Suite` (`cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf`)
+- **Train Rows:** `1,930,219` (`scale_pos_weight=6.11`) | **Test Rows:** `923,292`
+- **Rare Categories (Test < 0.5%):** `Credential_Attack, Exploitation_And_C2, Post_Exploitation_Discovery`
 
 ## Rare Attack Category Results
 
 | Category | Test Count | Prevalence | Model | Detection Rate (Recall) | One-vs-Benign F1 | Benign FPR |
 |---|---:|---:|---|---:|---:|---:|
-| Analysis | 294 | 0.0850% | RandomForest_Unweighted | 1.0000 | 0.9916 | 0.000016 |
-| Analysis | 294 | 0.0850% | RandomForest_CostSensitive | 1.0000 | 0.9899 | 0.000019 |
-| Analysis | 294 | 0.0850% | XGBoost_ScalePosWeight | 1.0000 | 0.9966 | 0.000006 |
-| Analysis | 294 | 0.0850% | IsolationForest | 0.9320 | 0.0107 | 0.160459 |
-| Analysis | 294 | 0.0850% | Autoencoder_Reconstruction | 0.0000 | 0.0000 | 0.048161 |
-| Backdoor | 1260 | 0.3642% | RandomForest_Unweighted | 1.0000 | 0.9980 | 0.000016 |
-| Backdoor | 1260 | 0.3642% | RandomForest_CostSensitive | 1.0000 | 0.9976 | 0.000019 |
-| Backdoor | 1260 | 0.3642% | XGBoost_ScalePosWeight | 1.0000 | 0.9992 | 0.000006 |
-| Backdoor | 1260 | 0.3642% | IsolationForest | 0.8675 | 0.0413 | 0.160459 |
-| Backdoor | 1260 | 0.3642% | Autoencoder_Reconstruction | 0.0627 | 0.0096 | 0.048161 |
-| DoS | 1193 | 0.3448% | RandomForest_Unweighted | 0.9983 | 0.9971 | 0.000016 |
-| DoS | 1193 | 0.3448% | RandomForest_CostSensitive | 0.9983 | 0.9967 | 0.000019 |
-| DoS | 1193 | 0.3448% | XGBoost_ScalePosWeight | 1.0000 | 0.9992 | 0.000006 |
-| DoS | 1193 | 0.3448% | IsolationForest | 0.8156 | 0.0369 | 0.160459 |
-| DoS | 1193 | 0.3448% | Autoencoder_Reconstruction | 0.1140 | 0.0165 | 0.048161 |
-| Shellcode | 396 | 0.1145% | RandomForest_Unweighted | 1.0000 | 0.9937 | 0.000016 |
-| Shellcode | 396 | 0.1145% | RandomForest_CostSensitive | 1.0000 | 0.9925 | 0.000019 |
-| Shellcode | 396 | 0.1145% | XGBoost_ScalePosWeight | 1.0000 | 0.9975 | 0.000006 |
-| Shellcode | 396 | 0.1145% | IsolationForest | 0.8864 | 0.0137 | 0.160459 |
-| Shellcode | 396 | 0.1145% | Autoencoder_Reconstruction | 0.0025 | 0.0001 | 0.048161 |
-| Worms | 36 | 0.0104% | RandomForest_Unweighted | 1.0000 | 0.9351 | 0.000016 |
-| Worms | 36 | 0.0104% | RandomForest_CostSensitive | 1.0000 | 0.9231 | 0.000019 |
-| Worms | 36 | 0.0104% | XGBoost_ScalePosWeight | 1.0000 | 0.9730 | 0.000006 |
-| Worms | 36 | 0.0104% | IsolationForest | 0.8056 | 0.0011 | 0.160459 |
-| Worms | 36 | 0.0104% | Autoencoder_Reconstruction | 0.0556 | 0.0003 | 0.048161 |
+| Credential_Attack | 78 | 0.0084% | RandomForest_Unweighted | 0.1410 | 0.0849 | 0.000227 |
+| Credential_Attack | 78 | 0.0084% | RandomForest_CostSensitive | 0.1410 | 0.0772 | 0.000262 |
+| Credential_Attack | 78 | 0.0084% | XGBoost_ScalePosWeight | 0.1410 | 0.0604 | 0.000368 |
+| Credential_Attack | 78 | 0.0084% | IsolationForest | 0.1667 | 0.0009 | 0.037569 |
+| Credential_Attack | 78 | 0.0084% | Autoencoder_Reconstruction | 0.0641 | 0.0004 | 0.035104 |
+| Exploitation_And_C2 | 5 | 0.0005% | RandomForest_Unweighted | 1.0000 | 0.0556 | 0.000227 |
+| Exploitation_And_C2 | 5 | 0.0005% | RandomForest_CostSensitive | 1.0000 | 0.0485 | 0.000262 |
+| Exploitation_And_C2 | 5 | 0.0005% | XGBoost_ScalePosWeight | 1.0000 | 0.0351 | 0.000368 |
+| Exploitation_And_C2 | 5 | 0.0005% | IsolationForest | 1.0000 | 0.0004 | 0.037569 |
+| Exploitation_And_C2 | 5 | 0.0005% | Autoencoder_Reconstruction | 1.0000 | 0.0004 | 0.035104 |
+| Post_Exploitation_Discovery | 37 | 0.0040% | RandomForest_Unweighted | 0.9459 | 0.2893 | 0.000227 |
+| Post_Exploitation_Discovery | 37 | 0.0040% | RandomForest_CostSensitive | 0.9459 | 0.2612 | 0.000262 |
+| Post_Exploitation_Discovery | 37 | 0.0040% | XGBoost_ScalePosWeight | 0.9459 | 0.2017 | 0.000368 |
+| Post_Exploitation_Discovery | 37 | 0.0040% | IsolationForest | 0.9459 | 0.0025 | 0.037569 |
+| Post_Exploitation_Discovery | 37 | 0.0040% | Autoencoder_Reconstruction | 0.1081 | 0.0003 | 0.035104 |
 
 ## Hypothesis Evaluation
-- Cost-sensitive RF/XGB detection rate >= 0.70 across all rare classes: `True`
+- Cost-sensitive RF/XGB detection rate >= 0.70 across all rare classes: `False`
 - Autoencoder one-vs-benign F1 >= 0.70 across all rare classes: `False`
 - Full H2 confirmed: `False`
 

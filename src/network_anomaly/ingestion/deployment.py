@@ -63,10 +63,10 @@ def check_deployment_readiness(
         PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
     )
     p_art = preprocessor_artifact_path or (
-        ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+        ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
     )
     p_man = preprocessor_manifest_path or (
-        PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     )
 
     blockers: List[str] = []

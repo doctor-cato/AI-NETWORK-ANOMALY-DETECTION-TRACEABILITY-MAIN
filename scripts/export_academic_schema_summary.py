@@ -18,8 +18,8 @@ LOCAL_SOURCE = PROJECT_ROOT / "src"
 if str(LOCAL_SOURCE) not in sys.path:
     sys.path.insert(0, str(LOCAL_SOURCE))
 
-from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
-    ALL_COLUMNS,
+from network_anomaly.data.v2_schema import (  # noqa: E402
+    ALL_CANONICAL_COLUMNS as ALL_COLUMNS,
     CATEGORICAL_CODED_COLUMNS,
     IDENTIFIER_COLUMNS,
     ML_FEATURE_COLUMNS,
@@ -30,12 +30,12 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
 )
 from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
 
-DEFAULT_EDA_SUMMARY = PROJECT_ROOT / "reports" / "eda" / "nf_unsw_nb15_v3_eda_summary.json"
+DEFAULT_EDA_SUMMARY = PROJECT_ROOT / "reports" / "datasets" / "v2_multi_source_profile.json"
 DEFAULT_PREP_MANIFEST = (
-    PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 )
 DEFAULT_PREP_ARTIFACT = (
-    PROJECT_ROOT / "artifacts" / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    PROJECT_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
 )
 
 

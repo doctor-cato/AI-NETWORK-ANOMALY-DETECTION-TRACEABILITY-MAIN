@@ -1,9 +1,12 @@
 # Architecture Decision: Model Feature Space Compatibility & Zero-Imputation Policy
 
-**Document ID:** `ADR-ML-002`  
-**Milestone:** `M6.3 (AI Research)`  
-**Issue:** `#95`  
-**Status:** `APPROVED & ADOPTED`  
+**Document ID:** `ADR-ML-002`
+**Milestone:** `M6.3 (AI Research)`
+**Issue:** `#95`
+**Status:** `SUPERSEDED by docs/adr/ADR-dataset-hard-cutover-v2.md (NetFlow Sentinel v2 Hard Cutover)`
+
+> [!WARNING]
+> **Tài liệu đã bị thay thế (Superseded):** Quyết định giữ lại hợp đồng 47 đặc trưng `NF-UNSW-NB15-v3` bên dưới không còn hiệu lực. Theo [`docs/adr/ADR-dataset-hard-cutover-v2.md`](../adr/ADR-dataset-hard-cutover-v2.md), NetFlow Sentinel v2 thực hiện hard cutover sang hợp đồng `canonical-flow-v2-18` (18 đặc trưng luồng chung) và huấn luyện lại toàn bộ 4 mô hình trên `AIT-NDS-v2`, đồng thời vẫn giữ nguyên chính sách **Strict Zero-Imputation Routing** đối với các log phi-NetFlow (`DNS`, `Web`, `Auth`, `System`).
 
 ---
 
@@ -35,7 +38,7 @@ Tuy nhiên, 4 họ mô hình học máy cốt lõi (Random Forest, XGBoost, Isol
 
 ## 3. Hệ quả (Consequences)
 
-- **Tích cực:** 
+- **Tích cực:**
   - Loại bỏ hoàn toàn nguy cơ rò rỉ hoặc suy giảm độ chính xác do giá trị giả lập ngầm.
   - Tái sử dụng trọn vẹn kết quả nghiên cứu và trọng số mô hình đã được kiểm chứng của v1.0.0.
   - Phân định rõ ràng trách nhiệm giữa Tầng phát hiện luồng (AI NIDS) và Tầng tương quan hành vi (Behavioral & Trace Engine).

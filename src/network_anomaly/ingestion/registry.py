@@ -1,11 +1,11 @@
-"""Source Registry and versioned schema directory for network ingestion (Issue #46)."""
+"""Source Registry and versioned schema directory for NetFlow Sentinel v2."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS, ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ALL_CANONICAL_COLUMNS, ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.exceptions import SourceUnsupportedError
 
 
@@ -33,70 +33,67 @@ class SourceRegistry:
         self._register_default_sources()
 
     def _register_default_sources(self) -> None:
-        # 1. NF-UNSW-NB15-v3 (Canonical Lab Baseline)
+        # 1. Canonical v2 Flow Schema
         self.register(
             SourceDefinition(
-                source_id="source:nf-v3-canonical",
-                name="NF-UNSW-NB15-v3 Canonical Flow",
+                source_id="source:canonical-flow-v2",
+                name="NetFlow Sentinel Canonical Flow v2",
                 physical_format="csv",
-                schema_version="1.0.0",
+                schema_version="2.0.0",
                 ml_supported=True,
                 trace_supported=True,
-                description="Canonical NetFlow v3 nProbe CSV dataset from UNSW-NB15 lab traffic.",
-                expected_columns=list(ALL_COLUMNS),
-                adapter_name="NetFlowV3Adapter",
+                description="Canonical 18-feature v2 flow contract aligned across AIT-NDS-v2, CTU-SME-11, and live telemetry.",
+                expected_columns=list(ML_FEATURE_COLUMNS),
+                adapter_name="CanonicalFlowV2Adapter",
             )
         )
 
-        # 2. NF-CSE-CIC-IDS2018-v3 / NF-ToN-IoT-v3 (External Benchmark)
+        # 2. AIT NetFlow Data Set v2 (Tstat)
         self.register(
             SourceDefinition(
-                source_id="source:nf-v3-external",
-                name="NetFlow v3 External Benchmark (CIC-IDS2018 / ToN-IoT)",
+                source_id="source:ait-nds-v2",
+                name="AIT NetFlow Data Set v2 (10.5281/zenodo.13168643)",
                 physical_format="csv",
-                schema_version="1.0.0",
+                schema_version="2.0.0",
                 ml_supported=True,
                 trace_supported=True,
-                description="Standard NetFlow v3 55-column format extracted via nProbe v3 on external networks.",
-                expected_columns=list(ALL_COLUMNS),
-                adapter_name="NetFlowV3Adapter",
+                description="Primary synthetic NetFlow ML benchmark derived from AIT-LDS-v2.0 PCAPs via Tstat.",
+                expected_columns=list(ALL_CANONICAL_COLUMNS),
+                adapter_name="CanonicalFlowV2Adapter",
             )
         )
 
-        # 2b. NF-CSE-CIC-IDS2018-v3 (Verified Cross-Domain Research Benchmark)
+        # 3. CTU-SME-11 (Real Captured SME Network Traffic via Zeek)
         self.register(
             SourceDefinition(
-                source_id="source:nf-cse-cic-ids2018-v3",
-                name="NF-CSE-CIC-IDS2018-v3 Cross-Domain Benchmark",
-                physical_format="csv",
-                schema_version="1.0.0",
+                source_id="source:ctu-sme-11",
+                name="CTU-SME-11 Real Captured Network Traffic (10.5281/zenodo.7958258)",
+                physical_format="tsv/csv",
+                schema_version="2.0.0",
                 ml_supported=True,
                 trace_supported=True,
-                description="Verified NetFlow v3 55-column cross-domain benchmark dataset (CSE-CIC-IDS2018).",
-                expected_columns=list(ALL_COLUMNS),
-                adapter_name="NetFlowV3Adapter",
+                description="Expert-labeled real captured network traffic from 11 devices over 7 days (Zeek conn.log.labeled).",
+                expected_columns=list(ML_FEATURE_COLUMNS),
+                adapter_name="CanonicalFlowV2Adapter",
             )
         )
 
-        # 2c. Unverified NetFlow v3 CSV (Arbitrary / External CSV without verified provenance)
+        # 4. Unverified v2 Flow CSV
         self.register(
             SourceDefinition(
-                source_id="source:nf-v3-unverified",
-                name="Unverified NetFlow v3 CSV Input",
+                source_id="source:flow-v2-unverified",
+                name="Unverified Canonical Flow v2 CSV Input",
                 physical_format="csv",
-                schema_version="1.0.0",
+                schema_version="2.0.0",
                 ml_supported=True,
                 trace_supported=True,
-                description=(
-                    "NetFlow v3 47-feature CSV file without verified canonical benchmark provenance. "
-                    "Assigned VALIDATION_NOT_VERIFIED and requires explicit research/unverified opt-in."
-                ),
-                expected_columns=list(ALL_COLUMNS),
-                adapter_name="NetFlowV3Adapter",
+                description="Canonical flow v2 CSV without verified benchmark provenance; requires explicit opt-in.",
+                expected_columns=list(ML_FEATURE_COLUMNS),
+                adapter_name="CanonicalFlowV2Adapter",
             )
         )
 
-        # 3. Zeek conn.log
+        # 5. Standard Zeek conn.log (trace-only unless adapted with full IP-byte bidirectional contract)
         self.register(
             SourceDefinition(
                 source_id="source:zeek-conn",
@@ -124,7 +121,7 @@ class SourceRegistry:
             )
         )
 
-        # 4. Cisco NetFlow v5
+        # 6. Cisco NetFlow v5
         self.register(
             SourceDefinition(
                 source_id="source:netflow-v5",
@@ -134,21 +131,12 @@ class SourceRegistry:
                 ml_supported=False,
                 trace_supported=True,
                 description="Traditional Cisco NetFlow v5 format with 5-tuple and single-direction volume counters.",
-                expected_columns=[
-                    "srcaddr",
-                    "dstaddr",
-                    "srcport",
-                    "dstport",
-                    "prot",
-                    "dOctets",
-                    "dPkts",
-                    "tcp_flags",
-                ],
+                expected_columns=["srcaddr", "dstaddr", "srcport", "dstport", "prot", "dOctets", "dPkts", "tcp_flags"],
                 adapter_name="NetFlowV5Adapter",
             )
         )
 
-        # 5. Enterprise NetFlow v9 / IPFIX Standard
+        # 7. Enterprise NetFlow v9 / IPFIX Standard
         self.register(
             SourceDefinition(
                 source_id="source:netflow-v9-ipfix",
@@ -157,7 +145,7 @@ class SourceRegistry:
                 schema_version="9.0.0",
                 ml_supported=False,
                 trace_supported=True,
-                description="Standard enterprise IPFIX flow records without micro-packet IAT histograms.",
+                description="Standard enterprise IPFIX flow records routed to Trace/Risk when bidirectional fields are incomplete.",
                 expected_columns=[
                     "sourceIPv4Address",
                     "destinationIPv4Address",
@@ -171,7 +159,7 @@ class SourceRegistry:
             )
         )
 
-        # 6. AWS VPC Flow Logs
+        # 8. AWS VPC Flow Logs
         self.register(
             SourceDefinition(
                 source_id="source:aws-vpc-flow",
@@ -181,27 +169,12 @@ class SourceRegistry:
                 ml_supported=False,
                 trace_supported=True,
                 description="Aggregated 1-10 min window AWS VPC flow records (version 2 format).",
-                expected_columns=[
-                    "version",
-                    "account-id",
-                    "interface-id",
-                    "srcaddr",
-                    "dstaddr",
-                    "srcport",
-                    "dstport",
-                    "protocol",
-                    "packets",
-                    "bytes",
-                    "start",
-                    "end",
-                    "action",
-                    "log-status",
-                ],
+                expected_columns=["version", "account-id", "interface-id", "srcaddr", "dstaddr", "srcport", "dstport", "protocol", "packets", "bytes", "start", "end", "action", "log-status"],
                 adapter_name="AWSVPCFlowAdapter",
             )
         )
 
-        # 7. Suricata EVE JSON
+        # 9. Suricata EVE JSON
         self.register(
             SourceDefinition(
                 source_id="source:suricata-eve",
@@ -211,20 +184,12 @@ class SourceRegistry:
                 ml_supported=False,
                 trace_supported=True,
                 description="Suricata EVE JSON event output for flow records and alert events.",
-                expected_columns=[
-                    "timestamp",
-                    "event_type",
-                    "src_ip",
-                    "src_port",
-                    "dest_ip",
-                    "dest_port",
-                    "proto",
-                ],
+                expected_columns=["timestamp", "event_type", "src_ip", "src_port", "dest_ip", "dest_port", "proto"],
                 adapter_name="SuricataEveAdapter",
             )
         )
 
-        # 8. sFlow (RFC 3176) — Declared UNSUPPORTED for ML inference
+        # 10. sFlow (RFC 3176) — Unsupported for ML inference
         self.register(
             SourceDefinition(
                 source_id="source:sflow",
@@ -239,11 +204,9 @@ class SourceRegistry:
         )
 
     def register(self, source: SourceDefinition) -> None:
-        """Register a new source definition."""
         self._sources[source.source_id] = source
 
     def get_source(self, source_id: str) -> SourceDefinition:
-        """Retrieve registered source by ID or raise SourceUnsupportedError."""
         if source_id not in self._sources:
             raise SourceUnsupportedError(
                 f"Source ID '{source_id}' is not registered. Registered sources: {list(self._sources.keys())}"
@@ -251,40 +214,30 @@ class SourceRegistry:
         return self._sources[source_id]
 
     def list_sources(self) -> List[SourceDefinition]:
-        """Return all registered source definitions."""
         return list(self._sources.values())
 
     def detect_source(self, column_names: List[str]) -> Optional[SourceDefinition]:
-        """Infer source definition based on column name signatures."""
         col_set = set(column_names)
 
-        # Check NetFlow v3 signature (all 47 ML features present)
         if all(col in col_set for col in ML_FEATURE_COLUMNS):
-            return self.get_source("source:nf-v3-external")
+            return self.get_source("source:canonical-flow-v2")
 
-        # Check Zeek conn.log signature
-        zeek_cols = {"id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p"}
-        if zeek_cols.issubset(col_set):
+        if {"#15#c_ip:1", "durat:31"}.issubset(col_set) or {"#c_ip:1", "c_first_abs:3"}.issubset(col_set):
+            return self.get_source("source:ait-nds-v2")
+
+        if {"id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p"}.issubset(col_set):
             return self.get_source("source:zeek-conn")
 
-        # Check NetFlow v5 signature
-        v5_cols = {"srcaddr", "dstaddr", "srcport", "dstport", "dOctets"}
-        if v5_cols.issubset(col_set):
+        if {"srcaddr", "dstaddr", "srcport", "dstport", "dOctets"}.issubset(col_set):
             return self.get_source("source:netflow-v5")
 
-        # Check AWS VPC Flow signature
-        aws_cols = {"account-id", "interface-id", "action"}
-        if aws_cols.issubset(col_set):
+        if {"account-id", "interface-id", "action"}.issubset(col_set):
             return self.get_source("source:aws-vpc-flow")
 
-        # Check IPFIX signature
-        ipfix_cols = {"sourceIPv4Address", "destinationIPv4Address"}
-        if ipfix_cols.issubset(col_set):
+        if {"sourceIPv4Address", "destinationIPv4Address"}.issubset(col_set):
             return self.get_source("source:netflow-v9-ipfix")
 
-        # Check Suricata signature
-        suricata_cols = {"event_type", "src_ip", "dest_ip"}
-        if suricata_cols.issubset(col_set):
+        if {"event_type", "src_ip", "dest_ip"}.issubset(col_set):
             return self.get_source("source:suricata-eve")
 
         return None

@@ -1,6 +1,6 @@
 {
   "benchmark_title": "NetFlow Sentinel v2.0 Dynamic System Performance Benchmark",
-  "benchmark_executed_at_utc": "2026-11-17T15:52:01.441243+00:00",
+  "benchmark_executed_at_utc": "2026-11-17T19:01:50.739167+00:00",
   "hardware_environment": {
     "os": "Windows-11-10.0.26200-SP0",
     "system": "Windows",
@@ -19,7 +19,7 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T15:51:23.687557+00:00"
+    "captured_at_utc": "2026-11-17T19:01:09.856933+00:00"
   },
   "inference_readiness": {
     "inference_mode": "REAL_MODELS",
@@ -28,18 +28,18 @@
   },
   "end_to_end_measured": {
     "events_processed": 200,
-    "elapsed_seconds": 16.2646,
-    "throughput_events_per_sec": 12.3,
+    "elapsed_seconds": 18.5592,
+    "throughput_events_per_sec": 10.78,
     "latency_us": {
-      "median_us": 78423.3,
-      "p95_us": 99766.7,
-      "p99_us": 175674.9
+      "median_us": 90432.9,
+      "p95_us": 131399.4,
+      "p99_us": 180361.7
     }
   },
   "replay_mode_measured": {
     "events_processed": 200,
-    "elapsed_seconds": 15.002,
-    "throughput_events_per_sec": 13.33
+    "elapsed_seconds": 17.129,
+    "throughput_events_per_sec": 11.68
   },
   "ring_buffer_measured": {
     "capacity": 2000,
@@ -50,34 +50,34 @@
   },
   "component_microbenchmarks_us": {
     "collector_decoding": {
-      "median_us": 1.0,
-      "p95_us": 1.2,
+      "median_us": 1.1,
+      "p95_us": 1.5,
       "p99_us": 2.0
     },
     "feature_contract_validation": {
-      "median_us": 8.7,
-      "p95_us": 9.6,
-      "p99_us": 12.3
+      "median_us": 3.8,
+      "p95_us": 4.2,
+      "p99_us": 11.4
     },
     "multi_model_ai_inference": {
-      "median_us": 79346.35,
-      "p95_us": 159022.0,
-      "p99_us": 244357.6
+      "median_us": 86594.2,
+      "p95_us": 127555.9,
+      "p99_us": 159956.6
     },
     "behavioral_vector_build": {
-      "median_us": 41.45,
-      "p95_us": 87.1,
-      "p99_us": 149.1
+      "median_us": 44.35,
+      "p95_us": 78.2,
+      "p99_us": 113.9
     },
     "aes_256_gcm_encrypt": {
-      "median_us": 4.5,
-      "p95_us": 13.2,
-      "p99_us": 71.6
+      "median_us": 4.8,
+      "p95_us": 8.8,
+      "p99_us": 47.7
     },
     "risk_scoring_dedup": {
-      "median_us": 4.1,
-      "p95_us": 7.8,
-      "p99_us": 9.4
+      "median_us": 4.25,
+      "p95_us": 5.6,
+      "p99_us": 11.6
     }
   },
   "limitations": [

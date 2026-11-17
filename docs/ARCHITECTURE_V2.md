@@ -70,21 +70,21 @@ flowchart TB
 
 ## 2. Ba Chế độ Hoạt động (Operating Modes)
 
-### 2.1. Chế độ 1: Offline CSV Mode (Bảo toàn v1.0.0)
-- **Mục đích:** Phân tích ngoại tuyến các tập tin CSV chuẩn (NF-UNSW-NB15-v3, NF-ToN-IoT-v3) hoặc báo cáo xuất từ firewall/NIDS.
+### 2.1. Chế độ 1: Offline CSV Mode (v2 Canonical Flow)
+- **Mục đích:** Phân tích ngoại tuyến các tập tin CSV chuẩn v2 (`AIT-NDS-v2`, `CTU-SME-11` hoặc tệp đã ánh xạ sang hợp đồng `canonical-flow-v2-18`).
 - **Luồng dữ liệu:**  
-  `Tệp CSV → Ingestion Adapter → Canonical Security Event → 47-feature Extraction → AI Inference (4 models) → Risk Score → Hiển thị Báo cáo`.
-- **Đảm bảo:** Tương thích 100% với kịch bản kiểm thử và nghiệm thu của v1.0.0.
+  `Tệp CSV → Ingestion Adapter → Canonical Security Event v2 → 18-feature Extraction (canonical-flow-v2-18) → AI Inference (4 models) → Risk Score → Hiển thị Báo cáo`.
+- **Đảm bảo:** Loại bỏ hoàn toàn `NF-UNSW-NB15-v3` và hợp đồng 47 đặc trưng cũ; kiểm tra `feature_contract_version == "canonical-flow-v2-18"` fail-closed.
 
 ### 2.2. Chế độ 2: Dataset Replay Mode (Mô phỏng Đa nguồn Nghiên cứu)
-- **Mục đích:** Tái hiện kịch bản tấn công thực tế từ tập dữ liệu đa nguồn (AIT NetFlow & Log Dataset v2.1) theo đúng dòng thời gian thực tế (time-scaled replay).
+- **Mục đích:** Tái hiện kịch bản tấn công từ nguồn đa dạng (`AIT-NDS-v2`, `AIT-LDS-v2.1`, `AIT-ADS`, `CTU-SME-11`) theo dòng thời gian.
 - **Luồng dữ liệu:**  
   `Replay Controller → Multi-source Adapters (Flow, DNS, Web, Auth) → Event Timestamp Alignment → Behavioral Vector Sessionization (Time-window) → AI Consensus & Risk Scoring → Attack Timeline Reconstruction → Adaptive Key Rotation Under Attack`.
 
 ### 2.3. Chế độ 3: Live Monitoring Mode (Giám sát Lab Được Cấp phép)
-- **Mục đích:** Thu thập trực tiếp lưu lượng mạng thực tế trong môi trường lab ủy quyền, phát hiện bất thường tức thời và kích hoạt tự vệ mật mã.
+- **Mục đích:** Thu thập trực tiếp lưu lượng mạng trong môi trường lab ủy quyền, phát hiện bất thường tức thời và kích hoạt tự vệ mật mã.
 - **Luồng dữ liệu:**  
-  `UDP Exporter → UDPFlowCollector / NetFlowIPFIXDecoder → CanonicalSecurityEvent → StreamingEventPipeline → RealtimeFeatureExtractor (strict 47-feature) → RealtimeInferenceEngine (4 real models via ModelRegistry) → RiskScorer & LiveAlertManager → BehavioralVector & AES-256-GCM Vault → TraceEngine`.
+  `UDP Exporter → UDPFlowCollector / NetFlowIPFIXDecoder → CanonicalSecurityEvent → StreamingEventPipeline → RealtimeFeatureExtractor (strict 18-feature canonical-flow-v2-18) → RealtimeInferenceEngine (4 real v2 models via ModelRegistry) → RiskScorer & LiveAlertManager → BehavioralVector & AES-256-GCM Vault → TraceEngine`.
 
 ```mermaid
 sequenceDiagram
@@ -145,13 +145,13 @@ Hệ thống định nghĩa 5 hợp đồng dữ liệu chuẩn hóa (Pydantic /
 }
 ```
 
-### Contract 2: `MLFeatureVector` (`contract_id: "ml-feat-v2"`)
+### Contract 2: `MLFeatureVector` (`contract_id: "canonical-flow-v2-18"`)
 Vector đặc trưng phục vụ suy luận AI, tách biệt tuyệt đối với siêu dữ liệu:
 ```json
 {
-  "contract_id": "ml-feat-nf-unsw-v3",
+  "contract_id": "canonical-flow-v2-18",
   "version": "2.0.0",
-  "features": [0.12, 1024.0, 4096.0, ...], // 47 float features
+  "features": [1250.0, 1024.0, 4096.0, "..."], // 18 canonical v2 float features
   "is_complete": true,
   "missing_attributes": []
 }
@@ -218,6 +218,6 @@ Thông tin quản lý vòng đời khóa mã hóa AES-256-GCM:
 
 ---
 
-## 5. Quy chuẩn Tương thích Ngược (Backward Compatibility Policy)
-- Đường truyền cũ (v1.0.0 Desktop CSV) hoạt động qua Adapter chuyển tiếp `LegacyCSVAdapter` sang `CanonicalSecurityEvent` mà không làm thay đổi kết quả dự đoán của 4 mô hình cơ sở.
-- SQLite Database v1.0.0 được tự động nâng cấp (idempotent migration) có sao lưu dự phòng, bảo toàn toàn bộ dữ liệu lịch sử.
+## 5. Chính sách Hard Cutover & Nâng cấp Database
+- **Không fallback v1 ML/CSV:** Các tệp CSV 55 cột / 47 đặc trưng của `NF-UNSW-NB15-v3` và model/preprocessor v1 bị từ chối fail-closed bởi `ModelRegistry`, `TrainOnlyPreprocessor` và `InferencePipeline`. Chỉ hợp đồng `canonical-flow-v2-18` được phép suy luận AI.
+- **SQLite Database v1.0.0 → v2.0:** Được nâng cấp idempotent qua `scripts/migrate_v1_to_v2.py` có sao lưu dự phòng, bảo toàn lịch sử sự cố và khóa mã hóa không phụ thuộc dataset.

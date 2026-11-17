@@ -5,7 +5,7 @@ from __future__ import annotations
 import socket
 import struct
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.streaming.live_service import LiveTelemetryService
 from network_anomaly.telemetry.collector import LAB_ENTERPRISE_FIELD_BASE
 
@@ -43,12 +43,12 @@ def _build_v9_packet(features_list, template_id=256):
                 "!HHBIIIIBII",
                 45000 + index,
                 443,
-                int(features["PROTOCOL"]),
-                int(features["IN_BYTES"]),
-                int(features["OUT_BYTES"]),
-                int(features["IN_PKTS"]),
-                int(features["OUT_PKTS"]),
-                int(features["TCP_FLAGS"]),
+                int(features["protocol_num"]),
+                int(features["bytes_in"]),
+                int(features["bytes_out"]),
+                int(features["pkts_in"]),
+                int(features["pkts_out"]),
+                24,
                 start,
                 start + 34,
             )
@@ -76,7 +76,7 @@ class TestLiveTelemetryService:
             assert status["bound_port"] == service.bound_port
 
             features_a = baseline_features()
-            features_b = baseline_features(OUT_BYTES=150_000.0, IN_BYTES=5000.0)
+            features_b = baseline_features(bytes_out=150_000.0, bytes_in=5000.0)
             sender = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             try:
                 sender.sendto(

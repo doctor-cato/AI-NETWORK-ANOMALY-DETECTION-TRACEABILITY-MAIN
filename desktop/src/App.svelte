@@ -321,7 +321,7 @@
     if (!trimmed) return;
     handleFlowsPathChange(path);
     const preInspectEpoch = comparisonState.sessionEpoch;
-    busyMessage = "Đang kiểm tra định dạng 47 đặc trưng NetFlow & chỉ số an toàn OOD...";
+    busyMessage = "Đang kiểm tra định dạng 18 đặc trưng NetFlow v2 & chỉ số an toàn OOD...";
     errorMessage = null;
     try {
       const inspected = await inspectCsv(trimmed, 20);
@@ -1035,7 +1035,7 @@
             <CsvPreviewPanel {inspectData} />
           {:else}
             <div class="empty-state">
-              Nhấn <strong>Mở Demo Validation (200 flows)</strong> hoặc chọn tệp NetFlow CSV từ máy cục bộ để kiểm tra 47 ML features và bắt đầu phân tích.
+              Nhấn <strong>Mở Demo Validation (200 flows)</strong> hoặc chọn tệp NetFlow CSV từ máy cục bộ để kiểm tra 18 ML features (canonical-flow-v2-18) và bắt đầu phân tích.
             </div>
           {/if}
         {:else if activeTab === "predictions"}

@@ -79,8 +79,8 @@ def _copy_attestation_workspace(tmp_path: Path) -> Path:
     rel_files = [
         "scripts/verify_companion_artifacts.py",
         "desktop/package.json",
-        "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-        "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+        "data/V2_SPLIT_MANIFEST.json",
+        "reports/preprocessing/v2_flow_preprocessing_manifest.json",
         "reports/models/random_forest_manifest.json",
         "reports/models/xgboost_manifest.json",
         "reports/models/isolation_forest_manifest.json",
@@ -97,10 +97,12 @@ def _copy_attestation_workspace(tmp_path: Path) -> Path:
     flows_path = demo_dir / "demo_flows.csv"
     labels_path = demo_dir / "demo_labels.csv"
     flows_path.write_text(
-        "L4_SRC_PORT,L4_DST_PORT\n80,443\n443,51234\n", encoding="utf-8", newline="\n"
+        "duration_ms,bytes_in,bytes_out\n10.0,100,200\n20.0,300,400\n",
+        encoding="utf-8",
+        newline="\n",
     )
-    labels_path.write_text("row_index,Label\n0,0\n1,1\n", encoding="utf-8", newline="\n")
-    split_sha = _sha256_path(ws / "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+    labels_path.write_text("row_index,label_binary\n0,0\n1,1\n", encoding="utf-8", newline="\n")
+    split_sha = _sha256_path(ws / "data/V2_SPLIT_MANIFEST.json")
     demo_manifest_payload = {
         "split_manifest_sha256": split_sha,
         "sampling": {
@@ -125,9 +127,9 @@ def _build_valid_attestation_payload(
     include_nsis: bool = True,
     commit: str | None = None,
 ) -> Dict[str, Any]:
-    split_sha = _sha256_path(root / "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+    split_sha = _sha256_path(root / "data/V2_SPLIT_MANIFEST.json")
     prep_manifest = json.loads(
-        (root / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+        (root / "reports/preprocessing/v2_flow_preprocessing_manifest.json").read_text(
             encoding="utf-8"
         )
     )
@@ -1072,7 +1074,7 @@ def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_de
     # Partial data/demo/* on disk must always fail closed
     partial_dir = ws / "data/demo"
     partial_dir.mkdir(parents=True, exist_ok=True)
-    (partial_dir / "demo_flows.csv").write_text("L4_SRC_PORT\n80\n", encoding="utf-8")
+    (partial_dir / "demo_flows.csv").write_text("duration_ms\n10.0\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="Incomplete tracked demo files"):
         verify_e2e_attestation(att, root=ws)
 
@@ -1080,7 +1082,7 @@ def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_de
 def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     ws = _copy_attestation_workspace(tmp_path / "src_ws")
     prep_manifest = json.loads(
-        (ws / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+        (ws / "reports/preprocessing/v2_flow_preprocessing_manifest.json").read_text(
             encoding="utf-8"
         )
     )
@@ -1100,7 +1102,7 @@ def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.Monkey
         model_runs[key] = str(md["run_id"])
 
     fake_files = {
-        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
+        "artifacts/preprocessing/v2_flow_preprocessor.joblib": b"prep",
         "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
         "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
         "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
@@ -1117,7 +1119,7 @@ def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.Monkey
             "data/demo/demo_flows.csv",
             "data/demo/demo_labels.csv",
             "data/demo/demo_manifest.json",
-            "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+            "reports/preprocessing/v2_flow_preprocessing_manifest.json",
             "reports/models/random_forest_manifest.json",
             "reports/models/xgboost_manifest.json",
             "reports/models/isolation_forest_manifest.json",
@@ -1518,7 +1520,7 @@ def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
 
     # Populate synthetic companion files in src_ws with a STALE XGBoost sidecar manifest
     companion_files = {
-        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
+        "artifacts/preprocessing/v2_flow_preprocessor.joblib": b"prep",
         "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
         "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
         "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
@@ -1535,7 +1537,7 @@ def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
     def _ready_summary(root: Path, runtime_dir: Path | None = None) -> dict[str, Any]:
         eff_rt = (runtime_dir or root).resolve()
         prep_sha = json.loads(
-            (root / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+            (root / "reports/preprocessing/v2_flow_preprocessing_manifest.json").read_text(
                 encoding="utf-8"
             )
         )["artifact_sha256"]
@@ -1571,7 +1573,7 @@ def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
             "companion_files": sorted(
                 list(companion_files.keys())
                 + [
-                    "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+                    "reports/preprocessing/v2_flow_preprocessing_manifest.json",
                     "reports/models/random_forest_manifest.json",
                     "reports/models/xgboost_manifest.json",
                     "reports/models/isolation_forest_manifest.json",
@@ -1671,11 +1673,11 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
 
 def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: Path):
     (tmp_path / "NOTICE").write_text(
-        "Dataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | UQ License ID 454104\n",
+        "AIT NetFlow Data Set v2 | DOI: 10.5281/zenodo.13168643 | CTU-SME-11 | 10.5281/zenodo.7958258\n",
         encoding="utf-8",
     )
     (tmp_path / "THIRD_PARTY_NOTICES.md").write_text(
-        "# Notices\nDataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | License ID 454104\n",
+        "# Notices\nAIT NetFlow Data Set v2 | DOI: 10.5281/zenodo.13168643 | CTU-SME-11 | 10.5281/zenodo.7958258\n",
         encoding="utf-8",
     )
     (tmp_path / "LICENSE").write_text("Apache License 2.0\n", encoding="utf-8")
@@ -1804,7 +1806,7 @@ def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: 
     assert res_public["public_release_allowed"] is True
     assert res_public["upload_allowed"] is True
     assert res_public["evidence_verified"] is True
-    assert res_public["citation_doi"] == "10.48610/6E0EDA1"
+    assert res_public["citation_doi"] == "10.5281/zenodo.13168643"
 
     # Attribution notices remain mandatory even when authorization exists
     (tmp_path / "NOTICE").unlink()
@@ -1832,7 +1834,7 @@ def test_tauri_standalone_config_covers_all_required_embedded_resources():
     destinations = set(standalone_res.values())
     # Must explicitly include sidecar-supporting artifacts for all 4 models, preprocessor, demo, and manifests
     required_standalone_dests = {
-        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+        "artifacts/preprocessing/v2_flow_preprocessor.joblib",
         "artifacts/models/random_forest/random_forest_baseline.joblib",
         "artifacts/models/random_forest/random_forest_manifest.json",
         "artifacts/models/xgboost/xgboost_baseline.joblib",

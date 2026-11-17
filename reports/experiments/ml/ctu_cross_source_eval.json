@@ -1,0 +1,1381 @@
+{
+  "status": "COMPLETED",
+  "generated_at_utc": "2026-11-17T19:04:20.794061+00:00",
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 124 Stepping 0, AuthenticAMD",
+    "cpu_count": 12,
+    "total_ram_gb": 15.27,
+    "python_version": "3.12.10",
+    "python_implementation": "CPython",
+    "packages": {
+      "numpy": "2.5.5",
+      "pandas": "3.1.1",
+      "scikit_learn": "1.9.1",
+      "xgboost": "3.4.1",
+      "joblib": "1.6.0",
+      "cryptography": "50.0.2"
+    },
+    "random_seed": 42,
+    "captured_at_utc": "2026-11-17T19:04:20.916096+00:00"
+  },
+  "datasets": {
+    "ctu_echo_by_day": {
+      "2023-02-20": {
+        "rows": 10119,
+        "benign": 5308,
+        "attack": 4811
+      },
+      "2023-02-21": {
+        "rows": 11234,
+        "benign": 5266,
+        "attack": 5968
+      },
+      "2023-02-22": {
+        "rows": 9178,
+        "benign": 5265,
+        "attack": 3913
+      },
+      "2023-02-23": {
+        "rows": 12301,
+        "benign": 8508,
+        "attack": 3793
+      },
+      "2023-02-24": {
+        "rows": 10913,
+        "benign": 5641,
+        "attack": 5272
+      },
+      "2023-02-25": {
+        "rows": 11329,
+        "benign": 5555,
+        "attack": 5774
+      },
+      "2023-02-26": {
+        "rows": 10995,
+        "benign": 3950,
+        "attack": 7045
+      },
+      "2023-02-27": {
+        "rows": 4,
+        "benign": 4,
+        "attack": 0
+      }
+    },
+    "ctu_windows7ad_by_day": {
+      "2023-02-20": {
+        "rows": 13899,
+        "benign": 13899,
+        "attack": 0
+      },
+      "2023-02-21": {
+        "rows": 64762,
+        "benign": 62947,
+        "attack": 1815
+      },
+      "2023-02-22": {
+        "rows": 34819,
+        "benign": 34598,
+        "attack": 221
+      },
+      "2023-02-23": {
+        "rows": 19440,
+        "benign": 19440,
+        "attack": 0
+      },
+      "2023-02-24": {
+        "rows": 22526,
+        "benign": 22524,
+        "attack": 2
+      },
+      "2023-02-25": {
+        "rows": 17358,
+        "benign": 17358,
+        "attack": 0
+      },
+      "2023-02-26": {
+        "rows": 2335,
+        "benign": 2335,
+        "attack": 0
+      },
+      "2023-02-27": {
+        "rows": 7,
+        "benign": 7,
+        "attack": 0
+      }
+    },
+    "ugr16_status": "BLOCKED (NESG portal HTTP 403 / maintenance; no synthetic substitute)"
+  },
+  "feature_shift_medians": {
+    "duration_ms": {
+      "ait_test_attack_median": 0.0,
+      "ait_test_benign_median": 5088.19,
+      "ctu_echo_attack_median": 0.0,
+      "ctu_echo_benign_median": 91.727,
+      "ctu_win7ad_attack_median": 2.641,
+      "ctu_win7ad_benign_median": 2.417
+    },
+    "bytes_in": {
+      "ait_test_attack_median": 231.0,
+      "ait_test_benign_median": 1278.0,
+      "ctu_echo_attack_median": 88.0,
+      "ctu_echo_benign_median": 840.0,
+      "ctu_win7ad_attack_median": 178.0,
+      "ctu_win7ad_benign_median": 164.0
+    },
+    "bytes_out": {
+      "ait_test_attack_median": 250.0,
+      "ait_test_benign_median": 1676.0,
+      "ctu_echo_attack_median": 0.0,
+      "ctu_echo_benign_median": 396.0,
+      "ctu_win7ad_attack_median": 100.0,
+      "ctu_win7ad_benign_median": 93.0
+    },
+    "pkts_in": {
+      "ait_test_attack_median": 1.0,
+      "ait_test_benign_median": 10.0,
+      "ctu_echo_attack_median": 2.0,
+      "ctu_echo_benign_median": 10.0,
+      "ctu_win7ad_attack_median": 3.0,
+      "ctu_win7ad_benign_median": 2.0
+    },
+    "pkts_out": {
+      "ait_test_attack_median": 1.0,
+      "ait_test_benign_median": 9.0,
+      "ctu_echo_attack_median": 0.0,
+      "ctu_echo_benign_median": 2.0,
+      "ctu_win7ad_attack_median": 2.0,
+      "ctu_win7ad_benign_median": 1.0
+    }
+  },
+  "zero_shot_ait_models": {
+    "random_forest": {
+      "ait_test": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.5,
+        "total_rows": 923292,
+        "accuracy": 0.965275340845583,
+        "precision": 0.9988191246240301,
+        "recall": 0.8184731503512027,
+        "f1": 0.8996974749955419,
+        "macro_f1": 0.9393502964971037,
+        "weighted_f1": 0.9639130121880716,
+        "false_positive_rate": 0.0002273912869009243,
+        "true_negative_rate": 0.999772608713099,
+        "roc_auc": 0.9995611275581099,
+        "pr_auc": 0.9980809386588139,
+        "confusion_matrix": {
+          "tn": 747440,
+          "fp": 170,
+          "fn": 31891,
+          "tp": 143791
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 747610,
+            "false_positive": 170,
+            "true_negative": 747440,
+            "false_positive_rate": 0.0002273912869009243
+          },
+          "Credential_Attack": {
+            "total": 78,
+            "detected": 11,
+            "missed": 67,
+            "detection_rate": 0.14102564102564102,
+            "false_negative_rate": 0.8589743589743589
+          },
+          "Data_Exfiltration": {
+            "total": 80075,
+            "detected": 48559,
+            "missed": 31516,
+            "detection_rate": 0.6064189822041836,
+            "false_negative_rate": 0.39358101779581645
+          },
+          "Exploitation_And_C2": {
+            "total": 5,
+            "detected": 5,
+            "missed": 0,
+            "detection_rate": 1.0,
+            "false_negative_rate": 0.0
+          },
+          "Post_Exploitation_Discovery": {
+            "total": 37,
+            "detected": 35,
+            "missed": 2,
+            "detection_rate": 0.9459459459459459,
+            "false_negative_rate": 0.05405405405405406
+          },
+          "Reconnaissance": {
+            "total": 95487,
+            "detected": 95181,
+            "missed": 306,
+            "detection_rate": 0.9967953752866883,
+            "false_negative_rate": 0.0032046247133117596
+          }
+        },
+        "inference_latency_seconds": 1.4545,
+        "inference_latency_us_per_row": 1.5753,
+        "csv_sha256": "5532fb77c35f0014f941a35386a8204eb48b5b7cbdf7480782da03d812831076"
+      },
+      "ctu_echo": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.5,
+        "total_rows": 76073,
+        "accuracy": 0.518764870584833,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "macro_f1": 0.34157023291240035,
+        "weighted_f1": 0.3546856174816578,
+        "false_positive_rate": 0.0008355064941641138,
+        "true_negative_rate": 0.9991644935058359,
+        "roc_auc": 0.7996289665542888,
+        "pr_auc": 0.763745252940845,
+        "confusion_matrix": {
+          "tn": 39464,
+          "fp": 33,
+          "fn": 36576,
+          "tp": 0
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 39497,
+            "false_positive": 33,
+            "true_negative": 39464,
+            "false_positive_rate": 0.0008355064941641138
+          },
+          "Reconnaissance": {
+            "total": 36576,
+            "detected": 0,
+            "missed": 36576,
+            "detection_rate": 0.0,
+            "false_negative_rate": 1.0
+          }
+        },
+        "inference_latency_seconds": 0.1253,
+        "inference_latency_us_per_row": 1.6465,
+        "csv_sha256": "8cdb4fb6981f6e17dc26ce1c861c0c7aa3e57d051bec393d37534c8b93d09a4d"
+      },
+      "ctu_windows7ad": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.5,
+        "total_rows": 175146,
+        "accuracy": 0.975369120619369,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "macro_f1": 0.4937654995404332,
+        "weighted_f1": 0.9760400819253116,
+        "false_positive_rate": 0.013147861450655083,
+        "true_negative_rate": 0.986852138549345,
+        "roc_auc": 0.6887744373981941,
+        "pr_auc": 0.11993574412746225,
+        "confusion_matrix": {
+          "tn": 170832,
+          "fp": 2276,
+          "fn": 2038,
+          "tp": 0
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 173108,
+            "false_positive": 2276,
+            "true_negative": 170832,
+            "false_positive_rate": 0.013147861450655083
+          },
+          "Exploitation_And_C2": {
+            "total": 2036,
+            "detected": 0,
+            "missed": 2036,
+            "detection_rate": 0.0,
+            "false_negative_rate": 1.0
+          },
+          "Malware_And_DoS": {
+            "total": 2,
+            "detected": 0,
+            "missed": 2,
+            "detection_rate": 0.0,
+            "false_negative_rate": 1.0
+          }
+        },
+        "inference_latency_seconds": 0.2649,
+        "inference_latency_us_per_row": 1.5124,
+        "csv_sha256": "090a454419a1d672c642b6a7d3f4d5b7451ad468f1c8339a1a9c6014b278c15c"
+      }
+    },
+    "xgboost": {
+      "ait_test": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.5,
+        "total_rows": 923292,
+        "accuracy": 0.9625546414352123,
+        "precision": 0.9988122591820142,
+        "recall": 0.8041632039708109,
+        "f1": 0.8909805850652893,
+        "macro_f1": 0.9341879152837256,
+        "weighted_f1": 0.9609524512671087,
+        "false_positive_rate": 0.00022471609529032516,
+        "true_negative_rate": 0.9997752839047097,
+        "roc_auc": 0.9786181573664741,
+        "pr_auc": 0.9384536955221222,
+        "confusion_matrix": {
+          "tn": 747442,
+          "fp": 168,
+          "fn": 34405,
+          "tp": 141277
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 747610,
+            "false_positive": 168,
+            "true_negative": 747442,
+            "false_positive_rate": 0.00022471609529032516
+          },
+          "Credential_Attack": {
+            "total": 78,
+            "detected": 11,
+            "missed": 67,
+            "detection_rate": 0.14102564102564102,
+            "false_negative_rate": 0.8589743589743589
+          },
+          "Data_Exfiltration": {
+            "total": 80075,
+            "detected": 46007,
+            "missed": 34068,
+            "detection_rate": 0.5745488604433344,
+            "false_negative_rate": 0.42545113955666564
+          },
+          "Exploitation_And_C2": {
+            "total": 5,
+            "detected": 5,
+            "missed": 0,
+            "detection_rate": 1.0,
+            "false_negative_rate": 0.0
+          },
+          "Post_Exploitation_Discovery": {
+            "total": 37,
+            "detected": 35,
+            "missed": 2,
+            "detection_rate": 0.9459459459459459,
+            "false_negative_rate": 0.05405405405405406
+          },
+          "Reconnaissance": {
+            "total": 95487,
+            "detected": 95219,
+            "missed": 268,
+            "detection_rate": 0.9971933352184067,
+            "false_negative_rate": 0.002806664781593306
+          }
+        },
+        "inference_latency_seconds": 0.4837,
+        "inference_latency_us_per_row": 0.5239,
+        "csv_sha256": "5532fb77c35f0014f941a35386a8204eb48b5b7cbdf7480782da03d812831076"
+      },
+      "ctu_echo": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.5,
+        "total_rows": 76073,
+        "accuracy": 0.4949193537786074,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "macro_f1": 0.3310675940662839,
+        "weighted_f1": 0.3437797053576437,
+        "false_positive_rate": 0.046763045294579336,
+        "true_negative_rate": 0.9532369547054207,
+        "roc_auc": 0.03734031119366273,
+        "pr_auc": 0.3930813871185607,
+        "confusion_matrix": {
+          "tn": 37650,
+          "fp": 1847,
+          "fn": 36576,
+          "tp": 0
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 39497,
+            "false_positive": 1847,
+            "true_negative": 37650,
+            "false_positive_rate": 0.046763045294579336
+          },
+          "Reconnaissance": {
+            "total": 36576,
+            "detected": 0,
+            "missed": 36576,
+            "detection_rate": 0.0,
+            "false_negative_rate": 1.0
+          }
+        },
+        "inference_latency_seconds": 0.0536,
+        "inference_latency_us_per_row": 0.704,
+        "csv_sha256": "8cdb4fb6981f6e17dc26ce1c861c0c7aa3e57d051bec393d37534c8b93d09a4d"
+      },
+      "ctu_windows7ad": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.5,
+        "total_rows": 175146,
+        "accuracy": 0.984481518276181,
+        "precision": 0.001466275659824047,
+        "recall": 0.0004906771344455348,
+        "f1": 0.0007352941176470588,
+        "macro_f1": 0.49645766581752676,
+        "weighted_f1": 0.9806435800073937,
+        "false_positive_rate": 0.003933960302239065,
+        "true_negative_rate": 0.996066039697761,
+        "roc_auc": 0.15988216883579212,
+        "pr_auc": 0.007886651741874987,
+        "confusion_matrix": {
+          "tn": 172427,
+          "fp": 681,
+          "fn": 2037,
+          "tp": 1
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 173108,
+            "false_positive": 681,
+            "true_negative": 172427,
+            "false_positive_rate": 0.003933960302239065
+          },
+          "Exploitation_And_C2": {
+            "total": 2036,
+            "detected": 1,
+            "missed": 2035,
+            "detection_rate": 0.0004911591355599214,
+            "false_negative_rate": 0.99950884086444
+          },
+          "Malware_And_DoS": {
+            "total": 2,
+            "detected": 0,
+            "missed": 2,
+            "detection_rate": 0.0,
+            "false_negative_rate": 1.0
+          }
+        },
+        "inference_latency_seconds": 0.1167,
+        "inference_latency_us_per_row": 0.6663,
+        "csv_sha256": "090a454419a1d672c642b6a7d3f4d5b7451ad468f1c8339a1a9c6014b278c15c"
+      }
+    },
+    "isolation_forest": {
+      "ait_test": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.002736309694079453,
+        "total_rows": 923292,
+        "accuracy": 0.8687035087491282,
+        "precision": 0.7461199844528207,
+        "recall": 0.46984893159230884,
+        "f1": 0.5765997352547736,
+        "macro_f1": 0.749452449454518,
+        "weighted_f1": 0.8565250842513445,
+        "false_positive_rate": 0.03756905338344859,
+        "true_negative_rate": 0.9624309466165514,
+        "roc_auc": 0.7752837278464689,
+        "pr_auc": 0.6353227129460307,
+        "confusion_matrix": {
+          "tn": 719523,
+          "fp": 28087,
+          "fn": 93138,
+          "tp": 82544
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 747610,
+            "false_positive": 28087,
+            "true_negative": 719523,
+            "false_positive_rate": 0.03756905338344859
+          },
+          "Credential_Attack": {
+            "total": 78,
+            "detected": 13,
+            "missed": 65,
+            "detection_rate": 0.16666666666666666,
+            "false_negative_rate": 0.8333333333333334
+          },
+          "Data_Exfiltration": {
+            "total": 80075,
+            "detected": 0,
+            "missed": 80075,
+            "detection_rate": 0.0,
+            "false_negative_rate": 1.0
+          },
+          "Exploitation_And_C2": {
+            "total": 5,
+            "detected": 5,
+            "missed": 0,
+            "detection_rate": 1.0,
+            "false_negative_rate": 0.0
+          },
+          "Post_Exploitation_Discovery": {
+            "total": 37,
+            "detected": 35,
+            "missed": 2,
+            "detection_rate": 0.9459459459459459,
+            "false_negative_rate": 0.05405405405405406
+          },
+          "Reconnaissance": {
+            "total": 95487,
+            "detected": 82491,
+            "missed": 12996,
+            "detection_rate": 0.8638977033522888,
+            "false_negative_rate": 0.1361022966477112
+          }
+        },
+        "inference_latency_seconds": 5.6102,
+        "inference_latency_us_per_row": 6.0763,
+        "csv_sha256": "5532fb77c35f0014f941a35386a8204eb48b5b7cbdf7480782da03d812831076"
+      },
+      "ctu_echo": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.002736309694079453,
+        "total_rows": 76073,
+        "accuracy": 0.8487636875106805,
+        "precision": 0.8016749693162949,
+        "recall": 0.910761154855643,
+        "f1": 0.852743539530776,
+        "macro_f1": 0.8486531375592732,
+        "weighted_f1": 0.848496077049516,
+        "false_positive_rate": 0.20864875813352912,
+        "true_negative_rate": 0.7913512418664709,
+        "roc_auc": 0.7844838445236912,
+        "pr_auc": 0.678161947957901,
+        "confusion_matrix": {
+          "tn": 31256,
+          "fp": 8241,
+          "fn": 3264,
+          "tp": 33312
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 39497,
+            "false_positive": 8241,
+            "true_negative": 31256,
+            "false_positive_rate": 0.20864875813352912
+          },
+          "Reconnaissance": {
+            "total": 36576,
+            "detected": 33312,
+            "missed": 3264,
+            "detection_rate": 0.910761154855643,
+            "false_negative_rate": 0.08923884514435695
+          }
+        },
+        "inference_latency_seconds": 0.3205,
+        "inference_latency_us_per_row": 4.2125,
+        "csv_sha256": "8cdb4fb6981f6e17dc26ce1c861c0c7aa3e57d051bec393d37534c8b93d09a4d"
+      },
+      "ctu_windows7ad": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.002736309694079453,
+        "total_rows": 175146,
+        "accuracy": 0.5600299178970687,
+        "precision": 9.32897980942227e-05,
+        "recall": 0.0034347399411187437,
+        "f1": 0.00018164597200057088,
+        "macro_f1": 0.35907024974621826,
+        "weighted_f1": 0.7096067932451016,
+        "false_positive_rate": 0.4334172886290639,
+        "true_negative_rate": 0.5665827113709361,
+        "roc_auc": 0.3067367007357923,
+        "pr_auc": 0.009281756931884653,
+        "confusion_matrix": {
+          "tn": 98080,
+          "fp": 75028,
+          "fn": 2031,
+          "tp": 7
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 173108,
+            "false_positive": 75028,
+            "true_negative": 98080,
+            "false_positive_rate": 0.4334172886290639
+          },
+          "Exploitation_And_C2": {
+            "total": 2036,
+            "detected": 6,
+            "missed": 2030,
+            "detection_rate": 0.0029469548133595285,
+            "false_negative_rate": 0.9970530451866405
+          },
+          "Malware_And_DoS": {
+            "total": 2,
+            "detected": 1,
+            "missed": 1,
+            "detection_rate": 0.5,
+            "false_negative_rate": 0.5
+          }
+        },
+        "inference_latency_seconds": 1.0567,
+        "inference_latency_us_per_row": 6.0333,
+        "csv_sha256": "090a454419a1d672c642b6a7d3f4d5b7451ad468f1c8339a1a9c6014b278c15c"
+      }
+    },
+    "autoencoder": {
+      "ait_test": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.0002279976895622908,
+        "total_rows": 923292,
+        "accuracy": 0.8703725365323213,
+        "precision": 0.7580886012941762,
+        "recall": 0.4681299165537733,
+        "f1": 0.5788266096112159,
+        "macro_f1": 0.7511123657471241,
+        "weighted_f1": 0.8578338015824803,
+        "false_positive_rate": 0.03510386431428151,
+        "true_negative_rate": 0.9648961356857185,
+        "roc_auc": 0.788561309828741,
+        "pr_auc": 0.6410646973711063,
+        "confusion_matrix": {
+          "tn": 721366,
+          "fp": 26244,
+          "fn": 93440,
+          "tp": 82242
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 747610,
+            "false_positive": 26244,
+            "true_negative": 721366,
+            "false_positive_rate": 0.03510386431428151
+          },
+          "Credential_Attack": {
+            "total": 78,
+            "detected": 5,
+            "missed": 73,
+            "detection_rate": 0.0641025641025641,
+            "false_negative_rate": 0.9358974358974359
+          },
+          "Data_Exfiltration": {
+            "total": 80075,
+            "detected": 37,
+            "missed": 80038,
+            "detection_rate": 0.0004620668123634093,
+            "false_negative_rate": 0.9995379331876366
+          },
+          "Exploitation_And_C2": {
+            "total": 5,
+            "detected": 5,
+            "missed": 0,
+            "detection_rate": 1.0,
+            "false_negative_rate": 0.0
+          },
+          "Post_Exploitation_Discovery": {
+            "total": 37,
+            "detected": 4,
+            "missed": 33,
+            "detection_rate": 0.10810810810810811,
+            "false_negative_rate": 0.8918918918918919
+          },
+          "Reconnaissance": {
+            "total": 95487,
+            "detected": 82191,
+            "missed": 13296,
+            "detection_rate": 0.8607559144176694,
+            "false_negative_rate": 0.1392440855823306
+          }
+        },
+        "inference_latency_seconds": 0.3038,
+        "inference_latency_us_per_row": 0.3291,
+        "csv_sha256": "5532fb77c35f0014f941a35386a8204eb48b5b7cbdf7480782da03d812831076"
+      },
+      "ctu_echo": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.0002279976895622908,
+        "total_rows": 76073,
+        "accuracy": 0.6218500650690784,
+        "precision": 0.565826519430161,
+        "recall": 0.9175962379702537,
+        "f1": 0.7000031285522104,
+        "macro_f1": 0.5943176250707012,
+        "weighted_f1": 0.5902595840355179,
+        "false_positive_rate": 0.6520242043699521,
+        "true_negative_rate": 0.3479757956300479,
+        "roc_auc": 0.7587621563797076,
+        "pr_auc": 0.6546928900026059,
+        "confusion_matrix": {
+          "tn": 13744,
+          "fp": 25753,
+          "fn": 3014,
+          "tp": 33562
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 39497,
+            "false_positive": 25753,
+            "true_negative": 13744,
+            "false_positive_rate": 0.6520242043699521
+          },
+          "Reconnaissance": {
+            "total": 36576,
+            "detected": 33562,
+            "missed": 3014,
+            "detection_rate": 0.9175962379702537,
+            "false_negative_rate": 0.08240376202974628
+          }
+        },
+        "inference_latency_seconds": 0.0219,
+        "inference_latency_us_per_row": 0.2885,
+        "csv_sha256": "8cdb4fb6981f6e17dc26ce1c861c0c7aa3e57d051bec393d37534c8b93d09a4d"
+      },
+      "ctu_windows7ad": {
+        "feature_contract_version": "canonical-flow-v2-18",
+        "feature_count": 18,
+        "threshold": 0.0002279976895622908,
+        "total_rows": 175146,
+        "accuracy": 0.1544768364678611,
+        "precision": 0.012444919214848445,
+        "recall": 0.914622178606477,
+        "f1": 0.024555718030800037,
+        "macro_f1": 0.13920632319710644,
+        "weighted_f1": 0.2511887779822573,
+        "false_positive_rate": 0.8544723525198142,
+        "true_negative_rate": 0.1455276474801858,
+        "roc_auc": 0.7812984652373895,
+        "pr_auc": 0.03195997618347253,
+        "confusion_matrix": {
+          "tn": 25192,
+          "fp": 147916,
+          "fn": 174,
+          "tp": 1864
+        },
+        "per_attack_category": {
+          "Benign": {
+            "total": 173108,
+            "false_positive": 147916,
+            "true_negative": 25192,
+            "false_positive_rate": 0.8544723525198142
+          },
+          "Exploitation_And_C2": {
+            "total": 2036,
+            "detected": 1863,
+            "missed": 173,
+            "detection_rate": 0.9150294695481336,
+            "false_negative_rate": 0.08497053045186641
+          },
+          "Malware_And_DoS": {
+            "total": 2,
+            "detected": 1,
+            "missed": 1,
+            "detection_rate": 0.5,
+            "false_negative_rate": 0.5
+          }
+        },
+        "inference_latency_seconds": 0.0576,
+        "inference_latency_us_per_row": 0.3288,
+        "csv_sha256": "090a454419a1d672c642b6a7d3f4d5b7451ad468f1c8339a1a9c6014b278c15c"
+      }
+    }
+  },
+  "device_disjoint_ait_plus_echo_to_unseen_win7ad": {
+    "random_forest": {
+      "train_seconds": 47.536,
+      "threshold": 0.5,
+      "splits": {
+        "ait_test": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 923292,
+          "accuracy": 0.9364263959830693,
+          "precision": 0.9978720687747372,
+          "recall": 0.6673136690156077,
+          "f1": 0.799783058802662,
+          "macro_f1": 0.8809986629012219,
+          "weighted_f1": 0.9313072088659665,
+          "false_positive_rate": 0.0003343989513248886,
+          "true_negative_rate": 0.9996656010486751,
+          "roc_auc": 0.9994346216836012,
+          "pr_auc": 0.9976385987655759,
+          "confusion_matrix": {
+            "tn": 747360,
+            "fp": 250,
+            "fn": 58447,
+            "tp": 117235
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 747610,
+              "false_positive": 250,
+              "true_negative": 747360,
+              "false_positive_rate": 0.0003343989513248886
+            },
+            "Credential_Attack": {
+              "total": 78,
+              "detected": 9,
+              "missed": 69,
+              "detection_rate": 0.11538461538461539,
+              "false_negative_rate": 0.8846153846153846
+            },
+            "Data_Exfiltration": {
+              "total": 80075,
+              "detected": 22056,
+              "missed": 58019,
+              "detection_rate": 0.2754417733374961,
+              "false_negative_rate": 0.7245582266625039
+            },
+            "Exploitation_And_C2": {
+              "total": 5,
+              "detected": 5,
+              "missed": 0,
+              "detection_rate": 1.0,
+              "false_negative_rate": 0.0
+            },
+            "Post_Exploitation_Discovery": {
+              "total": 37,
+              "detected": 30,
+              "missed": 7,
+              "detection_rate": 0.8108108108108109,
+              "false_negative_rate": 0.1891891891891892
+            },
+            "Reconnaissance": {
+              "total": 95487,
+              "detected": 95135,
+              "missed": 352,
+              "detection_rate": 0.9963136343167133,
+              "false_negative_rate": 0.00368636568328673
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        },
+        "ctu_windows7ad_unseen_device": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 175146,
+          "accuracy": 0.8262820732417526,
+          "precision": 0.033950617283950615,
+          "recall": 0.507360157016683,
+          "f1": 0.06364251861882193,
+          "macro_f1": 0.4839512286610117,
+          "weighted_f1": 0.8944785089124443,
+          "false_positive_rate": 0.16996325993021696,
+          "true_negative_rate": 0.830036740069783,
+          "roc_auc": 0.788008754534061,
+          "pr_auc": 0.03267258496917386,
+          "confusion_matrix": {
+            "tn": 143686,
+            "fp": 29422,
+            "fn": 1004,
+            "tp": 1034
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 173108,
+              "false_positive": 29422,
+              "true_negative": 143686,
+              "false_positive_rate": 0.16996325993021696
+            },
+            "Exploitation_And_C2": {
+              "total": 2036,
+              "detected": 1034,
+              "missed": 1002,
+              "detection_rate": 0.5078585461689588,
+              "false_negative_rate": 0.49214145383104124
+            },
+            "Malware_And_DoS": {
+              "total": 2,
+              "detected": 0,
+              "missed": 2,
+              "detection_rate": 0.0,
+              "false_negative_rate": 1.0
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        }
+      }
+    },
+    "xgboost": {
+      "train_seconds": 5.56,
+      "train_benign": 461716,
+      "train_attack": 95338,
+      "threshold": 0.5,
+      "splits": {
+        "ait_test": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 923292,
+          "accuracy": 0.9656652499967507,
+          "precision": 0.9976978437160812,
+          "recall": 0.8214501201033686,
+          "f1": 0.9010361222368253,
+          "macro_f1": 0.9401328371551824,
+          "weighted_f1": 0.9643510757728961,
+          "false_positive_rate": 0.00044541940316475165,
+          "true_negative_rate": 0.9995545805968352,
+          "roc_auc": 0.9977294393243011,
+          "pr_auc": 0.9917950157263593,
+          "confusion_matrix": {
+            "tn": 747277,
+            "fp": 333,
+            "fn": 31368,
+            "tp": 144314
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 747610,
+              "false_positive": 333,
+              "true_negative": 747277,
+              "false_positive_rate": 0.00044541940316475165
+            },
+            "Credential_Attack": {
+              "total": 78,
+              "detected": 8,
+              "missed": 70,
+              "detection_rate": 0.10256410256410256,
+              "false_negative_rate": 0.8974358974358975
+            },
+            "Data_Exfiltration": {
+              "total": 80075,
+              "detected": 49084,
+              "missed": 30991,
+              "detection_rate": 0.6129753356228536,
+              "false_negative_rate": 0.38702466437714644
+            },
+            "Exploitation_And_C2": {
+              "total": 5,
+              "detected": 5,
+              "missed": 0,
+              "detection_rate": 1.0,
+              "false_negative_rate": 0.0
+            },
+            "Post_Exploitation_Discovery": {
+              "total": 37,
+              "detected": 29,
+              "missed": 8,
+              "detection_rate": 0.7837837837837838,
+              "false_negative_rate": 0.21621621621621623
+            },
+            "Reconnaissance": {
+              "total": 95487,
+              "detected": 95188,
+              "missed": 299,
+              "detection_rate": 0.9968686836951627,
+              "false_negative_rate": 0.0031313163048373076
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        },
+        "ctu_windows7ad_unseen_device": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 175146,
+          "accuracy": 0.8026503602708598,
+          "precision": 0.02969838928891588,
+          "recall": 0.5039254170755643,
+          "f1": 0.056091100248504874,
+          "macro_f1": 0.4729483629261193,
+          "weighted_f1": 0.8801045179411326,
+          "false_positive_rate": 0.1938327518081198,
+          "true_negative_rate": 0.8061672481918802,
+          "roc_auc": 0.8304533867720194,
+          "pr_auc": 0.05129981571563432,
+          "confusion_matrix": {
+            "tn": 139554,
+            "fp": 33554,
+            "fn": 1011,
+            "tp": 1027
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 173108,
+              "false_positive": 33554,
+              "true_negative": 139554,
+              "false_positive_rate": 0.1938327518081198
+            },
+            "Exploitation_And_C2": {
+              "total": 2036,
+              "detected": 1027,
+              "missed": 1009,
+              "detection_rate": 0.5044204322200393,
+              "false_negative_rate": 0.4955795677799607
+            },
+            "Malware_And_DoS": {
+              "total": 2,
+              "detected": 0,
+              "missed": 2,
+              "detection_rate": 0.0,
+              "false_negative_rate": 1.0
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        }
+      }
+    },
+    "isolation_forest": {
+      "train_seconds": 1.426,
+      "fit_benign_rows": 300000,
+      "threshold": 0.03978959102114921,
+      "splits": {
+        "ait_test": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.03978959102114921,
+          "total_rows": 923292,
+          "accuracy": 0.8704061120425608,
+          "precision": 0.7582481401930328,
+          "recall": 0.4681982217870926,
+          "f1": 0.5789253275431886,
+          "macro_f1": 0.7511718167986554,
+          "weighted_f1": 0.8578689289873245,
+          "false_positive_rate": 0.03507844999398082,
+          "true_negative_rate": 0.9649215500060192,
+          "roc_auc": 0.7947672835473223,
+          "pr_auc": 0.6415009034967387,
+          "confusion_matrix": {
+            "tn": 721385,
+            "fp": 26225,
+            "fn": 93428,
+            "tp": 82254
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 747610,
+              "false_positive": 26225,
+              "true_negative": 721385,
+              "false_positive_rate": 0.03507844999398082
+            },
+            "Credential_Attack": {
+              "total": 78,
+              "detected": 13,
+              "missed": 65,
+              "detection_rate": 0.16666666666666666,
+              "false_negative_rate": 0.8333333333333334
+            },
+            "Data_Exfiltration": {
+              "total": 80075,
+              "detected": 0,
+              "missed": 80075,
+              "detection_rate": 0.0,
+              "false_negative_rate": 1.0
+            },
+            "Exploitation_And_C2": {
+              "total": 5,
+              "detected": 5,
+              "missed": 0,
+              "detection_rate": 1.0,
+              "false_negative_rate": 0.0
+            },
+            "Post_Exploitation_Discovery": {
+              "total": 37,
+              "detected": 35,
+              "missed": 2,
+              "detection_rate": 0.9459459459459459,
+              "false_negative_rate": 0.05405405405405406
+            },
+            "Reconnaissance": {
+              "total": 95487,
+              "detected": 82201,
+              "missed": 13286,
+              "detection_rate": 0.8608606407154901,
+              "false_negative_rate": 0.13913935928450993
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        },
+        "ctu_windows7ad_unseen_device": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.03978959102114921,
+          "total_rows": 175146,
+          "accuracy": 0.536432462060224,
+          "precision": 0.00011367655231647553,
+          "recall": 0.004416094210009814,
+          "f1": 0.00022164758034724788,
+          "macro_f1": 0.3492423153057711,
+          "weighted_f1": 0.6901405694924968,
+          "false_positive_rate": 0.45730411072856253,
+          "true_negative_rate": 0.5426958892714375,
+          "roc_auc": 0.4343710772445335,
+          "pr_auc": 0.011844074284783906,
+          "confusion_matrix": {
+            "tn": 93945,
+            "fp": 79163,
+            "fn": 2029,
+            "tp": 9
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 173108,
+              "false_positive": 79163,
+              "true_negative": 93945,
+              "false_positive_rate": 0.45730411072856253
+            },
+            "Exploitation_And_C2": {
+              "total": 2036,
+              "detected": 8,
+              "missed": 2028,
+              "detection_rate": 0.003929273084479371,
+              "false_negative_rate": 0.9960707269155207
+            },
+            "Malware_And_DoS": {
+              "total": 2,
+              "detected": 1,
+              "missed": 1,
+              "detection_rate": 0.5,
+              "false_negative_rate": 0.5
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        }
+      }
+    }
+  },
+  "ctu_temporal_early_to_late_days": {
+    "random_forest": {
+      "train_seconds": 5.536,
+      "threshold": 0.5,
+      "splits": {
+        "ctu_echo_late_days": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 22328,
+          "accuracy": 0.9557954138301684,
+          "precision": 0.9983993260320135,
+          "recall": 0.9244870894765582,
+          "f1": 0.9600226821661468,
+          "macro_f1": 0.9552955600443596,
+          "weighted_f1": 0.955996329223109,
+          "false_positive_rate": 0.0019981070564728154,
+          "true_negative_rate": 0.9980018929435271,
+          "roc_auc": 0.9986908047115066,
+          "pr_auc": 0.9986274803926877,
+          "confusion_matrix": {
+            "tn": 9490,
+            "fp": 19,
+            "fn": 968,
+            "tp": 11851
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 9509,
+              "false_positive": 19,
+              "true_negative": 9490,
+              "false_positive_rate": 0.0019981070564728154
+            },
+            "Reconnaissance": {
+              "total": 12819,
+              "detected": 11851,
+              "missed": 968,
+              "detection_rate": 0.9244870894765582,
+              "false_negative_rate": 0.07551291052344176
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        },
+        "ctu_win7ad_late_days": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 19700,
+          "accuracy": 0.9997969543147208,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "macro_f1": 0.49994923342471315,
+          "weighted_f1": 0.9998984668494263,
+          "false_positive_rate": 0.0002030456852791878,
+          "true_negative_rate": 0.9997969543147208,
+          "roc_auc": null,
+          "pr_auc": null,
+          "confusion_matrix": {
+            "tn": 19696,
+            "fp": 4,
+            "fn": 0,
+            "tp": 0
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 19700,
+              "false_positive": 4,
+              "true_negative": 19696,
+              "false_positive_rate": 0.0002030456852791878
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        }
+      }
+    },
+    "xgboost": {
+      "train_seconds": 1.339,
+      "train_benign": 147968,
+      "train_attack": 19384,
+      "threshold": 0.5,
+      "splits": {
+        "ctu_echo_late_days": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 22328,
+          "accuracy": 0.9474650662844859,
+          "precision": 0.9985445205479452,
+          "recall": 0.9098213589203527,
+          "f1": 0.95212049471407,
+          "macro_f1": 0.9469636556023096,
+          "weighted_f1": 0.94772812789987,
+          "false_positive_rate": 0.0017877799978967294,
+          "true_negative_rate": 0.9982122200021033,
+          "roc_auc": 0.9985079765335119,
+          "pr_auc": 0.9988430299045842,
+          "confusion_matrix": {
+            "tn": 9492,
+            "fp": 17,
+            "fn": 1156,
+            "tp": 11663
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 9509,
+              "false_positive": 17,
+              "true_negative": 9492,
+              "false_positive_rate": 0.0017877799978967294
+            },
+            "Reconnaissance": {
+              "total": 12819,
+              "detected": 11663,
+              "missed": 1156,
+              "detection_rate": 0.9098213589203527,
+              "false_negative_rate": 0.0901786410796474
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        },
+        "ctu_win7ad_late_days": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.5,
+          "total_rows": 19700,
+          "accuracy": 0.9997969543147208,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "macro_f1": 0.49994923342471315,
+          "weighted_f1": 0.9998984668494263,
+          "false_positive_rate": 0.0002030456852791878,
+          "true_negative_rate": 0.9997969543147208,
+          "roc_auc": null,
+          "pr_auc": null,
+          "confusion_matrix": {
+            "tn": 19696,
+            "fp": 4,
+            "fn": 0,
+            "tp": 0
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 19700,
+              "false_positive": 4,
+              "true_negative": 19696,
+              "false_positive_rate": 0.0002030456852791878
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        }
+      }
+    },
+    "isolation_forest": {
+      "train_seconds": 0.871,
+      "fit_benign_rows": 147968,
+      "threshold": 0.019063426877333534,
+      "splits": {
+        "ctu_echo_late_days": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.019063426877333534,
+          "total_rows": 22328,
+          "accuracy": 0.7977427445360086,
+          "precision": 0.943015686692989,
+          "recall": 0.6893673453467509,
+          "f1": 0.7964849031095088,
+          "macro_f1": 0.7977350180997558,
+          "weighted_f1": 0.7975496956070238,
+          "false_positive_rate": 0.05615732463981491,
+          "true_negative_rate": 0.9438426753601851,
+          "roc_auc": 0.8832270741967954,
+          "pr_auc": 0.9073534668873721,
+          "confusion_matrix": {
+            "tn": 8975,
+            "fp": 534,
+            "fn": 3982,
+            "tp": 8837
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 9509,
+              "false_positive": 534,
+              "true_negative": 8975,
+              "false_positive_rate": 0.05615732463981491
+            },
+            "Reconnaissance": {
+              "total": 12819,
+              "detected": 8837,
+              "missed": 3982,
+              "detection_rate": 0.6893673453467509,
+              "false_negative_rate": 0.3106326546532491
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        },
+        "ctu_win7ad_late_days": {
+          "feature_contract_version": "canonical-flow-v2-18",
+          "feature_count": 18,
+          "threshold": 0.019063426877333534,
+          "total_rows": 19700,
+          "accuracy": 0.9629441624365482,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "macro_f1": 0.49056115852081716,
+          "weighted_f1": 0.9811223170416343,
+          "false_positive_rate": 0.03705583756345178,
+          "true_negative_rate": 0.9629441624365482,
+          "roc_auc": null,
+          "pr_auc": null,
+          "confusion_matrix": {
+            "tn": 18970,
+            "fp": 730,
+            "fn": 0,
+            "tp": 0
+          },
+          "per_attack_category": {
+            "Benign": {
+              "total": 19700,
+              "false_positive": 730,
+              "true_negative": 18970,
+              "false_positive_rate": 0.03705583756345178
+            }
+          },
+          "inference_latency_seconds": 0.0,
+          "inference_latency_us_per_row": null
+        }
+      }
+    }
+  }
+}

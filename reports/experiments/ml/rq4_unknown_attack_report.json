@@ -1,30 +1,30 @@
 {
   "experiment_id": "EXP-RQ4-UNKNOWN-001",
   "status": "COMPLETED",
-  "timestamp_utc": "2026-11-17T15:57:04.802877+00:00",
+  "timestamp_utc": "2026-11-17T19:01:02.786323+00:00",
   "hypothesis": "H4: Unsupervised anomaly models maintain higher recall on unseen holdout attack families than closed-world supervised classifiers (benchmark holdout only; does not prove real-world zero-day detection).",
   "dataset_provenance": {
-    "dataset_id": "NF-UNSW-NB15-v3",
-    "dataset_version": "v3",
-    "doi": "https://staff.itee.uq.edu.au/marius/NIDS_datasets/",
-    "source_url": "https://staff.itee.uq.edu.au/marius/NIDS_datasets/",
-    "dataset_sha256": null,
-    "split_protocol": "nf-unsw-nb15-v3-chronological-group-purged-v1",
-    "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-    "preprocessor_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
+    "dataset_id": "AIT-NetFlow-v2-Suite",
+    "dataset_version": "v2",
+    "doi": "10.5281/zenodo.13168643",
+    "source_url": "https://zenodo.org/records/13168643",
+    "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+    "split_protocol": "v2-scenario-group-purged-v1",
+    "split_manifest_sha256": "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
+    "preprocessor_sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32"
   },
   "split_manifest": {
     "held_out_attack_families": [
-      "Backdoor",
-      "Worms"
+      "Exploitation_And_C2",
+      "Post_Exploitation_Discovery"
     ],
-    "train_rows_after_holdout_filter": 1652461,
-    "train_holdout_rows_removed": 3336,
-    "validation_rows_after_holdout_filter": 345190,
-    "validation_holdout_rows_removed": 181,
-    "test_benign_rows": 315357,
-    "test_known_attack_rows": 29300,
-    "test_unknown_holdout_rows": 1296,
+    "train_rows_after_holdout_filter": 1930010,
+    "train_holdout_rows_removed": 209,
+    "validation_rows_after_holdout_filter": 377646,
+    "validation_holdout_rows_removed": 58,
+    "test_benign_rows": 747610,
+    "test_known_attack_rows": 175640,
+    "test_unknown_holdout_rows": 42,
     "zero_leakage_verified": true
   },
   "environment": {
@@ -45,301 +45,301 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T15:55:35.589788+00:00"
+    "captured_at_utc": "2026-11-17T18:58:30.654039+00:00"
   },
   "model_performance_on_unknown_attacks": {
     "random_forest": {
       "paradigm": "Supervised Decision Forest (Holdout-Trained)",
-      "threshold": 0.55,
+      "threshold": 0.25,
       "threshold_source": "validation_known_only_f1_calibrated",
       "artifact_sha256": "trained_in_rq4_holdout_experiment",
       "known_attacks_vs_benign": {
-        "sample_count": 344657,
-        "positive_count": 29300,
-        "negative_count": 315357,
-        "accuracy": 0.9999825913879596,
-        "precision": 0.9998634905467204,
-        "recall": 0.9999317406143344,
-        "f1": 0.9998976144158902,
-        "macro_f1": 0.9999440506788162,
-        "false_positive_rate": 1.2684037455962608e-05,
-        "roc_auc": 0.9999999972943606,
-        "pr_auc": 0.9999999708831955,
+        "sample_count": 923250,
+        "positive_count": 175640,
+        "negative_count": 747610,
+        "accuracy": 0.9992103980503656,
+        "precision": 0.9984327001441916,
+        "recall": 0.9974151673878388,
+        "f1": 0.997923674384294,
+        "macro_f1": 0.9987180895368389,
+        "false_positive_rate": 0.0003678388464573775,
+        "roc_auc": 0.9995431899831005,
+        "pr_auc": 0.9979692889465738,
         "confusion_matrix": [
           [
-            315353,
-            4
+            747335,
+            275
           ],
           [
-            2,
-            29298
+            454,
+            175186
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 315353,
-          "fp": 4,
-          "fn": 2,
-          "tp": 29298
+          "tn": 747335,
+          "fp": 275,
+          "fn": 454,
+          "tp": 175186
         }
       },
       "unknown_holdout_vs_benign": {
-        "sample_count": 316653,
-        "positive_count": 1296,
-        "negative_count": 315357,
-        "accuracy": 0.9999873678758767,
-        "precision": 0.9969230769230769,
-        "recall": 1.0,
-        "f1": 0.9984591679506933,
-        "macro_f1": 0.9992264129458719,
-        "false_positive_rate": 1.2684037455962608e-05,
-        "roc_auc": 1.0,
-        "pr_auc": 1.0,
+        "sample_count": 747652,
+        "positive_count": 42,
+        "negative_count": 747610,
+        "accuracy": 0.9996228191725562,
+        "precision": 0.11290322580645161,
+        "recall": 0.8333333333333334,
+        "f1": 0.19886363636363635,
+        "macro_f1": 0.599337500772296,
+        "false_positive_rate": 0.0003678388464573775,
+        "roc_auc": 0.9877482275263204,
+        "pr_auc": 0.08516806218685685,
         "confusion_matrix": [
           [
-            315353,
-            4
+            747335,
+            275
           ],
           [
-            0,
-            1296
+            7,
+            35
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 315353,
-          "fp": 4,
-          "fn": 0,
-          "tp": 1296
+          "tn": 747335,
+          "fp": 275,
+          "fn": 7,
+          "tp": 35
         }
       },
-      "known_attacks_recall": 0.999932,
-      "unknown_holdout_recall": 1.0,
-      "unknown_holdout_precision": 0.996923,
-      "unknown_holdout_f1": 0.998459,
-      "unknown_holdout_fpr": 1.3e-05,
-      "recall_degradation_pct": 0.01
+      "known_attacks_recall": 0.997415,
+      "unknown_holdout_recall": 0.833333,
+      "unknown_holdout_precision": 0.112903,
+      "unknown_holdout_f1": 0.198864,
+      "unknown_holdout_fpr": 0.000368,
+      "recall_degradation_pct": -16.45
     },
     "xgboost": {
       "paradigm": "Gradient Boosted Trees (Holdout-Trained)",
-      "threshold": 0.1,
+      "threshold": 0.2,
       "threshold_source": "validation_known_only_f1_calibrated",
       "artifact_sha256": "trained_in_rq4_holdout_experiment",
       "known_attacks_vs_benign": {
-        "sample_count": 344657,
-        "positive_count": 29300,
-        "negative_count": 315357,
-        "accuracy": 0.9999941971293199,
-        "precision": 0.9999317452733602,
-        "recall": 1.0,
-        "f1": 0.9999658714719634,
-        "macro_f1": 0.999981350226272,
-        "false_positive_rate": 6.342018727981304e-06,
-        "roc_auc": 0.9999999981601653,
-        "pr_auc": 0.9999999801933748,
+        "sample_count": 923250,
+        "positive_count": 175640,
+        "negative_count": 747610,
+        "accuracy": 0.9658878960194963,
+        "precision": 0.9976042529687932,
+        "recall": 0.82266567979959,
+        "f1": 0.9017286570144782,
+        "macro_f1": 0.9405453287562529,
+        "false_positive_rate": 0.00046414574443894545,
+        "roc_auc": 0.9870552040936182,
+        "pr_auc": 0.9578706395762742,
         "confusion_matrix": [
           [
-            315355,
-            2
+            747263,
+            347
           ],
           [
-            0,
-            29300
+            31147,
+            144493
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 315355,
-          "fp": 2,
-          "fn": 0,
-          "tp": 29300
+          "tn": 747263,
+          "fp": 347,
+          "fn": 31147,
+          "tp": 144493
         }
       },
       "unknown_holdout_vs_benign": {
-        "sample_count": 316653,
-        "positive_count": 1296,
-        "negative_count": 315357,
-        "accuracy": 0.9999936839379384,
-        "precision": 0.9984591679506933,
-        "recall": 1.0,
-        "f1": 0.9992289899768697,
-        "macro_f1": 0.9996129094787252,
-        "false_positive_rate": 6.342018727981304e-06,
-        "roc_auc": 1.0,
-        "pr_auc": 0.9999999999999999,
+        "sample_count": 747652,
+        "positive_count": 42,
+        "negative_count": 747610,
+        "accuracy": 0.9995265176846982,
+        "precision": 0.09162303664921466,
+        "recall": 0.8333333333333334,
+        "f1": 0.1650943396226415,
+        "macro_f1": 0.582428765658479,
+        "false_positive_rate": 0.00046414574443894545,
+        "roc_auc": 0.9912364226063881,
+        "pr_auc": 0.0824576656318707,
         "confusion_matrix": [
           [
-            315355,
-            2
+            747263,
+            347
           ],
           [
-            0,
-            1296
+            7,
+            35
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 315355,
-          "fp": 2,
-          "fn": 0,
-          "tp": 1296
+          "tn": 747263,
+          "fp": 347,
+          "fn": 7,
+          "tp": 35
         }
       },
-      "known_attacks_recall": 1.0,
-      "unknown_holdout_recall": 1.0,
-      "unknown_holdout_precision": 0.998459,
-      "unknown_holdout_f1": 0.999229,
-      "unknown_holdout_fpr": 6e-06,
-      "recall_degradation_pct": 0.0
+      "known_attacks_recall": 0.822666,
+      "unknown_holdout_recall": 0.833333,
+      "unknown_holdout_precision": 0.091623,
+      "unknown_holdout_f1": 0.165094,
+      "unknown_holdout_fpr": 0.000464,
+      "recall_degradation_pct": 1.3
     },
     "isolation_forest": {
       "paradigm": "Unsupervised Isolation Forest (Benign-Only)",
-      "threshold": -0.033526858092757406,
+      "threshold": 0.002736309694079453,
       "threshold_source": "manifest.threshold",
-      "artifact_sha256": "15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
+      "artifact_sha256": "aca66915e0f57433c18ebbb819f2438c75e3840a183d2e379c986f0952e1aa1c",
       "known_attacks_vs_benign": {
-        "sample_count": 344657,
-        "positive_count": 29300,
-        "negative_count": 315357,
-        "accuracy": 0.8447848150480043,
-        "precision": 0.3428994390193227,
-        "recall": 0.9012286689419795,
-        "f1": 0.49678293261090417,
-        "macro_f1": 0.7025120070889088,
-        "false_positive_rate": 0.16045941583665496,
-        "roc_auc": 0.8939962725055491,
-        "pr_auc": 0.2807230603799887,
+        "sample_count": 923250,
+        "positive_count": 175640,
+        "negative_count": 747610,
+        "accuracy": 0.8686997021391822,
+        "precision": 0.7460281578066932,
+        "recall": 0.46973354588931904,
+        "f1": 0.5764854261068857,
+        "macro_f1": 0.7493958859999027,
+        "false_positive_rate": 0.03756905338344859,
+        "roc_auc": 0.7752386644611862,
+        "pr_auc": 0.6352369949672705,
         "confusion_matrix": [
           [
-            264755,
-            50602
+            719523,
+            28087
           ],
           [
-            2894,
-            26406
+            93136,
+            82504
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 264755,
-          "fp": 50602,
-          "fn": 2894,
-          "tp": 26406
+          "tn": 719523,
+          "fp": 28087,
+          "fn": 93136,
+          "tp": 82504
         }
       },
       "unknown_holdout_vs_benign": {
-        "sample_count": 316653,
-        "positive_count": 1296,
-        "negative_count": 315357,
-        "accuracy": 0.8396478163794437,
-        "precision": 0.021692057845487587,
-        "recall": 0.8657407407407407,
-        "f1": 0.04232365145228216,
-        "macro_f1": 0.47741098562315737,
-        "false_positive_rate": 0.16045941583665496,
-        "roc_auc": 0.8877129411084448,
-        "pr_auc": 0.016737931449030324,
+        "sample_count": 747652,
+        "positive_count": 42,
+        "negative_count": 747610,
+        "accuracy": 0.9624303820494027,
+        "precision": 0.001422121093611121,
+        "recall": 0.9523809523809523,
+        "f1": 0.00284000142000071,
+        "macro_f1": 0.49184726200497325,
+        "false_positive_rate": 0.03756905338344859,
+        "roc_auc": 0.9636513913225702,
+        "pr_auc": 0.001748399517769656,
         "confusion_matrix": [
           [
-            264755,
-            50602
+            719523,
+            28087
           ],
           [
-            174,
-            1122
+            2,
+            40
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 264755,
-          "fp": 50602,
-          "fn": 174,
-          "tp": 1122
+          "tn": 719523,
+          "fp": 28087,
+          "fn": 2,
+          "tp": 40
         }
       },
-      "known_attacks_recall": 0.901229,
-      "unknown_holdout_recall": 0.865741,
-      "unknown_holdout_precision": 0.021692,
-      "unknown_holdout_f1": 0.042324,
-      "unknown_holdout_fpr": 0.160459,
-      "recall_degradation_pct": -3.94
+      "known_attacks_recall": 0.469734,
+      "unknown_holdout_recall": 0.952381,
+      "unknown_holdout_precision": 0.001422,
+      "unknown_holdout_f1": 0.00284,
+      "unknown_holdout_fpr": 0.037569,
+      "recall_degradation_pct": 102.75
     },
     "autoencoder": {
       "paradigm": "Unsupervised Autoencoder MSE (Benign-Only)",
-      "threshold": 17234985.792475585,
+      "threshold": 0.0002279976895622908,
       "threshold_source": "manifest.threshold",
-      "artifact_sha256": "df24752b8eca0b111c6a7efa0700217bac3eabe8aaa194fcf82590c13b9d3b86",
+      "artifact_sha256": "2032f8caf37be27f12a91ca1348e85d32a718f332e151cd900dedcf082b71a1f",
       "known_attacks_vs_benign": {
-        "sample_count": 344657,
-        "positive_count": 29300,
-        "negative_count": 315357,
-        "accuracy": 0.880385426670574,
-        "precision": 0.17680216802168022,
-        "recall": 0.11133105802047781,
-        "f1": 0.1366282722513089,
-        "macro_f1": 0.5361848395940536,
-        "false_positive_rate": 0.04816129022029002,
-        "roc_auc": 0.6310292145092704,
-        "pr_auc": 0.15819039470466983,
+        "sample_count": 923250,
+        "positive_count": 175640,
+        "negative_count": 747610,
+        "accuracy": 0.8704023828865421,
+        "precision": 0.7580685306562681,
+        "recall": 0.46819061717148713,
+        "f1": 0.5788671568403158,
+        "macro_f1": 0.7511423911760571,
+        "false_positive_rate": 0.03510386431428151,
+        "roc_auc": 0.7885344727895987,
+        "pr_auc": 0.6410267746080616,
         "confusion_matrix": [
           [
-            300169,
-            15188
+            721366,
+            26244
           ],
           [
-            26038,
-            3262
+            93407,
+            82233
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 300169,
-          "fp": 15188,
-          "fn": 26038,
-          "tp": 3262
+          "tn": 721366,
+          "fp": 26244,
+          "fn": 93407,
+          "tp": 82233
         }
       },
       "unknown_holdout_vs_benign": {
-        "sample_count": 316653,
-        "positive_count": 1296,
-        "negative_count": 315357,
-        "accuracy": 0.9481988170015758,
-        "precision": 0.005304866068504814,
-        "recall": 0.0625,
-        "f1": 0.009779655900996076,
-        "macro_f1": 0.4915917011841569,
-        "false_positive_rate": 0.04816129022029002,
-        "roc_auc": 0.6140405781345124,
-        "pr_auc": 0.006503400804526036,
+        "sample_count": 747652,
+        "positive_count": 42,
+        "negative_count": 747610,
+        "accuracy": 0.9648539694938287,
+        "precision": 0.00034281796366129587,
+        "recall": 0.21428571428571427,
+        "f1": 0.0006845407872219053,
+        "macro_f1": 0.4913984858422569,
+        "false_positive_rate": 0.03510386431428151,
+        "roc_auc": 0.900787589149168,
+        "pr_auc": 0.0007162239752368371,
         "confusion_matrix": [
           [
-            300169,
-            15188
+            721366,
+            26244
           ],
           [
-            1215,
-            81
+            33,
+            9
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 300169,
-          "fp": 15188,
-          "fn": 1215,
-          "tp": 81
+          "tn": 721366,
+          "fp": 26244,
+          "fn": 33,
+          "tp": 9
         }
       },
-      "known_attacks_recall": 0.111331,
-      "unknown_holdout_recall": 0.0625,
-      "unknown_holdout_precision": 0.005305,
-      "unknown_holdout_f1": 0.00978,
-      "unknown_holdout_fpr": 0.048161,
-      "recall_degradation_pct": -43.86
+      "known_attacks_recall": 0.468191,
+      "unknown_holdout_recall": 0.214286,
+      "unknown_holdout_precision": 0.000343,
+      "unknown_holdout_f1": 0.000685,
+      "unknown_holdout_fpr": 0.035104,
+      "recall_degradation_pct": -54.23
     }
   },
   "hypothesis_evaluation": {
-    "supervised_min_unknown_recall": 1.0,
-    "supervised_max_unknown_recall": 1.0,
-    "isolation_forest_unknown_recall": 0.865741,
-    "autoencoder_unknown_recall": 0.0625,
+    "supervised_min_unknown_recall": 0.833333,
+    "supervised_max_unknown_recall": 0.833333,
+    "isolation_forest_unknown_recall": 0.952381,
+    "autoencoder_unknown_recall": 0.214286,
     "unsupervised_ge_0_75_both": false,
     "isolation_forest_ge_0_75": true,
     "autoencoder_ge_0_75": false
   },
   "limitations": [
-    "Holdout evaluation on NF-UNSW-NB15-v3 simulates unseen attack categories within the same testbed distribution and does NOT guarantee detection of real-world zero-day or adversarial evasion attacks.",
-    "Supervised models trained on NF-UNSW-NB15-v3 may still exploit shared testbed artifacts (such as MIN_TTL) that correlate across both known and held-out attack categories."
+    "Holdout evaluation on AIT-NDS-v2 simulates unseen attack categories within the simulation testbed suite and does NOT guarantee detection of real-world zero-day or adversarial evasion attacks.",
+    "Supervised models trained on AIT-NDS-v2 still exhibit cross-domain sensitivity when transferred zero-shot to real captured traffic such as CTU-SME-11."
   ]
 }

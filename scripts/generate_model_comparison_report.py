@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Empirical 4-Model Comparison Report Generator (RQ1 / Issue #105).
+"""Empirical 4-Model Comparison Report Generator (RQ1 / NetFlow Sentinel v2).
 
 Evaluates the four verified model artifacts (Random Forest, XGBoost, Isolation
-Forest, Autoencoder) on the same NF-UNSW-NB15-v3 test partition using the same
-train-only preprocessor. Fails closed to BLOCKED status if raw data or model
-artifacts are missing; never outputs hardcoded performance metrics.
+Forest, Autoencoder) on the same AIT-NDS-v2 held-out Test scenarios and CTU-SME-11
+external real-capture benchmark using the same train-only preprocessor. Fails closed
+to BLOCKED status if processed splits or model artifacts are missing.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ if str(_PROJECT_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from _rq_common import (  # noqa: E402
-    check_nf_unsw_prerequisites,
+    check_v2_prerequisites,
     collect_environment_metadata,
     compute_binary_metrics,
     dataset_provenance_summary,
@@ -35,7 +35,7 @@ from _rq_common import (  # noqa: E402
     load_verified_preprocessor,
 )
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS  # noqa: E402
 from network_anomaly.models.registry import MODEL_KEYS, ModelRegistry  # noqa: E402
 
 OUTPUT_JSON = Path("reports/experiments/ml/model_comparison_report.json")
@@ -68,10 +68,10 @@ def generate_comparison_report(
     output_json: Path = OUTPUT_JSON,
     output_md: Path = OUTPUT_MD,
 ) -> Dict[str, Any]:
-    """Run empirical 4-model evaluation on NF-UNSW-NB15-v3 test split."""
+    """Run empirical 4-model evaluation on AIT-NDS-v2 test split."""
     env = collect_environment_metadata()
     provenance = dataset_provenance_summary()
-    ok_data, missing_paths = check_nf_unsw_prerequisites()
+    ok_data, missing_paths = check_v2_prerequisites()
     registry = ModelRegistry(warmup=True)
 
     missing_models = [st.model_key for st in registry.statuses() if not st.decision_ready]
@@ -89,7 +89,7 @@ def generate_comparison_report(
             },
             "models": {},
             "limitations": [
-                "Cannot compute empirical 4-model comparison without raw NF-UNSW-NB15-v3 dataset and all 4 verified model artifacts."
+                "Cannot compute empirical 4-model comparison without processed v2 dataset splits and all 4 verified model artifacts."
             ],
         }
         output_json.parent.mkdir(parents=True, exist_ok=True)
@@ -173,8 +173,8 @@ def generate_comparison_report(
             "best_unsupervised_by_f1": best_unsup,
         },
         "limitations": [
-            "NF-UNSW-NB15-v3 contains strong MIN_TTL separation between benign and attack traffic; high supervised F1 partially reflects testbed topology.",
             "Supervised and unsupervised models follow different training and threshold calibration protocols and must be compared with protocol awareness.",
+            "In-domain evaluation uses AIT-NDS-v2 scenario-disjoint held-out testbeds (shaw, wheeler); cross-source domain-shift evaluation is separately measured on CTU-SME-11.",
             "Batch throughput reflects offline vectorized inference on this host and does not directly measure live network line-rate capacity.",
         ],
     }
@@ -197,7 +197,7 @@ def generate_comparison_report(
         )
 
     md_lines = [
-        "# RQ1 — 4-Model Empirical Comparison Report (NF-UNSW-NB15-v3)",
+        "# RQ1 — 4-Model Empirical Comparison Report (NetFlow Sentinel v2 / AIT-NDS-v2)",
         "",
         f"- **Status:** `{results['status']}`",
         f"- **Generated At (UTC):** `{results['generated_at_utc']}`",
@@ -231,7 +231,7 @@ def generate_comparison_report(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="RQ1 4-Model Comparison on NF-UNSW-NB15-v3")
+    parser = argparse.ArgumentParser(description="RQ1 4-Model Comparison on NetFlow Sentinel v2")
     parser.add_argument(
         "--max-rows", type=int, default=None, help="Optional row cap for quick test"
     )

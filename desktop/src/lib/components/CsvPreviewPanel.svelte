@@ -21,7 +21,7 @@
       {#if inspectData.ml_features_valid}
         <span class="badge badge-benign">
           <Icons name="check" size={12} />
-          Hợp lệ {inspectData.ml_feature_count}/47 ML Features
+          Hợp lệ {inspectData.ml_feature_count}/18 ML Features (v2)
         </span>
       {:else}
         <span class="badge badge-attack">
@@ -41,9 +41,9 @@
         <strong>Cách ly chống rò rỉ dữ liệu (No Target/PII Leakage):</strong>
         Cột nhãn bị loại khỏi đầu vào ML:
         <span class="mono">{inspectData.target_columns_excluded.length ? inspectData.target_columns_excluded.join(", ") : "Không có"}</span>
-        • Trace metadata loại khỏi 47 ML features:
+        • Trace metadata loại khỏi 18 ML features:
         <span class="mono">{inspectData.trace_metadata_excluded.length} cột</span>
-        • Giá trị non-finite thô do <span class="mono">DURATION=0</span> được TrainOnlyPreprocessor nội suy từ thống kê tập Train:
+        • Giá trị non-finite thô được TrainOnlyPreprocessor kiểm soát chặt theo tập Train:
         <strong class="mono">{inspectData.non_finite_feature_cells}</strong> ô.
       </div>
     </div>
@@ -53,8 +53,8 @@
         <Icons name="alert" size={16} />
         <div>
           <strong>
-            Cảnh báo OOD / Telemetry Drift ({inspectData.ood_report.zero_ttl_count} MIN_TTL=0,
-            {inspectData.ood_report.hard_violation_count} vi phạm bất biến vật lý):
+            Cảnh báo OOD / Telemetry Drift ({inspectData.ood_report.hard_violation_count} vi phạm bất biến vật lý,
+            {inspectData.ood_report.shortcut_shift_count} cảnh báo giao thức):
           </strong>
           {#each inspectData.ood_report.ood_flags as flag}
             <div>{flag}</div>

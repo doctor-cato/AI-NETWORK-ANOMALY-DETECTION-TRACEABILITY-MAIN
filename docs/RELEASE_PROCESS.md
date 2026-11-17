@@ -26,8 +26,7 @@ Tài liệu này mô tả quy trình build, kiểm chứng fail-closed và phát
 
 ## 2. Cổng Kiểm soát Bản quyền & Bằng chứng Phân phối (Evidence-Based Distribution Gate)
 
-Dữ liệu huấn luyện **NF-UNSW-NB15-v3** tuân theo **UQ License ID `454104`** (*Permitted Re-Use with Commercial Use Restriction*, DOI: [`10.48610/6E0EDA1`](https://doi.org/10.48610/6E0EDA1)):
-- Giấy phép dataset cho phép sử dụng nghiên cứu/học thuật phi thương mại kèm trích dẫn đầy đủ, nhưng **không mặc định chứng minh quyền phân phối công khai tự do** cho mọi tệp mô hình `.joblib` dẫn xuất và tập con `demo_*.csv` trên GitHub Release công khai.
+Dữ liệu v2 hiện hành (**AIT-NDS-v2**, **AIT-LDS-v2.1**, **AIT-ADS**, **CTU-SME-11**) sử dụng giấy phép **CC BY 4.0** (yêu cầu ghi nhận nguồn/attribution đầy đủ trong `NOTICE` và `THIRD_PARTY_NOTICES.md`). Nguồn `NF-UNSW-NB15-v3` (UQ License ID `454104`) đã ngừng sử dụng trong active pipeline và chuyển vào lưu trữ lịch sử `historical/nf_unsw_nb15_v3/`.
 - Hệ thống phân tách rạch ròi 4 mức quyền tại [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](../reports/governance/DISTRIBUTION_AUTHORIZATION.json) và hàm `verify_distribution_permission()` trong `scripts/verify_companion_artifacts.py`:
   1. `research-only`: nghiên cứu và đánh giá cục bộ (`target_channel=local_offline`). Cấm upload CI artifact và cấm phát hành.
   2. `private-build-only`: đóng gói và kiểm thử nội bộ **chỉ trên máy cục bộ (`local_offline`) hoặc private repository / private runner có quyền truy cập hạn chế (`repo_is_private=true`, `target_channel=private_ci_artifact`)**. Tuyệt đối **FAIL-CLOSED** trên public repository, không tin vào tên workflow `dryrun`.

@@ -1,7 +1,7 @@
 """Inference pipeline — load artifacts and predict.
 
-Provides verified inference entrypoints for the NF-UNSW-NB15-v3 dataset,
-ensuring fail-closed verification on all model and preprocessor artifacts (Issue #53).
+Provides verified inference entrypoints for NetFlow Sentinel v2,
+ensuring fail-closed verification on all model and preprocessor artifacts.
 """
 
 from __future__ import annotations

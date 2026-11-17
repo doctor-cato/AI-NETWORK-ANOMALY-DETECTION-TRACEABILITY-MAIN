@@ -594,7 +594,7 @@ async function ensureBatchInspected(params: {
   }
 
   const preInspectEpoch = state.sessionEpoch;
-  params.onProgress?.("Đang kiểm tra schema 47 ML features & OOD...");
+  params.onProgress?.("Đang kiểm tra schema 18 ML features (v2) & OOD...");
   try {
     const inspected = await params.deps.inspectCsv(trimmedFlowsPath, 20);
     if (params.getState().sessionEpoch !== preInspectEpoch) {

@@ -104,7 +104,7 @@ class TestFullSystemE2E:
             live_events = [
                 create_e2e_event(
                     "192.168.1.100",
-                    baseline_features(OUT_BYTES=123456),
+                    baseline_features(bytes_out=123456),
                     out_bytes=123456,
                     dst_port=445,
                 ),

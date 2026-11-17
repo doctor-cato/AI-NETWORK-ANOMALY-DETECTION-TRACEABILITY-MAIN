@@ -29,7 +29,7 @@ class AggregatedDecision:
 class MultiModelDecisionAggregator:
     """Combines predictions from Random Forest, XGBoost, Isolation Forest, and Autoencoder."""
 
-    # Empirically calibrated weights on NF-UNSW-NB15-v3 validation split
+    # Default multi-model weights for NetFlow Sentinel v2 ensemble aggregation
     DEFAULT_WEIGHTS = {
         "random_forest": 0.40,
         "xgboost": 0.30,

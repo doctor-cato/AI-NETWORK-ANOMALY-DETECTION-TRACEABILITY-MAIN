@@ -112,5 +112,5 @@ class ZeekConnAdapter(BaseSourceAdapter):
             trace_metadata=trace_meta,
             eligibility=InferenceEligibility.FEATURE_INCOMPATIBLE,
             validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
-            ood_warnings=["Missing 40/47 micro-telemetry features required for ML baseline."],
+            ood_warnings=["Standard Zeek conn.log routed to Trace Engine unless adapted via v2 Zeek IP-byte contract."],
         )

@@ -1,0 +1,135 @@
+{
+  "schema_version": 2,
+  "split_protocol_version": "v2-scenario-group-purged-v1",
+  "dataset_name": "NetFlow-Sentinel-v2-MultiSource",
+  "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+  "raw_archive_sha256": {
+    "fox_netflows.zip": "e2bfacdfe9822109c807300f941d0a0c9fa1b370bcf2822fd12f27ed23928381",
+    "harrison_netflows.zip": "3b4a0cbe9355b65890a8364a6309c5ac9da50b88095dee9d608dd91c13398834",
+    "russellmitchell_netflows.zip": "760e37d2c862c72604920cc1334768d8e582056b6979a3b160923b73525b0186",
+    "santos_netflows.zip": "72a37bb3e69a4e17103bacdd75d50817427bdfb6deaf06430ba3b942d462e328",
+    "shaw_netflows.zip": "c9c432b6eb64b89ba6c941dcd2cd3b13a7d57236fd92cc9c5c1d1bbab5cdeacb",
+    "wardbeck_netflows.zip": "9269999153f6a08522045d3f9102e6005ce719e7b1cd51ff4034455930d19a52",
+    "wheeler_netflows.zip": "d328705dbd6df28e225274624b830e6be2589a2339929daaa0f7154ba33859c8",
+    "wilson_netflows.zip": "130d9c0cdafc5a958db38ce05ebf8965618e5936c0a604af71dfa32639812749"
+  },
+  "feature_contract_version": "canonical-flow-v2-18",
+  "fingerprint_schema_version": "canonical-flow-v2-fingerprint-v1",
+  "split_strategy": "scenario_disjoint_ait_nds_v2_with_unmapped_exclusion",
+  "generated_at_utc": "2026-11-17T18:08:24.741441+00:00",
+  "total_labeled_rows": 3231215,
+  "excluded_unmapped_rows": 942,
+  "partitions": {
+    "train": {
+      "scenarios": [
+        "fox",
+        "harrison",
+        "santos",
+        "wardbeck",
+        "wilson"
+      ],
+      "row_count": 1930219,
+      "benign_count": 1658795,
+      "attack_count": 271424,
+      "attack_rate": 0.140618,
+      "categories": {
+        "Benign": 1658795,
+        "Reconnaissance": 181843,
+        "Data_Exfiltration": 87268,
+        "Credential_Attack": 2104,
+        "Post_Exploitation_Discovery": 180,
+        "Exploitation_And_C2": 29
+      },
+      "index_file": "train_indices.csv.gz",
+      "index_sha256": "bfbb745e76826f7c96995586ae1421cde0ff6ccd2d226c89ea98ab331c6cbe70",
+      "processed_csv_sha256": "628c8e9454bdc8551d139180bcf8367bc56c47933723763b64f16e18c4fc11d0",
+      "time_range_ms": [
+        1642118402425.734,
+        1644364792400.297
+      ]
+    },
+    "validation": {
+      "scenarios": [
+        "russellmitchell"
+      ],
+      "row_count": 377704,
+      "benign_count": 206676,
+      "attack_count": 171028,
+      "attack_rate": 0.45281,
+      "categories": {
+        "Benign": 206676,
+        "Reconnaissance": 155181,
+        "Data_Exfiltration": 15778,
+        "Post_Exploitation_Discovery": 56,
+        "Credential_Attack": 11,
+        "Exploitation_And_C2": 2
+      },
+      "index_file": "validation_indices.csv.gz",
+      "index_sha256": "b286391f86617f7b36737c3c0a569a9bb133eff5893395acc2a3c38053f9e02d",
+      "processed_csv_sha256": "4c480ab6e25a34dd1ba83ff67682fa864370ee881ff774201c1ca24a552eba39",
+      "time_range_ms": [
+        1642723202274.306,
+        1643068797389.599
+      ]
+    },
+    "test": {
+      "scenarios": [
+        "shaw",
+        "wheeler"
+      ],
+      "row_count": 923292,
+      "benign_count": 747610,
+      "attack_count": 175682,
+      "attack_rate": 0.190278,
+      "categories": {
+        "Benign": 747610,
+        "Reconnaissance": 95487,
+        "Data_Exfiltration": 80075,
+        "Credential_Attack": 78,
+        "Post_Exploitation_Discovery": 37,
+        "Exploitation_And_C2": 5
+      },
+      "index_file": "test_indices.csv.gz",
+      "index_sha256": "1989a9e5f07cd6cbd9eacefa2ea4beb48b1fc438e6fd9a941289e751cdc49c03",
+      "processed_csv_sha256": "5532fb77c35f0014f941a35386a8204eb48b5b7cbdf7480782da03d812831076",
+      "time_range_ms": [
+        1643068802508.266,
+        1643587110842.123
+      ]
+    }
+  },
+  "ctu_sme_11_external": {
+    "ctu_echo": {
+      "device": "Honeypot-Assistant-Amazon-Echo1stGen-1",
+      "labeled_rows": 76073,
+      "unmapped_rows": 0,
+      "attack_rows": 36576,
+      "benign_rows": 39497,
+      "sha256": "8cdb4fb6981f6e17dc26ce1c861c0c7aa3e57d051bec393d37534c8b93d09a4d"
+    },
+    "ctu_windows7ad": {
+      "device": "Experiment-VM-Microsoft-Windows7AD-1",
+      "labeled_rows": 175146,
+      "unmapped_rows": 9394,
+      "attack_rows": 2038,
+      "benign_rows": 173108,
+      "sha256": "090a454419a1d672c642b6a7d3f4d5b7451ad468f1c8339a1a9c6014b278c15c"
+    }
+  },
+  "leakage_audit": {
+    "scenario_overlap_count": 0,
+    "scenario_5tuple_ts_overlap_count": 0,
+    "within_train_exact_feature_duplicates": 827525,
+    "unique_feature_vectors": {
+      "train": 1102694,
+      "val": 135723,
+      "test": 492614
+    },
+    "cross_partition_unique_shared_feature_vectors": {
+      "train_val": 10048,
+      "train_test": 21560,
+      "val_test": 8675
+    },
+    "status": "PASS"
+  }
+}

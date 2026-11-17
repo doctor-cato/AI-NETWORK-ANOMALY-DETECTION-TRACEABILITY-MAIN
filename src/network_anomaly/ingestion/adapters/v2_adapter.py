@@ -19,7 +19,14 @@ from network_anomaly.canonical.event import (
     SystemData,
     ValidationStatus,
 )
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
+from network_anomaly.canonical.feature_contract import get_flow_feature_contract_v2
+from network_anomaly.data.taxonomy import classify_raw_label
+from network_anomaly.data.v2_schema import (
+    compute_flow_features_from_base,
+    parse_ait_nds_tstat_row,
+    parse_ctu_zeek_conn_row,
+    parse_protocol_number,
+)
 
 
 def parse_timestamp_utc(raw_ts: Any) -> datetime:
@@ -54,42 +61,102 @@ def parse_timestamp_utc(raw_ts: Any) -> datetime:
 
 
 class UnifiedNetFlowAdapter:
-    """Adapts NF-UNSW-NB15-v3 and AIT NetFlow CSV records to CanonicalSecurityEvent."""
+    """Adapts AIT-NDS-v2 (Tstat), CTU-SME-11 (Zeek), and canonical v2 flow records to CanonicalSecurityEvent."""
 
-    def __init__(self, source_id: str = "source:nf-unsw-nb15-v3"):
+    def __init__(self, source_id: str = "source:ait-nds-v2"):
         self.source_id = source_id
-        self.contract = get_baseline_47_feature_contract()
+        self.contract = get_flow_feature_contract_v2()
 
     def adapt_record(
         self, raw: Dict[str, Any], filename: str = "flow.csv", line_idx: Optional[int] = None
     ) -> CanonicalSecurityEvent:
-        ts_raw = raw.get("FLOW_START_MILLISECONDS") or raw.get("timestamp") or raw.get("flow_start")
-        dt = parse_timestamp_utc(ts_raw)
+        parsed: Optional[Dict[str, Any]] = None
+        if "#15#c_ip:1" in raw or "durat:31" in raw:
+            kind = "tcp_complete" if "c_ttl_min:50" in raw else "tcp_nocomplete"
+            parsed = parse_ait_nds_tstat_row(raw, flow_kind=kind)
+        elif "#c_ip:1" in raw or "c_first_abs:3" in raw:
+            parsed = parse_ait_nds_tstat_row(raw, flow_kind="udp_complete")
+        elif "id.orig_h" in raw and "orig_ip_bytes" in raw:
+            parsed = parse_ctu_zeek_conn_row(raw)
 
-        src_ip = str(raw.get("IPV4_SRC_ADDR") or raw.get("source_ip") or "0.0.0.0")
-        dst_ip = str(raw.get("IPV4_DST_ADDR") or raw.get("dest_ip") or "0.0.0.0")
-        src_port = int(raw.get("L4_SRC_PORT") or raw.get("source_port") or 0) % 65536
-        dst_port = int(raw.get("L4_DST_PORT") or raw.get("dest_port") or 0) % 65536
-        proto = str(raw.get("PROTOCOL") or "TCP")
+        if parsed is not None:
+            dt = parse_timestamp_utc(parsed["timestamp_ms"])
+            src_ip = str(parsed["source_ip"])
+            dst_ip = str(parsed["dest_ip"])
+            src_port = int(parsed["source_port"]) % 65536
+            dst_port = int(parsed["dest_port"]) % 65536
+            proto_str = str(parsed["raw_protocol_str"])
+            metrics = FlowMetrics(
+                duration_ms=float(parsed["duration_ms"]),
+                bytes_in=int(parsed["bytes_in"]),
+                bytes_out=int(parsed["bytes_out"]),
+                pkts_in=int(parsed["pkts_in"]),
+                pkts_out=int(parsed["pkts_out"]),
+            )
+            ml_feats = {k: float(parsed[k]) for k in self.contract.feature_names}
+            is_complete = True
+            label_res = classify_raw_label(
+                parsed.get("raw_label"),
+                detailed_label=parsed.get("raw_detailed_label"),
+            )
+            attack_cat = (
+                label_res.canonical_category if label_res.label_status != "UNMAPPED" else None
+            )
+        else:
+            ts_raw = raw.get("timestamp_ms") or raw.get("timestamp") or raw.get("flow_start")
+            dt = parse_timestamp_utc(ts_raw)
+            src_ip = str(raw.get("source_ip") or "0.0.0.0")
+            dst_ip = str(raw.get("dest_ip") or "0.0.0.0")
+            src_port = int(raw.get("source_port") or 0) % 65536
+            dst_port = int(raw.get("dest_port") or 0) % 65536
+            proto_raw = raw.get("protocol_num") or raw.get("raw_protocol_str") or raw.get("protocol")
+            proto_str = str(proto_raw or "UNKNOWN")
 
-        metrics = FlowMetrics(
-            duration_ms=float(raw.get("FLOW_DURATION_MILLISECONDS") or 0.0),
-            bytes_in=int(raw.get("IN_BYTES") or 0),
-            bytes_out=int(raw.get("OUT_BYTES") or 0),
-            pkts_in=int(raw.get("IN_PKTS") or 0),
-            pkts_out=int(raw.get("OUT_PKTS") or 0),
-            tcp_flags=int(raw.get("TCP_FLAGS") or 0),
-        )
+            is_complete, _ = self.contract.validate_features(raw)
+            ml_feats = (
+                {k: float(raw[k]) for k in self.contract.feature_names} if is_complete else None
+            )
+
+            dur_val = raw.get("duration_ms")
+            bin_val = raw.get("bytes_in")
+            bout_val = raw.get("bytes_out")
+            pin_val = raw.get("pkts_in")
+            pout_val = raw.get("pkts_out")
+            if ml_feats is None and all(
+                v is not None for v in (dur_val, bin_val, bout_val, pin_val, pout_val, proto_raw)
+            ):
+                try:
+                    proto_num = parse_protocol_number(proto_raw)
+                    ml_feats = compute_flow_features_from_base(
+                        duration_ms=float(dur_val),  # type: ignore[arg-type]
+                        bytes_in=float(bin_val),  # type: ignore[arg-type]
+                        bytes_out=float(bout_val),  # type: ignore[arg-type]
+                        pkts_in=float(pin_val),  # type: ignore[arg-type]
+                        pkts_out=float(pout_val),  # type: ignore[arg-type]
+                        protocol_num=proto_num,
+                    )
+                    is_complete = True
+                except (ValueError, TypeError):
+                    ml_feats = None
+                    is_complete = False
+
+            metrics = FlowMetrics(
+                duration_ms=float(dur_val) if dur_val is not None else None,
+                bytes_in=int(bin_val) if bin_val is not None else None,
+                bytes_out=int(bout_val) if bout_val is not None else None,
+                pkts_in=int(pin_val) if pin_val is not None else None,
+                pkts_out=int(pout_val) if pout_val is not None else None,
+            )
+            raw_lbl = raw.get("attack_category") or raw.get("raw_label") or raw.get("label")
+            attack_cat = (
+                classify_raw_label(raw_lbl).canonical_category if raw_lbl is not None else None
+            )
 
         provenance = RawProvenance(
             source_file=filename,
             line_or_offset=line_idx,
             adapter_name="UnifiedNetFlowAdapter",
         )
-
-        # Check ML feature completeness against 47 baseline
-        is_complete, missing = self.contract.validate_features(raw)
-        ml_feats = {k: float(raw[k]) for k in self.contract.feature_names} if is_complete else None
 
         return CanonicalSecurityEvent(
             event_timestamp=dt,
@@ -100,7 +167,8 @@ class UnifiedNetFlowAdapter:
             source_port=src_port,
             dest_ip=dst_ip,
             dest_port=dst_port,
-            protocol=proto,
+            protocol=proto_str,
+            attack_category=attack_cat,
             flow_metrics=metrics,
             raw_provenance=provenance,
             ml_features=ml_feats,

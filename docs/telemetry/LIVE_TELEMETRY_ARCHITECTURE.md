@@ -31,7 +31,7 @@ NetFlow Sentinel v2.0 mở rộng năng lực từ phân tích ngoại tuyến (
 +---------------------------------------------------------------------------------------------------+
 | 3. ADAPTERS, QUALITY GATES & CANONICAL ROUTER                                                     |
 |    - Strict Zero-Imputation Policy                                                                |
-|    - Flow Events (47 features) -> ML Inference Pipeline                                          |
+|    - Flow Events (18 canonical-flow-v2-18 features) -> ML Inference Pipeline                        |
 |    - Non-Flow / Incomplete Events -> Route-Only (Behavioral & Trace Engine)                       |
 +---------------------------------------------------------------------------------------------------+
                                                   |

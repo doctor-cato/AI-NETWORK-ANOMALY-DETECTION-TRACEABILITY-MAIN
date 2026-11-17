@@ -57,4 +57,5 @@ def test_official_ait_manifest_is_not_synthetic():
     assert manifest["synthetic"] is False
     assert manifest["official_source"]["doi_netflow"] == "10.5281/zenodo.13168643"
     assert manifest["official_source"]["doi_log"] == "10.5281/zenodo.19483937"
-    assert manifest["files"] == []
+    assert isinstance(manifest["files"], list)
+    assert manifest["official_source"]["netflow_dataset_name"] == "AIT NetFlow Data Set v2"

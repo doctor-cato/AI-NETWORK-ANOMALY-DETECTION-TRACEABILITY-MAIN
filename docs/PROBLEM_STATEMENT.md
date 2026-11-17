@@ -11,9 +11,8 @@ Lưu lượng mạng có cả mẫu kết nối bình thường và bất thư�
 
 ## Đầu vào
 
-- Bản ghi NetFlow từ NF-UNSW-NB15-v3: timestamp, IPv4/port nguồn-đích, protocol, duration,
-  bytes/packets, throughput, IAT, `Label` và `Attack`.
-- Nhãn mục tiêu nhị phân hoặc đa lớp, biểu thị normal và các nhóm anomaly.
+- Bản ghi NetFlow chuẩn hóa theo hợp đồng `canonical-flow-v2-18` từ **AIT-NDS-v2** và **CTU-SME-11**: timestamp, IPv4/port nguồn-đích (tách thành trace metadata), protocol, duration, bytes/packets, ratios, throughput, TCP flags, `label_binary` và `attack_category`.
+- Nhãn mục tiêu nhị phân hoặc đa lớp (`taxonomy-v2`), tuyệt đối không ép `background`/`unknown` thành `Benign`.
 
 ## Đầu ra
 
@@ -23,7 +22,7 @@ Lưu lượng mạng có cả mẫu kết nối bình thường và bất thư�
 
 ## Câu hỏi nghiên cứu / thiết kế
 
-1. Đặc trưng nào của NF-UNSW-NB15-v3 dự đoán anomaly mà không gây target/identifier leakage?
+1. Đặc trưng nào trong hợp đồng `canonical-flow-v2-18` dự đoán anomaly mà không gây target/identifier leakage, và mức độ suy giảm ra sao khi chuyển sang traffic thu thập thực tế (`CTU-SME-11`)?
 2. Random Forest hoạt động thế nào với vai trò baseline giám sát trên dataset này?
 3. Isolation Forest có phát hiện không giám sát hữu ích không, và đánh giá khác gì về threshold và diễn giải score?
 4. Đánh đổi false positive là gì, và mất cân bằng lớp hoặc missing value ảnh hưởng độ tin cậy ra sao?

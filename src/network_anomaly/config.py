@@ -46,10 +46,9 @@ ARTIFACTS = PROJECT_ROOT / "artifacts"
 
 
 def _has_populated_artifacts(artifacts_dir: Path) -> bool:
-    """Return True when an artifacts directory contains preprocessor or model binaries."""
-    prep_file = artifacts_dir / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-    legacy_prep = artifacts_dir / "preprocessor.joblib"
-    if prep_file.is_file() or legacy_prep.is_file():
+    """Return True when an artifacts directory contains v2 preprocessor or model binaries."""
+    prep_file = artifacts_dir / "preprocessing" / "v2_flow_preprocessor.joblib"
+    if prep_file.is_file():
         return True
     models_dir = artifacts_dir / "models"
     return models_dir.is_dir() and any(models_dir.rglob("*.joblib"))
@@ -146,7 +145,7 @@ XGBOOST_DEFAULTS = {
 # Autoencoder is unsupervised representation learning (C4 / Issue #29);
 # the explicit parameter set below is recorded with every run for reproducibility.
 AUTOENCODER_DEFAULTS = {
-    "hidden_layer_sizes": (32, 16, 32),
+    "hidden_layer_sizes": (16, 8, 16),
     "activation": "relu",
     "solver": "adam",
     "alpha": 0.0001,

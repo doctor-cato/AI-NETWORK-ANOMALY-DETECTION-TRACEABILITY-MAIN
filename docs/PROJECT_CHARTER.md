@@ -10,8 +10,7 @@ Autoencoder là các nhánh so sánh bắt buộc trong roadmap C3–C4.
 
 ## Nguyên tắc chấp nhận
 
-- NF-UNSW-NB15-v3 là dataset network-flow chính duy nhất: một CSV gồm 53 feature và hai target
-  `Label`/`Attack`. Split phải được tạo mới; UNSW-NB15 (2015) chỉ là historical evidence.
+- **NetFlow Sentinel v2** sử dụng **AIT NetFlow Data Set v2 (`AIT-NDS-v2`)**, **AIT-LDS-v2.1**, **AIT-ADS** và dữ liệu thực tế **CTU-SME-11** dưới hợp đồng `canonical-flow-v2-18` (18 ML features) + `taxonomy-v2` (`UGR'16` đang `BLOCKED` do cổng chính thức HTTP 403). Các artifact `NF-UNSW-NB15-v3` và `UNSW-NB15 (2015)` chỉ nằm trong `historical/`.
 - Split trước mọi fit; preprocessing/feature selection/threshold/calibration chỉ học từ
   train/validation theo protocol, không từ test.
 - Behavioral correlation là confidence trong phạm vi dữ liệu được phép giám sát, không

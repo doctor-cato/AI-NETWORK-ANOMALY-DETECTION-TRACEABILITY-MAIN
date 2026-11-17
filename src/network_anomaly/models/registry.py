@@ -34,9 +34,9 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
+from network_anomaly.canonical.feature_contract import get_flow_feature_contract_v2
 from network_anomaly.config import PROJECT_ROOT, resolve_artifacts_dir
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import FEATURE_CONTRACT_ID, ML_FEATURE_COLUMNS
 from network_anomaly.models.autoencoder import AutoencoderModel
 from network_anomaly.models.isolation_forest import IsolationForestModel
 from network_anomaly.models.random_forest import RandomForestModel
@@ -73,7 +73,7 @@ class ModelReadiness(str, Enum):
 
 
 class FeatureContractError(ValueError):
-    """Raised when a live event cannot satisfy the 47-feature model contract."""
+    """Raised when a live event cannot satisfy the 18-feature v2 flow contract."""
 
 
 @dataclass
@@ -94,6 +94,9 @@ class ModelStatus:
     error_count: int = 0
     last_latency_us: Optional[float] = None
     validated: bool = False
+    feature_contract_version: Optional[str] = None
+    dataset_provenance: Optional[str] = None
+    training_run_id: Optional[str] = None
 
     @property
     def decision_ready(self) -> bool:
@@ -117,6 +120,9 @@ class ModelStatus:
             "error_count": self.error_count,
             "last_latency_us": self.last_latency_us,
             "validated": self.validated,
+            "feature_contract_version": self.feature_contract_version,
+            "dataset_provenance": self.dataset_provenance,
+            "training_run_id": self.training_run_id,
         }
 
 
@@ -215,7 +221,7 @@ class ModelRegistry:
         self.preprocessor_path = (
             Path(preprocessor_path)
             if preprocessor_path
-            else self.artifacts_dir / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+            else self.artifacts_dir / "preprocessing" / "v2_flow_preprocessor.joblib"
         )
         self.preprocessor_manifest_path = (
             Path(preprocessor_manifest_path)
@@ -223,10 +229,10 @@ class ModelRegistry:
             else PROJECT_ROOT
             / "reports"
             / "preprocessing"
-            / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+            / "v2_flow_preprocessing_manifest.json"
         )
         self.demo_heuristics = demo_heuristics
-        self.contract = get_baseline_47_feature_contract()
+        self.contract = get_flow_feature_contract_v2()
 
         self._preprocessor: Any = None
         self._preprocessor_metadata: Dict[str, Any] = {}
@@ -343,6 +349,17 @@ class ModelRegistry:
                 raise ValueError("model manifest must be a JSON object")
             if not threshold_provenance_is_clean(manifest):
                 raise ValueError("threshold provenance violates test-partition leakage guard")
+            contract_ver = manifest.get("feature_contract_version")
+            if contract_ver != FEATURE_CONTRACT_ID:
+                raise ValueError(
+                    f"feature_contract_version mismatch or legacy v1 artifact: "
+                    f"expected {FEATURE_CONTRACT_ID!r}, got {contract_ver!r}"
+                )
+            ds_prov = manifest.get("dataset_provenance") or manifest.get("dataset_name") or ""
+            if "NF-UNSW-NB15" in str(ds_prov):
+                raise ValueError(
+                    f"Retired v1 dataset provenance rejected by v2 ModelRegistry: {ds_prov!r}"
+                )
 
             expected_prep = self.preprocessor_sha256
             backend, threshold, threshold_source = self._load_backend(
@@ -353,6 +370,10 @@ class ModelRegistry:
                 or manifest.get("model_sha256")
                 or self._sha256(spec.model_path)
             )
+            status.feature_contract_version = str(contract_ver)
+            status.dataset_provenance = str(ds_prov) if ds_prov else None
+            run_id = manifest.get("training_run_id") or manifest.get("run_id")
+            status.training_run_id = str(run_id) if run_id else None
             status.threshold = threshold
             status.threshold_source = threshold_source
             status.score_semantics = backend.score_semantics
@@ -521,7 +542,7 @@ class ModelRegistry:
 
     # ------------------------------------------------------------ inference
     def validate_features(self, features: Mapping[str, Any]) -> Dict[str, float]:
-        """Validate a live feature mapping against the 47-feature contract."""
+        """Validate a live feature mapping against the 18-feature v2 flow contract."""
         is_valid, invalid = self.contract.validate_features(dict(features))
         if not is_valid:
             raise FeatureContractError(

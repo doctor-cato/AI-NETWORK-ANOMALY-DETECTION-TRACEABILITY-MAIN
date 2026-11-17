@@ -1,11 +1,9 @@
-"""Robust Cross-Dataset Generalization Experiment Framework (Issue #48).
+"""Robust Cross-Dataset Generalization Experiment Framework for NetFlow Sentinel v2.
 
-Implements controlled, leak-free experiments E0–E5 to address shortcut collapse:
-- E0: Frozen Canonical Random Forest Baseline (47 features, with MIN_TTL/MAX_TTL).
-- E1: No-TTL Random Forest (45 features, strictly excluding MIN_TTL and MAX_TTL).
-- E2: Environment-Invariant Robust RF (41 features, excluding probe/lab specific artifacts).
-- E3: Multi-Domain Joint Training Protocol.
-- E4: Leave-One-Dataset-Out (LODO) Evaluation.
+Implements controlled, leak-free experiments across AIT-NDS-v2 and CTU-SME-11:
+- E0: Full Canonical 18-feature v2 contract (`canonical-flow-v2-18`).
+- E1: Rate-invariant ablation (excluding packet/byte rate features sensitive to capture jitter).
+- E2: Base-only 6-feature flow contract (`BASE_FLOW_FEATURE_COLUMNS`).
 """
 
 from __future__ import annotations
@@ -29,25 +27,17 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import GroupShuffleSplit
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import BASE_FLOW_FEATURE_COLUMNS, ML_FEATURE_COLUMNS
 
 # 1. Feature Contract Definitions
 FEATURES_E0: List[str] = list(ML_FEATURE_COLUMNS)
 
-# E1: Exclude MIN_TTL and MAX_TTL shortcut features
-SHORTCUT_TTL_FEATURES: Set[str] = {"MIN_TTL", "MAX_TTL"}
-FEATURES_E1: List[str] = [c for c in ML_FEATURE_COLUMNS if c not in SHORTCUT_TTL_FEATURES]
+# E1: Exclude high-variance throughput rate features to test capture-timing shift
+RATE_SENSITIVE_FEATURES: Set[str] = {"bytes_per_sec_in", "bytes_per_sec_out", "pkts_per_sec"}
+FEATURES_E1: List[str] = [c for c in ML_FEATURE_COLUMNS if c not in RATE_SENSITIVE_FEATURES]
 
-# E2: Exclude TTL + Application L7 artifacts that depend on specific generator infrastructure
-ENVIRONMENT_SPECIFIC_FEATURES: Set[str] = {
-    "MIN_TTL",
-    "MAX_TTL",
-    "DNS_QUERY_ID",
-    "DNS_QUERY_TYPE",
-    "DNS_TTL_ANSWER",
-    "FTP_COMMAND_RET_CODE",
-}
-FEATURES_E2: List[str] = [c for c in ML_FEATURE_COLUMNS if c not in ENVIRONMENT_SPECIFIC_FEATURES]
+# E2: Base 6 observed flow fields only
+FEATURES_E2: List[str] = list(BASE_FLOW_FEATURE_COLUMNS)
 
 
 @dataclass
@@ -102,17 +92,21 @@ def compute_fingerprint_disjoint_split(
     # 1. Compute canonical 5-tuple flow fingerprint (bidirectional)
     if all(
         col in df.columns
-        for col in ["IPV4_SRC_ADDR", "L4_SRC_PORT", "IPV4_DST_ADDR", "L4_DST_PORT", "PROTOCOL"]
+        for col in ["source_ip", "source_port", "dest_ip", "dest_port", "protocol_num"]
     ):
-        src_ep = df["IPV4_SRC_ADDR"].astype(str) + ":" + df["L4_SRC_PORT"].astype(str)
-        dst_ep = df["IPV4_DST_ADDR"].astype(str) + ":" + df["L4_DST_PORT"].astype(str)
+        src_ep = df["source_ip"].astype(str) + ":" + df["source_port"].astype(str)
+        dst_ep = df["dest_ip"].astype(str) + ":" + df["dest_port"].astype(str)
         cond = src_ep <= dst_ep
         ep1 = np.where(cond, src_ep, dst_ep)
         ep2 = np.where(cond, dst_ep, src_ep)
-        groups = pd.Series(ep1) + "__" + pd.Series(ep2) + "__" + df["PROTOCOL"].astype(str)
+        groups = pd.Series(ep1) + "__" + pd.Series(ep2) + "__" + df["protocol_num"].astype(str)
     else:
         # Fallback to feature hash grouping if 5-tuple is stripped
-        cols_to_hash = [c for c in df.columns if c not in {"Label", "Attack"}]
+        cols_to_hash = [
+            c
+            for c in df.columns
+            if c not in {"label_binary", "attack_category", "raw_label", "label_status"}
+        ]
         groups = pd.util.hash_pandas_object(df[cols_to_hash], index=False).astype(str)
 
     gss = GroupShuffleSplit(n_splits=1, train_size=train_size, random_state=random_state)
@@ -135,9 +129,10 @@ def compute_fingerprint_disjoint_split(
 
     # 4. Check label conflicts across shared feature hashes
     label_conflict_count = 0
-    if "Label" in df.columns:
+    target_col = "label_binary" if "label_binary" in df.columns else ("Label" if "Label" in df.columns else None)
+    if target_col is not None:
         train_map = dict(
-            zip(pd.util.hash_pandas_object(df_train[cols_to_check], index=False), df_train["Label"])
+            zip(pd.util.hash_pandas_object(df_train[cols_to_check], index=False), df_train[target_col])
         )
         test_pairs = zip(
             pd.util.hash_pandas_object(df_test[cols_to_check], index=False), df_test["Label"]
@@ -341,7 +336,7 @@ class RobustModelExperiment:
     def generate_manifest(
         self,
         eval_metrics: Optional[ExperimentMetrics] = None,
-        eval_dataset_name: str = "NF-CSE-CIC-IDS2018-v3",
+        eval_dataset_name: str = "CTU-SME-11",
     ) -> Dict[str, Any]:
         """Generate scientific run manifest for reproducibility."""
         return {

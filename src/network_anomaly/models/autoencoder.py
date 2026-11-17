@@ -27,7 +27,7 @@ import numpy as np
 from sklearn.neural_network import MLPRegressor
 
 from network_anomaly.config import AUTOENCODER_DEFAULTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.preprocessing import FEATURE_CONTRACT_VERSION
 
 SUPPORTED_PARAMS = (

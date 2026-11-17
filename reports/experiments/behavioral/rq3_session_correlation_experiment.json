@@ -2,14 +2,14 @@
   "experiment_id": "EXP-RQ3-CORRELATION-01",
   "execution_mode": "SIMULATION",
   "empirical_dataset_status": "BLOCKED",
-  "timestamp": "2026-11-17T16:00:50.068442+00:00",
+  "timestamp": "2026-11-17T19:04:42.720488+00:00",
   "hypothesis": "H3: Behavioral Vector achieves >= 85% session correlation F1/recall independent of IP",
   "dataset_provenance": {
     "simulation_source": "synthetic_ip_rotation_benchmark (synthetic: true)",
     "official_ait_source_doi": "10.5281/zenodo.13168643",
     "official_ait_status": {
       "status": "BLOCKED",
-      "reason": "Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.",
+      "reason": "Official AIT campaign-linkage ground truth absent or not verified in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.",
       "files_detected": 0
     }
   },
@@ -38,7 +38,7 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T16:00:50.060652+00:00"
+    "captured_at_utc": "2026-11-17T19:04:42.714347+00:00"
   },
   "ablation": {
     "strategy_a_ip_exact_matching": {
@@ -81,12 +81,12 @@
   "simulation_hypothesis_met": false,
   "empirical_ait_evaluation": {
     "status": "BLOCKED",
-    "reason": "Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.",
+    "reason": "Official AIT campaign-linkage ground truth absent or not verified in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.",
     "files_detected": 0
   },
-  "conclusion": "SIMULATION ONLY: Strategy B achieved pairwise F1=0.3191 (precision=0.1899, recall=1.0000, false_link_rate=0.8000) vs Strategy A IP-matching recall=0.0000. Empirical validation on real AIT dataset is BLOCKED (Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.).",
+  "conclusion": "SIMULATION ONLY: Strategy B achieved pairwise F1=0.3191 (precision=0.1899, recall=1.0000, false_link_rate=0.8000) vs Strategy A IP-matching recall=0.0000. Empirical validation on real AIT dataset is BLOCKED (Official AIT campaign-linkage ground truth absent or not verified in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.).",
   "limitations": [
     "Synthetic IP-rotation simulation tests algorithmic behavior only and MUST NOT be treated as empirical validation on real enterprise datasets.",
-    "Official AIT-Suite-v2.1 raw dataset absent in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone."
+    "Official AIT campaign-linkage ground truth absent or not verified in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone."
   ]
 }

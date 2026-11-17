@@ -11,7 +11,7 @@ import pandas as pd
 from network_anomaly.ingestion.adapters import (
     AWSVPCFlowAdapter,
     BaseSourceAdapter,
-    NetFlowV3Adapter,
+    CanonicalFlowV2Adapter,
     NetFlowV5Adapter,
     SuricataEveAdapter,
     UnsupportedSourceAdapter,
@@ -122,8 +122,8 @@ class StreamingChunkParser:
     def get_adapter(self, source_def: SourceDefinition) -> BaseSourceAdapter:
         """Instantiate corresponding adapter for a source definition."""
         adapter_name = source_def.adapter_name
-        if adapter_name == "NetFlowV3Adapter":
-            return NetFlowV3Adapter(
+        if adapter_name == "CanonicalFlowV2Adapter":
+            return CanonicalFlowV2Adapter(
                 source_id=source_def.source_id, schema_version=source_def.schema_version
             )
         elif adapter_name == "ZeekConnAdapter":

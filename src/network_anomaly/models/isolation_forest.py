@@ -31,8 +31,9 @@ from sklearn.ensemble import IsolationForest
 from sklearn.exceptions import NotFittedError
 
 from network_anomaly.config import ISOLATION_FOREST_DEFAULTS
+from network_anomaly.data.v2_schema import FEATURE_CONTRACT_ID
 
-FEATURE_CONTRACT_VERSION = "nf-unsw-nb15-v3-baseline-47"
+FEATURE_CONTRACT_VERSION = FEATURE_CONTRACT_ID
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 

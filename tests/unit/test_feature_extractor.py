@@ -1,4 +1,4 @@
-"""Feature contract tests: strict 47 features, zero imputation, explicit rejection."""
+"""Feature contract tests: strict 18 v2 features, zero imputation, explicit rejection."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from network_anomaly.canonical.event import (
     FlowMetrics,
     RawProvenance,
 )
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
+from network_anomaly.canonical.feature_contract import get_flow_feature_contract_v2
 from network_anomaly.streaming.feature_extractor import RealtimeFeatureExtractor
 
 
@@ -34,7 +34,7 @@ def _flow_event(ml_features=None, metrics=None, protocol="TCP") -> CanonicalSecu
 
 class TestFeatureContract:
     def test_complete_heterogeneous_row_is_accepted_in_contract_order(self, baseline_features):
-        contract = get_baseline_47_feature_contract()
+        contract = get_flow_feature_contract_v2()
         row = baseline_features()
         extractor = RealtimeFeatureExtractor()
 
@@ -42,55 +42,40 @@ class TestFeatureContract:
 
         assert result.is_ml_ready is True
         assert result.status == "MODEL_READY"
-        assert result.feature_vector.shape == (47,)
+        assert result.feature_vector.shape == (18,)
         expected = np.asarray([row[name] for name in contract.feature_names])
         np.testing.assert_allclose(result.feature_vector, expected)
         assert result.missing_features == []
-        assert len(set(row.values())) > 10  # fixture is not a uniform fill
+        assert len(set(row.values())) > 5  # fixture is not a uniform fill
 
     def test_partial_row_is_rejected_with_exact_missing_list(self):
         extractor = RealtimeFeatureExtractor()
-        result = extractor.extract(_flow_event({"OUT_BYTES": 10.0}))
+        result = extractor.extract(_flow_event({"bytes_out": 10.0}))
 
         assert result.is_ml_ready is False
         assert result.status == "NOT_MODEL_READY"
         assert result.feature_vector is None
         assert result.feature_dict is None
-        assert len(result.missing_features) == 45
-        assert "OUT_BYTES" not in result.missing_features
-        assert "PROTOCOL" not in result.missing_features  # derived from event.protocol
-        assert "IN_BYTES" in result.missing_features
+        assert len(result.missing_features) == 17
+        assert "bytes_out" not in result.missing_features
+        assert "bytes_in" in result.missing_features
 
-    def test_flow_metrics_are_derived_without_inventing_the_rest(self):
+    def test_incomplete_flow_metrics_rejects_without_silent_imputation(self):
         metrics = FlowMetrics(
             duration_ms=125.0,
             bytes_in=900,
-            bytes_out=1800,
+            bytes_out=None,
             pkts_in=9,
             pkts_out=12,
-            tcp_flags=24,
         )
         extractor = RealtimeFeatureExtractor()
         result = extractor.extract(_flow_event(metrics=metrics, protocol="TCP"))
 
         assert result.is_ml_ready is False
-        assert result.mapped_feature_count == 7  # 6 metrics + PROTOCOL
-        assert len(result.missing_features) == 40
         assert result.feature_vector is None
 
-    def test_partial_features_plus_derived_metrics_complete_the_contract(self, baseline_features):
-        contract = get_baseline_47_feature_contract()
-        derived_names = {
-            "IN_BYTES",
-            "IN_PKTS",
-            "OUT_BYTES",
-            "OUT_PKTS",
-            "TCP_FLAGS",
-            "FLOW_DURATION_MILLISECONDS",
-            "PROTOCOL",
-        }
-        row = baseline_features()
-        partial = {k: v for k, v in row.items() if k not in derived_names}
+    def test_complete_flow_metrics_derives_all_18_v2_features(self):
+        contract = get_flow_feature_contract_v2()
         metrics = FlowMetrics(
             duration_ms=34.0,
             bytes_in=1580,
@@ -101,10 +86,11 @@ class TestFeatureContract:
         )
 
         result = RealtimeFeatureExtractor().extract(
-            _flow_event(partial, metrics=metrics, protocol="TCP")
+            _flow_event(metrics=metrics, protocol="TCP")
         )
         assert result.is_ml_ready is True
-        index = contract.feature_names.index("IN_BYTES")
+        assert result.feature_vector.shape == (18,)
+        index = contract.feature_names.index("bytes_in")
         assert result.feature_vector[index] == 1580.0
 
     def test_non_flow_events_are_routed_not_scored(self):
@@ -119,7 +105,7 @@ class TestFeatureContract:
         assert result.status == "ROUTE_ONLY"
 
     def test_missing_features_are_mutated_for_trace_handling(self):
-        event = _flow_event({"OUT_BYTES": 10.0})
+        event = _flow_event({"bytes_out": 10.0})
         extractor = RealtimeFeatureExtractor()
         results, route_only = extractor.extract_batch([event])
 

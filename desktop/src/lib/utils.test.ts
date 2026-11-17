@@ -49,7 +49,7 @@ function makeItem(overrides: Partial<CsvFlowPredictionItem>): CsvFlowPredictionI
     dst_port: 443,
     protocol: 6,
     flow_duration_ms: 1000,
-    min_ttl: 62,
+    min_ttl: null,
     ...overrides,
   };
 }

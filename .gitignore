@@ -5,6 +5,8 @@ data/raw/*
 data/interim/*
 data/processed/*
 data/demo/*
+data/historical/nf_unsw_nb15_v3/splits/*
+data/historical/nf_unsw_nb15_v3/demo/*.csv
 !data/raw/.gitkeep
 !data/interim/.gitkeep
 !data/processed/.gitkeep

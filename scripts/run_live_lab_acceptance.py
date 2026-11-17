@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.canonical.feature_contract import get_flow_feature_contract_v2
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS, compute_flow_features_from_base
 from network_anomaly.streaming.live_service import LiveTelemetryService
 from network_anomaly.telemetry.collector import LAB_ENTERPRISE_FIELD_BASE, LAB_ENTERPRISE_NUMBER
 
@@ -44,56 +44,14 @@ OUTPUT_JSON = Path("reports/acceptance/synthetic_udp_loopback_report.json")
 OUTPUT_MD = Path("docs/telemetry/SYNTHETIC_UDP_LOOPBACK_ACCEPTANCE.md")
 ACCEPTANCE_TITLE = "Synthetic UDP Loopback Integration Acceptance"
 
-# Synthetic benign reference row built from column medians of a 200k-row sample
-# of NF-UNSW-NB15-v3. It is a synthetic fixture, not a dataset record.
-BASE_FEATURES: Dict[str, float] = {
-    "PROTOCOL": 6.0,
-    "L7_PROTO": 36.0,
-    "IN_BYTES": 1580.0,
-    "IN_PKTS": 16.0,
-    "OUT_BYTES": 2260.0,
-    "OUT_PKTS": 18.0,
-    "TCP_FLAGS": 27.0,
-    "CLIENT_TCP_FLAGS": 24.0,
-    "SERVER_TCP_FLAGS": 24.0,
-    "FLOW_DURATION_MILLISECONDS": 34.0,
-    "DURATION_IN": 31.0,
-    "DURATION_OUT": 31.0,
-    "MIN_TTL": 31.0,
-    "MAX_TTL": 32.0,
-    "LONGEST_FLOW_PKT": 362.0,
-    "SHORTEST_FLOW_PKT": 52.0,
-    "MIN_IP_PKT_LEN": 52.0,
-    "MAX_IP_PKT_LEN": 362.0,
-    "SRC_TO_DST_SECOND_BYTES": 162.0,
-    "DST_TO_SRC_SECOND_BYTES": 81.35,
-    "RETRANSMITTED_IN_BYTES": 436.0,
-    "RETRANSMITTED_IN_PKTS": 4.0,
-    "RETRANSMITTED_OUT_BYTES": 793.0,
-    "RETRANSMITTED_OUT_PKTS": 4.0,
-    "SRC_TO_DST_AVG_THROUGHPUT": 520000.0,
-    "DST_TO_SRC_AVG_THROUGHPUT": 656000.0,
-    "NUM_PKTS_UP_TO_128_BYTES": 30.0,
-    "NUM_PKTS_128_TO_256_BYTES": 0.0,
-    "NUM_PKTS_256_TO_512_BYTES": 0.0,
-    "NUM_PKTS_512_TO_1024_BYTES": 0.0,
-    "NUM_PKTS_1024_TO_1514_BYTES": 0.0,
-    "TCP_WIN_MAX_IN": 14480.0,
-    "TCP_WIN_MAX_OUT": 13032.0,
-    "ICMP_TYPE": 21248.0,
-    "ICMP_IPV4_TYPE": 83.0,
-    "DNS_QUERY_ID": 0.0,
-    "DNS_QUERY_TYPE": 0.0,
-    "DNS_TTL_ANSWER": 0.0,
-    "FTP_COMMAND_RET_CODE": 0.0,
-    "SRC_TO_DST_IAT_MIN": 0.0,
-    "SRC_TO_DST_IAT_MAX": 6.0,
-    "SRC_TO_DST_IAT_AVG": 0.0,
-    "SRC_TO_DST_IAT_STDDEV": 1.0,
-    "DST_TO_SRC_IAT_MIN": 0.0,
-    "DST_TO_SRC_IAT_MAX": 6.0,
-    "DST_TO_SRC_IAT_AVG": 0.0,
-    "DST_TO_SRC_IAT_STDDEV": 1.0,
+# Synthetic benign reference row for the canonical 18-feature v2 flow contract.
+BASE_FLOW_SPEC: Dict[str, float] = {
+    "duration_ms": 34.0,
+    "bytes_in": 1580.0,
+    "bytes_out": 2260.0,
+    "pkts_in": 16.0,
+    "pkts_out": 18.0,
+    "protocol_num": 6,
 }
 
 LAB_FLOWS: List[Dict[str, Any]] = [
@@ -104,7 +62,7 @@ LAB_FLOWS: List[Dict[str, Any]] = [
         "src_port": 52341,
         "dest_port": 80,
         "tcp_flags": 2,
-        "overrides": {"IN_BYTES": 350, "OUT_BYTES": 120, "IN_PKTS": 4, "OUT_PKTS": 3},
+        "overrides": {"duration_ms": 12.0, "bytes_in": 350.0, "bytes_out": 120.0, "pkts_in": 4.0, "pkts_out": 3.0},
     },
     {
         "label": "web_exploit_attempt",
@@ -113,7 +71,7 @@ LAB_FLOWS: List[Dict[str, Any]] = [
         "src_port": 44122,
         "dest_port": 80,
         "tcp_flags": 24,
-        "overrides": {"IN_BYTES": 8900, "OUT_BYTES": 25000, "IN_PKTS": 25, "OUT_PKTS": 30},
+        "overrides": {"duration_ms": 48.0, "bytes_in": 8900.0, "bytes_out": 25000.0, "pkts_in": 25.0, "pkts_out": 30.0},
     },
     {
         "label": "large_outbound_transfer",
@@ -123,12 +81,11 @@ LAB_FLOWS: List[Dict[str, Any]] = [
         "dest_port": 445,
         "tcp_flags": 24,
         "overrides": {
-            "IN_BYTES": 5000,
-            "OUT_BYTES": 150000,
-            "IN_PKTS": 20,
-            "OUT_PKTS": 200,
-            "LONGEST_FLOW_PKT": 1514.0,
-            "MAX_IP_PKT_LEN": 1514.0,
+            "duration_ms": 220.0,
+            "bytes_in": 5000.0,
+            "bytes_out": 150000.0,
+            "pkts_in": 20.0,
+            "pkts_out": 200.0,
         },
     },
     {
@@ -149,7 +106,7 @@ TEMPLATE_CACHE_FLOW = {
     "src_port": 55200,
     "dest_port": 443,
     "tcp_flags": 24,
-    "overrides": {"IN_BYTES": 900, "OUT_BYTES": 1200},
+    "overrides": {"bytes_in": 900.0, "bytes_out": 1200.0},
 }
 
 IPFIX_FLOW = {
@@ -159,16 +116,21 @@ IPFIX_FLOW = {
     "src_port": 55300,
     "dest_port": 443,
     "tcp_flags": 24,
-    "overrides": {"IN_BYTES": 1200, "OUT_BYTES": 1800},
+    "overrides": {"bytes_in": 1200.0, "bytes_out": 1800.0},
 }
 
 
 def _features_for(flow: Dict[str, Any]) -> Dict[str, float]:
-    features = dict(BASE_FEATURES)
-    features.update({name: float(value) for name, value in flow["overrides"].items()})
-    if flow["dest_port"] == 445:
-        features["IN_BYTES"] = float(flow["overrides"]["IN_BYTES"])
-    return features
+    spec = dict(BASE_FLOW_SPEC)
+    spec.update({name: float(value) for name, value in flow["overrides"].items()})
+    return compute_flow_features_from_base(
+        duration_ms=spec["duration_ms"],
+        bytes_in=spec["bytes_in"],
+        bytes_out=spec["bytes_out"],
+        pkts_in=spec["pkts_in"],
+        pkts_out=spec["pkts_out"],
+        protocol_num=int(spec["protocol_num"]),
+    )
 
 
 def _v9_template_fields() -> List[Tuple[int, int]]:
@@ -192,7 +154,7 @@ def _v9_template_fields() -> List[Tuple[int, int]]:
 
 def _v9_record(flow: Dict[str, Any], start_sys_up: int) -> bytes:
     features = _features_for(flow)
-    proto_num = int(features["PROTOCOL"])
+    proto_num = int(features["protocol_num"])
     record = (
         socket.inet_aton(flow["src_ip"])
         + socket.inet_aton(flow["dst_ip"])
@@ -201,13 +163,13 @@ def _v9_record(flow: Dict[str, Any], start_sys_up: int) -> bytes:
             flow["src_port"],
             flow["dest_port"],
             proto_num,
-            int(features["IN_BYTES"]),
-            int(features["OUT_BYTES"]),
-            int(features["IN_PKTS"]),
-            int(features["OUT_PKTS"]),
+            int(features["bytes_in"]),
+            int(features["bytes_out"]),
+            int(features["pkts_in"]),
+            int(features["pkts_out"]),
             flow["tcp_flags"],
             start_sys_up,
-            start_sys_up + int(features["FLOW_DURATION_MILLISECONDS"]),
+            start_sys_up + int(features["duration_ms"]),
         )
     )
     record += b"".join(struct.pack("!d", features[name]) for name in ML_FEATURE_COLUMNS)
@@ -283,14 +245,14 @@ def build_ipfix_packet(
             "!HHBIIIIBQQ",
             flow["src_port"],
             flow["dest_port"],
-            int(features["PROTOCOL"]),
-            int(features["IN_BYTES"]),
-            int(features["OUT_BYTES"]),
-            int(features["IN_PKTS"]),
-            int(features["OUT_PKTS"]),
+            int(features["protocol_num"]),
+            int(features["bytes_in"]),
+            int(features["bytes_out"]),
+            int(features["pkts_in"]),
+            int(features["pkts_out"]),
             flow["tcp_flags"],
             now_ms,
-            now_ms + int(features["FLOW_DURATION_MILLISECONDS"]),
+            now_ms + int(features["duration_ms"]),
         )
     )
     record += b"".join(struct.pack("!d", features[name]) for name in ML_FEATURE_COLUMNS)
@@ -306,7 +268,7 @@ def _send(sock: socket.socket, payload: bytes, port: int) -> None:
 
 def run_lab_acceptance_scenario() -> Dict[str, Any]:
     """Run the synthetic UDP loopback integration acceptance and write evidence."""
-    contract = get_baseline_47_feature_contract()
+    contract = get_flow_feature_contract_v2()
     print(f"Running {ACCEPTANCE_TITLE}...")
 
     with tempfile.TemporaryDirectory(prefix="nf-sentinel-acceptance-") as temp_dir:
@@ -474,8 +436,8 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
     hard_failures = [name for name, stage in stages.items() if stage["status"] == "FAIL"]
     limitations = [
         "Loopback UDP with a synthetic Python exporter; no physical router or switch was tested.",
-        "The 47 model features use a private lab IE convention (PEN 50000 / IE 50000+i, float64).",
-        "Synthetic feature values are fixtures, not benchmark samples from NF-UNSW-NB15-v3.",
+        f"The {len(ML_FEATURE_COLUMNS)} canonical v2 model features use a private lab IE convention (PEN 50000 / IE 50000+i, float64).",
+        "Synthetic feature values are fixtures, not real benchmark samples from AIT-NDS-v2 or CTU-SME-11.",
     ]
     if inference_mode != "REAL_MODELS":
         limitations.append(

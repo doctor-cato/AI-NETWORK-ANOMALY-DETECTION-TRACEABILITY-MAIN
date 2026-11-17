@@ -18,7 +18,7 @@ from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
 IF_MODEL = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
-PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
 
 
 @pytest.mark.skipif(
@@ -41,7 +41,7 @@ def test_real_demo_analyze_then_server_verified_dry_run_and_anti_spoof(tmp_path:
         assert analyze_resp.status_code == 200, analyze_resp.text
         analyzed = analyze_resp.json()
         analysis_id = analyzed["analysis_id"]
-        assert analyzed["ood_flagged_count"] == 2
+        assert analyzed["ood_flagged_count"] == 0
 
         # Server-verified simulation using analysis_id
         sim_resp = client.post(
@@ -56,13 +56,13 @@ def test_real_demo_analyze_then_server_verified_dry_run_and_anti_spoof(tmp_path:
         assert sim["os_firewall_touched"] is False
         assert sim["real_key_rotated"] is False
         assert sim["total_flows"] == analyzed["total_rows"] == 200
-        assert sim["ood_abstained_flows"] == 2
-        assert sim["evaluated_flows"] == 198
+        assert sim["ood_abstained_flows"] == 0
+        assert sim["evaluated_flows"] == 200
         assert sim["action_counts"]["ISOLATE_RECOMMENDED"] > 0
 
-        # Every OOD row in the real demo batch must NOT receive isolation
+        # Every OOD row (if present) must NOT receive isolation
         ood_recs = [r for r in sim["recommendations"] if r["is_ood_flagged"]]
-        assert len(ood_recs) == 2
+        assert len(ood_recs) == 0
         for rec in ood_recs:
             assert rec["action"] != "ISOLATE_RECOMMENDED"
             assert rec["containment_allowed"] is False

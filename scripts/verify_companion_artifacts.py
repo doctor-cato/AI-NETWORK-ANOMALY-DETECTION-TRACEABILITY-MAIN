@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Audit and stage NetFlow Sentinel v0.6.0 companion model artifacts on Windows.
+"""Audit and stage NetFlow Sentinel v2 companion model artifacts on Windows.
 
 Verifies SHA-256 digests and manifest linkage across the preprocessor, 4 verified
 ML models (Random Forest, XGBoost, Isolation Forest, Autoencoder), and Validation
-demo CSV bundle without copying or bundling raw NF-UNSW-NB15-v3 dataset files.
+demo CSV bundle on the canonical v2 schema (`canonical-flow-v2-18`).
 """
 
 from __future__ import annotations
@@ -81,19 +81,20 @@ MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
     ),
 }
 
-PREPROCESSOR_REL = Path("artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib")
+PREPROCESSOR_REL = Path("artifacts/preprocessing/v2_flow_preprocessor.joblib")
 PREPROCESSOR_MANIFEST_REL = Path(
-    "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json"
+    "reports/preprocessing/v2_flow_preprocessing_manifest.json"
 )
-SPLIT_MANIFEST_REL = Path("data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+SPLIT_MANIFEST_REL = Path("data/V2_SPLIT_MANIFEST.json")
 DEMO_FILES_REL: Tuple[Path, ...] = (
     Path("data/demo/demo_flows.csv"),
     Path("data/demo/demo_labels.csv"),
     Path("data/demo/demo_manifest.json"),
 )
 EMBEDDED_EXTRA_FILES_REL: Tuple[Path, ...] = (
-    Path("data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"),
-    Path("data/NF_UNSW_NB15_V3_MANIFEST.json"),
+    Path("data/V2_SPLIT_MANIFEST.json"),
+    Path("data/AIT_DATASETS_MANIFEST.json"),
+    Path("data/CTU_SME_11_MANIFEST.json"),
     Path("NOTICE"),
     Path("THIRD_PARTY_NOTICES.md"),
     Path("LICENSE"),
@@ -136,7 +137,7 @@ CLEAN_MACHINE_ENVIRONMENT_TIERS = frozenset(
         "independent_windows_vm",
     }
 )
-_REQUIRED_NOTICE_MARKERS: Tuple[str, ...] = ("NF-UNSW-NB15-v3", "454104", "10.48610/6E0EDA1")
+_REQUIRED_NOTICE_MARKERS: Tuple[str, ...] = ("AIT NetFlow Data Set v2", "10.5281/zenodo.13168643", "CTU-SME-11")
 SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
     "artifacts/models/xgboost/xgboost_manifest.json": "reports/models/xgboost_manifest.json",
     "artifacts/models/autoencoder/autoencoder_manifest.json": "reports/models/autoencoder_manifest.json",
@@ -441,7 +442,7 @@ def verify_distribution_permission(
         if not notice_text.strip() or missing_markers:
             raise RuntimeError(
                 f"BLOCKED — DISTRIBUTION PERMISSION: {rel.as_posix()} is missing required "
-                f"UQ dataset attribution markers {missing_markers}."
+                f"v2 dataset attribution markers {missing_markers}."
             )
     if not (resolved_root / "LICENSE").read_text(encoding="utf-8", errors="replace").strip():
         raise RuntimeError("BLOCKED — DISTRIBUTION PERMISSION: LICENSE file must not be empty.")
@@ -454,13 +455,13 @@ def verify_distribution_permission(
         )
     auth_doc = _read_json_dict(auth_manifest_path, "DISTRIBUTION_AUTHORIZATION.json")
     if (
-        auth_doc.get("schema_version") != 1
-        or auth_doc.get("dataset") != "NF-UNSW-NB15-v3"
-        or str(auth_doc.get("dataset_license_id", "")).strip() != "454104"
-        or str(auth_doc.get("dataset_doi", "")).strip() != "10.48610/6E0EDA1"
+        auth_doc.get("schema_version") not in (1, 2)
+        or auth_doc.get("dataset") != "NetFlow-Sentinel-v2-MultiSource"
+        or str(auth_doc.get("dataset_license_id", "")).strip() not in {"CC-BY-4.0", "CC BY 4.0"}
+        or str(auth_doc.get("dataset_doi", "")).strip() != "10.5281/zenodo.13168643"
     ):
         raise RuntimeError(
-            "BLOCKED — DISTRIBUTION PERMISSION: Invalid DISTRIBUTION_AUTHORIZATION.json header."
+            "BLOCKED — DISTRIBUTION PERMISSION: Invalid v2 DISTRIBUTION_AUTHORIZATION.json header."
         )
 
     if norm_scope == "non-commercial-academic-approved":
@@ -514,11 +515,10 @@ def verify_distribution_permission(
             )
         if pub_auth.get("approved") is not True or pub_auth.get("status") != "APPROVED":
             raise RuntimeError(
-                "BLOCKED — DISTRIBUTION PERMISSION: Public distribution of NF-UNSW-NB15-v3 "
+                "BLOCKED — DISTRIBUTION PERMISSION: Public distribution of v2 "
                 "derived models/demo CSV is NOT authorized "
                 f"(status={pub_auth.get('status')!r}, approved={pub_auth.get('approved')!r}). "
-                "UQ License ID 454104 forbids commercial use and does not auto-authorize public "
-                "binary redistribution without verifiable authorization evidence."
+                "Requires verifiable authorization evidence and maintainer signoff."
             )
         legal_basis = pub_auth.get("legal_basis")
         if not isinstance(legal_basis, str) or legal_basis not in APPROVED_PUBLIC_LEGAL_BASES:
@@ -552,11 +552,11 @@ def verify_distribution_permission(
 
         if (
             pub_auth.get("requires_attribution_notices") is not True
-            or pub_auth.get("forbids_commercial_use") is not True
+            or not isinstance(pub_auth.get("forbids_commercial_use"), bool)
         ):
             raise RuntimeError(
-                "BLOCKED — DISTRIBUTION PERMISSION: Authorization must preserve attribution and "
-                "non-commercial constraints."
+                "BLOCKED — DISTRIBUTION PERMISSION: Authorization must preserve attribution "
+                "requirements and explicit commercial-use policy boolean."
             )
 
         covered = pub_auth.get("covered_artifacts")
@@ -618,8 +618,8 @@ def verify_distribution_permission(
         "legal_basis": legal_basis,
         "maintainer_approver": maintainer_approver,
         "evidence_ref": evidence_ref,
-        "dataset_license": "UQ-454104-Permitted-Re-Use-NonCommercial",
-        "citation_doi": "10.48610/6E0EDA1",
+        "dataset_license": str(auth_doc.get("dataset_license_id") or "CC-BY-4.0"),
+        "citation_doi": str(auth_doc.get("dataset_doi") or "10.5281/zenodo.13168643"),
         "notices_verified": ["NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSE"],
         "governance_manifest": DISTRIBUTION_AUTH_MANIFEST_REL.as_posix(),
     }
@@ -4676,13 +4676,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--distribution-scope",
         type=str,
         default="private-build-only",
-        help="Distribution permission scope for embedded NF-UNSW-NB15-v3 artifacts.",
+        help="Distribution permission scope for embedded NetFlow Sentinel v2 artifacts.",
     )
     parser.add_argument(
         "--verify-distribution-permission",
         type=str,
         default=None,
-        help="Verify distribution permission gate for embedded NF-UNSW-NB15-v3 artifacts.",
+        help="Verify distribution permission gate for embedded NetFlow Sentinel v2 artifacts.",
     )
     parser.add_argument(
         "--target-channel",

@@ -48,44 +48,54 @@ class TestAttackTaxonomy:
     def test_taxonomy_harmonization(self):
         assert harmonize_attack_label("benign") == "Benign"
         assert harmonize_attack_label("0") == "Benign"
-        assert harmonize_attack_label("portscan") == "Reconnaissance"
-        assert harmonize_attack_label("sqli") == "Exploits"
-        assert harmonize_attack_label("dos") == "DoS"
-        assert harmonize_attack_label("worm") == "Worms"
-        assert harmonize_attack_label("backdoor") == "Backdoors"
-        assert harmonize_attack_label("unknown_strange_traffic") == "Suspicious"
+        assert harmonize_attack_label("service_scan") == "Reconnaissance"
+        assert harmonize_attack_label("online_cracking") == "Credential_Attack"
+        assert harmonize_attack_label("webshell") == "Exploitation_And_C2"
+        assert harmonize_attack_label("check_whoami") == "Post_Exploitation_Discovery"
+        assert harmonize_attack_label("dnsteal") == "Data_Exfiltration"
+        assert harmonize_attack_label("malicious", detailed_label="C2") == "Exploitation_And_C2"
+        assert harmonize_attack_label("background") == "Unmapped"
+        assert harmonize_attack_label("unknown_strange_traffic") == "Unmapped"
 
     def test_label_not_in_ml_input_vector(self):
         adapter = UnifiedNetFlowAdapter()
         raw = {
-            "FLOW_START_MILLISECONDS": 1604563200000,
-            "IPV4_SRC_ADDR": "192.168.1.100",
-            "IPV4_DST_ADDR": "10.0.0.1",
-            "Attack": "Reconnaissance",
-            "Label": 1,
+            "timestamp_ms": 1604563200000,
+            "duration_ms": 120.0,
+            "source_ip": "192.168.1.100",
+            "source_port": 44321,
+            "dest_ip": "10.0.0.1",
+            "dest_port": 80,
+            "protocol_num": 6,
+            "bytes_in": 1500,
+            "bytes_out": 4200,
+            "pkts_in": 10,
+            "pkts_out": 12,
+            "raw_label": "service_scan",
+            "label_binary": 1,
         }
         event = adapter.adapt_record(raw)
-        if event.ml_features:
-            assert "Attack" not in event.ml_features
-            assert "Label" not in event.ml_features
+        assert event.ml_features is not None
+        assert "raw_label" not in event.ml_features
+        assert "label_binary" not in event.ml_features
+        assert "attack_category" not in event.ml_features
 
 
 class TestAdapters:
     def test_unified_netflow_adapter(self):
         adapter = UnifiedNetFlowAdapter()
         raw = {
-            "FLOW_START_MILLISECONDS": 1604563200000,
-            "FLOW_DURATION_MILLISECONDS": 120.0,
-            "IPV4_SRC_ADDR": "192.168.1.100",
-            "IPV4_DST_ADDR": "192.168.1.10",
-            "L4_SRC_PORT": 44321,
-            "L4_DST_PORT": 80,
-            "PROTOCOL": 6,
-            "IN_BYTES": 1500,
-            "OUT_BYTES": 4200,
-            "IN_PKTS": 10,
-            "OUT_PKTS": 12,
-            "TCP_FLAGS": 24,
+            "timestamp_ms": 1604563200000,
+            "duration_ms": 120.0,
+            "source_ip": "192.168.1.100",
+            "dest_ip": "192.168.1.10",
+            "source_port": 44321,
+            "dest_port": 80,
+            "protocol_num": 6,
+            "bytes_in": 1500,
+            "bytes_out": 4200,
+            "pkts_in": 10,
+            "pkts_out": 12,
         }
         event = adapter.adapt_record(raw)
         assert event.event_kind == EventKind.FLOW
@@ -93,7 +103,7 @@ class TestAdapters:
         assert event.dest_port == 80
         assert event.flow_metrics is not None
         assert event.flow_metrics.bytes_in == 1500
-        assert event.flow_metrics.tcp_flags == 24
+        assert event.is_ml_complete is True
 
     def test_application_dns_adapter(self):
         adapter = ApplicationDNSAdapter()

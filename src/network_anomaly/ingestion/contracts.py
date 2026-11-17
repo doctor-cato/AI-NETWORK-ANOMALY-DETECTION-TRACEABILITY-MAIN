@@ -167,16 +167,16 @@ def create_dashboard_view_model(decision: GateDecision, source_name: str) -> Das
 
     if decision.can_proceed_to_ml and tier == ValidationStatus.MODEL_VALIDATED.value:
         badge_color = "green"
-        summary = "Model Validated: Full 47-feature inference active with quantitative benchmark."
+        summary = "Model Validated: Full 18-feature canonical-flow-v2-18 inference active with quantitative benchmark."
     elif decision.can_proceed_to_ml:
         badge_color = "blue"
-        summary = "Compatible: Full 47-feature inference active (domain validation unverified)."
+        summary = "Compatible: Full 18-feature canonical-flow-v2-18 inference active (domain validation unverified)."
     elif tier == ValidationStatus.SEMANTICALLY_COMPATIBLE.value:
         badge_color = "yellow"
         summary = "Semantically Compatible: Awaiting empirical benchmark validation."
     elif eligibility == InferenceEligibility.FEATURE_INCOMPATIBLE.value:
         badge_color = "yellow"
-        summary = "Telemetry Only: Lacks 47 micro-features. Routed to Trace and Risk engines."
+        summary = "Telemetry Only: Lacks canonical 18-feature flow contract. Routed to Trace and Risk engines."
     elif eligibility == InferenceEligibility.ABSTAINED.value:
         badge_color = "orange"
         summary = "Abstained: Out-of-distribution values detected. Inference suppressed for safety."
@@ -219,7 +219,7 @@ def route_to_trace_engine(
         in_pkts=event.metrics.in_pkts,
         flow_duration_ms=event.metrics.flow_duration_ms,
         timestamp=event.trace_metadata.get(
-            "FLOW_START_MILLISECONDS",
+            "timestamp_ms",
             event.trace_metadata.get("timestamp", event.trace_metadata.get("start")),
         ),
         trace_metadata=event.trace_metadata,

@@ -1,0 +1,6 @@
+timestamp_ms,source_ip,source_port,dest_ip,dest_port,protocol_num,duration_ms,bytes_in,bytes_out,pkts_in,pkts_out,attack_category,label_binary
+1642204800000,192.168.1.100,52314,192.168.1.10,80,6,150.0,1240,4520,10,12,Benign,0
+1642204805000,192.168.1.105,44122,192.168.1.10,80,6,20.0,350,120,4,3,Reconnaissance,1
+1642204810000,192.168.1.105,44124,192.168.1.10,80,6,12.0,890,240,6,4,Exploitation_And_C2,1
+1642204815000,192.168.1.10,48992,10.0.0.99,4444,6,85.0,45000,1200,50,20,Post_Exploitation_Discovery,1
+1642204820000,192.168.1.10,51234,198.51.100.5,53,17,45.0,125000,450,100,10,Data_Exfiltration,1

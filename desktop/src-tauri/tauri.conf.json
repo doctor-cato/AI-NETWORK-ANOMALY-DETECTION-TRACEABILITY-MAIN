@@ -42,8 +42,9 @@
     "resources": {
       "../../reports/models/*_manifest.json": "reports/models/",
       "../../reports/preprocessing/*_manifest.json": "reports/preprocessing/",
-      "../../data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json": "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-      "../../data/NF_UNSW_NB15_V3_MANIFEST.json": "data/NF_UNSW_NB15_V3_MANIFEST.json",
+      "../../data/V2_SPLIT_MANIFEST.json": "data/V2_SPLIT_MANIFEST.json",
+      "../../data/AIT_DATASETS_MANIFEST.json": "data/AIT_DATASETS_MANIFEST.json",
+      "../../data/CTU_SME_11_MANIFEST.json": "data/CTU_SME_11_MANIFEST.json",
       "../../NOTICE": "NOTICE",
       "../../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
       "../../LICENSE": "LICENSE"

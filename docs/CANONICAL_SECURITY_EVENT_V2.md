@@ -1,88 +1,64 @@
 # NetFlow Sentinel v2.0 — Canonical Security Event & Feature Contract Specification
 
-> **Đặc tả hợp đồng dữ liệu chuẩn tắc (Issue #79 — Milestone M6.1)**  
-> **Phiên bản:** 2.0.0-contract  
-> **Module thực thi:** `src/network_anomaly/canonical/`
+> **Đặc tả hợp đồng dữ liệu chuẩn tắc (Issue #79 — Milestone M6.1)**
+> **Phiên bản:** 2.0.0-contract
+> **Module thực thi:** `src/network_anomaly/canonical/`, `src/network_anomaly/data/v2_schema.py`
 
 ---
 
 ## 1. Mục tiêu và Nguyên tắc Thiết kế
 
 Trong kiến trúc NetFlow Sentinel v2.0, dữ liệu được thu thập từ nhiều nguồn dị thể:
-- Network Flow (NF-UNSW-NB15-v3, AIT NetFlow, NetFlow v9/IPFIX, PCAP)
-- Application Logs (DNS query/response, Web/HTTP access logs)
-- Identity & System Logs (Linux auth, Windows Security/Sysmon, VPN)
+- **Network Flow:** `AIT-NDS-v2` (Tstat), `CTU-SME-11` (Zeek `conn.log.labeled`), NetFlow v9/IPFIX, PCAP-to-flow.
+- **Application Logs:** DNS query/response, Web/HTTP access logs (`AIT-LDS-v2.1`, Zeek, Nginx/Apache).
+- **Identity, Alert & System Logs:** Linux auth/audit, VPN, Windows Security/Sysmon, `AIT-ADS`.
 
-Để đảm bảo tính nhất quán trong suy luận AI, tính toán Vector hành vi, định tuyến Rủi ro và truy vết Chứng cứ, toàn bộ dữ liệu đi vào hệ thống phải tuân theo hợp đồng dữ liệu **`CanonicalSecurityEvent` v2.0**.
+Toàn bộ dữ liệu đi vào hệ thống tuân theo hợp đồng dữ liệu **`CanonicalSecurityEvent` v2.0** và hợp đồng đặc trưng ML **`canonical-flow-v2-18`**.
 
 ### Nguyên tắc Bất biến:
-1. **Bảo tồn Nguồn gốc (Provenance Preservation):** Mỗi sự kiện phải mang `raw_provenance` chỉ rõ tệp nguồn, vị trí dòng/offset và adapter đã xử lý.
-2. **Nghiêm cấm Impute Ngầm (Strictly No Implicit Imputation):** Nếu một sự kiện không phải NetFlow hoặc thiếu bất kỳ đặc trưng nào trong số 47 đặc trưng ML chuẩn, sự kiện đó phải được đánh dấu `is_ml_complete = False` và từ chối suy luận trực tiếp; tuyệt đối không được tự động điền giá trị 0 hoặc mean để ép suy luận.
-3. **Định dạng Thời gian Chuẩn tắc:** Timestamp bắt buộc có timezone UTC (`ISO-8601`).
-4. **Phân định Rõ Ràng giữa Network Tuples và Application Payload:** Đảm bảo khả năng tương thích cao với cả sự kiện có IP và sự kiện hệ thống nội bộ.
+1. **Bảo tồn Nguồn gốc (Provenance Preservation):** Mỗi sự kiện mang `raw_provenance` chỉ rõ tệp nguồn, dòng/offset và adapter đã xử lý.
+2. **Nghiêm cấm Impute Ngầm (Strictly No Implicit Imputation):** Nếu sự kiện không phải NetFlow hai chiều hợp lệ hoặc thiếu bất kỳ trường cơ sở nào của `canonical-flow-v2-18`, sự kiện phải gắn `is_ml_complete = False` và bị từ chối suy luận ML trực tiếp; tuyệt đối không điền 0 hoặc mean/median để ép suy luận.
+3. **Định dạng Thời gian Chuẩn tắc:** Timestamp chuẩn UTC (`ISO-8601` / `timestamp_ms`).
+4. **Cách ly Tuyệt đối Metadata & Target:** 5 cột trace metadata (`timestamp_ms`, `source_ip`, `dest_ip`, `source_port`, `dest_port`), 5 cột provenance và 4 cột nhãn không bao giờ lọt vào ma trận đặc trưng `X`.
 
 ---
 
 ## 2. Lược đồ `CanonicalSecurityEvent` (Schema Specification)
 
-### 2.1. Các trường Cốt lõi (Core Header)
-- `event_id` (`str`): UUID v4 duy nhất cho mỗi sự kiện.
-- `schema_version` (`str`): Cố định `"2.0.0"`.
-- `event_timestamp` (`datetime`): Thời điểm xảy ra sự kiện, chuẩn UTC ISO-8601.
-- `event_kind` (`enum`): Một trong các giá trị:
-  - `flow`: Lưu lượng mạng luồng NetFlow / IPFIX / PCAP.
-  - `dns`: Bản ghi truy vấn/phản hồi DNS.
-  - `web`: Bản ghi truy cập HTTP / Web API.
-  - `auth`: Bản ghi xác thực người dùng / VPN / SSH.
-  - `system`: Bản ghi tiến trình hệ thống / Audit / Sysmon.
-- `source_id` (`str`): Định danh duy nhất của nguồn cấp dữ liệu (ví dụ: `source:nf-unsw-nb15-v3`, `source:ait-syslog`).
-- `entity_id` (`Optional[str]`): Định danh thực thể (máy chủ, tài khoản, thiết bị) phục vụ liên kết hành vi độc lập IP.
+### 2.1. Core Header
+- `event_id` (`str`): UUID duy nhất cho mỗi sự kiện.
+- `schema_version` (`str`): `"2.0.0"`.
+- `event_timestamp` (`datetime`): Thời điểm sự kiện theo UTC ISO-8601.
+- `event_kind` (`enum`): `flow`, `dns`, `web`, `auth`, `system`.
+- `source_id` (`str`): Định danh nguồn (ví dụ `source:ait-nds-v2`, `source:ctu-sme-11`, `source:ait-lds-v2.1`, `source:netflow-ipfix-live`).
+- `entity_id` (`Optional[str]`): Định danh thực thể phục vụ liên kết hành vi độc lập IP.
 
-### 2.2. Network 5-Tuple (Tùy chọn theo loại sự kiện)
-- `source_ip` (`Optional[str]`): Địa chỉ IPv4 hoặc IPv6 nguồn.
-- `source_port` (`Optional[int]`): Cổng nguồn $[0, 65535]$.
-- `dest_ip` (`Optional[str]`): Địa chỉ IPv4 hoặc IPv6 đích.
-- `dest_port` (`Optional[int]`): Cổng đích $[0, 65535]$.
-- `protocol` (`Optional[str]`): Giao thức mạng (TCP, UDP, ICMP...).
+### 2.2. Network 5-Tuple & Specialized Payloads
+- **5-Tuple:** `source_ip`, `source_port` (`[0, 65535]`), `dest_ip`, `dest_port` (`[0, 65535]`), `protocol`.
+- **Payloads:** `flow_metrics` (`duration_ms`, `bytes_in`, `bytes_out`, `pkts_in`, `pkts_out`), `dns_data`, `http_data`, `auth_data`, `system_data`.
 
-### 2.3. Specialized Payloads
-- `flow_metrics`: `duration_ms`, `bytes_in`, `bytes_out`, `pkts_in`, `pkts_out`, `tcp_flags`.
-- `dns_data`: `query_name`, `query_type`, `query_id`, `rcode`, `ttl_answer`.
-- `http_data`: `method`, `url`, `status_code`, `user_agent`, `content_type`.
-- `auth_data`: `username`, `auth_result` (`SUCCESS`, `FAILURE`, `CHALLENGE`), `service`.
-- `system_data`: `process_name`, `process_id`, `action`, `return_code`.
-
-### 2.4. Provenance & Validation Gate
-- `raw_provenance`:
-  - `source_file` (`str`): Tệp gốc hoặc tên giao diện mạng.
-  - `line_or_offset` (`Optional[int]`): Dòng hoặc byte offset.
-  - `source_checksum` (`Optional[str]`): SHA-256 tệp dữ liệu.
-  - `adapter_name` (`str`): Tên adapter xử lý (ví dụ: `NetFlowV3Adapter`, `ZeekDNSAdapter`).
-- `is_ml_complete` (`bool`): `True` khi đủ 47 đặc trưng ML hợp lệ; `False` nếu thiếu hoặc không áp dụng.
+### 2.3. Provenance & Validation Gate
+- `raw_provenance`: `source_file`, `line_or_offset`, `source_checksum`, `adapter_name`.
+- `is_ml_complete` (`bool`): `True` khi đủ 18 đặc trưng `canonical-flow-v2-18` hữu hạn và hợp lệ vật lý; `False` nếu thiếu hoặc là log ứng dụng/hệ thống.
 - `validation_status` (`ValidationStatus`): `VALID`, `FEATURE_INCOMPLETE`, `TIMESTAMP_INVALID`, `OUT_OF_BOUNDS`, `REJECTED`.
 
 ---
 
-## 3. Hợp đồng Đặc trưng Máy học `FeatureContract`
+## 3. Hợp đồng Đặc trưng Máy học: `canonical-flow-v2-18`
 
-Hợp đồng `FeatureContract` quy định giao ước bất biến đối với các mô hình AI:
-
-### 3.1. Hợp đồng Cơ sở: `nf-unsw-nb15-v3-baseline-47`
-- **Phiên bản:** `2.0.0`
-- **Danh sách:** Đúng 47 đặc trưng số hóa (loại trừ 6 metadata và 2 nhãn nhị phân/đa lớp).
-- **Hành vi Kiểm chứng (`validate_features`):**
-  - Mọi giá trị phải chuyển đổi được sang `float`.
-  - Giá trị `NaN`, `+Inf`, `-Inf` bị coi là không hợp lệ và trả về `(False, [features_loi])`.
-  - **Hành vi Trích xuất (`extract_vector`):** Ném ngoại lệ `ValueError` ngay lập tức nếu thiếu bất kỳ đặc trưng nào.
+- **Định danh hợp đồng:** `canonical-flow-v2-18` (`FEATURE_CONTRACT_VERSION = "2.0.0"`).
+- **Danh sách đầy đủ 18 đặc trưng (`ML_FEATURE_COLUMNS`):**
+  - **6 Base Observed Flow Fields:** `duration_ms`, `bytes_in`, `bytes_out`, `pkts_in`, `pkts_out`, `protocol_num`.
+  - **12 Derived Flow-Dynamics Features:** `total_bytes`, `total_pkts`, `bytes_in_ratio`, `pkts_in_ratio`, `bytes_per_pkt_in`, `bytes_per_pkt_out`, `bytes_per_sec_in`, `bytes_per_sec_out`, `pkts_per_sec`, `has_response`, `is_tcp`, `is_udp`.
+- **Hành vi Kiểm chứng (`validate_feature_selection` & `compute_flow_features_from_base`):**
+  - Từ chối ngay lập tức các cột rò rỉ (`timestamp_ms`, `source_ip`, `dest_ip`, `source_port`, `dest_port`, `label_binary`, `attack_category`, `raw_label`, `label_status`, `role_cli`, `uid`, `Label`, `Attack`, `MIN_TTL`...).
+  - Giá trị âm, `NaN`, `+Inf`, `-Inf`, port/protocol ngoài miền bị từ chối fail-closed (`ValueError`).
 
 ---
 
 ## 4. Kiểm thử Hợp đồng (Contract Tests)
 
-Toàn bộ các điều kiện của hợp đồng được tự động kiểm thử tại:
-- `tests/contract/test_canonical_security_event_v2.py`:
-  - `test_canonical_security_event_v2_flow`: Khởi tạo và kiểm tra luồng mạng.
-  - `test_canonical_security_event_v2_other_kinds`: Khởi tạo DNS, Web, Auth, System.
-  - `test_port_validation`: Bắt lỗi và từ chối port ngoài phạm vi.
-  - `test_feature_contract_validation_and_no_imputation`: Kiểm tra từ chối bản ghi thiếu feature, chặn impute ngầm.
-  - `test_v1_legacy_row_compatibility`: Chứng minh bản ghi 55 cột v1.0.0 chuyển đổi mượt mà sang v2.0.
+- `tests/contract/test_canonical_security_event_v2.py`
+- `tests/contract/test_canonical_event.py`
+- `tests/unit/test_v2_migration_guards.py`
+- `tests/unit/test_anti_imputation_and_label_integrity.py`

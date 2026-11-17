@@ -1,160 +1,54 @@
-# Source & Feature Compatibility Matrix (Issue #46)
+# Source & Feature Compatibility Matrix — NetFlow Sentinel v2 (`canonical-flow-v2-18`)
 
-Tài liệu kiểm toán tính tương thích nguồn dữ liệu mạng và ánh xạ 47 đặc trưng ML phục vụ:
-1. Multi-Source Ingestion & Adapter Architecture (Milestone M6).
-2. Out-of-Distribution & Prediction Abstention Policy.
-3. Hợp đồng định tuyến dữ liệu sang Trace Engine (#24) và Risk Engine (#32).
+Tài liệu kiểm toán tính tương thích nguồn dữ liệu mạng và ánh xạ **18 đặc trưng chuẩn tắc `canonical-flow-v2-18`** phục vụ:
+1. Multi-Source Ingestion & Adapter Architecture (`src/network_anomaly/ingestion/`).
+2. Out-of-Distribution & Fail-Closed Prediction Abstention Policy.
+3. Định tuyến dữ liệu phi-NetFlow (`route_only=True`) sang Trace Engine và Risk Engine mà **không impute ngầm**.
+
+> Tài liệu tương thích 47 đặc trưng cũ (`NF-UNSW-NB15-v3`) đã ngừng sử dụng và lưu trữ tại [`docs/historical/nf_unsw_nb15_v3/`](historical/nf_unsw_nb15_v3/).
 
 ---
 
-## 1. Hệ thống Phân định Trạng thái Dữ liệu & Ràng buộc Chứng cứ Benchmark
-
-Hệ thống phân định độc lập 6 trạng thái kiểm chứng và quyết định suy luận:
+## 1. Hệ thống Phân định Trạng thái Dữ liệu & Ràng buộc Chứng cứ
 
 | Mã Trạng thái | Điều kiện Kỹ thuật | Trạng thái Suy luận (`eligibility`) | Hành vi Hệ thống |
 |---|---|---|---|
-| `PARSEABLE` | Định dạng tệp vật lý (CSV, JSON, TSV, PCAP) giải mã thành công; không lỗi cú pháp. | `SCHEMA_INVALID` | Chuyển bản ghi sang bộ chuyển đổi (Adapter). |
-| `SCHEMA_COMPATIBLE` | Tệp đủ các trường bắt buộc và đúng kiểu dữ liệu theo lược đồ nguồn trong `SourceRegistry`. | `FEATURE_INCOMPLETE` / `FEATURE_INCOMPATIBLE` | Bản ghi chuẩn hóa thành `CanonicalNetworkEvent`. Chưa đủ 47 đặc trưng ML. |
-| `SEMANTICALLY_COMPATIBLE` | Đủ 47 đặc trưng ML có cùng ngữ nghĩa, đơn vị đo và hướng luồng; dữ liệu finite (không NaN/Inf). | `VALIDATION_NOT_VERIFIED` | Đủ điều kiện kỹ thuật nhưng **chưa có chứng cứ benchmark xác thực**. Mặc định bị chặn suy luận chứng nhận (`can_proceed_to_ml=False`). |
-| `MODEL_VALIDATED` | Cặp (mô hình, preprocessor, nguồn dữ liệu) có `BenchmarkEvidence` hợp lệ với SHA-256 khớp và đạt ngưỡng chấp thuận (Recall $\ge 85\%$, FPR $\le 5\%$). | `PREDICTION_AVAILABLE` | **Cho phép Inference chứng nhận.** Xác thực độ tin cậy thực nghiệm. |
-| `BENCHMARK_FAILED` | Đã chạy benchmark thực nghiệm nhưng không đạt ngưỡng chấp thuận (ví dụ: Recall = 0.0 hoặc FPR > 5%), hoặc hash model/preprocessor không khớp. | `BENCHMARK_UNSATISFACTORY` | **Chặn Inference fail-closed.** Chuyển sang Trace và Risk engines. |
-| `ABSTAINED` | Vi phạm bất biến mạng vật lý (port ngoài $[0, 65535]$, protocol ngoài $[0, 255]$, duration âm, counter âm, TTL đảo ngược) hoặc tỷ lệ trôi dạt shortcut $\ge 50\%$. | `ABSTAINED` | **Từ chối suy luận an toàn (Fail-closed Prediction Abstention).** Ngăn ngừa cảnh báo giả và phán đoán sai. |
-
-### 1.1. Ràng buộc Chứng cứ Benchmark (`BenchmarkEvidence`)
-Chứng cứ benchmark được định danh phiên bản và gắn kết chặt chẽ với:
-- `model_identifier` & `model_artifact_sha256` (khóa cứng SHA-256 của model binary).
-- `preprocessor_artifact_sha256` (khóa cứng SHA-256 của preprocessor binary).
-- `feature_contract_version` (khóa cứng phiên bản hợp đồng đặc trưng).
-- `dataset_name`, `dataset_version`, `dataset_sha256`.
-- `evaluation_protocol`, `metrics` và `acceptance_criteria`.
-- Mô hình khác hoặc preprocessor khác tuyệt đối không được tự động kế thừa chứng cứ cũ; bất kỳ sự sai lệch hash nào đều kích hoạt `BENCHMARK_FAILED`.
+| `PARSEABLE` | Tệp vật lý (CSV, TSV, JSONL, Zeek log) giải mã thành công; không lỗi cú pháp. | `SCHEMA_INVALID` | Chuyển bản ghi sang bộ chuyển đổi (Adapter). |
+| `SCHEMA_COMPATIBLE` | Tệp đủ trường định danh/metadata theo lược đồ nguồn trong `SourceRegistry`. | `FEATURE_INCOMPLETE` / `FEATURE_INCOMPATIBLE` | Chuẩn hóa thành `CanonicalNetworkEvent` / `CanonicalSecurityEvent`. Chưa đủ 18 đặc trưng ML `canonical-flow-v2-18`. |
+| `SEMANTICALLY_COMPATIBLE` | Đủ 18 đặc trưng `canonical-flow-v2-18` có cùng ngữ nghĩa, đơn vị đo (`ms`, `bytes`, `packets`), hướng luồng hai chiều; giá trị hữu hạn (`finite`). | `VALIDATION_NOT_VERIFIED` | Đủ điều kiện kỹ thuật nhưng chưa có chứng cứ benchmark gắn SHA-256 trên nguồn đó. |
+| `MODEL_VALIDATED` | Cặp (mô hình, preprocessor, nguồn dữ liệu) có chứng cứ benchmark khớp SHA-256 và `feature_contract_version == "canonical-flow-v2-18"`. | `PREDICTION_AVAILABLE` | **Cho phép Inference chứng nhận** (hiện chỉ áp dụng cho `Random Forest` trên `AIT-NDS-v2`; các mô hình/nguồn khác gắn `RESEARCH_ONLY` hoặc `BLOCKED`). |
+| `BENCHMARK_FAILED` | Đã chạy benchmark thực nghiệm nhưng suy giảm nghiêm trọng hoặc không đạt ngưỡng chấp thuận (ví dụ zero-shot domain shift), hoặc sai lệch SHA-256. | `BENCHMARK_UNSATISFACTORY` | **Chặn Inference chứng nhận fail-closed**; chỉ dùng metadata cho Trace & Risk Engine hoặc phân tích nghiên cứu. |
+| `ABSTAINED` | Vi phạm bất biến vật lý (port ngoài `[0, 65535]`, protocol ngoài `[0, 255]`, `duration_ms < 0`, byte/packet âm, `NaN`/`Inf`, tỷ lệ ngoài `[0, 1]`). | `ABSTAINED` | **Từ chối suy luận an toàn (`ABSTAINED_OOD`).** |
 
 ---
 
-## 2. Phân loại Mức độ Tương thích 47 Đặc trưng ML
+## 2. Hợp đồng 18 Đặc trưng ML Chuẩn tắc (`canonical-flow-v2-18`)
 
-Mỗi đặc trưng trong số 47 đặc trưng ML chuẩn hóa (`nf-unsw-nb15-v3-baseline-47`) được đánh giá theo 5 cấp độ tương thích khi ánh xạ từ nguồn ngoại vi:
+### 2.1. 6 Trường Cơ sở Quan sát Trực tiếp (`BASE_FLOW_FEATURE_COLUMNS`)
+1. `duration_ms` — Thời lượng luồng (milliseconds, `>= 0.0`)
+2. `bytes_in` — Số byte chiều client $\to$ server / originator $\to$ responder (`>= 0.0`)
+3. `bytes_out` — Số byte chiều server $\to$ client / responder $\to$ originator (`>= 0.0`)
+4. `pkts_in` — Số gói tin chiều đi (`>= 0.0`)
+5. `pkts_out` — Số gói tin chiều về (`>= 0.0`)
+6. `protocol_num` — Mã giao thức IANA (`[0..255]`, ví dụ TCP=`6`, UDP=`17`, ICMP=`1`)
 
-- **`EXACT`:** Đặc trưng có cùng tên, kiểu dữ liệu, đơn vị đo và thuật toán trích xuất nProbe v3.
-- **`DERIVABLE`:** Đặc trưng không có sẵn trực tiếp nhưng có thể tính toán chính xác 100% bằng công thức xác định từ các trường khác (ví dụ: `FLOW_DURATION_MILLISECONDS = FLOW_END - FLOW_START`).
-- **`APPROXIMATE`:** Đặc trưng có thể ước tính xấp xỉ qua phân tích thống kê (CẢNH BÁO: Không được sử dụng cho mô hình baseline 47 features fail-closed).
-- **`MISSING`:** Đặc trưng hoàn toàn không tồn tại trong nguồn dữ liệu và không thể suy diễn.
-- **`SEMANTIC_MISMATCH`:** Trường có tên tương tự nhưng sai khác về bản chất (lấy mẫu sFlow 1-in-N, cửa sổ tích lũy đám mây 10 phút, luồng đơn chiều thay vì hai chiều).
-
----
-
-## 3. Ma trận Khảo sát Nguồn Dữ liệu Ngoại vi (Source Compatibility Matrix)
-
-| Source ID | Tên Nguồn | Định dạng Vật lý | Số đặc trưng ML khả dụng (trên 47) | Tầng Đạt Được | Trạng thái ML | Hướng Xử lý trong Hệ thống M6 |
-|---|---|---|:---:|---|---|---|
-| `source:nf-v3-canonical` | NetFlow v3 Nội bộ (`NF-UNSW-NB15-v3`) | CSV | **47/47 (100%)** | `MODEL_VALIDATED` | `PREDICTION_AVAILABLE` | **Cho phép Inference trực tiếp.** Đã kiểm nghiệm đạt Recall 99.98%, FPR 0.0016%. |
-
----
-
-## 4. Tích hợp Hợp đồng Dữ liệu Đa nguồn v2.0 (Issue #79)
-
-Trong kiến trúc NetFlow Sentinel v2.0, các nguồn dữ liệu đa nguồn (AIT NetFlow, Zeek DNS, Nginx Web, Auth/Syslog) được phân luồng xử lý theo `CanonicalSecurityEvent` v2:
-
-| Event Kind | Khả năng Suy luận 47-feature Baseline | Quy tắc Xử lý v2.0 | Routing Engine |
-|---|:---:|---|---|
-| **Flow (NF-UNSW-NB15-v3 & AIT NetFlow)** | **Có (47/47)** | Nếu đủ 47 đặc trưng $\to$ `is_ml_complete=True`, gửi đến AI Detection Engine. | `AI Engine` + `Behavioral Engine` |
-| **DNS (Zeek DNS logs)** | **Không (Chuyên biệt)** | Trích xuất domain, query type, TTL; `is_ml_complete=False` (không impute ngầm). | `Behavioral Engine` + `Trace Engine` |
-| **Web (HTTP/Nginx logs)** | **Không (Chuyên biệt)** | Trích xuất URL, status code, method; `is_ml_complete=False`. | `Behavioral Engine` + `Trace Engine` |
-| **Auth / Identity logs** | **Không (Chuyên biệt)** | Trích xuất username, auth outcome, failure count; `is_ml_complete=False`. | `Risk Engine` + `Trace Engine` |
-| **System / Sysmon logs** | **Không (Chuyên biệt)** | Trích xuất process name, action, pid; `is_ml_complete=False`. | `Trace Engine` + `Investigation API` |
-
-> [!IMPORTANT]
-> **Nguyên tắc No-Imputation:** Tuyệt đối không nội suy (impute) các trường NetFlow vào log DNS/Web/Auth để chạy 4 mô hình NetFlow. Các nguồn phi NetFlow chỉ phục vụ tính toán Behavioral Vector, suy luận Risk Score và xâu chuỗi Trace Timeline.
-
-| `source:nf-v3-external` | NetFlow v3 Ngoại vi (`NF-CSE-CIC-IDS2018-v3`, AWS) | CSV | **47/47 (100%)** | `BENCHMARK_FAILED` | `BENCHMARK_UNSATISFACTORY` | **Chặn Inference fail-closed.** Benchmark thực nghiệm thất bại (Recall 0.0, FPR 38.02%) do sụp đổ phím tắt và lệch miền. |
-| `source:netflow-v5` | Cisco NetFlow v5 | Binary / Flow-tools | **6/47 (12.8%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Từ chối Inference (Abstain).** Trích xuất 5-tuple, byte, packet cho Trace Engine (#24). |
-| `source:netflow-v9-ipfix` | Enterprise NetFlow v9 / IPFIX (Cisco, Juniper) | Binary / JSON | **9/47 (19.1%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Từ chối Inference.** Thiếu IAT vi mô và histogram; chuyển sang Risk Engine để tính Volume Anomaly. |
-| `source:pcap` | Packet Capture (PCAP / PCAPNG) | Binary (libpcap) | **47/47 (nếu có Flow Exporter)** | `DERIVABLE` | `PENDING_EXPORTER` | Cần Flow Exporter Engine (nProbe/ipfixprobe) trích xuất luồng hai chiều trước khi suy luận. |
-| `source:zeek-conn` | Zeek Security Log (`conn.log`) | TSV / JSON | **7/47 (14.9%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Không chạy model 47 features.** Dùng `uid`, 5-tuple, duration, proto làm chứng cứ liên kết cho Trace Engine (#24). |
-| `source:suricata-eve` | Suricata EVE Log (`eve.json`) | JSON / JSONL | **7/47 (14.9%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Không chạy model 47 features.** Kết hợp metadata luồng và signature alert cho tương quan sự cố Risk Engine (#32). |
-| `source:aws-vpc-flow` | AWS VPC Flow Logs (Custom/Standard) | TSV / Space-delimited | **4/47 (8.5%)** | `SCHEMA_COMPATIBLE` | `FEATURE_INCOMPATIBLE` | **Từ chối Inference.** Dữ liệu tổng hợp theo cửa sổ 1–10 phút, thiếu đặc trưng gói vi mô. |
-| `source:sflow` | sFlow (RFC 3176) | Binary UDP datagram | **0/47 (0%)** | `PARSEABLE` | `SEMANTIC_MISMATCH` | **Tuyệt đối cấm Inference.** Lấy mẫu 1-in-N phá vỡ hoàn toàn định nghĩa luồng trạng thái (stateful flow). |
+### 2.2. 12 Đặc trưng Động học Luồng Suy diễn Xác định (`DERIVED_FLOW_FEATURE_COLUMNS`)
+Tính bằng `compute_flow_features_from_base()` trong `src/network_anomaly/data/v2_schema.py`:
+- `total_bytes`, `total_pkts`
+- `bytes_in_ratio`, `pkts_in_ratio`
+- `bytes_per_pkt_in`, `bytes_per_pkt_out`
+- `bytes_per_sec_in`, `bytes_per_sec_out`, `pkts_per_sec`
+- `has_response`, `is_tcp`, `is_udp`
 
 ---
 
-## 4. Chi tiết Ánh xạ 47 Đặc trưng ML theo Từng Nguồn
+## 3. Ma trận Tương thích Nguồn Dữ liệu v2
 
-| # | Tên Đặc trưng ML | NetFlow v3 | NetFlow v5 | NetFlow v9/IPFIX | Zeek `conn.log` | AWS VPC Flow | Suricata `eve` |
-|---|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| 1 | `PROTOCOL` | `EXACT` | `EXACT` | `EXACT` | `DERIVABLE` (proto) | `EXACT` | `EXACT` |
-| 2 | `L7_PROTO` | `EXACT` | `MISSING` | `MISSING` | `APPROXIMATE` (service) | `MISSING` | `APPROXIMATE` (app_proto) |
-| 3 | `IN_BYTES` | `EXACT` | `EXACT` (dOctets) | `EXACT` (octetDeltaCount) | `EXACT` (orig_bytes) | `APPROXIMATE` (bytes) | `EXACT` (src_bytes) |
-| 4 | `IN_PKTS` | `EXACT` | `EXACT` (dPkts) | `EXACT` (packetDeltaCount) | `EXACT` (orig_pkts) | `APPROXIMATE` (packets) | `EXACT` (src_pkts) |
-| 5 | `OUT_BYTES` | `EXACT` | `MISSING` | `APPROXIMATE` | `EXACT` (resp_bytes) | `MISSING` | `EXACT` (dst_bytes) |
-| 6 | `OUT_PKTS` | `EXACT` | `MISSING` | `APPROXIMATE` | `EXACT` (resp_pkts) | `MISSING` | `EXACT` (dst_pkts) |
-| 7 | `TCP_FLAGS` | `EXACT` | `EXACT` (tcp_flags) | `EXACT` (tcpControlBits) | `APPROXIMATE` (history) | `APPROXIMATE` (tcp_flags) | `EXACT` (tcp.tcp_flags) |
-| 8 | `CLIENT_TCP_FLAGS` | `EXACT` | `MISSING` | `MISSING` | `APPROXIMATE` | `MISSING` | `APPROXIMATE` |
-| 9 | `SERVER_TCP_FLAGS` | `EXACT` | `MISSING` | `MISSING` | `APPROXIMATE` | `MISSING` | `APPROXIMATE` |
-| 10 | `FLOW_DURATION_MILLISECONDS` | `EXACT` | `DERIVABLE` | `DERIVABLE` | `DERIVABLE` (duration*1000) | `SEMANTIC_MISMATCH` (60s win) | `DERIVABLE` |
-| 11 | `DURATION_IN` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 12 | `DURATION_OUT` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 13 | `MIN_TTL` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 14 | `MAX_TTL` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 15 | `LONGEST_FLOW_PKT` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 16 | `SHORTEST_FLOW_PKT` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 17 | `MIN_IP_PKT_LEN` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 18 | `MAX_IP_PKT_LEN` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 19 | `SRC_TO_DST_SECOND_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 20 | `DST_TO_SRC_SECOND_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 21 | `RETRANSMITTED_IN_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 22 | `RETRANSMITTED_IN_PKTS` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 23 | `RETRANSMITTED_OUT_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 24 | `RETRANSMITTED_OUT_PKTS` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 25 | `SRC_TO_DST_AVG_THROUGHPUT` | `EXACT` | `DERIVABLE` | `DERIVABLE` | `DERIVABLE` | `SEMANTIC_MISMATCH` | `DERIVABLE` |
-| 26 | `DST_TO_SRC_AVG_THROUGHPUT` | `EXACT` | `MISSING` | `MISSING` | `DERIVABLE` | `MISSING` | `DERIVABLE` |
-| 27 | `NUM_PKTS_UP_TO_128_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 28 | `NUM_PKTS_128_TO_256_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 29 | `NUM_PKTS_256_TO_512_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 30 | `NUM_PKTS_512_TO_1024_BYTES` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 31 | `NUM_PKTS_1024_TO_1514_BYTES`| `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 32 | `TCP_WIN_MAX_IN` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 33 | `TCP_WIN_MAX_OUT` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 34 | `ICMP_TYPE` | `EXACT` | `APPROXIMATE` | `EXACT` | `MISSING` | `MISSING` | `MISSING` |
-| 35 | `ICMP_IPV4_TYPE` | `EXACT` | `APPROXIMATE` | `EXACT` | `MISSING` | `MISSING` | `MISSING` |
-| 36 | `DNS_QUERY_ID` | `EXACT` | `MISSING` | `MISSING` | `MISSING` (có ở dns.log) | `MISSING` | `MISSING` |
-| 37 | `DNS_QUERY_TYPE` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 38 | `DNS_TTL_ANSWER` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 39 | `FTP_COMMAND_RET_CODE` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 40 | `SRC_TO_DST_IAT_MIN` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 41 | `SRC_TO_DST_IAT_MAX` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 42 | `SRC_TO_DST_IAT_AVG` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 43 | `SRC_TO_DST_IAT_STDDEV` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 44 | `DST_TO_SRC_IAT_MIN` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 45 | `DST_TO_SRC_IAT_MAX` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 46 | `DST_TO_SRC_IAT_AVG` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-| 47 | `DST_TO_SRC_IAT_STDDEV` | `EXACT` | `MISSING` | `MISSING` | `MISSING` | `MISSING` | `MISSING` |
-
----
-
-## 5. Chính sách Không Điền Giá trị Giả mạo (Anti-Imputation Policy)
-
-1. **Tuyệt đối cấm điền số 0, trung bình (mean), hoặc trung vị (median) vào các trường bị thiếu (`MISSING`) hoặc chứa `NaN`/`Inf` chỉ để ép vượt qua validation schema.**
-2. Việc điền giá trị giả mạo làm méo mó vector đặc trưng 47 chiều, khiến imputer của mô hình gán median của môi trường lab vào môi trường thực tế, gây suy luận sai lệch.
-3. Nếu tệp đầu vào hoặc bản ghi thiếu dù chỉ 1 đặc trưng bắt buộc hoặc chứa giá trị không hợp lệ (NaN, Inf, chuỗi lỗi):
-   - Hệ thống đánh dấu `FEATURE_INCOMPLETE` hoặc `FEATURE_INCOMPATIBLE`.
-   - Cổng quyết định tự động **Từ chối suy luận (`Abstain`)**.
-   - Trích xuất toàn bộ metadata hợp lệ (IP nguồn/đích, Port, Protocol, Timestamp, Duration, Bytes, Packets) chuyển sang **Trace Engine (#24)** và **Risk Engine (#32)** để thực hiện tương quan sự cố không dùng ML.
-
----
-
-## 6. Phân tích Chẩn đoán Đa biến & Cơ chế Lệch miền (Multivariate Diagnostic Analysis)
-
-Kết quả thực nghiệm trên 100.000 dòng `NF-CSE-CIC-IDS2018-v3` (AWS Canada) đối chiếu với `NF-UNSW-NB15-v3` (IXIA Lab):
-
-### A. Sự kiện đã xác minh (Verified Facts)
-1. **Lệch miền TTL:** Trong mẫu kiểm định AWS, 60.708 dòng (60.7%) có `MIN_TTL=0`, 24.551 dòng có `MIN_TTL=128`, và các giá trị còn lại phân bố quanh 100-106. Không có dòng nào nằm trong bộ phím tắt lab `{31, 62, 254, 255}`.
-2. **Họ tấn công `FTP-BruteForce`:** 100% bản ghi (29.980 dòng) đều có `MIN_TTL=0` và `FLOW_DURATION_MILLISECONDS=1.0`.
-3. **Cột & Thứ tự đặc trưng:** Toàn bộ 47 tên cột và kiểu dữ liệu đều khớp tuyệt đối (`EXACT`) giữa hai tập dữ liệu NetFlow v3.
-
-### B. Giả thuyết có bằng chứng thực nghiệm hỗ trợ (Supported Hypotheses)
-1. **Unobserved Telemetry:** Giá trị `MIN_TTL=0` xuất hiện từ việc probe thu thập trên card mạng ảo (tap/veth) của AWS không trích xuất được TTL gói tin khởi tạo hoặc flow timeout mà không có gói SYN, khác biệt hoàn toàn với máy phát phần cứng IXIA PerfectStorm luôn gán TTL cố định.
-2. **Cơ chế suy giảm dự đoán:** Cây quyết định của Random Forest baseline ưu tiên tách nhánh `MIN_TTL` ở những tầng cao nhất. Nhánh `MIN_TTL <= 15` được phân bổ vào Benign trong lab, dẫn đến việc nuốt trọn 29.980 luồng tấn công FTP-BruteForce (Recall = 0.0%). Đồng thời, các luồng Benign thật trên AWS có `MIN_TTL=128` (máy Windows) bị coi là giá trị bất thường và gán nhãn nhầm thành Attack (26.621 FP, FPR = 38.02%).
-
-### C. Yếu tố môi trường cần nghiên cứu thêm (Unproven Factors)
-1. Sự khác biệt về kiến trúc mạng thực tế (độ trễ WAN đám mây so với switch LAN nội bộ phòng thí nghiệm).
-2. Tác động của các họ tấn công khác (DoS, DDoS, Web Attacks) chưa có mặt trong lát cắt 100k dòng lịch sử.
+| Source / Probe | Định dạng | Mức tương thích `canonical-flow-v2-18` | Trạng thái Suy luận ML | Ghi chú Xử lý |
+|---|---|---|---|---|
+| **AIT NetFlow Data Set v2 (`AIT-NDS-v2`)** | Tstat (`tcp_complete`, `tcp_nocomplete`, `udp_complete`) | **18/18 (`EXACT` / `DERIVABLE`)** | `MODEL_VALIDATED` (RF) / `RESEARCH_ONLY` (XGB, IF, AE) | Nguồn huấn luyện & kiểm thử chính (`Train 1,930,219` / `Val 377,704` / `Test 923,292`). |
+| **CTU-SME-11** | Zeek `conn.log.labeled` | **18/18 (`EXACT` / `DERIVABLE`)** | Cross-source External Benchmark (`RESEARCH_ONLY`) | Dùng `orig_ip_bytes` / `resp_ip_bytes`; `duration="-"` ánh xạ tường minh sang `0.0 ms`. |
+| **Live NetFlow v9 / IPFIX (`UDPFlowCollector`)** | Binary / `CanonicalSecurityEvent` | **18/18 (`DERIVABLE`)** | `REAL_MODELS` (qua `RealtimeFeatureExtractor`) | Chỉ suy luận khi đủ 6 trường cơ sở hợp lệ; thiếu trường $\to$ từ chối fail-closed. |
+| **NetFlow v5 / AWS VPC Flow** | CSV / TSV | **Thiếu chiều trả về (`OUT_BYTES` / `OUT_PKTS`)** | `FEATURE_INCOMPATIBLE` | **Không zero-fill.** Chỉ trích xuất metadata cho Behavioral/Risk/Trace. |
+| **DNS / HTTP / Auth / System Logs (`AIT-LDS-v2.1`, Zeek, Suricata)** | JSON / TSV / Syslog | **0/18 (Phi-NetFlow)** | `route_only=True` (`is_ml_complete=False`) | **Tuyệt đối không impute.** Đi thẳng Behavioral Vector, Risk Engine, Trace Engine. |
+| **v1 CSV (`NF-UNSW-NB15-v3`, 55 cột)** | CSV cũ | **REJECTED** | `SCHEMA_INVALID` / Fail-Closed | Ngừng hỗ trợ v1 trên toàn bộ pipeline v2. |

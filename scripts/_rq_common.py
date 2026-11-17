@@ -35,21 +35,21 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from network_anomaly.config import RANDOM_SEED  # noqa: E402
-from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
+from network_anomaly.data.v2_schema import (  # noqa: E402
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
 )
 from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
 
-RAW_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
-DATA_MANIFEST_PATH = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_MANIFEST.json"
-SPLIT_MANIFEST_PATH = PROJECT_ROOT / "data" / "processed" / "nf_unsw_nb15_v3_split_manifest.json"
-INDICES_DIR_PATH = PROJECT_ROOT / "data" / "processed" / "splits"
+PROCESSED_V2_DIR = PROJECT_ROOT / "data" / "processed" / "v2"
+DATA_MANIFEST_PATH = PROJECT_ROOT / "data" / "AIT_DATASETS_MANIFEST.json"
+SPLIT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "splits" / "v2_split_manifest.json"
+INDICES_DIR_PATH = PROCESSED_V2_DIR / "splits"
 PREPROCESSOR_ARTIFACT_PATH = (
-    PROJECT_ROOT / "artifacts" / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    PROJECT_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
 )
 PREPROCESSOR_MANIFEST_PATH = (
-    PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+    PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 )
 
 
@@ -119,10 +119,12 @@ def collect_environment_metadata() -> Dict[str, Any]:
     }
 
 
-def check_nf_unsw_prerequisites() -> Tuple[bool, List[str]]:
+def check_v2_prerequisites() -> Tuple[bool, List[str]]:
     missing: List[str] = []
     for path in (
-        RAW_DATA_PATH,
+        PROCESSED_V2_DIR / "ait_train.csv.gz",
+        PROCESSED_V2_DIR / "ait_val.csv.gz",
+        PROCESSED_V2_DIR / "ait_test.csv.gz",
         DATA_MANIFEST_PATH,
         SPLIT_MANIFEST_PATH,
         INDICES_DIR_PATH / "train_indices.csv.gz",
@@ -144,19 +146,13 @@ def dataset_provenance_summary() -> Dict[str, Any]:
     if SPLIT_MANIFEST_PATH.is_file():
         split_manifest = json.loads(SPLIT_MANIFEST_PATH.read_text(encoding="utf-8"))
     official_source = data_manifest.get("official_source", {})
-    csv_sha256 = split_manifest.get("dataset_sha256")
-    if not csv_sha256:
-        for entry in data_manifest.get("files", []):
-            if str(entry.get("file", "")).endswith("NF-UNSW-NB15-v3.csv"):
-                csv_sha256 = entry.get("sha256")
-                break
     return {
-        "dataset_id": data_manifest.get("dataset", "NF-UNSW-NB15-v3"),
-        "dataset_version": str(data_manifest.get("release_year", "v3")),
-        "doi": official_source.get("doi") or "10.48610/6E0EDA1",
-        "source_url": official_source.get("landing_page")
-        or "https://staff.itee.uq.edu.au/marius/NIDS_datasets/",
-        "dataset_sha256": csv_sha256,
+        "dataset_id": data_manifest.get("dataset", "AIT-NDS-v2"),
+        "dataset_version": "v2",
+        "doi": official_source.get("doi_netflow") or "10.5281/zenodo.13168643",
+        "source_url": official_source.get("landing_page_netflow")
+        or "https://zenodo.org/records/13168643",
+        "dataset_sha256": split_manifest.get("dataset_sha256"),
         "split_protocol": split_manifest.get("split_protocol_version"),
         "split_manifest_sha256": (
             sha256_file(SPLIT_MANIFEST_PATH) if SPLIT_MANIFEST_PATH.is_file() else None
@@ -174,7 +170,6 @@ def load_verified_preprocessor() -> TrainOnlyPreprocessor:
         artifact_path=PREPROCESSOR_ARTIFACT_PATH,
         manifest_path=PREPROCESSOR_MANIFEST_PATH,
         split_manifest_path=SPLIT_MANIFEST_PATH,
-        dataset_path=RAW_DATA_PATH,
     )
 
 
@@ -183,40 +178,27 @@ def load_partition_raw(
     max_rows: Optional[int] = None,
     chunk_size: int = 200_000,
 ) -> Tuple[pd.DataFrame, np.ndarray, pd.Series]:
-    """Load raw feature DataFrame (47 cols), binary Label array, and Attack series."""
-    idx_path = INDICES_DIR_PATH / f"{partition_name}_indices.csv.gz"
-    if not idx_path.is_file():
-        raise FileNotFoundError(f"Missing partition index file: {idx_path}")
-    idx_df = pd.read_csv(idx_path, compression="gzip")
-    indices = idx_df["source_row_index"].to_numpy(dtype=np.int64)
-    if max_rows is not None and len(indices) > max_rows:
-        # Stratified-friendly evenly spaced slice across chronological partition
-        step = max(1, len(indices) // max_rows)
-        indices = indices[::step][:max_rows]
-    target_set = set(indices.tolist())
-    max_idx = int(indices.max()) if len(indices) else -1
+    """Load raw canonical v2 feature DataFrame (18 cols), binary label array, and category series."""
+    part_map = {
+        "train": PROCESSED_V2_DIR / "ait_train.csv.gz",
+        "validation": PROCESSED_V2_DIR / "ait_val.csv.gz",
+        "test": PROCESSED_V2_DIR / "ait_test.csv.gz",
+        "ctu_echo": PROCESSED_V2_DIR / "ctu_echo.csv.gz",
+        "ctu_windows7ad": PROCESSED_V2_DIR / "ctu_windows7ad.csv.gz",
+    }
+    csv_path = part_map.get(partition_name)
+    if csv_path is None or not csv_path.is_file():
+        raise FileNotFoundError(f"Missing processed v2 partition '{partition_name}': {csv_path}")
 
-    usecols = list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
-    collected_frames: List[pd.DataFrame] = []
-    row_offset = 0
-    for chunk in pd.read_csv(
-        RAW_DATA_PATH, usecols=usecols, chunksize=chunk_size, low_memory=False
-    ):
-        chunk_end = row_offset + len(chunk)
-        if row_offset > max_idx:
-            break
-        mask = [idx in target_set for idx in range(row_offset, chunk_end)]
-        if any(mask):
-            collected_frames.append(chunk.loc[mask].copy())
-        row_offset = chunk_end
+    usecols = list(ML_FEATURE_COLUMNS) + ["label_binary", "attack_category"]
+    df = pd.read_csv(csv_path, usecols=usecols, compression="gzip")
+    if max_rows is not None and len(df) > max_rows:
+        step = max(1, len(df) // max_rows)
+        df = df.iloc[::step].head(max_rows).reset_index(drop=True)
 
-    if not collected_frames:
-        raise ValueError(f"Loaded 0 rows for partition '{partition_name}'")
-
-    df = pd.concat(collected_frames, axis=0, ignore_index=True)
     X_df = df[list(ML_FEATURE_COLUMNS)].copy()
-    y_bin = df["Label"].to_numpy(dtype=np.int64)
-    attack_series = df["Attack"].astype(str).fillna("Benign")
+    y_bin = df["label_binary"].to_numpy(dtype=np.int64)
+    attack_series = df["attack_category"].astype(str).fillna("Benign")
     return X_df, y_bin, attack_series
 
 

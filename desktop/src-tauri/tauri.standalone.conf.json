@@ -4,7 +4,7 @@
       "binaries/netflow-sentinel-backend"
     ],
     "resources": {
-      "staged_bundle/artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+      "staged_bundle/artifacts/preprocessing/v2_flow_preprocessor.joblib": "artifacts/preprocessing/v2_flow_preprocessor.joblib",
       "staged_bundle/artifacts/models/random_forest/random_forest_baseline.joblib": "artifacts/models/random_forest/random_forest_baseline.joblib",
       "staged_bundle/artifacts/models/random_forest/random_forest_manifest.json": "artifacts/models/random_forest/random_forest_manifest.json",
       "staged_bundle/artifacts/models/xgboost/xgboost_baseline.joblib": "artifacts/models/xgboost/xgboost_baseline.joblib",

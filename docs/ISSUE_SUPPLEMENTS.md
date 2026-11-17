@@ -1,4 +1,7 @@
-# Bổ sung đề xuất cho GitHub Issues — ĐÃ ÁP DỤNG
+# Bổ sung đề xuất cho GitHub Issues — ĐÃ ÁP DỤNG (Historical M0/v1 Snapshot)
+
+> [!NOTE]
+> **Snapshot Lịch sử:** Tài liệu dưới đây là bản ghi lịch sử từ giai đoạn M0/v1 (`NF-UNSW-NB15-v3`). Kế hoạch & chuẩn mực v2 hiện hành xem tại [`docs/V2_DEPENDENCY_GRAPH.md`](V2_DEPENDENCY_GRAPH.md) và [`docs/adr/ADR-dataset-hard-cutover-v2.md`](adr/ADR-dataset-hard-cutover-v2.md).
 
 **Trạng thái:** Snapshot M0 này chỉ được giữ như lịch sử. Roadmap C0 ngày 2026-10-19 đã
 cập nhật #11, #16, #18–#20, tạo #23–#32 và bổ sung M6/M7. Nội dung “tùy chọn”, M0–M5

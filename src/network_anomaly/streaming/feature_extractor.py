@@ -1,20 +1,16 @@
 """Real-time feature extraction with a strict, zero-imputation contract.
 
-The extractor converts a :class:`CanonicalSecurityEvent` into the canonical 47
-feature vector only when every contract feature is genuinely present in the
-event. It never fills missing values:
+The extractor converts a :class:`CanonicalSecurityEvent` into the canonical v2
+18-feature flow vector (`canonical-flow-v2-18`) only when every required base
+field or full 18-feature mapping is genuinely present and finite:
 
-* ``event.ml_features`` is the authoritative carrier of model-space features.
-  A complete, finite 47-field mapping is accepted as-is.
-* A partial mapping is *not* padded. The event is marked
-  ``NOT_MODEL_READY`` and routed to trace-only handling with the exact list of
-  missing features.
-* When ``ml_features`` is absent, only fields that map one-to-one from decoded
-  flow metrics are derived. With a standard NetFlow v9 template that yields a
-  handful of the 47 features, so the event is (correctly) rejected for ML.
-
-No constant, median, or zero imputation happens here. Imputation, if any, is
-owned by the frozen train-fitted preprocessor downstream.
+* ``event.ml_features`` is accepted as-is when all 18 canonical features are
+  present and finite.
+* When ``ml_features`` is absent, all 18 features are deterministically derived
+  ONLY when all 6 base observed flow fields (``duration_ms``, ``bytes_in``,
+  ``bytes_out``, ``pkts_in``, ``pkts_out``, ``protocol``) are genuinely present.
+* If any required base field is missing or non-finite, the event is marked
+  ``NOT_MODEL_READY`` and routed to trace-only handling without silent imputation.
 """
 
 from __future__ import annotations
@@ -25,20 +21,11 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind, ValidationStatus
-from network_anomaly.canonical.feature_contract import get_baseline_47_feature_contract
-
-# Features that a decoded flow record can legitimately supply one-to-one.
-# L4 ports, IP addresses and timestamps are trace metadata, NOT model features.
-FLOW_METRIC_FEATURE_MAP: Dict[str, str] = {
-    "IN_BYTES": "bytes_in",
-    "IN_PKTS": "pkts_in",
-    "OUT_BYTES": "bytes_out",
-    "OUT_PKTS": "pkts_out",
-    "TCP_FLAGS": "tcp_flags",
-    "FLOW_DURATION_MILLISECONDS": "duration_ms",
-}
-
-PROTOCOL_NUMBERS = {"TCP": 6.0, "UDP": 17.0, "ICMP": 1.0, "ICMPV6": 58.0}
+from network_anomaly.canonical.feature_contract import get_flow_feature_contract_v2
+from network_anomaly.data.v2_schema import (
+    compute_flow_features_from_base,
+    parse_protocol_number,
+)
 
 
 @dataclass
@@ -64,33 +51,45 @@ class ExtractionResult:
 
 
 def derive_flow_features(event: CanonicalSecurityEvent) -> Dict[str, float]:
-    """Derive only the contract features that the event genuinely carries."""
-    derived: Dict[str, float] = {}
+    """Derive canonical v2 features strictly when all 6 base observed fields exist."""
     metrics = event.flow_metrics
-    if metrics is not None:
-        for feature_name, metric_attr in FLOW_METRIC_FEATURE_MAP.items():
-            value = getattr(metrics, metric_attr)
-            if value is not None:
-                derived[feature_name] = float(value)
-    if event.protocol and "PROTOCOL" not in derived:
-        protocol_number = PROTOCOL_NUMBERS.get(event.protocol.upper())
-        if protocol_number is not None:
-            derived["PROTOCOL"] = protocol_number
-    return derived
+    if metrics is None or not event.protocol:
+        return {}
+    required_attrs = (
+        metrics.duration_ms,
+        metrics.bytes_in,
+        metrics.bytes_out,
+        metrics.pkts_in,
+        metrics.pkts_out,
+    )
+    if any(v is None for v in required_attrs):
+        return {}
+    try:
+        proto_num = parse_protocol_number(event.protocol)
+        return compute_flow_features_from_base(
+            duration_ms=float(metrics.duration_ms),  # type: ignore[arg-type]
+            bytes_in=float(metrics.bytes_in),  # type: ignore[arg-type]
+            bytes_out=float(metrics.bytes_out),  # type: ignore[arg-type]
+            pkts_in=float(metrics.pkts_in),  # type: ignore[arg-type]
+            pkts_out=float(metrics.pkts_out),  # type: ignore[arg-type]
+            protocol_num=proto_num,
+        )
+    except (ValueError, TypeError):
+        return {}
 
 
 class RealtimeFeatureExtractor:
-    """Extracts the exact 47 baseline features or rejects the event explicitly."""
+    """Extracts the exact 18 canonical v2 features or rejects the event explicitly."""
 
     def __init__(self) -> None:
-        self.contract = get_baseline_47_feature_contract()
+        self.contract = get_flow_feature_contract_v2()
         self.total_extracted: int = 0
         self.total_ml_ready: int = 0
         self.total_rejected_to_trace: int = 0
         self.total_not_model_ready: int = 0
 
     def extract(self, event: CanonicalSecurityEvent) -> ExtractionResult:
-        """Extract a valid 47-feature vector, or explain precisely why not."""
+        """Extract a valid 18-feature v2 vector, or explain precisely why not."""
         self.total_extracted += 1
 
         if event.event_kind != EventKind.FLOW:

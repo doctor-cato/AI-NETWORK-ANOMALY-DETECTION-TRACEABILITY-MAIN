@@ -1,4 +1,4 @@
-"""Inference pipeline package for NF-UNSW-NB15-v3 network flow anomaly detection."""
+"""Inference pipeline package for NetFlow Sentinel v2 flow anomaly detection."""
 
 from network_anomaly.inference.predict import (
     InferencePipeline,

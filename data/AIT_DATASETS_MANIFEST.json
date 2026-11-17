@@ -1,22 +1,207 @@
 {
   "schema_version": 2,
-  "dataset": "AIT-Suite-v2.1",
-  "release_year": 2021,
+  "dataset": "AIT-NetFlow-v2-Suite",
+  "release_year": 2024,
   "synthetic": false,
-  "local_raw_status": "ABSENT",
-  "note": "Official dataset source manifest only. Raw AIT dataset files are not committed to Git; synthetic unit-test fixtures live separately in tests/fixtures/ait_synthetic/.",
+  "local_raw_status": "PRESENT",
   "official_source": {
     "publisher": "AIT Austrian Institute of Technology GmbH",
     "doi_netflow": "10.5281/zenodo.13168643",
+    "netflow_dataset_name": "AIT NetFlow Data Set v2",
+    "netflow_pcap_source": "AIT Log Data Set v2.0 (AIT-LDS-v2.0)",
+    "netflow_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
     "doi_log": "10.5281/zenodo.19483937",
+    "log_dataset_name": "AIT Log Data Set v2.1",
+    "log_license": "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)",
+    "doi_alert": "10.5281/zenodo.8263181",
+    "alert_dataset_name": "AIT Alert Data Set",
+    "alert_log_source": "AIT Log Data Set v2.0",
+    "alert_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
     "landing_page_netflow": "https://zenodo.org/records/13168643",
     "landing_page_log": "https://zenodo.org/records/19483937",
+    "landing_page_alert": "https://zenodo.org/records/8263181",
     "doi": "10.5281/zenodo.13168643",
     "landing_page": "https://zenodo.org/records/13168643",
     "access_type": "OPEN",
-    "license_title": "Creative Commons Attribution-ShareAlike 4.0 International",
-    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/"
+    "license_title": "CC BY 4.0 (AIT-NDS-v2, AIT-ADS) / CC BY-NC-SA 4.0 (AIT-LDS-v2.1)",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/"
   },
+  "generated_at_utc": "2026-11-17T20:32:27.944990+00:00",
   "clean_source_url": "https://zenodo.org/records/13168643",
-  "files": []
+  "files": [
+    {
+      "file": "fox_netflows.zip",
+      "size_bytes": 25870023,
+      "md5": "d3024ef6033fbd45982464f6b6f50984",
+      "sha256": "e2bfacdfe9822109c807300f941d0a0c9fa1b370bcf2822fd12f27ed23928381",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "harrison_netflows.zip",
+      "size_bytes": 31245912,
+      "md5": "840224491fb31d548e7ee0ecbd951db5",
+      "sha256": "3b4a0cbe9355b65890a8364a6309c5ac9da50b88095dee9d608dd91c13398834",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "label_info.txt",
+      "size_bytes": 986,
+      "md5": "e32c0e08d15725999df0c6a0c02aff47",
+      "sha256": "87f1d8775150cbfe214937110d2851eb2e37b0f3db79018b597edf787362248f",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "README.md",
+      "size_bytes": 2104,
+      "md5": "4143e85bea156333b463ebd5548fa443",
+      "sha256": "b66b99710695e907ebb74032bbff1a469d5ee845cf581ed1206cf1fd9012e55e",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "russellmitchell_netflows.zip",
+      "size_bytes": 20849591,
+      "md5": "290aa5b8b0a9d0515b7e99329c467364",
+      "sha256": "760e37d2c862c72604920cc1334768d8e582056b6979a3b160923b73525b0186",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "santos_netflows.zip",
+      "size_bytes": 25726503,
+      "md5": "e217db1c0307a8966db9e79609789fcb",
+      "sha256": "72a37bb3e69a4e17103bacdd75d50817427bdfb6deaf06430ba3b942d462e328",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "shaw_netflows.zip",
+      "size_bytes": 37791047,
+      "md5": "25c5a62572d37f088353cf7bbd58f590",
+      "sha256": "c9c432b6eb64b89ba6c941dcd2cd3b13a7d57236fd92cc9c5c1d1bbab5cdeacb",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "wardbeck_netflows.zip",
+      "size_bytes": 34616579,
+      "md5": "3a73afcaef00a1bbe53f1c39060c2f17",
+      "sha256": "9269999153f6a08522045d3f9102e6005ce719e7b1cd51ff4034455930d19a52",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "wheeler_netflows.zip",
+      "size_bytes": 41199118,
+      "md5": "2c45193c0babc8ec45f356f3e39118a6",
+      "sha256": "d328705dbd6df28e225274624b830e6be2589a2339929daaa0f7154ba33859c8",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "wilson_netflows.zip",
+      "size_bytes": 56386626,
+      "md5": "2c10183cf7aca03e9fb80408a360f34c",
+      "sha256": "130d9c0cdafc5a958db38ce05ebf8965618e5936c0a604af71dfa32639812749",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    }
+  ],
+  "ait_nds_v2_files": [
+    {
+      "file": "fox_netflows.zip",
+      "size_bytes": 25870023,
+      "md5": "d3024ef6033fbd45982464f6b6f50984",
+      "sha256": "e2bfacdfe9822109c807300f941d0a0c9fa1b370bcf2822fd12f27ed23928381",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "harrison_netflows.zip",
+      "size_bytes": 31245912,
+      "md5": "840224491fb31d548e7ee0ecbd951db5",
+      "sha256": "3b4a0cbe9355b65890a8364a6309c5ac9da50b88095dee9d608dd91c13398834",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "label_info.txt",
+      "size_bytes": 986,
+      "md5": "e32c0e08d15725999df0c6a0c02aff47",
+      "sha256": "87f1d8775150cbfe214937110d2851eb2e37b0f3db79018b597edf787362248f",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "README.md",
+      "size_bytes": 2104,
+      "md5": "4143e85bea156333b463ebd5548fa443",
+      "sha256": "b66b99710695e907ebb74032bbff1a469d5ee845cf581ed1206cf1fd9012e55e",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "russellmitchell_netflows.zip",
+      "size_bytes": 20849591,
+      "md5": "290aa5b8b0a9d0515b7e99329c467364",
+      "sha256": "760e37d2c862c72604920cc1334768d8e582056b6979a3b160923b73525b0186",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "santos_netflows.zip",
+      "size_bytes": 25726503,
+      "md5": "e217db1c0307a8966db9e79609789fcb",
+      "sha256": "72a37bb3e69a4e17103bacdd75d50817427bdfb6deaf06430ba3b942d462e328",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "shaw_netflows.zip",
+      "size_bytes": 37791047,
+      "md5": "25c5a62572d37f088353cf7bbd58f590",
+      "sha256": "c9c432b6eb64b89ba6c941dcd2cd3b13a7d57236fd92cc9c5c1d1bbab5cdeacb",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "wardbeck_netflows.zip",
+      "size_bytes": 34616579,
+      "md5": "3a73afcaef00a1bbe53f1c39060c2f17",
+      "sha256": "9269999153f6a08522045d3f9102e6005ce719e7b1cd51ff4034455930d19a52",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "wheeler_netflows.zip",
+      "size_bytes": 41199118,
+      "md5": "2c45193c0babc8ec45f356f3e39118a6",
+      "sha256": "d328705dbd6df28e225274624b830e6be2589a2339929daaa0f7154ba33859c8",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "wilson_netflows.zip",
+      "size_bytes": 56386626,
+      "md5": "2c10183cf7aca03e9fb80408a360f34c",
+      "sha256": "130d9c0cdafc5a958db38ce05ebf8965618e5936c0a604af71dfa32639812749",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    }
+  ],
+  "ait_lds_v2_1_sample_files": [
+    {
+      "file": "fox_no-pcaps.zip",
+      "size_bytes": 688586900,
+      "md5": "27b09dd2876ec08ee99a9b53e8718c92",
+      "sha256": "8d71d31a31df469d836c80bdbfdc35da566e90322cf9ae490233e176a0c88d49",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "russellmitchell_no-pcaps.zip",
+      "size_bytes": 522084364,
+      "md5": "abb43a46c70939ad9f98669e3510d2b7",
+      "sha256": "51a03f51daea0fbbdcfe9b8abe0dbbe10633716f4f98074f861204a162ee1978",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    }
+  ],
+  "ait_ads_files": [
+    {
+      "file": "ait_ads.zip",
+      "size_bytes": 96202946,
+      "md5": "43db6b1f0996e0024befd617706c50e9",
+      "sha256": "9f0595c4ebe56ac9223763881f55369dd4f249a8108064e4ae108eb3309aeeb9",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    },
+    {
+      "file": "labels.csv",
+      "size_bytes": 3703,
+      "md5": "60ff33796c77fd2136c4d1a4bc841bd9",
+      "sha256": "633e09b42772eabbbe5b48598220860eead60b7352efb01973fc45a5034290c0",
+      "verification_status": "RECORDED_FROM_ZENODO_RAW"
+    }
+  ]
 }

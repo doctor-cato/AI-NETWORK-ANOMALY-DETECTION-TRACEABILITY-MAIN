@@ -3,7 +3,7 @@
 
 Implements Issue #98 for NetFlow Sentinel v2.0.
 Protocol:
-- Holdout attack family: {"Backdoor", "Worms"} (0 instances in Train or Validation).
+- Holdout attack family: {"Exploitation_And_C2", "Post_Exploitation_Discovery"} (0 instances in Train or Validation).
 - Supervised models (RF, XGBoost) are trained strictly on Train (Benign + Known Attacks)
   and threshold-calibrated strictly on Validation (Benign + Known Attacks).
 - Unsupervised models (Isolation Forest, Autoencoder) are loaded from verified
@@ -36,7 +36,7 @@ if str(_PROJECT_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from _rq_common import (  # noqa: E402
-    check_nf_unsw_prerequisites,
+    check_v2_prerequisites,
     collect_environment_metadata,
     compute_binary_metrics,
     dataset_provenance_summary,
@@ -49,7 +49,7 @@ from network_anomaly.models.registry import ModelRegistry  # noqa: E402
 
 OUTPUT_JSON = Path("reports/experiments/ml/rq4_unknown_attack_report.json")
 OUTPUT_MD = Path("docs/experiments/EXP4_UNKNOWN_ATTACK.md")
-HOLDOUT_FAMILIES = frozenset({"Backdoor", "Worms"})
+HOLDOUT_FAMILIES = frozenset({"Exploitation_And_C2", "Post_Exploitation_Discovery"})
 
 
 def _calibrate_f1_threshold_on_val(
@@ -79,7 +79,7 @@ def run_rq4_experiment(
     holdout_set = frozenset(holdout_families)
     env = collect_environment_metadata()
     provenance = dataset_provenance_summary()
-    ok_data, missing_paths = check_nf_unsw_prerequisites()
+    ok_data, missing_paths = check_v2_prerequisites()
     registry = ModelRegistry(warmup=True)
 
     if not ok_data or not registry.preprocessor_ready:
@@ -258,8 +258,8 @@ def run_rq4_experiment(
             "autoencoder_ge_0_75": (ae_rec >= 0.75),
         },
         "limitations": [
-            "Holdout evaluation on NF-UNSW-NB15-v3 simulates unseen attack categories within the same testbed distribution and does NOT guarantee detection of real-world zero-day or adversarial evasion attacks.",
-            "Supervised models trained on NF-UNSW-NB15-v3 may still exploit shared testbed artifacts (such as MIN_TTL) that correlate across both known and held-out attack categories.",
+            "Holdout evaluation on AIT-NDS-v2 simulates unseen attack categories within the simulation testbed suite and does NOT guarantee detection of real-world zero-day or adversarial evasion attacks.",
+            "Supervised models trained on AIT-NDS-v2 still exhibit cross-domain sensitivity when transferred zero-shot to real captured traffic such as CTU-SME-11.",
         ],
     }
 
@@ -275,7 +275,7 @@ def run_rq4_experiment(
             f"{vals['unknown_holdout_fpr']:.4f} |"
         )
     md_lines = [
-        "# RQ4 — Unknown Attack Family Holdout Evaluation (Empirical NF-UNSW-NB15-v3)",
+        "# RQ4 — Unknown Attack Family Holdout Evaluation (Empirical AIT-NDS-v2)",
         "",
         f"- **Status:** `{results['status']}`",
         f"- **Timestamp (UTC):** `{results['timestamp_utc']}`",

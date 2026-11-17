@@ -281,7 +281,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             Write-Error (
               "BLOCKED — DISTRIBUTION PERMISSION: Refusing to acquire, cache, embed, or upload " +
-              "NF-UNSW-NB15-v3 derived models on channel '$targetChannel' (repo visibility '$repoVisibility', scope '$distScope'). " +
+              "NetFlow Sentinel v2 models on channel '$targetChannel' (repo visibility '$repoVisibility', scope '$distScope'). " +
               "For internal testing, use a private repository/runner with restricted access and distribution_scope='private-build-only'."
             )
             exit 1

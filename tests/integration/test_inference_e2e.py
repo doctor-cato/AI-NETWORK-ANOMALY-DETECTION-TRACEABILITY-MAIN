@@ -1,4 +1,4 @@
-"""Integration tests for NF-UNSW-NB15-v3 CSV Inference Pipeline (Issue #15).
+"""Integration tests for NetFlow Sentinel v2 CSV Inference Pipeline (canonical-flow-v2-18).
 
 Tests:
 1. Complete end-to-end lifecycle:
@@ -26,7 +26,7 @@ import pytest
 from sklearn.ensemble import RandomForestClassifier
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     CATEGORICAL_CODED_COLUMNS,
     ML_FEATURE_COLUMNS,
 )
@@ -63,24 +63,23 @@ def synthetic_integration_setup(
     df_full = pd.DataFrame(data, columns=list(ML_FEATURE_COLUMNS))
 
     # Add trace-only metadata and targets to verify pipeline ignores them
-    df_full["IPV4_SRC_ADDR"] = "192.168.1.100"
-    df_full["IPV4_DST_ADDR"] = "10.0.0.5"
-    df_full["L4_SRC_PORT"] = 49152
-    df_full["L4_DST_PORT"] = 443
-    df_full["FLOW_START_MILLISECONDS"] = 1600000000000
-    df_full["FLOW_END_MILLISECONDS"] = 1600000001000
-    df_full["Label"] = 0
-    df_full["Attack"] = "Benign"
+    df_full["source_ip"] = "192.168.1.100"
+    df_full["dest_ip"] = "10.0.0.5"
+    df_full["source_port"] = 49152
+    df_full["dest_port"] = 443
+    df_full["timestamp_ms"] = 1600000000000
+    df_full["label_binary"] = 0
+    df_full["attack_category"] = "Benign"
     df_full["row_id"] = [f"flow_{i:03d}" for i in range(n_rows)]
 
     input_csv_path = tmp_path / "incoming_flows.csv"
     df_full.to_csv(input_csv_path, index=False)
 
-    # 2. Fit train-only preprocessor on pure 47 features
+    # 2. Fit train-only preprocessor on pure 18 features
     prep = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
-        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-        split_manifest_sha256="bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+        dataset_sha256="cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+        split_manifest_sha256="1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
     )
     df_train_only = df_full[list(ML_FEATURE_COLUMNS)].copy()
     prep.fit(df_train_only)
@@ -301,11 +300,11 @@ def test_cli_error_schema_validation_failure(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
 ):
-    """CLI exits with code 1 when input CSV violates the 47-feature contract."""
+    """CLI exits with code 1 when input CSV violates the 18-feature contract."""
     _, prep_art, prep_man, model_art, model_man = synthetic_integration_setup
 
     invalid_csv = tmp_path / "invalid_schema.csv"
-    pd.DataFrame({"FLOW_DURATION_MILLISECONDS": [100.0]}).to_csv(invalid_csv, index=False)
+    pd.DataFrame({"duration_ms": [100.0]}).to_csv(invalid_csv, index=False)
     output_csv = tmp_path / "out.csv"
 
     cmd = [
@@ -328,7 +327,7 @@ def test_cli_error_schema_validation_failure(
     proc = subprocess.run(cmd, capture_output=True, text=True)
     assert proc.returncode == 1
     assert "missing" in proc.stderr
-    assert "baseline ML feature" in proc.stderr
+    assert "v2 ML feature" in proc.stderr
 
 
 def test_prediction_reproducibility(
@@ -369,14 +368,14 @@ def test_prediction_reproducibility(
 
 
 def test_real_preprocessor_artifact_smoke():
-    """Smoke test: verify that Issue #8 preprocessor artifact loads and verifies in repo."""
-    prep_art = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    """Smoke test: verify that v2 preprocessor artifact loads and verifies in repo."""
+    prep_art = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
     prep_man = (
-        PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     )
 
     if not prep_art.is_file() or not prep_man.is_file():
-        pytest.skip("Real preprocessor artifact from Issue #8 not found in repository.")
+        pytest.skip("Real v2 preprocessor artifact not found in repository.")
 
     manifest = json.loads(prep_man.read_text(encoding="utf-8"))
     if manifest.get("artifact_sha256") != _sha256_file(prep_art):
@@ -386,14 +385,13 @@ def test_real_preprocessor_artifact_smoke():
 
     prep = TrainOnlyPreprocessor.load_verified(prep_art, manifest_path=prep_man)
     assert prep.is_fitted_ is True
-    assert prep.train_row_count_ == 1655797
+    assert prep.train_row_count_ == 1930219
 
     # Model status check
     rf_art = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
     if not rf_art.is_file():
-        # Document explicit blocker
         print(
-            "\n[SMOKE REPORT] Real preprocessor: PASS (1,655,797 rows trained).\n"
+            "\n[SMOKE REPORT] Real v2 preprocessor: PASS (1,930,219 rows trained).\n"
             "[SMOKE REPORT] Real model: SKIPPED (RF baseline binary not present "
             "in working tree; excluded via .gitignore)."
         )

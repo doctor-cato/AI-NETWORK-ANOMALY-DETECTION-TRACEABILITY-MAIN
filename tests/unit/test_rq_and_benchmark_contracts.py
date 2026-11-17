@@ -19,12 +19,12 @@ def _load_script(name: str, rel_path: str):
 
 def test_rq1_rq2_rq4_fail_closed_to_blocked_when_raw_data_absent(tmp_path, monkeypatch):
     rq_common = _load_script("_rq_common", "scripts/_rq_common.py")
-    monkeypatch.setattr(rq_common, "RAW_DATA_PATH", tmp_path / "missing.csv")
+    monkeypatch.setattr(rq_common, "PROCESSED_V2_DIR", tmp_path / "missing_v2")
 
     rq1 = _load_script(
         "generate_model_comparison_report", "scripts/generate_model_comparison_report.py"
     )
-    monkeypatch.setattr(rq1, "check_nf_unsw_prerequisites", rq_common.check_nf_unsw_prerequisites)
+    monkeypatch.setattr(rq1, "check_v2_prerequisites", rq_common.check_v2_prerequisites)
     res1 = rq1.generate_comparison_report(
         output_json=tmp_path / "rq1.json", output_md=tmp_path / "rq1.md"
     )
@@ -34,14 +34,14 @@ def test_rq1_rq2_rq4_fail_closed_to_blocked_when_raw_data_absent(tmp_path, monke
     rq2 = _load_script(
         "run_rq2_rare_attack_experiment", "scripts/run_rq2_rare_attack_experiment.py"
     )
-    monkeypatch.setattr(rq2, "check_nf_unsw_prerequisites", rq_common.check_nf_unsw_prerequisites)
+    monkeypatch.setattr(rq2, "check_v2_prerequisites", rq_common.check_v2_prerequisites)
     res2 = rq2.run_rq2_experiment(output_json=tmp_path / "rq2.json", output_md=tmp_path / "rq2.md")
     assert res2["status"] == "BLOCKED"
 
     rq4 = _load_script(
         "run_rq4_unknown_attack_experiment", "scripts/run_rq4_unknown_attack_experiment.py"
     )
-    monkeypatch.setattr(rq4, "check_nf_unsw_prerequisites", rq_common.check_nf_unsw_prerequisites)
+    monkeypatch.setattr(rq4, "check_v2_prerequisites", rq_common.check_v2_prerequisites)
     res4 = rq4.run_rq4_experiment(output_json=tmp_path / "rq4.json", output_md=tmp_path / "rq4.md")
     assert res4["status"] == "BLOCKED"
 

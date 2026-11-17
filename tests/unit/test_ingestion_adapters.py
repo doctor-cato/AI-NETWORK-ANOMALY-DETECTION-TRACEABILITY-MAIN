@@ -1,10 +1,10 @@
-"""Unit tests for multi-source ingestion adapters (Issue #46)."""
+"""Unit tests for multi-source ingestion adapters."""
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import (
     AWSVPCFlowAdapter,
     BaseSourceAdapter,
-    NetFlowV3Adapter,
+    CanonicalFlowV2Adapter,
     NetFlowV5Adapter,
     SuricataEveAdapter,
     UnsupportedSourceAdapter,
@@ -13,41 +13,30 @@ from network_anomaly.ingestion.adapters import (
 from network_anomaly.ingestion.schemas import InferenceEligibility, ValidationStatus
 
 
-def test_netflow_v3_adapter_full_features():
-    adapter = NetFlowV3Adapter()
+def test_canonical_flow_v2_adapter_full_features():
+    adapter = CanonicalFlowV2Adapter()
     sample_record = {col: 1.0 for col in ML_FEATURE_COLUMNS}
     sample_record.update(
         {
-            "IPV4_SRC_ADDR": "192.168.1.100",
-            "L4_SRC_PORT": 44321,
-            "IPV4_DST_ADDR": "10.0.0.1",
-            "L4_DST_PORT": 80,
-            "PROTOCOL": 6,
-            "FLOW_START_MILLISECONDS": 1600000000000,
-            "FLOW_END_MILLISECONDS": 1600000001000,
-            "Label": 1,
-            "Attack": "Exploits",
+            "source_ip": "192.168.1.100",
+            "source_port": 44321,
+            "dest_ip": "10.0.0.1",
+            "dest_port": 80,
+            "protocol_num": 6,
+            "timestamp_ms": 1600000000000,
         }
     )
 
     event = adapter.adapt_record(sample_record, record_idx=0)
 
-    assert event.metadata.source_id == "source:nf-v3-external"
+    assert event.metadata.source_id == "source:canonical-flow-v2"
     assert event.network_5tuple.ipv4_src_addr == "192.168.1.100"
     assert event.network_5tuple.protocol == 6
-    # External unvalidated source reaches SEMANTICALLY_COMPATIBLE with VALIDATION_NOT_VERIFIED
-    assert event.eligibility == InferenceEligibility.VALIDATION_NOT_VERIFIED
-    assert event.validation_status == ValidationStatus.SEMANTICALLY_COMPATIBLE
+    assert event.eligibility == InferenceEligibility.PREDICTION_AVAILABLE
+    assert event.validation_status == ValidationStatus.SCHEMA_COMPATIBLE
     assert event.ml_features is not None
     assert len(event.ml_features) == len(ML_FEATURE_COLUMNS)
-    assert event.trace_metadata["Label"] == 1
-    assert event.trace_metadata["Attack"] == "Exploits"
-
-    # Canonical source reaches MODEL_VALIDATED
-    canonical_adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
-    can_event = canonical_adapter.adapt_record(sample_record, record_idx=0)
-    assert can_event.eligibility == InferenceEligibility.PREDICTION_AVAILABLE
-    assert can_event.validation_status == ValidationStatus.MODEL_VALIDATED
+    assert event.trace_metadata["timestamp_ms"] == 1600000000000
 
 
 def test_zeek_conn_adapter_abstains_ml_and_preserves_trace():
@@ -177,9 +166,11 @@ def test_unsupported_source_adapter_sflow():
 
 
 def test_base_adapter_extract_ml_matrix():
-    v3_adapter = NetFlowV3Adapter()
-    rec1 = {col: 10.0 for col in ML_FEATURE_COLUMNS}
-    rec2 = {col: 20.0 for col in ML_FEATURE_COLUMNS}
+    v2_adapter = CanonicalFlowV2Adapter()
+    rec1 = {col: 0.5 for col in ML_FEATURE_COLUMNS}
+    rec1["protocol_num"] = 6.0
+    rec2 = {col: 0.5 for col in ML_FEATURE_COLUMNS}
+    rec2["protocol_num"] = 17.0
 
     zeek_adapter = ZeekConnAdapter()
     rec3 = {
@@ -191,9 +182,9 @@ def test_base_adapter_extract_ml_matrix():
     }
 
     events = [
-        v3_adapter.adapt_record(rec1, 0),
+        v2_adapter.adapt_record(rec1, 0),
         zeek_adapter.adapt_record(rec3, 1),
-        v3_adapter.adapt_record(rec2, 2),
+        v2_adapter.adapt_record(rec2, 2),
     ]
 
     df_ml, eligible_idx = BaseSourceAdapter.extract_ml_matrix(events)
@@ -202,5 +193,5 @@ def test_base_adapter_extract_ml_matrix():
     assert eligible_idx == [0, 2]
     assert len(df_ml) == 2
     assert list(df_ml.columns) == list(ML_FEATURE_COLUMNS)
-    assert df_ml.iloc[0]["PROTOCOL"] == 10.0
-    assert df_ml.iloc[1]["PROTOCOL"] == 20.0
+    assert df_ml.iloc[0]["protocol_num"] == 6.0
+    assert df_ml.iloc[1]["protocol_num"] == 17.0

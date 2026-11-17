@@ -1,0 +1,41 @@
+{
+  "run_id": "inference-20261115051536-c3737f9c",
+  "timestamp_utc": "2026-11-15T05:15:36.715641+00:00",
+  "input_file_path": "data\\demo\\demo_flows.csv",
+  "input_file_sha256": "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b",
+  "input_row_count": 200,
+  "output_file_path": "data\\demo\\if_demo_predictions.csv",
+  "output_file_sha256": "0748536b7f3cf6284a552cf582f12ffc7921774dccf55d251e869f3a0fe17b11",
+  "model_artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\isolation_forest\\isolation_forest.joblib",
+  "model_artifact_sha256": "e8f3dcbcad9e5bd4dc31971281c8fb994dd46206344eeeca0ac0e0a8ed90811b",
+  "model_manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\models\\isolation_forest_manifest.json",
+  "model_manifest_sha256": "d429f1d5774a070b96745de87aac802dc44e1eaffa301743afaf8f382ff439fa",
+  "model_type": "IsolationForest",
+  "model_configuration": {
+    "n_estimators": 100,
+    "max_samples": "auto",
+    "contamination": 0.1,
+    "max_features": 1.0,
+    "bootstrap": false,
+    "random_state": 42,
+    "n_jobs": -1
+  },
+  "preprocessor_artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\preprocessing\\nf_unsw_nb15_v3_preprocessor.joblib",
+  "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
+  "preprocessor_manifest_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\reports\\preprocessing\\nf_unsw_nb15_v3_preprocessing_manifest.json",
+  "preprocessor_manifest_sha256": "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441",
+  "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+  "preprocessing_policy_version": "nf-unsw-nb15-v3-preprocessing-v1",
+  "environment": {
+    "python": "3.14.10 (tags/v3.14.10:b703b2c, Oct 25 2026, 17:36:52) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "win32",
+    "pandas": "3.1.1",
+    "numpy": "2.5.4",
+    "scikit-learn": "1.9.1",
+    "joblib": "1.6.0"
+  },
+  "git_commit": "c84f3375372df97768a9bf3b020f28025df03488",
+  "prediction_count": 200,
+  "error_count": 0,
+  "execution_status": "SUCCESS"
+}

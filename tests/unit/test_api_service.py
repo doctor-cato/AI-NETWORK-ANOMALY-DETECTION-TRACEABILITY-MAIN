@@ -20,14 +20,15 @@ from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.errors import ModelNotReadyError
 from network_anomaly.api.schemas import HealthResponse
 from network_anomaly.api.service import ApiService
-from network_anomaly.data.nf_unsw_nb15_v3 import CATEGORICAL_CODED_COLUMNS, ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import CATEGORICAL_CODED_COLUMNS, ML_FEATURE_COLUMNS
 from network_anomaly.inference.predict import _sha256_file
 from network_anomaly.preprocessing import (
     FEATURE_CONTRACT_VERSION,
     PreprocessingConfig,
     TrainOnlyPreprocessor,
 )
-from network_anomaly.preprocessing.pipeline import EXPECTED_DATASET_SHA256
+
+TEST_V2_DATASET_SHA256 = "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf"
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ def test_health_check_rejects_unverified_artifacts(api_service: ApiService, tmp_
     fake_model = fake_artifacts / "models" / "random_forest" / "random_forest_baseline.joblib"
     fake_model.write_text("model placeholder")
 
-    fake_prep = fake_artifacts / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    fake_prep = fake_artifacts / "preprocessing" / "v2_flow_preprocessor.joblib"
     fake_prep.write_text("preprocessor placeholder")
 
     with patch("network_anomaly.api.service.ARTIFACTS", fake_artifacts):
@@ -82,10 +83,10 @@ def test_health_check_accepts_verified_pipeline(api_service: ApiService):
 def test_health_check_accepts_real_verified_fixture(api_service: ApiService, tmp_path: Path):
     """Health loads synthetic artifacts through the actual verification path."""
     artifact_root = tmp_path / "artifacts"
-    prep_path = artifact_root / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    prep_path = artifact_root / "preprocessing" / "v2_flow_preprocessor.joblib"
     model_path = artifact_root / "models" / "random_forest" / "random_forest_baseline.joblib"
     prep_manifest = (
-        tmp_path / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+        tmp_path / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     )
     model_manifest = tmp_path / "reports" / "models" / "random_forest_manifest.json"
     prep_path.parent.mkdir(parents=True)
@@ -104,7 +105,7 @@ def test_health_check_accepts_real_verified_fixture(api_service: ApiService, tmp
     features = pd.DataFrame(data)
     preprocessor = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
-        dataset_sha256=EXPECTED_DATASET_SHA256,
+        dataset_sha256=TEST_V2_DATASET_SHA256,
         split_manifest_sha256="b" * 64,
     )
     preprocessor.fit(features)
@@ -181,7 +182,7 @@ def test_health_check_rejects_unverified_isolation_forest(api_service: ApiServic
     fake_model = fake_artifacts / "models" / "isolation_forest" / "isolation_forest.joblib"
     fake_model.write_text("iforest placeholder")
 
-    fake_prep = fake_artifacts / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    fake_prep = fake_artifacts / "preprocessing" / "v2_flow_preprocessor.joblib"
     fake_prep.write_text("preprocessor placeholder")
 
     with patch("network_anomaly.api.service.ARTIFACTS", fake_artifacts):
@@ -214,9 +215,9 @@ def test_analyze_flows_with_heuristic_and_incident_creation(api_service: ApiServ
     """Verify analysis creates incident alert and transparent metadata when fallback allowed."""
     flows = [
         # Normal flow
-        {"features": {"IN_BYTES": 500, "OUT_BYTES": 500, "IN_PKTS": 5, "OUT_PKTS": 5}},
+        {"features": {"bytes_in": 500, "bytes_out": 500, "pkts_in": 5, "pkts_out": 5}},
         # Abnormal high-volume flooding flow
-        {"features": {"IN_BYTES": 2_500_000, "OUT_BYTES": 100, "IN_PKTS": 2500, "OUT_PKTS": 0}},
+        {"features": {"bytes_in": 2_500_000, "bytes_out": 100, "pkts_in": 2500, "pkts_out": 0}},
     ]
 
     res = api_service.analyze_flows(
@@ -408,9 +409,9 @@ def _setup_synthetic_artifact_tree(
     from network_anomaly.models.isolation_forest import IsolationForestModel
 
     art_root = root / "artifacts"
-    prep_path = art_root / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    prep_path = art_root / "preprocessing" / "v2_flow_preprocessor.joblib"
     prep_manifest = (
-        root / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+        root / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     )
     rf_path = art_root / "models" / "random_forest" / "random_forest_baseline.joblib"
     rf_manifest = root / "reports" / "models" / "random_forest_manifest.json"
@@ -436,7 +437,7 @@ def _setup_synthetic_artifact_tree(
     features = pd.DataFrame(data)
     preprocessor = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
-        dataset_sha256=EXPECTED_DATASET_SHA256,
+        dataset_sha256=TEST_V2_DATASET_SHA256,
         split_manifest_sha256="b" * 64,
     )
     preprocessor.fit(features)

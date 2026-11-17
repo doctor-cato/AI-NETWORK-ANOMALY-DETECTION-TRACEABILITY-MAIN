@@ -4,7 +4,7 @@ Follows the identical shared supervised protocol and component structure as Rand
   - XGBoostModel wrapper providing fit(), predict(), predict_proba(), save(), load(),
     load_verified().
   - build_model() factory returning XGBClassifier for backward compatibility.
-  - Strict 47-feature NetFlow v3 contract enforcement.
+  - Strict 18-feature canonical v2 flow contract enforcement.
   - Fail-closed manifest verification with byte-for-byte SHA-256 integrity check.
 """
 
@@ -23,8 +23,9 @@ import pandas as pd
 from sklearn.exceptions import NotFittedError
 from xgboost import XGBClassifier
 
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
+    PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
@@ -229,7 +230,7 @@ class XGBoostModel:
         return XGBClassifier(**params)
 
     def fit(self, X: Any, y: Any, **fit_params: Any) -> "XGBoostModel":
-        """Fit model enforcing 47 ML features contract and target contract."""
+        """Fit model enforcing 18 ML features v2 contract and target contract."""
         X_mat = self._to_x_matrix(X, "fit")
         y_arr = np.asarray(y)
         if y_arr.ndim != 1:
@@ -250,7 +251,7 @@ class XGBoostModel:
         return self
 
     def _to_x_matrix(self, X: Any, operation: str) -> np.ndarray:
-        """Validate and convert input to the canonical 47-feature matrix (dataclass'd)."""
+        """Validate and convert input to the canonical 18-feature matrix."""
         names = list(self.feature_names)
         if isinstance(X, pd.DataFrame):
             duplicate_cols = X.columns[X.columns.duplicated()].unique().tolist()
@@ -266,7 +267,7 @@ class XGBoostModel:
             if selected.shape[1] != len(names) or selected.columns.duplicated().any():
                 raise ValueError(
                     f"Feature contract violation in {operation}: duplicated feature "
-                    "columns collapse the canonical 47-feature selection"
+                    "columns collapse the canonical 18-feature selection"
                 )
             return selected.values
         X_mat = np.asarray(X)
@@ -326,7 +327,7 @@ class XGBoostModel:
                 list(self.estimator.classes_) if hasattr(self.estimator, "classes_") else None
             ),
             "configuration_id": getattr(
-                self.config, "configuration_id", "xgb-baseline-canonical-v1"
+                self.config, "configuration_id", "xgb-v2-baseline-canonical-v1"
             ),
             "is_canonical_baseline": getattr(self.config, "is_canonical_baseline", True),
             "estimator": self.estimator,
@@ -348,7 +349,7 @@ class XGBoostModel:
                     self.protocol.protocol_version if self.protocol else PROTOCOL_IDENTIFIER
                 ),
                 "configuration_id": getattr(
-                    self.config, "configuration_id", "xgb-baseline-canonical-v1"
+                    self.config, "configuration_id", "xgb-v2-baseline-canonical-v1"
                 ),
                 "is_canonical_baseline": getattr(self.config, "is_canonical_baseline", True),
                 "feature_names": list(self.feature_names),
@@ -782,16 +783,17 @@ class XGBoostModel:
                     f"model payload has '{instance.protocol.feature_contract_version}'"
                 )
 
-        # 11. Feature contract (47 ML features, exact order, target/metadata exclusions)
-        if len(instance.feature_names) != 47:
+        # 11. Feature contract (18 ML features, exact order, target/metadata exclusions)
+        expected_len = len(ML_FEATURE_COLUMNS)
+        if len(instance.feature_names) != expected_len:
             raise ValueError(
-                f"Feature contract violation: expected 47 features, "
+                f"Feature contract violation: expected {expected_len} features, "
                 f"got {len(instance.feature_names)}"
             )
         if list(instance.feature_names) != list(ML_FEATURE_COLUMNS):
             raise ValueError(
                 "Feature contract violation: feature names or ordering differ "
-                "from canonical 47 ML features."
+                "from canonical 18 ML features."
             )
 
         manifest_features = manifest_data.get("selected_features") or manifest_data.get(
@@ -806,7 +808,7 @@ class XGBoostModel:
                 raise ValueError(
                     f"Target column '{tgt}' found in model features (leakage violation)"
                 )
-        for meta in TRACE_METADATA_COLUMNS:
+        for meta in TRACE_METADATA_COLUMNS + PROVENANCE_COLUMNS:
             if meta in instance.feature_names:
                 raise ValueError(
                     f"Trace metadata column '{meta}' found in model features (leakage violation)"

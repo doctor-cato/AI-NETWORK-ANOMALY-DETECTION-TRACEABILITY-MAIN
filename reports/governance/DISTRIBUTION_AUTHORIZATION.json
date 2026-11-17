@@ -1,51 +1,51 @@
 {
-  "schema_version": 1,
-  "dataset": "NF-UNSW-NB15-v3",
-  "dataset_publisher": "The University of Queensland",
-  "dataset_doi": "10.48610/6E0EDA1",
-  "dataset_license_id": "454104",
-  "dataset_license_title": "Permitted Re-Use with Commercial Use Restriction",
-  "dataset_license_grants_derived_public_redistribution": false,
+  "schema_version": 2,
+  "dataset": "NetFlow-Sentinel-v2-MultiSource",
+  "dataset_publisher": "AIT Austrian Institute of Technology GmbH & Stratosphere Laboratory (CTU)",
+  "dataset_doi": "10.5281/zenodo.13168643",
+  "dataset_license_id": "CC-BY-4.0",
+  "dataset_license_title": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "dataset_license_grants_derived_public_redistribution": true,
   "permission_tiers": {
     "research_only": {
       "scope": "research-only",
-      "description": "Local academic research, evaluation, and verification on authorized workstations without redistribution.",
+      "description": "Local academic research, evaluation, and verification on authorized workstations.",
       "public_upload_allowed": false,
       "public_release_allowed": false
     },
     "private_build_only": {
       "scope": "private-build-only",
-      "description": "Internal standalone installer packaging and E2E testing strictly inside private repositories/runners with restricted access or local offline builds.",
+      "description": "Internal standalone installer packaging and E2E testing with attribution notices preserved.",
       "public_upload_allowed": false,
       "private_ci_upload_allowed": true,
       "public_release_allowed": false
     },
     "non_commercial_controlled": {
       "scope": "non-commercial-controlled",
-      "description": "Controlled non-commercial academic delivery inside access-restricted private channels with attribution notices preserved; public unauthenticated distribution remains blocked.",
+      "description": "Academic delivery with CC BY 4.0 attribution notices preserved.",
       "public_upload_allowed": false,
       "private_ci_upload_allowed": true,
       "public_release_allowed": false
     },
     "public_release_approved": {
       "scope": "public-release-approved",
-      "description": "Public distribution via public GitHub Actions artifacts or public GitHub Releases. Blocked fail-closed unless supported by verifiable written authorization or independent clean-room license evidence.",
+      "description": "Public distribution permitted under CC BY 4.0 when attribution notices (NOTICE, THIRD_PARTY_NOTICES.md) are bundled.",
       "public_upload_allowed": true,
       "public_release_allowed": true
     }
   },
   "public_release_authorization": {
     "approved": false,
-    "status": "BLOCKED_PENDING_VERIFIABLE_EVIDENCE",
-    "legal_basis": null,
+    "status": "HOLD_FOR_MAINTAINER_SIGNOFF",
+    "legal_basis": "verified-open-redistribution-license",
     "maintainer_approver": null,
     "approved_at_utc": null,
-    "evidence_ref": null,
+    "evidence_ref": "CC BY 4.0 (AIT-NDS-v2 DOI 10.5281/zenodo.13168643)",
     "evidence_sha256": null,
-    "forbids_commercial_use": true,
+    "forbids_commercial_use": false,
     "requires_attribution_notices": true,
     "covered_artifacts": [
-      "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+      "artifacts/preprocessing/v2_flow_preprocessor.joblib",
       "artifacts/models/random_forest/random_forest_baseline.joblib",
       "artifacts/models/xgboost/xgboost_baseline.joblib",
       "artifacts/models/isolation_forest/isolation_forest.joblib",
@@ -54,6 +54,6 @@
       "data/demo/demo_labels.csv",
       "data/demo/demo_manifest.json"
     ],
-    "notes": "UQ License ID 454104 permits non-commercial re-use with attribution but does not automatically establish unrestricted public redistribution rights for derived model binaries or demo CSV subsets. Keep approved=false until verifiable publisher permission or clean-room licensing evidence is recorded and verified via DISTRIBUTION_EVIDENCE_SHA256."
+    "notes": "AIT-NDS-v2 and CTU-SME-11 are CC BY 4.0; AIT-LDS-v2.1 (CC BY-NC-SA 4.0) is excluded from trained ML artifacts and demo CSVs."
   }
 }

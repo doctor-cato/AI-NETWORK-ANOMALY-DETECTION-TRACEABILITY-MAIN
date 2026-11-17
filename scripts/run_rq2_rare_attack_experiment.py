@@ -4,7 +4,7 @@
 Implements Issue #96 for NetFlow Sentinel v2.0.
 Computes real per-class sample counts, real prevalence, cost-sensitive supervised
 models (trained strictly on Train), and real unsupervised model predictions on
-NF-UNSW-NB15-v3. Never uses hardcoded metrics.
+AIT-NDS-v2. Never uses hardcoded metrics.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ if str(_PROJECT_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT / "src"))
 
 from _rq_common import (  # noqa: E402
-    check_nf_unsw_prerequisites,
+    check_v2_prerequisites,
     collect_environment_metadata,
     compute_binary_metrics,
     dataset_provenance_summary,
@@ -76,10 +76,10 @@ def run_rq2_experiment(
     output_json: Path = OUTPUT_JSON,
     output_md: Path = OUTPUT_MD,
 ) -> Dict[str, Any]:
-    """Run empirical RQ2 rare-attack experiment on real NF-UNSW-NB15-v3 splits."""
+    """Run empirical RQ2 rare-attack experiment on real AIT-NDS-v2 splits."""
     env = collect_environment_metadata()
     provenance = dataset_provenance_summary()
-    ok_data, missing_paths = check_nf_unsw_prerequisites()
+    ok_data, missing_paths = check_v2_prerequisites()
     registry = ModelRegistry(warmup=True)
 
     if not ok_data or not registry.preprocessor_ready:
@@ -261,7 +261,7 @@ def run_rq2_experiment(
     output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
 
     md_lines = [
-        "# RQ2 — Class Imbalance & Rare Attack Evaluation (Empirical NF-UNSW-NB15-v3)",
+        "# RQ2 — Class Imbalance & Rare Attack Evaluation (Empirical AIT-NDS-v2)",
         "",
         f"- **Status:** `{results['status']}`",
         f"- **Timestamp (UTC):** `{results['timestamp_utc']}`",

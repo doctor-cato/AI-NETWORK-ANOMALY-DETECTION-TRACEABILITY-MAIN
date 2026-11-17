@@ -30,7 +30,7 @@
       <Icons name="cpu" size={17} />
       Trạng thái 4 Mô hình AI Tích hợp (Xác thực SHA-256 Fail-Closed)
     </h2>
-    <span class="badge badge-info">Hợp đồng: 47 ML Features • UNSW-NB15-v3</span>
+    <span class="badge badge-info">Hợp đồng: 18 ML Features • AIT-NDS-v2 + CTU-SME-11</span>
   </div>
 
   {#if models.length === 0}
