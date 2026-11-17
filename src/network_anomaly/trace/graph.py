@@ -129,6 +129,38 @@ class EntityRelationshipGraph:
         self._rev_adj[target_id].add(edge_id)
         return edge
 
+    def add_event(self, event: Any) -> None:
+        """Convenience method to register entities and interaction edges from a CanonicalSecurityEvent."""
+        src_ip = getattr(event, "source_ip", None)
+        dst_ip = getattr(event, "dest_ip", None)
+        if src_ip:
+            self.add_node(f"ip:{src_ip}", EntityKind.IP, label=src_ip)
+        if dst_ip:
+            self.add_node(f"ip:{dst_ip}", EntityKind.IP, label=dst_ip)
+        if src_ip and dst_ip:
+            self.add_edge(
+                source_id=f"ip:{src_ip}",
+                target_id=f"ip:{dst_ip}",
+                relation_type=RelationType.CONNECTS_TO,
+                confidence=1.0,
+                is_observed=True,
+                evidence_id=getattr(event, "event_id", None),
+                attributes={"protocol": getattr(event, "protocol", "TCP")},
+            )
+        auth_data = getattr(event, "auth_data", None)
+        if auth_data and getattr(auth_data, "username", None):
+            user = auth_data.username
+            self.add_node(f"user:{user}", EntityKind.USER, label=user)
+            if src_ip:
+                self.add_edge(
+                    source_id=f"ip:{src_ip}",
+                    target_id=f"user:{user}",
+                    relation_type=RelationType.AUTHENTICATES_AS,
+                    confidence=1.0,
+                    is_observed=True,
+                    evidence_id=getattr(event, "event_id", None),
+                )
+
     def get_neighbors(self, node_id: str, direction: str = "both") -> List[Tuple[EntityNode, RelationEdge]]:
         results = []
         if direction in ("out", "both"):
