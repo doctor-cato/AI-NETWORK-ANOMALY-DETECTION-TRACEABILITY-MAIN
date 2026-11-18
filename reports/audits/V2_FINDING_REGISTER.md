@@ -761,3 +761,11 @@
     - **Original Finding:** `random_forest_manifest.json` ghi `is_canonical_baseline=false` (`rf-v2-tuned-leaf5-cwbalanced_subsample`) trong khi WP3 dùng tên `E0_canonical_18f_baseline`.
     - **Remediation & Status:** **`PASS`** — `scripts/run_wp3_controlled_ablation.py`, `reports/experiments/ml/wp3_controlled_ablation_report.json`, `model_improvement_summary.json` và `V2_MODEL_AUDIT.md` đổi nhãn sang **`E0_frozen_18f_reference`** và giữ nguyên `random_forest_manifest.json` (`is_canonical_baseline=false`, không retrain hay sửa SHA).
 
+---
+
+## 10. Đợt Đồng bộ Mới nhất (`ac709f3` / CI Run `#215` & Phase 2–3 Option B)
+
+19. **Wave 1–2 (`ac709f3`, CI Run `#215` / ID `44351520341`, `7/7` `SUCCESS`) & Phase 2–3 Remediation (`2026-11-19`):**
+    - Đóng thêm: sở hữu `LICENSE`/`pyproject.toml` (`doctor-cato`), rà soát nguồn `UGR'16` (`UWF-ZeekData24` `95,871` flows read-only `XGB F1=0.9472`), Behavioral 16-D CSV + `EntityBaselineProfiler` detail/UI, đánh giá chỉ-đọc 4 `AggregationPolicy` + `RiskScorer`, `KEYSTORE_RUNBOOK.md` + DB migration rollback, `10,000`-event `tracemalloc` test, phân trang `2,000` alerts + 4-phase timeline Vitest, benchmark `--repeats 3` CV%, Real-Dataset UDP Loopback Replay ở `deployment` mode + trusted OOD SHA (`replay_real_netflow_udp.py`), System-Level Crypto A/B Overhead (`benchmark_crypto_overhead.py`, `121.7` vs `181.2 flow/s`, CPU `+53.56%`), thí nghiệm Multi-Class 6 lớp (`AIT-Test` `RF_multiclass Macro-F1=0.7347`), Cross-Source Calibration Diagnostic, và RQ3 Feature-Standardized Cosine (`UWF-ZeekData24` `F1=0.7192`).
+    - Đồng bộ lại PR `#156` description (cập nhật từ mốc cũ `20c4414`/`Run #214`) và giữ PR ở `OPEN / isDraft: true` chờ re-review.
+

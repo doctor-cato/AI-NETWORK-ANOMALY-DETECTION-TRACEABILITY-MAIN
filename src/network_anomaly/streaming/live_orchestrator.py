@@ -93,8 +93,10 @@ class LiveSystemOrchestrator:
         runtime_mode: Optional[str] = None,
         require_ood_gate: Optional[bool] = None,
         expected_ood_gate_sha256: Optional[str] = None,
+        encrypt_at_rest: bool = True,
     ):
         self.max_active_entities = max_active_entities
+        self.encrypt_at_rest = bool(encrypt_at_rest)
 
         # Subsystems
         self.feature_extractor = RealtimeFeatureExtractor()
@@ -215,9 +217,9 @@ class LiveSystemOrchestrator:
                     window_start=b_vec.window_start,
                     window_end=b_vec.window_end,
                     vector=list(b_vec.features),
-                    encrypt=True,
+                    encrypt=self.encrypt_at_rest,
                 )
-                vector_encrypted = True
+                vector_encrypted = self.encrypt_at_rest
 
         return LiveProcessingResult(
             event_id=event.event_id,

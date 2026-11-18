@@ -18,6 +18,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
+
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPTS_DIR.parent
 if str(_SCRIPTS_DIR) not in sys.path:
@@ -220,6 +222,125 @@ def run_rq3_experiment(
         >= 0.95,
     )
 
+    # Strategy C: Z-score feature-standardized cosine similarity across the 16-D vector space
+    # Balances low-amplitude protocol/flag/auth ratios against high-magnitude log_bytes dimensions.
+    def _standardized_eval(
+        items: List[tuple[str, str, Any]], *, cos_threshold: float = 0.60
+    ) -> Dict[str, Any]:
+        if len(items) < 2:
+            return _pairwise_metrics(items, lambda *_args: False)
+        mat = np.vstack([it[2].to_numpy() for it in items]).astype(np.float64)
+        mu = np.mean(mat, axis=0)
+        sigma = np.std(mat, axis=0)
+        active = sigma > 1e-6
+        z_mat = np.where(active, (mat - mu) / np.where(active, sigma, 1.0), 0.0)
+        z_items = [(items[i][0], items[i][1], z_mat[i]) for i in range(len(items))]
+
+        def _cos_z(_ip1: str, z1: np.ndarray, _ip2: str, z2: np.ndarray) -> bool:
+            n1 = float(np.linalg.norm(z1))
+            n2 = float(np.linalg.norm(z2))
+            if n1 < 1e-9 or n2 < 1e-9:
+                return False
+            return float(np.dot(z1, z2) / (n1 * n2)) >= cos_threshold
+
+        return _pairwise_metrics(z_items, _cos_z)
+
+    strategy_c_std = _standardized_eval(labeled_vectors, cos_threshold=0.60)
+
+    # Real-dataset empirical tactic correlation check on UWF-ZeekData24 (CC BY 4.0) if present locally
+    uwf_dir = _PROJECT_ROOT / "data" / "raw" / "uwf_zeekdata24"
+    uwf_empirical: Dict[str, Any] = {
+        "status": "SKIPPED",
+        "reason": "UWF-ZeekData24 raw CSVs absent locally.",
+    }
+    uwf_tactics = (
+        "Benign",
+        "Credential_Access",
+        "Defense_Evasion",
+        "Exfiltration",
+        "Initial_Access",
+        "Persistence",
+        "Privilege_Escalation",
+        "Reconnaissance",
+    )
+    if all((uwf_dir / f"{t}.csv").is_file() for t in uwf_tactics):
+        import csv
+
+        from network_anomaly.ingestion.adapters.uwf_zeek import parse_uwf_zeek_row
+
+        uwf_labeled: List[tuple[str, str, Any]] = []
+        for tactic in uwf_tactics:
+            csv_path = uwf_dir / f"{tactic}.csv"
+            evs: List[CanonicalSecurityEvent] = []
+            with csv_path.open("r", encoding="utf-8", errors="replace", newline="") as fh:
+                for idx, raw in enumerate(csv.DictReader(fh)):
+                    if idx >= 4000:
+                        break
+                    try:
+                        parsed = parse_uwf_zeek_row(
+                            raw, allow_zeek_unset_zero=True, subset_name=tactic
+                        )
+                    except Exception:
+                        continue
+                    if parsed["label_binary"] is None:
+                        continue
+                    ev_ts = datetime.fromtimestamp(
+                        float(parsed["timestamp_ms"]) / 1000.0, tz=timezone.utc
+                    )
+                    src_ip = str(parsed["source_ip"])
+                    evs.append(
+                        CanonicalSecurityEvent(
+                            event_timestamp=ev_ts,
+                            event_kind=EventKind.FLOW,
+                            source_id=f"uwf:{tactic}",
+                            entity_id=f"host:{src_ip}",
+                            source_ip=src_ip,
+                            dest_ip=str(parsed["dest_ip"]),
+                            source_port=int(parsed["source_port"]),
+                            dest_port=int(parsed["dest_port"]),
+                            protocol=str(parsed["raw_protocol_str"]),
+                            flow_metrics=FlowMetrics(
+                                duration_ms=float(parsed["duration_ms"]),
+                                bytes_in=int(round(float(parsed["bytes_in"]))),
+                                bytes_out=int(round(float(parsed["bytes_out"]))),
+                                pkts_in=int(round(float(parsed["pkts_in"]))),
+                                pkts_out=int(round(float(parsed["pkts_out"]))),
+                            ),
+                            raw_provenance=RawProvenance(
+                                source_file=f"{tactic}.csv", adapter_name="uwf_zeek"
+                            ),
+                        )
+                    )
+            sessions = [s for s in sessionizer.sessionize(evs) if s.event_count >= 2]
+            for s in sessions[:15]:
+                uwf_labeled.append(
+                    (
+                        tactic,
+                        s.entity_key,
+                        builder.build_vector(s),
+                    )
+                )
+
+        if len(uwf_labeled) >= 10:
+            uwf_ip = _pairwise_metrics(uwf_labeled, lambda ip1, _v1, ip2, _v2: ip1 == ip2)
+            uwf_raw_cos = _pairwise_metrics(
+                uwf_labeled,
+                lambda _ip1, v1, _ip2, v2: correlator.calc.cosine_similarity(
+                    v1.to_numpy(), v2.to_numpy()
+                )
+                >= threshold,
+            )
+            uwf_std_cos = _standardized_eval(uwf_labeled, cos_threshold=0.60)
+            uwf_empirical = {
+                "status": "EVALUATED",
+                "dataset": "UWF-ZeekData24 (CC BY 4.0, MITRE ATT&CK Tactics)",
+                "sessions_evaluated": len(uwf_labeled),
+                "tactics_represented": sorted({c for c, _, _ in uwf_labeled}),
+                "strategy_a_ip_exact": uwf_ip,
+                "strategy_b_raw_16d_cosine_0_85": uwf_raw_cos,
+                "strategy_c_standardized_cosine_0_60": uwf_std_cos,
+            }
+
     official_ait_files = _is_official_data_present(ait_data_dir)
     if official_ait_files:
         empirical_status = {
@@ -263,12 +384,18 @@ def run_rq3_experiment(
             "strategy_a_ip_exact_matching": strategy_a,
             "strategy_b_behavioral_vector_cosine": strategy_b,
             "strategy_b_strict_cosine_0_95": strategy_b_strict,
+            "strategy_c_standardized_behavioral_cosine_0_60": strategy_c_std,
         },
         "simulation_hypothesis_met": (
             strategy_b["pairwise_f1"] >= 0.85
             and strategy_b["pairwise_recall"] > strategy_a["pairwise_recall"]
         ),
+        "simulation_standardized_hypothesis_met": (
+            strategy_c_std["pairwise_f1"] >= 0.85
+            and strategy_c_std["pairwise_recall"] > strategy_a["pairwise_recall"]
+        ),
         "empirical_ait_evaluation": empirical_status,
+        "empirical_uwf_zeek24_tactic_correlation": uwf_empirical,
         "conclusion": (
             f"SIMULATION ONLY: Strategy B achieved pairwise F1={strategy_b['pairwise_f1']:.4f} "
             f"(precision={strategy_b['pairwise_precision']:.4f}, recall={strategy_b['pairwise_recall']:.4f}, "
@@ -301,10 +428,31 @@ def run_rq3_experiment(
         f"| Strategy A: IP Exact Match | {strategy_a['pairwise_precision']:.4f} | {strategy_a['pairwise_recall']:.4f} | {strategy_a['pairwise_f1']:.4f} | {strategy_a['false_link_rate']:.4f} | {strategy_a['match_accuracy']:.4f} |",
         f"| Strategy B: 16-D Behavioral Vector (cos >= {threshold}) | {strategy_b['pairwise_precision']:.4f} | {strategy_b['pairwise_recall']:.4f} | {strategy_b['pairwise_f1']:.4f} | {strategy_b['false_link_rate']:.4f} | {strategy_b['match_accuracy']:.4f} |",
         f"| Strategy B (Strict cos >= 0.95) | {strategy_b_strict['pairwise_precision']:.4f} | {strategy_b_strict['pairwise_recall']:.4f} | {strategy_b_strict['pairwise_f1']:.4f} | {strategy_b_strict['false_link_rate']:.4f} | {strategy_b_strict['match_accuracy']:.4f} |",
+        f"| Strategy C: Feature-Standardized 16-D Cosine (>= 0.60) | {strategy_c_std['pairwise_precision']:.4f} | {strategy_c_std['pairwise_recall']:.4f} | {strategy_c_std['pairwise_f1']:.4f} | {strategy_c_std['false_link_rate']:.4f} | {strategy_c_std['match_accuracy']:.4f} |",
         "",
-        "## Limitations",
-        *[f"- {lim}" for lim in results["limitations"]],
     ]
+    if uwf_empirical.get("status") == "EVALUATED":
+        ui = uwf_empirical["strategy_a_ip_exact"]
+        ur = uwf_empirical["strategy_b_raw_16d_cosine_0_85"]
+        us = uwf_empirical["strategy_c_standardized_cosine_0_60"]
+        md_lines.extend(
+            [
+                f"## Real-Dataset Tactic Correlation (`UWF-ZeekData24`, `{uwf_empirical['sessions_evaluated']}` multi-flow sessions across `{len(uwf_empirical['tactics_represented'])}` MITRE ATT&CK Tactics)",
+                "",
+                "| Strategy | Pairwise Precision | Pairwise Recall | Pairwise F1 | False Link Rate | Match Accuracy |",
+                "|---|---:|---:|---:|---:|---:|",
+                f"| IP Exact Match | {ui['pairwise_precision']:.4f} | {ui['pairwise_recall']:.4f} | {ui['pairwise_f1']:.4f} | {ui['false_link_rate']:.4f} | {ui['match_accuracy']:.4f} |",
+                f"| Raw 16-D Cosine (>= {threshold}) | {ur['pairwise_precision']:.4f} | {ur['pairwise_recall']:.4f} | {ur['pairwise_f1']:.4f} | {ur['false_link_rate']:.4f} | {ur['match_accuracy']:.4f} |",
+                f"| Feature-Standardized 16-D Cosine (>= 0.60) | {us['pairwise_precision']:.4f} | {us['pairwise_recall']:.4f} | {us['pairwise_f1']:.4f} | {us['false_link_rate']:.4f} | {us['match_accuracy']:.4f} |",
+                "",
+            ]
+        )
+    md_lines.extend(
+        [
+            "## Limitations",
+            *[f"- {lim}" for lim in results["limitations"]],
+        ]
+    )
     md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"RQ3 simulation report written: {json_path} and {md_path}")
     return results

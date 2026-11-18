@@ -2,7 +2,7 @@
   "experiment_id": "EXP-RQ3-CORRELATION-01",
   "execution_mode": "SIMULATION",
   "empirical_dataset_status": "BLOCKED",
-  "timestamp": "2026-11-17T23:04:51.208727+00:00",
+  "timestamp": "2026-11-18T18:03:01.949013+00:00",
   "hypothesis": "H3: Behavioral Vector achieves >= 85% session correlation F1/recall independent of IP",
   "dataset_provenance": {
     "simulation_source": "synthetic_ip_rotation_benchmark (synthetic: true)",
@@ -38,7 +38,7 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T23:04:51.200494+00:00"
+    "captured_at_utc": "2026-11-18T18:03:01.260984+00:00"
   },
   "ablation": {
     "strategy_a_ip_exact_matching": {
@@ -76,13 +76,77 @@
       "pairwise_f1": 0.555556,
       "false_link_rate": 0.3,
       "match_accuracy": 0.747368
+    },
+    "strategy_c_standardized_behavioral_cosine_0_60": {
+      "total_pairs": 190,
+      "tp": 30,
+      "fp": 0,
+      "fn": 0,
+      "tn": 160,
+      "pairwise_precision": 1.0,
+      "pairwise_recall": 1.0,
+      "pairwise_f1": 1.0,
+      "false_link_rate": 0.0,
+      "match_accuracy": 1.0
     }
   },
   "simulation_hypothesis_met": false,
+  "simulation_standardized_hypothesis_met": true,
   "empirical_ait_evaluation": {
     "status": "BLOCKED",
     "reason": "Official AIT campaign-linkage ground truth absent or not verified in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.",
     "files_detected": 0
+  },
+  "empirical_uwf_zeek24_tactic_correlation": {
+    "status": "EVALUATED",
+    "dataset": "UWF-ZeekData24 (CC BY 4.0, MITRE ATT&CK Tactics)",
+    "sessions_evaluated": 56,
+    "tactics_represented": [
+      "Benign",
+      "Credential_Access",
+      "Defense_Evasion",
+      "Exfiltration",
+      "Initial_Access",
+      "Persistence",
+      "Privilege_Escalation",
+      "Reconnaissance"
+    ],
+    "strategy_a_ip_exact": {
+      "total_pairs": 1540,
+      "tp": 283,
+      "fp": 199,
+      "fn": 53,
+      "tn": 1005,
+      "pairwise_precision": 0.587137,
+      "pairwise_recall": 0.842262,
+      "pairwise_f1": 0.691932,
+      "false_link_rate": 0.165282,
+      "match_accuracy": 0.836364
+    },
+    "strategy_b_raw_16d_cosine_0_85": {
+      "total_pairs": 1540,
+      "tp": 196,
+      "fp": 162,
+      "fn": 140,
+      "tn": 1042,
+      "pairwise_precision": 0.547486,
+      "pairwise_recall": 0.583333,
+      "pairwise_f1": 0.564841,
+      "false_link_rate": 0.134551,
+      "match_accuracy": 0.803896
+    },
+    "strategy_c_standardized_cosine_0_60": {
+      "total_pairs": 1540,
+      "tp": 219,
+      "fp": 54,
+      "fn": 117,
+      "tn": 1150,
+      "pairwise_precision": 0.802198,
+      "pairwise_recall": 0.651786,
+      "pairwise_f1": 0.719212,
+      "false_link_rate": 0.04485,
+      "match_accuracy": 0.888961
+    }
   },
   "conclusion": "SIMULATION ONLY: Strategy B achieved pairwise F1=0.3191 (precision=0.1899, recall=1.0000, false_link_rate=0.8000) vs Strategy A IP-matching recall=0.0000. Empirical validation on real AIT dataset is BLOCKED (Official AIT campaign-linkage ground truth absent or not verified in data\\raw\\ait; empirical real-dataset validation cannot be claimed from simulation alone.).",
   "limitations": [
