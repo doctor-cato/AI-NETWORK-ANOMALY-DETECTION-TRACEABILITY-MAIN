@@ -72,26 +72,64 @@ class LiveInferenceDecision:
         return asdict(self)
 
 
-def _resolve_runtime_policy(
-    runtime_mode: Optional[str],
-    require_ood_gate: Optional[bool],
-) -> tuple[str, bool]:
-    raw_mode = (
-        runtime_mode
-        if runtime_mode is not None
-        else os.environ.get("NETFLOW_RUNTIME_MODE", "research")
-    )
-    norm_mode = str(raw_mode).strip().lower() or "research"
+def _parse_optional_bool_env(name: str) -> Optional[bool]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    norm = raw.lower()
+    if norm in {"1", "true", "yes"}:
+        return True
+    if norm in {"0", "false", "no"}:
+        return False
+    raise ValueError(f"Invalid boolean value for {name}: {raw!r}")
+
+
+def resolve_runtime_policy(
+    runtime_mode: Optional[str] = None,
+    require_ood_gate: Optional[bool] = None,
+) -> tuple[str, bool, str]:
+    """Resolve effective ``(runtime_mode, require_ood_gate, policy_source)``.
+
+    Defaults fail-closed to ``deployment`` when neither ``runtime_mode`` nor
+    ``NETFLOW_RUNTIME_MODE`` is supplied; ``research`` mode is active only when
+    explicitly selected.
+    """
+    if runtime_mode is not None:
+        raw_mode = runtime_mode
+        policy_source = "explicit_argument"
+    else:
+        env_mode = os.environ.get("NETFLOW_RUNTIME_MODE", "").strip()
+        if env_mode:
+            raw_mode = env_mode
+            policy_source = "env:NETFLOW_RUNTIME_MODE"
+        else:
+            raw_mode = "deployment"
+            policy_source = "default_fail_closed:deployment"
+
+    norm_mode = str(raw_mode).strip().lower()
     if norm_mode not in SUPPORTED_RUNTIME_MODES:
         raise ValueError(
             f"Unsupported runtime_mode {raw_mode!r}; expected one of {SUPPORTED_RUNTIME_MODES}"
         )
-    if norm_mode == "deployment" and require_ood_gate is False:
+
+    env_require = (
+        _parse_optional_bool_env("NETFLOW_REQUIRE_OOD_GATE") if require_ood_gate is None else None
+    )
+    requested_require = require_ood_gate if require_ood_gate is not None else env_require
+    if norm_mode == "deployment" and requested_require is False:
         raise ValueError("require_ood_gate cannot be False when runtime_mode='deployment'")
     effective_require = (
-        bool(require_ood_gate) if require_ood_gate is not None else (norm_mode == "deployment")
+        bool(requested_require) if requested_require is not None else (norm_mode == "deployment")
     )
-    return norm_mode, effective_require
+    return norm_mode, effective_require, policy_source
+
+
+def _resolve_runtime_policy(
+    runtime_mode: Optional[str],
+    require_ood_gate: Optional[bool],
+) -> tuple[str, bool]:
+    mode, req, _ = resolve_runtime_policy(runtime_mode, require_ood_gate)
+    return mode, req
 
 
 def _load_ood_gate(
@@ -209,9 +247,18 @@ class RealtimeInferenceEngine:
             if isinstance(expected_ood_gate_sha256, str) and expected_ood_gate_sha256.strip()
             else expected_ood_gate_sha256
         )
-        self.runtime_mode, self.require_ood_gate = _resolve_runtime_policy(
-            runtime_mode, require_ood_gate
+        self.runtime_mode, self.require_ood_gate, self.runtime_policy_source = (
+            resolve_runtime_policy(runtime_mode, require_ood_gate)
         )
+        try:
+            self._resolved_expected_ood_gate_sha256, self._resolved_expected_ood_gate_source = (
+                resolve_expected_ood_gate_sha256(expected_ood_gate_sha256)
+            )
+        except Exception:
+            self._resolved_expected_ood_gate_sha256, self._resolved_expected_ood_gate_source = (
+                None,
+                "invalid_expected_sha256",
+            )
         (
             self.ood_gate,
             self.ood_gate_status,
@@ -253,7 +300,11 @@ class RealtimeInferenceEngine:
         summary = self.registry.summary()
         ood_block = self._ood_policy_blocked_reason()
         summary["runtime_mode"] = self.runtime_mode
+        summary["runtime_policy_source"] = self.runtime_policy_source
         summary["require_ood_gate"] = self.require_ood_gate
+        summary["expected_ood_gate_sha256_configured"] = bool(
+            self._resolved_expected_ood_gate_sha256
+        )
         summary["ood_gate_status"] = self.ood_gate_status
         summary["ood_gate_error"] = self.ood_gate_error
         summary["ood_gate_sha256"] = self.ood_gate_sha256

@@ -701,9 +701,9 @@
     - **Severity:** `P2`
     - **Original Finding:** Các tài liệu kiểm toán (`V2_FINAL_AUDIT`, `V2_MODEL_AUDIT`, `V2_FINDING_REGISTER`, `V2_ISSUE_AC_AUDIT`, `V2_PR156_AND_DEFERRED_HANDOFF`, `V2_DISTRIBUTION_GOVERNANCE_REVIEW`, `PRESENTATION_OUTLINE`) và mô tả PR `#156` có độ trễ so với HEAD & CI run thực tế (ban đầu `2c8acc1d` / `#44271966268`, sau đó `a6c87ae` / Run `#211` ID `44278751854` và bản vá `WP-F`).
     - **Remediation:** Tách bạch rõ **Model Training Provenance** (`79ebb678`, `git_dirty=true`), **Implementation & CI Verification Snapshot** (`a6c87ae`, Run `#211` ID `44278751854`), và **Documentation/WP-F Remediation Commit**; đồng bộ toàn bộ 7 tài liệu và cập nhật trực tiếp PR `#156` body (giữ nguyên `OPEN / Draft`, `approved: false`).
-    - **Verification Evidence:** Đối chiếu `git rev-parse`, `gh pr view 156`, `gh run view`, `verify_companion_artifacts.py`, và CI run gắn với commit mới sau push.
-    - **Current Status:** **`PASS`**
-    - **Remaining Limitation:** Các rào cản ngoài phạm vi (`UGR'16`, `#85`, `#137` physical lab, `#73`/`#148` Clean VM, `DISTRIBUTION_AUTHORIZATION.json`, `#152`, `#153`, và `0` independent submitted GitHub review) giữ nguyên chưa đóng.
+    - **Verification Evidence:** Đối chiếu `git rev-parse`, `gh pr view 156`, `gh run view`, `verify_companion_artifacts.py`, và CI run gắn với commit `5483794` (Run `#212`, ID `44312426631`).
+    - **Current Status:** **`SUPERSEDED_BY_SECTION_9` (`P2-02`)** — Review `CHANGES_REQUESTED` bởi `ViolaPeracia` trên `5483794` đã chỉ ra độ trễ đồng bộ tài liệu và đếm sai số review; xem Section 9 bên dưới.
+    - **Remaining Limitation:** Các rào cản ngoài phạm vi (`UGR'16`, `#85`, `#137` physical lab, `#73`/`#148` Clean VM, `DISTRIBUTION_AUTHORIZATION.json`, `#152`, `#153`, và review lại sau `CHANGES_REQUESTED`) giữ nguyên chưa đóng.
 
 13. **`R-OOD-EXPECTED-SHA` — Persisted OOD Gate Expected SHA-256 Verification & Missing Built-in Trust Anchor (`WP-F`)**
     - **Severity:** `P2`
@@ -716,6 +716,44 @@
       - `src/network_anomaly/streaming/realtime_inference.py`, `live_orchestrator.py`, `live_service.py`: thêm `expected_ood_gate_sha256`, truyền vào `verify_ood_gate_artifact(..., expected_sha256=...)`, từ chối fail-closed (`ERROR`, `ood_gate_trust_anchor="missing_trusted_expected_sha256"`) trong `deployment` mode nếu thiếu external expected SHA hoặc lệch SHA, và giữ nguyên contract `research` mode (`unanchored_local_artifact` / `unanchored_same_boundary_manifest`).
       - `scripts/verify_companion_artifacts.py`: bổ sung trường `ood_gate` vào `COMPANION_BUNDLE_MANIFEST.json`, kiểm `ood_gate` trong `_verify_companion_bundle_manifest()` và bắt buộc khớp `EMBEDDED_ARTIFACTS_MANIFEST.json` + `EMBEDDED_SHA256SUMS.txt` trong `verify_installed_standalone_layout()`.
     - **Verification Evidence:** Regression tests trong `tests/unit/test_realtime_inference.py` & `tests/unit/test_verify_companion_artifacts.py` (đúng SHA PASS, sai SHA REJECT, sửa JSON hợp lệ vẫn REJECT, sai preprocessor SHA REJECT, thiếu expected SHA trong `deployment` mode fail-closed, `research` mode giữ contract, companion/embedded manifest mismatch REJECT).
-    - **Current Status:** **`UNRESOLVED / ACCEPTED LIMITATION`** *(cơ chế runtime enforcement + manifest cross-check đã `PASS` test, nhưng **repository/standalone bundle mặc định chưa có built-in independent trust anchor** tách khỏi filesystem `artifacts/`)*
-    - **Conditions to Close:** Track một signed/authoritative OOD manifest trong Git hoặc ký cryptographic/Authenticode `EMBEDDED_ARTIFACTS_MANIFEST.json` (hoặc nhúng digest được ký cùng binary `netflow-sentinel-backend.exe`), hoặc cấp `NETFLOW_OOD_GATE_SHA256` từ secret/config store độc lập khi triển khai.
+    - **Current Status:** **`PASS (Runtime SHA Enforcement) / PARTIAL_UNANCHORED (Built-in Default Anchor)`** *(xem thêm `14. P1-01` & `16. P2-03` tại Mục 9 sau review `CHANGES_REQUESTED` tại `5483794`)*
+    - **Conditions to Close:** Track một signed/authoritative OOD manifest trong Git hoặc ký cryptographic/Authenticode `EMBEDDED_ARTIFACTS_MANIFEST.json` (hoặc cấp `NETFLOW_OOD_GATE_SHA256` tại `cargo build` `build.rs` `option_env!` hoặc biến môi trường operator ngoài trust boundary `artifacts/`).
+
+---
+
+## 9. Khắc phục Review `CHANGES_REQUESTED` trên `5483794` / CI Run `#212` (`ViolaPeracia`, `2026-11-18`)
+
+- **Historical Context Preserved:** Commit `5483794160e877bf2d65144f30fd1ffc181372c3` đạt CI Run `#212` (ID `44312426631`, `7/7` `SUCCESS`) nhưng nhận **`1` submitted GitHub review (`CHANGES_REQUESTED`)** từ `ViolaPeracia` (`COLLABORATOR`, `2026-11-18T13:46:21Z`), tách biệt với model training provenance (`79ebb678`, `DIRTY_DISCLOSED`) và snapshot trước đó (`a6c87ae`, Run `#211`).
+
+14. **`P1-01` — Nối Chính sách OOD `deployment` Vào Toàn bộ Product Entry Points**
+    - **Severity:** `P1`
+    - **Original Finding:** Tại `5483794`, `RealtimeInferenceEngine` mặc định `NETFLOW_RUNTIME_MODE="research"`, `LiveRuntime.start()` không truyền `runtime_mode` hay `expected_ood_gate_sha256`, `desktop/src-tauri/src/backend.rs` không set `NETFLOW_RUNTIME_MODE`/`NETFLOW_OOD_GATE_SHA256` ở cả 2 nhánh sidecar/Python fallback, và `scripts/run_live_lab_acceptance.py` dựng `LiveTelemetryService` không khai báo profile.
+    - **Remediation Implemented:**
+      - `src/network_anomaly/ml/ood_gate.py`: `resolve_expected_ood_gate_sha256()` hỗ trợ thêm `NETFLOW_EMBEDDED_OOD_GATE_SHA256` (`"build_embedded_sha256"`), không coi unsigned co-located manifest là anchor độc lập.
+      - `src/network_anomaly/streaming/realtime_inference.py`: thêm `resolve_runtime_policy()`, đổi mặc định khi vắng env sang fail-closed `"deployment"` (`require_ood_gate=True`, `policy_source="default_fail_closed:deployment"`), báo cáo `runtime_policy_source` & `expected_ood_gate_sha256_configured` trong `readiness()`.
+      - `src/network_anomaly/api/live_runtime.py` & `main.py`: `LiveRuntime`, `LiveRuntime.start()`, `create_app()` nhận và nối tường minh `runtime_mode`/`require_ood_gate`/`expected_ood_gate_sha256` xuống `LiveTelemetryService -> LiveSystemOrchestrator -> RealtimeInferenceEngine`; cấm hạ cấp ngầm `deployment -> research`; báo trạng thái fail-closed tiền khởi chạy (`UNAVAILABLE` nếu thiếu trusted SHA).
+      - `scripts/run_api.py` & `scripts/run_live_lab_acceptance.py`: `run_api.py` mặc định `deployment` (hỗ trợ `--runtime-mode`, `--ood-gate-sha256`); `run_live_lab_acceptance.py` chọn tường minh `research` cho lab tổng hợp khi thiếu SHA ngoài và ghi rõ vào report.
+      - `desktop/src-tauri/build.rs` & `src/backend.rs`: dùng `option_env!("NETFLOW_OOD_GATE_SHA256")` + runtime env qua `resolve_backend_runtime_policy()` & `apply_backend_runtime_policy()`, áp dụng đồng nhất cho cả **embedded backend sidecar** và **Python script fallback** (mặc định `NETFLOW_RUNTIME_MODE=deployment`, `NETFLOW_REQUIRE_OOD_GATE=true`; giữ inference `UNAVAILABLE` nếu thiếu trusted SHA; không downgrade về `research`).
+    - **Verification Evidence:** Regression tests trong `tests/unit/test_realtime_inference.py`, `tests/integration/test_full_system_e2e.py`, và Rust unit tests trong `desktop/src-tauri/src/backend.rs` (`test_runtime_policy_defaults_fail_closed_to_deployment`, `test_sidecar_and_python_fallback_receive_identical_runtime_policy`, `test_spawn_and_clean_shutdown_python_backend`).
+    - **Current Status:** **`PASS`** *(entry-point wiring & fail-closed behavior verified; live AI inference ở `deployment` mode giữ `UNAVAILABLE` khi operator/build chưa cấu hình `NETFLOW_OOD_GATE_SHA256`, và cả 4 model tiers vẫn giữ `RESEARCH_ONLY`)*
+
+15. **`P2-02` — Đồng bộ Hóa Toàn Bộ Audit Docs & Trạng thái Review PR `#156`**
+    - **Severity:** `P2`
+    - **Original Finding:** 7 tài liệu audit còn ghim snapshot cũ (`a6c87ae` / Run `#211`) hoặc ghi `0` submitted reviews sau khi `5483794` (Run `#212`) đã nhận `1` review `CHANGES_REQUESTED` từ `ViolaPeracia`.
+    - **Remediation & Status:** **`PASS`** — Đã tách 3 mốc (`79ebb678` `DIRTY_DISCLOSED`, `a6c87ae`/Run `#211`, `5483794`/Run `#212` + `CHANGES_REQUESTED`) và hiện trạng sửa lỗi trên 7 tài liệu + PR `#156` description (giữ `OPEN / DRAFT`).
+
+16. **`P2-03` — Tách Biệt Phân cấp Khẳng định Toàn vẹn OOD trong `verify_companion_artifacts.py` & `V2_MODEL_AUDIT.md`**
+    - **Severity:** `P2`
+    - **Original Finding:** `verify_companion_artifacts()` gọi `verify_ood_gate_artifact()` không truyền expected SHA, tạo ấn tượng PASS toàn vẹn dù chỉ tự tính hash + kiểm cấu trúc/preprocessor linkage.
+    - **Remediation & Status:** **`PASS`** — `scripts/verify_companion_artifacts.py` nhận `--expect-ood-gate-sha256` / env, chạy `cross_check_same_boundary_embedded_manifest()`, tách riêng `structural_schema_verified`, `preprocessor_linkage_verified`, `trusted_digest_verified`, `integrity_verification_status` (`"PASS"` vs `"PARTIAL_UNANCHORED"` vs `"FAIL"`), `trust_anchor_source`; `V2_MODEL_AUDIT.md` cập nhật khớp trung thực.
+
+17. **`P3-01` — Hiển thị Lý do Test Skip trong CI (`.github/workflows/ci.yml`)**
+    - **Severity:** `P3`
+    - **Original Finding:** CI hiện count `21 skipped` (Ubuntu) / `19 skipped` (Windows) ở Run `#211`/`#212` nhưng không in skip reasons tách biệt với raw dataset `SKIPPED`.
+    - **Remediation & Status:** **`PASS`** — Cập nhật `.github/workflows/ci.yml` thành `python -m pytest tests -q -rs --tb=short` (không xóa hoặc làm yếu test) và ghi nhận skip counts + exact reasons từ CI Ubuntu/Windows.
+
+18. **`P3-02` — Thống nhất Thuật ngữ RF Reference (`is_canonical_baseline=false` vs `E0`)**
+    - **Severity:** `P3`
+    - **Original Finding:** `random_forest_manifest.json` ghi `is_canonical_baseline=false` (`rf-v2-tuned-leaf5-cwbalanced_subsample`) trong khi WP3 dùng tên `E0_canonical_18f_baseline`.
+    - **Remediation & Status:** **`PASS`** — `scripts/run_wp3_controlled_ablation.py`, `reports/experiments/ml/wp3_controlled_ablation_report.json`, `model_improvement_summary.json` và `V2_MODEL_AUDIT.md` đổi nhãn sang **`E0_frozen_18f_reference`** và giữ nguyên `random_forest_manifest.json` (`is_canonical_baseline=false`, không retrain hay sửa SHA).
 

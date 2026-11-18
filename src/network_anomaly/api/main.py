@@ -93,18 +93,37 @@ from network_anomaly.trace.investigation import InvestigationReportGenerator
 from network_anomaly.trace.timeline import AttackTimelineReconstructor
 
 
-def create_app(db_path: Optional[Union[str, Path]] = None) -> FastAPI:
+def create_app(
+    db_path: Optional[Union[str, Path]] = None,
+    *,
+    runtime_mode: Optional[str] = None,
+    require_ood_gate: Optional[bool] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
+) -> FastAPI:
     """Application factory creating a configured FastAPI instance.
 
     Parameters
     ----------
     db_path : str or Path, optional
         Custom SQLite database path or ':memory:'. Defaults to standard project DB.
+    runtime_mode : str, optional
+        Explicit OOD runtime policy (``'deployment'`` or ``'research'``).
+        Defaults fail-closed to ``NETFLOW_RUNTIME_MODE`` or ``'deployment'``.
+    require_ood_gate : bool, optional
+        Explicit OOD gate requirement flag (cannot be ``False`` in ``'deployment'``).
+    expected_ood_gate_sha256 : str, optional
+        Trusted expected SHA-256 hex digest for persisted ``ood_reference_gate.json``.
     """
     db_manager = DatabaseManager(db_path=db_path)
     service = ApiService(db=db_manager)
     keystore_dir = None if db_path == ":memory:" else db_manager.db_path.parent / "keys"
-    live_runtime = LiveRuntime(db_path=db_path, keystore_dir=keystore_dir)
+    live_runtime = LiveRuntime(
+        db_path=db_path,
+        keystore_dir=keystore_dir,
+        runtime_mode=runtime_mode,
+        require_ood_gate=require_ood_gate,
+        expected_ood_gate_sha256=expected_ood_gate_sha256,
+    )
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):

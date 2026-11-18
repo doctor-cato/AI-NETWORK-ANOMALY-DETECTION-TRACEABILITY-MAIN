@@ -2398,3 +2398,52 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
             token_env_var=None,
             independent_vm_evidence=tmp_path / "vm_evidence.json",
         )
+
+
+def test_verify_companion_artifacts_distinguishes_unanchored_vs_trusted_ood_sha(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import hashlib
+
+    import scripts.verify_companion_artifacts as vca
+
+    ood_path = REPO_ROOT / "artifacts/ml/ood_reference_gate.json"
+    if not (
+        (REPO_ROOT / "artifacts/models/random_forest/random_forest_baseline.joblib").is_file()
+        and ood_path.is_file()
+    ):
+        pytest.skip("Local ML model binaries absent on runner")
+
+    monkeypatch.delenv("NETFLOW_OOD_GATE_SHA256", raising=False)
+    monkeypatch.delenv("NETFLOW_EMBEDDED_OOD_GATE_SHA256", raising=False)
+
+    unanchored = vca.verify_companion_artifacts(root=REPO_ROOT)
+    ood_un = unanchored["ood_gate"]
+    assert ood_un["ready"] is True
+    assert ood_un["structural_schema_verified"] is True
+    assert ood_un["preprocessor_linkage_verified"] is True
+    assert ood_un["trusted_digest_verified"] is False
+    assert ood_un["integrity_verification_status"] == "PARTIAL_UNANCHORED"
+    assert ood_un["trust_anchor_source"] == "none"
+
+    real_sha = hashlib.sha256(ood_path.read_bytes()).hexdigest()
+    anchored = vca.verify_companion_artifacts(
+        root=REPO_ROOT,
+        expected_ood_gate_sha256=real_sha,
+    )
+    ood_ok = anchored["ood_gate"]
+    assert ood_ok["ready"] is True
+    assert ood_ok["trusted_digest_verified"] is True
+    assert ood_ok["integrity_verification_status"] == "PASS"
+    assert ood_ok["trust_anchor_source"] == "explicit_expected_sha256"
+    assert ood_ok["expected_sha256"] == real_sha
+
+    wrong = vca.verify_companion_artifacts(
+        root=REPO_ROOT,
+        expected_ood_gate_sha256="0" * 64,
+    )
+    assert wrong["overall_status"] == "BLOCKED / NOT READY"
+    assert wrong["ood_gate"]["ready"] is False
+    assert wrong["ood_gate"]["status"] == "ERROR"
+    assert wrong["ood_gate"]["trusted_digest_verified"] is False
+    assert wrong["ood_gate"]["integrity_verification_status"] == "FAIL"

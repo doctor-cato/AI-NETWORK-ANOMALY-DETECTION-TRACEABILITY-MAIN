@@ -580,7 +580,7 @@ def _run_scenario_grouped_cv(raw_train: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _reconcile_e0_from_manifests() -> Dict[str, Any]:
-    """WP2: Reconcile official E0 baseline metrics & provenance from tracked model manifests."""
+    """WP2: Reconcile official E0 frozen reference metrics & provenance from tracked model manifests."""
     model_files = {
         "random_forest": PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json",
         "xgboost": PROJECT_ROOT / "reports" / "models" / "xgboost_manifest.json",
@@ -595,6 +595,9 @@ def _reconcile_e0_from_manifests() -> Dict[str, Any]:
         e0_models[key] = {
             "run_id": man.get("run_id"),
             "manifest_path": path.relative_to(PROJECT_ROOT).as_posix(),
+            "protocol_version": man.get("protocol_version"),
+            "configuration_id": man.get("configuration_id"),
+            "is_canonical_baseline": man.get("is_canonical_baseline"),
             "model_artifact_sha256": man.get("model_artifact_sha256") or man.get("model_sha256"),
             "split_manifest_sha256": man.get("split_manifest_sha256"),
             "preprocessor_artifact_sha256": (
@@ -610,8 +613,12 @@ def _reconcile_e0_from_manifests() -> Dict[str, Any]:
             },
         }
     return {
-        "exp_id": "E0_canonical_18f_baseline",
-        "description": "Reconciled baseline from official post-remediation 18-feature model manifests",
+        "exp_id": "E0_frozen_18f_reference",
+        "description": (
+            "Frozen 18-feature comparison reference reconciled from the 4 official retained model "
+            "manifests (Random Forest uses tuned experimental protocol "
+            "rf-v2-tuned-leaf5-cwbalanced_subsample with is_canonical_baseline=false)"
+        ),
         "rare_class_sample_warnings": {
             "ait_test": {
                 "Credential_Attack": {

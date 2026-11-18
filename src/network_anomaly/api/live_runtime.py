@@ -27,6 +27,8 @@ from network_anomaly.behavioral.similarity import BehavioralSimilarityCalculator
 from network_anomaly.behavioral.vector import BehavioralVector, BehavioralVectorBuilder
 from network_anomaly.crypto.key_manager import KeyManager, KeyStorageError
 from network_anomaly.crypto.rotation import KeyRotationPolicy
+from network_anomaly.ml.ood_gate import resolve_expected_ood_gate_sha256
+from network_anomaly.streaming.realtime_inference import resolve_runtime_policy
 
 DISCONNECTED = "DISCONNECTED"
 CONNECTED = "CONNECTED"
@@ -53,20 +55,77 @@ class LiveRuntime:
         self,
         db_path: Optional[Union[str, Path]] = None,
         keystore_dir: Optional[Path] = None,
+        *,
+        runtime_mode: Optional[str] = None,
+        require_ood_gate: Optional[bool] = None,
+        expected_ood_gate_sha256: Optional[str] = None,
     ):
         self.db_path = db_path
         self.keystore_dir = Path(keystore_dir) if keystore_dir else None
+        self.runtime_mode, self.require_ood_gate, self.runtime_policy_source = (
+            resolve_runtime_policy(runtime_mode, require_ood_gate)
+        )
+        self.expected_ood_gate_sha256 = (
+            expected_ood_gate_sha256.strip().lower()
+            if isinstance(expected_ood_gate_sha256, str) and expected_ood_gate_sha256.strip()
+            else expected_ood_gate_sha256
+        )
         self._service = None
         self._key_manager: Optional[KeyManager] = None
         self._lock = threading.RLock()
         self._last_error: Optional[str] = None
         self._demo_mode = False
+        self._active_policy: Optional[tuple[str, bool, Optional[str]]] = None
         self._temp_dir: Optional[Path] = None
         if self.keystore_dir is None:
             self._temp_dir = Path(tempfile.mkdtemp(prefix="nf-sentinel-api-keystore-"))
             self.keystore_dir = self._temp_dir
 
     # ------------------------------------------------------------- helpers
+    def _effective_start_policy(
+        self,
+        runtime_mode: Optional[str] = None,
+        require_ood_gate: Optional[bool] = None,
+        expected_ood_gate_sha256: Optional[str] = None,
+    ) -> tuple[str, bool, Optional[str]]:
+        if runtime_mode is not None:
+            requested_mode, requested_require, _ = resolve_runtime_policy(
+                runtime_mode, require_ood_gate
+            )
+            if self.runtime_mode == "deployment" and requested_mode != "deployment":
+                raise ValueError(
+                    "Cannot downgrade LiveRuntime from 'deployment' mode to 'research' mode"
+                )
+            eff_mode = requested_mode
+            eff_require = requested_require
+        else:
+            eff_mode = self.runtime_mode
+            if require_ood_gate is not None:
+                if eff_mode == "deployment" and require_ood_gate is False:
+                    raise ValueError(
+                        "require_ood_gate cannot be False when runtime_mode='deployment'"
+                    )
+                eff_require = bool(require_ood_gate)
+            else:
+                eff_require = self.require_ood_gate
+
+        eff_sha = self.expected_ood_gate_sha256
+        if expected_ood_gate_sha256 is not None:
+            norm_arg = (
+                expected_ood_gate_sha256.strip().lower()
+                if isinstance(expected_ood_gate_sha256, str)
+                else expected_ood_gate_sha256
+            )
+            if (
+                self.expected_ood_gate_sha256 is not None
+                and norm_arg != self.expected_ood_gate_sha256
+            ):
+                raise ValueError(
+                    "Cannot override configured expected_ood_gate_sha256 on LiveRuntime.start()"
+                )
+            eff_sha = norm_arg
+        return eff_mode, eff_require, eff_sha
+
     @property
     def sqlite_path(self) -> Optional[Path]:
         if self.db_path in (None, ":memory:"):
@@ -95,13 +154,24 @@ class LiveRuntime:
         demo_heuristics: bool = False,
         queue_capacity: int = 10_000,
         batch_size: int = 32,
+        runtime_mode: Optional[str] = None,
+        require_ood_gate: Optional[bool] = None,
+        expected_ood_gate_sha256: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Start the real UDP collector and processing worker."""
+        eff_mode, eff_require, eff_sha = self._effective_start_policy(
+            runtime_mode=runtime_mode,
+            require_ood_gate=require_ood_gate,
+            expected_ood_gate_sha256=expected_ood_gate_sha256,
+        )
+        requested_policy = (eff_mode, eff_require, eff_sha)
         with self._lock:
             if self._service is not None and self._service.is_running:
                 return self.status()
-            if self._service is not None and demo_heuristics != self._demo_mode:
-                # Mode cannot change in place; discard the previous stopped
+            if self._service is not None and (
+                demo_heuristics != self._demo_mode or requested_policy != self._active_policy
+            ):
+                # Mode or policy cannot change in place; discard the previous stopped
                 # service and start a fresh one.
                 self._service = None
             if self._service is None:
@@ -113,10 +183,14 @@ class LiveRuntime:
                     db_path=self.sqlite_path,
                     keystore_dir=self.keystore_dir,
                     demo_heuristics=demo_heuristics,
+                    runtime_mode=eff_mode,
+                    require_ood_gate=eff_require,
+                    expected_ood_gate_sha256=eff_sha,
                     queue_capacity=queue_capacity,
                     batch_size=batch_size,
                 )
                 self._demo_mode = demo_heuristics
+                self._active_policy = requested_policy
             try:
                 self._service.start()
                 self._last_error = None
@@ -145,6 +219,35 @@ class LiveRuntime:
                 self._temp_dir = None
 
     # -------------------------------------------------------------- status
+    def _prestart_inference_status(self) -> Dict[str, Any]:
+        info = dict(_PLACEHOLDER_INFERENCE)
+        info["runtime_mode"] = self.runtime_mode
+        info["runtime_policy_source"] = self.runtime_policy_source
+        info["require_ood_gate"] = self.require_ood_gate
+        try:
+            resolved_sha, trust_source = resolve_expected_ood_gate_sha256(
+                self.expected_ood_gate_sha256
+            )
+            info["expected_ood_gate_sha256_configured"] = bool(resolved_sha)
+            if self.require_ood_gate and resolved_sha is None:
+                info["ood_gate_trust_anchor"] = "missing_trusted_expected_sha256"
+                info["ood_gate_status"] = "ERROR"
+                info["ood_gate_error"] = (
+                    "Trusted expected_ood_gate_sha256 (or NETFLOW_OOD_GATE_SHA256) is required "
+                    "in deployment mode"
+                )
+                info["inference_mode"] = "UNAVAILABLE"
+            else:
+                info["ood_gate_trust_anchor"] = trust_source or "none"
+                info["ood_gate_error"] = None
+        except Exception as exc:
+            info["expected_ood_gate_sha256_configured"] = False
+            info["ood_gate_trust_anchor"] = "invalid_expected_sha256"
+            info["ood_gate_status"] = "ERROR"
+            info["ood_gate_error"] = f"{type(exc).__name__}: {exc}"
+            info["inference_mode"] = "UNAVAILABLE"
+        return info
+
     def status(self) -> Dict[str, Any]:
         with self._lock:
             service = self._service
@@ -158,7 +261,7 @@ class LiveRuntime:
                     "collector": {},
                     "pipeline": {},
                     "metrics": {},
-                    "inference": dict(_PLACEHOLDER_INFERENCE),
+                    "inference": self._prestart_inference_status(),
                     "demo_mode": False,
                     "persistence_enabled": self.sqlite_path is not None,
                     "last_error": self._last_error,

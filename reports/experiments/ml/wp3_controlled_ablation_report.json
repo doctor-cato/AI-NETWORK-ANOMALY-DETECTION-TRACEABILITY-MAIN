@@ -93,8 +93,8 @@
   },
   "experiments": {
     "E0_baseline": {
-      "exp_id": "E0_canonical_18f_baseline",
-      "description": "Reconciled baseline from official post-remediation 18-feature model manifests",
+      "exp_id": "E0_frozen_18f_reference",
+      "description": "Frozen 18-feature comparison reference reconciled from the 4 official retained model manifests (Random Forest uses tuned experimental protocol rf-v2-tuned-leaf5-cwbalanced_subsample with is_canonical_baseline=false)",
       "rare_class_sample_warnings": {
         "ait_test": {
           "Credential_Attack": {
@@ -119,6 +119,9 @@
         "random_forest": {
           "run_id": "v2-rf-20261117T231214Z",
           "manifest_path": "reports/models/random_forest_manifest.json",
+          "protocol_version": "rf-experimental-rf-v2-tuned-leaf5-cwbalanced_subsample",
+          "configuration_id": "rf-v2-tuned-leaf5-cwbalanced_subsample",
+          "is_canonical_baseline": false,
           "model_artifact_sha256": "b2e42f85f2625f5bf04902a032a4db734f4c4e744d45f4fef3ddffd05a694f2f",
           "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
           "preprocessor_artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
@@ -326,6 +329,9 @@
         "xgboost": {
           "run_id": "v2-xgb-20261117T231609Z",
           "manifest_path": "reports/models/xgboost_manifest.json",
+          "protocol_version": "xgb-baseline-v2-canonical-v1",
+          "configuration_id": "xgb-v2-baseline-canonical-v1",
+          "is_canonical_baseline": true,
           "model_artifact_sha256": "33d201f8f3d842c0b71547532c74f3d107bd402d8a65e20241ff5f407723aa48",
           "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
           "preprocessor_artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
@@ -533,6 +539,9 @@
         "isolation_forest": {
           "run_id": "v2-if-20261118T020525Z",
           "manifest_path": "reports/models/isolation_forest_manifest.json",
+          "protocol_version": null,
+          "configuration_id": null,
+          "is_canonical_baseline": null,
           "model_artifact_sha256": "11b1690088bca1984df9280b3c5662fbb13a76ca31e55258b9de43d6a10a6885",
           "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
           "preprocessor_artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
@@ -740,6 +749,9 @@
         "autoencoder": {
           "run_id": "v2-ae-20261118T020635Z",
           "manifest_path": "reports/models/autoencoder_manifest.json",
+          "protocol_version": null,
+          "configuration_id": null,
+          "is_canonical_baseline": null,
           "model_artifact_sha256": "e6afecefdc939a09e3c7fedd3e994a10c404f74e9b52c9ab95dfd984aae0cd4f",
           "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
           "preprocessor_artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
@@ -5648,5 +5660,5 @@
       "All four verified E0 artifacts (RF b2e42f85..., XGB 33d201f8..., IF 11b16900..., AE e6afecef...) remain the single verified artifact set on the frozen canonical-flow-v2-18 + preprocessor 0866dec7... contract."
     ]
   },
-  "policy_metadata_updated_at_utc": "2026-11-18T09:35:52.538829+00:00"
+  "policy_metadata_updated_at_utc": "2026-11-18T14:48:57.416493+00:00"
 }

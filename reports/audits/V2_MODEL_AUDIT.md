@@ -1,10 +1,11 @@
 # V2 Model Baseline & Provenance Audit (`NetFlow Sentinel v2`)
 
 - **Ngày kiểm toán gốc (Phase 3 Baseline):** `2026-11-18` (`+07:00`) / `2026-11-17T21:45Z` *(được bổ sung Mục 6 hậu kiểm ngày `2026-11-18`)*
-- **Tách bạch Mốc Truy vết:**
-  - **Model Training Provenance (4 baseline artifacts `E0` tại Mục 6):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `DIRTY_DISCLOSED` (không chỉnh sửa manifest hay retrain `E0`).
-  - **Implementation & CI Verification Snapshot:** `feat/v2-integration` @ `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (CI **Run `#211` / ID `44278751854`**, `7/7` jobs `PASS`).
-  - **Repository Audit Snapshot (Hiện tại):** `feat/v2-integration` (PR `#156` `OPEN / Draft`), cập nhật bổ sung `WP-F` (`expected_ood_gate_sha256` runtime verification + `UNRESOLVED / ACCEPTED LIMITATION` cho built-in trust anchor mặc định) và đồng bộ audit docs sau `a6c87ae`.
+- **Tách bạch Mốc Truy vết (Historical vs Current):**
+  - **Model Training Provenance (4 artifacts `E0` tại Mục 6 — giữ nguyên, không retrain):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `DIRTY_DISCLOSED`.
+  - **Historical Snapshot 1 (CI Run `#211`):** `feat/v2-integration` @ `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (CI Run `#211` / ID `44278751854`, `7/7` `SUCCESS`).
+  - **Historical Snapshot 2 (CI Run `#212` & `CHANGES_REQUESTED` Review):** `feat/v2-integration` @ `5483794160e877bf2d65144f30fd1ffc181372c3` (CI Run `#212` / ID `44312426631`, `7/7` `SUCCESS`; `1` submitted GitHub review `CHANGES_REQUESTED` bởi `ViolaPeracia` ngày `2026-11-18T13:46:21Z` nêu `P1-01`, `P2-01..P2-03`, `P3-01`, `P3-02`).
+  - **Current Remediation Snapshot (`feat/v2-integration`, PR `#156` `OPEN / Draft`):** Hoàn tất `P1-01` (nối mặc định fail-closed `"deployment"` qua Tauri/`run_api.py`/`LiveRuntime`/`create_app`), `P2-03` (tách kiểm chứng cấu trúc/schema OOD khỏi kiểm chứng trusted SHA-256 trong `verify_companion_artifacts.py` — `PARTIAL_UNANCHORED` khi thiếu `NETFLOW_OOD_GATE_SHA256`), `P3-01` (`pytest -rs`), `P3-02` (chuẩn hóa nhãn `E0_frozen_18f_reference` khớp RF `is_canonical_baseline=false`), và `P2-02` (đồng bộ bộ tài liệu kiểm toán).
 - **Lưu ý Lịch sử Tài liệu:** Mục 1–5 bên dưới giữ nguyên ảnh chụp đọc-chỉ ban đầu tại `79ebb678` (khi chưa sửa CRLF/LF và chưa retrain bản `E0` hiện tại); kết quả hậu khắc phục & thí nghiệm kiểm soát hiện hành nằm tại **Mục 6**.
 - **Phạm vi đối tượng:** `Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder`, `TrainOnlyPreprocessor` (`v2_flow_preprocessor.joblib`), Split/Dataset manifests, `ModelRegistry`, và các báo cáo đánh giá thực nghiệm (`model_comparison_report.json`, `ctu_cross_source_eval.json`, `rq2_imbalance_report.json`, `rq4_unknown_attack_report.json`).
 
@@ -257,16 +258,19 @@ Kiểm tra `fitted_state` của `v2_flow_preprocessor.joblib` và đo đạc l�
 
 Sau khi khắc phục `DATA-A01..A04` (phục hồi đủ `3,464,400` flows có nhãn từ chunk boundary, sửa `udp_complete` `* 1000.0 ms`, chuẩn hóa CTU Zeek sang L4 payload `orig_bytes`/`resp_bytes`, áp `MIN_BOUNDED_SCALE_FLOOR = 0.25` cho biến bounded trong `asinh_robust`, và chuẩn hóa LF `ed542ee80babca26...`), toàn bộ 4 mô hình đã được thử nghiệm có kiểm soát trên `AIT-Val` (không chạm `AIT-Test`) trong `reports/experiments/ml/model_improvement_summary.json` và retrain bản chính thức:
 
-### 6.1. Provenance & Verification Status (`verify_companion_artifacts.py`: `READY 4/4`)
+### 6.1. Provenance & Verification Status (`verify_companion_artifacts.py`: `READY 4/4` models; OOD gate `PARTIAL_UNANCHORED` nếu không cấp `expected_ood_gate_sha256`)
+
+> [!NOTE]
+> **`Random Forest` Manifest & WP3 Naming Consistency (`P3-02`):** `artifacts/models/random_forest/random_forest_manifest.json` giữ nguyên `is_canonical_baseline = false` (`protocol_version = "rf-experimental-rf-v2-tuned-leaf5-cwbalanced_subsample"`, `configuration_id = "rf-v2-tuned-leaf5-cwbalanced_subsample"`). Đây là tham chiếu đối chứng đã đóng băng cho `v2`, **không** phải canonical baseline chưa tuning; do đó báo cáo `wp3_controlled_ablation_report.json` dùng định danh **`E0_frozen_18f_reference`** thay cho `E0_canonical_18f_baseline` và không retrain hay sửa `is_canonical_baseline`.
 
 | Thành phần | Artifact SHA-256 | Run ID / Contract | Ghi chú khắc phục |
 |---|---|---|---|
 | `TrainOnlyPreprocessor` | `0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7` | Split `ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8` (LF) | `MIN_BOUNDED_SCALE_FLOOR = 0.25`; fit strictly on `ait_train` (`2,097,891`) |
-| `Random Forest` | `b2e42f85f2625f5bf04902a032a4db734f4c4e744d45f4fef3ddffd05a694f2f` | `v2-rf-20261117T231214Z` (`balanced_subsample`, `min_samples_leaf=5`) | Đã điền đủ `SplitReference` & `PreprocessingReference` (`VERIFIED`) |
+| `Random Forest` | `b2e42f85f2625f5bf04902a032a4db734f4c4e744d45f4fef3ddffd05a694f2f` | `v2-rf-20261117T231214Z` (`rf-v2-tuned-leaf5-cwbalanced_subsample`, `is_canonical_baseline=false`) | Đã điền đủ `SplitReference` & `PreprocessingReference` (`VERIFIED`); dùng làm `E0_frozen_18f_reference` |
 | `XGBoost` | `33d201f8f3d842c0b71547532c74f3d107bd402d8a65e20241ff5f407723aa48` | `v2-xgb-20261117T231609Z` | Sửa `provenance_note` verified, relative POSIX path |
 | `Isolation Forest` | `11b1690088bca1984df9280b3c5662fbb13a76ca31e55258b9de43d6a10a6885` | `v2-if-20261118T020525Z` (`th=0.031268`, `>=` FPR `0.049991`) | Đổi `target="label_binary"`, thêm `top_features` permutation importance |
 | `Autoencoder` | `e6afecefdc939a09e3c7fedd3e994a10c404f74e9b52c9ab95dfd984aae0cd4f` | `v2-ae-20261118T020635Z` (`(16,8,16)` Benign std, `th=0.000467`, FPR `0.049996`) | Thêm per-feature Benign standardization, check `expected_split_manifest_sha256`, `top_features` |
-| `OODRejectionGate` | `8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825` | `artifacts/ml/ood_reference_gate.json` (`2,097,891` raw train rows) | Khớp không gian raw `feature_dict`; kiểm chứng schema/arrays/provenance/preprocessor-SHA (`verify_ood_gate_artifact` & `validate_ood_gate_instance`); `WP-F` hỗ trợ `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256` và fail-closed ở `deployment` mode khi thiếu external expected SHA (**built-in independent trust anchor: `UNRESOLVED / ACCEPTED LIMITATION`**) |
+| `OODRejectionGate` | `8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825` | `artifacts/ml/ood_reference_gate.json` (`2,097,891` raw train rows) | Khớp `feature_dict` + `preprocessor_artifact_sha256`. `verify_companion_artifacts.py` tách rõ `structural_schema_verified=true` / `preprocessor_linkage_verified=true` khỏi `trusted_digest_verified` (`false` -> `integrity_verification_status="PARTIAL_UNANCHORED"` khi không có `--expect-ood-gate-sha256` / `NETFLOW_OOD_GATE_SHA256` / `NETFLOW_EMBEDDED_OOD_GATE_SHA256`). Tại runtime, mọi product entry point (`Tauri backend.rs`, `run_api.py`, `LiveRuntime`, `create_app`, `RealtimeInferenceEngine`) mặc định fail-closed `"deployment"` và giữ AI inference `UNAVAILABLE` nếu thiếu trusted SHA (**built-in default trust anchor: `UNRESOLVED / ACCEPTED LIMITATION`**) |
 | `AE score_normalization.json` | `d7bcb78f7439930ee61b53e6e970ff1535d52ad10f2a025ad4877629a7478847` | `artifacts/models/autoencoder/score_normalization.json` | Sidecar chuẩn hóa điểm AE; cross-checked lúc load (`_validate_ae_contract_before_deserialize`) & stage standalone |
 
 ### 6.2. So sánh Thực nghiệm Trước vs Sau Khắc phục (Cohort Đầy đủ `AIT-Test = 988,805`)
@@ -282,9 +286,9 @@ Sau khi khắc phục `DATA-A01..A04` (phục hồi đủ `3,464,400` flows có 
 
 ---
 
-### 6.3. Đối chiếu Toàn diện Baseline `E0` trên Toàn Bộ Chỉ số & Nhóm Tấn công Hiếm (`wp3_controlled_ablation_report.json`)
+### 6.3. Đối chiếu Toàn diện Reference `E0` (`E0_frozen_18f_reference`) trên Toàn Bộ Chỉ số & Nhóm Tấn công Hiếm (`wp3_controlled_ablation_report.json`)
 
-Bảng đối chiếu đầy đủ trích xuất trực tiếp từ 4 model manifest và `reports/experiments/ml/wp3_controlled_ablation_report.json` (`canonical-flow-v2-18`, `split_manifest_sha256 = ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8`, `preprocessor_sha256 = 0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`):
+Bảng đối chiếu đầy đủ trích xuất trực tiếp từ 4 model manifest (`RF` là cấu hình tuned `rf-v2-tuned-leaf5-cwbalanced_subsample` với `is_canonical_baseline = false`) và `reports/experiments/ml/wp3_controlled_ablation_report.json` (`E0_frozen_18f_reference`, `canonical-flow-v2-18`, `split_manifest_sha256 = ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8`, `preprocessor_sha256 = 0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`):
 
 | Mô hình / Split | Precision | Recall | F1 | Macro-F1 | ROC-AUC | PR-AUC | FPR | Confusion Matrix (`tn, fp, fn, tp`) | Latency (`s` / `us/flow`) |
 |---|---:|---:|---:|---:|---:|---:|---:|---|---|
@@ -339,7 +343,7 @@ Toàn bộ thí nghiệm được thực thi bằng [`scripts/run_wp3_controlled
 
 | Trục Provenance | Phán quyết | Bằng chứng & Lý do |
 |---|---|---|
-| `artifact_integrity_verified` | **`PASS`** | Toàn bộ 4 model `.joblib`/`.pt`, `v2_flow_preprocessor.joblib` (`0866dec7...`), `V2_SPLIT_MANIFEST.json` (`ed542ee8...`), `ood_reference_gate.json` (`8a52bfe5...`) và AE `score_normalization.json` (`d7bcb78f...`) đều khớp SHA-256 trong `verify_companion_artifacts.py`. |
+| `artifact_integrity_verified` | **`PASS`** *(4 models, preprocessor, split, AE sidecar)* / **`PARTIAL_UNANCHORED`** *(OOD gate khi thiếu trusted SHA)* | Toàn bộ 4 model `.joblib`/`.pt`, `v2_flow_preprocessor.joblib` (`0866dec7...`), `V2_SPLIT_MANIFEST.json` (`ed542ee8...`) và AE `score_normalization.json` (`d7bcb78f...`) đều có manifest được theo dõi và khớp SHA-256 trong `verify_companion_artifacts.py`. Riêng `ood_reference_gate.json` (`8a52bfe5...`, nằm ngoài Git) đạt `structural_schema_verified=true` và `preprocessor_linkage_verified=true`, nhưng `trusted_digest_verified=false` (`PARTIAL_UNANCHORED`) nếu không truyền `--expect-ood-gate-sha256` / `NETFLOW_OOD_GATE_SHA256` / `NETFLOW_EMBEDDED_OOD_GATE_SHA256`; self-computed SHA và unsigned co-located manifests không được tính là independent trust anchor. |
 | `dataset_provenance_verified` | **`PASS`** *(AIT & CTU)* / **`BLOCKED`** *(UGR'16)* | `fetch_multi_source_dataset.py --verify-only` xác nhận 10 archive `AIT-NDS-v2`, 2 `AIT-LDS-v2.1` (cách ly không trộn vào weights/demo), 2 `AIT-ADS`, 4 `CTU-SME-11`; `UGR'16` trả `HTTP 403` nên giữ `BLOCKED`. |
 | `source_reproducibility_verified` | **`DIRTY_DISCLOSED`** | 4 model manifest ghi trung thực `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f` và `git_dirty = true`. Theo nguyên tắc kiểm toán, không sửa giả `git_dirty = false`; tái huấn luyện từ clean commit thuộc `#154` sau khi chốt mã nguồn PR `#156`. |
 

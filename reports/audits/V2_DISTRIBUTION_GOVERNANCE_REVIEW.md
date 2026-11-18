@@ -3,8 +3,8 @@
 - **Vai trò thực hiện:** Agent F — Kiểm toán viên Quản trị Phân phối & Bản quyền (`Distribution Authorization & Licensing Governance Auditor`) *(đồng bộ hậu kiểm PR `#156` ngày `2026-11-18`)*
 - **Ngày kiểm toán:** `2026-11-18` (`UTC+7`)
 - **Nhánh / Commit kiểm toán:**
-  - **Implementation & CI Snapshot:** `feat/v2-integration` @ `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (CI **Run `#211` / ID `44278751854`**, `7/7` jobs `PASS`), kèm bản vá `WP-F` (`expected_ood_gate_sha256` & companion manifest cross-check) và đợt đồng bộ docs tiếp theo trên `feat/v2-integration`.
-  - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `DIRTY_DISCLOSED` (giữ nguyên trung thực).
+  - **Historical Implementation Snapshots:** `feat/v2-integration` @ `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (CI **Run `#211` / ID `44278751854`**, `7/7` `SUCCESS`) và `5483794160e877bf2d65144f30fd1ffc181372c3` (CI **Run `#212` / ID `44312426631`**, `7/7` `SUCCESS`; `1` submitted review `CHANGES_REQUESTED` bởi `ViolaPeracia`), kèm đợt khắc phục `P1-01`/`P2-02`/`P2-03`/`P3-01`/`P3-02` tiếp theo trên `feat/v2-integration`.
+  - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `DIRTY_DISCLOSED` (giữ nguyên trung thực; `4/4` model tiers giữ `RESEARCH_ONLY`; `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`).
 - **Phương pháp:** Đọc trực tiếp toàn bộ hồ sơ bản quyền, manifest dữ liệu, manifest 4 mô hình + preprocessor + demo, `scripts/verify_companion_artifacts.py`, cấu hình Tauri/Cargo/npm/PyInstaller, CI/Release workflows và chạy lệnh kiểm chứng read-only. Không chỉnh sửa [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](../governance/DISTRIBUTION_AUTHORIZATION.json), không giả mạo phê duyệt và không thay đổi mã nguồn.
 
 ---
@@ -167,7 +167,7 @@ Tất cả `8` artifact liệt kê trong `public_release_authorization.covered_a
 | `... --verify-distribution-permission private-build-only --target-channel public_ci_artifact` | `1` | **`BLOCKED`:** `Scope 'private-build-only' forbids public channel 'public_ci_artifact'`. |
 | `... --verify-distribution-permission non-commercial-controlled --target-channel private_ci_artifact --repo-private true` | `0` | **`PASS` (`status: "APPROVED"`):** `upload_allowed: true`, `public_release_allowed: false`. |
 | `... --verify-distribution-permission non-commercial-academic-approved --target-channel local_offline` | `1` | **`BLOCKED`:** `Legacy string 'non-commercial-academic-approved' is NOT legal evidence...` |
-| `.\.venv\Scripts\python.exe scripts/verify_companion_artifacts.py` | `0` | **`PASS` (`overall_status: "READY"`):** Đủ `4/4` models `READY`, `preprocessor: READY`, `ood_gate: FITTED`, `demo_ready: true`, liệt kê **`20` `companion_files`** *(đã gồm `ood_reference_gate.json` & AE `score_normalization.json`)*. |
+| `.\.venv\Scripts\python.exe scripts/verify_companion_artifacts.py` | `0` | **`READY` (`4/4` models, `preprocessor: READY`) / `OOD Gate: PARTIAL_UNANCHORED` (khi không truyền external expected SHA):** Liệt kê `20` `companion_files` *(gồm `ood_reference_gate.json` & AE `score_normalization.json`)*; OOD kiểm chứng `structural_schema_verified: true`, `preprocessor_linkage_verified: true`, `trusted_digest_verified: false` nếu thiếu `--expect-ood-gate-sha256` / `NETFLOW_OOD_GATE_SHA256` / `NETFLOW_EMBEDDED_OOD_GATE_SHA256`. |
 | `.\.venv\Scripts\python.exe scripts/fetch_multi_source_dataset.py --verify-only` | `0` | **`PASS` (read-only) / `BLOCKED` (`UGR16`):** `10 AIT-NDS-v2`, `2 AIT-LDS-v2.1`, `2 AIT-ADS`, `4 CTU-SME-11` file(s) khớp digest; `UGR16=BLOCKED`. |
 
 ### 5.4. Các Phát hiện Quản trị & Đóng gói Cần lưu ý trước Release

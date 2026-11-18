@@ -41,7 +41,11 @@ from network_anomaly.inference.predict import (  # noqa: E402
     load_verified_model,
     load_verified_preprocessor,
 )
-from network_anomaly.ml.ood_gate import verify_ood_gate_artifact  # noqa: E402
+from network_anomaly.ml.ood_gate import (  # noqa: E402
+    cross_check_same_boundary_embedded_manifest,
+    resolve_expected_ood_gate_sha256,
+    verify_ood_gate_artifact,
+)
 
 _TAURI_BUNDLE_MARKER_UNK = b"BUNDLE_TYPE_VAR_UNK"
 _TAURI_BUNDLE_MARKER_NSS = b"BUNDLE_TYPE_VAR_NSS"
@@ -167,6 +171,7 @@ def verify_companion_artifacts(
     root: Path = PROJECT_ROOT,
     *,
     runtime_dir: Optional[Path] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Verify preprocessor, all 4 model bundles, and demo files fail-closed."""
     resolved_root = Path(root).resolve()
@@ -311,16 +316,52 @@ def verify_companion_artifacts(
 
     ood_gate_abs = resolved_runtime / OOD_REFERENCE_GATE_REL
     ood_gate_status: Dict[str, Any]
+    try:
+        trusted_ood_sha, ood_trust_source = resolve_expected_ood_gate_sha256(
+            expected_ood_gate_sha256
+        )
+        ood_anchor_err: Optional[str] = None
+    except Exception as exc:
+        trusted_ood_sha = None
+        ood_trust_source = "invalid_expected_sha256"
+        ood_anchor_err = str(exc)
+
     if not ood_gate_abs.is_file():
         ood_gate_status = {
             "ready": False,
             "status": "NOT_FITTED",
             "path": OOD_REFERENCE_GATE_REL.as_posix(),
             "sha256": None,
+            "expected_sha256": trusted_ood_sha,
             "fit_rows": None,
             "feature_count": 0,
             "preprocessor_artifact_sha256": None,
-            "reason": f"Missing OOD reference gate artifact: {OOD_REFERENCE_GATE_REL.as_posix()}",
+            "structural_schema_verified": False,
+            "preprocessor_linkage_verified": False,
+            "trusted_digest_verified": False,
+            "integrity_verification_status": "FAIL",
+            "trust_anchor_source": ood_trust_source or "none",
+            "same_boundary_cross_check": "none",
+            "reason": ood_anchor_err
+            or f"Missing OOD reference gate artifact: {OOD_REFERENCE_GATE_REL.as_posix()}",
+        }
+    elif ood_anchor_err is not None:
+        ood_gate_status = {
+            "ready": False,
+            "status": "ERROR",
+            "path": OOD_REFERENCE_GATE_REL.as_posix(),
+            "sha256": _sha256_file(ood_gate_abs).lower(),
+            "expected_sha256": None,
+            "fit_rows": None,
+            "feature_count": 0,
+            "preprocessor_artifact_sha256": None,
+            "structural_schema_verified": False,
+            "preprocessor_linkage_verified": False,
+            "trusted_digest_verified": False,
+            "integrity_verification_status": "FAIL",
+            "trust_anchor_source": ood_trust_source,
+            "same_boundary_cross_check": "none",
+            "reason": ood_anchor_err,
         }
     elif not prep_status["ready"] or prep_sha is None:
         ood_gate_status = {
@@ -328,9 +369,16 @@ def verify_companion_artifacts(
             "status": "ERROR",
             "path": OOD_REFERENCE_GATE_REL.as_posix(),
             "sha256": _sha256_file(ood_gate_abs).lower(),
+            "expected_sha256": trusted_ood_sha,
             "fit_rows": None,
             "feature_count": 0,
             "preprocessor_artifact_sha256": None,
+            "structural_schema_verified": False,
+            "preprocessor_linkage_verified": False,
+            "trusted_digest_verified": False,
+            "integrity_verification_status": "FAIL",
+            "trust_anchor_source": ood_trust_source or "none",
+            "same_boundary_cross_check": "none",
             "reason": "Preprocessor artifact is not verified.",
         }
     else:
@@ -338,15 +386,29 @@ def verify_companion_artifacts(
             _, ood_meta = verify_ood_gate_artifact(
                 ood_gate_abs,
                 expected_preprocessor_sha256=prep_sha,
+                expected_sha256=trusted_ood_sha,
             )
+            same_boundary = cross_check_same_boundary_embedded_manifest(
+                ood_gate_abs, str(ood_meta["sha256"])
+            )
+            trusted_verified = trusted_ood_sha is not None
             ood_gate_status = {
                 "ready": True,
                 "status": "FITTED",
                 "path": OOD_REFERENCE_GATE_REL.as_posix(),
                 "sha256": ood_meta["sha256"],
+                "expected_sha256": trusted_ood_sha,
                 "fit_rows": ood_meta["fit_rows"],
                 "feature_count": ood_meta["feature_count"],
                 "preprocessor_artifact_sha256": ood_meta["preprocessor_artifact_sha256"],
+                "structural_schema_verified": True,
+                "preprocessor_linkage_verified": True,
+                "trusted_digest_verified": trusted_verified,
+                "integrity_verification_status": (
+                    "PASS" if trusted_verified else "PARTIAL_UNANCHORED"
+                ),
+                "trust_anchor_source": ood_trust_source or "none",
+                "same_boundary_cross_check": same_boundary or "none",
                 "reason": None,
             }
             staged_files.append(OOD_REFERENCE_GATE_REL)
@@ -356,9 +418,16 @@ def verify_companion_artifacts(
                 "status": "ERROR",
                 "path": OOD_REFERENCE_GATE_REL.as_posix(),
                 "sha256": None,
+                "expected_sha256": trusted_ood_sha,
                 "fit_rows": None,
                 "feature_count": 0,
                 "preprocessor_artifact_sha256": None,
+                "structural_schema_verified": False,
+                "preprocessor_linkage_verified": False,
+                "trusted_digest_verified": False,
+                "integrity_verification_status": "FAIL",
+                "trust_anchor_source": ood_trust_source or "none",
+                "same_boundary_cross_check": "none",
                 "reason": str(exc),
             }
 
@@ -811,6 +880,7 @@ def verify_installed_standalone_layout(
     install_dir: Path,
     *,
     expected_sidecar_sha256: Optional[str] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Verify an installed NSIS directory has sidecar, notices, and all 4 embedded models."""
     resolved_install = Path(install_dir).resolve()
@@ -862,7 +932,11 @@ def verify_installed_standalone_layout(
             raise RuntimeError(
                 f"Installed standalone bundle missing {req_companion!r} in EMBEDDED_SHA256SUMS.txt"
             )
-    summary = verify_companion_artifacts(root=resolved_install, runtime_dir=resolved_install)
+    summary = verify_companion_artifacts(
+        root=resolved_install,
+        runtime_dir=resolved_install,
+        expected_ood_gate_sha256=expected_ood_gate_sha256,
+    )
     ood_gate_info = summary.get("ood_gate") or {}
     if not ood_gate_info.get("ready") or ood_gate_info.get("status") != "FITTED":
         raise RuntimeError(
@@ -4969,6 +5043,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Expected 64-char SHA-256 of embedded netflow-sentinel-backend.exe sidecar.",
     )
     parser.add_argument(
+        "--expect-ood-gate-sha256",
+        type=str,
+        default=None,
+        help="Optional trusted expected 64-char SHA-256 of artifacts/ml/ood_reference_gate.json.",
+    )
+    parser.add_argument(
         "--package-bundle",
         type=Path,
         default=None,
@@ -5378,9 +5458,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     summary = (
-        verify_companion_artifacts(root=args.root)
+        verify_companion_artifacts(
+            root=args.root,
+            expected_ood_gate_sha256=args.expect_ood_gate_sha256,
+        )
         if args.runtime_dir is None
-        else verify_companion_artifacts(root=args.root, runtime_dir=args.runtime_dir)
+        else verify_companion_artifacts(
+            root=args.root,
+            runtime_dir=args.runtime_dir,
+            expected_ood_gate_sha256=args.expect_ood_gate_sha256,
+        )
     )
     _emit_json(summary, args.output_json)
     return 0 if summary["overall_status"] == "READY" else 1

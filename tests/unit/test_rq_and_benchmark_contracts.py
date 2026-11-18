@@ -130,6 +130,17 @@ def test_wp3_leakage_policy_and_report_schema_consistency():
     assert rec["selection_type"] == "posthoc_holdout_informed_retention_decision"
     assert rec["holdout_independent_selection"] is False
 
+    e0_block = report["experiments"]["E0_baseline"]
+    assert e0_block["exp_id"] == "E0_frozen_18f_reference"
+    rf_manifest = json.loads(
+        (root / "reports" / "models" / "random_forest_manifest.json").read_text(encoding="utf-8")
+    )
+    assert rf_manifest["is_canonical_baseline"] is False
+    assert e0_block["models"]["random_forest"]["is_canonical_baseline"] is False
+    assert (
+        e0_block["models"]["random_forest"]["protocol_version"] == rf_manifest["protocol_version"]
+    )
+
     for exp_key in (
         "E1_base_6f_ablation",
         "E2_byte_rate_ablation",

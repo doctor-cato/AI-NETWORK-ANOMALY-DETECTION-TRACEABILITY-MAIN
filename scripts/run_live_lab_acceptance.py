@@ -22,6 +22,7 @@ Issues #132, #135, #137.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -37,6 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from network_anomaly.canonical.feature_contract import get_flow_feature_contract_v2
 from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS, compute_flow_features_from_base
+from network_anomaly.ml.ood_gate import resolve_expected_ood_gate_sha256
 from network_anomaly.streaming.live_service import LiveTelemetryService
 from network_anomaly.telemetry.collector import LAB_ENTERPRISE_FIELD_BASE, LAB_ENTERPRISE_NUMBER
 
@@ -278,10 +280,49 @@ def _send(sock: socket.socket, payload: bytes, port: int) -> None:
     sock.sendto(payload, ("127.0.0.1", port))
 
 
-def run_lab_acceptance_scenario() -> Dict[str, Any]:
+def _resolve_lab_acceptance_policy(
+    runtime_mode: Optional[str] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
+) -> Tuple[str, bool, Optional[str], str]:
+    """Resolve explicit runtime policy for controlled synthetic lab acceptance."""
+    resolved_sha: Optional[str] = expected_ood_gate_sha256
+    sha_source: Optional[str] = None
+    try:
+        resolved_sha, sha_source = resolve_expected_ood_gate_sha256(expected_ood_gate_sha256)
+    except ValueError:
+        resolved_sha = expected_ood_gate_sha256
+        sha_source = "invalid_expected_sha256"
+
+    if runtime_mode is not None:
+        eff_mode = runtime_mode.strip().lower()
+        policy_note = f"explicit_cli_or_caller:{eff_mode}"
+    elif os.environ.get("NETFLOW_RUNTIME_MODE", "").strip():
+        eff_mode = os.environ["NETFLOW_RUNTIME_MODE"].strip().lower()
+        policy_note = f"env:NETFLOW_RUNTIME_MODE={eff_mode}"
+    elif resolved_sha is not None:
+        eff_mode = "deployment"
+        policy_note = f"controlled_lab_deployment_with_trusted_sha ({sha_source})"
+    else:
+        eff_mode = "research"
+        policy_note = "explicit_controlled_lab_research_profile_no_external_ood_sha"
+    if eff_mode not in {"deployment", "research"}:
+        raise ValueError(f"Unsupported lab acceptance runtime_mode: {eff_mode!r}")
+    eff_require = eff_mode == "deployment"
+    return eff_mode, eff_require, expected_ood_gate_sha256, policy_note
+
+
+def run_lab_acceptance_scenario(
+    *,
+    runtime_mode: Optional[str] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
+) -> Dict[str, Any]:
     """Run the synthetic UDP loopback integration acceptance and write evidence."""
     contract = get_flow_feature_contract_v2()
-    print(f"Running {ACCEPTANCE_TITLE}...")
+    eff_mode, eff_require_ood, eff_sha, policy_note = _resolve_lab_acceptance_policy(
+        runtime_mode=runtime_mode,
+        expected_ood_gate_sha256=expected_ood_gate_sha256,
+    )
+    print(f"Running {ACCEPTANCE_TITLE} (runtime_mode={eff_mode}, policy={policy_note})...")
 
     with tempfile.TemporaryDirectory(prefix="nf-sentinel-acceptance-") as temp_dir:
         temp = Path(temp_dir)
@@ -290,6 +331,9 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
             port=0,
             db_path=temp / "acceptance.db",
             keystore_dir=temp / "keys",
+            runtime_mode=eff_mode,
+            require_ood_gate=eff_require_ood,
+            expected_ood_gate_sha256=eff_sha,
             queue_capacity=2_048,
             batch_size=16,
         )
@@ -472,6 +516,9 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
         "scope": {
             "transport": "UDP over 127.0.0.1 loopback",
             "exporter": "in-process synthetic NetFlow v9 / IPFIX exporter",
+            "runtime_mode": eff_mode,
+            "require_ood_gate": eff_require_ood,
+            "runtime_policy_note": policy_note,
             "real_device_tested": False,
             "production_readiness_claimed": False,
         },
@@ -537,8 +584,9 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
 ## Inference
 
 - Mode: `{inference_mode}`
+- Runtime policy: `{eff_mode}` (`require_ood_gate={eff_require_ood}`, `{policy_note}`)
 - Validated models: `{inference_readiness.get("validated_count")}/4`
-- OOD gate: `{inference_readiness.get("ood_gate_status")}`
+- OOD gate: `{inference_readiness.get("ood_gate_status")}` (trust anchor: `{inference_readiness.get("ood_gate_trust_anchor")}`)
 - Participating models in the ensemble: `{", ".join(participating) if participating else "none"}`
 
 ## Limitations
@@ -558,6 +606,26 @@ Artifacts: `{OUTPUT_JSON.as_posix()}`, `reports/acceptance/live_gui_alert_synthe
     return report
 
 
+def main(argv: Optional[List[str]] = None) -> int:
+    parser = argparse.ArgumentParser(description=ACCEPTANCE_TITLE)
+    parser.add_argument(
+        "--runtime-mode",
+        choices=("deployment", "research"),
+        default=None,
+        help="Explicit runtime policy override for controlled lab acceptance.",
+    )
+    parser.add_argument(
+        "--expected-ood-gate-sha256",
+        default=None,
+        help="Optional trusted expected SHA-256 for persisted OOD gate in deployment mode.",
+    )
+    args = parser.parse_args(argv)
+    result = run_lab_acceptance_scenario(
+        runtime_mode=args.runtime_mode,
+        expected_ood_gate_sha256=args.expected_ood_gate_sha256,
+    )
+    return 1 if result["hard_failures"] else 0
+
+
 if __name__ == "__main__":
-    result = run_lab_acceptance_scenario()
-    raise SystemExit(1 if result["hard_failures"] else 0)
+    raise SystemExit(main())

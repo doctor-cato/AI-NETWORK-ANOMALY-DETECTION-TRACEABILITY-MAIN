@@ -161,8 +161,13 @@ class TestFullSystemE2E:
         from network_anomaly.api.main import create_app
 
         rf_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
-        if not rf_path.is_file():
-            pytest.skip("Model artifacts unavailable in this environment.")
+        gate_path = ARTIFACTS / "ml" / "ood_reference_gate.json"
+        if not rf_path.is_file() or not gate_path.is_file():
+            pytest.skip("Model or OOD gate artifacts unavailable in this environment.")
+
+        import hashlib
+
+        expected_ood_sha = hashlib.sha256(gate_path.read_bytes()).hexdigest()
 
         script_path = PROJECT_ROOT / "scripts" / "run_live_lab_acceptance.py"
         spec = importlib.util.spec_from_file_location("run_live_lab_acceptance", script_path)
@@ -175,7 +180,13 @@ class TestFullSystemE2E:
         )
         packet = acc_mod.build_netflow_v9_packet([high_risk_flow], include_template=True)
 
-        with TestClient(create_app(tmp_path / "live_alert_e2e.db")) as client:
+        with TestClient(
+            create_app(
+                tmp_path / "live_alert_e2e.db",
+                runtime_mode="deployment",
+                expected_ood_gate_sha256=expected_ood_sha,
+            )
+        ) as client:
             start_resp = client.post(
                 "/api/v1/live/start",
                 json={"host": "127.0.0.1", "port": 0, "demo_heuristics": False},
@@ -222,7 +233,13 @@ class TestFullSystemE2E:
         # Restart API against same DB and ingest an event for a second entity
         second_flow = dict(high_risk_flow, src_ip="192.0.2.99", dst_ip="198.51.100.8")
         second_packet = acc_mod.build_netflow_v9_packet([second_flow], include_template=True)
-        with TestClient(create_app(tmp_path / "live_alert_e2e.db")) as client2:
+        with TestClient(
+            create_app(
+                tmp_path / "live_alert_e2e.db",
+                runtime_mode="deployment",
+                expected_ood_gate_sha256=expected_ood_sha,
+            )
+        ) as client2:
             pre_restart_resp = client2.get("/api/v1/live/alerts?limit=50")
             assert pre_restart_resp.status_code == 200
             assert any(item["alert_id"] == alert_id for item in pre_restart_resp.json()["items"])

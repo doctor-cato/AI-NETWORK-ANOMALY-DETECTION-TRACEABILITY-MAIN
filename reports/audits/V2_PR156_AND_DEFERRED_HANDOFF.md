@@ -2,7 +2,10 @@
 
 - **Tài liệu:** `reports/audits/V2_PR156_AND_DEFERRED_HANDOFF.md`
 - **Ngày lập / Cập nhật:** `2026-11-18` (`UTC+7`)
-- **Implementation Snapshot (`feat/v2-integration`):** `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (`14` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; CI Workflow `Run #211` / ID `44278751854` đạt `7/7 SUCCESS`, `495` files changed, `+72,717 / -19,349`), sau đó bổ sung commit remediation cuối (`WP-C` đồng bộ docs + `WP-F` P2 OOD expected SHA verification) và chạy lại CI trên HEAD mới nhất của PR `#156`.
+- **Historical Implementation Snapshots (`feat/v2-integration`):**
+  - `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (`14` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; CI Workflow **Run `#211` / ID `44278751854`**, `7/7` `SUCCESS`).
+  - `5483794160e877bf2d65144f30fd1ffc181372c3` (`15` commits ahead, `0` behind `main`; CI Workflow **Run `#212` / ID `44312426631`**, `7/7` `SUCCESS`; nhận **`1` submitted GitHub review `CHANGES_REQUESTED` bởi `ViolaPeracia`** ngày `2026-11-18T13:46:21Z`, nêu `P1-01`, `P2-01..P2-03`, `P3-01`, `P3-02`).
+- **Current Remediation Snapshot (`feat/v2-integration` sau `5483794`):** Khắc phục `P1-01` (nối mặc định fail-closed `"deployment"` vào Tauri sidecar + Python fallback, `run_api.py`, `create_app`, `LiveRuntime`, `LiveTelemetryService`, `LiveSystemOrchestrator`, `RealtimeInferenceEngine`; giữ inference `UNAVAILABLE` nếu thiếu `NETFLOW_OOD_GATE_SHA256`), `P2-02` (đồng bộ docs + trạng thái review), `P2-03` (`PARTIAL_UNANCHORED` khi thiếu trusted SHA), `P3-01` (`pytest -rs` trong `ci.yml`), và `P3-02` (`E0_frozen_18f_reference` khớp RF `is_canonical_baseline=false`).
 - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f` (`git_dirty = true`, `git_clean = false`, `worktree_provenance = "DIRTY_DISCLOSED"`).
 - **Nhánh Website tham chiếu (`origin/site-source`):** `a01bd38ad705577fc210fdeeeb61ccbd80a0ac42` (`77` tệp: `15` MDX VI + `15` MDX EN = `30` tệp MDX, các trang `.astro`, views, scripts, workflow)
 - **Pull Request `#156`:** `OPEN`, `isDraft: true`, `feat/v2-integration` $\to$ `main` *(giữ nguyên trạng thái **DRAFT / DO NOT MERGE**; không push lên `main`, không tự ý bỏ Draft hay merge, không build `.exe`/`.msi`/NSIS và không sửa nhánh `site-source`)*
@@ -15,7 +18,7 @@
 |---|---|---|---|
 | **D — Windows Standalone Installer v2.0 & Clean VM E2E** | `#73` (`OPEN`, `0/8` AC, `milestone: None`), `#148` (`OPEN`, `0/4` AC, `M6.7`) | **`DEFERRED / BLOCKED / NOT VERIFIED`** | Đã sửa `tauri.standalone.conf.json`, `vm_target_e2e.ps1` và staging/verify `ood_reference_gate.json` + AE `score_normalization.json` (`20` `companion_files`, `ood_gate: FITTED`) ở `WP5`. Tuy nhiên `.venv` mới đạt `FRONTEND_READY` (`pyinstaller: false`, `makensis: false`, `staged_bundle_manifest: false`); chưa build `.exe`, chưa chạy Clean Windows 10/11 VM E2E; `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`. |
 | **F — Website `site-source` v2.0 & Guides** | `#152` (`OPEN`, `1/4` AC, `M6.7`) | **`OPEN (1/4 AC) / STALE V1`** | Nhánh `origin/site-source` (`a01bd38ad705577fc210fdeeeb61ccbd80a0ac42`, 77 tệp) vẫn đóng băng ở `v0.6.0` / `NF-UNSW-NB15-v3` / `55` cột / `47` đặc trưng / snapshot `main@d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48`. Giữ `OPEN`; chỉ cập nhật sau khi PR `#156` merge `main`. |
-| **PR `#156` — Tích hợp v2.0.0** | PR `#156` (`feat/v2-integration` $\to$ `main`) | **`OPEN / DRAFT (DO NOT MERGE)`** | Implementation snapshot `a6c87ae` (`14` commits ahead, `495` files, `+72,717 / -19,349`) đã đạt `7/7` CI checks (`Run #211`, ID `44278751854`); bổ sung đợt vá cuối `WP-C` (đồng bộ docs) + `WP-F` (P2 expected SHA-256 verification cho OOD gate, giữ limitation về trust anchor mặc định) push lên `feat/v2-integration`, chạy CI & cập nhật PR body trước khi maintainer review độc lập. |
+| **PR `#156` — Tích hợp v2.0.0** | PR `#156` (`feat/v2-integration` $\to$ `main`) | **`OPEN / DRAFT (DO NOT MERGE)`** | Các mốc lịch sử `a6c87ae` (`Run #211`) và `5483794` (`Run #212`, `1` review `CHANGES_REQUESTED` bởi `ViolaPeracia`) đạt `7/7` CI; đợt khắc phục sau `5483794` hoàn tất `P1-01` product runtime policy, `P2-02`/`P2-03`, `P3-01` (`-rs`), `P3-02` (`E0_frozen_18f_reference`), giữ `RESEARCH_ONLY` & `approved: false`, chạy CI trên commit mới nhất và mời re-review. |
 
 ---
 
@@ -156,9 +159,9 @@ Kiểm tra trực tiếp mã nguồn và cấu hình đóng gói ghi nhận **8 
 Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích hợp toàn bộ phân hệ **NetFlow Sentinel v2.0.0** trên nhánh `feat/v2-integration` vào `main`, hướng tới mốc **Academic & Controlled Lab Functional Prototype**.
 
 > **Trạng thái PR:** **OPEN / DRAFT — DO NOT MERGE (KHÔNG tuyên bố Production-Ready hoặc Public-Release-Ready).**
-> - **Verified Implementation Snapshot:** `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (`14` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; `495` files changed, `+72,717 / -19,349`) đã đạt `7/7` CI jobs trên [Run #211 (ID 44278751854)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44278751854), kèm đợt remediation cuối (`WP-C` audit doc sync + `WP-F` OOD expected SHA-256 verification) trên HEAD mới nhất của `feat/v2-integration`.
-> - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `worktree_provenance = "DIRTY_DISCLOSED"`. Không retrain hay ghi đè baseline `E0`.
-> - **Independent GitHub Reviews:** `0` submitted reviews.
+> - **Historical Implementation Snapshots:** `a6c87ae8397e466ab1bd3d19f82d880e71084b88` ([Run #211 / ID 44278751854](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44278751854), `7/7` `SUCCESS`) và `5483794160e877bf2d65144f30fd1ffc181372c3` ([Run #212 / ID 44312426631](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44312426631), `7/7` `SUCCESS`; nhận review `CHANGES_REQUESTED` của `ViolaPeracia`). Đợt khắc phục mới nhất đóng `P1-01`/`P2-02`/`P2-03`/`P3-01`/`P3-02` trên `feat/v2-integration`.
+> - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `worktree_provenance = "DIRTY_DISCLOSED"`. Không retrain hay ghi đè `E0`.
+> - **Submitted GitHub Reviews:** `1` (`CHANGES_REQUESTED` bởi `ViolaPeracia`, `COLLABORATOR`, tại `5483794160e877bf2d65144f30fd1ffc181372c3` lúc `2026-11-18T13:46:21Z`). Chờ review lại trên HEAD mới sau khi CI pass.
 
 ---
 
@@ -192,26 +195,22 @@ Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích h
 | **Autoencoder** (`v2-ae-20261118T020635Z`, `e6afecef...`) | `0.9215` / `0.0500` | **`0.5877`** / `0.5544` / `0.0276` | `F1=0.7325` (`R=0.9990, FPR=0.6746`) | `F1=0.0326` (`R=0.9921, FPR=0.6925`) |
 
 - **WP3 Controlled Ablation & Leakage Disclosure (`scripts/run_wp3_controlled_ablation.py`, `wp3_controlled_ablation_report.json`):**
-  - `E1` (6f), `E2`/`E2b` (byte/rate ablation), `E3a`/`E3b` (protocol one-hot IF/AE), `E4` (5-fold LOSO CV trong `AIT-Train`), `E5` (Tier 1 Zero-Shot vs Tier 2/3 `RESEARCH_ONLY` adaptation) dẫn tới quyết định **`RETAIN_E0_BASELINE_ARTIFACTS`**.
+  - `E0_frozen_18f_reference` (RF giữ `is_canonical_baseline=false`, `rf-v2-tuned-leaf5-cwbalanced_subsample`), `E1` (6f), `E2`/`E2b` (byte/rate ablation), `E3a`/`E3b` (protocol one-hot IF/AE), `E4` (5-fold LOSO CV trong `AIT-Train`), `E5` (Tier 1 Zero-Shot vs Tier 2/3 `RESEARCH_ONLY` adaptation) dẫn tới quyết định **`RETAIN_E0_BASELINE_ARTIFACTS`**.
   - **Minh bạch ranh giới split (`WP-B`):** `ait_test` và `ctu_*` **không** dùng để fit model, fit transform, calibrate threshold hay tune hyperparameter trong `E0–E4` (`ait_test_used_for_training=false`, `ait_test_used_for_threshold_calibration=false`, `ctu_used_for_training_in_zero_shot_experiments=false`), nhưng **`selection_recommendation` có trích dẫn hậu nghiệm kết quả `AIT-Test` và `CTU`** (`ait_test_used_for_posthoc_candidate_selection=true`, `ctu_used_for_posthoc_candidate_selection=true`, `holdout_independent_selection=false`, `selection_type="posthoc_holdout_informed_retention_decision"`).
 
 ---
 
-## 4. WP1–WP7 & WP-A/B/C/D/E/F Status, OOD Validation & Companion Artifacts
+## 4. WP1–WP7, WP-A–F & Khắc phục `CHANGES_REQUESTED` (`P1-01`, `P2`, `P3`), OOD Runtime Policy
 
-- **WP1–WP7 + WP-A–WP-F:**
-  - `WP1` (PR `#156` & Git baseline sync): **DONE**
-  - `WP2` (E0 baseline reconciliation & rare-class caveats `Exploitation_And_C2 N=5`): **DONE**
-  - `WP3` (`E0–E5` ablation & `WP-B` post-hoc leakage disclosure): **DONE**
-  - `WP4` (3-axis provenance separation — `DIRTY_DISCLOSED` @ `79ebb678`): **DONE**
-  - `WP5` + `WP-A` (Companion staging `20` files & OOD in-memory trust-boundary hardening): **DONE**
-  - `WP-F` (P2 Persisted OOD expected SHA-256 verification): **PARTIAL / ACCEPTED LIMITATION** (Đã bắt buộc `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256` + cross-check same-boundary manifests + fail-closed `deployment`; built-in repo/bundle thiếu trust anchor độc lập mặc định -> `UNRESOLVED / ACCEPTED LIMITATION`)
-  - `WP6` + `WP-C` + `WP-D` (Audit docs & PR `#156` body sync): **DONE**
-  - `WP7` + `WP-E` (Local verification & remote CI on latest HEAD): **DONE / VERIFIED**
-- **OOD Validation & Companion Artifacts (`WP5` + `WP-A` + `WP-F`):**
-  - `desktop/src-tauri/tauri.standalone.conf.json` & `scripts/verify_companion_artifacts.py`: stage và kiểm SHA-256 đủ `20` `companion_files` bao gồm `ood_reference_gate.json` (`8a52bfe5...`, `fit_rows=2,097,891`) và AE `score_normalization.json` (`d7bcb78f...`); yêu cầu `ood_gate.status == "FITTED"` và đối khớp 64-hex SHA trong `COMPANION_BUNDLE_MANIFEST.json`, `EMBEDDED_ARTIFACTS_MANIFEST.json` và `EMBEDDED_SHA256SUMS.txt`.
-  - `src/network_anomaly/ml/ood_gate.py`: `from_artifact()`, `verify_ood_gate_artifact()`, `validate_ood_gate_instance()`, `resolve_expected_ood_gate_sha256()`, và `cross_check_same_boundary_embedded_manifest()` kiểm schema, exact `ML_FEATURE_COLUMNS`, array shape/finite/`stds > 0`/`min_bounds <= max_bounds`, `provenance.fit_rows > 0`, `preprocessor_artifact_sha256`, và expected SHA-256.
-  - `src/network_anomaly/streaming/realtime_inference.py` + `live_orchestrator.py` + `live_service.py`: tách `runtime_mode` (`"research"` vs `"deployment"`), **cấm direct in-memory `ood_gate` injection và bắt buộc external `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256` ở `deployment` mode / `require_ood_gate=True`** (chặn cả fake `is_fitted=True` và manifest cùng trust boundary `unanchored_same_boundary_manifest`), giữ hành vi `research` mode kèm cross-check manifest đồng vị trí, bắt fail-closed runtime error trong `evaluate_sample()`, và truyền/kiểm khớp `runtime_mode` + `expected_ood_gate_sha256` qua `LiveSystemOrchestrator` & `LiveTelemetryService`.
+- **Tổng hợp Trạng thái Remediation:**
+  - `WP1–WP5`, `WP-A`, `WP-B`: **DONE** (cứng hóa OOD in-memory/contract & minh bạch WP3 leakage disclosure; RF giữ `is_canonical_baseline=false` với tên `E0_frozen_18f_reference`).
+  - `P1-01` (**Product Runtime OOD Policy**): **DONE** — `RealtimeInferenceEngine`, `LiveRuntime`, `create_app`, `run_api.py` và cả **embedded backend sidecar** + **Python script fallback** trong `desktop/src-tauri/src/backend.rs` (+ `build.rs` `option_env!("NETFLOW_OOD_GATE_SHA256")`) mặc định fail-closed `"deployment"` (`require_ood_gate=true`); cấm downgrade `"deployment" -> "research"`; `"research"` chỉ kích hoạt khi chọn tường minh (như `scripts/run_live_lab_acceptance.py`); AI inference ở `"deployment"` giữ fail-closed `"UNAVAILABLE"` nếu thiếu trusted `NETFLOW_OOD_GATE_SHA256`.
+  - `P2-03` & `WP-F` (**OOD Integrity Verification & Trust Anchor**): **PASS (Tách cấu trúc vs Anchor) / `PARTIAL_UNANCHORED` khi thiếu external SHA** — `verify_companion_artifacts.py` tách rõ `structural_schema_verified` + `preprocessor_linkage_verified` (`true`) khỏi `trusted_digest_verified` (`false` trừ khi cấp `--expect-ood-gate-sha256` / `NETFLOW_OOD_GATE_SHA256` / `NETFLOW_EMBEDDED_OOD_GATE_SHA256`); không coi self-computed hash hay unsigned co-located manifest là anchor độc lập.
+  - `P2-02` (**Audit Docs & PR Status**), `P3-01` (**CI `pytest -rs`**), `P3-02` (**RF `E0_frozen_18f_reference`**): **DONE** (đồng bộ đầy đủ, công bố exact CI skip reasons & `1` `CHANGES_REQUESTED` review của `ViolaPeracia`).
+- **OOD Validation & Companion Artifacts:**
+  - `desktop/src-tauri/tauri.standalone.conf.json` & `scripts/verify_companion_artifacts.py`: stage và kiểm SHA-256 đủ `20` `companion_files` bao gồm `ood_reference_gate.json` (`8a52bfe5...`, `fit_rows=2,097,891`) và AE `score_normalization.json` (`d7bcb78f...`); đối khớp 64-hex SHA trong `COMPANION_BUNDLE_MANIFEST.json`, `EMBEDDED_ARTIFACTS_MANIFEST.json` và `EMBEDDED_SHA256SUMS.txt`.
+  - `src/network_anomaly/ml/ood_gate.py`: `from_artifact()`, `verify_ood_gate_artifact()`, `validate_ood_gate_instance()`, `resolve_expected_ood_gate_sha256()` (hỗ trợ `NETFLOW_OOD_GATE_SHA256` và `NETFLOW_EMBEDDED_OOD_GATE_SHA256`), và `cross_check_same_boundary_embedded_manifest()`.
+  - `src/network_anomaly/streaming/realtime_inference.py` + `live_orchestrator.py` + `live_service.py` + `api/live_runtime.py`: tách `runtime_mode` (`"deployment"` mặc định fail-closed vs `"research"` tường minh), **cấm direct in-memory `ood_gate` injection và bắt buộc trusted `expected_ood_gate_sha256` ở `deployment` mode / `require_ood_gate=True`** (chặn cả fake `is_fitted=True` và unsigned same-boundary manifest), bắt fail-closed runtime error trong `evaluate_sample()`, và truyền/kiểm khớp `runtime_mode` + `require_ood_gate` + `expected_ood_gate_sha256` xuyên suốt chuỗi khởi chạy.
 
 ---
 
@@ -227,9 +226,10 @@ Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích h
   - `#153` (`M6.7`): **`UNVERIFIED` (`0/4`)** — `OUTLINE_ONLY` (`docs/PRESENTATION_OUTLINE.md`).
   - `#154` (`M6.7`): **`BLOCKED` (`0/4`)** — `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`.
 - **CI / Test Evidence:**
-  - Implementation snapshot `a6c87ae8397e466ab1bd3d19f82d880e71084b88`: đạt `7/7` CI jobs trên [Run #211 (ID 44278751854)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44278751854) (`lint`, `test (ubuntu-latest)` `585 passed, 21 skipped`, `test (windows-latest)` `587 passed, 19 skipped`, `desktop-frontend`, `desktop-tauri-windows`, `security-audit`, `build-gate-summary`).
-  - **Lưu ý CI:** Kiểm tra raw dataset integrity (`verify_ait_manifest` / `fetch_multi_source_dataset`) trên CI bị **`SKIPPED`** do không có raw archives tại `data/raw/ait_nds_v2`.
-  - Kết quả kiểm thử cục bộ & CI run gắn với HEAD SHA mới nhất sau đợt `WP-C + WP-F` được cập nhật trực tiếp ở đầu PR này sau khi push.
+  - Historical `a6c87ae8397e466ab1bd3d19f82d880e71084b88`: `7/7` CI jobs trên [Run #211 (ID 44278751854)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44278751854) (`test (ubuntu-latest)` `585 passed, 21 skipped`, `test (windows-latest)` `587 passed, 19 skipped`).
+  - Historical `5483794160e877bf2d65144f30fd1ffc181372c3`: `7/7` CI jobs trên [Run #212 (ID 44312426631)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44312426631) (`1` submitted review `CHANGES_REQUESTED` bởi `ViolaPeracia`).
+  - **Lưu ý CI:** Kiểm tra raw dataset integrity (`verify_ait_manifest` / `fetch_multi_source_dataset`) trên CI bị **`SKIPPED`** do không có raw archives tại `data/raw/ait_nds_v2`, tách biệt với test-level skips được hiển thị qua `pytest -q -rs --tb=short`.
+  - Kết quả kiểm thử cục bộ & CI run gắn với HEAD SHA mới nhất sau đợt khắc phục `P1-01`/`P2`/`P3` được cập nhật trực tiếp ở đầu PR `#156` sau khi push.
 
 ---
 
@@ -243,11 +243,11 @@ Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích h
 
 ## 7. Reviewer Checklist
 
-- [ ] Thực hiện independent GitHub review (`0` submitted reviews hiện tại)
-- [ ] Kiểm tra diff `WP-A` & `WP-F` (`ood_gate.py`, `realtime_inference.py`, `live_orchestrator.py`, `live_service.py`, `verify_companion_artifacts.py`) và regression tests
-- [ ] Xác nhận chấp nhận giới hạn `UNRESOLVED / ACCEPTED LIMITATION` (`WP-F`: chưa có trust anchor độc lập mặc định cho `ood_reference_gate.json` nếu không cấp `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256`)
-- [ ] Kiểm tra `WP-B` (`run_wp3_controlled_ablation.py`, `wp3_controlled_ablation_report.json`, `V2_MODEL_AUDIT.md`) — xác nhận `E0` không bị retrain/thay SHA
-- [ ] Xác nhận GitHub Actions CI (`ci.yml`) PASS trên HEAD SHA mới nhất của `feat/v2-integration`
+- [ ] Thực hiện review lại sau đợt sửa `CHANGES_REQUESTED` (hiện có `1` submitted review `CHANGES_REQUESTED` bởi `ViolaPeracia` tại `5483794`)
+- [ ] Kiểm tra diff `P1-01` & `P2-03` (`ood_gate.py`, `realtime_inference.py`, `live_runtime.py`, `api/main.py`, `run_api.py`, `run_live_lab_acceptance.py`, `desktop/src-tauri/{build.rs,src/backend.rs}`, `verify_companion_artifacts.py`) và regression tests
+- [ ] Xác nhận cơ chế fail-closed mặc định `"deployment"` giữ live AI inference `"UNAVAILABLE"` nếu build/operator không cung cấp `NETFLOW_OOD_GATE_SHA256` ngoài trust boundary `artifacts/` (`PARTIAL_UNANCHORED`)
+- [ ] Kiểm tra `WP-B` & `P3-02` (`run_wp3_controlled_ablation.py`, `wp3_controlled_ablation_report.json` với `E0_frozen_18f_reference`, `random_forest_manifest.json` giữ `is_canonical_baseline=false`) — xác nhận `E0` không bị retrain/thay SHA
+- [ ] Xác nhận GitHub Actions CI (`ci.yml` với `pytest -q -rs --tb=short`) PASS trên HEAD SHA mới nhất của `feat/v2-integration` và công bố skip reasons (Ubuntu & Windows)
 - [ ] Xác nhận giữ `isDraft: true` nếu các gate `#73/#148`, `#137`, `#154` vẫn chưa mở khóa
 
 Refs #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #87, #88, #89, #90, #91, #92, #93, #94, #95, #96, #97, #98, #99, #100, #101, #102, #103, #104, #105, #106, #107, #108, #109, #110, #111, #112, #113, #114, #115, #116, #117, #118, #119, #120, #121, #122, #123, #124, #125, #126, #127, #128, #129, #130, #131, #132, #133, #134, #135, #136, #137, #138, #139, #140, #141, #142, #143, #144, #145, #146, #147, #148, #149, #150, #151, #152, #153, #154, #155

@@ -41,11 +41,13 @@ def normalize_sha256_hex(value: Any, *, field_name: str = "sha256") -> str:
 def resolve_expected_ood_gate_sha256(
     explicit_sha256: Optional[str] = None,
 ) -> tuple[Optional[str], Optional[str]]:
-    """Resolve an externally supplied expected OOD gate SHA-256 trust anchor.
+    """Resolve an externally supplied or build-embedded expected OOD gate SHA-256 trust anchor.
 
-    Returns ``(sha256, source)`` from either an explicit caller argument or
-    ``NETFLOW_OOD_GATE_SHA256``. Unsigned manifests co-located with the artifact
-    are intentionally NOT treated as independent trust anchors.
+    Returns ``(sha256, source)`` from either an explicit caller argument,
+    ``NETFLOW_OOD_GATE_SHA256``, or ``NETFLOW_EMBEDDED_OOD_GATE_SHA256``
+    (compiled into a trusted launcher/executable outside the writable artifact
+    directory). Unsigned manifests co-located with the artifact are intentionally
+    NOT treated as independent trust anchors.
     """
     if explicit_sha256 is not None:
         return (
@@ -57,6 +59,12 @@ def resolve_expected_ood_gate_sha256(
         return (
             normalize_sha256_hex(env_sha, field_name="NETFLOW_OOD_GATE_SHA256"),
             "env:NETFLOW_OOD_GATE_SHA256",
+        )
+    embedded_sha = os.environ.get("NETFLOW_EMBEDDED_OOD_GATE_SHA256", "").strip()
+    if embedded_sha:
+        return (
+            normalize_sha256_hex(embedded_sha, field_name="NETFLOW_EMBEDDED_OOD_GATE_SHA256"),
+            "build_embedded_sha256",
         )
     return None, None
 
