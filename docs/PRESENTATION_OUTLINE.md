@@ -136,7 +136,7 @@
   - **Tiền xử lý Train-Only & OOD 2 Lớp:**
     - `TrainOnlyPreprocessor(asinh_robust)` (`SHA-256: 0866dec7...`) fit duy nhất trên `ait_train` (`2,097,891` dòng), có `MIN_BOUNDED_SCALE_FLOOR = 0.25` chống suy biến IQR `pkts_in_ratio`.
     - **`OODValidator`** (`src/network_anomaly/ingestion/ood.py`): bắt buộc physical invariants (`duration_ms >= 0`, counters `>= 0`, ports `[0, 65535]`, `protocol_num [0, 255]`, ratios `[0, 1]`, finite), phát hiện unseen protocol IDs (`KNOWN_PROTOCOLS`), và tách riêng `ZERO_TTL_DRIFT` nếu đầu vào có `min_ttl == 0`.
-    - **`OODRejectionGate`** (`artifacts/ml/ood_reference_gate.json`, `SHA-256: 8a52bfe5...`, fit trên `2,097,891` dòng raw train, `std_margin = 4.0`, `statistical_threshold = 5.0`): kiểm chứng schema/SHA preprocessor fail-closed qua `OODRejectionGate.from_artifact()` và `validate_ood_gate_instance()`, kết hợp AE sidecar `score_normalization.json` (`d7bcb78f...`) cross-check trong `AutoencoderModel`, phát hiện `MISSING_MANDATORY_FEATURES`, `FEATURE_BOUNDS_EXTREME_BREACH`, `STATISTICAL_OUTLIER_DISTANCE` -> `ABSTAIN`; `RealtimeInferenceEngine` phân tách `runtime_mode` (`"research"` vs `"deployment"`) để cấm inject in-memory gate ở `deployment` và khóa fail-closed (`inference_mode = "UNAVAILABLE"`) khi OOD `ERROR` hoặc thiếu OOD ở `deployment`.
+    - **`OODRejectionGate`** (`artifacts/ml/ood_reference_gate.json`, `SHA-256: 8a52bfe5...`, fit trên `2,097,891` dòng raw train, `std_margin = 4.0`, `statistical_threshold = 5.0`): kiểm chứng schema/SHA preprocessor + `expected_sha256` fail-closed qua `OODRejectionGate.from_artifact()`, `verify_ood_gate_artifact()`, và `validate_ood_gate_instance()`, kết hợp AE sidecar `score_normalization.json` (`d7bcb78f...`) cross-check trong `AutoencoderModel`, phát hiện `MISSING_MANDATORY_FEATURES`, `FEATURE_BOUNDS_EXTREME_BREACH`, `STATISTICAL_OUTLIER_DISTANCE` -> `ABSTAIN`; `RealtimeInferenceEngine` phân tách `runtime_mode` (`"research"` vs `"deployment"`) để cấm inject in-memory gate ở `deployment`, bắt buộc external `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256` ở `deployment` (ghi nhận built-in default trust anchor là giới hạn chấp nhận `UNRESOLVED / ACCEPTED LIMITATION`), và khóa fail-closed (`inference_mode = "UNAVAILABLE"`) khi OOD `ERROR` hoặc không xác minh được ở `deployment`.
 - **Speaker Notes (Lời thuyết minh):**
   - Giải thích sự khác biệt giữa hai lớp bảo vệ đầu vào: `OODValidator` kiểm tra các **bất biến vật lý tuyệt đối** (ví dụ duration âm hoặc tỷ lệ `bytes_in_ratio > 1.0`), còn `OODRejectionGate` kiểm tra **độ lệch thống kê đa biến** so với phân phối huấn luyện `AIT-NDS-v2`.
   - Nhấn mạnh vai trò của `MIN_BOUNDED_SCALE_FLOOR = 0.25`: ở bản audit trước, IQR của `pkts_in_ratio` bị co về `0.044269` làm luồng một chiều trên CTU bị phóng đại tới `+9.04 sigma`; floor `0.25` kéo `scaled_W1` xuống còn `0.7272`.
@@ -347,7 +347,7 @@
 - **Giới hạn Trung thực (`Honest Limitations`):**
   - `16.38 events/s` trên CPU là thông lượng của pipeline suy luận 4-model thực tế trên sự kiện tuần tự, không thể chứng nhận cho băng thông mạng doanh nghiệp 1–10 Gbps.
   - Chưa thực hiện kiểm thử xâm nhập (pentest) độc lập và chưa chạy kiểm chứng trên Clean Windows 10/11 VM (`#73`, `#148`).
-  - `git_dirty: true` (`79ebb678`) trên working tree hiện tại cần được đóng băng thành commit sạch để chạy CI từ xa xác nhận lại.
+  - Model Training Provenance giữ `git_dirty: true` (`79ebb678`, `DIRTY_DISCLOSED`); mọi phát hành công khai yêu cầu đóng băng commit sạch trên `main` và tái huấn luyện/tái xác minh artifact gắn commit sạch.
 
 ---
 
@@ -381,7 +381,7 @@
 - **Biểu đồ / Tham chiếu Bằng chứng:**
   - [`reports/audits/V2_FINAL_AUDIT.md`](../reports/audits/V2_FINAL_AUDIT.md), [`reports/audits/V2_ISSUE_AC_AUDIT.md`](../reports/audits/V2_ISSUE_AC_AUDIT.md), [`docs/ROADMAP_FULL_SYSTEM.md`](ROADMAP_FULL_SYSTEM.md).
 - **Giới hạn Trung thực (`Honest Limitations`):**
-  - Tài liệu hiện tại chỉ là dàn ý văn bản (`OUTLINE_ONLY — PPTX/PDF deferred`); các thay đổi working tree cần được commit sạch và chạy lại CI GitHub Actions sau khi hoàn tất bảo vệ/review.
+  - Tài liệu hiện tại chỉ là dàn ý văn bản (`OUTLINE_ONLY — PPTX/PDF deferred`); mọi chỉnh sửa đều gắn vào lịch sử commit/CI của PR `#156` (`feat/v2-integration`), tách biệt rõ với model training provenance `79ebb678`.
 
 ---
 

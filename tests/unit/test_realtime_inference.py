@@ -266,8 +266,9 @@ class TestOODGate:
         assert "missing preprocessor_artifact_sha256" in (engine_missing_sha.ood_gate_error or "")
 
     def test_deployment_mode_rejects_injected_gate_and_accepts_verified_persisted_artifact(
-        self, tmp_path, baseline_features
+        self, tmp_path, baseline_features, monkeypatch
     ):
+        import hashlib
         import json
 
         rng = np.random.default_rng(23)
@@ -303,17 +304,161 @@ class TestOODGate:
                 "preprocessor_artifact_sha256": "a" * 64,
             }
         )
-        gate_path.write_text(json.dumps(payload), encoding="utf-8")
+        gate_bytes = json.dumps(payload).encode("utf-8")
+        gate_path.write_bytes(gate_bytes)
+        expected_gate_sha = hashlib.sha256(gate_bytes).hexdigest()
 
+        # Missing trusted expected SHA in deployment mode must fail closed even if unsigned
+        # co-located EMBEDDED_ARTIFACTS_MANIFEST.json claims to endorse the artifact.
+        (tmp_path / "EMBEDDED_ARTIFACTS_MANIFEST.json").write_text(
+            json.dumps({"ood_gate": {"status": "FITTED", "sha256": expected_gate_sha}}),
+            encoding="utf-8",
+        )
+        monkeypatch.delenv("NETFLOW_OOD_GATE_SHA256", raising=False)
+        unanchored_engine = RealtimeInferenceEngine(
+            registry=registry,
+            runtime_mode="deployment",
+            demo_heuristics=True,
+        )
+        assert unanchored_engine.ood_gate_status == "ERROR"
+        assert unanchored_engine.ood_gate_trust_anchor == "missing_trusted_expected_sha256"
+        assert "expected_ood_gate_sha256" in (unanchored_engine.ood_gate_error or "")
+        assert unanchored_engine.readiness()["inference_mode"] == "UNAVAILABLE"
+        assert (
+            unanchored_engine.infer_event(_Event(), baseline_features()).inference_mode
+            == "UNAVAILABLE"
+        )
+
+        # With explicit trusted expected SHA + matching preprocessor SHA -> PASS
         verified_engine = RealtimeInferenceEngine(
             registry=registry,
             runtime_mode="deployment",
+            expected_ood_gate_sha256=expected_gate_sha,
         )
         assert verified_engine.ood_gate_status == "FITTED"
         assert verified_engine.ood_gate_error is None
-        assert verified_engine.ood_gate_sha256 is not None
+        assert verified_engine.ood_gate_sha256 == expected_gate_sha
+        assert verified_engine.ood_gate_trust_anchor == "explicit_expected_sha256"
         assert verified_engine.readiness()["runtime_mode"] == "deployment"
         assert verified_engine.readiness()["ood_gate_status"] == "FITTED"
+        assert verified_engine.readiness()["ood_gate_trust_anchor"] == "explicit_expected_sha256"
+
+        # Via NETFLOW_OOD_GATE_SHA256 env var -> PASS
+        monkeypatch.setenv("NETFLOW_OOD_GATE_SHA256", expected_gate_sha)
+        env_engine = RealtimeInferenceEngine(registry=registry, runtime_mode="deployment")
+        assert env_engine.ood_gate_status == "FITTED"
+        assert env_engine.ood_gate_trust_anchor == "env:NETFLOW_OOD_GATE_SHA256"
+        monkeypatch.delenv("NETFLOW_OOD_GATE_SHA256", raising=False)
+
+    def test_persisted_ood_gate_expected_sha_rejects_mismatch_and_valid_json_tamper(
+        self, tmp_path, baseline_features
+    ):
+        import hashlib
+        import json
+
+        rng = np.random.default_rng(31)
+        gate = OODRejectionGate().fit(rng.normal(size=(50, 18)), list(baseline_features().keys()))
+        registry = _empty_registry(tmp_path)
+        registry._preprocessor_metadata = {"artifact_sha256": "a" * 64}
+
+        gate_path = registry.artifacts_dir / "ml" / "ood_reference_gate.json"
+        gate_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = gate.to_artifact(
+            {
+                "dataset_name": "AIT-NDS-v2",
+                "partition": "train",
+                "fit_rows": 50,
+                "preprocessor_artifact_sha256": "a" * 64,
+            }
+        )
+        gate_bytes = json.dumps(payload).encode("utf-8")
+        gate_path.write_bytes(gate_bytes)
+        expected_gate_sha = hashlib.sha256(gate_bytes).hexdigest()
+
+        # Wrong expected SHA -> REJECT
+        wrong_sha_engine = RealtimeInferenceEngine(
+            registry=registry,
+            runtime_mode="deployment",
+            expected_ood_gate_sha256="f" * 64,
+            demo_heuristics=True,
+        )
+        assert wrong_sha_engine.ood_gate_status == "ERROR"
+        assert "SHA-256 mismatch" in (wrong_sha_engine.ood_gate_error or "")
+        assert (
+            wrong_sha_engine.infer_event(_Event(), baseline_features()).inference_mode
+            == "UNAVAILABLE"
+        )
+
+        # Structurally valid JSON edit (fit_rows changed from 50 -> 51) -> REJECT
+        tampered_payload = json.loads(json.dumps(payload))
+        tampered_payload["provenance"]["fit_rows"] = 51
+        gate_path.write_text(json.dumps(tampered_payload), encoding="utf-8")
+        tampered_engine = RealtimeInferenceEngine(
+            registry=registry,
+            runtime_mode="deployment",
+            expected_ood_gate_sha256=expected_gate_sha,
+        )
+        assert tampered_engine.ood_gate_status == "ERROR"
+        assert "SHA-256 mismatch" in (tampered_engine.ood_gate_error or "")
+
+        # Matching tampered SHA but wrong preprocessor SHA -> REJECT
+        tampered_sha = hashlib.sha256(gate_path.read_bytes()).hexdigest()
+        registry._preprocessor_metadata = {"artifact_sha256": "b" * 64}
+        bad_prep_engine = RealtimeInferenceEngine(
+            registry=registry,
+            runtime_mode="deployment",
+            expected_ood_gate_sha256=tampered_sha,
+        )
+        assert bad_prep_engine.ood_gate_status == "ERROR"
+        assert "preprocessor_artifact_sha256 mismatch" in (bad_prep_engine.ood_gate_error or "")
+
+    def test_research_mode_unanchored_and_same_boundary_manifest_mismatch(
+        self, tmp_path, baseline_features
+    ):
+        import hashlib
+        import json
+
+        rng = np.random.default_rng(37)
+        gate = OODRejectionGate().fit(rng.normal(size=(50, 18)), list(baseline_features().keys()))
+        registry = _empty_registry(tmp_path)
+        registry._preprocessor_metadata = {"artifact_sha256": "a" * 64}
+
+        gate_path = registry.artifacts_dir / "ml" / "ood_reference_gate.json"
+        gate_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = gate.to_artifact(
+            {
+                "dataset_name": "AIT-NDS-v2",
+                "partition": "train",
+                "fit_rows": 50,
+                "preprocessor_artifact_sha256": "a" * 64,
+            }
+        )
+        gate_bytes = json.dumps(payload).encode("utf-8")
+        gate_path.write_bytes(gate_bytes)
+        actual_sha = hashlib.sha256(gate_bytes).hexdigest()
+
+        # Research mode without expected_ood_gate_sha256 still works per contract
+        res_engine = RealtimeInferenceEngine(registry=registry, runtime_mode="research")
+        assert res_engine.ood_gate_status == "FITTED"
+        assert res_engine.ood_gate_trust_anchor == "unanchored_local_artifact"
+
+        # If co-located EMBEDDED_ARTIFACTS_MANIFEST.json mismatches actual artifact -> REJECT
+        (tmp_path / "EMBEDDED_ARTIFACTS_MANIFEST.json").write_text(
+            json.dumps({"ood_gate": {"status": "FITTED", "sha256": "0" * 64}}),
+            encoding="utf-8",
+        )
+        mismatch_engine = RealtimeInferenceEngine(registry=registry, runtime_mode="research")
+        assert mismatch_engine.ood_gate_status == "ERROR"
+        assert "EMBEDDED_ARTIFACTS_MANIFEST.json" in (mismatch_engine.ood_gate_error or "")
+
+        # Matching co-located manifest records honest unanchored_same_boundary_manifest
+        (tmp_path / "EMBEDDED_ARTIFACTS_MANIFEST.json").write_text(
+            json.dumps({"ood_gate": {"status": "FITTED", "sha256": actual_sha}}),
+            encoding="utf-8",
+        )
+        matched_engine = RealtimeInferenceEngine(registry=registry, runtime_mode="research")
+        assert matched_engine.ood_gate_status == "FITTED"
+        assert matched_engine.ood_gate_trust_anchor == "unanchored_same_boundary_manifest"
 
     def test_ood_runtime_error_during_evaluate_sample_fails_closed(
         self, tmp_path, baseline_features
@@ -345,17 +490,23 @@ class TestOODGate:
         from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
         from network_anomaly.streaming.live_service import LiveTelemetryService
 
-        orch_deploy = LiveSystemOrchestrator(runtime_mode="deployment")
+        orch_deploy = LiveSystemOrchestrator(
+            runtime_mode="deployment",
+            expected_ood_gate_sha256="e" * 64,
+        )
         assert orch_deploy.inference_engine.runtime_mode == "deployment"
         assert orch_deploy.inference_engine.require_ood_gate is True
+        assert orch_deploy.inference_engine.expected_ood_gate_sha256 == "e" * 64
 
         svc_deploy = LiveTelemetryService(
             db_path=tmp_path / "svc.db",
             keystore_dir=tmp_path / "keys",
             runtime_mode="deployment",
+            expected_ood_gate_sha256="e" * 64,
         )
         assert svc_deploy.orchestrator.inference_engine.runtime_mode == "deployment"
         assert svc_deploy.orchestrator.inference_engine.require_ood_gate is True
+        assert svc_deploy.orchestrator.inference_engine.expected_ood_gate_sha256 == "e" * 64
 
         monkeypatch.setenv("NETFLOW_RUNTIME_MODE", "research")
         orch_research = LiveSystemOrchestrator()
@@ -366,6 +517,11 @@ class TestOODGate:
             LiveSystemOrchestrator(
                 inference_engine=orch_research.inference_engine,
                 runtime_mode="deployment",
+            )
+        with pytest.raises(ValueError, match="expected_ood_gate_sha256"):
+            LiveSystemOrchestrator(
+                inference_engine=orch_deploy.inference_engine,
+                expected_ood_gate_sha256="f" * 64,
             )
 
 

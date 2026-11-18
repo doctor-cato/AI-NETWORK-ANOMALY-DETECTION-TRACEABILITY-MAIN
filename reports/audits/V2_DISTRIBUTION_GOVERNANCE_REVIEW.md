@@ -2,7 +2,9 @@
 
 - **Vai trò thực hiện:** Agent F — Kiểm toán viên Quản trị Phân phối & Bản quyền (`Distribution Authorization & Licensing Governance Auditor`) *(đồng bộ hậu kiểm PR `#156` ngày `2026-11-18`)*
 - **Ngày kiểm toán:** `2026-11-18` (`UTC+7`)
-- **Nhánh / Commit kiểm toán:** `feat/v2-integration` @ `2c8acc1d68b558d74e0ce1a53c7c92eb4b917557` *(cập nhật từ `f5dacb1e` / `79ebb678`; kèm bản vá PR `#156` WP-A/B/C đang chuẩn bị commit sạch — riêng `training_git_commit` của 4 model manifests giữ nguyên `79ebb678b87de19cc6b664b587726983fecaf98f` với `git_dirty: true`, `DIRTY_DISCLOSED`)*
+- **Nhánh / Commit kiểm toán:**
+  - **Implementation & CI Snapshot:** `feat/v2-integration` @ `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (CI **Run `#211` / ID `44278751854`**, `7/7` jobs `PASS`), kèm bản vá `WP-F` (`expected_ood_gate_sha256` & companion manifest cross-check) và đợt đồng bộ docs tiếp theo trên `feat/v2-integration`.
+  - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `DIRTY_DISCLOSED` (giữ nguyên trung thực).
 - **Phương pháp:** Đọc trực tiếp toàn bộ hồ sơ bản quyền, manifest dữ liệu, manifest 4 mô hình + preprocessor + demo, `scripts/verify_companion_artifacts.py`, cấu hình Tauri/Cargo/npm/PyInstaller, CI/Release workflows và chạy lệnh kiểm chứng read-only. Không chỉnh sửa [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](../governance/DISTRIBUTION_AUTHORIZATION.json), không giả mạo phê duyệt và không thay đổi mã nguồn.
 
 ---

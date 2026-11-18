@@ -1107,6 +1107,9 @@ def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.Monkey
         "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
         "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
         "artifacts/models/autoencoder/autoencoder_model.joblib": b"ae",
+        "artifacts/ml/ood_reference_gate.json": json.dumps(
+            {"preprocessor_artifact_sha256": prep_sha, "fit_rows": 100}
+        ).encode("utf-8"),
     }
     for rel, content in fake_files.items():
         p = ws / rel
@@ -1150,6 +1153,16 @@ def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.Monkey
             "preprocessor": {
                 "ready": all_present,
                 "sha256": prep_sha if all_present else None,
+            },
+            "ood_gate": {
+                "status": "FITTED" if all_present else "MISSING",
+                "sha256": (
+                    _sha256_path(root / "artifacts/ml/ood_reference_gate.json")
+                    if (root / "artifacts/ml/ood_reference_gate.json").is_file()
+                    else None
+                ),
+                "fit_rows": 100 if all_present else None,
+                "preprocessor_artifact_sha256": prep_sha if all_present else None,
             },
             "models": {
                 key: {
@@ -1483,6 +1496,26 @@ def test_github_actions_artifact_zip_wrapper_and_provenance_f06(
             root=target_ws,
             bundle_archive=tampered_inner,
             expected_bundle_sha256=_sha256_path(tampered_inner),
+        )
+
+    # (d) Tampered OOD gate SHA-256 inside COMPANION_BUNDLE_MANIFEST.json rejected fail-closed
+    tampered_ood_manifest = tmp_path / "tampered_ood_manifest.zip"
+    with (
+        zipfile.ZipFile(bundle_zip, "r") as zin,
+        zipfile.ZipFile(tampered_ood_manifest, "w") as zout,
+    ):
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "COMPANION_BUNDLE_MANIFEST.json":
+                m = json.loads(data.decode("utf-8"))
+                m["ood_gate"]["sha256"] = "0" * 64
+                data = json.dumps(m).encode("utf-8")
+            zout.writestr(item, data)
+    with pytest.raises(RuntimeError, match="COMPANION_BUNDLE_MANIFEST ood_gate sha256 mismatch"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_archive=tampered_ood_manifest,
+            expected_bundle_sha256=_sha256_path(tampered_ood_manifest),
         )
 
 
@@ -1898,13 +1931,13 @@ def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
 
     # Corrupted OOD gate in installed standalone dir must fail closed
     ood_installed = install_dir / "artifacts/ml/ood_reference_gate.json"
-    saved_ood = ood_installed.read_text(encoding="utf-8")
-    ood_installed.write_text("{corrupted_ood", encoding="utf-8")
+    saved_ood = ood_installed.read_bytes()
+    ood_installed.write_bytes(b"{corrupted_ood")
     with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
         vca.verify_installed_standalone_layout(
             install_dir, expected_sidecar_sha256=expected_sidecar_sha
         )
-    ood_installed.write_text(saved_ood, encoding="utf-8")
+    ood_installed.write_bytes(saved_ood)
 
     # Corrupted OR missing score_normalization.json in runtime dir must fail Autoencoder & overall verification
     bad_runtime = tmp_path / "bad_runtime"
@@ -1946,6 +1979,18 @@ def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
     no_ood_summary = vca.verify_companion_artifacts(root=REPO_ROOT, runtime_dir=no_ood_runtime)
     assert no_ood_summary["overall_status"] == "BLOCKED / NOT READY"
     assert no_ood_summary["ood_gate"]["status"] == "NOT_FITTED"
+
+    # Tamper EMBEDDED_ARTIFACTS_MANIFEST.json ood_gate.sha256 must fail closed
+    emb_man_path = install_dir / "EMBEDDED_ARTIFACTS_MANIFEST.json"
+    saved_emb_man = emb_man_path.read_text(encoding="utf-8")
+    tampered_emb = json.loads(saved_emb_man)
+    tampered_emb["ood_gate"]["sha256"] = "0" * 64
+    emb_man_path.write_text(json.dumps(tampered_emb), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="EMBEDDED_ARTIFACTS_MANIFEST.json"):
+        vca.verify_installed_standalone_layout(
+            install_dir, expected_sidecar_sha256=expected_sidecar_sha
+        )
+    emb_man_path.write_text(saved_emb_man, encoding="utf-8")
 
     # Tamper sidecar or embedded file must fail closed
     with pytest.raises(RuntimeError, match="sidecar SHA-256 mismatch"):

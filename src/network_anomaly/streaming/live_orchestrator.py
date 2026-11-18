@@ -92,6 +92,7 @@ class LiveSystemOrchestrator:
         demo_heuristics: bool = False,
         runtime_mode: Optional[str] = None,
         require_ood_gate: Optional[bool] = None,
+        expected_ood_gate_sha256: Optional[str] = None,
     ):
         self.max_active_entities = max_active_entities
 
@@ -111,12 +112,23 @@ class LiveSystemOrchestrator:
                     raise ValueError(
                         "inference_engine.require_ood_gate does not match requested require_ood_gate"
                     )
+            if expected_ood_gate_sha256 is not None and hasattr(
+                inference_engine, "expected_ood_gate_sha256"
+            ):
+                req_sha = expected_ood_gate_sha256.strip().lower()
+                eng_sha = getattr(inference_engine, "expected_ood_gate_sha256", None)
+                if (eng_sha or "").strip().lower() != req_sha:
+                    raise ValueError(
+                        "inference_engine.expected_ood_gate_sha256 does not match requested "
+                        "expected_ood_gate_sha256"
+                    )
             self.inference_engine = inference_engine
         else:
             self.inference_engine = RealtimeInferenceEngine(
                 demo_heuristics=demo_heuristics,
                 runtime_mode=runtime_mode,
                 require_ood_gate=require_ood_gate,
+                expected_ood_gate_sha256=expected_ood_gate_sha256,
             )
         self.key_manager = KeyManager(keystore_dir=keystore_dir)
         self.key_rotator = KeyRotationPolicy(

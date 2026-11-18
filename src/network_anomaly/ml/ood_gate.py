@@ -8,6 +8,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -21,6 +23,130 @@ from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 
 OOD_GATE_SCHEMA_VERSION = 1
 DEFAULT_OOD_GATE_PATH = PROJECT_ROOT / "artifacts" / "ml" / "ood_reference_gate.json"
+_HEX_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def normalize_sha256_hex(value: Any, *, field_name: str = "sha256") -> str:
+    """Validate and normalize a 64-char hex SHA-256 string."""
+    if not isinstance(value, str):
+        raise ValueError(
+            f"Invalid {field_name}: expected 64-hex string, got {type(value).__name__}"
+        )
+    norm = value.strip().lower()
+    if not _HEX_SHA256_RE.fullmatch(norm):
+        raise ValueError(f"Invalid {field_name}: expected 64-hex SHA-256, got {value!r}")
+    return norm
+
+
+def resolve_expected_ood_gate_sha256(
+    explicit_sha256: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Resolve an externally supplied expected OOD gate SHA-256 trust anchor.
+
+    Returns ``(sha256, source)`` from either an explicit caller argument or
+    ``NETFLOW_OOD_GATE_SHA256``. Unsigned manifests co-located with the artifact
+    are intentionally NOT treated as independent trust anchors.
+    """
+    if explicit_sha256 is not None:
+        return (
+            normalize_sha256_hex(explicit_sha256, field_name="expected_ood_gate_sha256"),
+            "explicit_expected_sha256",
+        )
+    env_sha = os.environ.get("NETFLOW_OOD_GATE_SHA256", "").strip()
+    if env_sha:
+        return (
+            normalize_sha256_hex(env_sha, field_name="NETFLOW_OOD_GATE_SHA256"),
+            "env:NETFLOW_OOD_GATE_SHA256",
+        )
+    return None, None
+
+
+def cross_check_same_boundary_embedded_manifest(
+    gate_path: Path,
+    actual_sha256: str,
+) -> Optional[str]:
+    """Cross-check co-located bundle manifests when present to catch mismatched edits.
+
+    Note: Because co-located unsigned manifests share the same filesystem trust
+    boundary as ``gate_path``, passing this check does NOT replace an independent
+    trust anchor. Any mismatch or unreadable manifest fails closed.
+    """
+    resolved = gate_path.resolve()
+    if resolved.parent.name != "ml" or resolved.parent.parent.name != "artifacts":
+        return None
+    bundle_root = resolved.parent.parent.parent
+    norm_actual = normalize_sha256_hex(actual_sha256, field_name="actual_sha256")
+    rel_key = "artifacts/ml/ood_reference_gate.json"
+    saw_manifest = False
+
+    embedded_manifest = bundle_root / "EMBEDDED_ARTIFACTS_MANIFEST.json"
+    if embedded_manifest.is_file():
+        saw_manifest = True
+        try:
+            payload = json.loads(embedded_manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"EMBEDDED_ARTIFACTS_MANIFEST.json unreadable at '{embedded_manifest}': {exc}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError("EMBEDDED_ARTIFACTS_MANIFEST.json must be a JSON object")
+        ood_block = payload.get("ood_gate")
+        if not isinstance(ood_block, dict) or not ood_block.get("sha256"):
+            raise ValueError("EMBEDDED_ARTIFACTS_MANIFEST.json missing ood_gate.sha256")
+        man_sha = normalize_sha256_hex(
+            ood_block.get("sha256"), field_name="EMBEDDED_ARTIFACTS_MANIFEST.ood_gate.sha256"
+        )
+        if man_sha != norm_actual:
+            raise ValueError(
+                "OOD gate artifact SHA-256 mismatch against EMBEDDED_ARTIFACTS_MANIFEST.json: "
+                f"manifest={man_sha} != actual={norm_actual}"
+            )
+
+    embedded_sums = bundle_root / "EMBEDDED_SHA256SUMS.txt"
+    if embedded_sums.is_file():
+        saw_manifest = True
+        try:
+            lines = embedded_sums.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ValueError(f"EMBEDDED_SHA256SUMS.txt unreadable: {exc}") from exc
+        sums_sha: Optional[str] = None
+        for line in lines:
+            parts = line.strip().split(None, 1)
+            if len(parts) == 2 and parts[1].strip().replace("\\", "/") == rel_key:
+                sums_sha = normalize_sha256_hex(parts[0], field_name="EMBEDDED_SHA256SUMS")
+                break
+        if sums_sha is None:
+            raise ValueError(f"EMBEDDED_SHA256SUMS.txt missing entry for {rel_key}")
+        if sums_sha != norm_actual:
+            raise ValueError(
+                "OOD gate artifact SHA-256 mismatch against EMBEDDED_SHA256SUMS.txt: "
+                f"sums={sums_sha} != actual={norm_actual}"
+            )
+
+    companion_manifest = bundle_root / "COMPANION_BUNDLE_MANIFEST.json"
+    if companion_manifest.is_file():
+        saw_manifest = True
+        try:
+            payload = json.loads(companion_manifest.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"COMPANION_BUNDLE_MANIFEST.json unreadable at '{companion_manifest}': {exc}"
+            ) from exc
+        if not isinstance(payload, dict):
+            raise ValueError("COMPANION_BUNDLE_MANIFEST.json must be a JSON object")
+        ood_block = payload.get("ood_gate")
+        if not isinstance(ood_block, dict) or not ood_block.get("sha256"):
+            raise ValueError("COMPANION_BUNDLE_MANIFEST.json missing ood_gate.sha256")
+        man_sha = normalize_sha256_hex(
+            ood_block.get("sha256"), field_name="COMPANION_BUNDLE_MANIFEST.ood_gate.sha256"
+        )
+        if man_sha != norm_actual:
+            raise ValueError(
+                "OOD gate artifact SHA-256 mismatch against COMPANION_BUNDLE_MANIFEST.json: "
+                f"manifest={man_sha} != actual={norm_actual}"
+            )
+
+    return "unanchored_same_boundary_manifest" if saw_manifest else None
 
 
 class OODAction(str, Enum):
@@ -348,7 +474,7 @@ def verify_ood_gate_artifact(
     raw_bytes = candidate.read_bytes()
     actual_sha256 = hashlib.sha256(raw_bytes).hexdigest().lower()
     if expected_sha256 is not None:
-        exp = str(expected_sha256).strip().lower()
+        exp = normalize_sha256_hex(expected_sha256, field_name="expected_sha256")
         if actual_sha256 != exp:
             raise ValueError(
                 f"OOD gate artifact SHA-256 mismatch: expected {exp}, got {actual_sha256}"

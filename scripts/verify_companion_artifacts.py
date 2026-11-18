@@ -871,11 +871,17 @@ def verify_installed_standalone_layout(
         )
     expected_ood_sha = (manifest_data.get("ood_gate") or {}).get("sha256")
     if (
-        expected_ood_sha
-        and str(expected_ood_sha).lower() != str(ood_gate_info.get("sha256", "")).lower()
+        not expected_ood_sha
+        or not _is_hex_sha256(str(expected_ood_sha))
+        or str(expected_ood_sha).lower() != str(ood_gate_info.get("sha256", "")).lower()
     ):
         raise RuntimeError(
-            "Installed standalone OOD gate SHA-256 mismatch with EMBEDDED_ARTIFACTS_MANIFEST.json"
+            "Installed standalone OOD gate SHA-256 missing or mismatch with EMBEDDED_ARTIFACTS_MANIFEST.json"
+        )
+    sums_ood_sha = sums_map.get(OOD_REFERENCE_GATE_REL.as_posix())
+    if not sums_ood_sha or sums_ood_sha.lower() != str(expected_ood_sha).lower():
+        raise RuntimeError(
+            "Installed standalone OOD gate SHA-256 mismatch between EMBEDDED_ARTIFACTS_MANIFEST.json and EMBEDDED_SHA256SUMS.txt"
         )
     if summary["overall_status"] != "READY" or len(summary["ready_models"]) != len(MODEL_SPECS):
         raise RuntimeError(
@@ -1176,6 +1182,14 @@ def package_companion_bundle(
                 key: {"sha256": info["sha256"], "run_id": info["run_id"]}
                 for key, info in staged["models"].items()
             },
+            "ood_gate": {
+                "status": (staged.get("ood_gate") or {}).get("status"),
+                "sha256": (staged.get("ood_gate") or {}).get("sha256"),
+                "fit_rows": (staged.get("ood_gate") or {}).get("fit_rows"),
+                "preprocessor_artifact_sha256": (staged.get("ood_gate") or {}).get(
+                    "preprocessor_artifact_sha256"
+                ),
+            },
             "demo_sha256": {key: info["sha256"] for key, info in staged["demo"].items()},
             "files": sorted(staged["companion_files"]),
         }
@@ -1428,6 +1442,37 @@ def _verify_companion_bundle_manifest(
             raise RuntimeError(
                 "COMPANION_BUNDLE_MANIFEST files list does not match COMPANION_SHA256SUMS.txt."
             )
+
+    ood_rel = OOD_REFERENCE_GATE_REL.as_posix()
+    ood_block = bundle_manifest.get("ood_gate")
+    if ood_rel in sums_map:
+        if not isinstance(ood_block, dict) or not ood_block.get("sha256"):
+            raise RuntimeError(
+                "COMPANION_BUNDLE_MANIFEST missing ood_gate metadata for packaged OOD gate."
+            )
+        if str(ood_block.get("status") or "") != "FITTED":
+            raise RuntimeError(
+                f"COMPANION_BUNDLE_MANIFEST ood_gate status must be 'FITTED', got {ood_block.get('status')!r}."
+            )
+        if str(ood_block.get("sha256") or "").lower() != str(sums_map[ood_rel]).lower():
+            raise RuntimeError(
+                "COMPANION_BUNDLE_MANIFEST ood_gate sha256 mismatch with COMPANION_SHA256SUMS.txt."
+            )
+        prep_manifest_path = resolved_root / PREPROCESSOR_MANIFEST_REL
+        if prep_manifest_path.is_file():
+            prep_manifest = _read_json_dict(prep_manifest_path, str(PREPROCESSOR_MANIFEST_REL))
+            expected_prep_sha = str(prep_manifest.get("artifact_sha256") or "").lower()
+            ood_prep_sha = str(ood_block.get("preprocessor_artifact_sha256") or "").lower()
+            if expected_prep_sha and ood_prep_sha != expected_prep_sha:
+                raise RuntimeError(
+                    "COMPANION_BUNDLE_MANIFEST ood_gate preprocessor_artifact_sha256 mismatch with HEAD manifest."
+                )
+    elif isinstance(ood_block, dict) and (
+        ood_block.get("sha256") is not None or str(ood_block.get("status") or "") == "FITTED"
+    ):
+        raise RuntimeError(
+            "COMPANION_BUNDLE_MANIFEST ood_gate sha256 mismatch: artifact missing from COMPANION_SHA256SUMS.txt."
+        )
 
 
 def _has_symlink_ancestor(path: Path, stop_at: Path) -> bool:

@@ -1,8 +1,11 @@
 # V2 Model Baseline & Provenance Audit (`NetFlow Sentinel v2`)
 
-- **Ngày kiểm toán:** `2026-11-18` (`+07:00`) / `2026-11-17T21:45Z`
-- **Repository Snapshot:** branch `feat/v2-integration`, HEAD `79ebb678b87de19cc6b664b587726983fecaf98f` (`2026-11-18 03:39:25 +0700` = `2026-11-17T20:39:25Z`)
-- **Chế độ kiểm toán:** Read-only (không chạy `train_*.py`, không ghi đè model artifacts hay manifests hiện có, không chỉnh sửa source code)
+- **Ngày kiểm toán gốc (Phase 3 Baseline):** `2026-11-18` (`+07:00`) / `2026-11-17T21:45Z` *(được bổ sung Mục 6 hậu kiểm ngày `2026-11-18`)*
+- **Tách bạch Mốc Truy vết:**
+  - **Model Training Provenance (4 baseline artifacts `E0` tại Mục 6):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `DIRTY_DISCLOSED` (không chỉnh sửa manifest hay retrain `E0`).
+  - **Implementation & CI Verification Snapshot:** `feat/v2-integration` @ `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (CI **Run `#211` / ID `44278751854`**, `7/7` jobs `PASS`).
+  - **Repository Audit Snapshot (Hiện tại):** `feat/v2-integration` (PR `#156` `OPEN / Draft`), cập nhật bổ sung `WP-F` (`expected_ood_gate_sha256` runtime verification + `UNRESOLVED / ACCEPTED LIMITATION` cho built-in trust anchor mặc định) và đồng bộ audit docs sau `a6c87ae`.
+- **Lưu ý Lịch sử Tài liệu:** Mục 1–5 bên dưới giữ nguyên ảnh chụp đọc-chỉ ban đầu tại `79ebb678` (khi chưa sửa CRLF/LF và chưa retrain bản `E0` hiện tại); kết quả hậu khắc phục & thí nghiệm kiểm soát hiện hành nằm tại **Mục 6**.
 - **Phạm vi đối tượng:** `Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder`, `TrainOnlyPreprocessor` (`v2_flow_preprocessor.joblib`), Split/Dataset manifests, `ModelRegistry`, và các báo cáo đánh giá thực nghiệm (`model_comparison_report.json`, `ctu_cross_source_eval.json`, `rq2_imbalance_report.json`, `rq4_unknown_attack_report.json`).
 
 ---
@@ -263,7 +266,7 @@ Sau khi khắc phục `DATA-A01..A04` (phục hồi đủ `3,464,400` flows có 
 | `XGBoost` | `33d201f8f3d842c0b71547532c74f3d107bd402d8a65e20241ff5f407723aa48` | `v2-xgb-20261117T231609Z` | Sửa `provenance_note` verified, relative POSIX path |
 | `Isolation Forest` | `11b1690088bca1984df9280b3c5662fbb13a76ca31e55258b9de43d6a10a6885` | `v2-if-20261118T020525Z` (`th=0.031268`, `>=` FPR `0.049991`) | Đổi `target="label_binary"`, thêm `top_features` permutation importance |
 | `Autoencoder` | `e6afecefdc939a09e3c7fedd3e994a10c404f74e9b52c9ab95dfd984aae0cd4f` | `v2-ae-20261118T020635Z` (`(16,8,16)` Benign std, `th=0.000467`, FPR `0.049996`) | Thêm per-feature Benign standardization, check `expected_split_manifest_sha256`, `top_features` |
-| `OODRejectionGate` | `8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825` | `artifacts/ml/ood_reference_gate.json` (`2,097,891` raw train rows) | Khớp không gian raw `feature_dict`; kiểm chứng cả persisted artifact (`verify_ood_gate_artifact`) lẫn injected gate (`validate_ood_gate_instance`: schema, finite arrays, provenance, preprocessor SHA); `deployment` mode cấm inject in-memory gate và khóa fail-closed |
+| `OODRejectionGate` | `8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825` | `artifacts/ml/ood_reference_gate.json` (`2,097,891` raw train rows) | Khớp không gian raw `feature_dict`; kiểm chứng schema/arrays/provenance/preprocessor-SHA (`verify_ood_gate_artifact` & `validate_ood_gate_instance`); `WP-F` hỗ trợ `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256` và fail-closed ở `deployment` mode khi thiếu external expected SHA (**built-in independent trust anchor: `UNRESOLVED / ACCEPTED LIMITATION`**) |
 | `AE score_normalization.json` | `d7bcb78f7439930ee61b53e6e970ff1535d52ad10f2a025ad4877629a7478847` | `artifacts/models/autoencoder/score_normalization.json` | Sidecar chuẩn hóa điểm AE; cross-checked lúc load (`_validate_ae_contract_before_deserialize`) & stage standalone |
 
 ### 6.2. So sánh Thực nghiệm Trước vs Sau Khắc phục (Cohort Đầy đủ `AIT-Test = 988,805`)

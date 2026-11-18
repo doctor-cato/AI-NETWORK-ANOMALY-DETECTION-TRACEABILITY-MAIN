@@ -29,7 +29,12 @@ import numpy as np
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
-from network_anomaly.ml.ood_gate import OODRejectionGate, validate_ood_gate_instance
+from network_anomaly.ml.ood_gate import (
+    OODRejectionGate,
+    cross_check_same_boundary_embedded_manifest,
+    resolve_expected_ood_gate_sha256,
+    validate_ood_gate_instance,
+)
 from network_anomaly.models.registry import (
     FeatureContractError,
     ModelRegistry,
@@ -96,12 +101,12 @@ def _load_ood_gate(
     *,
     runtime_mode: str = "research",
     require_ood_gate: bool = False,
-) -> tuple[Optional[OODRejectionGate], str, Optional[str], Optional[str]]:
+    expected_ood_gate_sha256: Optional[str] = None,
+) -> tuple[Optional[OODRejectionGate], str, Optional[str], Optional[str], str]:
     """Verify supplied research gate or persisted reference artifact.
 
     Distinguishes missing artifact (``NOT_FITTED``) from corrupted, mismatched,
-    unprovenanced, or disallowed gate injection (``ERROR``) so broken or unverified
-    OOD artifacts never silently pass as ``FITTED``.
+    unprovenanced, unanchored-in-deployment, or disallowed gate injection (``ERROR``).
     """
     if gate is not None:
         if runtime_mode == "deployment" or require_ood_gate:
@@ -112,13 +117,20 @@ def _load_ood_gate(
                 "runtime_mode='deployment' or require_ood_gate=True; persisted verified "
                 "artifact is required",
                 None,
+                "disallowed_in_memory_injection",
             )
         if (
             isinstance(gate, OODRejectionGate)
             and type(getattr(gate, "is_fitted", None)) is bool
             and not gate.is_fitted
         ):
-            return None, "NOT_FITTED", "Explicitly supplied OODRejectionGate is not fitted", None
+            return (
+                None,
+                "NOT_FITTED",
+                "Explicitly supplied OODRejectionGate is not fitted",
+                None,
+                "none",
+            )
         try:
             meta = validate_ood_gate_instance(
                 gate,
@@ -127,13 +139,18 @@ def _load_ood_gate(
                 require_provenance=True,
                 require_preprocessor_sha256=bool(expected_preprocessor_sha256),
             )
-            return gate, "FITTED", None, meta.get("artifact_sha256")
+            return gate, "FITTED", None, meta.get("artifact_sha256"), "in_memory_research_gate"
         except Exception as exc:
-            return None, "ERROR", f"{type(exc).__name__}: {exc}", None
+            return None, "ERROR", f"{type(exc).__name__}: {exc}", None, "invalid_in_memory_gate"
 
     from pathlib import Path
 
     from network_anomaly.ml.ood_gate import DEFAULT_OOD_GATE_PATH, verify_ood_gate_artifact
+
+    try:
+        trusted_sha, trust_source = resolve_expected_ood_gate_sha256(expected_ood_gate_sha256)
+    except Exception as exc:
+        return None, "ERROR", f"{type(exc).__name__}: {exc}", None, "invalid_expected_sha256"
 
     gate_path = (
         Path(artifacts_dir) / "ml" / "ood_reference_gate.json"
@@ -141,15 +158,32 @@ def _load_ood_gate(
         else DEFAULT_OOD_GATE_PATH
     )
     if not gate_path.is_file():
-        return None, "NOT_FITTED", None, None
+        return None, "NOT_FITTED", None, None, "none"
+
+    if (runtime_mode == "deployment" or require_ood_gate) and trusted_sha is None:
+        return (
+            None,
+            "ERROR",
+            "ValueError: Trusted expected_ood_gate_sha256 (or NETFLOW_OOD_GATE_SHA256) is "
+            "required to verify persisted OOD gate in deployment mode; co-located unsigned "
+            "manifests share the same filesystem trust boundary",
+            None,
+            "missing_trusted_expected_sha256",
+        )
+
     try:
         verified_gate, meta = verify_ood_gate_artifact(
             gate_path,
             expected_preprocessor_sha256=expected_preprocessor_sha256,
+            expected_sha256=trusted_sha,
         )
-        return verified_gate, "FITTED", None, str(meta["sha256"])
+        same_boundary_source = cross_check_same_boundary_embedded_manifest(
+            gate_path, str(meta["sha256"])
+        )
+        anchor = trust_source or same_boundary_source or "unanchored_local_artifact"
+        return verified_gate, "FITTED", None, str(meta["sha256"]), anchor
     except Exception as exc:
-        return None, "ERROR", f"{type(exc).__name__}: {exc}", None
+        return None, "ERROR", f"{type(exc).__name__}: {exc}", None, "verification_failed"
 
 
 class RealtimeInferenceEngine:
@@ -163,23 +197,34 @@ class RealtimeInferenceEngine:
         demo_heuristics: bool = False,
         runtime_mode: Optional[str] = None,
         require_ood_gate: Optional[bool] = None,
+        expected_ood_gate_sha256: Optional[str] = None,
     ):
         self.registry = registry or ModelRegistry()
         self.aggregator = aggregator or MultiModelDecisionAggregator(
             policy=AggregationPolicy.WEIGHTED_ENSEMBLE
         )
         self.demo_heuristics = demo_heuristics
+        self.expected_ood_gate_sha256 = (
+            expected_ood_gate_sha256.strip().lower()
+            if isinstance(expected_ood_gate_sha256, str) and expected_ood_gate_sha256.strip()
+            else expected_ood_gate_sha256
+        )
         self.runtime_mode, self.require_ood_gate = _resolve_runtime_policy(
             runtime_mode, require_ood_gate
         )
-        self.ood_gate, self.ood_gate_status, self.ood_gate_error, self.ood_gate_sha256 = (
-            _load_ood_gate(
-                ood_gate,
-                artifacts_dir=getattr(self.registry, "artifacts_dir", None),
-                expected_preprocessor_sha256=getattr(self.registry, "preprocessor_sha256", None),
-                runtime_mode=self.runtime_mode,
-                require_ood_gate=self.require_ood_gate,
-            )
+        (
+            self.ood_gate,
+            self.ood_gate_status,
+            self.ood_gate_error,
+            self.ood_gate_sha256,
+            self.ood_gate_trust_anchor,
+        ) = _load_ood_gate(
+            ood_gate,
+            artifacts_dir=getattr(self.registry, "artifacts_dir", None),
+            expected_preprocessor_sha256=getattr(self.registry, "preprocessor_sha256", None),
+            runtime_mode=self.runtime_mode,
+            require_ood_gate=self.require_ood_gate,
+            expected_ood_gate_sha256=expected_ood_gate_sha256,
         )
         if (
             self.require_ood_gate
@@ -212,6 +257,7 @@ class RealtimeInferenceEngine:
         summary["ood_gate_status"] = self.ood_gate_status
         summary["ood_gate_error"] = self.ood_gate_error
         summary["ood_gate_sha256"] = self.ood_gate_sha256
+        summary["ood_gate_trust_anchor"] = self.ood_gate_trust_anchor
         if ood_block is not None:
             summary["ai_ready"] = False
             summary["inference_mode"] = "UNAVAILABLE"

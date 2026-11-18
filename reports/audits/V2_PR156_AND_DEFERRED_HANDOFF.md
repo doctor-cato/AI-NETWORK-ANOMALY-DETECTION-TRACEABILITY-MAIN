@@ -2,7 +2,8 @@
 
 - **Tài liệu:** `reports/audits/V2_PR156_AND_DEFERRED_HANDOFF.md`
 - **Ngày lập / Cập nhật:** `2026-11-18` (`UTC+7`)
-- **Nhánh & Commit tham chiếu (`feat/v2-integration`):** `2c8acc1d68b558d74e0ce1a53c7c92eb4b917557` (`13` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; CI Run `#44271966268` đạt `7/7 SUCCESS`, `495` files changed, `+71,880 / -19,349`), kèm cụm vá tiếp theo WP-A/B/C (`OOD` in-memory gate bypass, `WP3` leakage disclosure, đồng bộ audit docs) chuẩn bị commit/push & chạy CI mới.
+- **Implementation Snapshot (`feat/v2-integration`):** `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (`14` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; CI Workflow `Run #211` / ID `44278751854` đạt `7/7 SUCCESS`, `495` files changed, `+72,717 / -19,349`), sau đó bổ sung commit remediation cuối (`WP-C` đồng bộ docs + `WP-F` P2 OOD expected SHA verification) và chạy lại CI trên HEAD mới nhất của PR `#156`.
+- **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f` (`git_dirty = true`, `git_clean = false`, `worktree_provenance = "DIRTY_DISCLOSED"`).
 - **Nhánh Website tham chiếu (`origin/site-source`):** `a01bd38ad705577fc210fdeeeb61ccbd80a0ac42` (`77` tệp: `15` MDX VI + `15` MDX EN = `30` tệp MDX, các trang `.astro`, views, scripts, workflow)
 - **Pull Request `#156`:** `OPEN`, `isDraft: true`, `feat/v2-integration` $\to$ `main` *(giữ nguyên trạng thái **DRAFT / DO NOT MERGE**; không push lên `main`, không tự ý bỏ Draft hay merge, không build `.exe`/`.msi`/NSIS và không sửa nhánh `site-source`)*
 
@@ -14,7 +15,7 @@
 |---|---|---|---|
 | **D — Windows Standalone Installer v2.0 & Clean VM E2E** | `#73` (`OPEN`, `0/8` AC, `milestone: None`), `#148` (`OPEN`, `0/4` AC, `M6.7`) | **`DEFERRED / BLOCKED / NOT VERIFIED`** | Đã sửa `tauri.standalone.conf.json`, `vm_target_e2e.ps1` và staging/verify `ood_reference_gate.json` + AE `score_normalization.json` (`20` `companion_files`, `ood_gate: FITTED`) ở `WP5`. Tuy nhiên `.venv` mới đạt `FRONTEND_READY` (`pyinstaller: false`, `makensis: false`, `staged_bundle_manifest: false`); chưa build `.exe`, chưa chạy Clean Windows 10/11 VM E2E; `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`. |
 | **F — Website `site-source` v2.0 & Guides** | `#152` (`OPEN`, `1/4` AC, `M6.7`) | **`OPEN (1/4 AC) / STALE V1`** | Nhánh `origin/site-source` (`a01bd38ad705577fc210fdeeeb61ccbd80a0ac42`, 77 tệp) vẫn đóng băng ở `v0.6.0` / `NF-UNSW-NB15-v3` / `55` cột / `47` đặc trưng / snapshot `main@d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48`. Giữ `OPEN`; chỉ cập nhật sau khi PR `#156` merge `main`. |
-| **PR `#156` — Tích hợp v2.0.0** | PR `#156` (`feat/v2-integration` $\to$ `main`) | **`OPEN / DRAFT (DO NOT MERGE)`** | Commit `2c8acc1d` (`13` commits ahead, `495` files) đã đạt `7/7` CI checks (`Run #44271966268`); tiếp theo là cụm vá WP-A/B/C (`OOD` in-memory gate validation, `WP3` leakage disclosure, đồng bộ docs & PR body) được commit/push lên `feat/v2-integration` và chạy lại CI trên HEAD mới trước khi maintainer review độc lập. |
+| **PR `#156` — Tích hợp v2.0.0** | PR `#156` (`feat/v2-integration` $\to$ `main`) | **`OPEN / DRAFT (DO NOT MERGE)`** | Implementation snapshot `a6c87ae` (`14` commits ahead, `495` files, `+72,717 / -19,349`) đã đạt `7/7` CI checks (`Run #211`, ID `44278751854`); bổ sung đợt vá cuối `WP-C` (đồng bộ docs) + `WP-F` (P2 expected SHA-256 verification cho OOD gate, giữ limitation về trust anchor mặc định) push lên `feat/v2-integration`, chạy CI & cập nhật PR body trước khi maintainer review độc lập. |
 
 ---
 
@@ -143,7 +144,7 @@ Kiểm tra trực tiếp mã nguồn và cấu hình đóng gói ghi nhận **8 
 ## Phần 3 — Nội dung Mô tả Đồng bộ cho PR `#156` (Cập nhật trực tiếp trên GitHub qua `gh pr edit 156`, giữ nguyên `OPEN / Draft`)
 
 > [!IMPORTANT]
-> PR `#156` (`feat/v2-integration` $\to$ `main`) **tiếp tục giữ trạng thái `OPEN` và `Draft` (`Do Not Merge`)**. Không merge, không bỏ Draft, và không push lên `main`. Bản tổng kết dưới đây đồng bộ hoàn toàn kiến trúc v2.0.0, WP1–WP7 + WP-A/B/C, trạng thái model (`RESEARCH_ONLY`, `DIRTY_DISCLOSED` @ `79ebb678`), CI/test evidence, acceptance criteria, governance (`approved: false`), và reviewer checklist.
+> PR `#156` (`feat/v2-integration` $\to$ `main`) **tiếp tục giữ trạng thái `OPEN` và `Draft` (`Do Not Merge`)**. Không merge, không bỏ Draft, và không push lên `main`. Bản template dưới đây đồng bộ kiến trúc v2.0.0, WP1–WP7 + WP-A/B/C/F, trạng thái model (`RESEARCH_ONLY`, `DIRTY_DISCLOSED` @ `79ebb678`), CI `Run #211` trên `a6c87ae`, acceptance criteria, governance (`approved: false`), và reviewer checklist; bản cập nhật trực tiếp lên GitHub PR `#156` bổ sung SHA commit remediation cuối cùng và CI run mới nhất sau khi push.
 
 ---
 
@@ -155,7 +156,7 @@ Kiểm tra trực tiếp mã nguồn và cấu hình đóng gói ghi nhận **8 
 Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích hợp toàn bộ phân hệ **NetFlow Sentinel v2.0.0** trên nhánh `feat/v2-integration` vào `main`, hướng tới mốc **Academic & Controlled Lab Functional Prototype**.
 
 > **Trạng thái PR:** **OPEN / DRAFT — DO NOT MERGE (KHÔNG tuyên bố Production-Ready hoặc Public-Release-Ready).**
-> - **Repository Audit Snapshot:** Commit nền `2c8acc1d68b558d74e0ce1a53c7c92eb4b917557` (`13` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; `495` files changed) đã đạt `7/7` CI jobs trên [Run #44271966268](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44271966268), kèm cụm vá tiếp theo `WP-A / WP-B / WP-C` trên `feat/v2-integration` (chi tiết SHA & CI run mới nhất ở mục CI/Test Evidence).
+> - **Verified Implementation Snapshot:** `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (`14` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; `495` files changed, `+72,717 / -19,349`) đã đạt `7/7` CI jobs trên [Run #211 (ID 44278751854)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44278751854), kèm đợt remediation cuối (`WP-C` audit doc sync + `WP-F` OOD expected SHA-256 verification) trên HEAD mới nhất của `feat/v2-integration`.
 > - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `worktree_provenance = "DIRTY_DISCLOSED"`. Không retrain hay ghi đè baseline `E0`.
 > - **Independent GitHub Reviews:** `0` submitted reviews.
 
@@ -196,26 +197,27 @@ Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích h
 
 ---
 
-## 4. WP1–WP7 Status, OOD Validation & Companion Artifacts
+## 4. WP1–WP7 & WP-A/B/C/D/E/F Status, OOD Validation & Companion Artifacts
 
-- **WP1–WP7 + WP-A/B/C:**
+- **WP1–WP7 + WP-A–WP-F:**
   - `WP1` (PR `#156` & Git baseline sync): **DONE**
   - `WP2` (E0 baseline reconciliation & rare-class caveats `Exploitation_And_C2 N=5`): **DONE**
   - `WP3` (`E0–E5` ablation & `WP-B` post-hoc leakage disclosure): **DONE**
   - `WP4` (3-axis provenance separation — `DIRTY_DISCLOSED` @ `79ebb678`): **DONE**
-  - `WP5` + `WP-A` (Companion staging `20` files & OOD trust-boundary hardening): **DONE**
+  - `WP5` + `WP-A` (Companion staging `20` files & OOD in-memory trust-boundary hardening): **DONE**
+  - `WP-F` (P2 Persisted OOD expected SHA-256 verification): **PARTIAL / ACCEPTED LIMITATION** (Đã bắt buộc `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256` + cross-check same-boundary manifests + fail-closed `deployment`; built-in repo/bundle thiếu trust anchor độc lập mặc định -> `UNRESOLVED / ACCEPTED LIMITATION`)
   - `WP6` + `WP-C` + `WP-D` (Audit docs & PR `#156` body sync): **DONE**
   - `WP7` + `WP-E` (Local verification & remote CI on latest HEAD): **DONE / VERIFIED**
-- **OOD Validation & Companion Artifacts (`WP5` + `WP-A`):**
-  - `desktop/src-tauri/tauri.standalone.conf.json` & `scripts/verify_companion_artifacts.py`: stage và kiểm SHA-256 đủ `20` `companion_files` bao gồm `ood_reference_gate.json` (`8a52bfe5...`, `fit_rows=2,097,891`) và AE `score_normalization.json` (`d7bcb78f...`); yêu cầu `ood_gate.status == "FITTED"`.
-  - `src/network_anomaly/ml/ood_gate.py`: `from_artifact()`, `verify_ood_gate_artifact()`, và `validate_ood_gate_instance()` kiểm schema, exact `ML_FEATURE_COLUMNS`, array shape/finite/`stds > 0`/`min_bounds <= max_bounds`, `provenance.fit_rows > 0`, và `preprocessor_artifact_sha256`.
-  - `src/network_anomaly/streaming/realtime_inference.py` + `live_orchestrator.py` + `live_service.py`: tách `runtime_mode` (`"research"` vs `"deployment"`), **cấm direct in-memory `ood_gate` injection ở `deployment` mode / `require_ood_gate=True`**, bắt buộc validation đầy đủ cho in-memory gate ở `research` mode (chặn fake `is_fitted=True` bypass), bắt fail-closed runtime error trong `evaluate_sample()`, và truyền/kiểm khớp `runtime_mode` qua `LiveSystemOrchestrator` & `LiveTelemetryService`.
+- **OOD Validation & Companion Artifacts (`WP5` + `WP-A` + `WP-F`):**
+  - `desktop/src-tauri/tauri.standalone.conf.json` & `scripts/verify_companion_artifacts.py`: stage và kiểm SHA-256 đủ `20` `companion_files` bao gồm `ood_reference_gate.json` (`8a52bfe5...`, `fit_rows=2,097,891`) và AE `score_normalization.json` (`d7bcb78f...`); yêu cầu `ood_gate.status == "FITTED"` và đối khớp 64-hex SHA trong `COMPANION_BUNDLE_MANIFEST.json`, `EMBEDDED_ARTIFACTS_MANIFEST.json` và `EMBEDDED_SHA256SUMS.txt`.
+  - `src/network_anomaly/ml/ood_gate.py`: `from_artifact()`, `verify_ood_gate_artifact()`, `validate_ood_gate_instance()`, `resolve_expected_ood_gate_sha256()`, và `cross_check_same_boundary_embedded_manifest()` kiểm schema, exact `ML_FEATURE_COLUMNS`, array shape/finite/`stds > 0`/`min_bounds <= max_bounds`, `provenance.fit_rows > 0`, `preprocessor_artifact_sha256`, và expected SHA-256.
+  - `src/network_anomaly/streaming/realtime_inference.py` + `live_orchestrator.py` + `live_service.py`: tách `runtime_mode` (`"research"` vs `"deployment"`), **cấm direct in-memory `ood_gate` injection và bắt buộc external `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256` ở `deployment` mode / `require_ood_gate=True`** (chặn cả fake `is_fitted=True` và manifest cùng trust boundary `unanchored_same_boundary_manifest`), giữ hành vi `research` mode kèm cross-check manifest đồng vị trí, bắt fail-closed runtime error trong `evaluate_sample()`, và truyền/kiểm khớp `runtime_mode` + `expected_ood_gate_sha256` qua `LiveSystemOrchestrator` & `LiveTelemetryService`.
 
 ---
 
 ## 5. Audit Findings, Acceptance Criteria & CI/Test Evidence
 
-- **Audit Findings & Remediation:** `F-01` (Threat Model Python collector), `F-02` (RQ2 taxonomy `Exploitation_And_C2 N=5`), `F-03` (`DIRTY_DISCLOSED` `79ebb678`), `F-04` (4 cổng `ModelRegistry`/`compatibility.py`/containment), `R-137` (live alert SQLite/UI), `R-OOD-COMPANION`, `R-OOD-INMEM-BYPASS` (`WP-A` — internal API/trust-boundary validation bypass), `R-WP3-LEAKAGE-DISCLOSURE` (`WP-B`), `R-AUDIT-PR156-RESYNC` (`WP-C/D`). Chi tiết tại [`reports/audits/V2_FINDING_REGISTER.md`](reports/audits/V2_FINDING_REGISTER.md).
+- **Audit Findings & Remediation:** `F-01` (Threat Model Python collector), `F-02` (RQ2 taxonomy `Exploitation_And_C2 N=5`), `F-03` (`DIRTY_DISCLOSED` `79ebb678`), `F-04` (4 cổng `ModelRegistry`/`compatibility.py`/containment), `R-137` (live alert SQLite/UI), `R-OOD-COMPANION`, `R-OOD-INMEM-BYPASS` (`WP-A` — internal API/trust-boundary validation bypass), `R-WP3-LEAKAGE-DISCLOSURE` (`WP-B`), `R-OOD-EXPECTED-SHA` (`WP-F` P2 — `UNRESOLVED / ACCEPTED LIMITATION` cho built-in unanchored OOD artifact), `R-AUDIT-PR156-RESYNC` (`WP-C/D`). Chi tiết tại [`reports/audits/V2_FINDING_REGISTER.md`](reports/audits/V2_FINDING_REGISTER.md).
 - **Acceptance Criteria (Phân định trung thực):**
   - `#131` (`M6.6`): **`PASS`** (chờ merge `main`; Python UDP collector).
   - `#137` (`M6.6`): **`PARTIAL` (`3/5`)** — Synthetic UDP loopback (`13/13` stages, `real_device_tested=false`) **KHÔNG** thay thế physical router/switch lab (`BLOCKED`).
@@ -225,9 +227,9 @@ Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích h
   - `#153` (`M6.7`): **`UNVERIFIED` (`0/4`)** — `OUTLINE_ONLY` (`docs/PRESENTATION_OUTLINE.md`).
   - `#154` (`M6.7`): **`BLOCKED` (`0/4`)** — `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`.
 - **CI / Test Evidence:**
-  - CI tham chiếu trước đợt vá: Run `#44271966268` trên `2c8acc1d` (`7/7` jobs `PASS`: Ubuntu pytest `577 passed, 21 skipped`; Windows pytest `579 passed, 19 skipped`; `lint`, `desktop-frontend`, `desktop-tauri-windows`).
+  - Implementation snapshot `a6c87ae8397e466ab1bd3d19f82d880e71084b88`: đạt `7/7` CI jobs trên [Run #211 (ID 44278751854)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44278751854) (`lint`, `test (ubuntu-latest)` `585 passed, 21 skipped`, `test (windows-latest)` `587 passed, 19 skipped`, `desktop-frontend`, `desktop-tauri-windows`, `security-audit`, `build-gate-summary`).
   - **Lưu ý CI:** Kiểm tra raw dataset integrity (`verify_ait_manifest` / `fetch_multi_source_dataset`) trên CI bị **`SKIPPED`** do không có raw archives tại `data/raw/ait_nds_v2`.
-  - Kết quả kiểm thử cục bộ & CI run gắn với HEAD SHA mới nhất của PR sẽ được cập nhật trực tiếp ở đầu PR này sau khi push.
+  - Kết quả kiểm thử cục bộ & CI run gắn với HEAD SHA mới nhất sau đợt `WP-C + WP-F` được cập nhật trực tiếp ở đầu PR này sau khi push.
 
 ---
 
@@ -242,7 +244,8 @@ Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích h
 ## 7. Reviewer Checklist
 
 - [ ] Thực hiện independent GitHub review (`0` submitted reviews hiện tại)
-- [ ] Kiểm tra diff `WP-A` (`ood_gate.py`, `realtime_inference.py`, `live_orchestrator.py`, `live_service.py`) và regression tests
+- [ ] Kiểm tra diff `WP-A` & `WP-F` (`ood_gate.py`, `realtime_inference.py`, `live_orchestrator.py`, `live_service.py`, `verify_companion_artifacts.py`) và regression tests
+- [ ] Xác nhận chấp nhận giới hạn `UNRESOLVED / ACCEPTED LIMITATION` (`WP-F`: chưa có trust anchor độc lập mặc định cho `ood_reference_gate.json` nếu không cấp `expected_ood_gate_sha256` / `NETFLOW_OOD_GATE_SHA256`)
 - [ ] Kiểm tra `WP-B` (`run_wp3_controlled_ablation.py`, `wp3_controlled_ablation_report.json`, `V2_MODEL_AUDIT.md`) — xác nhận `E0` không bị retrain/thay SHA
 - [ ] Xác nhận GitHub Actions CI (`ci.yml`) PASS trên HEAD SHA mới nhất của `feat/v2-integration`
 - [ ] Xác nhận giữ `isDraft: true` nếu các gate `#73/#148`, `#137`, `#154` vẫn chưa mở khóa

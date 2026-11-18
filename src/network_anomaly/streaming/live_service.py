@@ -78,6 +78,7 @@ class LiveTelemetryService:
         demo_heuristics: bool = False,
         runtime_mode: Optional[str] = None,
         require_ood_gate: Optional[bool] = None,
+        expected_ood_gate_sha256: Optional[str] = None,
         queue_capacity: int = 10_000,
         batch_size: int = 32,
         history_capacity: int = 500,
@@ -93,6 +94,7 @@ class LiveTelemetryService:
             demo_heuristics=demo_heuristics,
             runtime_mode=runtime_mode,
             require_ood_gate=require_ood_gate,
+            expected_ood_gate_sha256=expected_ood_gate_sha256,
         )
         self.history_capacity = max(1, int(history_capacity))
 
