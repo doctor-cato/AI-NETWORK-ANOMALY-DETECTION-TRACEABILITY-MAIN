@@ -12,6 +12,6 @@
 | `Experiment-VM-Microsoft-Windows7AD-1` | 184,540 | 7 days | Benign=173,108, Exploitation_And_C2=2,036, Malware_And_DoS=2, Unmapped=9,394 |
 | `Honeypot-Assistant-Amazon-Echo1stGen-1` | 76,073 | 7 days | Benign=39,497, Reconnaissance=36,576 |
 
-## Observed Probe Domain Shift vs. AIT-NDS-v2
-- **Byte Accounting:** AIT-NDS-v2 Tstat reports TCP payload bytes (`c_bytes_all`), whereas CTU-SME-11 Zeek reports IP packet bytes (`orig_ip_bytes` / `resp_ip_bytes`, IP+TCP/UDP header overhead included).
+## Cross-Source Byte Semantics Alignment vs. AIT-NDS-v2
+- **Byte Accounting (`DATA-A03` remediated):** Both AIT-NDS-v2 Tstat (`c_bytes_all`/`s_bytes_all`) and CTU-SME-11 canonicalizer (`orig_bytes`/`resp_bytes`, coercing `'-'`/`'(empty)'` to `0.0`) use L4 transport payload bytes. Raw Zeek `orig_ip_bytes`/`resp_ip_bytes` are audited separately and only used as fallback if L4 byte columns are absent.
 - **Unknown Labels:** `Experiment-VM-Microsoft-Windows7AD-1` contains 9,394 `Unknown` (`(empty)`) rows; preserved as `UNMAPPED` and excluded from labeled ML evaluation metrics.

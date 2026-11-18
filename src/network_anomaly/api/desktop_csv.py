@@ -45,7 +45,6 @@ from network_anomaly.config import PROJECT_ROOT
 from network_anomaly.data.v2_schema import (
     FEATURE_CONTRACT_ID,
     ML_FEATURE_COLUMNS,
-    PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
@@ -316,24 +315,16 @@ def compute_netflow_behavioral_summary(df: pd.DataFrame) -> BehavioralSummarySch
     """Compute descriptive statistics solely from NetFlow metadata columns (#28)."""
     n_rows = len(df)
     src_ips = (
-        [_optional_str(v) for v in df["source_ip"].tolist()]
-        if "source_ip" in df.columns
-        else []
+        [_optional_str(v) for v in df["source_ip"].tolist()] if "source_ip" in df.columns else []
     )
-    dst_ips = (
-        [_optional_str(v) for v in df["dest_ip"].tolist()]
-        if "dest_ip" in df.columns
-        else []
-    )
+    dst_ips = [_optional_str(v) for v in df["dest_ip"].tolist()] if "dest_ip" in df.columns else []
     src_ports = (
         [_optional_int(v) for v in df["source_port"].tolist()]
         if "source_port" in df.columns
         else []
     )
     dst_ports = (
-        [_optional_int(v) for v in df["dest_port"].tolist()]
-        if "dest_port" in df.columns
-        else []
+        [_optional_int(v) for v in df["dest_port"].tolist()] if "dest_port" in df.columns else []
     )
     protocols = (
         [_optional_int(v) for v in df["protocol_num"].tolist()]
@@ -348,19 +339,12 @@ def compute_netflow_behavioral_summary(df: pd.DataFrame) -> BehavioralSummarySch
     clean_protos = [str(p) for p in protocols if p is not None]
 
     start_vals = (
-        [
-            t
-            for t in (_optional_int(v) for v in df["timestamp_ms"].tolist())
-            if t is not None
-        ]
+        [t for t in (_optional_int(v) for v in df["timestamp_ms"].tolist()) if t is not None]
         if "timestamp_ms" in df.columns
         else []
     )
     dur_vals = (
-        [
-            _optional_int(v)
-            for v in df["duration_ms"].tolist()
-        ]
+        [_optional_int(v) for v in df["duration_ms"].tolist()]
         if "duration_ms" in df.columns
         else []
     )
@@ -682,13 +666,13 @@ CANONICAL_SPLIT_MANIFEST_PATH = PROJECT_ROOT / "data" / "V2_SPLIT_MANIFEST.json"
 # Repository-controlled trust anchor for canonical v2 Validation-only demo subsets
 # produced by scripts/prepare_demo_dataset.py from AIT-NDS-v2 Validation scenario.
 TRUSTED_CANONICAL_VALIDATION_SUBSETS: Dict[str, Dict[str, Any]] = {
-    "0af10c7aa7b428c8ca914a9a048cbccbf4f2a37e3e7082ed5895455fd32e6f7a": {
+    "90b028939c36e84cf43eb9595e6d74ee9fc0f2d03c40f46d439f1886f50d01a3": {
         "dataset_name": "NetFlow-Sentinel-v2-MultiSource",
         "source_id": "source:ait-nds-v2",
         "partition": "validation",
         "row_count": 200,
         "source_dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
-        "split_manifest_sha256": "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
+        "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
         "selected_indices_sha256": "8bf86cf116faa190b27b65bed222a203c34f85860d5c14fd1244f0a26cffc866",
         "train_overlap_count": 0,
         "test_overlap_count": 0,
@@ -1475,7 +1459,11 @@ def evaluate_predictions_with_ground_truth(
         # cannot upcast integer row_id values to floats (e.g. "2393.0").
         raw_row_ids = labels_df["row_id"].tolist()
         raw_labels = labels_df[label_col].tolist()
-        raw_attacks = labels_df[attack_col].tolist() if has_attack_col and attack_col else [None] * len(labels_df)
+        raw_attacks = (
+            labels_df[attack_col].tolist()
+            if has_attack_col and attack_col
+            else [None] * len(labels_df)
+        )
         for raw_rid, raw_lbl, raw_att in zip(raw_row_ids, raw_labels, raw_attacks):
             rid_key = _normalize_row_id_key(raw_rid)
             if rid_key in lbl_map:

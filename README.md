@@ -29,8 +29,8 @@ NetFlow Sentinel là nền tảng nghiên cứu phát hiện bất thường m�
 
 | Nguồn | DOI / URL | Vai trò trong NetFlow Sentinel v2 | Giấy phép & Trạng thái |
 |---|---|---|---|
-| **AIT NetFlow Data Set v2 (`AIT-NDS-v2`)** | `10.5281/zenodo.13168643` (dẫn xuất từ PCAP `AIT-LDS-v2.0`) | Dataset huấn luyện ML chính (`3,465,342` flows trước lọc; `3,231,215` flows có nhãn chuẩn hóa + `942` unmapped loại riêng) | **CC BY 4.0 — VERIFIED** |
-| **AIT Log Data Set v2.1 (`AIT-LDS-v2.1`)** | `10.5281/zenodo.19483937` | Application/system/auth/DNS/VPN/audit logs cho Behavioral Vector, Session Correlation, Trace Engine | **CC BY 4.0 — VERIFIED** (tách version với `AIT-NDS-v2`; chưa gán join trực tiếp nếu thiếu khóa đồng bộ) |
+| **AIT NetFlow Data Set v2 (`AIT-NDS-v2`)** | `10.5281/zenodo.13168643` (dẫn xuất từ PCAP `AIT-LDS-v2.0`) | Dataset huấn luyện ML chính (`3,465,342` flows gốc; `3,464,400` flows có nhãn chuẩn hóa + `942` unmapped loại riêng) | **CC BY 4.0 — VERIFIED** |
+| **AIT Log Data Set v2.1 (`AIT-LDS-v2.1`)** | `10.5281/zenodo.19483937` | Application/system/auth/DNS/VPN/audit logs cho Behavioral Vector, Session Correlation, Trace Engine | **CC BY-NC-SA 4.0 — VERIFIED** (nghiên cứu cục bộ, không nhúng vào trọng số ML/demo; tách version với `AIT-NDS-v2`) |
 | **AIT Alert Data Set (`AIT-ADS`)** | `10.5281/zenodo.8263181` | Alert aggregation & multi-step alert correlation tạo từ `AIT-LDS-v2.0`; **không** dùng làm benchmark ML độc lập | **CC BY 4.0 — VERIFIED** |
 | **CTU-SME-11** | `10.5281/zenodo.7958258` (record `7958259`) | Lưu lượng thu thập thực tế trên thiết bị SME thật (`Honeypot-Assistant-Amazon-Echo1stGen-1`: `76,073` flows; `Experiment-VM-Microsoft-Windows7AD-1`: `175,146` flows có nhãn + `9,394` unmapped) | **CC BY 4.0 — VERIFIED** |
 | **UGR'16** | `https://nesg.ugr.es/nesg-ugr16/` | Real ISP traffic external validation & domain-shift | **`BLOCKED`** (HTTP 403 / Portal en Mantenimiento; không tải được, không thay thế) |
@@ -52,26 +52,26 @@ flowchart LR
 
 - **18 đặc trưng ML (`canonical-flow-v2-18`):** `duration_ms`, `bytes_in`, `bytes_out`, `pkts_in`, `pkts_out`, `protocol_num`, `total_bytes`, `total_pkts`, `bytes_in_ratio`, `pkts_in_ratio`, `bytes_per_pkt_in`, `bytes_per_pkt_out`, `bytes_per_sec_in`, `bytes_per_sec_out`, `pkts_per_sec`, `has_response`, `is_tcp`, `is_udp`. Tách biệt tuyệt đối khỏi 5 cột trace metadata (`timestamp_ms`, `source_ip`, `dest_ip`, `source_port`, `dest_port`), 5 cột provenance (`source_dataset`, `scenario_or_device`, `flow_id`, `raw_protocol_str`, `probe_source`) và 4 cột target/label (`label_binary`, `attack_category`, `raw_label`, `label_status`).
 - **Scenario-Disjoint Split (`v2-scenario-group-purged-v1`):**
-  - **Train (`1,930,219` flows):** `fox`, `harrison`, `santos`, `wardbeck`, `wilson` (`1,658,795` Benign / `271,424` Attack).
+  - **Train (`2,097,891` flows):** `fox`, `harrison`, `santos`, `wardbeck`, `wilson` (`1,825,866` Benign / `272,025` Attack).
   - **Validation (`377,704` flows):** `russellmitchell` (`206,676` Benign / `171,028` Attack).
-  - **Held-out Test (`923,292` flows):** `shaw`, `wheeler` (`747,610` Benign / `175,682` Attack).
+  - **Held-out Test (`988,805` flows):** `shaw`, `wheeler` (`812,980` Benign / `175,825` Attack).
   - **Leakage audit:** `0` scenario overlap, `0` `(scenario, 5-tuple, ts_bucket)` overlap.
-- **Tiền xử lý (`asinh_robust`):** Fit duy nhất trên `1,930,219` dòng Train (`d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32`), biến đổi `arcsinh` + `RobustScaler` cho 17 biến định lượng, giữ nguyên `protocol_num` dạng số nguyên rời rạc, giữ dòng `duration_ms == 0.0`.
+- **Tiền xử lý (`asinh_robust`):** Fit duy nhất trên `2,097,891` dòng Train (`0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`), biến đổi `arcsinh` + `RobustScaler` cho 17 biến định lượng (kèm `MIN_BOUNDED_SCALE_FLOOR = 0.25` cho 5 biến bounded), giữ nguyên `protocol_num` dạng số nguyên rời rạc, giữ dòng `duration_ms == 0.0`.
 
 ---
 
 ## 3. Kết quả Thực nghiệm v2 Đã Kiểm chứng
 
-| Mô hình | Nguồn ngưỡng & Giao thức | AIT-Test (`923,292` flows) | CTU-Echo Real (`76,073` flows) | CTU-Win7AD Real (`175,146` flows) |
+| Mô hình | Nguồn ngưỡng & Giao thức | AIT-Test (`988,805` flows) | CTU-Echo Real (`76,073` flows) | CTU-Win7AD Real (`175,146` flows) |
 |---|---|---|---|---|
-| **Random Forest** | Supervised (`th = 0.50`) | `F1 = 0.8997`, `P = 0.9988`, `R = 0.8185`, `FPR = 0.000227`, `ROC-AUC = 0.9996` | `F1 = 0.0000`, `R = 0.0000`, `FPR = 0.000836`, `ROC-AUC = 0.7996` | `F1 = 0.0000`, `R = 0.0000`, `FPR = 0.013148`, `ROC-AUC = 0.6888` |
-| **XGBoost** | Supervised (`th = 0.50`) | `F1 = 0.8910`, `P = 0.9988`, `R = 0.8042`, `FPR = 0.000225`, `ROC-AUC = 0.9786` | `F1 = 0.0000`, `R = 0.0000`, `FPR = 0.046763`, `ROC-AUC = 0.0373` | `F1 = 0.0007`, `R = 0.0005`, `FPR = 0.003934`, `ROC-AUC = 0.1599` |
-| **Isolation Forest** | Benign-only (`th = 0.002736`, Val `target_fpr = 0.05`) | `F1 = 0.5766`, `P = 0.7461`, `R = 0.4698`, `FPR = 0.037569`, `ROC-AUC = 0.7753` | `F1 = 0.8527`, `P = 0.8017`, `R = 0.9108`, `FPR = 0.208649`, `ROC-AUC = 0.7845` | `F1 = 0.0002`, `R = 0.0034`, `FPR = 0.433417`, `ROC-AUC = 0.3067` |
-| **Autoencoder** | Benign-only (`th = 0.000228`, Val `target_fpr = 0.05`) | `F1 = 0.5788`, `P = 0.7581`, `R = 0.4681`, `FPR = 0.035104`, `ROC-AUC = 0.7886` | `F1 = 0.7000`, `P = 0.5658`, `R = 0.9176`, `FPR = 0.652024`, `ROC-AUC = 0.7588` | `F1 = 0.0246`, `R = 0.9146`, `FPR = 0.854472`, `ROC-AUC = 0.7813` |
+| **Random Forest** | Supervised (`balanced_subsample, leaf=5`, `th = 0.50`) | `F1 = 0.9950`, `P = 0.9989`, `R = 0.9911`, `FPR = 0.000246`, `ROC-AUC = 0.9994` | `F1 = 0.0474`, `R = 0.0264`, `FPR = 0.081069`, `ROC-AUC = 0.6137` | `F1 = 0.0712`, `R = 0.5412`, `FPR = 0.160755`, `ROC-AUC = 0.8392` |
+| **XGBoost** | Supervised (`th = 0.50`) | `F1 = 0.9013`, `P = 0.9989`, `R = 0.8211`, `FPR = 0.000198`, `ROC-AUC = 0.9884` | `F1 = 0.1436`, `R = 0.0832`, `FPR = 0.069980`, `ROC-AUC = 0.7017` | `F1 = 0.0738`, `R = 0.5623`, `FPR = 0.161131`, `ROC-AUC = 0.6978` |
+| **Isolation Forest** | Benign-only (`th = 0.031268`, Val `target_fpr = 0.05`) | `F1 = 0.5842`, `P = 0.7775`, `R = 0.4678`, `FPR = 0.028952`, `ROC-AUC = 0.8330` | `F1 = 0.8853`, `P = 0.8001`, `R = 0.9908`, `FPR = 0.229182`, `ROC-AUC = 0.9571` | `F1 = 0.0464`, `R = 0.9760`, `FPR = 0.472185`, `ROC-AUC = 0.7649` |
+| **Autoencoder** | Benign-only std (`th = 0.000467`, Val `target_fpr = 0.05`) | `F1 = 0.5877`, `P = 0.7860`, `R = 0.4693`, `FPR = 0.027637`, `ROC-AUC = 0.5544` | `F1 = 0.7325`, `P = 0.5783`, `R = 0.9990`, `FPR = 0.674634`, `ROC-AUC = 0.7810` | `F1 = 0.0326`, `R = 0.9921`, `FPR = 0.692521`, `ROC-AUC = 0.7280` |
 
 **Phát hiện quan trọng từ đánh giá thực tế `CTU-SME-11` (`reports/experiments/ml/ctu_cross_source_eval.json`):**
-- Mô hình cây giám sát (`RF`, `XGBoost`) đạt `F1 ~ 0.89–0.90` trên kịch bản testbed mới của `AIT-NDS-v2`, nhưng **sụp đổ về ~0.00 recall khi chuyển zero-shot sang thiết bị thu thập thực tế CTU-SME-11** do chênh lệch phân phối `duration_ms`, `bytes_in`, `bytes_out` giữa testbed mô phỏng và SME thật.
-- Khi bổ sung thích nghi miền trên thiết bị khác (`AIT-Train + CTU-Echo` → unseen `CTU-Win7AD`), `RF` và `XGB` đạt `ROC-AUC` lần lượt `0.7880` và `0.8305` (recall `0.5074` / `0.5039`, FPR `0.1700` / `0.1938`); khi huấn luyện theo trục thời gian ngay trong `CTU-Echo` (`2023-02-20..24` → `2023-02-25..26`), `RF` đạt `F1 = 0.9600` (`FPR = 0.0020`).
+- Mô hình cây giám sát (`RF`, `XGBoost`) đạt `F1 = 0.9950` và `0.9013` trên kịch bản testbed mới của `AIT-NDS-v2`, cải thiện ranking zero-shot trên `CTU-SME-11` sau sửa L4 bytes/UDP ms (`CTU-Win7AD RF ROC-AUC = 0.8392`, `CTU-Echo XGB ROC-AUC = 0.7017`), nhưng `F1` zero-shot tại ngưỡng `0.50` vẫn thấp (`0.0474` / `0.1436`) do chênh lệch phân phối `duration_ms`, `bytes_in`, `bytes_out` giữa testbed mô phỏng và SME thật.
+- Khi bổ sung thích nghi miền trên thiết bị khác (`AIT-Train + CTU-Echo` → unseen `CTU-Win7AD`), `RF` và `XGB` đạt `ROC-AUC` lần lượt `0.8280` và `0.8465` (recall `0.6428` / `0.6340`, FPR `0.1438` / `0.1425`) còn `Autoencoder` đạt `ROC-AUC = 0.9520`; khi huấn luyện theo trục thời gian ngay trong `CTU-Echo` (`2023-02-20..24` → `2023-02-25..26`), `RF` đạt `F1 = 0.9634` (`FPR = 0.0011`).
 
 ---
 
@@ -122,5 +122,5 @@ git diff --check
 ## 6. Giấy phép & Ghi nhận nguồn
 
 - **Mã nguồn:** [Apache License 2.0](LICENSE) (giữ nguyên không thay đổi).
-- **Datasets v2:** `AIT-NDS-v2` (`10.5281/zenodo.13168643`), `AIT-LDS-v2.1` (`10.5281/zenodo.19483937`), `AIT-ADS` (`10.5281/zenodo.8263181`) và `CTU-SME-11` (`10.5281/zenodo.7958258`) phát hành theo **CC BY 4.0**. `UGR'16` ở trạng thái `BLOCKED`.
+- **Datasets v2:** `AIT-NDS-v2` (`10.5281/zenodo.13168643`), `AIT-ADS` (`10.5281/zenodo.8263181`) và `CTU-SME-11` (`10.5281/zenodo.7958258`) phát hành theo **CC BY 4.0**; `AIT-LDS-v2.1` (`10.5281/zenodo.19483937`) phát hành theo **CC BY-NC-SA 4.0**. `UGR'16` ở trạng thái `BLOCKED`.
 - **Kiểm kê giấy phép & Lịch sử:** Xem [`NOTICE`](NOTICE), [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](reports/governance/DISTRIBUTION_AUTHORIZATION.json), và lưu trữ v1 tại [`docs/historical/nf_unsw_nb15_v3/`](docs/historical/nf_unsw_nb15_v3/).

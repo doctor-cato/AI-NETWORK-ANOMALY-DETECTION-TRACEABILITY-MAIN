@@ -40,6 +40,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
+
 from network_anomaly.models.isolation_forest import (  # noqa: E402
     IsolationForestModel,
     anomaly_scores,

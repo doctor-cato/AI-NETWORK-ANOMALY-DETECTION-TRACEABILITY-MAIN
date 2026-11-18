@@ -35,11 +35,11 @@ if str(LOCAL_SOURCE) not in sys.path:
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
 from sklearn.ensemble import RandomForestClassifier  # noqa: E402
 from sklearn.metrics import average_precision_score, confusion_matrix, roc_auc_score  # noqa: E402
 from sklearn.tree import DecisionTreeClassifier  # noqa: E402
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
 from network_anomaly.models.random_forest import RandomForestModel  # noqa: E402
 from network_anomaly.preprocessing.pipeline import (  # noqa: E402
     EXPECTED_DATASET_SHA256,

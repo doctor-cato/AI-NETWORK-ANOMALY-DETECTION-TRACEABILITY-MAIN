@@ -11,8 +11,6 @@ separately via ``scripts/train_xgboost.py`` and ``reports/models/xgboost_manifes
 
 import copy
 
-import pytest
-
 # ---------------------------------------------------------------------------
 # Import and dependency tests
 # ---------------------------------------------------------------------------

@@ -1,15 +1,15 @@
 # NetFlow Sentinel v2 — Split & Leakage Audit Report
 
 **Split Protocol:** `v2-scenario-group-purged-v1` (scenario-disjoint across independent AIT-NDS-v2 testbeds)
-**Split Manifest SHA-256:** `1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a`
-**Preprocessor Manifest:** `reports/preprocessing/v2_flow_preprocessing_manifest.json` (`RobustScaler`, fit strictly on Train)
+**Split Manifest SHA-256:** `ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8`
+**Preprocessor Manifest:** `reports/preprocessing/v2_flow_preprocessing_manifest.json` (`asinh_robust`, fit strictly on Train)
 
 ## Partition Summary (AIT-NDS-v2)
 | Partition | Scenarios | Rows | Benign | Attack | Attack Rate |
 |---|---|---:|---:|---:|---:|
-| **Train** | `fox, harrison, santos, wardbeck, wilson` | 1,930,219 | 1,658,795 | 271,424 | 14.06% |
+| **Train** | `fox, harrison, santos, wardbeck, wilson` | 2,097,891 | 1,825,866 | 272,025 | 12.97% |
 | **Validation** | `russellmitchell` | 377,704 | 206,676 | 171,028 | 45.28% |
-| **Held-out Test** | `shaw, wheeler` | 923,292 | 747,610 | 175,682 | 19.03% |
+| **Held-out Test** | `shaw, wheeler` | 988,805 | 812,980 | 175,825 | 17.78% |
 | **Excluded Unmapped** | `shaw` empty labels | 942 | — | — | — |
 
 ## External Real-Capture Benchmarks (CTU-SME-11)
@@ -19,6 +19,6 @@
 ## Leakage Audit Checks
 - Cross-partition scenario overlap: **0** (`PASS`)
 - Cross-partition scenario+5-tuple+timestamp overlap: **0** (`PASS`)
-- Within-Train identical 18-feature vectors: **827,525** (retained as authentic high-frequency benign/scan telemetry without synthetic deduplication inflation, audited transparently).
-- Unique 18-feature vectors shared across Train/Val: **10,048**, Train/Test: **21,560**, Val/Test: **8,675** (identical protocol payload sizes such as single-packet RST/DNS/NTP probes occurring independently in separate testbeds).
+- Within-Train identical 18-feature vectors: **833,731** (retained as authentic high-frequency benign/scan telemetry without synthetic deduplication inflation, audited transparently).
+- Unique 18-feature vectors shared across Train/Val: **10,050**, Train/Test: **21,773**, Val/Test: **8,677** (identical protocol payload sizes such as single-packet RST/DNS/NTP probes occurring independently in separate testbeds).
 - Preprocessor fit boundary: **strictly AIT Train**; Validation/Test/CTU receive immutable `transform()` only (`verify_preprocessing_artifact == PASS`).

@@ -1,6 +1,6 @@
 # NetFlow Sentinel v2 — Multi-Source Dataset Audit
 
-**Generated (UTC):** 2026-11-17T18:05:59.242597+00:00
+**Generated (UTC):** 2026-11-17T22:34:06.071904+00:00
 **Feature Contract:** `canonical-flow-v2-18` (18 features)
 
 | Dataset | Identifier / Source | License | Role in v2 | Verification Status |

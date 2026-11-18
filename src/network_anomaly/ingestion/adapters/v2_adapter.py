@@ -29,8 +29,47 @@ from network_anomaly.data.v2_schema import (
 )
 
 
+def _sanitize_url(url: str) -> str:
+    """Strip sensitive credential/token query parameters while keeping benign URL path."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    sensitive_keys = {
+        "token",
+        "key",
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "auth",
+        "session",
+        "jwt",
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "credential",
+        "signature",
+    }
+    try:
+        parts = urlsplit(str(url))
+    except Exception:
+        return str(url)
+    if not parts.query:
+        return str(url)
+    filtered = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if k.lower() not in sensitive_keys
+    ]
+    new_query = urlencode(filtered)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+
+
 def parse_timestamp_utc(raw_ts: Any) -> datetime:
-    """Normalize any timestamp (epoch seconds, milliseconds, ISO string) to timezone-aware UTC datetime."""
+    """Normalize any timestamp (epoch seconds, milliseconds, ISO string) to timezone-aware UTC datetime (fail closed)."""
+    if raw_ts is None or (isinstance(raw_ts, str) and not raw_ts.strip()):
+        raise ValueError(f"Invalid or missing timestamp: {raw_ts!r}")
+
     if isinstance(raw_ts, datetime):
         return raw_ts if raw_ts.tzinfo is not None else raw_ts.replace(tzinfo=timezone.utc)
 
@@ -57,7 +96,7 @@ def parse_timestamp_utc(raw_ts: Any) -> datetime:
         except Exception:
             pass
 
-    return datetime.now(timezone.utc)
+    raise ValueError(f"Invalid or missing timestamp: {raw_ts!r}")
 
 
 class UnifiedNetFlowAdapter:
@@ -109,7 +148,9 @@ class UnifiedNetFlowAdapter:
             dst_ip = str(raw.get("dest_ip") or "0.0.0.0")
             src_port = int(raw.get("source_port") or 0) % 65536
             dst_port = int(raw.get("dest_port") or 0) % 65536
-            proto_raw = raw.get("protocol_num") or raw.get("raw_protocol_str") or raw.get("protocol")
+            proto_raw = (
+                raw.get("protocol_num") or raw.get("raw_protocol_str") or raw.get("protocol")
+            )
             proto_str = str(proto_raw or "UNKNOWN")
 
             is_complete, _ = self.contract.validate_features(raw)
@@ -246,24 +287,27 @@ class ApplicationWebAdapter:
                     "time_local": dt,
                     "remote_addr": src_ip,
                     "method": method,
-                    "url": url,
+                    "url": _sanitize_url(url),
                     "status": int(status),
                 },
                 filename=filename,
                 line_idx=line_idx,
             )
-        return self.adapt_record({"remote_addr": "0.0.0.0"}, filename=filename, line_idx=line_idx)
+        raise ValueError(f"Malformed HTTP log line (expected CLF/Combined format): {line!r}")
 
     def adapt_record(
         self, raw: Dict[str, Any], filename: str = "access.log", line_idx: Optional[int] = None
     ) -> CanonicalSecurityEvent:
         dt = parse_timestamp_utc(raw.get("time_local") or raw.get("timestamp"))
-        src_ip = str(raw.get("remote_addr") or raw.get("source_ip") or "0.0.0.0")
+        src_raw = raw.get("remote_addr") or raw.get("source_ip")
+        if not src_raw or not str(src_raw).strip():
+            raise ValueError("Missing source_ip / remote_addr in web log record")
+        src_ip = str(src_raw).strip()
         dst_ip = str(raw.get("server_addr") or raw.get("dest_ip") or "0.0.0.0")
 
         http_data = HTTPData(
             method=str(raw.get("method") or raw.get("request_method") or "GET"),
-            url=str(raw.get("url") or raw.get("request_uri") or "/"),
+            url=_sanitize_url(str(raw.get("url") or raw.get("request_uri") or "/")),
             status_code=int(raw.get("status") or raw.get("status_code") or 200),
             user_agent=str(raw.get("http_user_agent") or ""),
         )
@@ -288,29 +332,58 @@ class ApplicationWebAdapter:
 class IdentityAuthAdapter:
     """Adapts Authentication, SSH, and VPN logs to CanonicalSecurityEvent."""
 
-    def __init__(self, source_id: str = "source:auth-audit"):
+    def __init__(self, source_id: str = "source:auth-audit", default_year: int = 2020):
         self.source_id = source_id
+        self.default_year = int(default_year)
 
     def adapt_line(
         self, line: str, filename: str = "auth.log", line_idx: Optional[int] = None
     ) -> CanonicalSecurityEvent:
-        """Parse Linux auth.log / sshd line."""
+        """Parse Linux auth.log / sshd line (ISO8601 or RFC3164 syslog timestamp)."""
         # Nov  5 08:00:00 server01 sshd[1234]: Accepted publickey for alice from 192.168.1.100 port 52314 ssh2
         import re
 
         line_clean = line.strip()
-        dt = datetime(2020, 11, 5, 8, 0, 0, tzinfo=timezone.utc)
+        if not line_clean:
+            raise ValueError("Empty auth log line")
+
+        iso_m = re.match(
+            r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)\b",
+            line_clean,
+        )
+        rfc_m = re.match(r"^([A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\b", line_clean)
+        if iso_m:
+            dt = parse_timestamp_utc(iso_m.group(1))
+        elif rfc_m:
+            normalized_ts = " ".join(rfc_m.group(1).split())
+            dt = datetime.strptime(
+                f"{self.default_year} {normalized_ts}", "%Y %b %d %H:%M:%S"
+            ).replace(tzinfo=timezone.utc)
+        else:
+            raise ValueError(f"Missing or unparseable syslog timestamp in auth line: {line!r}")
 
         # IP match
         ip_m = re.search(r"from (\d+\.\d+\.\d+\.\d+)", line_clean)
-        src_ip = ip_m.group(1) if ip_m else "0.0.0.0"
-
         # User match
-        user_m = re.search(r"for (?:invalid user )?([a-zA-Z0-9_\-]+)", line_clean)
+        user_m = re.search(r"(?:for (?:invalid user )?|user=)([a-zA-Z0-9_.\-]+)", line_clean)
+        if not ip_m and not user_m:
+            raise ValueError(f"Unrecognized auth log line (no user or source IP): {line!r}")
+
+        src_ip = ip_m.group(1) if ip_m else "0.0.0.0"
         user = user_m.group(1) if user_m else "unknown"
 
         # Status
-        result = "Accepted" if "accepted" in line_clean.lower() else "Failed"
+        lower_line = line_clean.lower()
+        if "accepted" in lower_line or "session opened" in lower_line:
+            result = "Accepted"
+        elif (
+            "failed" in lower_line
+            or "invalid user" in lower_line
+            or "authentication failure" in lower_line
+        ):
+            result = "Failed"
+        else:
+            raise ValueError(f"Unrecognized auth status in log line: {line!r}")
 
         return self.adapt_record(
             {
@@ -328,8 +401,12 @@ class IdentityAuthAdapter:
         self, raw: Dict[str, Any], filename: str = "auth.log", line_idx: Optional[int] = None
     ) -> CanonicalSecurityEvent:
         dt = parse_timestamp_utc(raw.get("timestamp") or raw.get("date"))
-        src_ip = str(raw.get("source_ip") or raw.get("rhost") or "0.0.0.0")
-        user = str(raw.get("user") or raw.get("username") or "unknown_user")
+        raw_ip = raw.get("source_ip") or raw.get("rhost")
+        raw_user = raw.get("user") or raw.get("username")
+        if (not raw_ip or not str(raw_ip).strip()) and (not raw_user or not str(raw_user).strip()):
+            raise ValueError("Auth record must provide at least one of 'source_ip' or 'user'")
+        src_ip = str(raw_ip or "0.0.0.0").strip()
+        user = str(raw_user or "unknown_user").strip()
         res = (
             "SUCCESS"
             if str(raw.get("result") or raw.get("status") or "").lower()

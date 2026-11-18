@@ -10,13 +10,13 @@ from typing import Any, Dict, Optional, Union
 
 import joblib
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import NotFittedError
 
 from network_anomaly.config import RANDOM_FOREST_DEFAULTS
 from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
-    PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
     validate_feature_selection,
@@ -280,6 +280,15 @@ class RandomForestModel:
             else:
                 raise ValueError(f"Unsupported target label type at index {idx}: {type(val)}")
 
+    def _to_estimator_frame(self, X: Any) -> Any:
+        """Convert 2D array inputs to a DataFrame when estimator expects named columns."""
+        if hasattr(X, "columns"):
+            return X
+        feature_names = getattr(self._estimator, "feature_names_in_", None)
+        if feature_names is not None and len(feature_names) == len(self.feature_names):
+            return pd.DataFrame(np.asarray(X, dtype=np.float64), columns=list(feature_names))
+        return X
+
     def fit(self, X: Any, y: Any, **fit_params: Any) -> "RandomForestModel":
         """Fit interface on verified v2 canonical flow feature data."""
         n_samples = self._validate_feature_input(X)
@@ -297,7 +306,7 @@ class RandomForestModel:
                 "Call 'fit' with verified v2 training data before using 'predict'."
             )
         self._validate_feature_input(X)
-        return self._estimator.predict(X)
+        return self._estimator.predict(self._to_estimator_frame(X))
 
     def predict_proba(self, X: Any) -> Any:
         """Predict class probabilities for anomaly detection."""
@@ -308,7 +317,7 @@ class RandomForestModel:
                 "before using 'predict_proba'."
             )
         self._validate_feature_input(X)
-        return self._estimator.predict_proba(X)
+        return self._estimator.predict_proba(self._to_estimator_frame(X))
 
     def save(
         self,

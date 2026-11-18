@@ -8,8 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass
-from typing import Any, Dict, List
+from collections import deque
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -27,6 +28,8 @@ class BehavioralVector:
     features: List[float] = None
     feature_names: List[str] = None
     sha256_hash: str = ""
+    missing_feature_count: int = 0
+    missing_feature_names: Tuple[str, ...] = field(default_factory=tuple)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -39,6 +42,8 @@ class BehavioralVector:
             "features": self.features,
             "feature_names": self.feature_names,
             "sha256_hash": self.sha256_hash,
+            "missing_feature_count": int(self.missing_feature_count),
+            "missing_feature_names": list(self.missing_feature_names),
         }
 
     def to_numpy(self) -> np.ndarray:
@@ -90,11 +95,16 @@ class BehavioralVectorBuilder:
             math.log1p(max(session.std_iat_ms, 0.0)),
         ]
 
-        # Verify no NaN or Inf
-        cleaned = []
-        for x in raw:
-            if math.isnan(x) or math.isinf(x):
+        # Verify no NaN or Inf and record missing/non-finite dimensions explicitly
+        cleaned: List[float] = []
+        missing_names: List[str] = []
+        if session.event_count <= 0:
+            missing_names.append("event_count")
+        for idx, x in enumerate(raw):
+            if x is None or math.isnan(x) or math.isinf(x):
                 cleaned.append(0.0)
+                if idx < len(self.FEATURE_NAMES):
+                    missing_names.append(self.FEATURE_NAMES[idx])
             else:
                 cleaned.append(float(x))
 
@@ -120,4 +130,55 @@ class BehavioralVectorBuilder:
             features=normalized_features,
             feature_names=self.FEATURE_NAMES,
             sha256_hash=sha256,
+            missing_feature_count=len(missing_names),
+            missing_feature_names=tuple(missing_names),
         )
+
+
+class EntityBaselineProfiler:
+    """Sliding-window entity behavioral profiler and cosine deviation scorer."""
+
+    def __init__(self, window_size: int = 50):
+        if window_size < 1:
+            raise ValueError("window_size must be >= 1")
+        self.window_size = int(window_size)
+        self._windows: Dict[str, deque[np.ndarray]] = {}
+
+    def update(self, vector: BehavioralVector) -> int:
+        buf = self._windows.setdefault(vector.entity_key, deque(maxlen=self.window_size))
+        buf.append(np.asarray(vector.to_numpy(), dtype=np.float64))
+        return len(buf)
+
+    def baseline_centroid(self, entity_key: str) -> Optional[np.ndarray]:
+        buf = self._windows.get(entity_key)
+        if not buf:
+            return None
+        centroid = np.mean(np.stack(list(buf), axis=0), axis=0)
+        norm = float(np.linalg.norm(centroid))
+        return centroid / norm if norm > 1e-9 else centroid
+
+    def score_deviation(self, vector: BehavioralVector) -> Dict[str, Any]:
+        centroid = self.baseline_centroid(vector.entity_key)
+        if centroid is None:
+            return {
+                "entity_key": vector.entity_key,
+                "has_baseline": False,
+                "deviation_score": 0.0,
+                "cosine_similarity": 1.0,
+                "sample_count": 0,
+            }
+        vec = np.asarray(vector.to_numpy(), dtype=np.float64)
+        v_norm = float(np.linalg.norm(vec))
+        c_norm = float(np.linalg.norm(centroid))
+        if v_norm <= 1e-9 or c_norm <= 1e-9:
+            cos_sim = 0.0
+        else:
+            cos_sim = float(np.clip(np.dot(vec, centroid) / (v_norm * c_norm), -1.0, 1.0))
+        deviation = float(max(0.0, 1.0 - cos_sim))
+        return {
+            "entity_key": vector.entity_key,
+            "has_baseline": True,
+            "deviation_score": round(deviation, 6),
+            "cosine_similarity": round(cos_sim, 6),
+            "sample_count": len(self._windows[vector.entity_key]),
+        }

@@ -5,9 +5,9 @@
 | ID | Yêu cầu | Checkpoint | Trạng thái |
 |---|---|---|---|
 | F01 | Acquisition, provenance SHA-256, streaming profiling & quality gates cho `AIT-NDS-v2`, `AIT-LDS-v2.1`, `AIT-ADS`, `CTU-SME-11`; đánh dấu trung thực `UGR'16 BLOCKED` | C1 | **COMPLETED** (`VERIFIED` CC BY 4.0; `UGR'16 BLOCKED`) |
-| F02 | Canonical contract `canonical-flow-v2-18` (18 ML features), `taxonomy-v2` (không ép `background`/`unknown` thành `Benign`), `v2-scenario-group-purged-v1`, `TrainOnlyPreprocessor(asinh_robust)` | C2 | **COMPLETED** (`d33dfe09...`, `1,930,219` rows) |
-| F03 | Random Forest & XGBoost huấn luyện mới trên `AIT-Train`, audit feature shortcut | C3 | **EXPERIMENTALLY VALIDATED** (`AIT-Test` RF `F1=0.8997`, XGB `F1=0.8910`) |
-| F04 | Isolation Forest & Autoencoder benign-only trên `AIT-Train`, calibration trên `AIT-Val` (`target_fpr=0.05`), `AI Ready 4/4` | C4 | **EXPERIMENTALLY VALIDATED** (`IF F1=0.5766`, `AE F1=0.5788`, `CTU-Echo IF F1=0.8527`) |
+| F02 | Canonical contract `canonical-flow-v2-18` (18 ML features), `taxonomy-v2` (không ép `background`/`unknown` thành `Benign`), `v2-scenario-group-purged-v1`, `TrainOnlyPreprocessor(asinh_robust)` | C2 | **COMPLETED** (`0866dec7...`, `2,097,891` rows) |
+| F03 | Random Forest & XGBoost huấn luyện mới trên `AIT-Train`, audit feature shortcut | C3 | **EXPERIMENTALLY VALIDATED** (`AIT-Test` RF `F1=0.9950`, XGB `F1=0.9013`) |
+| F04 | Isolation Forest & Autoencoder benign-only trên `AIT-Train`, calibration trên `AIT-Val` (`target_fpr=0.05`), `AI Ready 4/4` | C4 | **EXPERIMENTALLY VALIDATED** (`IF F1=0.5842`, `AE F1=0.5877`, `CTU-Echo IF F1=0.8853`) |
 | F05 | Behavioral Vector 16-D & Session Correlation | C5 | **IMPLEMENTED / TESTED** (`RQ3` simulation; empirical AIT linkage `BLOCKED`) |
 | F06 | Risk Scoring `[0..100]` & Trace Engine / Attack Timeline | C6 | **IMPLEMENTED / TESTED** |
 | F07 | Bảo mật AES-256-GCM, DPAPI/POSIX key wrapping & Adaptive Key Rotation | C7 | **IMPLEMENTED / TESTED / BENCHMARKED** (`RQ5`, `RQ6`) |

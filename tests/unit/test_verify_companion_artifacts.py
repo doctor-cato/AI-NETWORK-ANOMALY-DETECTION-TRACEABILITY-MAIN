@@ -143,12 +143,12 @@ def _build_valid_attestation_payload(
     if all((root / rel).is_file() for rel in demo_rels):
         demo_sha256 = {rel: _sha256_path(root / rel) for rel in demo_rels}
     else:
-        # Demo CSV files are .gitignored on clean CI checkouts; reuse historical demo_sha256 only
-        tracked_att_path = root / "reports/releases/v0.6.0_e2e_verification.json"
-        if not tracked_att_path.is_file():
-            tracked_att_path = REPO_ROOT / "reports/releases/v0.6.0_e2e_verification.json"
-        tracked_att = json.loads(tracked_att_path.read_text(encoding="utf-8"))
-        demo_sha256 = dict(tracked_att["demo_sha256"])
+        # Demo CSV files are .gitignored on clean CI checkouts; use deterministic test digests
+        demo_sha256 = {
+            "data/demo/demo_flows.csv": "1" * 64,
+            "data/demo/demo_labels.csv": "2" * 64,
+            "data/demo/demo_manifest.json": "3" * 64,
+        }
 
     cm_specs = {
         "random_forest": (98, 0, 0, 100),

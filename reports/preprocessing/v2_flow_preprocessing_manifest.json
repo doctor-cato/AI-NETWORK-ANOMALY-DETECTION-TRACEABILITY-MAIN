@@ -4,7 +4,7 @@
   "dataset_name": "AIT-NDS-v2",
   "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
   "split_protocol_version": "v2-scenario-group-purged-v1",
-  "split_manifest_sha256": "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
+  "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
   "feature_contract_version": "canonical-flow-v2-18",
   "baseline_ml_features_count": 18,
   "baseline_ml_features_in_order": [
@@ -78,8 +78,8 @@
     "add_missing_indicators": false,
     "handle_unknown_categories": "passthrough"
   },
-  "train_row_count": 1930219,
-  "fitted_at_utc": "2026-11-17T18:17:36.707768+00:00",
+  "train_row_count": 2097891,
+  "fitted_at_utc": "2026-11-17T22:31:24.253366+00:00",
   "constant_features": [],
   "all_missing_columns": [],
   "indicator_features": [],
@@ -90,7 +90,7 @@
     "joblib": "1.6.0"
   },
   "artifact_path": "v2_flow_preprocessor.joblib",
-  "artifact_sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32",
+  "artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
   "fitted_parameters_summary": {
     "imputed_values_count": 18,
     "scaler_params_count": 17,

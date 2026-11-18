@@ -23,13 +23,13 @@ import pandas as pd
 from sklearn.exceptions import NotFittedError
 from xgboost import XGBClassifier
 
+from network_anomaly.data.split import _sha256_file
 from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
     PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
-from network_anomaly.data.split import _sha256_file
 from network_anomaly.models.xgboost_protocol import (
     FEATURE_CONTRACT_VERSION,
     POSITIVE_CLASS_NAME,
@@ -338,6 +338,11 @@ class XGBoostModel:
         joblib.dump(payload, model_path, compress=3)
         artifact_sha256 = _sha256_file(model_path)
 
+        try:
+            rel_model_path = model_path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+        except ValueError:
+            rel_model_path = model_path.as_posix()
+
         if manifest_path is not None:
             manifest_data: Dict[str, Any] = {
                 "model_type": self.model_type,
@@ -357,7 +362,7 @@ class XGBoostModel:
                 "num_features": len(self.feature_names),
                 "configuration": self.config.to_dict(),
                 "hyperparameters": self.config.to_dict(),
-                "model_artifact_path": str(model_path.as_posix()),
+                "model_artifact_path": rel_model_path,
                 "model_artifact_sha256": artifact_sha256,
                 # The protocol declares intended references, but save() cannot infer that the
                 # current process actually used or verified them.  Never manufacture VERIFIED
@@ -421,6 +426,9 @@ class XGBoostModel:
                         else manifest_data.get("preprocessor_artifact_path")
                     ),
                 )
+                manifest_data["provenance_note"] = (
+                    "Runtime provenance verified against canonical split and preprocessing artifacts."
+                )
             else:
                 manifest_data["provenance_complete"] = True
                 manifest_data["provenance_status"] = "UNVERIFIED"
@@ -430,8 +438,9 @@ class XGBoostModel:
                 )
             manifest_path = Path(manifest_path)
             manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(manifest_path, "w", encoding="utf-8") as f:
+            with open(manifest_path, "w", encoding="utf-8", newline="\n") as f:
                 json.dump(manifest_data, f, indent=2, ensure_ascii=False)
+                f.write("\n")
 
         return artifact_sha256
 

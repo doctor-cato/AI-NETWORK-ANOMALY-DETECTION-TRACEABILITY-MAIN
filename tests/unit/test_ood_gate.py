@@ -83,9 +83,7 @@ def test_eligibility_gate_blocks_benchmark_failed_source():
         reason="Empirical zero recall on cross-domain transfer.",
     )
     gate = InferenceEligibilityGate(
-        evaluator=FeatureCompatibilityEvaluator(
-            benchmark_registry={"source:ctu-sme-11": failed_ev}
-        )
+        evaluator=FeatureCompatibilityEvaluator(benchmark_registry={"source:ctu-sme-11": failed_ev})
     )
     adapter = CanonicalFlowV2Adapter(source_id="source:ctu-sme-11")
     rec = {col: 0.5 for col in ML_FEATURE_COLUMNS}

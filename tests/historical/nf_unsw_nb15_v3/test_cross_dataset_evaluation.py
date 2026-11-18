@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-
 from scripts.evaluate_cross_dataset import (
     DEFAULT_DATASET_CSV,
     DEFAULT_MODEL_ARTIFACT,

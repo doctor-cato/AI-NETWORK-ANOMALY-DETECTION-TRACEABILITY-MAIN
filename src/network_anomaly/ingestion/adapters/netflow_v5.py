@@ -80,5 +80,7 @@ class NetFlowV5Adapter(BaseSourceAdapter):
             trace_metadata=trace_meta,
             eligibility=InferenceEligibility.FEATURE_INCOMPATIBLE,
             validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
-            ood_warnings=["NetFlow v5 lacks bidirectional flow counters required by canonical-flow-v2-18."],
+            ood_warnings=[
+                "NetFlow v5 lacks bidirectional flow counters required by canonical-flow-v2-18."
+            ],
         )

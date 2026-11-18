@@ -29,8 +29,9 @@ from _v2_train_common import (  # noqa: E402
     load_v2_partitions,
     make_run_id,
 )
-from network_anomaly.data.split import _sha256_file  # noqa: E402
+
 from network_anomaly.data.v2_schema import (  # noqa: E402
+    DATASET_SUITE_NAME,
     FEATURE_CONTRACT_ID,
     ML_FEATURE_COLUMNS,
 )
@@ -43,16 +44,28 @@ from network_anomaly.models.random_forest import (  # noqa: E402
 )
 from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
 
-MODEL_ARTIFACT_PATH = PROJECT_ROOT / "artifacts" / "models" / "random_forest" / "random_forest_baseline.joblib"
-MODEL_SIDECAR_MANIFEST = PROJECT_ROOT / "artifacts" / "models" / "random_forest" / "random_forest_manifest.json"
+MODEL_ARTIFACT_PATH = (
+    PROJECT_ROOT / "artifacts" / "models" / "random_forest" / "random_forest_baseline.joblib"
+)
+MODEL_SIDECAR_MANIFEST = (
+    PROJECT_ROOT / "artifacts" / "models" / "random_forest" / "random_forest_manifest.json"
+)
 REPORT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
 EVAL_REPORT_JSON = PROJECT_ROOT / "reports" / "evaluation" / "random_forest_v2_eval.json"
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train Random Forest v2 model")
-    parser.add_argument("--verify-only", action="store_true", help="Exit 0 SKIPPED if datasets absent")
-    parser.add_argument("--reuse-artifact", action="store_true", help="Reuse existing joblib instead of refitting")
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Exit 0 SKIPPED if datasets absent"
+    )
+    parser.add_argument(
+        "--reuse-artifact", action="store_true", help="Reuse existing joblib instead of refitting"
+    )
+    parser.add_argument("--n-estimators", type=int, default=None)
+    parser.add_argument("--max-depth", type=int, default=None)
+    parser.add_argument("--min-samples-leaf", type=int, default=None)
+    parser.add_argument("--class-weight", type=str, default=None)
     args = parser.parse_args()
 
     ok, errors, info = check_v2_training_prerequisites()
@@ -68,15 +81,60 @@ def main() -> None:
     prep_sha = info["preprocessor_sha256"]
     dataset_sha = split_man["dataset_sha256"]
 
+    prep_manifest_path = (
+        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
+    )
     preproc = TrainOnlyPreprocessor.load_verified(
         artifact_path=PREPROC_ARTIFACT_PATH,
-        manifest_path=PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json",
+        manifest_path=prep_manifest_path,
         split_manifest_path=SPLIT_MANIFEST_PATH,
     )
     partitions = load_v2_partitions(preproc, include_test=True, include_ctu=True)
 
     run_id = make_run_id("rf")
-    protocol = create_rf_baseline_protocol(split_id=split_man["split_protocol_version"])
+    from dataclasses import replace
+
+    rf_overrides: Dict[str, Any] = {}
+    if args.n_estimators is not None:
+        rf_overrides["n_estimators"] = int(args.n_estimators)
+    if args.max_depth is not None:
+        rf_overrides["max_depth"] = int(args.max_depth)
+    if args.min_samples_leaf is not None:
+        rf_overrides["min_samples_leaf"] = int(args.min_samples_leaf)
+    if args.class_weight is not None:
+        cw_val = None if args.class_weight.lower() == "none" else args.class_weight
+        rf_overrides["class_weight"] = cw_val
+
+    if rf_overrides:
+        rf_overrides["is_canonical_baseline"] = False
+        rf_overrides["configuration_id"] = (
+            f"rf-v2-tuned-leaf{args.min_samples_leaf or 1}" f"-cw{args.class_weight or 'none'}"
+        )
+
+    base_proto = create_rf_baseline_protocol(
+        split_id=split_man["split_protocol_version"],
+        **rf_overrides,
+    )
+
+    protocol = replace(
+        base_proto,
+        split_reference=SplitReference(
+            dataset_name=DATASET_SUITE_NAME,
+            dataset_csv_sha256=dataset_sha,
+            split_protocol_id=split_man["split_protocol_version"],
+            split_id=split_man["split_protocol_version"],
+            split_manifest_sha256=split_sha,
+            split_status="VERIFIED",
+            ml_ready=True,
+        ),
+        preprocessing_reference=PreprocessingReference(
+            preprocessing_contract_id=PREPROCESSING_CONTRACT_ID,
+            fit_boundary="train_only",
+            preprocessing_status="VERIFIED",
+            fitted_artifact_path="artifacts/preprocessing/v2_flow_preprocessor.joblib",
+            fitted_artifact_sha256=prep_sha,
+        ),
+    )
     model = RandomForestModel(protocol=protocol)
 
     X_train = partitions["ait_train"]["X"]
@@ -86,7 +144,10 @@ def main() -> None:
         model = RandomForestModel.load(MODEL_ARTIFACT_PATH)
         train_seconds = 0.0
     else:
-        print(f"[RF] Fitting RandomForestClassifier on {len(X_train):,} AIT Train flows (18 features)...", flush=True)
+        print(
+            f"[RF] Fitting RandomForestClassifier on {len(X_train):,} AIT Train flows (18 features)...",
+            flush=True,
+        )
         t0 = time.perf_counter()
         model.fit(X_train, y_train)
         train_seconds = time.perf_counter() - t0
@@ -153,7 +214,7 @@ def main() -> None:
 
     for mp in (MODEL_SIDECAR_MANIFEST, REPORT_MANIFEST_PATH):
         mp.parent.mkdir(parents=True, exist_ok=True)
-        mp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        mp.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     # Fail-closed reload verification
     reloaded = RandomForestModel.load_verified(
@@ -167,7 +228,9 @@ def main() -> None:
         raise RuntimeError("Reload parity check failed for RandomForest")
 
     EVAL_REPORT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    EVAL_REPORT_JSON.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    EVAL_REPORT_JSON.write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
     print(
         f"[RF] Verified reload OK | size={model_size_bytes/1e6:.2f} MB | "
         f"AIT-Val F1={evals['ait_val']['f1']:.4f} | AIT-Test F1={evals['ait_test']['f1']:.4f} | "

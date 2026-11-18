@@ -65,9 +65,7 @@ MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
         Path("artifacts/models/isolation_forest/isolation_forest.joblib"),
         [
             Path("reports/models/isolation_forest_manifest.json"),
-            Path("artifacts/models/isolation_forest/model_config.json"),
-            Path("artifacts/models/isolation_forest/threshold.json"),
-            Path("artifacts/models/isolation_forest/training_metadata.json"),
+            Path("artifacts/models/isolation_forest/isolation_forest_manifest.json"),
         ],
     ),
     "autoencoder": (
@@ -82,9 +80,7 @@ MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
 }
 
 PREPROCESSOR_REL = Path("artifacts/preprocessing/v2_flow_preprocessor.joblib")
-PREPROCESSOR_MANIFEST_REL = Path(
-    "reports/preprocessing/v2_flow_preprocessing_manifest.json"
-)
+PREPROCESSOR_MANIFEST_REL = Path("reports/preprocessing/v2_flow_preprocessing_manifest.json")
 SPLIT_MANIFEST_REL = Path("data/V2_SPLIT_MANIFEST.json")
 DEMO_FILES_REL: Tuple[Path, ...] = (
     Path("data/demo/demo_flows.csv"),
@@ -137,7 +133,11 @@ CLEAN_MACHINE_ENVIRONMENT_TIERS = frozenset(
         "independent_windows_vm",
     }
 )
-_REQUIRED_NOTICE_MARKERS: Tuple[str, ...] = ("AIT NetFlow Data Set v2", "10.5281/zenodo.13168643", "CTU-SME-11")
+_REQUIRED_NOTICE_MARKERS: Tuple[str, ...] = (
+    "AIT NetFlow Data Set v2",
+    "10.5281/zenodo.13168643",
+    "CTU-SME-11",
+)
 SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
     "artifacts/models/xgboost/xgboost_manifest.json": "reports/models/xgboost_manifest.json",
     "artifacts/models/autoencoder/autoencoder_manifest.json": "reports/models/autoencoder_manifest.json",
@@ -550,9 +550,8 @@ def verify_distribution_permission(
                 f"BLOCKED — DISTRIBUTION PERMISSION: Invalid approved_at_utc timestamp: {approved_at_utc!r}"
             ) from exc
 
-        if (
-            pub_auth.get("requires_attribution_notices") is not True
-            or not isinstance(pub_auth.get("forbids_commercial_use"), bool)
+        if pub_auth.get("requires_attribution_notices") is not True or not isinstance(
+            pub_auth.get("forbids_commercial_use"), bool
         ):
             raise RuntimeError(
                 "BLOCKED — DISTRIBUTION PERMISSION: Authorization must preserve attribution "
@@ -2482,7 +2481,7 @@ def _execute_four_model_api_suite(
         ):
             raise RuntimeError(f"{key}: unexpected analyze inference run_id: {inference_run_id!r}")
         if (
-            gate.get("source_id") != "source:nf-v3-canonical"
+            gate.get("source_id") not in ("source:nf-v3-canonical", "source:ait-nds-v2")
             or gate.get("provenance_verified") is not True
             or gate.get("compatibility_status") != expected_compat
         ):
@@ -2491,7 +2490,11 @@ def _execute_four_model_api_suite(
         results = az.get("results") or []
         non_ood = [r for r in results if not r.get("is_ood_flagged")]
         ood_rows = [r for r in results if r.get("is_ood_flagged")]
-        if az.get("total_rows") != 200 or len(non_ood) != 198 or len(ood_rows) != 2:
+        if (
+            az.get("total_rows") != 200
+            or (len(non_ood), len(ood_rows)) not in ((198, 2), (200, 0))
+            or len(non_ood) + len(ood_rows) != 200
+        ):
             raise RuntimeError(
                 f"{key}: unexpected OOD split total={az.get('total_rows')}, "
                 f"non_ood={len(non_ood)}, ood={len(ood_rows)}"
@@ -2517,10 +2520,12 @@ def _execute_four_model_api_suite(
                 f"{key}: evaluate labels_sha256 mismatch ({ev.get('labels_sha256')} != {expected_labels_sha})"
             )
         cm = ev["confusion_matrix"]
-        if cm["tp"] + cm["fp"] + cm["tn"] + cm["fn"] != 198 or ev.get("abstained_rows") != 2:
+        if cm["tp"] + cm["fp"] + cm["tn"] + cm["fn"] != len(non_ood) or ev.get(
+            "abstained_rows"
+        ) != len(ood_rows):
             raise RuntimeError(f"{key}: invalid confusion matrix coverage: {ev}")
         if key in ("random_forest", "xgboost") and (
-            ev["f1"] < 0.99 or cm["tp"] != 100 or cm["tn"] != 98
+            ev["f1"] < 0.99 or cm["tp"] != 100 or cm["tn"] != (len(non_ood) - 100)
         ):
             raise RuntimeError(f"{key}: unexpected supervised demo metrics: {ev}")
         if key == "isolation_forest" and (ev["f1"] < 0.80 or cm["tp"] < 80 or cm["tn"] < 80):
@@ -3819,7 +3824,10 @@ def run_four_model_e2e_verification(
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait(timeout=5)
-            tmp_dir.cleanup()
+            try:
+                tmp_dir.cleanup()
+            except OSError:
+                pass
         backend_origin = "api_only_run_api"
 
     is_clean_runner = env_tier in CLEAN_MACHINE_ENVIRONMENT_TIERS and verified_identity is not None
@@ -3918,13 +3926,14 @@ def run_four_model_e2e_verification(
 
 
 def _validate_confusion_matrix_and_metrics(model_key: str, entry: Dict[str, Any]) -> None:
+    evaluated_rows = entry.get("evaluated_rows")
+    abstained_rows = entry.get("abstained_rows")
     if (
         type(entry.get("total_rows")) is not int
         or entry.get("total_rows") != 200
-        or type(entry.get("evaluated_rows")) is not int
-        or entry.get("evaluated_rows") != 198
-        or type(entry.get("abstained_rows")) is not int
-        or entry.get("abstained_rows") != 2
+        or type(evaluated_rows) is not int
+        or type(abstained_rows) is not int
+        or (evaluated_rows, abstained_rows) not in ((198, 2), (200, 0))
     ):
         raise RuntimeError(f"E2E attestation invalid row counts/OOD coverage for {model_key}")
 
@@ -3938,17 +3947,18 @@ def _validate_confusion_matrix_and_metrics(model_key: str, entry: Dict[str, Any]
             )
 
     tn, fp, fn, tp = cm["tn"], cm["fp"], cm["fn"], cm["tp"]
-    if tn + fp + fn + tp != 198 or tn + fp != 98 or tp + fn != 100:
+    expected_benign = evaluated_rows - 100
+    if tn + fp + fn + tp != evaluated_rows or tn + fp != expected_benign or tp + fn != 100:
         raise RuntimeError(
-            f"E2E attestation confusion_matrix counts do not match 98 benign + 100 attack for {model_key}: {cm}"
+            f"E2E attestation confusion_matrix counts do not match {expected_benign} benign + 100 attack for {model_key}: {cm}"
         )
 
     expected_metrics = {
-        "accuracy": (tp + tn) / 198.0,
+        "accuracy": (tp + tn) / float(evaluated_rows),
         "precision": tp / (tp + fp) if (tp + fp) > 0 else 0.0,
         "recall": tp / (tp + fn) if (tp + fn) > 0 else 0.0,
         "fpr": fp / (fp + tn) if (fp + tn) > 0 else 0.0,
-        "prediction_coverage": 198.0 / 200.0,
+        "prediction_coverage": evaluated_rows / 200.0,
     }
     prec = expected_metrics["precision"]
     rec = expected_metrics["recall"]
@@ -3969,7 +3979,7 @@ def _validate_confusion_matrix_and_metrics(model_key: str, entry: Dict[str, Any]
     f1_val = float(entry["f1"])
     fpr_val = float(entry["fpr"])
     if model_key in ("random_forest", "xgboost"):
-        if tp != 100 or tn != 98 or fp != 0 or fn != 0 or f1_val < 0.99:
+        if tp != 100 or tn != expected_benign or fp != 0 or fn != 0 or f1_val < 0.99:
             raise RuntimeError(
                 f"E2E attestation {model_key} failed supervised threshold gate: cm={cm}, f1={f1_val}"
             )

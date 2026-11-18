@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
 from network_anomaly.evaluation.metrics import (
     compute_attack_category_breakdown,
     compute_wilson_confidence_interval,

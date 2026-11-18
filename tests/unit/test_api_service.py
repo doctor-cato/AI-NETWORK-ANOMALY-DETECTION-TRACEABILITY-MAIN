@@ -85,9 +85,7 @@ def test_health_check_accepts_real_verified_fixture(api_service: ApiService, tmp
     artifact_root = tmp_path / "artifacts"
     prep_path = artifact_root / "preprocessing" / "v2_flow_preprocessor.joblib"
     model_path = artifact_root / "models" / "random_forest" / "random_forest_baseline.joblib"
-    prep_manifest = (
-        tmp_path / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
-    )
+    prep_manifest = tmp_path / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     model_manifest = tmp_path / "reports" / "models" / "random_forest_manifest.json"
     prep_path.parent.mkdir(parents=True)
     model_path.parent.mkdir(parents=True)
@@ -410,9 +408,7 @@ def _setup_synthetic_artifact_tree(
 
     art_root = root / "artifacts"
     prep_path = art_root / "preprocessing" / "v2_flow_preprocessor.joblib"
-    prep_manifest = (
-        root / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
-    )
+    prep_manifest = root / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     rf_path = art_root / "models" / "random_forest" / "random_forest_baseline.joblib"
     rf_manifest = root / "reports" / "models" / "random_forest_manifest.json"
     if_path = art_root / "models" / "isolation_forest" / "isolation_forest.joblib"

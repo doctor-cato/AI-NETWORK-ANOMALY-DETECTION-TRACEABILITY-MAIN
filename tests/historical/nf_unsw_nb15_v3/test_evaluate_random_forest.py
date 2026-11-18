@@ -424,8 +424,8 @@ def test_prediction_and_label_invariants_reject_fractional_labels_and_bad_classe
     """Verify P2-06: fractional labels, duplicate row_indices, and misordered classes_ fail closed."""  # noqa: E501
     import numpy as np
     import pandas as pd
-
     from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
     from network_anomaly.evaluation.metrics import compute_metrics
     from network_anomaly.evaluation.test_evaluation import (
         TestPartitionData,

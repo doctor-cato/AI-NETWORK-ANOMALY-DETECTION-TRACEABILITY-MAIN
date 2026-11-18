@@ -38,6 +38,7 @@ if str(LOCAL_SOURCE) not in sys.path:
     sys.path.insert(0, str(LOCAL_SOURCE))
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
+
 from network_anomaly.data.split import load_partition_indices  # noqa: E402
 
 # Chronological bounds are an early guard; verified partition indices decide membership.

@@ -29,6 +29,7 @@ The standalone Windows installer bundles compiled/packaged binaries of open-sour
 | scikit-learn | Preprocessing, Random Forest, Isolation Forest, Autoencoder (`MLPRegressor`) | BSD-3-Clause |
 | XGBoost | Gradient boosted decision tree classifier | Apache-2.0 |
 | joblib | Verified artifact serialization/deserialization | BSD-3-Clause |
+| cryptography (pyca/cryptography) | AES-256-GCM authenticated encryption & key lifecycle | Apache-2.0 / BSD-3-Clause |
 | httpx | HTTP client for testing & loopback checks | BSD-3-Clause |
 | Tauri 2 | Native Windows desktop shell & IPC bridge | Apache-2.0 / MIT |
 | Svelte 5 | Desktop frontend UI framework | MIT |

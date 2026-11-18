@@ -11,7 +11,7 @@ through the real pipeline:
     -> real four-model inference (when artifacts exist) -> risk -> alerts
     -> behavioral vector -> AES-256-GCM vault -> entity/trace graph
 
-The 47 model features travel in a documented private lab convention: IPFIX
+The 18 canonical v2 model features travel in a documented private lab convention: IPFIX
 enterprise IE (PEN 50000) / NetFlow v9 IE ``50000 + index`` carrying an IEEE-754
 float64. No standard router exports that; it exists only so the synthetic
 exporter can exercise the full contract. Synthetic values are labelled
@@ -62,7 +62,13 @@ LAB_FLOWS: List[Dict[str, Any]] = [
         "src_port": 52341,
         "dest_port": 80,
         "tcp_flags": 2,
-        "overrides": {"duration_ms": 12.0, "bytes_in": 350.0, "bytes_out": 120.0, "pkts_in": 4.0, "pkts_out": 3.0},
+        "overrides": {
+            "duration_ms": 12.0,
+            "bytes_in": 350.0,
+            "bytes_out": 120.0,
+            "pkts_in": 4.0,
+            "pkts_out": 3.0,
+        },
     },
     {
         "label": "web_exploit_attempt",
@@ -71,7 +77,13 @@ LAB_FLOWS: List[Dict[str, Any]] = [
         "src_port": 44122,
         "dest_port": 80,
         "tcp_flags": 24,
-        "overrides": {"duration_ms": 48.0, "bytes_in": 8900.0, "bytes_out": 25000.0, "pkts_in": 25.0, "pkts_out": 30.0},
+        "overrides": {
+            "duration_ms": 48.0,
+            "bytes_in": 8900.0,
+            "bytes_out": 25000.0,
+            "pkts_in": 25.0,
+            "pkts_out": 30.0,
+        },
     },
     {
         "label": "large_outbound_transfer",
@@ -492,7 +504,7 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
     }
 
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_JSON.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    OUTPUT_JSON.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     stage_rows = "\n".join(
         f"| {name} | **{data['status']}** | {data['evidence']} |" for name, data in stages.items()
@@ -535,7 +547,7 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
 Artifacts: `{OUTPUT_JSON.as_posix()}`.
 """
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_MD.write_text(md, encoding="utf-8")
+    OUTPUT_MD.write_text(md, encoding="utf-8", newline="\n")
 
     print(f"Verdict: {report['overall_status']}")
     print(f"  {OUTPUT_JSON}")

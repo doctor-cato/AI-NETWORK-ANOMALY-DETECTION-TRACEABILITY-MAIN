@@ -46,8 +46,8 @@ Tính bằng `compute_flow_features_from_base()` trong `src/network_anomaly/data
 
 | Source / Probe | Định dạng | Mức tương thích `canonical-flow-v2-18` | Trạng thái Suy luận ML | Ghi chú Xử lý |
 |---|---|---|---|---|
-| **AIT NetFlow Data Set v2 (`AIT-NDS-v2`)** | Tstat (`tcp_complete`, `tcp_nocomplete`, `udp_complete`) | **18/18 (`EXACT` / `DERIVABLE`)** | `MODEL_VALIDATED` (RF) / `RESEARCH_ONLY` (XGB, IF, AE) | Nguồn huấn luyện & kiểm thử chính (`Train 1,930,219` / `Val 377,704` / `Test 923,292`). |
-| **CTU-SME-11** | Zeek `conn.log.labeled` | **18/18 (`EXACT` / `DERIVABLE`)** | Cross-source External Benchmark (`RESEARCH_ONLY`) | Dùng `orig_ip_bytes` / `resp_ip_bytes`; `duration="-"` ánh xạ tường minh sang `0.0 ms`. |
+| **AIT NetFlow Data Set v2 (`AIT-NDS-v2`)** | Tstat (`tcp_complete`, `tcp_nocomplete`, `udp_complete`) | **18/18 (`EXACT` / `DERIVABLE`)** | `MODEL_VALIDATED` (RF) / `RESEARCH_ONLY` (XGB, IF, AE) | Nguồn huấn luyện & kiểm thử chính (`Train 2,097,891` / `Val 377,704` / `Test 988,805`). |
+| **CTU-SME-11** | Zeek `conn.log.labeled` | **18/18 (`EXACT` / `DERIVABLE`)** | Cross-source External Benchmark (`RESEARCH_ONLY`) | Dùng `orig_bytes` / `resp_bytes` (L4 payload chuẩn hóa); `duration="-"` ánh xạ tường minh sang `0.0 ms`. |
 | **Live NetFlow v9 / IPFIX (`UDPFlowCollector`)** | Binary / `CanonicalSecurityEvent` | **18/18 (`DERIVABLE`)** | `REAL_MODELS` (qua `RealtimeFeatureExtractor`) | Chỉ suy luận khi đủ 6 trường cơ sở hợp lệ; thiếu trường $\to$ từ chối fail-closed. |
 | **NetFlow v5 / AWS VPC Flow** | CSV / TSV | **Thiếu chiều trả về (`OUT_BYTES` / `OUT_PKTS`)** | `FEATURE_INCOMPATIBLE` | **Không zero-fill.** Chỉ trích xuất metadata cho Behavioral/Risk/Trace. |
 | **DNS / HTTP / Auth / System Logs (`AIT-LDS-v2.1`, Zeek, Suricata)** | JSON / TSV / Syslog | **0/18 (Phi-NetFlow)** | `route_only=True` (`is_ml_complete=False`) | **Tuyệt đối không impute.** Đi thẳng Behavioral Vector, Risk Engine, Trace Engine. |

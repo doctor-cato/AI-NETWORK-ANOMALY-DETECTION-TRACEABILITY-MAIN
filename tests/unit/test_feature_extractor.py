@@ -85,9 +85,7 @@ class TestFeatureContract:
             tcp_flags=27,
         )
 
-        result = RealtimeFeatureExtractor().extract(
-            _flow_event(metrics=metrics, protocol="TCP")
-        )
+        result = RealtimeFeatureExtractor().extract(_flow_event(metrics=metrics, protocol="TCP"))
         assert result.is_ml_ready is True
         assert result.feature_vector.shape == (18,)
         index = contract.feature_names.index("bytes_in")

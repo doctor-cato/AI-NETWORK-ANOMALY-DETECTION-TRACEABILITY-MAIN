@@ -37,7 +37,6 @@ if str(SRC_DIR) not in sys.path:
 from network_anomaly.config import RANDOM_SEED  # noqa: E402
 from network_anomaly.data.v2_schema import (  # noqa: E402
     ML_FEATURE_COLUMNS,
-    TARGET_COLUMNS,
 )
 from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
 

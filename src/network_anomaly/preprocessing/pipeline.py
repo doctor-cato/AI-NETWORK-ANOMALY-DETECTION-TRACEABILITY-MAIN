@@ -46,6 +46,14 @@ ARTIFACT_TYPE = "v2-flow-train-only-preprocessor"
 
 VALID_SCALER_TYPES = {"none", "robust", "asinh_robust", "standard", "minmax"}
 VALID_UNKNOWN_CATEGORIES_STRATEGIES = {"passthrough", "sentinel", "error"}
+BOUNDED_UNIT_COLUMNS: Tuple[str, ...] = (
+    "bytes_in_ratio",
+    "pkts_in_ratio",
+    "has_response",
+    "is_tcp",
+    "is_udp",
+)
+MIN_BOUNDED_SCALE_FLOOR = 0.25
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 REQUIRED_COMPANION_MANIFEST_FIELDS: Dict[str, type] = {
@@ -109,9 +117,7 @@ class PreprocessingConfig:
             )
 
 
-def audit_column_tokens(
-    series: pd.Series, column_name: str, return_masks: bool = False
-) -> Union[
+def audit_column_tokens(series: pd.Series, column_name: str, return_masks: bool = False) -> Union[
     Tuple[Dict[str, int], np.ndarray],
     Tuple[Dict[str, int], np.ndarray, Dict[str, np.ndarray]],
 ]:
@@ -314,7 +320,14 @@ class TrainOnlyPreprocessor:
                     t_arr = np.arcsinh(arr)
                     med = float(np.median(t_arr))
                     iqr = float(np.percentile(t_arr, 75) - np.percentile(t_arr, 25))
-                    self.scaler_params_[col] = {"center": med, "scale": iqr if iqr > 1e-9 else 1.0, "transform": "arcsinh"}
+                    scale = iqr if iqr > 1e-9 else 1.0
+                    if col in BOUNDED_UNIT_COLUMNS:
+                        scale = max(scale, MIN_BOUNDED_SCALE_FLOOR)
+                    self.scaler_params_[col] = {
+                        "center": med,
+                        "scale": scale,
+                        "transform": "arcsinh",
+                    }
                 elif self.config.scaler_type == "standard":
                     mean = float(np.mean(arr))
                     std = float(np.std(arr))
@@ -351,7 +364,10 @@ class TrainOnlyPreprocessor:
 
             if self.config.scaler_type != "none" and col in self.scaler_params_:
                 params = self.scaler_params_[col]
-                if self.config.scaler_type == "asinh_robust" or params.get("transform") == "arcsinh":
+                if (
+                    self.config.scaler_type == "asinh_robust"
+                    or params.get("transform") == "arcsinh"
+                ):
                     cleaned_arr = np.arcsinh(cleaned_arr)
                 cleaned_arr = (cleaned_arr - params["center"]) / params["scale"]
 
@@ -465,7 +481,9 @@ class TrainOnlyPreprocessor:
                     "indicator_features_count": len(self.indicator_features_),
                 },
             }
-            manifest_path.write_text(json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8")
+            manifest_path.write_text(
+                json.dumps(manifest_data, indent=2) + "\n", encoding="utf-8", newline="\n"
+            )
 
         return artifact_sha256
 
@@ -480,14 +498,20 @@ class TrainOnlyPreprocessor:
         if not artifact_path.is_file():
             raise FileNotFoundError(f"Preprocessor artifact not found: {artifact_path}")
         payload = joblib.load(artifact_path)
-        if not isinstance(payload, dict) or "metadata" not in payload or "fitted_state" not in payload:
+        if (
+            not isinstance(payload, dict)
+            or "metadata" not in payload
+            or "fitted_state" not in payload
+        ):
             raise ValueError(f"Corrupted preprocessor artifact schema in {artifact_path}")
 
         metadata = payload["metadata"]
         fitted_state = payload["fitted_state"]
 
         if metadata.get("artifact_type") != ARTIFACT_TYPE:
-            raise ValueError(f"Invalid artifact type (v1 artifacts rejected): {metadata.get('artifact_type')}")
+            raise ValueError(
+                f"Invalid artifact type (v1 artifacts rejected): {metadata.get('artifact_type')}"
+            )
         if metadata.get("feature_contract_version") != FEATURE_CONTRACT_VERSION:
             raise ValueError(
                 f"Feature contract version mismatch: expected {FEATURE_CONTRACT_VERSION}, "
@@ -508,12 +532,22 @@ class TrainOnlyPreprocessor:
 
         out_features = metadata.get("output_features_in_order")
         out_count = metadata.get("output_features_count")
-        if not isinstance(out_features, list) or not isinstance(out_count, int) or len(out_features) != out_count:
+        if (
+            not isinstance(out_features, list)
+            or not isinstance(out_count, int)
+            or len(out_features) != out_count
+        ):
             raise ValueError("Corrupted output features contract in artifact metadata")
 
-        if expected_dataset_sha256 is not None and metadata.get("dataset_sha256") != expected_dataset_sha256:
+        if (
+            expected_dataset_sha256 is not None
+            and metadata.get("dataset_sha256") != expected_dataset_sha256
+        ):
             raise ValueError("Dataset SHA-256 mismatch in preprocessor artifact")
-        if expected_manifest_sha256 is not None and metadata.get("split_manifest_sha256") != expected_manifest_sha256:
+        if (
+            expected_manifest_sha256 is not None
+            and metadata.get("split_manifest_sha256") != expected_manifest_sha256
+        ):
             raise ValueError("Split manifest SHA-256 mismatch in preprocessor artifact")
 
         config = PreprocessingConfig(**metadata.get("config", {}))
@@ -555,7 +589,9 @@ class TrainOnlyPreprocessor:
             expected_dataset_sha256=expected_dataset_sha256,
         )
         if report["status"] != "PASS":
-            raise ValueError(f"Preprocessor artifact verification failed: {'; '.join(report['errors'])}")
+            raise ValueError(
+                f"Preprocessor artifact verification failed: {'; '.join(report['errors'])}"
+            )
         preprocessor = report.get("preprocessor")
         if not isinstance(preprocessor, cls):
             raise ValueError("Verified preprocessor instance not available")
@@ -569,20 +605,50 @@ def verify_zero_duration_retention(
 ) -> Dict[str, Any]:
     """Verify that zero-duration flows in X_before are retained (not dropped) in X_after."""
     if not isinstance(X_before, pd.DataFrame) or not isinstance(X_after, pd.DataFrame):
-        return {"status": "NOT VERIFIED", "reason": "Inputs must be DataFrames", "zero_duration_flows_count": 0, "zero_duration_retained": False}
+        return {
+            "status": "NOT VERIFIED",
+            "reason": "Inputs must be DataFrames",
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": False,
+        }
     if duration_col not in X_before.columns or duration_col not in X_after.columns:
-        return {"status": "NOT VERIFIED", "reason": f"Missing {duration_col}", "zero_duration_flows_count": 0, "zero_duration_retained": False}
+        return {
+            "status": "NOT VERIFIED",
+            "reason": f"Missing {duration_col}",
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": False,
+        }
     if X_before.index.has_duplicates or X_after.index.has_duplicates:
-        return {"status": "NOT VERIFIED", "reason": "Duplicate index", "zero_duration_flows_count": 0, "zero_duration_retained": False}
+        return {
+            "status": "NOT VERIFIED",
+            "reason": "Duplicate index",
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": False,
+        }
 
     raw_num = pd.to_numeric(X_before[duration_col], errors="coerce")
     zero_indices = X_before.index[(raw_num == 0.0) & raw_num.notna()]
     zero_count = int(len(zero_indices))
     if zero_count == 0:
-        return {"status": "NOT APPLICABLE", "reason": "No zero-duration flows", "zero_duration_flows_count": 0, "zero_duration_retained": True}
+        return {
+            "status": "NOT APPLICABLE",
+            "reason": "No zero-duration flows",
+            "zero_duration_flows_count": 0,
+            "zero_duration_retained": True,
+        }
     if len(X_after) != len(X_before) or len(zero_indices.difference(X_after.index)) > 0:
-        return {"status": "FAIL", "reason": "Zero-duration flows were dropped", "zero_duration_flows_count": zero_count, "zero_duration_retained": False}
-    return {"status": "PASS", "reason": f"All {zero_count} zero-duration flows retained", "zero_duration_flows_count": zero_count, "zero_duration_retained": True}
+        return {
+            "status": "FAIL",
+            "reason": "Zero-duration flows were dropped",
+            "zero_duration_flows_count": zero_count,
+            "zero_duration_retained": False,
+        }
+    return {
+        "status": "PASS",
+        "reason": f"All {zero_count} zero-duration flows retained",
+        "zero_duration_flows_count": zero_count,
+        "zero_duration_retained": True,
+    }
 
 
 def verify_preprocessing_artifact(
@@ -602,7 +668,13 @@ def verify_preprocessing_artifact(
     if not manifest_path.is_file():
         errors.append(f"Companion manifest file not found: {manifest_path}")
     if errors:
-        return {"status": "FAIL", "errors": errors, "artifact_path": str(artifact_path), "manifest_path": str(manifest_path), "metadata": {}}
+        return {
+            "status": "FAIL",
+            "errors": errors,
+            "artifact_path": str(artifact_path),
+            "manifest_path": str(manifest_path),
+            "metadata": {},
+        }
 
     manifest_json: Dict[str, Any] = {}
     try:
@@ -622,7 +694,9 @@ def verify_preprocessing_artifact(
             elif exp_type is int and isinstance(val, bool):
                 errors.append(f"Field '{field}' must be int, got bool")
             elif not isinstance(val, exp_type):
-                errors.append(f"Field '{field}' must be {exp_type.__name__}, got {type(val).__name__}")
+                errors.append(
+                    f"Field '{field}' must be {exp_type.__name__}, got {type(val).__name__}"
+                )
             elif isinstance(val, str) and not val.strip():
                 errors.append(f"Field '{field}' must not be empty")
 
@@ -631,19 +705,30 @@ def verify_preprocessing_artifact(
                 f"Invalid artifact_type: expected '{ARTIFACT_TYPE}', got '{manifest_json.get('artifact_type')}'"
             )
         if manifest_json.get("artifact_version") != 2:
-            errors.append(f"Invalid artifact_version: expected 2, got {manifest_json.get('artifact_version')}")
+            errors.append(
+                f"Invalid artifact_version: expected 2, got {manifest_json.get('artifact_version')}"
+            )
         if not _valid_sha256(manifest_json.get("dataset_sha256")):
             errors.append("Invalid or placeholder dataset_sha256 in companion manifest")
         if not _valid_sha256(manifest_json.get("split_manifest_sha256")):
             errors.append("Invalid or placeholder split_manifest_sha256 in companion manifest")
-        if expected_dataset_sha256 is not None and manifest_json.get("dataset_sha256") != expected_dataset_sha256:
+        if (
+            expected_dataset_sha256 is not None
+            and manifest_json.get("dataset_sha256") != expected_dataset_sha256
+        ):
             errors.append("Dataset SHA-256 in manifest does not match expected value")
         if manifest_json.get("split_protocol_version") != SPLIT_PROTOCOL_VERSION:
-            errors.append(f"Invalid split_protocol_version: {manifest_json.get('split_protocol_version')}")
+            errors.append(
+                f"Invalid split_protocol_version: {manifest_json.get('split_protocol_version')}"
+            )
         if manifest_json.get("feature_contract_version") != FEATURE_CONTRACT_VERSION:
-            errors.append(f"Invalid feature_contract_version: {manifest_json.get('feature_contract_version')}")
+            errors.append(
+                f"Invalid feature_contract_version: {manifest_json.get('feature_contract_version')}"
+            )
         if manifest_json.get("preprocessing_policy_version") != PREPROCESSING_POLICY_VERSION:
-            errors.append(f"Invalid preprocessing_policy_version: {manifest_json.get('preprocessing_policy_version')}")
+            errors.append(
+                f"Invalid preprocessing_policy_version: {manifest_json.get('preprocessing_policy_version')}"
+            )
         if manifest_json.get("baseline_ml_features_count") != len(ML_FEATURE_COLUMNS):
             errors.append("baseline_ml_features_count mismatch")
         if manifest_json.get("baseline_ml_features_in_order") != list(ML_FEATURE_COLUMNS):

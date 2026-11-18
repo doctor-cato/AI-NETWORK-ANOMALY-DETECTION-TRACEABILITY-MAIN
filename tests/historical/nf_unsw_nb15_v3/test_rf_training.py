@@ -14,13 +14,13 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.exceptions import NotFittedError
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     DATASET_NAME,
     ML_FEATURE_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
+from sklearn.exceptions import NotFittedError
+
 from network_anomaly.data.split import (
     SPLIT_PROTOCOL_VERSION,
     _sha256_file,

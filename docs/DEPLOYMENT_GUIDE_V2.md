@@ -77,6 +77,6 @@ cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
 
 ## 5. Lưu ý tuân thủ & Release Gate
 
-- Tuân thủ kiểm tra governance và provenance tại `reports/governance/DISTRIBUTION_AUTHORIZATION.json` cùng nghĩa vụ ghi nhận nguồn **CC BY 4.0** trong `NOTICE` và `THIRD_PARTY_NOTICES.md` (`AIT-NDS-v2`, `AIT-LDS-v2.1`, `AIT-ADS`, `CTU-SME-11`). Nguồn v1 `NF-UNSW-NB15-v3` đã ngừng sử dụng trong active pipeline và lưu trữ chỉ đọc tại `historical/nf_unsw_nb15_v3/`.
+- Tuân thủ kiểm tra governance và provenance tại `reports/governance/DISTRIBUTION_AUTHORIZATION.json` cùng nghĩa vụ ghi nhận nguồn trong `NOTICE` và `THIRD_PARTY_NOTICES.md` (**CC BY 4.0** cho `AIT-NDS-v2`, `AIT-ADS`, `CTU-SME-11`; **CC BY-NC-SA 4.0** cho `AIT-LDS-v2.1`, không nhúng vào trọng số ML hay bộ demo). Nguồn v1 `NF-UNSW-NB15-v3` đã ngừng sử dụng trong active pipeline và lưu trữ chỉ đọc tại `historical/nf_unsw_nb15_v3/`.
 - **Không lưu khóa plaintext hoặc raw key lên Git:** `.gitignore` đã chặn `data/keys/`, `*.key`, `*.db`, và `artifacts/`.
 - **Kiểm thử trên máy sạch:** Trước khi gắn nhãn stable release công khai, phải hoàn tất kiểm thử cài đặt thực tế trên máy Windows 10/11 sạch không có Python/Rust (theo dõi ở Issue #73).

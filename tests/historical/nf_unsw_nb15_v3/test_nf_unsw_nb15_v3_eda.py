@@ -29,6 +29,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     validate_feature_selection,
     validate_semantic_column_roles,
 )
+
 from network_anomaly.eda import (  # noqa: E402
     DatasetProfiler,
     render_figures,

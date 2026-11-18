@@ -25,7 +25,7 @@ an explicit status and no prediction for that model.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -97,6 +97,8 @@ class ModelStatus:
     feature_contract_version: Optional[str] = None
     dataset_provenance: Optional[str] = None
     training_run_id: Optional[str] = None
+    capabilities: List[str] = field(default_factory=list)
+    deployment_tier: str = "RESEARCH_ONLY"
 
     @property
     def decision_ready(self) -> bool:
@@ -123,6 +125,8 @@ class ModelStatus:
             "feature_contract_version": self.feature_contract_version,
             "dataset_provenance": self.dataset_provenance,
             "training_run_id": self.training_run_id,
+            "capabilities": list(self.capabilities),
+            "deployment_tier": self.deployment_tier,
         }
 
 
@@ -160,6 +164,30 @@ class ModelArtifactPaths:
     model_type: str
 
 
+def _to_repo_posix(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _as_estimator_input(model_obj: Any, X: Any) -> Any:
+    if isinstance(X, pd.DataFrame):
+        return X
+    arr = np.asarray(X)
+    if arr.ndim != 2:
+        return X
+    estimator = getattr(
+        model_obj,
+        "_estimator",
+        getattr(model_obj, "estimator", getattr(model_obj, "model", model_obj)),
+    )
+    feature_names = getattr(estimator, "feature_names_in_", None)
+    if feature_names is not None and len(feature_names) == arr.shape[1]:
+        return pd.DataFrame(arr, columns=list(feature_names))
+    return X
+
+
 class _SupervisedBackend:
     score_semantics = PROBABILITY_SEMANTICS
 
@@ -169,7 +197,8 @@ class _SupervisedBackend:
         self.calibration = calibration
 
     def score(self, X: np.ndarray) -> Tuple[float, Optional[float], Optional[bool], Optional[str]]:
-        proba = np.asarray(self.estimator.predict_proba(X), dtype=float)
+        X_in = _as_estimator_input(self.estimator, X)
+        proba = np.asarray(self.estimator.predict_proba(X_in), dtype=float)
         if proba.ndim != 2 or proba.shape[1] < 2:
             raise ValueError("Supervised model must expose two-class predict_proba output")
         attack_probability = float(proba[0, 1])
@@ -189,7 +218,8 @@ class _ThresholdBackend:
         self.calibration = calibration
 
     def raw_scores(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(self.model.anomaly_scores(X), dtype=float)
+        X_in = _as_estimator_input(self.model, X)
+        return np.asarray(self.model.anomaly_scores(X_in), dtype=float)
 
     def score(self, X: np.ndarray) -> Tuple[float, Optional[float], Optional[bool], Optional[str]]:
         raw = float(self.raw_scores(X)[0])
@@ -226,10 +256,7 @@ class ModelRegistry:
         self.preprocessor_manifest_path = (
             Path(preprocessor_manifest_path)
             if preprocessor_manifest_path
-            else PROJECT_ROOT
-            / "reports"
-            / "preprocessing"
-            / "v2_flow_preprocessing_manifest.json"
+            else PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
         )
         self.demo_heuristics = demo_heuristics
         self.contract = get_flow_feature_contract_v2()
@@ -250,6 +277,11 @@ class ModelRegistry:
     # ------------------------------------------------------------------ paths
     def _artifact_specs(self) -> List[ModelArtifactPaths]:
         models_dir = self.artifacts_dir / "models"
+        ae_manifest = self.manifest_root / "autoencoder_manifest.json"
+        if not ae_manifest.is_file():
+            sidecar_ae_manifest = models_dir / "autoencoder" / "autoencoder_manifest.json"
+            if sidecar_ae_manifest.is_file():
+                ae_manifest = sidecar_ae_manifest
         return [
             ModelArtifactPaths(
                 models_dir / "random_forest" / "random_forest_baseline.joblib",
@@ -268,7 +300,7 @@ class ModelRegistry:
             ),
             ModelArtifactPaths(
                 models_dir / "autoencoder" / "autoencoder_model.joblib",
-                models_dir / "autoencoder" / "autoencoder_manifest.json",
+                ae_manifest,
                 "Autoencoder",
             ),
         ]
@@ -321,8 +353,8 @@ class ModelRegistry:
             display_name=DISPLAY_NAMES[model_key],
             model_type=spec.model_type,
             readiness=ModelReadiness.UNAVAILABLE,
-            artifact_path=str(spec.model_path),
-            manifest_path=str(spec.manifest_path) if spec.manifest_path else None,
+            artifact_path=_to_repo_posix(spec.model_path),
+            manifest_path=_to_repo_posix(spec.manifest_path) if spec.manifest_path else None,
         )
 
     def _load_model(self, spec: ModelArtifactPaths) -> None:
@@ -383,11 +415,21 @@ class ModelRegistry:
             if threshold is None:
                 status.readiness = ModelReadiness.RESEARCH
                 status.reason = "calibrated decision threshold unavailable"
+                status.capabilities = ["raw_anomaly_scoring"]
+                status.deployment_tier = "RESEARCH_ONLY"
             else:
                 status.readiness = ModelReadiness.LOADED
+                if model_key in ("random_forest", "xgboost"):
+                    status.capabilities = ["binary_classification", "probability_scoring"]
+                    status.deployment_tier = "PRODUCTION_ELIGIBLE"
+                else:
+                    status.capabilities = ["anomaly_scoring", "percentile_normalization"]
+                    status.deployment_tier = "RESEARCH_ONLY"
         except Exception as exc:
             status.readiness = ModelReadiness.ERROR
             status.reason = f"{type(exc).__name__}: {exc}"
+            status.capabilities = []
+            status.deployment_tier = "RESEARCH_ONLY"
             self._backends.pop(model_key, None)
 
     def _load_backend(
@@ -525,7 +567,7 @@ class ModelRegistry:
         return {
             "preprocessor": {
                 "ready": self.preprocessor_ready,
-                "path": str(self.preprocessor_path),
+                "path": _to_repo_posix(self.preprocessor_path),
                 "sha256": self.preprocessor_sha256,
                 "error": self._preprocessor_error,
                 "feature_contract_version": self._preprocessor_metadata.get(
@@ -608,7 +650,8 @@ class ModelRegistry:
         if backend is None or status is None or status.threshold is None:
             raise RuntimeError(f"Model '{model_key}' is not decision-ready")
         if isinstance(backend, _SupervisedBackend):
-            proba = np.asarray(backend.estimator.predict_proba(X), dtype=float)[:, 1]
+            X_in = _as_estimator_input(backend.estimator, X)
+            proba = np.asarray(backend.estimator.predict_proba(X_in), dtype=float)[:, 1]
             preds = (proba >= float(status.threshold)).astype(np.int64)
             return proba, preds
         raw = np.asarray(backend.raw_scores(X), dtype=float)

@@ -138,7 +138,9 @@ def load_v2_benchmark_registry(
             continue
         run_id = str(data.get("training_run_id") or data.get("run_id") or "")
         model_sha = str(data.get("artifact_sha256") or data.get("model_artifact_sha256") or "")
-        prep_sha = str(data.get("preprocessor_artifact_sha256") or data.get("preprocessor_sha256") or "")
+        prep_sha = str(
+            data.get("preprocessor_artifact_sha256") or data.get("preprocessor_sha256") or ""
+        )
         test_eval = data.get("test_evaluation") or data.get("evaluation_metrics") or {}
         recall = float(test_eval.get("recall", 0.0) or 0.0)
         fpr = float(test_eval.get("fpr", test_eval.get("false_positive_rate", 0.0)) or 0.0)
@@ -158,7 +160,9 @@ def load_v2_benchmark_registry(
                 dataset_name=str(data.get("dataset_name") or DATASET_SUITE_NAME),
                 dataset_version="2.0.0",
                 dataset_sha256=data.get("dataset_sha256"),
-                evaluation_protocol=str(data.get("split_protocol_version") or SPLIT_PROTOCOL_VERSION),
+                evaluation_protocol=str(
+                    data.get("split_protocol_version") or SPLIT_PROTOCOL_VERSION
+                ),
                 split_identity="scenario-disjoint-test-split",
                 recall=recall,
                 fpr=fpr,

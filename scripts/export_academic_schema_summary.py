@@ -20,6 +20,8 @@ if str(LOCAL_SOURCE) not in sys.path:
 
 from network_anomaly.data.v2_schema import (  # noqa: E402
     ALL_CANONICAL_COLUMNS as ALL_COLUMNS,
+)
+from network_anomaly.data.v2_schema import (  # noqa: E402
     CATEGORICAL_CODED_COLUMNS,
     IDENTIFIER_COLUMNS,
     ML_FEATURE_COLUMNS,
@@ -34,9 +36,7 @@ DEFAULT_EDA_SUMMARY = PROJECT_ROOT / "reports" / "datasets" / "v2_multi_source_p
 DEFAULT_PREP_MANIFEST = (
     PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 )
-DEFAULT_PREP_ARTIFACT = (
-    PROJECT_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
-)
+DEFAULT_PREP_ARTIFACT = PROJECT_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
 
 
 def _column_role(col: str) -> str:

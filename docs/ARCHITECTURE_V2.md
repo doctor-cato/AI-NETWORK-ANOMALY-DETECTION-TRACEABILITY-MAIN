@@ -46,7 +46,7 @@ flowchart TB
         end
     end
 
-    subgraph Telemetry ["Live Network & Log Telemetry (Rust / Crate)"]
+    subgraph Telemetry ["Live Network & Log Telemetry (Python UDP / Collector)"]
         NetFlow_Col["NetFlow v9 / IPFIX UDP Collector"]
         PCAP_Reader["PCAP Reader & Flow Aggregator"]
         Log_Tail["Zeek / Suricata / Auth Log Tailer"]
@@ -212,7 +212,7 @@ Thông tin quản lý vòng đời khóa mã hóa AES-256-GCM:
 | **B (AI & Behavioral)** | 4 Models, Tuning, Behavioral Vector | `src/network_anomaly/models/`, `src/network_anomaly/preprocessing/`, `src/network_anomaly/behavioral/` | Tuân thủ Contract 2 & 3; không chỉnh sửa `train_only` transformer ngoài preprocessor. |
 | **C (Risk & Trace)** | Risk Scoring, Trace Graph, Timeline | `src/network_anomaly/risk/`, `src/network_anomaly/trace/`, `src/network_anomaly/investigation/` | Tuân thủ Contract 4; phân định rõ ràng giữa bằng chứng quan sát và suy luận giả thuyết. |
 | **D (Crypto)** | AES-GCM, Rotation, Key Vault | `src/network_anomaly/crypto/` | Tuân thủ Contract 5; chỉ lưu ciphertext, nonce và tag; cấm log plaintext hoặc secret key. |
-| **E (Live Telemetry)** | Rust Collector, Streaming Pipeline | `telemetry/`, `src/network_anomaly/streaming/` | Có buffer chặn và backpressure; từ chối gói tin dị dạng an toàn. |
+| **E (Live Telemetry)** | Python UDP Collector, Streaming Pipeline | `src/network_anomaly/telemetry/`, `src/network_anomaly/streaming/` | Có buffer chặn và backpressure; từ chối gói tin dị dạng an toàn (`#128` standalone Rust crate deferred post-v2.0.0). |
 | **F (Desktop & Release)** | UI Dashboards, Packaging, NSIS | `desktop/`, `.github/workflows/`, `scripts/build_*` | Đảm bảo hoạt động ngoại tuyến (offline attestation) trên Windows x64. |
 | **G (QA & Governance)** | E2E, Research Validation, Docs | `docs/`, `reports/`, `tests/` | Kiểm chứng độc lập trước khi đánh dấu nghiệm thu. |
 

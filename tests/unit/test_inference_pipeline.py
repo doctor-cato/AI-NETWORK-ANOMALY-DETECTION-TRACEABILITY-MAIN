@@ -67,7 +67,7 @@ def synthetic_preprocessor_and_model(
     prep = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
         dataset_sha256="cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
-        split_manifest_sha256="1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
+        split_manifest_sha256="ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
     )
     prep.fit(synthetic_features)
 
@@ -246,9 +246,7 @@ def test_validate_inference_input_accepts_valid_missing_tokens(
 def test_load_real_v2_preprocessor():
     """Verify loading the real v2 preprocessor artifact if present."""
     art_path = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
-    man_path = (
-        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
-    )
+    man_path = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     if not art_path.is_file() or not man_path.is_file():
         pytest.skip("Real v2 preprocessor artifact is unavailable")
     manifest = json.loads(man_path.read_text(encoding="utf-8"))
@@ -259,7 +257,7 @@ def test_load_real_v2_preprocessor():
     prep, meta = load_verified_preprocessor(art_path, manifest_path=man_path)
     assert prep.is_fitted_ is True
     assert meta["feature_contract_version"] == FEATURE_CONTRACT_VERSION
-    assert meta["train_row_count"] == 1930219
+    assert meta["train_row_count"] == 2097891
 
 
 def test_load_verified_preprocessor_missing_artifact(tmp_path: Path):

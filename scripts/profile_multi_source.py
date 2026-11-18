@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
-import io
 import json
 import sys
 import zipfile
@@ -151,13 +150,34 @@ def profile_ait_nds_v2(ait_nds_dir: Path) -> Dict[str, Any]:
 
                         ts_col = "c_first_abs:3" if is_udp else "first:29"
                         num_cols = (
-                            ["c_first_abs:3", "c_durat:4", "s_durat:13", "c_bytes_all:5", "s_bytes_all:14", "c_pkts_all:6", "s_pkts_all:15", "c_port:2", "s_port:11"]
+                            [
+                                "c_first_abs:3",
+                                "c_durat:4",
+                                "s_durat:13",
+                                "c_bytes_all:5",
+                                "s_bytes_all:14",
+                                "c_pkts_all:6",
+                                "s_pkts_all:15",
+                                "c_port:2",
+                                "s_port:11",
+                            ]
                             if is_udp
-                            else ["first:29", "durat:31", "c_bytes_all:9", "s_bytes_all:23", "c_pkts_all:3", "s_pkts_all:17", "c_port:2", "s_port:16"]
+                            else [
+                                "first:29",
+                                "durat:31",
+                                "c_bytes_all:9",
+                                "s_bytes_all:23",
+                                "c_pkts_all:3",
+                                "s_pkts_all:17",
+                                "c_port:2",
+                                "s_port:16",
+                            ]
                         )
                         for nc in num_cols:
                             vals = pd.to_numeric(chunk[nc], errors="coerce")
-                            bad = vals.isna() | ~np.isfinite(vals.to_numpy(dtype=np.float64, na_value=np.nan))
+                            bad = vals.isna() | ~np.isfinite(
+                                vals.to_numpy(dtype=np.float64, na_value=np.nan)
+                            )
                             invalid_numeric += int(bad.sum())
                             if nc not in {ts_col, "c_port:2", "s_port:11", "s_port:16"}:
                                 negative_base += int((vals < 0).sum())
@@ -209,12 +229,16 @@ def profile_ait_nds_v2(ait_nds_dir: Path) -> Dict[str, Any]:
             "role_cli_top": dict(sc_roles.most_common(5)),
             "time_range_epoch_ms": [sc_min_ts, sc_max_ts],
             "time_range_utc": [
-                datetime.fromtimestamp(sc_min_ts / 1000.0, tz=timezone.utc).isoformat()
-                if sc_min_ts
-                else None,
-                datetime.fromtimestamp(sc_max_ts / 1000.0, tz=timezone.utc).isoformat()
-                if sc_max_ts
-                else None,
+                (
+                    datetime.fromtimestamp(sc_min_ts / 1000.0, tz=timezone.utc).isoformat()
+                    if sc_min_ts
+                    else None
+                ),
+                (
+                    datetime.fromtimestamp(sc_max_ts / 1000.0, tz=timezone.utc).isoformat()
+                    if sc_max_ts
+                    else None
+                ),
             ],
         }
 
@@ -225,7 +249,9 @@ def profile_ait_nds_v2(ait_nds_dir: Path) -> Dict[str, Any]:
         "license": "CC BY 4.0",
         "total_rows": total_rows,
         "header_variants_per_type": {k: len(v) for k, v in csv_type_headers.items()},
-        "header_column_counts": {k: len(next(iter(v))) if v else 0 for k, v in csv_type_headers.items()},
+        "header_column_counts": {
+            k: len(next(iter(v))) if v else 0 for k, v in csv_type_headers.items()
+        },
         "invalid_numeric_cells": invalid_numeric,
         "negative_base_values": negative_base,
         "exact_duplicate_scenario_5tuple_ts": dup_5tuples,
@@ -289,8 +315,12 @@ def profile_ctu_sme_11(ctu_dir: Path) -> Dict[str, Any]:
                 dev_entry["total_rows"] += 1
 
                 ts = float(row["ts"])
-                dev_entry["min_ts"] = ts if dev_entry["min_ts"] is None else min(dev_entry["min_ts"], ts)
-                dev_entry["max_ts"] = ts if dev_entry["max_ts"] is None else max(dev_entry["max_ts"], ts)
+                dev_entry["min_ts"] = (
+                    ts if dev_entry["min_ts"] is None else min(dev_entry["min_ts"], ts)
+                )
+                dev_entry["max_ts"] = (
+                    ts if dev_entry["max_ts"] is None else max(dev_entry["max_ts"], ts)
+                )
 
                 proto_counts[str(row.get("proto", ""))] += 1
                 if str(row.get("duration", "-")).strip() in {"-", ""}:
@@ -323,12 +353,16 @@ def profile_ctu_sme_11(ctu_dir: Path) -> Dict[str, Any]:
             "categories": dict(info["categories"]),
             "raw_labels": dict(info["raw_labels"]),
             "time_range_utc": [
-                datetime.fromtimestamp(info["min_ts"], tz=timezone.utc).isoformat()
-                if info["min_ts"]
-                else None,
-                datetime.fromtimestamp(info["max_ts"], tz=timezone.utc).isoformat()
-                if info["max_ts"]
-                else None,
+                (
+                    datetime.fromtimestamp(info["min_ts"], tz=timezone.utc).isoformat()
+                    if info["min_ts"]
+                    else None
+                ),
+                (
+                    datetime.fromtimestamp(info["max_ts"], tz=timezone.utc).isoformat()
+                    if info["max_ts"]
+                    else None
+                ),
             ],
         }
 
@@ -349,7 +383,9 @@ def profile_ctu_sme_11(ctu_dir: Path) -> Dict[str, Any]:
     }
 
 
-def profile_ait_ads_and_lds(ads_dir: Path, lds_dir: Path, nds_profile: Dict[str, Any]) -> Dict[str, Any]:
+def profile_ait_ads_and_lds(
+    ads_dir: Path, lds_dir: Path, nds_profile: Dict[str, Any]
+) -> Dict[str, Any]:
     """Audit AIT-ADS alerts/labels and AIT-LDS-v2.1 logs for cross-source linkage feasibility."""
     ads_zip = ads_dir / "ait_ads.zip"
     labels_csv = ads_dir / "labels.csv"
@@ -397,7 +433,9 @@ def profile_ait_ads_and_lds(ads_dir: Path, lds_dir: Path, nds_profile: Dict[str,
                 c_col = "#c_ip:1" if is_udp else "#15#c_ip:1"
                 s_col = "s_ip:10" if is_udp else "s_ip:15"
                 with zf.open(member) as fh:
-                    for chunk in pd.read_csv(fh, usecols=[c_col, s_col], chunksize=100_000, dtype=str):
+                    for chunk in pd.read_csv(
+                        fh, usecols=[c_col, s_col], chunksize=100_000, dtype=str
+                    ):
                         fox_nds_ips.update(chunk[c_col].dropna().astype(str).tolist())
                         fox_nds_ips.update(chunk[s_col].dropna().astype(str).tolist())
 
@@ -409,7 +447,9 @@ def profile_ait_ads_and_lds(ads_dir: Path, lds_dir: Path, nds_profile: Dict[str,
 
     overlap_ips = sorted(fox_wazuh_ips & fox_nds_ips)
     result["alert_file_counts"] = alert_counts
-    result["fox_lds_files_count"] = len(zipfile.ZipFile(fox_lds).namelist()) if fox_lds.is_file() else 0
+    result["fox_lds_files_count"] = (
+        len(zipfile.ZipFile(fox_lds).namelist()) if fox_lds.is_file() else 0
+    )
     result["russellmitchell_lds_files_count"] = (
         len(zipfile.ZipFile(rm_lds).namelist()) if rm_lds.is_file() else 0
     )
@@ -463,13 +503,16 @@ def write_markdown_reports(payload: Dict[str, Any]) -> None:
 3. `UGR'16` failed HTTP access check (`403 Forbidden`) and remains `BLOCKED` with zero synthetic replacement.
 """,
         encoding="utf-8",
+        newline="\n",
     )
 
     sc_rows = []
     for sc, info in sorted(ait.get("scenarios", {}).items()):
         cats = ", ".join(f"{k}={v:,}" for k, v in sorted(info["categories"].items()))
         t0, t1 = info["time_range_utc"]
-        sc_rows.append(f"| `{sc}` | {info['total_rows']:,} | {info['unmapped_rows']:,} | {t0} .. {t1} | {cats} |")
+        sc_rows.append(
+            f"| `{sc}` | {info['total_rows']:,} | {info['unmapped_rows']:,} | {t0} .. {t1} | {cats} |"
+        )
 
     AIT_PROFILE_MD.write_text(
         f"""# AIT NetFlow Data Set v2 — Empirical Profile
@@ -483,13 +526,14 @@ def write_markdown_reports(payload: Dict[str, Any]) -> None:
 |---|---:|---:|---|---|
 """
         + "\n".join(sc_rows)
-        + f"""
+        + """
 
 ## Leakage-Risk Audit in Raw AIT-NDS-v2 Columns
 - `role_cli` / `role_serv` explicitly encode scenario actor roles such as `attacker_0`, `internal_server`, `monitoring`. **Strict rule:** excluded from `ML_FEATURE_COLUMNS` via `v2_schema.validate_feature_selection`.
 - `c_ttl_min:50` / `s_ttl_min:61` are absent from `udp_complete.csv` and `tcp_nocomplete.csv` and act as topology shortcuts -> excluded from `canonical-flow-v2-18`.
 """,
         encoding="utf-8",
+        newline="\n",
     )
 
     fle = link.get("fox_linkage_evidence", {})
@@ -508,6 +552,7 @@ def write_markdown_reports(payload: Dict[str, Any]) -> None:
 - **Engineering Policy:** Trace Engine and Behavioral Vector correlate flow, log, and alert events ONLY via `(scenario, normalized_ip_entity, utc_epoch_window)` and emit explicit cross-source caveats; never fabricate a synthetic foreign key.
 """,
         encoding="utf-8",
+        newline="\n",
     )
 
     ctu_rows = []
@@ -531,11 +576,12 @@ def write_markdown_reports(payload: Dict[str, Any]) -> None:
         + "\n".join(ctu_rows)
         + """
 
-## Observed Probe Domain Shift vs. AIT-NDS-v2
-- **Byte Accounting:** AIT-NDS-v2 Tstat reports TCP payload bytes (`c_bytes_all`), whereas CTU-SME-11 Zeek reports IP packet bytes (`orig_ip_bytes` / `resp_ip_bytes`, IP+TCP/UDP header overhead included).
+## Cross-Source Byte Semantics Alignment vs. AIT-NDS-v2
+- **Byte Accounting (`DATA-A03` remediated):** Both AIT-NDS-v2 Tstat (`c_bytes_all`/`s_bytes_all`) and CTU-SME-11 canonicalizer (`orig_bytes`/`resp_bytes`, coercing `'-'`/`'(empty)'` to `0.0`) use L4 transport payload bytes. Raw Zeek `orig_ip_bytes`/`resp_ip_bytes` are audited separately and only used as fallback if L4 byte columns are absent.
 - **Unknown Labels:** `Experiment-VM-Microsoft-Windows7AD-1` contains 9,394 `Unknown` (`(empty)`) rows; preserved as `UNMAPPED` and excluded from labeled ML evaluation metrics.
 """,
         encoding="utf-8",
+        newline="\n",
     )
 
     QUALITY_GATES_MD.write_text(
@@ -552,19 +598,24 @@ def write_markdown_reports(payload: Dict[str, Any]) -> None:
 | Same-Scenario Exact (5-tuple + Timestamp) Duplicates | {ait.get("exact_duplicate_scenario_5tuple_ts", 0):,} | Audited in split | `RECORDED` |
 """,
         encoding="utf-8",
+        newline="\n",
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Profile v2 multi-source datasets")
-    parser.add_argument("--verify-only", action="store_true", help="Exit 0 SKIPPED if raw files are absent")
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Exit 0 SKIPPED if raw files are absent"
+    )
     args = parser.parse_args()
 
     ait_present = AIT_NDS_DIR.is_dir() and any(AIT_NDS_DIR.glob("*_netflows.zip"))
     ctu_present = CTU_EXTRACTED_DIR.is_dir() and any(CTU_EXTRACTED_DIR.rglob("conn.log.labeled"))
     if not ait_present and not ctu_present:
         if args.verify_only:
-            print("[profile_multi_source] SKIPPED — raw AIT/CTU datasets not downloaded on this host.")
+            print(
+                "[profile_multi_source] SKIPPED — raw AIT/CTU datasets not downloaded on this host."
+            )
             return
         print("ERROR: Neither AIT-NDS-v2 nor CTU-SME-11 raw files found.", file=sys.stderr)
         sys.exit(1)
@@ -583,10 +634,14 @@ def main() -> None:
         "ugr16": {"status": "BLOCKED", "reason": "HTTP 403 / Maintenance on nesg.ugr.es"},
     }
     REPORT_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_JSON_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    REPORT_JSON_PATH.write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
     write_markdown_reports(payload)
     print(f"Profile JSON written: {REPORT_JSON_PATH}")
-    print(f"AIT total rows: {ait_profile.get('total_rows', 0):,} | CTU total rows: {ctu_profile.get('total_rows', 0):,}")
+    print(
+        f"AIT total rows: {ait_profile.get('total_rows', 0):,} | CTU total rows: {ctu_profile.get('total_rows', 0):,}"
+    )
 
 
 if __name__ == "__main__":

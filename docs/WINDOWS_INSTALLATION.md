@@ -1,6 +1,6 @@
 # Hướng dẫn Cài đặt & Sử dụng trên Windows — NetFlow Sentinel v2
 
-> **Lưu ý phiên bản Desktop Runtime:** Nhị phân shell Desktop giữ SemVer `1.0.0` (`v1.0.0` theo cấu hình `check_desktop_version.py`) trong quá trình migration nền tảng sang **NetFlow Sentinel v2** (`canonical-flow-v2-18`, `AIT-NDS-v2` + `CTU-SME-11`, CC BY 4.0) trên nhánh `feat/v2-integration`. Các tài liệu cài đặt cũ cho `NF-UNSW-NB15-v3` đã ngừng sử dụng và lưu trữ tại [`docs/historical/nf_unsw_nb15_v3/`](historical/nf_unsw_nb15_v3/).
+> **Lưu ý phiên bản Desktop Runtime:** Nhị phân shell Desktop sử dụng SemVer `2.0.0` (`v2.0.0` theo cấu hình `check_desktop_version.py`) cho **NetFlow Sentinel v2** (`canonical-flow-v2-18`, `AIT-NDS-v2` + `CTU-SME-11` theo giấy phép `CC BY 4.0`, `AIT-LDS-v2.1` theo `CC BY-NC-SA 4.0`) trên nhánh `feat/v2-integration`. Các tài liệu cài đặt cũ cho `NF-UNSW-NB15-v3` đã ngừng sử dụng và lưu trữ tại [`docs/historical/nf_unsw_nb15_v3/`](historical/nf_unsw_nb15_v3/).
 
 ---
 
@@ -38,7 +38,7 @@
    .venv\Scripts\python.exe -m pip install -r requirements-runtime.txt
    .venv\Scripts\python.exe -m pip install -e ".[dev,packaging]"
 
-   # Tải dữ liệu v2 (AIT-NDS-v2, AIT-LDS-v2.1, AIT-ADS, CTU-SME-11 — CC BY 4.0)
+   # Tải dữ liệu v2 (AIT-NDS-v2, AIT-ADS, CTU-SME-11 — CC BY 4.0; AIT-LDS-v2.1 — CC BY-NC-SA 4.0)
    .venv\Scripts\python.exe scripts/fetch_multi_source_dataset.py
    .venv\Scripts\python.exe scripts/build_v2_dataset_and_split.py
    .venv\Scripts\python.exe scripts/train_random_forest.py

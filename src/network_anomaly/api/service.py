@@ -167,10 +167,7 @@ class ApiService:
             prep_path if prep_path.is_file() else artifacts_dir / "preprocessor.joblib"
         )
         prep_manifest = (
-            PROJECT_ROOT
-            / "reports"
-            / "preprocessing"
-            / "v2_flow_preprocessing_manifest.json"
+            PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
         )
         if not preprocessor_path.is_file():
             return False, "preprocessor artifact not found"
@@ -371,10 +368,7 @@ class ApiService:
             prep_path if prep_path.is_file() else artifacts_dir / "preprocessor.joblib"
         )
         prep_manifest = (
-            PROJECT_ROOT
-            / "reports"
-            / "preprocessing"
-            / "v2_flow_preprocessing_manifest.json"
+            PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
         )
 
         return (

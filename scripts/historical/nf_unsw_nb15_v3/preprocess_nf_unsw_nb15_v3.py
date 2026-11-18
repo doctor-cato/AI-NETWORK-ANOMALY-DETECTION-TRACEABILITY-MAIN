@@ -29,10 +29,10 @@ if str(LOCAL_SOURCE) not in sys.path:
     sys.path.insert(0, str(LOCAL_SOURCE))
 
 import numpy as np  # noqa: E402
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
     ML_FEATURE_COLUMNS,
 )
+
 from network_anomaly.preprocessing.pipeline import (  # noqa: E402
     EXPECTED_DATASET_SHA256,
     _sha256_file,

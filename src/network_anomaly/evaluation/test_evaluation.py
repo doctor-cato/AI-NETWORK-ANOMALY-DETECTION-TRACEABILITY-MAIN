@@ -6,12 +6,10 @@ import csv
 import gzip
 import hashlib
 import json
-import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-import pandas as pd
 from sklearn.metrics import average_precision_score, confusion_matrix, f1_score, roc_auc_score
 
 from network_anomaly.data.v2_schema import FEATURE_CONTRACT_ID, ML_FEATURE_COLUMNS
@@ -103,7 +101,9 @@ def verify_index_disjointness(
     for a, b in (("train", "validation"), ("train", "test"), ("validation", "test")):
         overlap = sets[a] & sets[b]
         if overlap:
-            errors.append(f"Partition leakage: {len(overlap)} overlapping rows between {a} and {b}.")
+            errors.append(
+                f"Partition leakage: {len(overlap)} overlapping rows between {a} and {b}."
+            )
 
     return len(errors) == 0, errors
 

@@ -12,7 +12,7 @@ Reads real downloaded datasets:
       Device 1:   ctu_echo.csv.gz       (Amazon Echo IoT)
       Device 2:   ctu_windows7ad.csv.gz (Windows 7 AD VM; Unknown rows -> ctu_windows7ad_unmapped.csv.gz)
 
-Fits `TrainOnlyPreprocessor(PreprocessingConfig(scaler_type="robust"))` STRICTLY on AIT Train
+Fits `TrainOnlyPreprocessor(PreprocessingConfig(scaler_type="asinh_robust"))` STRICTLY on AIT Train
 and saves:
   - data/processed/v2/{ait_train,ait_val,ait_test,ait_unmapped_audit,ctu_echo,ctu_windows7ad}.csv.gz
   - data/processed/v2/splits/{train,validation,test}_indices.csv.gz
@@ -30,7 +30,6 @@ import hashlib
 import json
 import sys
 import zipfile
-from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -72,7 +71,9 @@ SPLITS_DIR = OUT_V2_DIR / "splits"
 SPLIT_MANIFEST_ROOT = PROJECT_ROOT / "data" / "V2_SPLIT_MANIFEST.json"
 SPLIT_MANIFEST_REPORTS = PROJECT_ROOT / "reports" / "splits" / "v2_split_manifest.json"
 PREPROC_ARTIFACT = PROJECT_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
-PREPROC_MANIFEST = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
+PREPROC_MANIFEST = (
+    PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
+)
 LEAKAGE_DOC = PROJECT_ROOT / "docs" / "dataset" / "V2_LEAKAGE_AUDIT.md"
 
 TRAIN_SCENARIOS = ("fox", "harrison", "santos", "wardbeck", "wilson")
@@ -122,7 +123,9 @@ def _derive_features_vectorized(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _classify_series(raw_labels: pd.Series, detailed_labels: pd.Series | None = None) -> Tuple[pd.Series, pd.Series, pd.Series]:
+def _classify_series(
+    raw_labels: pd.Series, detailed_labels: pd.Series | None = None
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
     cache: Dict[Tuple[str, str], Tuple[Any, str, str]] = {}
     bins: List[Any] = []
     cats: List[str] = []
@@ -150,6 +153,7 @@ def _canonicalize_ait_scenario(zp: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
     labeled_frames: List[pd.DataFrame] = []
     unmapped_frames: List[pd.DataFrame] = []
     row_seq = 0
+    raw_rows_read = 0
 
     with zipfile.ZipFile(zp) as zf:
         for member in sorted(zf.namelist()):
@@ -191,20 +195,34 @@ def _canonicalize_ait_scenario(zp: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 for chunk in pd.read_csv(
                     stream, usecols=usecols, chunksize=250_000, keep_default_na=False
                 ):
+                    chunk = chunk.reset_index(drop=True)
                     n = len(chunk)
                     if n == 0:
                         continue
+                    raw_rows_read += n
                     base = pd.DataFrame()
                     if is_udp:
                         base["timestamp_ms"] = pd.to_numeric(chunk["c_first_abs:3"], errors="raise")
                         base["source_ip"] = chunk["#c_ip:1"].astype(str)
-                        base["source_port"] = pd.to_numeric(chunk["c_port:2"], errors="raise").astype(np.int64)
+                        base["source_port"] = pd.to_numeric(
+                            chunk["c_port:2"], errors="raise"
+                        ).astype(np.int64)
                         base["dest_ip"] = chunk["s_ip:10"].astype(str)
-                        base["dest_port"] = pd.to_numeric(chunk["s_port:11"], errors="raise").astype(np.int64)
+                        base["dest_port"] = pd.to_numeric(
+                            chunk["s_port:11"], errors="raise"
+                        ).astype(np.int64)
                         base["protocol_num"] = 17
-                        base["duration_ms"] = np.maximum(
-                            pd.to_numeric(chunk["c_durat:4"], errors="raise").to_numpy(dtype=np.float64),
-                            pd.to_numeric(chunk["s_durat:13"], errors="raise").to_numpy(dtype=np.float64),
+                        # Tstat udp_complete stores c_durat:4 and s_durat:13 in seconds; convert to ms.
+                        base["duration_ms"] = (
+                            np.maximum(
+                                pd.to_numeric(chunk["c_durat:4"], errors="raise").to_numpy(
+                                    dtype=np.float64
+                                ),
+                                pd.to_numeric(chunk["s_durat:13"], errors="raise").to_numpy(
+                                    dtype=np.float64
+                                ),
+                            )
+                            * 1000.0
                         )
                         base["bytes_in"] = pd.to_numeric(chunk["c_bytes_all:5"], errors="raise")
                         base["bytes_out"] = pd.to_numeric(chunk["s_bytes_all:14"], errors="raise")
@@ -214,9 +232,13 @@ def _canonicalize_ait_scenario(zp: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
                     else:
                         base["timestamp_ms"] = pd.to_numeric(chunk["first:29"], errors="raise")
                         base["source_ip"] = chunk["#15#c_ip:1"].astype(str)
-                        base["source_port"] = pd.to_numeric(chunk["c_port:2"], errors="raise").astype(np.int64)
+                        base["source_port"] = pd.to_numeric(
+                            chunk["c_port:2"], errors="raise"
+                        ).astype(np.int64)
                         base["dest_ip"] = chunk["s_ip:15"].astype(str)
-                        base["dest_port"] = pd.to_numeric(chunk["s_port:16"], errors="raise").astype(np.int64)
+                        base["dest_port"] = pd.to_numeric(
+                            chunk["s_port:16"], errors="raise"
+                        ).astype(np.int64)
                         base["protocol_num"] = 6
                         base["duration_ms"] = pd.to_numeric(chunk["durat:31"], errors="raise")
                         base["bytes_in"] = pd.to_numeric(chunk["c_bytes_all:9"], errors="raise")
@@ -235,19 +257,32 @@ def _canonicalize_ait_scenario(zp: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
                     feat_df = _derive_features_vectorized(base)
                     lb, cat, lst = _classify_series(feat_df["raw_label"])
-                    feat_df["label_binary"] = lb
-                    feat_df["attack_category"] = cat
-                    feat_df["label_status"] = lst
+                    feat_df["label_binary"] = lb.to_numpy()
+                    feat_df["attack_category"] = cat.to_numpy()
+                    feat_df["label_status"] = lst.to_numpy()
                     feat_df = feat_df[EXPORT_COLUMNS]
 
-                    unm_mask = feat_df["label_status"] == "UNMAPPED"
-                    if unm_mask.any():
-                        unmapped_frames.append(feat_df[unm_mask].copy())
-                    if (~unm_mask).any():
-                        labeled_frames.append(feat_df[~unm_mask].copy())
+                    unm_mask = (feat_df["label_status"] == "UNMAPPED").fillna(False).to_numpy()
+                    if np.any(unm_mask):
+                        unmapped_frames.append(feat_df.iloc[unm_mask].copy())
+                    if np.any(~unm_mask):
+                        labeled_frames.append(feat_df.iloc[~unm_mask].copy())
 
-    df_labeled = pd.concat(labeled_frames, ignore_index=True) if labeled_frames else pd.DataFrame(columns=EXPORT_COLUMNS)
-    df_unmapped = pd.concat(unmapped_frames, ignore_index=True) if unmapped_frames else pd.DataFrame(columns=EXPORT_COLUMNS)
+    df_labeled = (
+        pd.concat(labeled_frames, ignore_index=True)
+        if labeled_frames
+        else pd.DataFrame(columns=EXPORT_COLUMNS)
+    )
+    df_unmapped = (
+        pd.concat(unmapped_frames, ignore_index=True)
+        if unmapped_frames
+        else pd.DataFrame(columns=EXPORT_COLUMNS)
+    )
+    if len(df_labeled) + len(df_unmapped) != raw_rows_read:
+        raise RuntimeError(
+            f"Row accounting mismatch in {scenario}: read {raw_rows_read}, "
+            f"exported labeled={len(df_labeled)} + unmapped={len(df_unmapped)}"
+        )
     return df_labeled, df_unmapped
 
 
@@ -276,6 +311,10 @@ def _canonicalize_ctu_device(ctu_dir: Path, device_name: str) -> Tuple[pd.DataFr
             continue
 
         dur_s = df_raw["duration"].replace({"-": "0", "": "0", "(empty)": "0"})
+        b_in_col = "orig_bytes" if "orig_bytes" in df_raw.columns else "orig_ip_bytes"
+        b_out_col = "resp_bytes" if "resp_bytes" in df_raw.columns else "resp_ip_bytes"
+        b_in_raw = df_raw[b_in_col].replace({"-": "0", "": "0", "(empty)": "0"})
+        b_out_raw = df_raw[b_out_col].replace({"-": "0", "": "0", "(empty)": "0"})
         base = pd.DataFrame()
         base["timestamp_ms"] = pd.to_numeric(df_raw["ts"], errors="raise") * 1000.0
         base["source_ip"] = df_raw["id.orig_h"].astype(str)
@@ -284,8 +323,8 @@ def _canonicalize_ctu_device(ctu_dir: Path, device_name: str) -> Tuple[pd.DataFr
         base["dest_port"] = pd.to_numeric(df_raw["id.resp_p"], errors="raise").astype(np.int64)
         base["protocol_num"] = df_raw["proto"].str.lower().map(proto_map).fillna(0).astype(np.int64)
         base["duration_ms"] = pd.to_numeric(dur_s, errors="raise") * 1000.0
-        base["bytes_in"] = pd.to_numeric(df_raw["orig_ip_bytes"], errors="raise")
-        base["bytes_out"] = pd.to_numeric(df_raw["resp_ip_bytes"], errors="raise")
+        base["bytes_in"] = pd.to_numeric(b_in_raw, errors="raise")
+        base["bytes_out"] = pd.to_numeric(b_out_raw, errors="raise")
         base["pkts_in"] = pd.to_numeric(df_raw["orig_pkts"], errors="raise")
         base["pkts_out"] = pd.to_numeric(df_raw["resp_pkts"], errors="raise")
         base["source_dataset"] = "CTU-SME-11"
@@ -310,8 +349,16 @@ def _canonicalize_ctu_device(ctu_dir: Path, device_name: str) -> Tuple[pd.DataFr
         if (~unm_mask).any():
             rows_labeled.append(feat_df[~unm_mask].copy())
 
-    df_lab = pd.concat(rows_labeled, ignore_index=True) if rows_labeled else pd.DataFrame(columns=EXPORT_COLUMNS)
-    df_unm = pd.concat(rows_unmapped, ignore_index=True) if rows_unmapped else pd.DataFrame(columns=EXPORT_COLUMNS)
+    df_lab = (
+        pd.concat(rows_labeled, ignore_index=True)
+        if rows_labeled
+        else pd.DataFrame(columns=EXPORT_COLUMNS)
+    )
+    df_unm = (
+        pd.concat(rows_unmapped, ignore_index=True)
+        if rows_unmapped
+        else pd.DataFrame(columns=EXPORT_COLUMNS)
+    )
     return df_lab, df_unm
 
 
@@ -320,7 +367,15 @@ def _hash_feature_vectors(df: pd.DataFrame) -> set[int]:
 
 
 def _hash_5tuple_time(df: pd.DataFrame) -> set[int]:
-    cols = ["scenario_or_device", "source_ip", "source_port", "dest_ip", "dest_port", "protocol_num", "timestamp_ms"]
+    cols = [
+        "scenario_or_device",
+        "source_ip",
+        "source_port",
+        "dest_ip",
+        "dest_port",
+        "protocol_num",
+        "timestamp_ms",
+    ]
     return set(pd.util.hash_pandas_object(df[cols], index=False).tolist())
 
 
@@ -334,8 +389,12 @@ def _write_indices_gz(indices: np.ndarray, out_path: Path) -> Tuple[str, int]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build canonical v2 datasets, splits, and preprocessor")
-    parser.add_argument("--verify-only", action="store_true", help="Skip gracefully if raw data missing")
+    parser = argparse.ArgumentParser(
+        description="Build canonical v2 datasets, splits, and preprocessor"
+    )
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Skip gracefully if raw data missing"
+    )
     args = parser.parse_args()
 
     if not AIT_NDS_DIR.is_dir() or not any(AIT_NDS_DIR.glob("*_netflows.zip")):
@@ -370,22 +429,32 @@ def main() -> None:
     df_train = pd.concat(train_parts, ignore_index=True)
     df_val = pd.concat(val_parts, ignore_index=True)
     df_test = pd.concat(test_parts, ignore_index=True)
-    df_unmapped = pd.concat(unm_parts, ignore_index=True) if unm_parts else pd.DataFrame(columns=EXPORT_COLUMNS)
+    df_unmapped = (
+        pd.concat(unm_parts, ignore_index=True)
+        if unm_parts
+        else pd.DataFrame(columns=EXPORT_COLUMNS)
+    )
 
     # Sort each partition chronologically for deterministic index ordering
-    df_train = df_train.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(drop=True)
-    df_val = df_val.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(drop=True)
-    df_test = df_test.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(drop=True)
+    df_train = df_train.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(
+        drop=True
+    )
+    df_val = df_val.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(
+        drop=True
+    )
+    df_test = df_test.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(
+        drop=True
+    )
 
     print("[2/5] Exporting processed AIT CSV.gz partitions...", flush=True)
     p_train = OUT_V2_DIR / "ait_train.csv.gz"
     p_val = OUT_V2_DIR / "ait_val.csv.gz"
     p_test = OUT_V2_DIR / "ait_test.csv.gz"
     p_unm = OUT_V2_DIR / "ait_unmapped_audit.csv.gz"
-    df_train.to_csv(p_train, index=False, compression="gzip")
-    df_val.to_csv(p_val, index=False, compression="gzip")
-    df_test.to_csv(p_test, index=False, compression="gzip")
-    df_unmapped.to_csv(p_unm, index=False, compression="gzip")
+    df_train.to_csv(p_train, index=False, compression="gzip", lineterminator="\n")
+    df_val.to_csv(p_val, index=False, compression="gzip", lineterminator="\n")
+    df_test.to_csv(p_test, index=False, compression="gzip", lineterminator="\n")
+    df_unmapped.to_csv(p_unm, index=False, compression="gzip", lineterminator="\n")
 
     print("[3/5] Canonicalizing CTU-SME-11 real-captured devices...", flush=True)
     ctu_summary: Dict[str, Any] = {}
@@ -394,11 +463,13 @@ def main() -> None:
         ("Experiment-VM-Microsoft-Windows7AD-1", "ctu_windows7ad"),
     ):
         df_c_lab, df_c_unm = _canonicalize_ctu_device(CTU_EXTRACTED_DIR, dev)
-        df_c_lab = df_c_lab.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(drop=True)
+        df_c_lab = df_c_lab.sort_values(["timestamp_ms", "flow_id"], kind="mergesort").reset_index(
+            drop=True
+        )
         out_c = OUT_V2_DIR / f"{slug}.csv.gz"
-        df_c_lab.to_csv(out_c, index=False, compression="gzip")
+        df_c_lab.to_csv(out_c, index=False, compression="gzip", lineterminator="\n")
         out_cu = OUT_V2_DIR / f"{slug}_unmapped.csv.gz"
-        df_c_unm.to_csv(out_cu, index=False, compression="gzip")
+        df_c_unm.to_csv(out_cu, index=False, compression="gzip", lineterminator="\n")
         ctu_summary[slug] = {
             "device": dev,
             "labeled_rows": len(df_c_lab),
@@ -407,7 +478,10 @@ def main() -> None:
             "benign_rows": int((df_c_lab["label_binary"] == 0).sum()),
             "sha256": _sha256_file(out_c),
         }
-        print(f"  {dev}: labeled={len(df_c_lab):,} (attack={ctu_summary[slug]['attack_rows']:,}), unmapped={len(df_c_unm):,}", flush=True)
+        print(
+            f"  {dev}: labeled={len(df_c_lab):,} (attack={ctu_summary[slug]['attack_rows']:,}), unmapped={len(df_c_unm):,}",
+            flush=True,
+        )
 
     print("[4/5] Running leakage & duplicate audit and saving split manifest...", flush=True)
     n_tr, n_va, n_te = len(df_train), len(df_val), len(df_test)
@@ -419,8 +493,16 @@ def main() -> None:
     sha_idx_va, _ = _write_indices_gz(idx_va, SPLITS_DIR / "validation_indices.csv.gz")
     sha_idx_te, _ = _write_indices_gz(idx_te, SPLITS_DIR / "test_indices.csv.gz")
 
-    fp5_tr, fp5_va, fp5_te = _hash_5tuple_time(df_train), _hash_5tuple_time(df_val), _hash_5tuple_time(df_test)
-    feat_tr, feat_va, feat_te = _hash_feature_vectors(df_train), _hash_feature_vectors(df_val), _hash_feature_vectors(df_test)
+    fp5_tr, fp5_va, fp5_te = (
+        _hash_5tuple_time(df_train),
+        _hash_5tuple_time(df_val),
+        _hash_5tuple_time(df_test),
+    )
+    feat_tr, feat_va, feat_te = (
+        _hash_feature_vectors(df_train),
+        _hash_feature_vectors(df_val),
+        _hash_feature_vectors(df_test),
+    )
 
     dup_within_train_feat = n_tr - len(feat_tr)
     shared_feat_tv = len(feat_tr & feat_va)
@@ -428,17 +510,23 @@ def main() -> None:
     shared_feat_vt = len(feat_va & feat_te)
 
     # Ledger SHA-256 computed over sorted raw AIT-NDS-v2 zip hashes
-    ledger_bytes = json.dumps(raw_zip_digests, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ledger_bytes = json.dumps(raw_zip_digests, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
     dataset_sha256 = hashlib.sha256(ledger_bytes).hexdigest().lower()
 
-    def _part_stats(df_p: pd.DataFrame, idx_file: str, idx_sha: str, csv_path: Path, scenarios: Tuple[str, ...]) -> Dict[str, Any]:
+    def _part_stats(
+        df_p: pd.DataFrame, idx_file: str, idx_sha: str, csv_path: Path, scenarios: Tuple[str, ...]
+    ) -> Dict[str, Any]:
         return {
             "scenarios": list(scenarios),
             "row_count": int(len(df_p)),
             "benign_count": int((df_p["label_binary"] == 0).sum()),
             "attack_count": int((df_p["label_binary"] == 1).sum()),
             "attack_rate": round(float((df_p["label_binary"] == 1).mean()), 6),
-            "categories": {str(k): int(v) for k, v in df_p["attack_category"].value_counts().items()},
+            "categories": {
+                str(k): int(v) for k, v in df_p["attack_category"].value_counts().items()
+            },
             "index_file": idx_file,
             "index_sha256": idx_sha,
             "processed_csv_sha256": _sha256_file(csv_path),
@@ -458,8 +546,12 @@ def main() -> None:
         "total_labeled_rows": int(n_tr + n_va + n_te),
         "excluded_unmapped_rows": int(len(df_unmapped)),
         "partitions": {
-            "train": _part_stats(df_train, "train_indices.csv.gz", sha_idx_tr, p_train, TRAIN_SCENARIOS),
-            "validation": _part_stats(df_val, "validation_indices.csv.gz", sha_idx_va, p_val, VAL_SCENARIOS),
+            "train": _part_stats(
+                df_train, "train_indices.csv.gz", sha_idx_tr, p_train, TRAIN_SCENARIOS
+            ),
+            "validation": _part_stats(
+                df_val, "validation_indices.csv.gz", sha_idx_va, p_val, VAL_SCENARIOS
+            ),
             "test": _part_stats(df_test, "test_indices.csv.gz", sha_idx_te, p_test, TEST_SCENARIOS),
         },
         "ctu_sme_11_external": ctu_summary,
@@ -467,9 +559,15 @@ def main() -> None:
             "scenario_overlap_count": len(set(TRAIN_SCENARIOS) & set(VAL_SCENARIOS))
             + len(set(TRAIN_SCENARIOS) & set(TEST_SCENARIOS))
             + len(set(VAL_SCENARIOS) & set(TEST_SCENARIOS)),
-            "scenario_5tuple_ts_overlap_count": len(fp5_tr & fp5_va) + len(fp5_tr & fp5_te) + len(fp5_va & fp5_te),
+            "scenario_5tuple_ts_overlap_count": len(fp5_tr & fp5_va)
+            + len(fp5_tr & fp5_te)
+            + len(fp5_va & fp5_te),
             "within_train_exact_feature_duplicates": int(dup_within_train_feat),
-            "unique_feature_vectors": {"train": len(feat_tr), "val": len(feat_va), "test": len(feat_te)},
+            "unique_feature_vectors": {
+                "train": len(feat_tr),
+                "val": len(feat_va),
+                "test": len(feat_te),
+            },
             "cross_partition_unique_shared_feature_vectors": {
                 "train_val": int(shared_feat_tv),
                 "train_test": int(shared_feat_tt),
@@ -482,8 +580,8 @@ def main() -> None:
     SPLIT_MANIFEST_ROOT.parent.mkdir(parents=True, exist_ok=True)
     SPLIT_MANIFEST_REPORTS.parent.mkdir(parents=True, exist_ok=True)
     manifest_text = json.dumps(split_manifest, indent=2) + "\n"
-    SPLIT_MANIFEST_ROOT.write_text(manifest_text, encoding="utf-8")
-    SPLIT_MANIFEST_REPORTS.write_text(manifest_text, encoding="utf-8")
+    SPLIT_MANIFEST_ROOT.write_text(manifest_text, encoding="utf-8", newline="\n")
+    SPLIT_MANIFEST_REPORTS.write_text(manifest_text, encoding="utf-8", newline="\n")
 
     sm_verify = verify_split_artifacts(SPLIT_MANIFEST_REPORTS, indices_dir=SPLITS_DIR)
     if sm_verify["status"] != "PASS":
@@ -515,7 +613,7 @@ def main() -> None:
 
 **Split Protocol:** `{SPLIT_PROTOCOL_VERSION}` (scenario-disjoint across independent AIT-NDS-v2 testbeds)
 **Split Manifest SHA-256:** `{split_manifest_sha256}`
-**Preprocessor Manifest:** `reports/preprocessing/v2_flow_preprocessing_manifest.json` (`RobustScaler`, fit strictly on Train)
+**Preprocessor Manifest:** `reports/preprocessing/v2_flow_preprocessing_manifest.json` (`asinh_robust`, fit strictly on Train)
 
 ## Partition Summary (AIT-NDS-v2)
 | Partition | Scenarios | Rows | Benign | Attack | Attack Rate |
@@ -537,8 +635,11 @@ def main() -> None:
 - Preprocessor fit boundary: **strictly AIT Train**; Validation/Test/CTU receive immutable `transform()` only (`verify_preprocessing_artifact == PASS`).
 """,
         encoding="utf-8",
+        newline="\n",
     )
-    print(f"DONE! Split manifest & verified preprocessor ready. Split SHA256={split_manifest_sha256[:16]}...")
+    print(
+        f"DONE! Split manifest & verified preprocessor ready. Split SHA256={split_manifest_sha256[:16]}..."
+    )
 
 
 if __name__ == "__main__":

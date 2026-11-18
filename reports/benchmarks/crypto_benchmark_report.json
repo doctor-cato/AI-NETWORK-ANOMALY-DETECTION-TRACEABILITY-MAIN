@@ -1,6 +1,6 @@
 {
   "benchmark_id": "BM-CRYPTO-OVERHEAD-RQ6",
-  "timestamp": "2026-11-17T19:02:37.925762+00:00",
+  "timestamp": "2026-11-17T23:04:56.436285+00:00",
   "warmup_iterations": 200,
   "measured_iterations_per_size": 2000,
   "hypothesis": "H6: AES-256-GCM adds <= 500 us P95 latency per vector event and >= 5,000 ops/sec",
@@ -23,82 +23,82 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T19:02:37.580260+00:00"
+    "captured_at_utc": "2026-11-17T23:04:56.200448+00:00"
   },
   "payload_benchmarks": {
     "256": {
       "actual_payload_bytes": 256,
       "plaintext_json_roundtrip": {
-        "median_us": 10.2,
-        "mean_us": 20.542,
-        "p95_us": 26.1,
-        "p99_us": 116.1,
-        "throughput_ops_sec": 46839.5
+        "median_us": 6.1,
+        "mean_us": 6.935,
+        "p95_us": 6.6,
+        "p99_us": 52.4,
+        "throughput_ops_sec": 138416.0
       },
       "encryption": {
-        "median_us": 11.9,
-        "mean_us": 18.294,
-        "p95_us": 38.8,
-        "p99_us": 107.5,
-        "throughput_ops_sec": 43806.2,
+        "median_us": 9.2,
+        "mean_us": 10.153,
+        "p95_us": 13.3,
+        "p99_us": 33.2,
+        "throughput_ops_sec": 75851.2,
         "peak_traced_memory_mb": 1.458
       },
       "decryption": {
-        "median_us": 2.3,
-        "mean_us": 2.799,
-        "p95_us": 3.9,
-        "p99_us": 6.4,
-        "throughput_ops_sec": 322076.8
+        "median_us": 2.2,
+        "mean_us": 2.15,
+        "p95_us": 2.6,
+        "p99_us": 3.1,
+        "throughput_ops_sec": 429719.4
       }
     },
     "1024": {
       "actual_payload_bytes": 1024,
       "plaintext_json_roundtrip": {
-        "median_us": 8.5,
-        "mean_us": 10.996,
-        "p95_us": 17.3,
-        "p99_us": 39.9,
-        "throughput_ops_sec": 87562.2
+        "median_us": 8.3,
+        "mean_us": 9.246,
+        "p95_us": 9.8,
+        "p99_us": 68.0,
+        "throughput_ops_sec": 104425.6
       },
       "encryption": {
-        "median_us": 11.5,
-        "mean_us": 15.142,
-        "p95_us": 28.0,
-        "p99_us": 59.6,
-        "throughput_ops_sec": 52903.8,
+        "median_us": 12.2,
+        "mean_us": 13.759,
+        "p95_us": 17.3,
+        "p99_us": 52.0,
+        "throughput_ops_sec": 59259.3,
         "peak_traced_memory_mb": 3.412
       },
       "decryption": {
-        "median_us": 3.8,
-        "mean_us": 4.278,
-        "p95_us": 6.2,
-        "p99_us": 8.1,
-        "throughput_ops_sec": 221736.9
+        "median_us": 4.0,
+        "mean_us": 4.292,
+        "p95_us": 5.9,
+        "p99_us": 6.5,
+        "throughput_ops_sec": 223005.2
       }
     },
     "4096": {
       "actual_payload_bytes": 4096,
       "plaintext_json_roundtrip": {
-        "median_us": 18.35,
-        "mean_us": 22.078,
-        "p95_us": 39.1,
-        "p99_us": 60.8,
-        "throughput_ops_sec": 44208.7
+        "median_us": 14.6,
+        "mean_us": 15.68,
+        "p95_us": 16.2,
+        "p99_us": 28.4,
+        "throughput_ops_sec": 62595.8
       },
       "encryption": {
-        "median_us": 27.4,
-        "mean_us": 32.252,
-        "p95_us": 54.3,
-        "p99_us": 115.9,
-        "throughput_ops_sec": 26661.0,
+        "median_us": 19.7,
+        "mean_us": 22.737,
+        "p95_us": 29.6,
+        "p99_us": 78.2,
+        "throughput_ops_sec": 38617.1,
         "peak_traced_memory_mb": 11.234
       },
       "decryption": {
-        "median_us": 15.0,
-        "mean_us": 16.524,
-        "p95_us": 24.8,
-        "p99_us": 38.7,
-        "throughput_ops_sec": 59154.1
+        "median_us": 8.3,
+        "mean_us": 10.319,
+        "p95_us": 15.8,
+        "p99_us": 16.5,
+        "throughput_ops_sec": 95269.4
       }
     }
   },

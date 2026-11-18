@@ -16,8 +16,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from network_anomaly.config import PROJECT_ROOT
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
+from network_anomaly.config import PROJECT_ROOT
 from network_anomaly.data.split import SPLIT_MANIFEST_SCHEMA_VERSION
 from network_anomaly.preprocessing import FEATURE_CONTRACT_VERSION
 from network_anomaly.preprocessing.pipeline import EXPECTED_DATASET_SHA256

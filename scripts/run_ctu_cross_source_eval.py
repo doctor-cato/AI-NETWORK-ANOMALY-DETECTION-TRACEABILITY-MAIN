@@ -41,21 +41,51 @@ from _v2_train_common import (  # noqa: E402
     calibrate_unsupervised_threshold_on_validation,
     evaluate_v2_partition,
 )
+
 from network_anomaly.config import (  # noqa: E402
+    AUTOENCODER_DEFAULTS,
     ISOLATION_FOREST_DEFAULTS,
     RANDOM_FOREST_DEFAULTS,
     RANDOM_SEED,
     XGBOOST_DEFAULTS,
 )
 from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS  # noqa: E402
-from network_anomaly.models.isolation_forest import anomaly_scores as if_anomaly_scores  # noqa: E402
+from network_anomaly.models.autoencoder import build_model as build_ae_model  # noqa: E402
+from network_anomaly.models.isolation_forest import (  # noqa: E402
+    anomaly_scores as if_anomaly_scores,
+)
 from network_anomaly.models.isolation_forest import build_model as build_if_model  # noqa: E402
 from network_anomaly.models.random_forest import build_model as build_rf_model  # noqa: E402
-from network_anomaly.preprocessing.pipeline import PreprocessingConfig, TrainOnlyPreprocessor  # noqa: E402
-
+from network_anomaly.preprocessing.pipeline import (  # noqa: E402
+    PreprocessingConfig,
+    TrainOnlyPreprocessor,
+)
 
 DEFAULT_JSON = PROJECT_ROOT / "reports" / "experiments" / "ml" / "ctu_cross_source_eval.json"
+CROSS_DATASET_JSON = (
+    PROJECT_ROOT / "reports" / "experiments" / "ml" / "cross_dataset_evaluation.json"
+)
 DEFAULT_MD = PROJECT_ROOT / "docs" / "experiments" / "CTU_CROSS_SOURCE_EVAL.md"
+
+
+def _flow_bucket_keys(df: pd.DataFrame) -> pd.Series:
+    """Build (5-tuple + 300s time bucket) key to deduplicate cross-capture overlaps."""
+    ts_bucket = (
+        pd.to_numeric(df["timestamp_ms"], errors="coerce").fillna(0).astype(np.int64)
+    ) // 300_000
+    return (
+        df["source_ip"].astype(str)
+        + "|"
+        + df["source_port"].astype(str)
+        + "|"
+        + df["dest_ip"].astype(str)
+        + "|"
+        + df["dest_port"].astype(str)
+        + "|"
+        + df["protocol_num"].astype(str)
+        + "|"
+        + ts_bucket.astype(str)
+    )
 
 
 def _load_split_df(path: Path) -> pd.DataFrame:
@@ -75,17 +105,31 @@ def _day_summary(df: pd.DataFrame) -> Dict[str, Dict[str, int]]:
     return out
 
 
-def _feature_shift_summary(df_ait: pd.DataFrame, df_echo: pd.DataFrame, df_win7: pd.DataFrame) -> Dict[str, Any]:
+def _feature_shift_summary(
+    df_ait: pd.DataFrame, df_echo: pd.DataFrame, df_win7: pd.DataFrame
+) -> Dict[str, Any]:
     cols = ["duration_ms", "bytes_in", "bytes_out", "pkts_in", "pkts_out"]
     summary: Dict[str, Any] = {}
     for col in cols:
         summary[col] = {
-            "ait_test_attack_median": round(float(df_ait.loc[df_ait["label_binary"] == 1, col].median()), 3),
-            "ait_test_benign_median": round(float(df_ait.loc[df_ait["label_binary"] == 0, col].median()), 3),
-            "ctu_echo_attack_median": round(float(df_echo.loc[df_echo["label_binary"] == 1, col].median()), 3),
-            "ctu_echo_benign_median": round(float(df_echo.loc[df_echo["label_binary"] == 0, col].median()), 3),
-            "ctu_win7ad_attack_median": round(float(df_win7.loc[df_win7["label_binary"] == 1, col].median()), 3),
-            "ctu_win7ad_benign_median": round(float(df_win7.loc[df_win7["label_binary"] == 0, col].median()), 3),
+            "ait_test_attack_median": round(
+                float(df_ait.loc[df_ait["label_binary"] == 1, col].median()), 3
+            ),
+            "ait_test_benign_median": round(
+                float(df_ait.loc[df_ait["label_binary"] == 0, col].median()), 3
+            ),
+            "ctu_echo_attack_median": round(
+                float(df_echo.loc[df_echo["label_binary"] == 1, col].median()), 3
+            ),
+            "ctu_echo_benign_median": round(
+                float(df_echo.loc[df_echo["label_binary"] == 0, col].median()), 3
+            ),
+            "ctu_win7ad_attack_median": round(
+                float(df_win7.loc[df_win7["label_binary"] == 1, col].median()), 3
+            ),
+            "ctu_win7ad_benign_median": round(
+                float(df_win7.loc[df_win7["label_binary"] == 0, col].median()), 3
+            ),
         }
     return summary
 
@@ -189,10 +233,43 @@ def _train_and_eval_models(
             for name, d in X_eval.items()
         },
     }
+
+    # 4. Autoencoder (Standardized Benign-only fit, Validation-calibrated threshold)
+    X_ae_arr = X_train_benign.to_numpy(dtype=np.float64)
+    feat_mean = np.mean(X_ae_arr, axis=0)
+    feat_scale = np.maximum(np.std(X_ae_arr, axis=0), 1.0)
+    X_ae_std = (X_ae_arr - feat_mean) / feat_scale
+    ae_est = build_ae_model(dict(AUTOENCODER_DEFAULTS))
+    t0 = time.perf_counter()
+    ae_est.fit(X_ae_std, X_ae_std)
+    ae_time = time.perf_counter() - t0
+    X_val_std = (X_val.to_numpy(dtype=np.float64) - feat_mean) / feat_scale
+    ae_val_scores = np.mean((X_val_std - ae_est.predict(X_val_std)) ** 2, axis=1)
+    ae_th, _, _ = calibrate_unsupervised_threshold_on_validation(
+        ae_val_scores, y_val, target_fpr=0.05
+    )
+    ae_splits: Dict[str, Any] = {}
+    for name, d in X_eval.items():
+        x_std = (d["X"].to_numpy(dtype=np.float64) - feat_mean) / feat_scale
+        s = np.mean((x_std - ae_est.predict(x_std)) ** 2, axis=1)
+        ae_splits[name] = evaluate_v2_partition(
+            y_true=d["y"],
+            scores=s,
+            threshold=ae_th,
+            attack_categories=d["categories"],
+        )
+    results["autoencoder"] = {
+        "train_seconds": round(ae_time, 3),
+        "fit_benign_rows": int(len(X_train_benign)),
+        "threshold": float(ae_th),
+        "splits": ae_splits,
+    }
     return results
 
 
-def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAULT_MD) -> Dict[str, Any]:
+def run_ctu_experiment(
+    output_json: Path = DEFAULT_JSON, output_md: Path = DEFAULT_MD
+) -> Dict[str, Any]:
     ok, missing = check_v2_prerequisites()
     echo_path = PROCESSED_V2_DIR / "ctu_echo.csv.gz"
     win7_path = PROCESSED_V2_DIR / "ctu_windows7ad.csv.gz"
@@ -203,17 +280,34 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         }
         output_json.parent.mkdir(parents=True, exist_ok=True)
-        output_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        output_json.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n")
         return payload
 
     feature_cols = list(ML_FEATURE_COLUMNS)
     df_ait_train = _load_split_df(PROCESSED_V2_DIR / "ait_train.csv.gz")
     df_ait_val = _load_split_df(PROCESSED_V2_DIR / "ait_val.csv.gz")
     df_ait_test = _load_split_df(PROCESSED_V2_DIR / "ait_test.csv.gz")
-    df_echo = _load_split_df(echo_path).sort_values("timestamp_ms", kind="mergesort").reset_index(drop=True)
-    df_win7 = _load_split_df(win7_path).sort_values("timestamp_ms", kind="mergesort").reset_index(drop=True)
+    df_echo = (
+        _load_split_df(echo_path)
+        .sort_values("timestamp_ms", kind="mergesort")
+        .reset_index(drop=True)
+    )
+    df_win7_raw = (
+        _load_split_df(win7_path)
+        .sort_values("timestamp_ms", kind="mergesort")
+        .reset_index(drop=True)
+    )
 
-    # Zero-shot reference read directly from verified v2 manifests
+    # Deduplicate (5-tuple, 300s bucket) overlaps between CTU-Echo and CTU-Windows7AD (DATA-A06)
+    echo_keys = _flow_bucket_keys(df_echo)
+    win7_keys = _flow_bucket_keys(df_win7_raw)
+    shared_keys = set(echo_keys) & set(win7_keys)
+    win7_keep_mask = ~win7_keys.isin(shared_keys)
+    df_win7 = df_win7_raw.loc[win7_keep_mask].reset_index(drop=True)
+    overlap_removed = int((~win7_keep_mask).sum())
+
+    # Exp A & Exp B reference read directly from verified v2 manifests
+    in_domain_ait: Dict[str, Any] = {}
     zero_shot: Dict[str, Any] = {}
     for key, m_name in (
         ("random_forest", "random_forest_manifest.json"),
@@ -223,22 +317,26 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
     ):
         man = json.loads((PROJECT_ROOT / "reports" / "models" / m_name).read_text(encoding="utf-8"))
         ev = man.get("evaluation") or man.get("evaluation_results") or {}
+        in_domain_ait[key] = {
+            "ait_val": ev.get("ait_val", {}),
+            "ait_test": ev.get("ait_test", {}),
+        }
         zero_shot[key] = {
             "ait_test": ev.get("ait_test", {}),
             "ctu_echo": ev.get("ctu_echo", {}),
             "ctu_windows7ad": ev.get("ctu_windows7ad", {}),
         }
 
-    # Device-disjoint adaptation:
-    # AIT-Train + early 75% of CTU-Echo -> Train; AIT-Val + remaining 25% CTU-Echo -> Val;
-    # Evaluate on held-out AIT-Test AND completely unseen CTU-Windows7AD device!
+    # Exp D: Device-disjoint adaptation (AIT-Train + early 75% CTU-Echo -> unseen Win7AD & AIT-Test)
     echo_cut = int(len(df_echo) * 0.75)
     df_echo_tr = df_echo.iloc[:echo_cut]
     df_echo_val = df_echo.iloc[echo_cut:]
 
     # Cap AIT-Train sample deterministically at 500k alongside full CTU-Echo train split to measure transfer cleanly
     rng = np.random.default_rng(RANDOM_SEED)
-    ait_idx = np.sort(rng.choice(len(df_ait_train), size=min(500_000, len(df_ait_train)), replace=False))
+    ait_idx = np.sort(
+        rng.choice(len(df_ait_train), size=min(500_000, len(df_ait_train)), replace=False)
+    )
     df_ait_sub = df_ait_train.iloc[ait_idx]
 
     df_adapt_tr = pd.concat([df_ait_sub, df_echo_tr], ignore_index=True)
@@ -263,6 +361,29 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
         },
     )
 
+    # Exp C: Reverse zero-shot transfer (Train/Val on CTU-SME-11 chronological 80/20 -> Test on AIT-Test)
+    df_ctu_all = (
+        pd.concat([df_echo, df_win7], ignore_index=True)
+        .sort_values("timestamp_ms", kind="mergesort")
+        .reset_index(drop=True)
+    )
+    rev_cut = int(len(df_ctu_all) * 0.80)
+    df_rev_tr = df_ctu_all.iloc[:rev_cut]
+    df_rev_val = df_ctu_all.iloc[rev_cut:]
+    reverse_zero_shot = _train_and_eval_models(
+        X_train_raw=df_rev_tr[feature_cols],
+        y_train=df_rev_tr["label_binary"].to_numpy(dtype=np.int64),
+        X_val_raw=df_rev_val[feature_cols],
+        y_val=df_rev_val["label_binary"].to_numpy(dtype=np.int64),
+        eval_sets={
+            "ait_test": {
+                "X_raw": df_ait_test[feature_cols],
+                "y": df_ait_test["label_binary"].to_numpy(dtype=np.int64),
+                "categories": df_ait_test["attack_category"].astype(str).tolist(),
+            },
+        },
+    )
+
     # Temporal split inside CTU-SME-11:
     # Chronological early capture days (2023-02-20..2023-02-24) -> Train (75%) / Val (25%),
     # Late days (2023-02-25..2023-02-26) -> Held-out Temporal Test!
@@ -271,7 +392,9 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
     early_win7 = df_win7[df_win7["utc_date"] <= "2023-02-24"].reset_index(drop=True)
     late_win7 = df_win7[df_win7["utc_date"] >= "2023-02-25"].reset_index(drop=True)
 
-    df_ctu_early = pd.concat([early_echo, early_win7], ignore_index=True).sort_values("timestamp_ms")
+    df_ctu_early = pd.concat([early_echo, early_win7], ignore_index=True).sort_values(
+        "timestamp_ms"
+    )
     tr_cut = int(len(df_ctu_early) * 0.80)
     df_ctu_tr = df_ctu_early.iloc[:tr_cut]
     df_ctu_val = df_ctu_early.iloc[tr_cut:]
@@ -302,31 +425,69 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
         "datasets": {
             "ctu_echo_by_day": _day_summary(df_echo),
             "ctu_windows7ad_by_day": _day_summary(df_win7),
+            "overlap_dedup": {
+                "dedup_key": "(source_ip, source_port, dest_ip, dest_port, protocol_num, int(timestamp_ms // 300_000))",
+                "raw_echo_rows": int(len(df_echo)),
+                "raw_win7_rows": int(len(df_win7_raw)),
+                "shared_bucket_keys": int(len(shared_keys)),
+                "overlap_rows_removed_from_win7": overlap_removed,
+                "dedup_win7_rows": int(len(df_win7)),
+            },
             "ugr16_status": "BLOCKED (NESG portal HTTP 403 / maintenance; no synthetic substitute)",
         },
         "feature_shift_medians": _feature_shift_summary(df_ait_test, df_echo, df_win7),
+        "exp_a_in_domain_ait": in_domain_ait,
+        "exp_b_zero_shot_ait_to_ctu": zero_shot,
+        "exp_c_reverse_ctu_to_ait": reverse_zero_shot,
+        "exp_d_multi_source_lodo": device_disjoint,
+        "exp_e_ugr16": {
+            "status": "BLOCKED",
+            "reason": "NESG portal HTTP 403 / Portal en Mantenimiento",
+        },
         "zero_shot_ait_models": zero_shot,
         "device_disjoint_ait_plus_echo_to_unseen_win7ad": device_disjoint,
         "ctu_temporal_early_to_late_days": ctu_temporal,
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    rendered_json = json.dumps(result, indent=2) + "\n"
+    output_json.write_text(rendered_json, encoding="utf-8", newline="\n")
+    if output_json.resolve() != CROSS_DATASET_JSON.resolve():
+        CROSS_DATASET_JSON.parent.mkdir(parents=True, exist_ok=True)
+        CROSS_DATASET_JSON.write_text(rendered_json, encoding="utf-8", newline="\n")
 
     # Render concise Markdown report directly from verified numbers
     lines = [
-        "# Cross-Source & Real-Capture CTU-SME-11 Evaluation",
+        "# Cross-Source & Real-Capture CTU-SME-11 Evaluation (Experiments A–E)",
         "",
         "Real captured evaluation on **CTU-SME-11** (`Honeypot-Assistant-Amazon-Echo1stGen-1`: "
-        f"{len(df_echo):,} flows; `Experiment-VM-Microsoft-Windows7AD-1`: {len(df_win7):,} labeled flows; "
+        f"{len(df_echo):,} flows; `Experiment-VM-Microsoft-Windows7AD-1`: {len(df_win7_raw):,} labeled flows "
+        f"({len(df_win7):,} after deduplicating {overlap_removed:,} 5-tuple/300s-bucket overlaps with Echo); "
         "plus 9,394 `unknown`/`Unmapped` Windows7AD flows excluded from supervised binary metrics). "
-        "**UGR'16** remains `BLOCKED` (official NESG portal returned HTTP 403 / Portal en Mantenimiento).",
+        "**UGR'16** (Exp E) remains `BLOCKED` (official NESG portal returned HTTP 403 / Portal en Mantenimiento).",
         "",
-        "## 1. Zero-Shot Transfer: AIT-NDS-v2 Models -> Real CTU-SME-11",
+        "## Exp A — In-Domain AIT-NDS-v2 Reference",
         "",
-        "| Model | AIT-Test F1 | CTU-Echo F1 | CTU-Echo Recall | CTU-Echo FPR | CTU-Win7AD F1 | CTU-Win7AD Recall | CTU-Win7AD FPR |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Model | AIT-Val F1 | AIT-Val FPR | AIT-Test F1 | AIT-Test FPR | AIT-Test ROC-AUC |",
+        "|---|---|---|---|---|---|",
     ]
+    for m_key in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
+        av = in_domain_ait[m_key]["ait_val"]
+        at = in_domain_ait[m_key]["ait_test"]
+        lines.append(
+            f"| `{m_key}` | {av.get('f1', 0):.4f} | {av.get('false_positive_rate', 0):.4f} | "
+            f"{at.get('f1', 0):.4f} | {at.get('false_positive_rate', 0):.4f} | {at.get('roc_auc', 0) or 0:.4f} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Exp B — Zero-Shot Transfer: AIT-NDS-v2 Models -> Real CTU-SME-11",
+            "",
+            "| Model | AIT-Test F1 | CTU-Echo F1 | CTU-Echo Recall | CTU-Echo FPR | CTU-Win7AD F1 | CTU-Win7AD Recall | CTU-Win7AD FPR |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+    )
     for m_key in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
         at = zero_shot[m_key]["ait_test"]
         ce = zero_shot[m_key]["ctu_echo"]
@@ -339,13 +500,29 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
     lines.extend(
         [
             "",
-            "## 2. Device-Disjoint Cross-Source Transfer (`AIT-Train + CTU-Echo` -> Unseen `CTU-Windows7AD` & `AIT-Test`)",
+            "## Exp C — Reverse Zero-Shot Transfer (`CTU-SME-11` -> `AIT-Test`)",
+            "",
+            "| Model | AIT-Test F1 | AIT-Test Recall | AIT-Test FPR | AIT-Test ROC-AUC |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for m_key in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
+        at = reverse_zero_shot[m_key]["splits"]["ait_test"]
+        lines.append(
+            f"| `{m_key}` | {at['f1']:.4f} | {at['recall']:.4f} | "
+            f"{at['false_positive_rate']:.4f} | {at.get('roc_auc') or 0:.4f} |"
+        )
+
+    lines.extend(
+        [
+            "",
+            "## Exp D — Device-Disjoint Cross-Source Transfer (`AIT-Train + CTU-Echo` -> Unseen `CTU-Windows7AD` & `AIT-Test`)",
             "",
             "| Model | AIT-Test F1 | Unseen CTU-Win7AD F1 | Unseen CTU-Win7AD Recall | Unseen CTU-Win7AD FPR | Unseen Win7AD ROC-AUC |",
             "|---|---|---|---|---|---|",
         ]
     )
-    for m_key in ("random_forest", "xgboost", "isolation_forest"):
+    for m_key in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
         at = device_disjoint[m_key]["splits"]["ait_test"]
         cw = device_disjoint[m_key]["splits"]["ctu_windows7ad_unseen_device"]
         lines.append(
@@ -356,13 +533,13 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
     lines.extend(
         [
             "",
-            "## 3. Within-CTU Temporal Split (`2023-02-20..24` -> Held-out `2023-02-25..26`)",
+            "## Within-CTU Temporal Split (`2023-02-20..24` -> Held-out `2023-02-25..26`)",
             "",
             "| Model | Late CTU-Echo F1 | Late CTU-Echo Recall | Late CTU-Echo FPR | Late CTU-Win7AD F1 | Late CTU-Win7AD Recall | Late CTU-Win7AD FPR |",
             "|---|---|---|---|---|---|---|",
         ]
     )
-    for m_key in ("random_forest", "xgboost", "isolation_forest"):
+    for m_key in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
         ce = ctu_temporal[m_key]["splits"]["ctu_echo_late_days"]
         cw = ctu_temporal[m_key]["splits"]["ctu_win7ad_late_days"]
         lines.append(
@@ -373,9 +550,18 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
     lines.extend(
         [
             "",
-            "## 4. Empirical Feature-Shift Failure Analysis",
+            "## Exp E — UGR'16 External Generalization",
             "",
-            "Median feature shifts explain why AIT-trained supervised classifiers degrade zero-shot on CTU-SME-11:",
+            "- **Status:** `BLOCKED` (official NESG portal returned HTTP 403 / Portal en Mantenimiento; no synthetic proxy substituted).",
+        ]
+    )
+
+    lines.extend(
+        [
+            "",
+            "## Empirical Feature-Shift Failure Analysis",
+            "",
+            "Median feature shifts explain domain shift behavior between AIT-NDS-v2 and real CTU-SME-11:",
             "",
             "| Feature | AIT-Test Attack | AIT-Test Benign | CTU-Echo Attack | CTU-Echo Benign | CTU-Win7AD Attack | CTU-Win7AD Benign |",
             "|---|---|---|---|---|---|---|",
@@ -389,13 +575,15 @@ def run_ctu_experiment(output_json: Path = DEFAULT_JSON, output_md: Path = DEFAU
         )
 
     output_md.parent.mkdir(parents=True, exist_ok=True)
-    output_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    output_md.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"[CTU-EVAL] Completed: {output_json} & {output_md}")
     return result
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run CTU-SME-11 cross-source & temporal evaluation")
+    parser = argparse.ArgumentParser(
+        description="Run CTU-SME-11 cross-source & temporal evaluation"
+    )
     parser.add_argument("--output-json", type=Path, default=DEFAULT_JSON)
     parser.add_argument("--output-md", type=Path, default=DEFAULT_MD)
     args = parser.parse_args()

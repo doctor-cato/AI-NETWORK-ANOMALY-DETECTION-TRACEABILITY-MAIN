@@ -10,6 +10,49 @@
 
 ---
 
+## ADDENDUM — Trạng thái Hậu Khắc phục (Post-Remediation Update: `2026-11-18`)
+
+> [!IMPORTANT]
+> Nội dung từ Mục 1 trở đi bên dưới là **snapshot kiểm toán ban đầu trước remediation** (`2026-11-17T17:30:00+07:00`). Bảng tổng hợp dưới đây cập nhật trạng thái thực tế hiện hành trên nhánh `feat/v2-integration` sau khi thực thi chu trình sửa lỗi toàn diện (Phases 1–9).
+
+### 1. Điểm nhấn Đã Khắc phục & Tái xác minh
+
+1. **CI, Tooling & Version Sync (Phase 1):**
+   - `ruff==0.17.5`, `black==26.10.1` được cài và đồng bộ giữa `pyproject.toml`, `.github/workflows/ci.yml`, `.github/workflows/lint-audit.yml` (loại bỏ test path chết ở `lint-audit.yml`).
+   - Metadata desktop (`desktop/package.json`, `desktop/package-lock.json`, `desktop/src-tauri/Cargo.toml`, `desktop/src-tauri/Cargo.lock`, `desktop/src-tauri/tauri.conf.json`) đã đồng bộ lên `2.0.0`, khớp `docs/releases/v2.0.0.md`; FastAPI API contract giữ `0.1.0`.
+   - Loại bỏ `pytest.skip()` ẩn trong `tests/integration/test_full_system_e2e.py` và chuẩn hóa LF (`\n`).
+2. **Dữ liệu Multi-Source & Leakage/Unit Remediation (Phase 2 — `DATA-A01..A08`):**
+   - Sửa `--verify-only` trong `scripts/fetch_multi_source_dataset.py` sang chế độ read-only thuần túy.
+   - Sửa lỗi mất `233,185` dòng chunk index alignment trong `scripts/build_v2_dataset_and_split.py` — khôi phục đủ **`3,464,400` labeled + `942` unmapped = `3,465,342` raw AIT-NDS-v2 flows** (`ait_train=2,097,891`, `ait_val=377,704`, `ait_test=988,805`).
+   - Sửa đơn vị UDP duration Tstat `* 1000.0` (giây → mili-giây), thống nhất L4 payload bytes cho Zeek (`orig_bytes`/`resp_bytes`), và đặt `MIN_BOUNDED_SCALE_FLOOR = 0.25` cho `TrainOnlyPreprocessor`.
+   - Regenerate LF split manifest (`ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8`) và preprocessor (`0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`).
+   - CTU cross-source deduplicated `45` nhóm LAN overlap (`win7: 175,146 -> 175,101`) và bổ sung đầy đủ Experiments A–E (`reports/experiments/ml/ctu_cross_source_eval.json`).
+3. **Retraining 4 Mô hình & OOD Rejection Gate (Phases 3–5 — `ML-01..05`):**
+   - Khắc phục `>= threshold`, gắn `SplitReference`/`PreprocessingReference` đầy đủ, dùng đường dẫn POSIX tương đối (không lộ đường dẫn cá nhân), chuẩn hóa `AutoencoderModel.load_verified()` kiểm tra split SHA-256.
+   - Huấn luyện lại cả 4 mô hình trên split sạch (`AIT-Val` tuning only, 0 Test leakage):
+     - **Random Forest** (`balanced_subsample`, `min_samples_leaf=5`, SHA `b2e42f85...`): `AIT-Val F1=0.999658`, `AIT-Test F1=0.994967` (`P=0.998854`, `R=0.991110`, `FPR=0.000246`, `ROC-AUC=0.999372`, `PR-AUC=0.997721`).
+     - **XGBoost** (canonical defaults, SHA `33d201f8...`): `AIT-Val F1=0.999556`, `AIT-Test F1=0.901289` (`P=0.998886`, `R=0.821066`, `FPR=0.000198`, `ROC-AUC=0.988440`, `PR-AUC=0.972823`).
+     - **Isolation Forest** (`th=0.031268`, SHA `11b16900...`): `AIT-Val F1=0.921308` (`FPR=0.049991`), `AIT-Test F1=0.584182`, `CTU-Echo F1=0.885328` (`ROC-AUC=0.957148`).
+     - **Autoencoder** (`(16,8,16)` Benign std, `th=0.000467`, SHA `e6afecef...`): `AIT-Val F1=0.921513` (`FPR=0.049996`), `AIT-Test F1=0.587662`, `CTU-Echo F1=0.732531` (`ROC-AUC=0.780993`).
+   - Fit & lưu `artifacts/ml/ood_reference_gate.json` trên raw `2,097,891` `AIT-Train` flows; scoped `_load_ood_gate()` theo `artifacts_dir`; sinh `top_features` cho cả 4 model trong `reports/experiments/ml/model_comparison_report.json`.
+4. **Hardening Sản phẩm & Traceability (`PROD-01..05`):**
+   - `v2_adapter.py` fail-closed timestamp/identities + URL query secret redaction; đăng ký đủ `v2_netflow/v2_dns/v2_web/v2_auth/v2_audit` vào `SourceRegistry`.
+   - `BehavioralVector` thêm `missing_feature_count` / `missing_feature_names` và triển khai `EntityBaselineProfiler`.
+   - `DatabaseManager` tách `V2_SCHEMA_SQL` (`initialize_schema(include_v2=True)`) + truy vấn `entity`/`time_range`; `KeyRotationPolicy` hỗ trợ `clock_fn` + lưu cooldown/rate-limit qua SQLite; mở track `/docs/audits/` khỏi `.gitignore` và đồng bộ tài liệu (`THIRD_PARTY_NOTICES.md`, `README.md`, `USER_GUIDE_V2.md`, `ARCHITECTURE_V2.md`, `DATASET.md`, `RESEARCH_QUESTIONS.md`, `EVALUATION.md`, `TRACEABILITY_MATRIX.md`).
+5. **Tái tạo Demo Subset & Tái chạy Thí nghiệm/Benchmark (Phase 8):**
+   - `demo_flows.csv` SHA-256 `90b028939c36e84cf43eb9595e6d74ee9fc0f2d03c40f46d439f1886f50d01a3` + `verify_companion_artifacts.py` đạt `overall_status: READY` (`4/4` models).
+   - `evaluate_traceability.py` đạt `1.0` vs dynamic grep `0.375` (`+62.5%`); `run_live_lab_acceptance.py` đạt `PASS` (`ood_gate=FITTED`); `benchmark_full_system.py` đo động `16.38 events/s` E2E / `19.43 events/s` replay.
+
+### 2. Blocker Bên ngoài & Phạm vi Giữ Mở (Không tự động đóng)
+
+- **`UGR'16` external ISP validation (`#82, #83, #97`):** `BLOCKED` do máy chủ NESG (`HTTP 403`).
+- **`AIT-NDS-v2 ↔ AIT-LDS-v2.1` direct UID join (`#85, #104`):** `NOT VERIFIED / BLOCKED` (chỉ có simulation cho RQ3).
+- **Nghiệm thu thiết bị lab vật lý (`#137`):** `BLOCKED` (chỉ mới chạy synthetic UDP loopback trên `127.0.0.1`).
+- **Windows NSIS Clean VM E2E (`#73, #148`) & Governance Signoff (`#154`):** `BLOCKED / NOT VERIFIED` (`DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`).
+- **Website `site-source` (`#152`) & Slide/Báo cáo bảo vệ (`#153`):** Còn giữ mở để hoàn thiện riêng.
+
+---
+
 ## MỤC LỤC BÁO CÁO
 
 - [A. Executive Summary (Tóm tắt Điều hành & Kết luận Tổng thể)](#a-executive-summary)

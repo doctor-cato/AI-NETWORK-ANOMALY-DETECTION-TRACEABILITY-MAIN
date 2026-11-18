@@ -7,11 +7,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
-from network_anomaly.models.robust_experiment import (
-    FEATURES_E1,
-    compute_fingerprint_disjoint_split,
-)
 from scripts.fetch_external_dataset import (
     UNSW_CANONICAL_TRAIN_END,
     UNSW_TEST_LOCK_START,
@@ -21,6 +16,11 @@ from scripts.fetch_external_dataset import (
 from scripts.run_cross_dataset_experiments import (
     DEFAULT_SPLIT_MANIFEST,
     verify_split_manifest_and_test_lock,
+)
+
+from network_anomaly.models.robust_experiment import (
+    FEATURES_E1,
+    compute_fingerprint_disjoint_split,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]

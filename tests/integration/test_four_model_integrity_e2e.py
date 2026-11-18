@@ -26,9 +26,7 @@ from network_anomaly.inference.predict import InferencePipeline
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
 PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
-PREP_MANIFEST = (
-    PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
-)
+PREP_MANIFEST = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 MODEL_FILES = {
     "random_forest": (
         ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib",

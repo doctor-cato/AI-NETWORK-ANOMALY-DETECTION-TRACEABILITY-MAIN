@@ -66,14 +66,22 @@ class LiveInferenceDecision:
 
 def _load_ood_gate(
     gate: Optional[OODRejectionGate],
+    artifacts_dir: Optional[Any] = None,
 ) -> tuple[Optional[OODRejectionGate], str]:
     """Use the supplied gate when fitted; otherwise attempt the persisted reference stats."""
     if gate is not None and gate.is_fitted:
         return gate, "FITTED"
     try:
+        from pathlib import Path
+
         from network_anomaly.ml.ood_gate import load_persisted_ood_gate
 
-        persisted = load_persisted_ood_gate()
+        gate_path = (
+            Path(artifacts_dir) / "ml" / "ood_reference_gate.json"
+            if artifacts_dir is not None
+            else None
+        )
+        persisted = load_persisted_ood_gate(path=gate_path)
     except Exception:
         persisted = None
     if persisted is not None and persisted.is_fitted:
@@ -96,7 +104,10 @@ class RealtimeInferenceEngine:
             policy=AggregationPolicy.WEIGHTED_ENSEMBLE
         )
         self.demo_heuristics = demo_heuristics
-        self.ood_gate, self.ood_gate_status = _load_ood_gate(ood_gate)
+        self.ood_gate, self.ood_gate_status = _load_ood_gate(
+            ood_gate,
+            artifacts_dir=getattr(self.registry, "artifacts_dir", None),
+        )
 
         self.total_inferences: int = 0
         self.total_anomalies_detected: int = 0

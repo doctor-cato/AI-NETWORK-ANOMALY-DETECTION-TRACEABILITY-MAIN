@@ -1,6 +1,6 @@
-# Quy trình Đóng gói & Phát hành Windows Standalone (`v1.0.0`)
+# Quy trình Đóng gói & Phát hành Windows Standalone (`v2.0.0`)
 
-Tài liệu này mô tả quy trình build, kiểm chứng fail-closed và phát hành **NetFlow Sentinel (`v1.0.0` Stable)** cho **Windows 10/11 x64** theo kiến trúc **Fully Embedded Standalone Installer** (Issue #71).
+Tài liệu này mô tả quy trình build, kiểm chứng fail-closed và phát hành **NetFlow Sentinel (`v2.0.0`)** cho **Windows 10/11 x64** theo kiến trúc **Fully Embedded Standalone Installer** (Issue #71).
 
 ---
 
@@ -26,7 +26,7 @@ Tài liệu này mô tả quy trình build, kiểm chứng fail-closed và phát
 
 ## 2. Cổng Kiểm soát Bản quyền & Bằng chứng Phân phối (Evidence-Based Distribution Gate)
 
-Dữ liệu v2 hiện hành (**AIT-NDS-v2**, **AIT-LDS-v2.1**, **AIT-ADS**, **CTU-SME-11**) sử dụng giấy phép **CC BY 4.0** (yêu cầu ghi nhận nguồn/attribution đầy đủ trong `NOTICE` và `THIRD_PARTY_NOTICES.md`). Nguồn `NF-UNSW-NB15-v3` (UQ License ID `454104`) đã ngừng sử dụng trong active pipeline và chuyển vào lưu trữ lịch sử `historical/nf_unsw_nb15_v3/`.
+Dữ liệu v2 hiện hành (**AIT-NDS-v2**, **AIT-ADS**, **CTU-SME-11** áp dụng **CC BY 4.0**; **AIT-LDS-v2.1** áp dụng **CC BY-NC-SA 4.0** chỉ dùng cho nghiên cứu/correlation cục bộ và không nhúng vào trọng số ML hay bộ demo phát hành) yêu cầu ghi nhận nguồn/attribution đầy đủ trong `NOTICE` và `THIRD_PARTY_NOTICES.md`. Nguồn `NF-UNSW-NB15-v3` (UQ License ID `454104`) đã ngừng sử dụng trong active pipeline và chuyển vào lưu trữ lịch sử `historical/nf_unsw_nb15_v3/`.
 - Hệ thống phân tách rạch ròi 4 mức quyền tại [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](../reports/governance/DISTRIBUTION_AUTHORIZATION.json) và hàm `verify_distribution_permission()` trong `scripts/verify_companion_artifacts.py`:
   1. `research-only`: nghiên cứu và đánh giá cục bộ (`target_channel=local_offline`). Cấm upload CI artifact và cấm phát hành.
   2. `private-build-only`: đóng gói và kiểm thử nội bộ **chỉ trên máy cục bộ (`local_offline`) hoặc private repository / private runner có quyền truy cập hạn chế (`repo_is_private=true`, `target_channel=private_ci_artifact`)**. Tuyệt đối **FAIL-CLOSED** trên public repository, không tin vào tên workflow `dryrun`.
@@ -47,7 +47,7 @@ Kiểm tra trước khi cắt tag hoặc dispatch workflow:
 
 ```powershell
 python scripts/check_desktop_version.py --check
-python scripts/check_desktop_version.py --check --expect-tag v1.0.0
+python scripts/check_desktop_version.py --check --expect-tag v2.0.0
 ```
 
 - Năm tệp desktop bắt buộc khớp 1-1:

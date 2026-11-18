@@ -15,7 +15,11 @@ from network_anomaly.config import RANDOM_SEED
 from network_anomaly.data.taxonomy import CANONICAL_ATTACK_CATEGORIES
 from network_anomaly.data.v2_schema import (
     DATASET_SUITE_NAME as DATASET_NAME,
+)
+from network_anomaly.data.v2_schema import (
     FEATURE_CONTRACT_ID as FEATURE_CONTRACT_VERSION,
+)
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
     PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
@@ -639,7 +643,9 @@ class RandomForestBaselineProtocol:
 
         protocol = cls(
             protocol_version=d.get("protocol_version", PROTOCOL_IDENTIFIER),
-            protocol_name=d.get("protocol_name", "NetFlow Sentinel v2 Random Forest Baseline Protocol"),
+            protocol_name=d.get(
+                "protocol_name", "NetFlow Sentinel v2 Random Forest Baseline Protocol"
+            ),
             feature_contract_version=d.get("feature_contract_version", FEATURE_CONTRACT_VERSION),
             selected_features=selected_features,
             excluded_metadata=excluded_metadata,

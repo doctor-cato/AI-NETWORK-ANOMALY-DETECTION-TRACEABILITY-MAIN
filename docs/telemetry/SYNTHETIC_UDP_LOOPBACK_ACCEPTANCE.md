@@ -1,7 +1,7 @@
 # Synthetic UDP Loopback Integration Acceptance
 
 **Issue:** `#137` · **Synthetic test:** yes · **Real exporter hardware:** no
-**Run at (UTC):** `2026-11-17T18:54:23.945396+00:00`
+**Run at (UTC):** `2026-11-18T02:17:03.308868+00:00`
 **Verdict:** **`ACCEPTED`**
 
 > This is an integration test over UDP loopback with a synthetic exporter. It is not a
@@ -10,7 +10,7 @@
 
 ## Scope
 
-- Transport: UDP `127.0.0.1` (ephemeral port `52916`)
+- Transport: UDP `127.0.0.1` (ephemeral port `62982`)
 - Packets: one NetFlow v9 template+data datagram, one v9 data-only datagram
   (template-cache reuse), one IPFIX template+data datagram, one malformed datagram
 - Model features: private lab IE convention `PEN 50000` (IPFIX) /
@@ -20,15 +20,15 @@
 
 | Stage | Status | Evidence |
 | :--- | :---: | :--- |
-| udp_transport | **PASS** | 4 datagrams received on UDP port 52916 |
+| udp_transport | **PASS** | 4 datagrams received on UDP port 62982 |
 | decoder | **PASS** | 6 flows decoded (NetFlow v9 + IPFIX; 0 unresolved) |
 | template_cache | **PASS** | 2 templates cached; data-only packet decoded |
 | malformed_packet_handling | **PASS** | malformed_packet_count=1, datagrams_rejected=1 |
 | streaming_pipeline | **PASS** | 6 processed, 0 dropped, queue=0.0% |
 | feature_contract | **PASS** | 6/6 events satisfied all 18 non-imputed features |
-| ai_inference | **PASS** | mode=REAL_MODELS, participating=['autoencoder', 'isolation_forest', 'random_forest', 'xgboost'], avg_latency_us=59192.167, ood_gate=NOT_FITTED |
+| ai_inference | **PASS** | mode=REAL_MODELS, participating=['autoencoder', 'isolation_forest', 'random_forest', 'xgboost'], avg_latency_us=55905.317, ood_gate=FITTED |
 | model_readiness | **PASS** | random_forest=VALIDATED; xgboost=VALIDATED; isolation_forest=VALIDATED; autoencoder=VALIDATED |
-| risk_scoring | **PASS** | risk scores: 127d5ccc=20.3, 14b6fe87=35.9, adf10715=62.4, b83c38a7=20.1, 1818c448=19.8, 7920bd5f=20.2 |
+| risk_scoring | **PASS** | risk scores: 2449f858=20.2, 8e46deb9=35.8, 7acce5e1=62.8, 2f774550=19.1, d8cde2e7=20.7, 4ee515df=18.6 |
 | alerts | **NOT_TRIGGERED** | 0 alerts raised above the 70.0 risk threshold |
 | behavioral_vector | **PASS** | 6/6 events produced a 16-D session vector |
 | vector_encryption | **PASS** | 6/6 vectors stored as AES-256-GCM ciphertext in the vault (plaintext column NULL) |
@@ -38,7 +38,7 @@
 
 - Mode: `REAL_MODELS`
 - Validated models: `4/4`
-- OOD gate: `NOT_FITTED`
+- OOD gate: `FITTED`
 - Participating models in the ensemble: `autoencoder, isolation_forest, random_forest, xgboost`
 
 ## Limitations

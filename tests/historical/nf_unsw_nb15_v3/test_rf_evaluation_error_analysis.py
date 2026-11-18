@@ -11,13 +11,13 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.exceptions import NotFittedError
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     CATEGORICAL_CODED_COLUMNS,
     ML_FEATURE_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
+from sklearn.exceptions import NotFittedError
+
 from network_anomaly.evaluation import (
     CANONICAL_DECISION_THRESHOLD,
     analyze_classification_boundary,

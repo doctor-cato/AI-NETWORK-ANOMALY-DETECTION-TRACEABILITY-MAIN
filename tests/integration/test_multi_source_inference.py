@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS, TRACE_METADATA_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.inference.predict import (
     load_verified_model,
     load_verified_preprocessor,
@@ -120,9 +120,7 @@ def test_multi_source_canonical_v2_end_to_end_inference(synthetic_files_dir: dic
 
     all_preds = []
     # 1. Test canonical internal source -> Approved for ML
-    for chunk_events in parser.parse_file_chunks(
-        v2_csv, explicit_source_id="source:ait-nds-v2"
-    ):
+    for chunk_events in parser.parse_file_chunks(v2_csv, explicit_source_id="source:ait-nds-v2"):
         decision = gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is True
         assert decision.eligibility_status == InferenceEligibility.PREDICTION_AVAILABLE
@@ -152,13 +150,9 @@ def test_multi_source_canonical_v2_end_to_end_inference(synthetic_files_dir: dic
         reason="Empirical zero recall on failed cross-source transfer.",
     )
     failed_gate = InferenceEligibilityGate(
-        evaluator=FeatureCompatibilityEvaluator(
-            benchmark_registry={"source:ctu-sme-11": failed_ev}
-        )
+        evaluator=FeatureCompatibilityEvaluator(benchmark_registry={"source:ctu-sme-11": failed_ev})
     )
-    for chunk_events in parser.parse_file_chunks(
-        v2_csv, explicit_source_id="source:ctu-sme-11"
-    ):
+    for chunk_events in parser.parse_file_chunks(v2_csv, explicit_source_id="source:ctu-sme-11"):
         decision = failed_gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is False
         assert decision.eligibility_status == InferenceEligibility.BENCHMARK_UNSATISFACTORY

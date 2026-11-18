@@ -123,6 +123,29 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
     # Path completeness
     trace_completeness = len(trace_res.nodes_visited) / len(ground_truth_stages)
 
+    # 1b. Dynamic unstructured single-keyword grep baseline over the same events (no entity graph)
+    grep_stage_hits = 0
+    anchor_src = events_for_reconstruction[0]["source_ip"]
+    grep_linked_nodes = 0
+    for gt_item, ev in zip(ground_truth_stages, events_for_reconstruction):
+        atk = str(ev.get("attack_type", "")).lower()
+        predicted_phase = (
+            AttackPhase.RECONNAISSANCE
+            if atk == "scan"
+            else (AttackPhase.INITIAL_ACCESS if atk == "exploit" else None)
+        )
+        if predicted_phase == gt_item["phase"]:
+            grep_stage_hits += 1
+        if ev.get("source_ip") == anchor_src and gt_item["phase"] in (
+            AttackPhase.RECONNAISSANCE,
+            AttackPhase.INITIAL_ACCESS,
+        ):
+            grep_linked_nodes += 1
+    grep_stage_acc = grep_stage_hits / len(ground_truth_stages)
+    grep_completeness = grep_linked_nodes / len(ground_truth_stages)
+    stage_delta_pct = (stage_accuracy - grep_stage_acc) * 100.0
+    comp_delta_pct = (trace_completeness - grep_completeness) * 100.0
+
     results = {
         "evaluation_id": "EVAL-TRACEABILITY-M64",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -131,24 +154,28 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
         "trace_path_completeness": round(trace_completeness, 4),
         "baseline_comparison": {
             "unstructured_log_grep": {
-                "stage_attribution_accuracy": 0.25,
-                "context_reconstruction_completeness": 0.30,
+                "stage_attribution_accuracy": round(grep_stage_acc, 4),
+                "context_reconstruction_completeness": round(grep_completeness, 4),
             },
             "trace_engine_v2": {
                 "stage_attribution_accuracy": round(stage_accuracy, 4),
                 "context_reconstruction_completeness": round(trace_completeness, 4),
             },
+            "delta_percentage_points": {
+                "stage_attribution": round(stage_delta_pct, 2),
+                "context_reconstruction": round(comp_delta_pct, 2),
+            },
         },
         "conclusion": (
             f"Trace Engine v2 achieved {stage_accuracy * 100:.1f}% stage attribution accuracy "
-            f"and {trace_completeness * 100:.1f}% path completeness across the 4-phase attack progression, "
-            "empirically validating Attack Traceability against ground truth."
+            f"and {trace_completeness * 100:.1f}% path completeness across the {len(ground_truth_stages)}-event "
+            "4-phase attack progression, empirically validating Attack Traceability against ground truth."
         ),
     }
 
     # Save JSON manifest
     json_path = output_dir / "traceability_evaluation.json"
-    json_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    json_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     # Save Markdown doc
     docs_dir = Path("docs/experiments")
@@ -168,13 +195,13 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
 
 | Chỉ số Đo lường | Baseline Log Grep Truyền thống | Trace Engine v2 (Entity Graph + Timeline) | Mức độ Cải thiện |
 |---|:---:|:---:|:---:|
-| **Độ chính xác Gán giai đoạn (Stage Attribution)** | 25.0% | **{stage_accuracy * 100:.1f}%** | **+65.0%** |
-| **Độ hoàn chỉnh Chuỗi vết (Path Completeness)** | 30.0% | **{trace_completeness * 100:.1f}%** | **+70.0%** |
+| **Độ chính xác Gán giai đoạn (Stage Attribution)** | {grep_stage_acc * 100:.1f}% | **{stage_accuracy * 100:.1f}%** | **{stage_delta_pct:+.1f}%** |
+| **Độ hoàn chỉnh Chuỗi vết (Path Completeness)** | {grep_completeness * 100:.1f}% | **{trace_completeness * 100:.1f}%** | **{comp_delta_pct:+.1f}%** |
 
 ## 3. Kết luận
 {results["conclusion"]}
 """
-    md_path.write_text(md_content, encoding="utf-8")
+    md_path.write_text(md_content, encoding="utf-8", newline="\n")
     print(f"[+] Traceability evaluation completed: {json_path} and {md_path}")
     return results
 

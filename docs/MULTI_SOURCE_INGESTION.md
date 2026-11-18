@@ -57,12 +57,12 @@ flowchart TD
 
 Thay vì benchmark v1 cũ trên `NF-CSE-CIC-IDS2018-v3`, NetFlow Sentinel v2 thực hiện đánh giá chéo trực tiếp từ tập tổng hợp `AIT-NDS-v2` sang traffic thu thập trên thiết bị thật **`CTU-SME-11`** (`scripts/run_ctu_cross_source_eval.py`, báo cáo đầy đủ tại [`docs/experiments/CTU_CROSS_SOURCE_EVAL.md`](experiments/CTU_CROSS_SOURCE_EVAL.md)):
 
-| Mô hình (Huấn luyện trên `AIT-Train`) | `AIT-Test` (N=923,292) | `CTU-Echo` Zero-Shot (N=76,073) | `CTU-Win7AD` Zero-Shot (N=175,146) |
+| Mô hình (Huấn luyện trên `AIT-Train`) | `AIT-Test` (N=988,805) | `CTU-Echo` Zero-Shot (N=76,073) | `CTU-Win7AD` Zero-Shot (N=175,146) |
 |---|---:|---:|---:|
-| **Random Forest** | `F1 = 0.8997` (`R = 0.8185`, `FPR = 0.0002`) | `F1 = 0.0000` (`R = 0.0000`, `FPR = 0.0008`) | `F1 = 0.0000` (`R = 0.0000`, `FPR = 0.0131`) |
-| **XGBoost** | `F1 = 0.8910` (`R = 0.8042`, `FPR = 0.0002`) | `F1 = 0.0000` (`R = 0.0000`, `FPR = 0.0468`) | `F1 = 0.0007` (`R = 0.0005`, `FPR = 0.0039`) |
-| **Isolation Forest** | `F1 = 0.5766` (`R = 0.4698`, `FPR = 0.0376`) | **`F1 = 0.8527`** (`R = 0.9108`, `FPR = 0.2086`) | `F1 = 0.0002` (`R = 0.0034`, `FPR = 0.4334`) |
-| **Autoencoder** | `F1 = 0.5788` (`R = 0.4681`, `FPR = 0.0351`) | **`F1 = 0.7000`** (`R = 0.9176`, `FPR = 0.6520`) | `F1 = 0.0246` (`R = 0.9146`, `FPR = 0.8545`) |
+| **Random Forest** | `F1 = 0.9950` (`R = 0.9911`, `FPR = 0.0002`) | `F1 = 0.0474` (`R = 0.0264`, `FPR = 0.0811`) | `F1 = 0.0712` (`R = 0.5412`, `FPR = 0.1608`) |
+| **XGBoost** | `F1 = 0.9013` (`R = 0.8211`, `FPR = 0.0002`) | `F1 = 0.1436` (`R = 0.0832`, `FPR = 0.0700`) | `F1 = 0.0738` (`R = 0.5623`, `FPR = 0.1611`) |
+| **Isolation Forest** | `F1 = 0.5842` (`R = 0.4678`, `FPR = 0.0290`) | **`F1 = 0.8853`** (`R = 0.9908`, `FPR = 0.2292`) | `F1 = 0.0464` (`R = 0.9760`, `FPR = 0.4722`) |
+| **Autoencoder** | `F1 = 0.5877` (`R = 0.4693`, `FPR = 0.0276`) | **`F1 = 0.7325`** (`R = 0.9990`, `FPR = 0.6746`) | `F1 = 0.0326` (`R = 0.9921`, `FPR = 0.6925`) |
 
 - **Kết luận thực nghiệm:** Ngay cả khi đã loại bỏ hoàn toàn shortcut `MIN_TTL`, các mô hình cây supervised (`RF`, `XGB`) vẫn bị sụp đổ zero-shot khi chuyển sang thiết bị thật do dịch chuyển phân phối `duration_ms`, `bytes_in`, `bytes_out` (xem trung vị tại `reports/experiments/ml/ctu_cross_source_eval.json`). Ngược lại, `Isolation Forest` giữ được khả năng phát hiện port scan trên `CTU-Echo`. Nguồn ISP `UGR'16` hiện giữ trạng thái **`BLOCKED`** (`HTTP 403`).
 

@@ -14,6 +14,8 @@ from sklearn.ensemble import RandomForestClassifier
 from network_anomaly.config import RANDOM_SEED
 from network_anomaly.data.v2_schema import (
     DATASET_SUITE_NAME as DATASET_NAME,
+)
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
@@ -603,7 +605,7 @@ def test_rf_baseline_protocol_doc_matches_split_manifest_contract():
     assert audit["status"] == "PASS"
 
     cross = audit["cross_partition_unique_shared_feature_vectors"]
-    assert cross["train_val"] == 10048
-    assert cross["train_test"] == 21560
-    assert cross["val_test"] == 8675
+    assert cross["train_val"] == 10050
+    assert cross["train_test"] == 21773
+    assert cross["val_test"] == 8677
     assert manifest["feature_contract_version"] == FEATURE_CONTRACT_VERSION

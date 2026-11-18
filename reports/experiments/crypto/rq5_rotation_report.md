@@ -1,7 +1,7 @@
 # Research Experiment RQ5: Fixed vs Adaptive Key Rotation (SIMULATION)
 
 - **Execution Mode:** `SIMULATION`
-- **Timestamp (UTC):** `2026-11-17T19:02:34.455424+00:00`
+- **Timestamp (UTC):** `2026-11-17T23:04:53.738187+00:00`
 - **Hypothesis Confirmed (>= 70% exposure reduction):** `True`
 
 ## Computed Metrics from Recorded Timeline

@@ -324,9 +324,7 @@ class InferenceEligibilityGate:
                 abstained_indices.append(idx)
                 if idx not in rejected_indices:
                     rejected_indices.append(idx)
-                row_rejection_reasons[idx] = (
-                    "OOD invariant violation -> ABSTAINED."
-                )
+                row_rejection_reasons[idx] = "OOD invariant violation -> ABSTAINED."
 
         # 1. Source registry check
         try:

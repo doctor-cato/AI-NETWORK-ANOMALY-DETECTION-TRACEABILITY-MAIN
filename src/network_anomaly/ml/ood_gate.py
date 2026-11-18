@@ -206,7 +206,7 @@ def save_persisted_ood_gate(
     path = Path(output_path) if output_path else DEFAULT_OOD_GATE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = gate.to_artifact(provenance or {})
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8", newline="\n")
     return path
 
 

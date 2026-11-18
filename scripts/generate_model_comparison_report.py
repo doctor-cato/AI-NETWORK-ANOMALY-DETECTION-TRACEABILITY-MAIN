@@ -42,22 +42,74 @@ OUTPUT_JSON = Path("reports/experiments/ml/model_comparison_report.json")
 OUTPUT_MD = Path("docs/experiments/FOUR_MODEL_COMPARISON.md")
 
 
-def _extract_top_features(model_key: str, model_obj: Any, top_k: int = 5) -> List[Dict[str, Any]]:
+def _to_repo_posix(path_str: str) -> str:
+    p = Path(path_str)
+    try:
+        return p.resolve().relative_to(Path(__file__).resolve().parents[1].resolve()).as_posix()
+    except ValueError:
+        return p.as_posix()
+
+
+def _extract_top_features(
+    model_key: str,
+    model_obj: Any,
+    registry: Optional[ModelRegistry] = None,
+    X_sample: Optional[np.ndarray] = None,
+    y_sample: Optional[np.ndarray] = None,
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
     if model_obj is None:
         return []
     importances = getattr(model_obj, "feature_importances_", None)
     if importances is None and hasattr(model_obj, "estimator"):
         importances = getattr(model_obj.estimator, "feature_importances_", None)
-    if importances is None:
+    if importances is not None:
+        arr = np.asarray(importances, dtype=float)
+        if len(arr) != len(ML_FEATURE_COLUMNS):
+            return []
+        order = np.argsort(arr)[::-1][:top_k]
+        return [
+            {
+                "feature": ML_FEATURE_COLUMNS[int(idx)],
+                "importance": round(float(arr[int(idx)]), 6),
+                "method": "tree_feature_importances",
+            }
+            for idx in order
+        ]
+
+    if registry is None or X_sample is None or len(X_sample) == 0:
         return []
-    arr = np.asarray(importances, dtype=float)
-    if len(arr) != len(ML_FEATURE_COLUMNS):
-        return []
-    order = np.argsort(arr)[::-1][:top_k]
+    rng = np.random.default_rng(42)
+    base_scores, _ = registry.score_batch(model_key, X_sample)
+    base_std = float(np.std(base_scores))
+    use_auc = y_sample is not None and len(np.unique(y_sample)) >= 2
+    if use_auc:
+        from sklearn.metrics import roc_auc_score
+
+        base_auc = float(roc_auc_score(y_sample, base_scores))
+    deltas = np.zeros(len(ML_FEATURE_COLUMNS), dtype=float)
+    X_perm = X_sample.copy()
+    for col_idx in range(len(ML_FEATURE_COLUMNS)):
+        saved = X_perm[:, col_idx].copy()
+        X_perm[:, col_idx] = rng.permutation(saved)
+        perm_scores, _ = registry.score_batch(model_key, X_perm)
+        X_perm[:, col_idx] = saved
+        if use_auc:
+            perm_auc = float(roc_auc_score(y_sample, perm_scores))
+            deltas[col_idx] = max(0.0, base_auc - perm_auc)
+        else:
+            deltas[col_idx] = float(np.mean(np.abs(base_scores - perm_scores))) / max(
+                base_std, 1e-9
+            )
+    total = float(np.sum(deltas))
+    if total > 1e-12:
+        deltas = deltas / total
+    order = np.argsort(deltas)[::-1][:top_k]
     return [
         {
             "feature": ML_FEATURE_COLUMNS[int(idx)],
-            "importance": round(float(arr[int(idx)]), 6),
+            "importance": round(float(deltas[int(idx)]), 6),
+            "method": "validation_permutation_importance",
         }
         for idx in order
     ]
@@ -93,13 +145,14 @@ def generate_comparison_report(
             ],
         }
         output_json.parent.mkdir(parents=True, exist_ok=True)
-        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8")
+        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8", newline="\n")
         output_md.parent.mkdir(parents=True, exist_ok=True)
         output_md.write_text(
             "# RQ1 — 4-Model Empirical Comparison (BLOCKED)\n\n"
             f"- Missing data files: `{missing_paths}`\n"
             f"- Unready models: `{missing_models}`\n",
             encoding="utf-8",
+            newline="\n",
         )
         return blocked
 
@@ -107,6 +160,13 @@ def generate_comparison_report(
     X_test_raw, y_test, attack_test = load_partition_raw("test", max_rows=max_rows)
     X_test_df = preprocessor.transform(X_test_raw, partition_name="test")
     X_test_np = X_test_df.to_numpy(dtype=float)
+
+    X_val_raw, y_val_sample, _ = load_partition_raw(
+        "validation", max_rows=min(2000, max_rows or 2000)
+    )
+    X_val_perm = preprocessor.transform(X_val_raw, partition_name="validation").to_numpy(
+        dtype=float
+    )
 
     models_payload: Dict[str, Any] = {}
     for key in MODEL_KEYS:
@@ -117,7 +177,13 @@ def generate_comparison_report(
         elapsed_s = max(1e-9, time.perf_counter() - t0)
         metrics = compute_binary_metrics(y_test, y_pred, y_score=raw_scores)
         disk_mb = round(Path(st.artifact_path).stat().st_size / (1024 * 1024), 4)
-        top_feats = _extract_top_features(key, registry.model_object(key))
+        top_feats = _extract_top_features(
+            key,
+            registry.model_object(key),
+            registry=registry,
+            X_sample=X_val_perm,
+            y_sample=y_val_sample,
+        )
         protocol = (
             "supervised_binary_classification (trained on Train Ben+Attack; threshold on probability)"
             if key in ("random_forest", "xgboost")
@@ -130,7 +196,7 @@ def generate_comparison_report(
             "display_name": st.display_name,
             "model_type": st.model_type,
             "evaluation_protocol": protocol,
-            "artifact_path": st.artifact_path,
+            "artifact_path": _to_repo_posix(st.artifact_path),
             "artifact_sha256": st.artifact_sha256,
             "model_disk_size_mb": disk_mb,
             "decision_threshold": st.threshold,
@@ -180,7 +246,7 @@ def generate_comparison_report(
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     # Render Markdown directly from computed results
     rows = []
@@ -225,7 +291,7 @@ def generate_comparison_report(
         md_lines.append(f"- {lim}")
 
     output_md.parent.mkdir(parents=True, exist_ok=True)
-    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"RQ1 model comparison generated: {output_json} and {output_md}")
     return results
 

@@ -161,7 +161,7 @@ def run_benchmark(
     }
 
     json_path = output_dir / "crypto_benchmark_report.json"
-    json_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    json_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     rows = []
     for sz, entry in per_size.items():
@@ -187,7 +187,7 @@ def run_benchmark(
         *rows,
     ]
     md_path = output_dir / "crypto_benchmark_report.md"
-    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"RQ6 crypto benchmark written: {json_path} and {md_path}")
     return results
 

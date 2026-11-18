@@ -18,7 +18,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
@@ -70,7 +70,9 @@ def prepare_demo_dataset(
     benign_idx = df_val.index[df_val["label_binary"] == 0].to_numpy()
     attack_idx = df_val.index[df_val["label_binary"] == 1].to_numpy()
     if len(benign_idx) == 0 or len(attack_idx) == 0:
-        raise ValueError("Validation partition must contain both benign and attack flows for demo sampling")
+        raise ValueError(
+            "Validation partition must contain both benign and attack flows for demo sampling"
+        )
 
     n_attack = min(len(attack_idx), num_rows // 2)
     n_benign = min(len(benign_idx), num_rows - n_attack)
@@ -90,8 +92,8 @@ def prepare_demo_dataset(
     labels_path = output_dir / "demo_labels.csv"
     manifest_path = output_dir / "demo_manifest.json"
 
-    subset[flow_cols].to_csv(flows_path, index=False)
-    subset[label_cols].to_csv(labels_path, index=False)
+    subset[flow_cols].to_csv(flows_path, index=False, lineterminator="\n")
+    subset[label_cols].to_csv(labels_path, index=False, lineterminator="\n")
 
     flows_sha = _sha256_file(flows_path)
     labels_sha = _sha256_file(labels_path)
@@ -137,7 +139,7 @@ def prepare_demo_dataset(
             "AIT-NDS-v2 russellmitchell) for UI inspection only; not a prevalence benchmark."
         ),
     }
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
     return manifest
 
 
@@ -147,7 +149,9 @@ def main() -> None:
     parser.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLIT_MANIFEST)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--num-rows", type=int, default=DEFAULT_DEMO_ROWS)
-    parser.add_argument("--verify-only", action="store_true", help="Exit 0 SKIPPED if validation split missing")
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Exit 0 SKIPPED if validation split missing"
+    )
     args = parser.parse_args()
 
     if not args.val_csv.is_file() or not args.split_manifest.is_file():
@@ -166,7 +170,9 @@ def main() -> None:
     flows_info = manifest["outputs"]["demo_flows_csv"]
     ready = manifest["artifact_readiness"]["validated_count"]
     total = manifest["artifact_readiness"]["total_models"]
-    print(f"Demo dataset ready: {flows_info['row_count']} rows | sha256={flows_info['sha256']} | AI Ready {ready}/{total}")
+    print(
+        f"Demo dataset ready: {flows_info['row_count']} rows | sha256={flows_info['sha256']} | AI Ready {ready}/{total}"
+    )
 
 
 if __name__ == "__main__":

@@ -212,7 +212,7 @@ def run_benchmark(batch_events: int = 200, micro_iters: int = 100) -> Dict[str, 
     }
 
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_JSON.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    OUTPUT_JSON.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     e2e_lat = results["end_to_end_measured"]["latency_us"]
     md_lines = [
@@ -239,7 +239,7 @@ def run_benchmark(batch_events: int = 200, micro_iters: int = 100) -> Dict[str, 
         )
     md_lines.extend(["", "## 3. Limitations", *[f"- {lim}" for lim in results["limitations"]]])
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_MD.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    OUTPUT_MD.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"Dynamic system benchmark written: {OUTPUT_JSON} and {OUTPUT_MD}")
     return results
 

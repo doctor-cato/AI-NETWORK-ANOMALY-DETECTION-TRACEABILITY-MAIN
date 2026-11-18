@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
 from network_anomaly.evaluation import evidence_recovery as recovery
 
 

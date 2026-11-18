@@ -14,8 +14,8 @@
 ## 2. Protocol & Test Lock
 
 - **Feature Contract:** `canonical-flow-v2-18` (18 ML features), loại 5 trace metadata và 4 target columns khỏi `X`.
-- **Split:** `v2-scenario-group-purged-v1` (Train `1,930,219` / Validation `377,704` / Test `923,292`).
-- **Preprocessing:** `TrainOnlyPreprocessor(scaler_type="asinh_robust")` fit chỉ trên `ait_train`, SHA-256 `d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32`.
+- **Split:** `v2-scenario-group-purged-v1` (Train `2,097,891` / Validation `377,704` / Test `988,805`).
+- **Preprocessing:** `TrainOnlyPreprocessor(scaler_type="asinh_robust")` fit chỉ trên `ait_train`, SHA-256 `0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`.
 - **Random Seed:** `42`.
 - **Test Lock:** Tuyệt đối không dùng `ait_test` hay `CTU-SME-11` để fit imputer/scaler, chọn hyperparameter hay calibrate threshold.
 

@@ -10,7 +10,7 @@
 
 ## 1. Dành cho người dùng cuối (Standalone Installer)
 
-Bộ cài dự kiến cho GitHub Release `v1.0.0` là `NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`. Việc phát hành đang chờ nghiệm thu Windows sạch và xác nhận quyền phân phối.
+Bộ cài dự kiến cho GitHub Release `v2.0.0` là `NetFlow-Sentinel-v2.0.0-windows-x64-setup.exe`. Việc phát hành đang chờ nghiệm thu Windows sạch và xác nhận quyền phân phối.
 - **Không cần cài Python, Rust, Node.js, Git hay tải Companion Bundle.**
 - Nhúng sẵn ứng dụng Tauri 2 + Svelte 5, PyInstaller sidecar backend (`netflow-sentinel-backend.exe`), **cả 4 mô hình ML thật**, preprocessor, manifests, demo CSV, **WebView2 Offline Installer** và `NOTICE` / `THIRD_PARTY_NOTICES.md`.
 - Tự động khởi chạy/health-check/restart/shutdown sidecar trên `127.0.0.1` với token phiên `X-Sentinel-Session-Token` và lưu DB cục bộ tại `%LOCALAPPDATA%\NetFlowSentinel\`.

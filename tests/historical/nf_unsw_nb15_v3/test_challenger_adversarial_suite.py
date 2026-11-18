@@ -42,6 +42,7 @@ except ImportError:
     ApiService = None
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
 from network_anomaly.evaluation.test_evaluation import verify_index_disjointness
 from network_anomaly.inference.pipeline import (
     InferencePipeline,

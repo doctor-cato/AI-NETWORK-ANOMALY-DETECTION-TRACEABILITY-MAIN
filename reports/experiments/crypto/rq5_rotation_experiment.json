@@ -1,7 +1,7 @@
 {
   "experiment_id": "EXP-RQ5-ROTATION-01",
   "execution_mode": "SIMULATION",
-  "timestamp": "2026-11-17T19:02:34.455424+00:00",
+  "timestamp": "2026-11-17T23:04:53.738187+00:00",
   "hypothesis": "H5: Adaptive Key Rotation reduces attack-key exposure window >= 70% vs fixed 30-min schedule",
   "environment": {
     "os": "Windows-11-10.0.26200-SP0",
@@ -21,7 +21,7 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T19:02:34.303812+00:00"
+    "captured_at_utc": "2026-11-17T23:04:53.610202+00:00"
   },
   "simulation_config": {
     "total_events": 120,
@@ -41,17 +41,17 @@
         "timestamp_utc": "2026-11-17T10:30:00+00:00",
         "trigger": "FIXED_SCHEDULE",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-1",
-        "new_key_id": "k-general-20261117190234-2"
+        "old_key_id": "k-general-20261117230453-1",
+        "new_key_id": "k-general-20261117230453-2"
       }
     ],
     "records_per_key": {
-      "k-general-20261117190234-1": 60,
-      "k-general-20261117190234-2": 60
+      "k-general-20261117230453-1": 60,
+      "k-general-20261117230453-2": 60
     },
     "attack_records_per_key": {
-      "k-general-20261117190234-1": 40,
-      "k-general-20261117190234-2": 20
+      "k-general-20261117230453-1": 40,
+      "k-general-20261117230453-2": 20
     },
     "max_attack_key_exposure_seconds": 1200.0,
     "max_attack_key_exposure_minutes": 20.0,
@@ -67,8 +67,8 @@
         "timestamp_utc": "2026-11-17T10:10:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-1",
-        "new_key_id": "k-general-20261117190234-2"
+        "old_key_id": "k-general-20261117230453-1",
+        "new_key_id": "k-general-20261117230453-2"
       },
       {
         "sim_elapsed_s": 780.0,
@@ -76,8 +76,8 @@
         "timestamp_utc": "2026-11-17T10:13:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-2",
-        "new_key_id": "k-general-20261117190234-3"
+        "old_key_id": "k-general-20261117230453-2",
+        "new_key_id": "k-general-20261117230453-3"
       },
       {
         "sim_elapsed_s": 960.0,
@@ -85,8 +85,8 @@
         "timestamp_utc": "2026-11-17T10:16:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-3",
-        "new_key_id": "k-general-20261117190234-4"
+        "old_key_id": "k-general-20261117230453-3",
+        "new_key_id": "k-general-20261117230453-4"
       },
       {
         "sim_elapsed_s": 1140.0,
@@ -94,8 +94,8 @@
         "timestamp_utc": "2026-11-17T10:19:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-4",
-        "new_key_id": "k-general-20261117190234-5"
+        "old_key_id": "k-general-20261117230453-4",
+        "new_key_id": "k-general-20261117230453-5"
       },
       {
         "sim_elapsed_s": 1320.0,
@@ -103,8 +103,8 @@
         "timestamp_utc": "2026-11-17T10:22:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-5",
-        "new_key_id": "k-general-20261117190234-6"
+        "old_key_id": "k-general-20261117230453-5",
+        "new_key_id": "k-general-20261117230453-6"
       },
       {
         "sim_elapsed_s": 1500.0,
@@ -112,8 +112,8 @@
         "timestamp_utc": "2026-11-17T10:25:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-6",
-        "new_key_id": "k-general-20261117190234-7"
+        "old_key_id": "k-general-20261117230453-6",
+        "new_key_id": "k-general-20261117230453-7"
       },
       {
         "sim_elapsed_s": 1680.0,
@@ -121,8 +121,8 @@
         "timestamp_utc": "2026-11-17T10:28:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-7",
-        "new_key_id": "k-general-20261117190234-8"
+        "old_key_id": "k-general-20261117230453-7",
+        "new_key_id": "k-general-20261117230453-8"
       },
       {
         "sim_elapsed_s": 1860.0,
@@ -130,8 +130,8 @@
         "timestamp_utc": "2026-11-17T10:31:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-8",
-        "new_key_id": "k-general-20261117190234-9"
+        "old_key_id": "k-general-20261117230453-8",
+        "new_key_id": "k-general-20261117230453-9"
       },
       {
         "sim_elapsed_s": 2040.0,
@@ -139,8 +139,8 @@
         "timestamp_utc": "2026-11-17T10:34:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-9",
-        "new_key_id": "k-general-20261117190234-10"
+        "old_key_id": "k-general-20261117230453-9",
+        "new_key_id": "k-general-20261117230453-10"
       },
       {
         "sim_elapsed_s": 2220.0,
@@ -148,35 +148,35 @@
         "timestamp_utc": "2026-11-17T10:37:00+00:00",
         "trigger": "ADAPTIVE_RISK",
         "decision": "EXECUTED",
-        "old_key_id": "k-general-20261117190234-10",
-        "new_key_id": "k-general-20261117190234-11"
+        "old_key_id": "k-general-20261117230453-10",
+        "new_key_id": "k-general-20261117230453-11"
       }
     ],
     "records_per_key": {
-      "k-general-20261117190234-1": 21,
-      "k-general-20261117190234-2": 6,
-      "k-general-20261117190234-3": 6,
-      "k-general-20261117190234-4": 6,
-      "k-general-20261117190234-5": 6,
-      "k-general-20261117190234-6": 6,
-      "k-general-20261117190234-7": 6,
-      "k-general-20261117190234-8": 6,
-      "k-general-20261117190234-9": 6,
-      "k-general-20261117190234-10": 6,
-      "k-general-20261117190234-11": 45
+      "k-general-20261117230453-1": 21,
+      "k-general-20261117230453-2": 6,
+      "k-general-20261117230453-3": 6,
+      "k-general-20261117230453-4": 6,
+      "k-general-20261117230453-5": 6,
+      "k-general-20261117230453-6": 6,
+      "k-general-20261117230453-7": 6,
+      "k-general-20261117230453-8": 6,
+      "k-general-20261117230453-9": 6,
+      "k-general-20261117230453-10": 6,
+      "k-general-20261117230453-11": 45
     },
     "attack_records_per_key": {
-      "k-general-20261117190234-1": 1,
-      "k-general-20261117190234-2": 6,
-      "k-general-20261117190234-3": 6,
-      "k-general-20261117190234-4": 6,
-      "k-general-20261117190234-5": 6,
-      "k-general-20261117190234-6": 6,
-      "k-general-20261117190234-7": 6,
-      "k-general-20261117190234-8": 6,
-      "k-general-20261117190234-9": 6,
-      "k-general-20261117190234-10": 6,
-      "k-general-20261117190234-11": 5
+      "k-general-20261117230453-1": 1,
+      "k-general-20261117230453-2": 6,
+      "k-general-20261117230453-3": 6,
+      "k-general-20261117230453-4": 6,
+      "k-general-20261117230453-5": 6,
+      "k-general-20261117230453-6": 6,
+      "k-general-20261117230453-7": 6,
+      "k-general-20261117230453-8": 6,
+      "k-general-20261117230453-9": 6,
+      "k-general-20261117230453-10": 6,
+      "k-general-20261117230453-11": 5
     },
     "max_attack_key_exposure_seconds": 150.01,
     "max_attack_key_exposure_minutes": 2.5002,
@@ -193,7 +193,7 @@
       "timestamp_utc": "2026-11-17T10:09:00+00:00",
       "is_attack": false,
       "risk_score": 28.0,
-      "key_id": "k-general-20261117190234-1"
+      "key_id": "k-general-20261117230453-1"
     },
     {
       "event_index": 19,
@@ -201,7 +201,7 @@
       "timestamp_utc": "2026-11-17T10:09:30+00:00",
       "is_attack": false,
       "risk_score": 29.0,
-      "key_id": "k-general-20261117190234-1"
+      "key_id": "k-general-20261117230453-1"
     },
     {
       "event_index": 20,
@@ -209,7 +209,7 @@
       "timestamp_utc": "2026-11-17T10:10:00+00:00",
       "is_attack": true,
       "risk_score": 88.0,
-      "key_id": "k-general-20261117190234-1"
+      "key_id": "k-general-20261117230453-1"
     },
     {
       "event_index": 21,
@@ -217,7 +217,7 @@
       "timestamp_utc": "2026-11-17T10:10:30+00:00",
       "is_attack": true,
       "risk_score": 89.0,
-      "key_id": "k-general-20261117190234-2"
+      "key_id": "k-general-20261117230453-2"
     },
     {
       "event_index": 22,
@@ -225,7 +225,7 @@
       "timestamp_utc": "2026-11-17T10:11:00+00:00",
       "is_attack": true,
       "risk_score": 90.0,
-      "key_id": "k-general-20261117190234-2"
+      "key_id": "k-general-20261117230453-2"
     },
     {
       "event_index": 23,
@@ -233,7 +233,7 @@
       "timestamp_utc": "2026-11-17T10:11:30+00:00",
       "is_attack": true,
       "risk_score": 91.0,
-      "key_id": "k-general-20261117190234-2"
+      "key_id": "k-general-20261117230453-2"
     },
     {
       "event_index": 24,
@@ -241,7 +241,7 @@
       "timestamp_utc": "2026-11-17T10:12:00+00:00",
       "is_attack": true,
       "risk_score": 92.0,
-      "key_id": "k-general-20261117190234-2"
+      "key_id": "k-general-20261117230453-2"
     }
   ],
   "limitations": [

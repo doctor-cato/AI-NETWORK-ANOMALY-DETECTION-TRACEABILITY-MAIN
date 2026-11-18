@@ -35,7 +35,6 @@ from unittest import mock
 import numpy as np
 import pandas as pd
 import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
     CATEGORICAL_CODED_COLUMNS,
@@ -43,6 +42,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
+
 from network_anomaly.data.split import SPLIT_PROTOCOL_VERSION
 from network_anomaly.models.autoencoder import (
     build_model,

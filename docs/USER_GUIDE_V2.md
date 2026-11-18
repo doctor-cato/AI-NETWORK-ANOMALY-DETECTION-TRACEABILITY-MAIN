@@ -9,10 +9,10 @@ Tài liệu này hướng dẫn vận hành giao diện Desktop **NetFlow Sentin
 | Màn hình | Chức năng Thực tế | Endpoint Backend |
 |---|---|---|
 | **Offline CSV & 4-Model Compare** | Nạp CSV 18 đặc trưng chuẩn v2 (`canonical-flow-v2-18`) hoặc mở `demo_flows.csv`, hiển thị `AI Ready 4/4` sau kiểm thực SHA-256 | `/api/v1/csv/inspect`, `/api/v1/csv/analyze` |
-| **Live Telemetry & Streaming** | Giám sát event stream, backpressure ring buffer, chế độ Replay / UDP Loopback lab | `/api/v1/telemetry/status`, `/api/v1/telemetry/events` |
-| **Behavioral Analysis** | Hiển thị `Behavioral Vector` 16-D theo sliding time-window & cosine similarity score | `/api/v1/behavioral/sessions` |
+| **Live Telemetry & Streaming** | Giám sát event stream, backpressure ring buffer, chế độ Replay / UDP Loopback lab | `/api/v1/live/start`, `/api/v1/live/status`, `/api/v1/live/results`, `/api/v1/live/alerts`, `/api/v1/live/graph` |
+| **Behavioral Analysis** | Hiển thị `Behavioral Vector` 16-D theo sliding time-window & cosine similarity score | `/api/v1/behavioral/vectors`, `/api/v1/behavioral/similarity`, `/api/v1/behavioral/correlate` |
 | **Attack Timeline & Trace** | Tách biệt `OBSERVED TELEMETRY` vs `INFERRED RELATIONSHIP`, xuất investigation report kèm SHA-256 | `/api/v1/trace/timeline`, `/api/v1/trace/graph`, `/api/v1/trace/investigation/generate` |
-| **Cryptography & Security Dry-Run** | Theo dõi `active_key_id`, Windows DPAPI / KEK AES-256-GCM, lịch sử xoay vòng khóa & mô phỏng phản ứng `executed=false` | `/api/v1/crypto/status`, `/api/v1/security/simulate-response` |
+| **Cryptography & Security Dry-Run** | Theo dõi `active_key_id`, Windows DPAPI / KEK AES-256-GCM, lịch sử xoay vòng khóa & mô phỏng phản ứng `executed=false` | `/api/v1/crypto/status`, `/api/v1/keys`, `/api/v1/rotation`, `/api/v1/security/simulate-response` |
 
 ---
 

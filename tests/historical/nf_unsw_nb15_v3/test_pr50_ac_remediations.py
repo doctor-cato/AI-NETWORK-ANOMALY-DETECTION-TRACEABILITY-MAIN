@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+from network_anomaly.evaluation.evidence_recovery import render_report
 
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.schemas import HealthResponse
 from network_anomaly.api.service import ApiService
 from network_anomaly.config import PROJECT_ROOT
-from network_anomaly.evaluation.evidence_recovery import render_report
 
 
 def test_evidence_recovery_renders_rf_vs_if_comparison_and_artifacts():

@@ -139,9 +139,7 @@ def validate_inference_input(
     excluded_trace_cols = set(TRACE_METADATA_COLUMNS) | set(PROVENANCE_COLUMNS)
     trace_metadata_present = [col for col in input_columns if col in excluded_trace_cols]
     other_extra_columns = [
-        col
-        for col in extra_columns
-        if col not in TARGET_COLUMNS and col not in excluded_trace_cols
+        col for col in extra_columns if col not in TARGET_COLUMNS and col not in excluded_trace_cols
     ]
 
     # 4. Audit each feature column for invalid / unparseable numeric tokens

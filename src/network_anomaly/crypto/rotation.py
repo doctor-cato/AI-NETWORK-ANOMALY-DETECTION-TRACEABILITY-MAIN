@@ -6,12 +6,11 @@ Implements Issues #120, #121, #122 for NetFlow Sentinel v2.0.
 from __future__ import annotations
 
 import sqlite3
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .key_manager import KeyManager
 
@@ -59,6 +58,7 @@ class KeyRotationPolicy:
         cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS,
         max_rotations_per_hour: int = DEFAULT_MAX_ROTATIONS_PER_HOUR,
         adaptive_risk_threshold: float = DEFAULT_ADAPTIVE_RISK_THRESHOLD,
+        clock_fn: Optional[Callable[[], datetime]] = None,
     ):
         self.key_manager = key_manager
         self.db_path = db_path
@@ -66,14 +66,73 @@ class KeyRotationPolicy:
         self.cooldown_seconds = cooldown_seconds
         self.max_rotations_per_hour = max_rotations_per_hour
         self.adaptive_risk_threshold = adaptive_risk_threshold
+        self.clock_fn: Callable[[], datetime] = clock_fn or (lambda: datetime.now(timezone.utc))
 
-        # In-memory audit trail & rate limiter
+        # Audit trail & rate limiter (backed by SQLite when db_path is configured)
         self._history: List[RotationAuditRecord] = []
         self._last_rotation_time: Dict[str, float] = {}
+        self._load_persisted_state()
+
+    def _now_dt(self) -> datetime:
+        now_dt = self.clock_fn()
+        if now_dt.tzinfo is None:
+            return now_dt.replace(tzinfo=timezone.utc)
+        return now_dt.astimezone(timezone.utc)
+
+    def _infer_domain(self, rotation_id: str, key_id: Optional[str]) -> str:
+        if key_id:
+            meta = self.key_manager.get_metadata(key_id)
+            if meta and getattr(meta, "domain", None):
+                return str(meta.domain)
+        if rotation_id.startswith("rot-") and "-" in rotation_id[4:]:
+            return rotation_id[4:].rsplit("-", 1)[0]
+        return "general"
+
+    def _load_persisted_state(self) -> None:
+        if not self.db_path or not self.db_path.exists():
+            return
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT rotation_id, triggered_by, old_key_id, new_key_id, status, reason, created_at
+                FROM rotation_audit
+                ORDER BY created_at ASC;
+                """).fetchall()
+            conn.close()
+        except Exception:
+            return
+
+        for row in rows:
+            try:
+                trigger = RotationTrigger(row["triggered_by"])
+                decision = RotationDecision(row["status"])
+            except ValueError:
+                continue
+            new_kid = row["new_key_id"] or None
+            old_kid = row["old_key_id"] or None
+            domain = self._infer_domain(row["rotation_id"], new_kid or old_kid)
+            rec = RotationAuditRecord(
+                rotation_id=row["rotation_id"],
+                trigger=trigger,
+                decision=decision,
+                domain=domain,
+                old_key_id=old_kid,
+                new_key_id=new_kid,
+                risk_score=None,
+                reason=row["reason"] or "",
+                timestamp=row["created_at"],
+            )
+            self._history.append(rec)
+            if decision == RotationDecision.EXECUTED:
+                ts_val = datetime.fromisoformat(row["created_at"]).timestamp()
+                prev = self._last_rotation_time.get(domain, 0.0)
+                if ts_val > prev:
+                    self._last_rotation_time[domain] = ts_val
 
     def can_rotate(self, domain: str = "general") -> Tuple[bool, Optional[RotationDecision], str]:
         """Check if rotation is permitted by cooldown and rate-limit guardrails."""
-        now = time.time()
+        now = self._now_dt().timestamp()
         last_time = self._last_rotation_time.get(domain, 0.0)
 
         # 1. Check Cooldown
@@ -113,8 +172,8 @@ class KeyRotationPolicy:
         reason: str = "",
     ) -> Tuple[RotationDecision, Optional[str]]:
         """Execute key rotation if permitted by policy, or record rejection."""
-        now_dt = datetime.now(timezone.utc)
-        rot_id = f"rot-{domain}-{now_dt.strftime('%Y%m%d%H%M%S')}"
+        now_dt = self._now_dt()
+        rot_id = f"rot-{domain}-{now_dt.strftime('%Y%m%d%H%M%S%f')}"
 
         permitted, decision, msg = self.can_rotate(domain=domain)
         if not permitted:
@@ -137,7 +196,7 @@ class KeyRotationPolicy:
         old_key_id = self.key_manager._active_key_ids.get(domain)
         try:
             new_km = self.key_manager.generate_key(domain=domain)
-            self._last_rotation_time[domain] = time.time()
+            self._last_rotation_time[domain] = now_dt.timestamp()
 
             rec = RotationAuditRecord(
                 rotation_id=rot_id,
@@ -214,7 +273,7 @@ class KeyRotationPolicy:
             )
 
         created = datetime.fromisoformat(km.created_at)
-        elapsed = (datetime.now(timezone.utc) - created).total_seconds()
+        elapsed = (self._now_dt() - created).total_seconds()
 
         if elapsed >= self.fixed_interval_seconds:
             return self.execute_rotation(

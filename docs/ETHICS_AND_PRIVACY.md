@@ -2,7 +2,7 @@
 
 ## Sử dụng dữ liệu
 
-- Các dataset hiện hành (**AIT-NDS-v2**, **AIT-LDS-v2.1**, **AIT-ADS**, **CTU-SME-11**) áp dụng giấy phép **CC BY 4.0**: phải ghi nhận đầy đủ nguồn và DOI trích dẫn trong `NOTICE` và `THIRD_PARTY_NOTICES.md`. Nguồn cũ `NF-UNSW-NB15-v3` đã ngừng sử dụng trong active pipeline (chuyển vào `historical/`). Apache-2.0 của source code không relicense dataset.
+- Các dataset hiện hành áp dụng đúng giấy phép gốc (**CC BY 4.0** cho **AIT-NDS-v2**, **AIT-ADS**, **CTU-SME-11**; **CC BY-NC-SA 4.0** cho **AIT-LDS-v2.1**, chỉ dùng cho nghiên cứu/correlation cục bộ): phải ghi nhận đầy đủ nguồn và DOI trích dẫn trong `NOTICE` và `THIRD_PARTY_NOTICES.md`. Nguồn cũ `NF-UNSW-NB15-v3` đã ngừng sử dụng trong active pipeline (chuyển vào `historical/`). Apache-2.0 của source code không relicense dataset.
 - Repository này chỉ chứa hướng dẫn và mã nguồn; không kèm dataset.
 - Mã nguồn và tài liệu không nhúng dữ liệu cá nhân như tên, địa chỉ hoặc nội dung mạng riêng tư.
 

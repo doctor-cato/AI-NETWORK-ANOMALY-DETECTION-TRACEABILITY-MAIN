@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from scripts.fetch_external_dataset import (
     UNSW_CANONICAL_TRAIN_END,

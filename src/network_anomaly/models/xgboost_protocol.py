@@ -15,7 +15,11 @@ from network_anomaly.config import RANDOM_SEED
 from network_anomaly.data.taxonomy import CANONICAL_ATTACK_CATEGORIES
 from network_anomaly.data.v2_schema import (
     DATASET_SUITE_NAME as DATASET_NAME,
+)
+from network_anomaly.data.v2_schema import (
     FEATURE_CONTRACT_ID as FEATURE_CONTRACT_VERSION,
+)
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
     PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
@@ -74,6 +78,10 @@ class XGBoostBaselineConfig:
     learning_rate: float = 0.1
     subsample: float = 0.8
     colsample_bytree: float = 0.8
+    scale_pos_weight: float = 1.0
+    min_child_weight: float = 1.0
+    reg_lambda: float = 1.0
+    reg_alpha: float = 0.0
     objective: str = "binary:logistic"
     eval_metric: str = "logloss"
     tree_method: str = "hist"
@@ -94,6 +102,10 @@ class XGBoostBaselineConfig:
             and abs(self.learning_rate - CANONICAL_BASELINE_PARAMS["learning_rate"]) < 1e-9
             and abs(self.subsample - CANONICAL_BASELINE_PARAMS["subsample"]) < 1e-9
             and abs(self.colsample_bytree - CANONICAL_BASELINE_PARAMS["colsample_bytree"]) < 1e-9
+            and abs(self.scale_pos_weight - 1.0) < 1e-9
+            and abs(self.min_child_weight - 1.0) < 1e-9
+            and abs(self.reg_lambda - 1.0) < 1e-9
+            and abs(self.reg_alpha - 0.0) < 1e-9
             and self.objective == CANONICAL_BASELINE_PARAMS["objective"]
             and self.eval_metric == CANONICAL_BASELINE_PARAMS["eval_metric"]
             and self.tree_method == CANONICAL_BASELINE_PARAMS["tree_method"]
@@ -133,6 +145,14 @@ class XGBoostBaselineConfig:
             raise ValueError(f"subsample must be in (0, 1], got {self.subsample}")
         if not (0.0 < self.colsample_bytree <= 1.0):
             raise ValueError(f"colsample_bytree must be in (0, 1], got {self.colsample_bytree}")
+        if self.scale_pos_weight <= 0.0:
+            raise ValueError(f"scale_pos_weight must be positive, got {self.scale_pos_weight}")
+        if self.min_child_weight < 0.0:
+            raise ValueError(f"min_child_weight must be >= 0, got {self.min_child_weight}")
+        if self.reg_lambda < 0.0:
+            raise ValueError(f"reg_lambda must be >= 0, got {self.reg_lambda}")
+        if self.reg_alpha < 0.0:
+            raise ValueError(f"reg_alpha must be >= 0, got {self.reg_alpha}")
         if self.n_jobs == 0 or self.n_jobs < -1:
             raise ValueError(f"n_jobs must be -1 or a positive integer, got {self.n_jobs}")
 
@@ -148,6 +168,17 @@ class XGBoostBaselineConfig:
                         f"expected {canonical_v}, got {actual_v}. If this is an intentional "
                         "override, set is_canonical_baseline=False and provide a distinct "
                         "configuration_id."
+                    )
+            for k, default_v in (
+                ("scale_pos_weight", 1.0),
+                ("min_child_weight", 1.0),
+                ("reg_lambda", 1.0),
+                ("reg_alpha", 0.0),
+            ):
+                if abs(float(getattr(self, k)) - default_v) >= 1e-9:
+                    raise ValueError(
+                        f"Canonical baseline configuration mismatch for '{k}': "
+                        f"expected {default_v}, got {getattr(self, k)}"
                     )
             if self.configuration_id != "xgb-v2-baseline-canonical-v1":
                 raise ValueError(

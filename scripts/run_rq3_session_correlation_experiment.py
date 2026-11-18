@@ -283,7 +283,7 @@ def run_rq3_experiment(
     }
 
     json_path = output_dir / "rq3_session_correlation_experiment.json"
-    json_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    json_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     md_path = md_output_path or Path("docs/experiments/EXP5_SESSION_CORRELATION.md")
     md_path.parent.mkdir(parents=True, exist_ok=True)
@@ -305,7 +305,7 @@ def run_rq3_experiment(
         "## Limitations",
         *[f"- {lim}" for lim in results["limitations"]],
     ]
-    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"RQ3 simulation report written: {json_path} and {md_path}")
     return results
 

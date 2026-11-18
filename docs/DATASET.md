@@ -7,7 +7,7 @@
 | Mã nguồn | Tên chính thức & Phiên bản | DOI / URL | Vai trò | Trạng thái |
 |---|---|---|---|---|
 | `ait_nds_v2` | **AIT NetFlow Data Set v2** *(không gọi v2.1)* | [`10.5281/zenodo.13168643`](https://doi.org/10.5281/zenodo.13168643) | Primary synthetic NetFlow ML dataset (tạo từ PCAP của `AIT-LDS-v2.0`, 8 kịch bản, `3,465,342` flows gốc) | `VERIFIED` (CC BY 4.0) |
-| `ait_lds_v2_1` | **AIT Log Data Set v2.1** | [`10.5281/zenodo.19483937`](https://doi.org/10.5281/zenodo.19483937) | Application, system, auth, DNS, VPN, audit logs & ground-truth attack steps cho Behavioral Vector, Session Correlation, Trace Engine | `VERIFIED` (CC BY 4.0); tách phiên bản với `AIT-NDS-v2`, **không** tự giả định join trực tiếp |
+| `ait_lds_v2_1` | **AIT Log Data Set v2.1** | [`10.5281/zenodo.19483937`](https://doi.org/10.5281/zenodo.19483937) | Application, system, auth, DNS, VPN, audit logs & ground-truth attack steps cho Behavioral Vector, Session Correlation, Trace Engine | `VERIFIED` (CC BY-NC-SA 4.0); tách phiên bản với `AIT-NDS-v2`, **không** tự giả định join trực tiếp |
 | `ait_ads` | **AIT Alert Data Set** | [`10.5281/zenodo.8263181`](https://doi.org/10.5281/zenodo.8263181) | Alert aggregation & multi-step alert correlation sinh từ `AIT-LDS-v2.0`; không coi là benchmark ML độc lập | `VERIFIED` (CC BY 4.0) |
 | `ctu_sme_11` | **CTU-SME-11** | [`10.5281/zenodo.7958258`](https://doi.org/10.5281/zenodo.7958258) | Real captured SME testbed traffic trên thiết bị thật (`Echo1stGen-1`: `76,073` flows; `Windows7AD-1`: `175,146` labeled + `9,394` unmapped) | `VERIFIED` (CC BY 4.0) |
 | `ugr16` | **UGR'16** | `https://nesg.ugr.es/nesg-ugr16/` | Real ISP traffic external validation & domain shift | **`BLOCKED`** (`HTTP 403` / Portal en Mantenimiento; không tạo dữ liệu thay thế) |
@@ -56,8 +56,8 @@ git check-ignore data/raw/ait_nds_v2 data/processed/v2
 
 ## 4. Tóm tắt Chất lượng & Chia tập (`v2-scenario-group-purged-v1`)
 
-- **AIT-NDS-v2 (`3,231,215` dòng có nhãn hợp lệ):**
-  - **Train (`1,930,219`):** `fox`, `harrison`, `santos`, `wardbeck`, `wilson` — `1,658,795` Benign / `271,424` Attack (`Reconnaissance`: 181,843; `Data_Exfiltration`: 87,268; `Credential_Attack`: 2,104; `Post_Exploitation_Discovery`: 180; `Exploitation_And_C2`: 29).
+- **AIT-NDS-v2 (`3,464,400` dòng có nhãn hợp lệ + `942` unmapped = `3,465,342` dòng gốc):**
+  - **Train (`2,097,891`):** `fox`, `harrison`, `santos`, `wardbeck`, `wilson` — `1,825,866` Benign / `272,025` Attack (`Reconnaissance`: 182,103; `Data_Exfiltration`: 87,268; `Credential_Attack`: 2,438; `Post_Exploitation_Discovery`: 180; `Exploitation_And_C2`: 36).
   - **Validation (`377,704`):** `russellmitchell` — `206,676` Benign / `171,028` Attack (`Reconnaissance`: 155,181; `Data_Exfiltration`: 15,778; `Post_Exploitation_Discovery`: 56; `Credential_Attack`: 11; `Exploitation_And_C2`: 2).
-  - **Test (`923,292`):** `shaw`, `wheeler` — `747,610` Benign / `175,682` Attack (`Reconnaissance`: 95,487; `Data_Exfiltration`: 80,075; `Credential_Attack`: 78; `Post_Exploitation_Discovery`: 37; `Exploitation_And_C2`: 5).
+  - **Test (`988,805`):** `shaw`, `wheeler` — `812,980` Benign / `175,825` Attack (`Reconnaissance`: 95,628; `Data_Exfiltration`: 80,075; `Credential_Attack`: 78; `Post_Exploitation_Discovery`: 39; `Exploitation_And_C2`: 5).
   - **Kiểm toán rò rỉ:** `scenario_overlap_count = 0`, `scenario_5tuple_ts_overlap_count = 0`, `status = "PASS"`.

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Type
 
 from network_anomaly.data.v2_schema import ALL_CANONICAL_COLUMNS, ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.exceptions import SourceUnsupportedError
@@ -131,7 +131,16 @@ class SourceRegistry:
                 ml_supported=False,
                 trace_supported=True,
                 description="Traditional Cisco NetFlow v5 format with 5-tuple and single-direction volume counters.",
-                expected_columns=["srcaddr", "dstaddr", "srcport", "dstport", "prot", "dOctets", "dPkts", "tcp_flags"],
+                expected_columns=[
+                    "srcaddr",
+                    "dstaddr",
+                    "srcport",
+                    "dstport",
+                    "prot",
+                    "dOctets",
+                    "dPkts",
+                    "tcp_flags",
+                ],
                 adapter_name="NetFlowV5Adapter",
             )
         )
@@ -169,7 +178,22 @@ class SourceRegistry:
                 ml_supported=False,
                 trace_supported=True,
                 description="Aggregated 1-10 min window AWS VPC flow records (version 2 format).",
-                expected_columns=["version", "account-id", "interface-id", "srcaddr", "dstaddr", "srcport", "dstport", "protocol", "packets", "bytes", "start", "end", "action", "log-status"],
+                expected_columns=[
+                    "version",
+                    "account-id",
+                    "interface-id",
+                    "srcaddr",
+                    "dstaddr",
+                    "srcport",
+                    "dstport",
+                    "protocol",
+                    "packets",
+                    "bytes",
+                    "start",
+                    "end",
+                    "action",
+                    "log-status",
+                ],
                 adapter_name="AWSVPCFlowAdapter",
             )
         )
@@ -184,7 +208,15 @@ class SourceRegistry:
                 ml_supported=False,
                 trace_supported=True,
                 description="Suricata EVE JSON event output for flow records and alert events.",
-                expected_columns=["timestamp", "event_type", "src_ip", "src_port", "dest_ip", "dest_port", "proto"],
+                expected_columns=[
+                    "timestamp",
+                    "event_type",
+                    "src_ip",
+                    "src_port",
+                    "dest_ip",
+                    "dest_port",
+                    "proto",
+                ],
                 adapter_name="SuricataEveAdapter",
             )
         )
@@ -202,6 +234,106 @@ class SourceRegistry:
                 adapter_name="UnsupportedSourceAdapter",
             )
         )
+
+        # 11-15. Unified v2 Security Event Adapters
+        self.register(
+            SourceDefinition(
+                source_id="v2_netflow",
+                name="Unified v2 NetFlow Adapter",
+                physical_format="csv/tsv",
+                schema_version="2.0.0",
+                ml_supported=True,
+                trace_supported=True,
+                description="Adapts AIT-NDS-v2 Tstat, CTU-SME-11 Zeek, and canonical v2 flow records.",
+                expected_columns=list(ML_FEATURE_COLUMNS),
+                adapter_name="UnifiedNetFlowAdapter",
+            )
+        )
+        self.register(
+            SourceDefinition(
+                source_id="v2_dns",
+                name="Application DNS Adapter (v2)",
+                physical_format="jsonl/tsv",
+                schema_version="2.0.0",
+                ml_supported=False,
+                trace_supported=True,
+                description="Adapts DNS query logs to CanonicalSecurityEvent (route-only, no ML imputation).",
+                adapter_name="ApplicationDNSAdapter",
+            )
+        )
+        self.register(
+            SourceDefinition(
+                source_id="v2_web",
+                name="Application Web Log Adapter (v2)",
+                physical_format="clf/combined",
+                schema_version="2.0.0",
+                ml_supported=False,
+                trace_supported=True,
+                description="Adapts HTTP/Nginx access logs to CanonicalSecurityEvent with URL credential stripping.",
+                adapter_name="ApplicationWebAdapter",
+            )
+        )
+        self.register(
+            SourceDefinition(
+                source_id="v2_auth",
+                name="Identity & Auth Log Adapter (v2)",
+                physical_format="syslog",
+                schema_version="2.0.0",
+                ml_supported=False,
+                trace_supported=True,
+                description="Adapts SSH/VPN authentication syslog lines to CanonicalSecurityEvent.",
+                adapter_name="IdentityAuthAdapter",
+            )
+        )
+        self.register(
+            SourceDefinition(
+                source_id="v2_audit",
+                name="System Audit Adapter (v2)",
+                physical_format="jsonl",
+                schema_version="2.0.0",
+                ml_supported=False,
+                trace_supported=True,
+                description="Adapts Sysmon and auditd records to CanonicalSecurityEvent.",
+                adapter_name="SystemAuditAdapter",
+            )
+        )
+
+    def get_adapter_class(self, source_id: str) -> Type[Any]:
+        """Resolve a registered v2 source_id or adapter_name to its adapter class."""
+        from network_anomaly.ingestion.adapters.v2_adapter import (
+            ApplicationDNSAdapter,
+            ApplicationWebAdapter,
+            IdentityAuthAdapter,
+            SystemAuditAdapter,
+            UnifiedNetFlowAdapter,
+        )
+
+        adapter_map: Dict[str, Type[Any]] = {
+            "v2_netflow": UnifiedNetFlowAdapter,
+            "UnifiedNetFlowAdapter": UnifiedNetFlowAdapter,
+            "source:ait-nds-v2": UnifiedNetFlowAdapter,
+            "source:ctu-sme-11": UnifiedNetFlowAdapter,
+            "source:canonical-flow-v2": UnifiedNetFlowAdapter,
+            "v2_dns": ApplicationDNSAdapter,
+            "ApplicationDNSAdapter": ApplicationDNSAdapter,
+            "v2_web": ApplicationWebAdapter,
+            "ApplicationWebAdapter": ApplicationWebAdapter,
+            "v2_auth": IdentityAuthAdapter,
+            "IdentityAuthAdapter": IdentityAuthAdapter,
+            "v2_audit": SystemAuditAdapter,
+            "SystemAuditAdapter": SystemAuditAdapter,
+        }
+        if source_id in adapter_map:
+            return adapter_map[source_id]
+        source_def = self.get_source(source_id)
+        if source_def.adapter_name and source_def.adapter_name in adapter_map:
+            return adapter_map[source_def.adapter_name]
+        raise SourceUnsupportedError(f"No runtime adapter class bound for source '{source_id}'.")
+
+    def create_adapter(self, source_id: str, **kwargs: Any) -> Any:
+        """Instantiate the registered adapter class for a given source_id."""
+        cls = self.get_adapter_class(source_id)
+        return cls(source_id=source_id, **kwargs) if "source_id" not in kwargs else cls(**kwargs)
 
     def register(self, source: SourceDefinition) -> None:
         self._sources[source.source_id] = source
@@ -222,7 +354,9 @@ class SourceRegistry:
         if all(col in col_set for col in ML_FEATURE_COLUMNS):
             return self.get_source("source:canonical-flow-v2")
 
-        if {"#15#c_ip:1", "durat:31"}.issubset(col_set) or {"#c_ip:1", "c_first_abs:3"}.issubset(col_set):
+        if {"#15#c_ip:1", "durat:31"}.issubset(col_set) or {"#c_ip:1", "c_first_abs:3"}.issubset(
+            col_set
+        ):
             return self.get_source("source:ait-nds-v2")
 
         if {"id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p"}.issubset(col_set):

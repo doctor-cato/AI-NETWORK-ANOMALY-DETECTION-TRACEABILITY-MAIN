@@ -22,7 +22,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
     CATEGORICAL_CODED_COLUMNS,

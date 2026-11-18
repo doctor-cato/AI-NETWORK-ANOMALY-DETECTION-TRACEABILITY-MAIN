@@ -119,9 +119,7 @@ def test_failed_external_benchmark_cannot_proceed_to_ml_in_gate():
         reason="Empirical recall is zero on cross-domain transfer.",
     )
     gate = InferenceEligibilityGate(
-        evaluator=FeatureCompatibilityEvaluator(
-            benchmark_registry={"source:ctu-sme-11": failed_ev}
-        )
+        evaluator=FeatureCompatibilityEvaluator(benchmark_registry={"source:ctu-sme-11": failed_ev})
     )
     adapter = CanonicalFlowV2Adapter(source_id="source:ctu-sme-11")
     rec = {col: 0.5 for col in ML_FEATURE_COLUMNS}

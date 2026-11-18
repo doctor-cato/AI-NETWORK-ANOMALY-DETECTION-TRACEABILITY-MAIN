@@ -44,7 +44,7 @@ Ghi chú trạng thái `UGR'16`: cổng chính thức `https://nesg.ugr.es/nesg-
 
 ## 3. Reproduce Training, Threshold Calibration & Evaluation (4 Models v2)
 
-Mỗi mô hình huấn luyện độc lập, fit preprocessing **chỉ trên `ait_train`** (`asinh_robust`, SHA-256 `d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32`) và ghi manifest kèm `model_artifact_sha256`, `dataset_sha256`, `split_manifest_sha256`, `preprocessor_artifact_sha256`:
+Mỗi mô hình huấn luyện độc lập, fit preprocessing **chỉ trên `ait_train`** (`asinh_robust`, SHA-256 `0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`) và ghi manifest kèm `model_artifact_sha256`, `dataset_sha256`, `split_manifest_sha256`, `preprocessor_artifact_sha256`:
 
 ```powershell
 .venv\Scripts\python.exe scripts/train_random_forest.py
@@ -61,7 +61,7 @@ Mỗi mô hình huấn luyện độc lập, fit preprocessing **chỉ trên `ai
 ## 4. Reproduce Research Experiments & Cross-Source Benchmarks
 
 ```powershell
-# RQ1: So sánh 4 mô hình trên AIT-Test (923,292 dòng)
+# RQ1: So sánh 4 mô hình trên AIT-Test (988,805 dòng)
 .venv\Scripts\python.exe scripts/generate_model_comparison_report.py
 
 # RQ2: Mất cân bằng lớp & tấn công hiếm trên AIT-NDS-v2

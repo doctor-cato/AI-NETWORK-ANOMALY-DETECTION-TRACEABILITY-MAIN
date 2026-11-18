@@ -111,7 +111,14 @@ class CanonicalFlowV2Adapter(BaseSourceAdapter):
 
             # If only derived columns were omitted while all 6 base fields exist, compute cleanly
             if missing_features and not invalid_features:
-                base_keys = ("duration_ms", "bytes_in", "bytes_out", "pkts_in", "pkts_out", "protocol_num")
+                base_keys = (
+                    "duration_ms",
+                    "bytes_in",
+                    "bytes_out",
+                    "pkts_in",
+                    "pkts_out",
+                    "protocol_num",
+                )
                 if all(k in candidate for k in base_keys):
                     try:
                         candidate = compute_flow_features_from_base(
@@ -126,7 +133,11 @@ class CanonicalFlowV2Adapter(BaseSourceAdapter):
                     except ValueError as exc:
                         invalid_features["base_flow"] = str(exc)
 
-            if not missing_features and not invalid_features and len(candidate) == len(ML_FEATURE_COLUMNS):
+            if (
+                not missing_features
+                and not invalid_features
+                and len(candidate) == len(ML_FEATURE_COLUMNS)
+            ):
                 ml_feats = candidate
 
             dur_ms = float(candidate.get("duration_ms", 0.0)) if "candidate" in locals() else 0.0
@@ -169,8 +180,6 @@ class CanonicalFlowV2Adapter(BaseSourceAdapter):
                 else InferenceEligibility.FEATURE_INCOMPLETE
             ),
             validation_status=(
-                ValidationStatus.SCHEMA_COMPATIBLE
-                if is_complete
-                else ValidationStatus.PARSEABLE
+                ValidationStatus.SCHEMA_COMPATIBLE if is_complete else ValidationStatus.PARSEABLE
             ),
         )

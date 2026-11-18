@@ -372,7 +372,13 @@ class AutoencoderModel:
 
     model_type = "Autoencoder"
 
-    def __init__(self, estimator: MLPRegressor, threshold: float) -> None:
+    def __init__(
+        self,
+        estimator: MLPRegressor,
+        threshold: float,
+        feature_mean: Any = None,
+        feature_scale: Any = None,
+    ) -> None:
         if not isinstance(estimator, MLPRegressor):
             raise TypeError(
                 f"AutoencoderModel requires an MLPRegressor estimator, got {type(estimator).__name__}"
@@ -382,25 +388,54 @@ class AutoencoderModel:
         threshold_val = float(threshold)
         if not np.isfinite(threshold_val) or threshold_val < 0.0:
             raise ValueError(f"threshold must be non-negative and finite, got {threshold!r}")
+        if (feature_mean is None) != (feature_scale is None):
+            raise ValueError("feature_mean and feature_scale must both be provided or both None")
         self._estimator = estimator
         self.threshold = threshold_val
+        if feature_mean is not None and feature_scale is not None:
+            mean_arr = np.asarray(feature_mean, dtype=np.float64)
+            scale_arr = np.asarray(feature_scale, dtype=np.float64)
+            if mean_arr.ndim != 1 or scale_arr.shape != mean_arr.shape:
+                raise ValueError("Autoencoder feature_mean and feature_scale shapes must match 1-D")
+            if not np.all(np.isfinite(mean_arr)) or not np.all(np.isfinite(scale_arr)):
+                raise ValueError("Autoencoder feature_mean/feature_scale must be finite")
+            if np.any(scale_arr <= 0.0):
+                raise ValueError("Autoencoder feature_scale must be strictly positive")
+            self.feature_mean: np.ndarray | None = mean_arr
+            self.feature_scale: np.ndarray | None = scale_arr
+        else:
+            self.feature_mean = None
+            self.feature_scale = None
 
     @property
     def estimator(self) -> MLPRegressor:
         """Return the underlying fitted MLPRegressor instance."""
         return self._estimator
 
+    def _prepare_input(self, X: Any) -> np.ndarray:
+        validate_features(X)
+        X_arr = _to_float_array(X)
+        if self.feature_mean is not None and self.feature_scale is not None:
+            if X_arr.shape[1] != self.feature_mean.shape[0]:
+                raise ValueError(
+                    f"Feature dimension mismatch: expected {self.feature_mean.shape[0]}, got {X_arr.shape[1]}"
+                )
+            return (X_arr - self.feature_mean) / self.feature_scale
+        return X_arr
+
     def anomaly_scores(self, X: Any) -> np.ndarray:
         """Compute per-sample MSE reconstruction errors (higher = more anomalous)."""
-        return anomaly_scores(self._estimator, X)
+        X_in = self._prepare_input(X)
+        X_hat = self._estimator.predict(X_in)
+        return np.asarray(np.mean((X_in - X_hat) ** 2, axis=1), dtype=np.float64)
 
     def score_samples(self, X: Any) -> np.ndarray:
         """Alias returning MSE reconstruction errors for uniform score extraction."""
-        return anomaly_scores(self._estimator, X)
+        return self.anomaly_scores(X)
 
     def predict(self, X: Any) -> np.ndarray:
         """Predict binary anomaly labels {0, 1} using the frozen threshold."""
-        return predict(self._estimator, X, threshold=self.threshold)
+        return (self.anomaly_scores(X) >= self.threshold).astype(np.int64)
 
     @classmethod
     def load_verified(
@@ -408,12 +443,14 @@ class AutoencoderModel:
         model_path: str | Path,
         manifest_path: str | Path | None = None,
         expected_preprocessor_sha256: str | None = None,
+        expected_split_manifest_sha256: str | None = None,
     ) -> "AutoencoderModel":
         """Load and strictly verify an Autoencoder artifact against its manifest and sidecars."""
         model, _ = load_verified_autoencoder_bundle(
             model_artifact_path=model_path,
             manifest_path=manifest_path,
             expected_preprocessor_sha256=expected_preprocessor_sha256,
+            expected_split_manifest_sha256=expected_split_manifest_sha256,
         )
         return model
 
@@ -529,6 +566,7 @@ def _validate_ae_contract_before_deserialize(
     manifest_path: Path,
     manifest: Mapping[str, Any],
     expected_preprocessor_sha256: str | None,
+    expected_split_manifest_sha256: str | None = None,
 ) -> tuple[float, dict[str, Any], dict[str, Any], str, str, str, str]:
     """Enforce canonical manifest, hash, config, architecture, and frozen threshold contracts."""
     if manifest.get("artifact_type") != "autoencoder-anomaly-detector":
@@ -578,6 +616,18 @@ def _validate_ae_contract_before_deserialize(
             f"Model was trained with preprocessor SHA-256 '{prep_sha_norm}', "
             f"but current preprocessor artifact has SHA-256 '{expected_preprocessor_sha256}'."
         )
+
+    if expected_split_manifest_sha256 is not None:
+        sm_sha = manifest.get("split_manifest_sha256")
+        if (
+            not _is_valid_sha256(sm_sha)
+            or not _is_valid_sha256(expected_split_manifest_sha256)
+            or str(sm_sha).strip().lower() != expected_split_manifest_sha256.strip().lower()
+        ):
+            raise ValueError(
+                f"Autoencoder split_manifest_sha256 mismatch: expected {expected_split_manifest_sha256}, "
+                f"got {sm_sha!r}"
+            )
 
     model_file_decl = manifest.get("model_file")
     if (
@@ -739,6 +789,8 @@ def _validate_ae_estimator(
     expected_config: Mapping[str, Any],
 ) -> AutoencoderModel:
     """Validate deserialized Autoencoder estimator, dimensions, parameters, and threshold."""
+    feature_mean = None
+    feature_scale = None
     if isinstance(loaded_obj, AutoencoderModel):
         if not math.isclose(loaded_obj.threshold, expected_threshold, rel_tol=0.0, abs_tol=1e-12):
             raise ValueError(
@@ -746,6 +798,8 @@ def _validate_ae_estimator(
                 f"threshold.json ({expected_threshold})"
             )
         estimator = loaded_obj.estimator
+        feature_mean = loaded_obj.feature_mean
+        feature_scale = loaded_obj.feature_scale
     elif isinstance(loaded_obj, dict) and "estimator" in loaded_obj:
         if "threshold" in loaded_obj and loaded_obj["threshold"] is not None:
             art_th = _require_nonneg_finite(loaded_obj["threshold"], "artifact threshold")
@@ -757,6 +811,8 @@ def _validate_ae_estimator(
             ):
                 raise ValueError("Autoencoder payload config disagrees with model_config.json")
         estimator = loaded_obj["estimator"]
+        feature_mean = loaded_obj.get("feature_mean")
+        feature_scale = loaded_obj.get("feature_scale")
     else:
         estimator = loaded_obj
 
@@ -809,13 +865,19 @@ def _validate_ae_estimator(
                 f"model_config.json {expected_val!r}"
             )
 
-    return AutoencoderModel(estimator, threshold=expected_threshold)
+    return AutoencoderModel(
+        estimator,
+        threshold=expected_threshold,
+        feature_mean=feature_mean,
+        feature_scale=feature_scale,
+    )
 
 
 def load_verified_autoencoder_bundle(
     model_artifact_path: str | Path,
     manifest_path: str | Path | None = None,
     expected_preprocessor_sha256: str | None = None,
+    expected_split_manifest_sha256: str | None = None,
 ) -> tuple[AutoencoderModel, dict[str, Any]]:
     """Verify Autoencoder manifest, cryptographic sidecars, and deserialize frozen model."""
     model_path = Path(model_artifact_path)
@@ -845,6 +907,7 @@ def load_verified_autoencoder_bundle(
         manifest_path=man_p,
         manifest=manifest_data,
         expected_preprocessor_sha256=expected_preprocessor_sha256,
+        expected_split_manifest_sha256=expected_split_manifest_sha256,
     )
 
     try:
@@ -861,10 +924,18 @@ def load_verified_autoencoder_bundle(
     )
 
     man_sha = _sha256_file(man_p)
+    try:
+        rel_model_path = model_path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except ValueError:
+        rel_model_path = model_path.as_posix()
+    try:
+        rel_man_path = man_p.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except ValueError:
+        rel_man_path = man_p.as_posix()
     model_metadata: dict[str, Any] = {
-        "model_artifact_path": str(model_path),
+        "model_artifact_path": rel_model_path,
         "model_artifact_sha256": model_sha,
-        "model_manifest_path": str(man_p),
+        "model_manifest_path": rel_man_path,
         "model_manifest_sha256": man_sha,
         "model_type": "Autoencoder",
         "run_id": manifest_data.get("run_id", "untracked"),

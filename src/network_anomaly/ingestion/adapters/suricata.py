@@ -92,5 +92,7 @@ class SuricataEveAdapter(BaseSourceAdapter):
             trace_metadata=trace_meta,
             eligibility=InferenceEligibility.FEATURE_INCOMPATIBLE,
             validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
-            ood_warnings=["Suricata EVE logs routed to Risk/Trace engines (non-canonical v2 ML source)."],
+            ood_warnings=[
+                "Suricata EVE logs routed to Risk/Trace engines (non-canonical v2 ML source)."
+            ],
         )

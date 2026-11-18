@@ -6,7 +6,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
     DATASET_NAME,
@@ -16,6 +15,7 @@ from network_anomaly.data.nf_unsw_nb15_v3 import (
     validate_feature_selection,
     validate_semantic_column_roles,
 )
+
 from network_anomaly.data.split import (
     EXPECTED_ARTIFACT_REL_PATHS,
     PARTITION_PURGED_TRAIN_VAL,

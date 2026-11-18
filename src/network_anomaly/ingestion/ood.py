@@ -81,22 +81,34 @@ class OODValidator:
         # 1. Negative duration
         if "duration_ms" in df.columns:
             dur_s = pd.to_numeric(df["duration_ms"], errors="coerce")
-            dur_neg = dur_s.isna() | ~np.isfinite(dur_s.to_numpy(dtype=np.float64, na_value=np.nan)) | (dur_s < 0)
+            dur_neg = (
+                dur_s.isna()
+                | ~np.isfinite(dur_s.to_numpy(dtype=np.float64, na_value=np.nan))
+                | (dur_s < 0)
+            )
             if dur_neg.any():
                 c = int(dur_neg.sum())
                 out_of_range["duration_ms_negative_or_invalid"] = c
-                flags.append(f"Hard constraint violation: Negative/invalid duration_ms in {c} row(s).")
+                flags.append(
+                    f"Hard constraint violation: Negative/invalid duration_ms in {c} row(s)."
+                )
                 hard_mask |= dur_neg.to_numpy()
 
         # 2. Negative byte/packet counters
         for col in ("bytes_in", "bytes_out", "pkts_in", "pkts_out", "total_bytes", "total_pkts"):
             if col in df.columns:
                 cnt_s = pd.to_numeric(df[col], errors="coerce")
-                neg_c = cnt_s.isna() | ~np.isfinite(cnt_s.to_numpy(dtype=np.float64, na_value=np.nan)) | (cnt_s < 0)
+                neg_c = (
+                    cnt_s.isna()
+                    | ~np.isfinite(cnt_s.to_numpy(dtype=np.float64, na_value=np.nan))
+                    | (cnt_s < 0)
+                )
                 if neg_c.any():
                     c = int(neg_c.sum())
                     out_of_range[f"{col}_negative_or_invalid"] = c
-                    flags.append(f"Hard constraint violation: Negative/invalid {col} in {c} row(s).")
+                    flags.append(
+                        f"Hard constraint violation: Negative/invalid {col} in {c} row(s)."
+                    )
                     hard_mask |= neg_c.to_numpy()
 
         # 3. Port bounds [0, 65535]
@@ -107,7 +119,9 @@ class OODValidator:
                 if inv_port.any():
                     c = int(inv_port.sum())
                     out_of_range[f"{col}_out_of_range"] = c
-                    flags.append(f"Hard constraint violation: Port out of range in {col} ({c} rows).")
+                    flags.append(
+                        f"Hard constraint violation: Port out of range in {col} ({c} rows)."
+                    )
                     hard_mask |= inv_port.to_numpy()
 
         # 4. Protocol bounds [0, 255]
@@ -139,7 +153,9 @@ class OODValidator:
                 if inv_r.any():
                     c = int(inv_r.sum())
                     out_of_range[f"{col}_out_of_bounds"] = c
-                    flags.append(f"Hard constraint violation: Ratio {col} outside [0, 1] ({c} rows).")
+                    flags.append(
+                        f"Hard constraint violation: Ratio {col} outside [0, 1] ({c} rows)."
+                    )
                     hard_mask |= inv_r.to_numpy()
 
         hard_violation_count = int(hard_mask.sum())

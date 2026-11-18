@@ -92,11 +92,12 @@ def run_rq2_experiment(
             "blocked_reasons": {"missing_data_files": missing_paths},
         }
         output_json.parent.mkdir(parents=True, exist_ok=True)
-        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8")
+        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8", newline="\n")
         output_md.parent.mkdir(parents=True, exist_ok=True)
         output_md.write_text(
             f"# RQ2 Class Imbalance Experiment (BLOCKED)\n\nMissing: `{missing_paths}`\n",
             encoding="utf-8",
+            newline="\n",
         )
         return blocked
 
@@ -258,7 +259,7 @@ def run_rq2_experiment(
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     md_lines = [
         "# RQ2 — Class Imbalance & Rare Attack Evaluation (Empirical AIT-NDS-v2)",
@@ -296,7 +297,7 @@ def run_rq2_experiment(
     )
 
     output_md.parent.mkdir(parents=True, exist_ok=True)
-    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"RQ2 experiment completed: {output_json} and {output_md}")
     return results
 

@@ -34,9 +34,9 @@ from _rq_common import (  # noqa: E402
     load_partition_raw,
     load_verified_preprocessor,
 )
+from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
 
 from network_anomaly.config import RANDOM_SEED  # noqa: E402
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
 
 OUTPUT_JSON = Path("reports/experiments/ml/ttl_ablation_results.json")
 OUTPUT_MD = Path("docs/audits/MODEL_AUDIT_TTL_ABLATION.md")

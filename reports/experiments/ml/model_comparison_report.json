@@ -1,7 +1,7 @@
 {
   "experiment_id": "EXP-RQ1-4MODEL-COMPARISON",
   "status": "COMPLETED",
-  "generated_at_utc": "2026-11-17T18:54:50.951138+00:00",
+  "generated_at_utc": "2026-11-18T02:07:40.325399+00:00",
   "dataset_provenance": {
     "dataset_id": "AIT-NetFlow-v2-Suite",
     "dataset_version": "v2",
@@ -9,18 +9,18 @@
     "source_url": "https://zenodo.org/records/13168643",
     "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
     "split_protocol": "v2-scenario-group-purged-v1",
-    "split_manifest_sha256": "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
-    "preprocessor_sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32"
+    "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
+    "preprocessor_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7"
   },
   "evaluation_partition": "test",
-  "sample_count": 923292,
+  "sample_count": 988805,
   "max_rows_cap": null,
   "attack_class_support": {
-    "Benign": 747610,
-    "Reconnaissance": 95487,
+    "Benign": 812980,
+    "Reconnaissance": 95628,
     "Data_Exfiltration": 80075,
     "Credential_Attack": 78,
-    "Post_Exploitation_Discovery": 37,
+    "Post_Exploitation_Discovery": 39,
     "Exploitation_And_C2": 5
   },
   "environment": {
@@ -41,74 +41,79 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T18:54:37.667270+00:00"
+    "captured_at_utc": "2026-11-18T02:07:18.393117+00:00"
   },
   "models": {
     "random_forest": {
       "display_name": "Random Forest",
       "model_type": "RandomForest",
       "evaluation_protocol": "supervised_binary_classification (trained on Train Ben+Attack; threshold on probability)",
-      "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\random_forest\\random_forest_baseline.joblib",
-      "artifact_sha256": "0dd7aaafa40f351986d7f977e81d9517a3c25083e6cd4525ecdb23abac38dbf0",
-      "model_disk_size_mb": 6.4431,
+      "artifact_path": "artifacts/models/random_forest/random_forest_baseline.joblib",
+      "artifact_sha256": "b2e42f85f2625f5bf04902a032a4db734f4c4e744d45f4fef3ddffd05a694f2f",
+      "model_disk_size_mb": 11.8691,
       "decision_threshold": 0.5,
       "threshold_source": "manifest.threshold",
       "score_semantics": "calibrated_binary_probability",
       "metrics": {
-        "sample_count": 923292,
-        "positive_count": 175682,
-        "negative_count": 747610,
-        "accuracy": 0.965275340845583,
-        "precision": 0.9988191246240301,
-        "recall": 0.8184731503512027,
-        "f1": 0.8996974749955419,
-        "macro_f1": 0.9393502964971037,
-        "false_positive_rate": 0.0002273912869009243,
-        "roc_auc": 0.9995611294082469,
-        "pr_auc": 0.9980809414978853,
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.9982170397601144,
+        "precision": 0.9988536185530373,
+        "recall": 0.9911104791696289,
+        "f1": 0.9949669842158002,
+        "macro_f1": 0.9969418049320905,
+        "false_positive_rate": 0.00024600851189451157,
+        "roc_auc": 0.9993721032405903,
+        "pr_auc": 0.9977205926481825,
         "confusion_matrix": [
           [
-            747440,
-            170
+            812780,
+            200
           ],
           [
-            31891,
-            143791
+            1563,
+            174262
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 747440,
-          "fp": 170,
-          "fn": 31891,
-          "tp": 143791
+          "tn": 812780,
+          "fp": 200,
+          "fn": 1563,
+          "tp": 174262
         }
       },
       "operational_characteristics": {
-        "batch_elapsed_seconds": 1.6025,
-        "avg_inference_latency_us": 1.736,
-        "throughput_flows_sec": 576169.05
+        "batch_elapsed_seconds": 2.0336,
+        "avg_inference_latency_us": 2.057,
+        "throughput_flows_sec": 486239.1
       },
       "explainability": {
         "top_features": [
           {
             "feature": "bytes_in_ratio",
-            "importance": 0.188487
+            "importance": 0.134504,
+            "method": "tree_feature_importances"
           },
           {
-            "feature": "total_bytes",
-            "importance": 0.140971
-          },
-          {
-            "feature": "bytes_in",
-            "importance": 0.140442
+            "feature": "duration_ms",
+            "importance": 0.118191,
+            "method": "tree_feature_importances"
           },
           {
             "feature": "bytes_per_pkt_in",
-            "importance": 0.116124
+            "importance": 0.108183,
+            "method": "tree_feature_importances"
           },
           {
-            "feature": "bytes_per_sec_in",
-            "importance": 0.092993
+            "feature": "pkts_per_sec",
+            "importance": 0.101364,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "total_bytes",
+            "importance": 0.100648,
+            "method": "tree_feature_importances"
           }
         ]
       }
@@ -117,67 +122,72 @@
       "display_name": "XGBoost",
       "model_type": "XGBoost",
       "evaluation_protocol": "supervised_binary_classification (trained on Train Ben+Attack; threshold on probability)",
-      "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\xgboost\\xgboost_baseline.joblib",
-      "artifact_sha256": "6bb5a6f2ac6f16fc76138c6f22c3e80cc8664d2db1ddc039819c845a97a26732",
-      "model_disk_size_mb": 0.2295,
+      "artifact_path": "artifacts/models/xgboost/xgboost_baseline.joblib",
+      "artifact_sha256": "33d201f8f3d842c0b71547532c74f3d107bd402d8a65e20241ff5f407723aa48",
+      "model_disk_size_mb": 0.2376,
       "decision_threshold": 0.5,
       "threshold_source": "manifest.threshold",
       "score_semantics": "calibrated_binary_probability",
       "metrics": {
-        "sample_count": 923292,
-        "positive_count": 175682,
-        "negative_count": 747610,
-        "accuracy": 0.9625546414352123,
-        "precision": 0.9988122591820142,
-        "recall": 0.8041632039708109,
-        "f1": 0.8909805850652893,
-        "macro_f1": 0.9341879152837256,
-        "false_positive_rate": 0.00022471609529032516,
-        "roc_auc": 0.9786235626941979,
-        "pr_auc": 0.938466481877343,
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.9680199837177199,
+        "precision": 0.9988860058813354,
+        "recall": 0.8210664012512441,
+        "f1": 0.90128921492118,
+        "macro_f1": 0.9411041611817925,
+        "false_positive_rate": 0.0001980368520750818,
+        "roc_auc": 0.988451121090661,
+        "pr_auc": 0.9728355973227448,
         "confusion_matrix": [
           [
-            747442,
-            168
+            812819,
+            161
           ],
           [
-            34405,
-            141277
+            31461,
+            144364
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 747442,
-          "fp": 168,
-          "fn": 34405,
-          "tp": 141277
+          "tn": 812819,
+          "fp": 161,
+          "fn": 31461,
+          "tp": 144364
         }
       },
       "operational_characteristics": {
-        "batch_elapsed_seconds": 0.4567,
-        "avg_inference_latency_us": 0.495,
-        "throughput_flows_sec": 2021728.79
+        "batch_elapsed_seconds": 0.6389,
+        "avg_inference_latency_us": 0.646,
+        "throughput_flows_sec": 1547693.06
       },
       "explainability": {
         "top_features": [
           {
             "feature": "bytes_in",
-            "importance": 0.354245
+            "importance": 0.35791,
+            "method": "tree_feature_importances"
           },
           {
             "feature": "bytes_per_sec_in",
-            "importance": 0.199612
-          },
-          {
-            "feature": "total_bytes",
-            "importance": 0.083642
-          },
-          {
-            "feature": "bytes_in_ratio",
-            "importance": 0.083348
+            "importance": 0.212111,
+            "method": "tree_feature_importances"
           },
           {
             "feature": "bytes_per_pkt_out",
-            "importance": 0.080892
+            "importance": 0.09575,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "bytes_in_ratio",
+            "importance": 0.085497,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "bytes_per_sec_out",
+            "importance": 0.069285,
+            "method": "tree_feature_importances"
           }
         ]
       }
@@ -186,96 +196,148 @@
       "display_name": "Isolation Forest",
       "model_type": "IsolationForest",
       "evaluation_protocol": "unsupervised_anomaly_detection (trained on Train Benign-only; threshold_source=manifest.threshold)",
-      "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\isolation_forest\\isolation_forest.joblib",
-      "artifact_sha256": "aca66915e0f57433c18ebbb819f2438c75e3840a183d2e379c986f0952e1aa1c",
-      "model_disk_size_mb": 0.8871,
-      "decision_threshold": 0.002736309694079453,
+      "artifact_path": "artifacts/models/isolation_forest/isolation_forest.joblib",
+      "artifact_sha256": "11b1690088bca1984df9280b3c5662fbb13a76ca31e55258b9de43d6a10a6885",
+      "model_disk_size_mb": 0.8831,
+      "decision_threshold": 0.03126839775265744,
       "threshold_source": "manifest.threshold",
       "score_semantics": "empirical_percentile_vs_validation_benign",
       "metrics": {
-        "sample_count": 923292,
-        "positive_count": 175682,
-        "negative_count": 747610,
-        "accuracy": 0.8687035087491282,
-        "precision": 0.7461199844528207,
-        "recall": 0.46984893159230884,
-        "f1": 0.5765997352547736,
-        "macro_f1": 0.749452449454518,
-        "false_positive_rate": 0.03756905338344859,
-        "roc_auc": 0.7752837079746262,
-        "pr_auc": 0.6353227043972207,
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.8815711894660727,
+        "precision": 0.7775246701198533,
+        "recall": 0.46784586947248685,
+        "f1": 0.5841822875424773,
+        "macro_f1": 0.7575676297625982,
+        "false_positive_rate": 0.028951511722305593,
+        "roc_auc": 0.8330126364390124,
+        "pr_auc": 0.658716154856379,
         "confusion_matrix": [
           [
-            719523,
-            28087
+            789443,
+            23537
           ],
           [
-            93138,
-            82544
+            93566,
+            82259
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 719523,
-          "fp": 28087,
-          "fn": 93138,
-          "tp": 82544
+          "tn": 789443,
+          "fp": 23537,
+          "fn": 93566,
+          "tp": 82259
         }
       },
       "operational_characteristics": {
-        "batch_elapsed_seconds": 6.0696,
-        "avg_inference_latency_us": 6.574,
-        "throughput_flows_sec": 152117.19
+        "batch_elapsed_seconds": 8.5711,
+        "avg_inference_latency_us": 8.668,
+        "throughput_flows_sec": 115364.38
       },
       "explainability": {
-        "top_features": []
+        "top_features": [
+          {
+            "feature": "bytes_per_pkt_in",
+            "importance": 0.138113,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "duration_ms",
+            "importance": 0.094307,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "has_response",
+            "importance": 0.08814,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "bytes_per_pkt_out",
+            "importance": 0.085584,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "pkts_in",
+            "importance": 0.073166,
+            "method": "validation_permutation_importance"
+          }
+        ]
       }
     },
     "autoencoder": {
       "display_name": "Autoencoder",
       "model_type": "Autoencoder",
       "evaluation_protocol": "unsupervised_anomaly_detection (trained on Train Benign-only; threshold_source=manifest.threshold)",
-      "artifact_path": "C:\\Users\\ASUS\\Documents\\GitHub\\AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN\\artifacts\\models\\autoencoder\\autoencoder_model.joblib",
-      "artifact_sha256": "2032f8caf37be27f12a91ca1348e85d32a718f332e151cd900dedcf082b71a1f",
-      "model_disk_size_mb": 0.0239,
-      "decision_threshold": 0.0002279976895622908,
+      "artifact_path": "artifacts/models/autoencoder/autoencoder_model.joblib",
+      "artifact_sha256": "e6afecefdc939a09e3c7fedd3e994a10c404f74e9b52c9ab95dfd984aae0cd4f",
+      "model_disk_size_mb": 0.0244,
+      "decision_threshold": 0.0004672738606371692,
       "threshold_source": "manifest.threshold",
       "score_semantics": "empirical_percentile_vs_validation_benign",
       "metrics": {
-        "sample_count": 923292,
-        "positive_count": 175682,
-        "negative_count": 747610,
-        "accuracy": 0.8703725365323213,
-        "precision": 0.7580886012941762,
-        "recall": 0.4681299165537733,
-        "f1": 0.5788266096112159,
-        "macro_f1": 0.7511123657471241,
-        "false_positive_rate": 0.03510386431428151,
-        "roc_auc": 0.7885613089531618,
-        "pr_auc": 0.6410646965969237,
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.8829041115285623,
+        "precision": 0.7859701265051059,
+        "recall": 0.46926205033413904,
+        "f1": 0.5876617248514072,
+        "macro_f1": 0.7597124083156652,
+        "false_positive_rate": 0.027636596226229427,
+        "roc_auc": 0.5543829794752332,
+        "pr_auc": 0.5664230031886072,
         "confusion_matrix": [
           [
-            721366,
-            26244
+            790512,
+            22468
           ],
           [
-            93440,
-            82242
+            93317,
+            82508
           ]
         ],
         "confusion_matrix_labeled": {
-          "tn": 721366,
-          "fp": 26244,
-          "fn": 93440,
-          "tp": 82242
+          "tn": 790512,
+          "fp": 22468,
+          "fn": 93317,
+          "tp": 82508
         }
       },
       "operational_characteristics": {
-        "batch_elapsed_seconds": 0.3594,
-        "avg_inference_latency_us": 0.389,
-        "throughput_flows_sec": 2569121.03
+        "batch_elapsed_seconds": 0.4786,
+        "avg_inference_latency_us": 0.484,
+        "throughput_flows_sec": 2066235.38
       },
       "explainability": {
-        "top_features": []
+        "top_features": [
+          {
+            "feature": "pkts_in",
+            "importance": 0.082123,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "total_pkts",
+            "importance": 0.079703,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "duration_ms",
+            "importance": 0.079124,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "bytes_per_sec_out",
+            "importance": 0.076038,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "pkts_out",
+            "importance": 0.074305,
+            "method": "validation_permutation_importance"
+          }
+        ]
       }
     }
   },

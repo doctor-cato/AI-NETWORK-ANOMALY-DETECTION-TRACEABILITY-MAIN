@@ -6,8 +6,8 @@ Covers P0-01, P0-02, P1-01, P1-02, P1-03.
 import numpy as np
 import pandas as pd
 import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
 from network_anomaly.ingestion.adapters import BaseSourceAdapter, NetFlowV3Adapter
 from network_anomaly.ingestion.compatibility import (
     DEFAULT_BENCHMARK_REGISTRY,
@@ -108,6 +108,7 @@ def test_evaluator_rejects_mismatched_model_hash():
 def test_unverified_benchmark_fails_closed_in_gate():
     """Unbenchmarked source reaches SEMANTICALLY_COMPATIBLE but is blocked fail-closed."""
     from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS
+
     from network_anomaly.ingestion.registry import SourceDefinition, SourceRegistry
 
     registry = SourceRegistry()

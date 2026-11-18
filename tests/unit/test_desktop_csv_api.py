@@ -35,7 +35,7 @@ from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.inference.predict import InferencePipeline
 
 CANONICAL_V2_DATASET_SHA256 = "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf"
-CANONICAL_SPLIT_MANIFEST_SHA256 = "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a"
+CANONICAL_SPLIT_MANIFEST_SHA256 = "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8"
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
 RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
@@ -237,7 +237,9 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
     def _feature_driven_predict(frame: pd.DataFrame) -> pd.DataFrame:
         # Row 0 (bytes_in=1.0) and row 2 (bytes_in=3.0) -> Attack; row 3 (bytes_in=4.0) -> Benign.
         # Row 1 (duration_ms=-10.0) must NEVER reach this predict function.
-        assert (frame["duration_ms"] >= 0.0).all(), "OOD negative duration row leaked into predict()"
+        assert (
+            frame["duration_ms"] >= 0.0
+        ).all(), "OOD negative duration row leaked into predict()"
         preds = [1 if float(v) in {1.0, 3.0} else 0 for v in frame["bytes_in"].tolist()]
         p_att = [0.92 if p == 1 else 0.12 for p in preds]
         return pd.DataFrame(

@@ -278,7 +278,8 @@ def parse_ait_nds_tstat_row(
         dst_ip = str(raw.get("s_ip:10") or "").strip()
         dst_port = int(float(raw["s_port:11"]))
         ts_ms = float(raw["c_first_abs:3"])
-        dur_ms = max(float(raw["c_durat:4"]), float(raw["s_durat:13"]))
+        # Tstat udp_complete records c_durat:4 and s_durat:13 in seconds (tcp_*.csv uses ms).
+        dur_ms = max(float(raw["c_durat:4"]), float(raw["s_durat:13"])) * 1000.0
         bytes_in = float(raw["c_bytes_all:5"])
         bytes_out = float(raw["s_bytes_all:14"])
         pkts_in = float(raw["c_pkts_all:6"])
@@ -330,10 +331,11 @@ def parse_ctu_zeek_conn_row(
 ) -> Dict[str, Any]:
     """Parse one row from CTU-SME-11 Zeek conn.log.labeled into canonical v2 schema.
 
-    Uses ``orig_ip_bytes`` and ``resp_ip_bytes`` (always populated by Zeek) rather
-    than ``orig_bytes``/``resp_bytes`` (which are ``'-'`` on ~30% of S0/REJ flows).
-    When Zeek ``duration`` is ``'-'`` (single-packet / unanswered flow with no
-    observed interval), ``duration_ms`` is explicitly 0.0.
+    Uses L4 transport payload ``orig_bytes`` and ``resp_bytes`` (coercing Zeek
+    ``'-'`` / ``'(empty)'`` to ``0.0``) so byte semantics match AIT-NDS-v2 Tstat
+    ``c_bytes_all``/``s_bytes_all`` (fallback to ``orig_ip_bytes``/``resp_ip_bytes``
+    only when L4 byte keys are absent). When Zeek ``duration`` is ``'-'``,
+    ``duration_ms`` is explicitly ``0.0``.
     """
     ts_sec = float(raw["ts"])
     ts_ms = ts_sec * 1000.0
@@ -347,8 +349,14 @@ def parse_ctu_zeek_conn_row(
     raw_dur = str(raw.get("duration", "-")).strip()
     dur_ms = 0.0 if raw_dur in ("-", "", "(empty)") else float(raw_dur) * 1000.0
 
-    bytes_in = float(raw["orig_ip_bytes"])
-    bytes_out = float(raw["resp_ip_bytes"])
+    def _zeek_l4_bytes(l4_key: str, l3_fallback_key: str) -> float:
+        if l4_key in raw:
+            val = str(raw.get(l4_key, "-")).strip()
+            return 0.0 if val in ("-", "", "(empty)", "nan", "NaN", "None") else float(val)
+        return float(raw[l3_fallback_key])
+
+    bytes_in = _zeek_l4_bytes("orig_bytes", "orig_ip_bytes")
+    bytes_out = _zeek_l4_bytes("resp_bytes", "resp_ip_bytes")
     pkts_in = float(raw["orig_pkts"])
     pkts_out = float(raw["resp_pkts"])
 

@@ -37,6 +37,7 @@ if str(LOCAL_SOURCE) not in sys.path:
     sys.path.insert(0, str(LOCAL_SOURCE))
 
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS  # noqa: E402
+
 from network_anomaly.inference.predict import (  # noqa: E402
     load_verified_model,
     load_verified_preprocessor,

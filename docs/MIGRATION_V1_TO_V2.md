@@ -35,7 +35,7 @@ Do đó, **NetFlow Sentinel v2** thực hiện **hard cutover**: chuyển toàn 
 
 - **Hợp đồng `canonical-flow-v2-18` (`src/network_anomaly/data/v2_schema.py`):** Xây dựng thuần túy từ 6 trường luồng hai chiều thực sự tồn tại trên cả Tstat (`AIT-NDS-v2`), Zeek (`CTU-SME-11`) và NetFlow v9/IPFIX (`duration_ms`, `bytes_in`, `bytes_out`, `pkts_in`, `pkts_out`, `protocol_num`) cùng 12 đặc trưng động học luồng suy diễn xác định (`total_bytes`, `total_pkts`, `bytes_in_ratio`, `pkts_in_ratio`, `bytes_per_pkt_in`, `bytes_per_pkt_out`, `bytes_per_sec_in`, `bytes_per_sec_out`, `pkts_per_sec`, `has_response`, `is_tcp`, `is_udp`).
 - **Tách biệt nhãn & `taxonomy-v2` (`src/network_anomaly/data/taxonomy.py`):** Không ép `background`/`unknown`/`-` thành `Benign` (`942` dòng unmapped trong `AIT-NDS-v2` và `9,394` dòng unmapped trong `CTU-Win7AD` bị tách khỏi ma trận $X$ và supervised metrics).
-- **Retrain 100% từ đầu:** Vì không gian đặc trưng đổi từ `47` $\to$ `18` và tiền xử lý đổi sang `TrainOnlyPreprocessor(scaler_type="asinh_robust")` fit chỉ trên `ait_train` (`1,930,219` flows), cả 4 mô hình (**Random Forest**, **XGBoost**, **Isolation Forest**, **Autoencoder**) đều được huấn luyện lại mới với manifest, threshold hiệu chuẩn trên Validation và SHA-256 riêng (`AI Ready 4/4`).
+- **Retrain 100% từ đầu:** Vì không gian đặc trưng đổi từ `47` $\to$ `18` và tiền xử lý đổi sang `TrainOnlyPreprocessor(scaler_type="asinh_robust")` fit chỉ trên `ait_train` (`2,097,891` flows), cả 4 mô hình (**Random Forest**, **XGBoost**, **Isolation Forest**, **Autoencoder**) đều được huấn luyện lại mới với manifest, threshold hiệu chuẩn trên Validation và SHA-256 riêng (`AI Ready 4/4`).
 
 ---
 

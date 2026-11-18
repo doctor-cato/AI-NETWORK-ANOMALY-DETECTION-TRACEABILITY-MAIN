@@ -16,7 +16,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
 from network_anomaly.evaluation.error_analysis import (
     CANONICAL_DECISION_THRESHOLD,

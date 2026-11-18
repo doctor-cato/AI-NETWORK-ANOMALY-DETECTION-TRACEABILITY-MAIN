@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import platform
 import sys
 import time
@@ -23,8 +21,6 @@ if str(_SRC_DIR) not in sys.path:
 
 from network_anomaly.data.split import _sha256_file, verify_split_artifacts  # noqa: E402
 from network_anomaly.data.v2_schema import (  # noqa: E402
-    DATASET_SUITE_NAME,
-    FEATURE_CONTRACT_ID,
     ML_FEATURE_COLUMNS,
 )
 from network_anomaly.evaluation.test_evaluation import evaluate_v2_partition  # noqa: E402
@@ -38,7 +34,9 @@ PROCESSED_V2_DIR = PROJECT_ROOT / "data" / "processed" / "v2"
 SPLITS_DIR = PROCESSED_V2_DIR / "splits"
 SPLIT_MANIFEST_PATH = PROJECT_ROOT / "reports" / "splits" / "v2_split_manifest.json"
 PREPROC_ARTIFACT_PATH = PROJECT_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
-PREPROC_MANIFEST_PATH = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
+PREPROC_MANIFEST_PATH = (
+    PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
+)
 
 
 def check_v2_training_prerequisites(
@@ -73,11 +71,19 @@ def check_v2_training_prerequisites(
     if prep_res["status"] != "PASS":
         errors.extend(prep_res.get("errors", []))
 
-    return len(errors) == 0, errors, {
-        "split_manifest": sm_res.get("manifest", {}),
-        "split_manifest_sha256": _sha256_file(split_manifest_path) if split_manifest_path.is_file() else None,
-        "preprocessor_sha256": _sha256_file(preproc_artifact) if preproc_artifact.is_file() else None,
-    }
+    return (
+        len(errors) == 0,
+        errors,
+        {
+            "split_manifest": sm_res.get("manifest", {}),
+            "split_manifest_sha256": (
+                _sha256_file(split_manifest_path) if split_manifest_path.is_file() else None
+            ),
+            "preprocessor_sha256": (
+                _sha256_file(preproc_artifact) if preproc_artifact.is_file() else None
+            ),
+        },
+    )
 
 
 def _read_partition_csv(path: Path) -> Tuple[pd.DataFrame, np.ndarray, np.ndarray]:
@@ -108,7 +114,13 @@ def load_v2_partitions(
         items.append(("ait_test", PROCESSED_V2_DIR / "ait_test.csv.gz", "test"))
     if include_ctu:
         items.append(("ctu_echo", PROCESSED_V2_DIR / "ctu_echo.csv.gz", "external_ctu_echo"))
-        items.append(("ctu_windows7ad", PROCESSED_V2_DIR / "ctu_windows7ad.csv.gz", "external_ctu_windows7ad"))
+        items.append(
+            (
+                "ctu_windows7ad",
+                PROCESSED_V2_DIR / "ctu_windows7ad.csv.gz",
+                "external_ctu_windows7ad",
+            )
+        )
 
     for key, csv_path, part_label in items:
         X_raw, y, cats = _read_partition_csv(csv_path)
@@ -175,9 +187,19 @@ def calibrate_unsupervised_threshold_on_validation(
     if len(benign_scores) < 10:
         raise ValueError("Insufficient Validation benign rows for threshold calibration")
 
-    # Use method="higher" so strictly empirical_val_fpr = P(score > threshold | benign) <= target_fpr
-    threshold = float(np.quantile(benign_scores, 1.0 - target_fpr, method="higher"))
-    empirical_val_fpr = float(np.mean(benign_scores > threshold))
+    # Guarantee empirical_val_fpr <= target_fpr under the >= threshold decision rule
+    max_fp = int(np.floor(target_fpr * len(benign_scores)))
+    if max_fp <= 0:
+        threshold = float(np.nextafter(benign_scores[-1], np.inf))
+    else:
+        idx = len(benign_scores) - max_fp
+        while idx < len(benign_scores) and idx > 0 and benign_scores[idx] <= benign_scores[idx - 1]:
+            idx += 1
+        if idx >= len(benign_scores):
+            threshold = float(np.nextafter(benign_scores[-1], np.inf))
+        else:
+            threshold = float(benign_scores[idx])
+    empirical_val_fpr = float(np.mean(benign_scores >= threshold))
     grid = [round(i / 100.0, 2) for i in range(101)]
     values = [float(np.quantile(benign_scores, q)) for q in grid]
     # Guarantee exact monotonicity against float rounding noise

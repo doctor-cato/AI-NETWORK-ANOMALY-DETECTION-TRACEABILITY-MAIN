@@ -45,7 +45,6 @@ from network_anomaly.preprocessing.pipeline import (
     SPLIT_PROTOCOL_VERSION,
     PreprocessingConfig,
     TrainOnlyPreprocessor,
-    _sha256_file,
     audit_column_tokens,
     verify_preprocessing_artifact,
     verify_zero_duration_retention,
@@ -53,7 +52,7 @@ from network_anomaly.preprocessing.pipeline import (
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 TEST_DATASET_SHA = "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf"
-TEST_SPLIT_SHA = "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a"
+TEST_SPLIT_SHA = "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8"
 
 
 @pytest.fixture
@@ -624,12 +623,7 @@ def test_zero_duration_flows_regression(synthetic_18_feature_data):
 def test_real_v2_preprocessor_artifact_verified():
     """Verify the real fitted v2 preprocessor artifact if present in working tree."""
     art_path = REPOSITORY_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
-    man_path = (
-        REPOSITORY_ROOT
-        / "reports"
-        / "preprocessing"
-        / "v2_flow_preprocessing_manifest.json"
-    )
+    man_path = REPOSITORY_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     if not art_path.is_file() or not man_path.is_file():
         pytest.skip("v2 preprocessor artifact absent in checkout")
 
@@ -638,7 +632,7 @@ def test_real_v2_preprocessor_artifact_verified():
     assert res["metadata"]["feature_contract_version"] == FEATURE_CONTRACT_VERSION
     loaded = TrainOnlyPreprocessor.load_verified(art_path, manifest_path=man_path)
     assert loaded.config.scaler_type == "asinh_robust"
-    assert loaded.train_row_count_ == 1930219
+    assert loaded.train_row_count_ == 2097891
     assert ARTIFACT_TYPE == "v2-flow-train-only-preprocessor"
     assert PREPROCESSING_POLICY_VERSION == "v2-flow-preprocessing-v1"
     assert SPLIT_PROTOCOL_VERSION == "v2-scenario-group-purged-v1"

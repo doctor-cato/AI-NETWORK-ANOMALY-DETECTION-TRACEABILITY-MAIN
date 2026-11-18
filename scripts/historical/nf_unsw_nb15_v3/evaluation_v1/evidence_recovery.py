@@ -15,8 +15,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-
 from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+
 from network_anomaly.evaluation.metrics import compute_wilson_confidence_interval
 from network_anomaly.evaluation.test_evaluation import (
     CANONICAL_DECISION_THRESHOLD,

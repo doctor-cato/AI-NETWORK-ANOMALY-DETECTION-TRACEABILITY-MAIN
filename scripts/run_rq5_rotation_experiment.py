@@ -250,7 +250,7 @@ def run_rq5_experiment(output_dir: Optional[Path] = None) -> Dict[str, Any]:
     }
 
     manifest_path = output_dir / "rq5_rotation_experiment.json"
-    manifest_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     report_path = output_dir / "rq5_rotation_report.md"
     md_lines = [
@@ -272,7 +272,7 @@ def run_rq5_experiment(output_dir: Optional[Path] = None) -> Dict[str, Any]:
         "## Limitations",
         *[f"- {lim}" for lim in results["limitations"]],
     ]
-    report_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    report_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"RQ5 simulation report written: {manifest_path} and {report_path}")
     return results
 

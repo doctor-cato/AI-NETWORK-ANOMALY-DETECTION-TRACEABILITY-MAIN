@@ -4,17 +4,17 @@
   "task": "binary_classification",
   "provenance_complete": true,
   "provenance_status": "VERIFIED",
-  "training_run_id": "v2-rf-20261117T181745Z",
-  "run_id": "v2-rf-20261117T181745Z",
+  "training_run_id": "v2-rf-20261117T231214Z",
+  "run_id": "v2-rf-20261117T231214Z",
   "dataset_name": "AIT-NDS-v2",
   "dataset_provenance": "AIT-NDS-v2 (10.5281/zenodo.13168643); Train={fox,harrison,santos,wardbeck,wilson}",
   "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
-  "split_manifest_sha256": "1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
-  "preprocessor_artifact_sha256": "d33dfe09630687f825d7e4cfa604001c3e091560538059da2eb397b49f44bc32",
+  "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
+  "preprocessor_artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
   "preprocessing_contract_id": "v2-flow-preprocessing-v1",
-  "protocol_version": "rf-baseline-v2-canonical-v1",
-  "configuration_id": "rf-v2-baseline-canonical-v1",
-  "is_canonical_baseline": true,
+  "protocol_version": "rf-experimental-rf-v2-tuned-leaf5-cwbalanced_subsample",
+  "configuration_id": "rf-v2-tuned-leaf5-cwbalanced_subsample",
+  "is_canonical_baseline": false,
   "feature_contract_version": "canonical-flow-v2-18",
   "selected_features": [
     "duration_ms",
@@ -64,19 +64,19 @@
     "n_estimators": 200,
     "max_depth": 16,
     "min_samples_split": 2,
-    "min_samples_leaf": 1,
+    "min_samples_leaf": 5,
     "criterion": "gini",
     "max_features": "sqrt",
-    "class_weight": null,
+    "class_weight": "balanced_subsample",
     "random_state": 42,
     "n_jobs": -1,
     "bootstrap": true,
-    "configuration_id": "rf-v2-baseline-canonical-v1",
-    "is_canonical_baseline": true
+    "configuration_id": "rf-v2-tuned-leaf5-cwbalanced_subsample",
+    "is_canonical_baseline": false
   },
   "model_artifact_path": "artifacts/models/random_forest/random_forest_baseline.joblib",
-  "model_artifact_sha256": "0dd7aaafa40f351986d7f977e81d9517a3c25083e6cd4525ecdb23abac38dbf0",
-  "model_size_bytes": 6756036,
+  "model_artifact_sha256": "b2e42f85f2625f5bf04902a032a4db734f4c4e744d45f4fef3ddffd05a694f2f",
+  "model_size_bytes": 12445660,
   "threshold": 0.5,
   "calibrated_threshold": 0.5,
   "threshold_source": "validation_verified_binary_probability_0.5",
@@ -85,8 +85,8 @@
     "test_touched": false,
     "method": "binary_probability_0.5_verified_on_validation"
   },
-  "training_duration_seconds": 155.897,
-  "train_row_count": 1930219,
+  "training_duration_seconds": 203.339,
+  "train_row_count": 2097891,
   "shortcut_audit": {
     "evaluated_on": "ait_val (russellmitchell)",
     "single_feature_abs_auc_top5": [
@@ -117,78 +117,78 @@
     "feature_importance_ranking": [
       {
         "feature": "bytes_in_ratio",
-        "importance": 0.188487
-      },
-      {
-        "feature": "total_bytes",
-        "importance": 0.140971
-      },
-      {
-        "feature": "bytes_in",
-        "importance": 0.140442
-      },
-      {
-        "feature": "bytes_per_pkt_in",
-        "importance": 0.116124
-      },
-      {
-        "feature": "bytes_per_sec_in",
-        "importance": 0.092993
-      },
-      {
-        "feature": "bytes_per_sec_out",
-        "importance": 0.067889
-      },
-      {
-        "feature": "bytes_out",
-        "importance": 0.063363
-      },
-      {
-        "feature": "bytes_per_pkt_out",
-        "importance": 0.055689
-      },
-      {
-        "feature": "pkts_in",
-        "importance": 0.031603
-      },
-      {
-        "feature": "total_pkts",
-        "importance": 0.030466
-      },
-      {
-        "feature": "pkts_per_sec",
-        "importance": 0.014646
+        "importance": 0.134504
       },
       {
         "feature": "duration_ms",
-        "importance": 0.013885
+        "importance": 0.118191
+      },
+      {
+        "feature": "bytes_per_pkt_in",
+        "importance": 0.108183
+      },
+      {
+        "feature": "pkts_per_sec",
+        "importance": 0.101364
+      },
+      {
+        "feature": "total_bytes",
+        "importance": 0.100648
+      },
+      {
+        "feature": "bytes_per_sec_in",
+        "importance": 0.092072
+      },
+      {
+        "feature": "bytes_in",
+        "importance": 0.090292
+      },
+      {
+        "feature": "bytes_per_sec_out",
+        "importance": 0.058011
+      },
+      {
+        "feature": "bytes_per_pkt_out",
+        "importance": 0.050837
+      },
+      {
+        "feature": "bytes_out",
+        "importance": 0.03589
+      },
+      {
+        "feature": "pkts_in",
+        "importance": 0.034326
+      },
+      {
+        "feature": "total_pkts",
+        "importance": 0.027587
       },
       {
         "feature": "pkts_out",
-        "importance": 0.011811
+        "importance": 0.01593
       },
       {
         "feature": "is_udp",
-        "importance": 0.009499
-      },
-      {
-        "feature": "protocol_num",
-        "importance": 0.008312
-      },
-      {
-        "feature": "pkts_in_ratio",
-        "importance": 0.007573
+        "importance": 0.011603
       },
       {
         "feature": "is_tcp",
-        "importance": 0.003694
+        "importance": 0.009313
+      },
+      {
+        "feature": "protocol_num",
+        "importance": 0.006149
+      },
+      {
+        "feature": "pkts_in_ratio",
+        "importance": 0.004802
       },
       {
         "feature": "has_response",
-        "importance": 0.002552
+        "importance": 0.000299
       }
     ],
-    "top2_importance_share": 0.329458
+    "top2_importance_share": 0.252695
   },
   "evaluation": {
     "ait_val": {
@@ -196,28 +196,28 @@
       "feature_count": 18,
       "threshold": 0.5,
       "total_rows": 377704,
-      "accuracy": 0.9995446169487218,
-      "precision": 0.999777689373552,
-      "recall": 0.9992165025609842,
-      "f1": 0.9994970171949936,
-      "macro_f1": 0.9995405017864831,
-      "weighted_f1": 0.9995446058963612,
-      "false_positive_rate": 0.00018386266426677504,
-      "true_negative_rate": 0.9998161373357333,
-      "roc_auc": 0.9999308591811455,
-      "pr_auc": 0.999858334374933,
+      "accuracy": 0.9996902336220956,
+      "precision": 0.999760224102741,
+      "recall": 0.9995556283181701,
+      "f1": 0.9996579157420158,
+      "macro_f1": 0.9996874439869234,
+      "weighted_f1": 0.9996902308858563,
+      "false_positive_rate": 0.00019837813776152046,
+      "true_negative_rate": 0.9998016218622385,
+      "roc_auc": 0.9999406143870884,
+      "pr_auc": 0.9998752301969077,
       "confusion_matrix": {
-        "tn": 206638,
-        "fp": 38,
-        "fn": 134,
-        "tp": 170894
+        "tn": 206635,
+        "fp": 41,
+        "fn": 76,
+        "tp": 170952
       },
       "per_attack_category": {
         "Benign": {
           "total": 206676,
-          "false_positive": 38,
-          "true_negative": 206638,
-          "false_positive_rate": 0.00018386266426677504
+          "false_positive": 41,
+          "true_negative": 206635,
+          "false_positive_rate": 0.00019837813776152046
         },
         "Credential_Attack": {
           "total": 11,
@@ -228,10 +228,10 @@
         },
         "Data_Exfiltration": {
           "total": 15778,
-          "detected": 15776,
-          "missed": 2,
-          "detection_rate": 0.9998732412219546,
-          "false_negative_rate": 0.00012675877804537965
+          "detected": 15777,
+          "missed": 1,
+          "detection_rate": 0.9999366206109773,
+          "false_negative_rate": 6.337938902268983e-05
         },
         "Exploitation_And_C2": {
           "total": 2,
@@ -249,43 +249,43 @@
         },
         "Reconnaissance": {
           "total": 155181,
-          "detected": 155051,
-          "missed": 130,
-          "detection_rate": 0.9991622685766943,
-          "false_negative_rate": 0.0008377314233056882
+          "detected": 155108,
+          "missed": 73,
+          "detection_rate": 0.9995295815853745,
+          "false_negative_rate": 0.00047041841462550185
         }
       },
-      "inference_latency_seconds": 0.5994,
-      "inference_latency_us_per_row": 1.587,
-      "csv_sha256": "4c480ab6e25a34dd1ba83ff67682fa864370ee881ff774201c1ca24a552eba39"
+      "inference_latency_seconds": 0.5992,
+      "inference_latency_us_per_row": 1.5865,
+      "csv_sha256": "1ddd66ce7bf62042c310bc2f8c22c8297ce3e4f25c7a76827eebe53e89a9f022"
     },
     "ait_test": {
       "feature_contract_version": "canonical-flow-v2-18",
       "feature_count": 18,
       "threshold": 0.5,
-      "total_rows": 923292,
-      "accuracy": 0.965275340845583,
-      "precision": 0.9988191246240301,
-      "recall": 0.8184731503512027,
-      "f1": 0.8996974749955419,
-      "macro_f1": 0.9393502964971037,
-      "weighted_f1": 0.9639130121880716,
-      "false_positive_rate": 0.0002273912869009243,
-      "true_negative_rate": 0.999772608713099,
-      "roc_auc": 0.9995611275581099,
-      "pr_auc": 0.9980809386588139,
+      "total_rows": 988805,
+      "accuracy": 0.9982170397601144,
+      "precision": 0.9988536185530373,
+      "recall": 0.9911104791696289,
+      "f1": 0.9949669842158002,
+      "macro_f1": 0.9969418049320905,
+      "weighted_f1": 0.9982143176049512,
+      "false_positive_rate": 0.00024600851189451157,
+      "true_negative_rate": 0.9997539914881055,
+      "roc_auc": 0.9993721034574612,
+      "pr_auc": 0.9977205931972929,
       "confusion_matrix": {
-        "tn": 747440,
-        "fp": 170,
-        "fn": 31891,
-        "tp": 143791
+        "tn": 812780,
+        "fp": 200,
+        "fn": 1563,
+        "tp": 174262
       },
       "per_attack_category": {
         "Benign": {
-          "total": 747610,
-          "false_positive": 170,
-          "true_negative": 747440,
-          "false_positive_rate": 0.0002273912869009243
+          "total": 812980,
+          "false_positive": 200,
+          "true_negative": 812780,
+          "false_positive_rate": 0.00024600851189451157
         },
         "Credential_Attack": {
           "total": 78,
@@ -296,10 +296,10 @@
         },
         "Data_Exfiltration": {
           "total": 80075,
-          "detected": 48559,
-          "missed": 31516,
-          "detection_rate": 0.6064189822041836,
-          "false_negative_rate": 0.39358101779581645
+          "detected": 78951,
+          "missed": 1124,
+          "detection_rate": 0.9859631595379332,
+          "false_negative_rate": 0.014036840462066812
         },
         "Exploitation_And_C2": {
           "total": 5,
@@ -309,98 +309,98 @@
           "false_negative_rate": 0.0
         },
         "Post_Exploitation_Discovery": {
-          "total": 37,
+          "total": 39,
           "detected": 35,
-          "missed": 2,
-          "detection_rate": 0.9459459459459459,
-          "false_negative_rate": 0.05405405405405406
+          "missed": 4,
+          "detection_rate": 0.8974358974358975,
+          "false_negative_rate": 0.10256410256410256
         },
         "Reconnaissance": {
-          "total": 95487,
-          "detected": 95181,
-          "missed": 306,
-          "detection_rate": 0.9967953752866883,
-          "false_negative_rate": 0.0032046247133117596
+          "total": 95628,
+          "detected": 95260,
+          "missed": 368,
+          "detection_rate": 0.9961517547161919,
+          "false_negative_rate": 0.0038482452838080896
         }
       },
-      "inference_latency_seconds": 1.4545,
-      "inference_latency_us_per_row": 1.5753,
-      "csv_sha256": "5532fb77c35f0014f941a35386a8204eb48b5b7cbdf7480782da03d812831076"
+      "inference_latency_seconds": 1.8561,
+      "inference_latency_us_per_row": 1.8771,
+      "csv_sha256": "a09c7d0e6045c425f925281b703ae539bc38f32a1a995510fcbb1bf0a0cb9039"
     },
     "ctu_echo": {
       "feature_contract_version": "canonical-flow-v2-18",
       "feature_count": 18,
       "threshold": 0.5,
       "total_rows": 76073,
-      "accuracy": 0.518764870584833,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "macro_f1": 0.34157023291240035,
-      "weighted_f1": 0.3546856174816578,
-      "false_positive_rate": 0.0008355064941641138,
-      "true_negative_rate": 0.9991644935058359,
-      "roc_auc": 0.7996289665542888,
-      "pr_auc": 0.763745252940845,
+      "accuracy": 0.48980584438631314,
+      "precision": 0.2317658349328215,
+      "recall": 0.026410761154855644,
+      "f1": 0.04741802473983899,
+      "macro_f1": 0.3495110626024108,
+      "weighted_f1": 0.3611106283300221,
+      "false_positive_rate": 0.08106944831253006,
+      "true_negative_rate": 0.91893055168747,
+      "roc_auc": 0.6137386823608053,
+      "pr_auc": 0.617969743787429,
       "confusion_matrix": {
-        "tn": 39464,
-        "fp": 33,
-        "fn": 36576,
-        "tp": 0
+        "tn": 36295,
+        "fp": 3202,
+        "fn": 35610,
+        "tp": 966
       },
       "per_attack_category": {
         "Benign": {
           "total": 39497,
-          "false_positive": 33,
-          "true_negative": 39464,
-          "false_positive_rate": 0.0008355064941641138
+          "false_positive": 3202,
+          "true_negative": 36295,
+          "false_positive_rate": 0.08106944831253006
         },
         "Reconnaissance": {
           "total": 36576,
-          "detected": 0,
-          "missed": 36576,
-          "detection_rate": 0.0,
-          "false_negative_rate": 1.0
+          "detected": 966,
+          "missed": 35610,
+          "detection_rate": 0.026410761154855644,
+          "false_negative_rate": 0.9735892388451444
         }
       },
-      "inference_latency_seconds": 0.1253,
-      "inference_latency_us_per_row": 1.6465,
-      "csv_sha256": "8cdb4fb6981f6e17dc26ce1c861c0c7aa3e57d051bec393d37534c8b93d09a4d"
+      "inference_latency_seconds": 0.1499,
+      "inference_latency_us_per_row": 1.9709,
+      "csv_sha256": "6f86be6be0fc020403763bff3c37bb7cb60598e5e9feba9bc69e7dcd4dea1f80"
     },
     "ctu_windows7ad": {
       "feature_contract_version": "canonical-flow-v2-18",
       "feature_count": 18,
       "threshold": 0.5,
       "total_rows": 175146,
-      "accuracy": 0.975369120619369,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "macro_f1": 0.4937654995404332,
-      "weighted_f1": 0.9760400819253116,
-      "false_positive_rate": 0.013147861450655083,
-      "true_negative_rate": 0.986852138549345,
-      "roc_auc": 0.6887744373981941,
-      "pr_auc": 0.11993574412746225,
+      "accuracy": 0.8357770088954358,
+      "precision": 0.03812519442812208,
+      "recall": 0.5412168792934249,
+      "f1": 0.07123252284542607,
+      "macro_f1": 0.49057879152546163,
+      "weighted_f1": 0.9001660283626928,
+      "false_positive_rate": 0.1607551355223329,
+      "true_negative_rate": 0.8392448644776671,
+      "roc_auc": 0.8392457176665288,
+      "pr_auc": 0.49477327948721056,
       "confusion_matrix": {
-        "tn": 170832,
-        "fp": 2276,
-        "fn": 2038,
-        "tp": 0
+        "tn": 145280,
+        "fp": 27828,
+        "fn": 935,
+        "tp": 1103
       },
       "per_attack_category": {
         "Benign": {
           "total": 173108,
-          "false_positive": 2276,
-          "true_negative": 170832,
-          "false_positive_rate": 0.013147861450655083
+          "false_positive": 27828,
+          "true_negative": 145280,
+          "false_positive_rate": 0.1607551355223329
         },
         "Exploitation_And_C2": {
           "total": 2036,
-          "detected": 0,
-          "missed": 2036,
-          "detection_rate": 0.0,
-          "false_negative_rate": 1.0
+          "detected": 1103,
+          "missed": 933,
+          "detection_rate": 0.5417485265225933,
+          "false_negative_rate": 0.4582514734774067
         },
         "Malware_And_DoS": {
           "total": 2,
@@ -410,9 +410,9 @@
           "false_negative_rate": 1.0
         }
       },
-      "inference_latency_seconds": 0.2649,
-      "inference_latency_us_per_row": 1.5124,
-      "csv_sha256": "090a454419a1d672c642b6a7d3f4d5b7451ad468f1c8339a1a9c6014b278c15c"
+      "inference_latency_seconds": 0.2682,
+      "inference_latency_us_per_row": 1.5311,
+      "csv_sha256": "59d1ba35e72db508912ea3f9d8834ce88c7fb8b59eea03a2bd211cf68cc5b621"
     }
   },
   "environment": {
@@ -421,69 +421,69 @@
     "scikit_learn": "1.9.1",
     "pandas": "3.1.1",
     "numpy": "2.5.5",
-    "git_commit": "05240b44b2a057a9942d6297ae75f2b4cb48ea2f",
+    "git_commit": "79ebb678b87de19cc6b664b587726983fecaf98f",
     "git_dirty": true,
     "git": {
-      "git_commit": "05240b44b2a057a9942d6297ae75f2b4cb48ea2f",
+      "git_commit": "79ebb678b87de19cc6b664b587726983fecaf98f",
       "git_dirty": true,
       "git_clean": false,
       "git_dirty_paths": [
-        "M NOTICE",
+        "M .agents/reports/V2_CURRENT_AUDIT.md",
+        "M .github/workflows/ci.yml",
+        "M .github/workflows/lint-audit.yml",
+        "M .gitignore",
+        "M README.md",
         "M THIRD_PARTY_NOTICES.md",
-        "M data/AIT_DATASETS_MANIFEST.json",
-        "M data/EXTERNAL_DATASETS_PROVENANCE.json",
-        "D data/NF_CSE_CIC_IDS2018_V3_MANIFEST.json",
-        "D data/NF_UNSW_NB15_V3_MANIFEST.json",
-        "D data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-        "M desktop/src/App.svelte",
-        "M desktop/src/lib/components/CsvPreviewPanel.svelte",
-        "M desktop/src/lib/components/ForensicTimelinePanel.svelte",
-        "M desktop/src/lib/components/ModelReadinessPanel.svelte",
-        "M desktop/src/lib/components/OnboardingGuidePanel.svelte",
-        "D docs/NF_UNSW_NB15_V3_MIGRATION_ARCHITECTURE.md",
-        "D docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md",
-        "D docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md",
-        "D docs/RF_BASELINE_PROTOCOL.md",
-        "D docs/XGB_BASELINE_PROTOCOL.md",
-        "D docs/audits/MODEL_AUDIT_TTL_ABLATION.md",
+        "M data/V2_SPLIT_MANIFEST.json",
+        "M data/historical/nf_unsw_nb15_v3/demo/demo_manifest.json",
+        "M data/historical/nf_unsw_nb15_v3/demo/demo_predictions_meta.json",
+        "M data/historical/nf_unsw_nb15_v3/demo/if_demo_predictions.metadata.json",
+        "M desktop/README.md",
+        "M desktop/package-lock.json",
+        "M desktop/package.json",
+        "M desktop/src-tauri/Cargo.lock",
+        "M desktop/src-tauri/Cargo.toml",
+        "M desktop/src-tauri/tauri.conf.json",
+        "M docs/ARCHITECTURE_V2.md",
+        "M docs/CANONICAL_SECURITY_EVENT_V2.md",
+        "M docs/DATASET.md",
+        "M docs/DEPLOYMENT_GUIDE_V2.md",
+        "M docs/DEVELOPMENT_PLAN.md",
+        "M docs/ETHICS_AND_PRIVACY.md",
+        "M docs/FEATURE_COMPATIBILITY_MATRIX.md",
+        "M docs/MIGRATION_V1_TO_V2.md",
+        "M docs/MULTI_SOURCE_INGESTION.md",
+        "M docs/MULTI_SOURCE_PIPELINE.md",
+        "M docs/PRESENTATION_OUTLINE.md",
+        "M docs/RELEASE_PROCESS.md",
+        "M docs/REPORT_OUTLINE.md",
+        "M docs/ROADMAP_FULL_SYSTEM.md",
+        "M docs/TRACEABILITY_MATRIX.md",
+        "M docs/USER_GUIDE_V2.md",
+        "M docs/WINDOWS_INSTALLATION.md",
+        "M docs/adr/ADR-dataset-hard-cutover-v2.md",
+        "M docs/benchmarks/SYSTEM_PERFORMANCE.md",
         "M docs/dataset/AIT_LINKAGE_FEASIBILITY.md",
         "M docs/dataset/AIT_PROFILE.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_DECISION.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_EDA.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_MIGRATION_IMPACT.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_QUALITY_ANALYSIS.md",
-        "D docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md",
+        "M docs/dataset/CTU_SME_11_PROFILE.md",
         "M docs/dataset/QUALITY_GATES.md",
+        "M docs/dataset/V2_LEAKAGE_AUDIT.md",
         "M docs/dataset/V2_SOURCE_AUDIT.md",
-        "D docs/experiments/EXP4_UNKNOWN_ATTACK.md",
-        "D docs/experiments/FOUR_MODEL_COMPARISON.md",
-        "D reports/data_quality/nf_unsw_nb15_v3_validation.json",
-        "D reports/eda/evidence/reproducibility_comparison.json",
-        "D reports/eda/evidence/reproducibility_comparison.md",
-        "D reports/eda/evidence/run-1/eda_report.md",
-        "D reports/eda/evidence/run-1/eda_summary.json",
-        "D reports/eda/evidence/run-1/run_metadata.json",
-        "D reports/eda/evidence/run-1/stderr.log",
-        "D reports/eda/evidence/run-1/stdout.log",
-        "D reports/eda/evidence/run-2/eda_report.md",
-        "D reports/eda/evidence/run-2/eda_summary.json",
-        "D reports/eda/evidence/run-2/run_metadata.json",
-        "D reports/eda/evidence/run-2/stderr.log",
-        "D reports/eda/evidence/run-2/stdout.log",
-        "D reports/eda/nf_unsw_nb15_v3_eda_summary.json",
-        "D reports/evaluation/autoencoder/evaluation_report.md",
-        "D reports/evaluation/autoencoder/metrics.json",
-        "D reports/evaluation/autoencoder/run_metadata.json",
-        "D reports/evaluation/autoencoder/runs/ae_benign_quantile_20261115T151859Z/README.md"
+        "M docs/decisions/MODEL_FEATURE_SPACE_COMPATIBILITY.md",
+        "M docs/experiments/CTU_CROSS_SOURCE_EVAL.md",
+        "M docs/experiments/EXP4_UNKNOWN_ATTACK.md",
+        "M docs/experiments/EXP5_SESSION_CORRELATION.md",
+        "M docs/experiments/FOUR_MODEL_COMPARISON.md",
+        "M docs/experiments/TRACEABILITY_EVALUATION.md",
+        "M docs/historical/nf_unsw_nb15_v3/EXP4_UNKNOWN_ATTACK.md",
+        "M docs/historical/nf_unsw_nb15_v3/FOUR_MODEL_COMPARISON.md",
+        "M docs/historical/nf_unsw_nb15_v3/MODEL_AUDIT_TTL_ABLATION.md"
       ],
-      "git_dirty_disclosure": "Trained from commit 05240b4 with uncommitted worktree changes (215 modified/untracked path(s)).",
+      "git_dirty_disclosure": "Trained from commit 79ebb67 with uncommitted worktree changes (192 modified/untracked path(s)).",
       "worktree_provenance": "DIRTY_DISCLOSED",
       "provenance_complete": true,
       "provenance_status": "VERIFIED"
     },
-    "timestamp_utc": "2026-11-17T18:20:33.845713+00:00"
+    "timestamp_utc": "2026-11-17T23:15:57.810523+00:00"
   }
 }

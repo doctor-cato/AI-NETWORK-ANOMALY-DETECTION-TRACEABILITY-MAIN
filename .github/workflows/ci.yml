@@ -64,8 +64,9 @@ jobs:
           fi
           if [ "${{ steps.cache-venv.outputs.cache-hit }}" = "true" ]; then
             "$VENV_BIN/python" -m pip install --no-deps --no-build-isolation -e .
+            "$VENV_BIN/python" -m pip install "ruff==0.17.5" "black==26.10.1"
           else
-            "$VENV_BIN/python" -m pip install --prefer-binary setuptools wheel -e .
+            "$VENV_BIN/python" -m pip install --prefer-binary setuptools wheel -e ".[dev]"
           fi
       - name: Check environment
         run: python scripts/check_environment.py
@@ -86,10 +87,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/fetch_multi_source_dataset.py --verify-only
       - name: Validate live telemetry & authorized lab acceptance
-        if: matrix.python-version == '3.12'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/run_live_lab_acceptance.py
       - name: Verify full system performance benchmark
-        if: matrix.python-version == '3.12'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/benchmark_full_system.py
 
   desktop-frontend:

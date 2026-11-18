@@ -2,7 +2,7 @@
   "experiment_id": "EXP-RQ3-CORRELATION-01",
   "execution_mode": "SIMULATION",
   "empirical_dataset_status": "BLOCKED",
-  "timestamp": "2026-11-17T19:04:42.720488+00:00",
+  "timestamp": "2026-11-17T23:04:51.208727+00:00",
   "hypothesis": "H3: Behavioral Vector achieves >= 85% session correlation F1/recall independent of IP",
   "dataset_provenance": {
     "simulation_source": "synthetic_ip_rotation_benchmark (synthetic: true)",
@@ -38,7 +38,7 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-17T19:04:42.714347+00:00"
+    "captured_at_utc": "2026-11-17T23:04:51.200494+00:00"
   },
   "ablation": {
     "strategy_a_ip_exact_matching": {

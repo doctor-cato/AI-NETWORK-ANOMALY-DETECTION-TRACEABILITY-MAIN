@@ -129,10 +129,17 @@ def compute_fingerprint_disjoint_split(
 
     # 4. Check label conflicts across shared feature hashes
     label_conflict_count = 0
-    target_col = "label_binary" if "label_binary" in df.columns else ("Label" if "Label" in df.columns else None)
+    target_col = (
+        "label_binary"
+        if "label_binary" in df.columns
+        else ("Label" if "Label" in df.columns else None)
+    )
     if target_col is not None:
         train_map = dict(
-            zip(pd.util.hash_pandas_object(df_train[cols_to_check], index=False), df_train[target_col])
+            zip(
+                pd.util.hash_pandas_object(df_train[cols_to_check], index=False),
+                df_train[target_col],
+            )
         )
         test_pairs = zip(
             pd.util.hash_pandas_object(df_test[cols_to_check], index=False), df_test["Label"]

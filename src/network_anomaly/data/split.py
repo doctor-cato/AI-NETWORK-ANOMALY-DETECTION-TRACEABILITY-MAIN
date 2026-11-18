@@ -25,9 +25,7 @@ import pandas as pd
 from network_anomaly.data.v2_schema import (
     DATASET_SUITE_NAME,
     FINGERPRINT_SCHEMA_VERSION,
-    ML_FEATURE_COLUMNS,
     canonical_flow_group,
-    full_row_fingerprint,
     ml_feature_fingerprint,
     source_feature_fingerprint,
 )

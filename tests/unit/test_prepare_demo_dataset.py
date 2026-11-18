@@ -8,7 +8,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPTS_DIR = _PROJECT_ROOT / "scripts"
@@ -65,7 +64,9 @@ def _build_synthetic_val_fixture(tmp_path: Path) -> tuple[Path, Path]:
 
     split_manifest = tmp_path / "v2_split_manifest.json"
     split_manifest.write_text(
-        json.dumps({"dataset_sha256": "a" * 64, "split_protocol_version": "v2-scenario-group-purged-v1"}),
+        json.dumps(
+            {"dataset_sha256": "a" * 64, "split_protocol_version": "v2-scenario-group-purged-v1"}
+        ),
         encoding="utf-8",
     )
     return val_csv, split_manifest

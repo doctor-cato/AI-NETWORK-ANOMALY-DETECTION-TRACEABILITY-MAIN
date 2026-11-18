@@ -32,7 +32,16 @@ def test_active_package_has_no_v1_nf_unsw_module():
 
 def test_taxonomy_never_coerces_background_or_unknown_to_benign():
     """Explicit unmapped / background / unknown tokens must NEVER coerce to Benign."""
-    for raw in ("", "-", "(empty)", "background", "unknown", "unlabeled", "nan", "completely_new_attack"):
+    for raw in (
+        "",
+        "-",
+        "(empty)",
+        "background",
+        "unknown",
+        "unlabeled",
+        "nan",
+        "completely_new_attack",
+    ):
         res = classify_raw_label(raw)
         assert res.canonical_category == "Unmapped", f"{raw!r} coerced to {res.canonical_category}"
         assert res.binary_label is None, f"{raw!r} assigned binary label {res.binary_label}"
@@ -42,10 +51,13 @@ def test_taxonomy_never_coerces_background_or_unknown_to_benign():
 def test_preprocessor_rejects_v1_47_feature_and_leakage_columns():
     """TrainOnlyPreprocessor must reject targets, identifiers, provenance, and 47-col v1 schemas."""
     rng = np.random.default_rng(7)
-    base = pd.DataFrame(
-        {col: rng.uniform(1.0, 50.0, size=10) for col in ML_FEATURE_COLUMNS}
-    )
-    for forbidden in TARGET_COLUMNS + TRACE_METADATA_COLUMNS + PROVENANCE_COLUMNS + ("Label", "Attack", "MIN_TTL"):
+    base = pd.DataFrame({col: rng.uniform(1.0, 50.0, size=10) for col in ML_FEATURE_COLUMNS})
+    for forbidden in (
+        TARGET_COLUMNS
+        + TRACE_METADATA_COLUMNS
+        + PROVENANCE_COLUMNS
+        + ("Label", "Attack", "MIN_TTL")
+    ):
         bad = base.copy()
         bad[forbidden] = 1.0
         prep = TrainOnlyPreprocessor()
@@ -66,7 +78,9 @@ def test_model_registry_rejects_v1_contract_without_fallback(tmp_path: Path):
     prep_man.parent.mkdir(parents=True)
     prep_path.write_bytes(b"dummy")
     prep_man.write_text(
-        json.dumps({"feature_contract_version": "nf-unsw-nb15-v3-baseline-47", "artifact_sha256": "0" * 64}),
+        json.dumps(
+            {"feature_contract_version": "nf-unsw-nb15-v3-baseline-47", "artifact_sha256": "0" * 64}
+        ),
         encoding="utf-8",
     )
 

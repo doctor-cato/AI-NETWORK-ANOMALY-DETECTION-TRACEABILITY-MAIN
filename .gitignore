@@ -66,7 +66,6 @@ logs/
 # Local session audit evidence (preserve on disk; not project source)
 /AUDIT_REPORT.md
 /AUDIT_LEDGER.md
-/docs/audits/
 
 # Agent session artifacts
 .agents/checkpoints/

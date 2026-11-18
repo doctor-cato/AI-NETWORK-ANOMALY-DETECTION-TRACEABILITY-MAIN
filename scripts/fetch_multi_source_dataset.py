@@ -163,7 +163,7 @@ def generate_synthetic_fixtures(
         "1642204815000,192.168.1.10,48992,10.0.0.99,4444,6,85.0,45000,1200,50,20,Post_Exploitation_Discovery,1\n"
         "1642204820000,192.168.1.10,51234,198.51.100.5,53,17,45.0,125000,450,100,10,Data_Exfiltration,1\n"
     )
-    flow_file.write_text(flow_content, encoding="utf-8")
+    flow_file.write_text(flow_content, encoding="utf-8", newline="\n")
     generated[flow_file.name] = flow_file
 
     dns_file = output_dir / "synthetic_dns_fixture.log"
@@ -173,7 +173,7 @@ def generate_synthetic_fixtures(
         "1642204805.200,192.168.1.105,53414,192.168.1.1,53,web.corp,A,0,60\n"
         "1642204820.150,192.168.1.10,51234,198.51.100.5,53,tunnel.exfil-data.xyz,TXT,0,10\n"
     )
-    dns_file.write_text(dns_content, encoding="utf-8")
+    dns_file.write_text(dns_content, encoding="utf-8", newline="\n")
     generated[dns_file.name] = dns_file
 
     web_file = output_dir / "synthetic_web_fixture.log"
@@ -182,7 +182,7 @@ def generate_synthetic_fixtures(
         '192.168.1.105 - - [15/Jan/2022:08:00:05 +0000] "GET /admin HTTP/1.1" 404 120 "-" "Gobuster/v3.1"\n'
         '192.168.1.105 - - [15/Jan/2022:08:00:10 +0000] "POST /api/upload.action HTTP/1.1" 200 240 "-" "Python-requests"\n'
     )
-    web_file.write_text(web_content, encoding="utf-8")
+    web_file.write_text(web_content, encoding="utf-8", newline="\n")
     generated[web_file.name] = web_file
 
     auth_file = output_dir / "synthetic_auth_fixture.log"
@@ -191,7 +191,7 @@ def generate_synthetic_fixtures(
         "Jan 15 08:00:08 server01 sshd[1288]: Failed password for invalid user root from 192.168.1.105 port 44120 ssh2\n"
         "Jan 15 08:00:12 server01 sudo:   alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/bin/bash\n"
     )
-    auth_file.write_text(auth_content, encoding="utf-8")
+    auth_file.write_text(auth_content, encoding="utf-8", newline="\n")
     generated[auth_file.name] = auth_file
 
     target_manifest = manifest_path or (output_dir / "SYNTHETIC_FIXTURE_MANIFEST.json")
@@ -218,8 +218,10 @@ def generate_synthetic_fixtures(
                 "files": fixture_entries,
             },
             indent=2,
-        ),
+        )
+        + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return generated
 
@@ -276,7 +278,8 @@ def _is_official_data_present(data_dir: Path) -> List[Path]:
         if p.is_file()
         and not p.name.startswith(".")
         and not p.name.endswith(".part")
-        and p.suffix.lower() in {".csv", ".log", ".json", ".zip", ".tar", ".bz2", ".gz", ".txt", ".md", ".labeled"}
+        and p.suffix.lower()
+        in {".csv", ".log", ".json", ".zip", ".tar", ".bz2", ".gz", ".txt", ".md", ".labeled"}
     ]
     return candidates
 
@@ -336,6 +339,75 @@ def verify_and_generate_manifest(
             )
         return entries
 
+    def _verify_entries_readonly(
+        directory: Path, recorded_entries: List[Dict[str, Any]], label: str
+    ) -> int:
+        verified = 0
+        for rec in recorded_entries:
+            rel = str(rec.get("file", "")).replace("\\", "/")
+            if not rel:
+                continue
+            fp = directory / rel
+            if not fp.is_file():
+                raise RuntimeError(f"Missing {label} file recorded in manifest: {fp}")
+            actual_size = fp.stat().st_size
+            if actual_size != int(rec.get("size_bytes", -1)):
+                raise RuntimeError(
+                    f"Size mismatch for {label}/{rel}: expected {rec.get('size_bytes')}, got {actual_size}"
+                )
+            exp_sha = str(rec.get("sha256", "")).lower()
+            actual_sha = compute_sha256(fp)
+            if exp_sha and actual_sha != exp_sha:
+                raise RuntimeError(
+                    f"SHA-256 mismatch for {label}/{rel}: expected {exp_sha}, got {actual_sha}"
+                )
+            exp_md5 = str(rec.get("md5", "")).lower()
+            if exp_md5:
+                actual_md5 = compute_md5(fp)
+                if actual_md5 != exp_md5:
+                    raise RuntimeError(
+                        f"MD5 mismatch for {label}/{rel}: expected {exp_md5}, got {actual_md5}"
+                    )
+            verified += 1
+        return verified
+
+    if verify_only:
+        if manifest_path.is_file():
+            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+            nds_rec = existing.get("ait_nds_v2_files") or existing.get("files") or []
+            lds_rec = existing.get("ait_lds_v2_1_sample_files") or []
+            ads_rec = existing.get("ait_ads_files") or []
+            try:
+                n_nds = _verify_entries_readonly(data_dir, nds_rec, "AIT-NDS-v2")
+                n_lds = _verify_entries_readonly(AIT_LDS_DIR, lds_rec, "AIT-LDS-v2.1")
+                n_ads = _verify_entries_readonly(AIT_ADS_DIR, ads_rec, "AIT-ADS")
+            except RuntimeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return False
+            _write_step_summary(
+                [
+                    "### AIT Dataset Verification: PASS (Read-Only)",
+                    f"- Verified {n_nds} AIT-NDS-v2, {n_lds} AIT-LDS-v2.1, {n_ads} AIT-ADS file(s) against {manifest_path}.",
+                ]
+            )
+            print(
+                f"SUCCESS (read-only): Verified {n_nds} AIT-NDS-v2, {n_lds} AIT-LDS-v2.1, {n_ads} AIT-ADS file(s)."
+            )
+            return True
+        # No existing manifest on disk; compute digests strictly in memory without writing
+        try:
+            nds_files = _collect(data_dir)
+            lds_files = _collect(AIT_LDS_DIR) if AIT_LDS_DIR.exists() else []
+            ads_files = _collect(AIT_ADS_DIR) if AIT_ADS_DIR.exists() else []
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return False
+        print(
+            f"SUCCESS (read-only, no manifest created): Checked {len(nds_files)} AIT-NDS-v2, "
+            f"{len(lds_files)} AIT-LDS-v2.1, {len(ads_files)} AIT-ADS file(s)."
+        )
+        return True
+
     try:
         nds_files = _collect(data_dir)
         lds_files = _collect(AIT_LDS_DIR) if AIT_LDS_DIR.exists() else []
@@ -363,7 +435,9 @@ def verify_and_generate_manifest(
         "ait_ads_files": ads_files,
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(manifest_payload, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest_payload, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
     _write_step_summary(
         [
             "### AIT Dataset Verification: PASS",
@@ -371,6 +445,44 @@ def verify_and_generate_manifest(
         ]
     )
     print(f"SUCCESS: Official AIT manifest written to {manifest_path}")
+    return True
+
+
+def verify_ctu_and_master_readonly(
+    ctu_dir: Path = CTU_DATA_DIR,
+    ctu_manifest_path: Path = CTU_MANIFEST_PATH,
+    master_path: Path = EXTERNAL_PROVENANCE_PATH,
+) -> bool:
+    """Verify CTU-SME-11 subset digests and master provenance ledger without modifying tracked JSONs."""
+    if not master_path.is_file():
+        print(f"ERROR: Missing master provenance ledger: {master_path}", file=sys.stderr)
+        return False
+    master_payload = json.loads(master_path.read_text(encoding="utf-8"))
+    if (master_payload.get("datasets") or {}).get("UGR16", {}).get("status") != "BLOCKED":
+        print(
+            "ERROR: External provenance ledger must record UGR16 status=BLOCKED.", file=sys.stderr
+        )
+        return False
+    if _is_official_data_present(ctu_dir):
+        if not ctu_manifest_path.is_file():
+            print(f"ERROR: Missing CTU manifest: {ctu_manifest_path}", file=sys.stderr)
+            return False
+        ctu_manifest = json.loads(ctu_manifest_path.read_text(encoding="utf-8"))
+        entries = ctu_manifest.get("files") or []
+        for rec in entries:
+            rel = str(rec.get("file", "")).replace("\\", "/")
+            fp = ctu_dir / rel
+            if not fp.is_file():
+                print(f"ERROR: Missing CTU file recorded in manifest: {fp}", file=sys.stderr)
+                return False
+            if fp.stat().st_size != int(rec.get("size_bytes", -1)):
+                print(f"ERROR: CTU size mismatch for {rel}", file=sys.stderr)
+                return False
+            exp_sha = str(rec.get("sha256", "")).lower()
+            if exp_sha and compute_sha256(fp) != exp_sha:
+                print(f"ERROR: CTU SHA-256 mismatch for {rel}", file=sys.stderr)
+                return False
+        print(f"SUCCESS (read-only): Verified {len(entries)} CTU-SME-11 file(s) and UGR16=BLOCKED.")
     return True
 
 
@@ -410,7 +522,9 @@ def write_ctu_and_master_manifests(
         "files": ctu_files,
     }
     ctu_manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    ctu_manifest_path.write_text(json.dumps(ctu_payload, indent=2) + "\n", encoding="utf-8")
+    ctu_manifest_path.write_text(
+        json.dumps(ctu_payload, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
 
     master_payload = {
         "schema_version": 2,
@@ -446,11 +560,15 @@ def write_ctu_and_master_manifests(
             "UGR16": UGR16_STATUS,
         },
     }
-    master_path.write_text(json.dumps(master_payload, indent=2) + "\n", encoding="utf-8")
+    master_path.write_text(
+        json.dumps(master_payload, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="NetFlow Sentinel v2 Multi-Source Dataset Verifier")
+    parser = argparse.ArgumentParser(
+        description="NetFlow Sentinel v2 Multi-Source Dataset Verifier"
+    )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument("--manifest-path", type=Path, default=MANIFEST_PATH)
     parser.add_argument("--generate-synthetic-fixtures", action="store_true")
@@ -479,7 +597,11 @@ def main() -> None:
     if not ok:
         sys.exit(1)
     if _is_official_data_present(args.data_dir) or _is_official_data_present(CTU_DATA_DIR):
-        write_ctu_and_master_manifests()
+        if args.verify_only:
+            if not verify_ctu_and_master_readonly():
+                sys.exit(1)
+        else:
+            write_ctu_and_master_manifests()
 
 
 if __name__ == "__main__":

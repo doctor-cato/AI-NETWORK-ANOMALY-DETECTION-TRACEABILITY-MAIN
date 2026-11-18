@@ -48,7 +48,7 @@ flowchart LR
 | Thành phần | Vị trí / Package | Vai trò trong v2 | Trạng thái |
 |---|---|---|---|
 | Data, Split & Taxonomy v2 | `src/network_anomaly/data/` | `v2_schema.py`, `taxonomy-v2`, `v2-scenario-group-purged-v1` | **EXPERIMENTALLY VALIDATED** (`AIT-NDS-v2`, `CTU-SME-11`) |
-| Preprocessing `asinh_robust` | `src/network_anomaly/preprocessing/` | `TrainOnlyPreprocessor` fit chỉ trên `ait_train` (`1,930,219`) | **EXPERIMENTALLY VALIDATED** |
+| Preprocessing `asinh_robust` | `src/network_anomaly/preprocessing/` | `TrainOnlyPreprocessor` fit chỉ trên `ait_train` (`2,097,891`) | **EXPERIMENTALLY VALIDATED** |
 | 4 ML Models & Inference | `src/network_anomaly/models/`, `inference/` | RF, XGBoost, Isolation Forest, Autoencoder (`AI Ready 4/4`) | **EXPERIMENTALLY VALIDATED** (`AIT-Test` + `CTU-SME-11`) |
 | FastAPI, Ingestion, OOD & Dry-Run | `src/network_anomaly/api/`, `ingestion/` | REST endpoints, OpenAPI synced, provenance gate, OOD, Dry-Run | **IMPLEMENTED / TESTED** |
 | Behavioral, Risk, Trace & Crypto | `src/network_anomaly/{behavioral,risk,trace,crypto,streaming}/` | Sessionizer, 16-D vector, Timeline, AES-256-GCM, Key Rotation | **IMPLEMENTED / TESTED / BENCHMARKED** |

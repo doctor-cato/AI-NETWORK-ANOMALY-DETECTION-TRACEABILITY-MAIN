@@ -8,7 +8,6 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict
 
 import numpy as np
 
@@ -29,10 +28,10 @@ from _v2_train_common import (  # noqa: E402
     load_v2_partitions,
     make_run_id,
 )
+
 from network_anomaly.data.split import _sha256_file  # noqa: E402
 from network_anomaly.data.v2_schema import (  # noqa: E402
     DATASET_SUITE_NAME,
-    FEATURE_CONTRACT_ID,
     ML_FEATURE_COLUMNS,
 )
 from network_anomaly.models.xgboost_model import XGBoostModel  # noqa: E402
@@ -53,7 +52,16 @@ EVAL_REPORT_JSON = PROJECT_ROOT / "reports" / "evaluation" / "xgboost_v2_eval.js
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train XGBoost v2 model")
-    parser.add_argument("--verify-only", action="store_true", help="Exit 0 SKIPPED if datasets absent")
+    parser.add_argument(
+        "--verify-only", action="store_true", help="Exit 0 SKIPPED if datasets absent"
+    )
+    parser.add_argument("--n-estimators", type=int, default=None)
+    parser.add_argument("--max-depth", type=int, default=None)
+    parser.add_argument("--learning-rate", type=float, default=None)
+    parser.add_argument("--min-child-weight", type=float, default=None)
+    parser.add_argument("--reg-lambda", type=float, default=None)
+    parser.add_argument("--reg-alpha", type=float, default=None)
+    parser.add_argument("--scale-pos-weight", type=float, default=1.0)
     args = parser.parse_args()
 
     ok, errors, info = check_v2_training_prerequisites()
@@ -71,13 +79,39 @@ def main() -> None:
 
     preproc = TrainOnlyPreprocessor.load_verified(
         artifact_path=PREPROC_ARTIFACT_PATH,
-        manifest_path=PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json",
+        manifest_path=PROJECT_ROOT
+        / "reports"
+        / "preprocessing"
+        / "v2_flow_preprocessing_manifest.json",
         split_manifest_path=SPLIT_MANIFEST_PATH,
     )
     partitions = load_v2_partitions(preproc, include_test=True, include_ctu=True)
 
-    prep_manifest_path = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
+    prep_manifest_path = (
+        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
+    )
     prep_manifest_sha = _sha256_file(prep_manifest_path)
+
+    cfg_overrides = {}
+    if args.n_estimators is not None:
+        cfg_overrides["n_estimators"] = args.n_estimators
+    if args.max_depth is not None:
+        cfg_overrides["max_depth"] = args.max_depth
+    if args.learning_rate is not None:
+        cfg_overrides["learning_rate"] = args.learning_rate
+    if args.min_child_weight is not None:
+        cfg_overrides["min_child_weight"] = args.min_child_weight
+    if args.reg_lambda is not None:
+        cfg_overrides["reg_lambda"] = args.reg_lambda
+    if args.reg_alpha is not None:
+        cfg_overrides["reg_alpha"] = args.reg_alpha
+    if abs(args.scale_pos_weight - 1.0) > 1e-12:
+        cfg_overrides["scale_pos_weight"] = float(args.scale_pos_weight)
+    if cfg_overrides:
+        cfg_overrides["is_canonical_baseline"] = False
+        cfg_overrides["configuration_id"] = (
+            f"xgb-v2-tuned-d{args.max_depth or 6}-spw{args.scale_pos_weight:g}"
+        )
 
     run_id = make_run_id("xgb")
     protocol = XGBoostBaselineProtocol(
@@ -95,7 +129,7 @@ def main() -> None:
             manifest_sha256=prep_manifest_sha,
             status="PASS",
         ),
-        model_config=XGBoostBaselineConfig(),
+        model_config=XGBoostBaselineConfig(**cfg_overrides),
     )
     protocol.validate()
     model = XGBoostModel(protocol=protocol)
@@ -117,11 +151,16 @@ def main() -> None:
     model.fit(
         X_train,
         y_train,
-        eval_set=[(X_train.to_numpy(dtype=np.float32), y_train), (X_val.to_numpy(dtype=np.float32), y_val)],
+        eval_set=[
+            (X_train.to_numpy(dtype=np.float32), y_train),
+            (X_val.to_numpy(dtype=np.float32), y_val),
+        ],
         verbose=False,
     )
     train_seconds = time.perf_counter() - t0
-    evals_result = model.estimator.evals_result() if hasattr(model.estimator, "evals_result") else {}
+    evals_result = (
+        model.estimator.evals_result() if hasattr(model.estimator, "evals_result") else {}
+    )
     val_logloss_curve = (
         evals_result.get("validation_1", {}).get("logloss", [])
         if isinstance(evals_result, dict)
@@ -129,7 +168,10 @@ def main() -> None:
     )
     best_val_logloss = float(min(val_logloss_curve)) if val_logloss_curve else None
     best_val_iter = int(np.argmin(val_logloss_curve)) if val_logloss_curve else None
-    print(f"[XGB] Fit completed in {train_seconds:.2f}s (best_val_logloss={best_val_logloss})", flush=True)
+    print(
+        f"[XGB] Fit completed in {train_seconds:.2f}s (best_val_logloss={best_val_logloss})",
+        flush=True,
+    )
 
     importances = {
         col: float(imp)
@@ -171,7 +213,7 @@ def main() -> None:
         "class_imbalance_audit": {
             "train_benign": n_neg,
             "train_attack": n_pos,
-            "scale_pos_weight_used": 1.0,
+            "scale_pos_weight_used": float(args.scale_pos_weight),
             "best_val_logloss": best_val_logloss,
             "best_val_iteration": best_val_iter,
         },
@@ -190,9 +232,13 @@ def main() -> None:
     model_size_bytes = MODEL_ARTIFACT_PATH.stat().st_size
     manifest_obj = json.loads(REPORT_MANIFEST_PATH.read_text(encoding="utf-8"))
     manifest_obj["model_size_bytes"] = model_size_bytes
-    REPORT_MANIFEST_PATH.write_text(json.dumps(manifest_obj, indent=2) + "\n", encoding="utf-8")
+    REPORT_MANIFEST_PATH.write_text(
+        json.dumps(manifest_obj, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
     MODEL_SIDECAR_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
-    MODEL_SIDECAR_MANIFEST.write_text(json.dumps(manifest_obj, indent=2) + "\n", encoding="utf-8")
+    MODEL_SIDECAR_MANIFEST.write_text(
+        json.dumps(manifest_obj, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
 
     reloaded = XGBoostModel.load_verified(
         MODEL_ARTIFACT_PATH,
@@ -205,7 +251,9 @@ def main() -> None:
         raise RuntimeError("Reload parity check failed for XGBoost")
 
     EVAL_REPORT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    EVAL_REPORT_JSON.write_text(json.dumps(manifest_obj, indent=2) + "\n", encoding="utf-8")
+    EVAL_REPORT_JSON.write_text(
+        json.dumps(manifest_obj, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
     print(
         f"[XGB] Verified reload OK | sha256={model_sha[:12]} | size={model_size_bytes/1e6:.2f} MB | "
         f"AIT-Val F1={evals['ait_val']['f1']:.4f} | AIT-Test F1={evals['ait_test']['f1']:.4f} | "

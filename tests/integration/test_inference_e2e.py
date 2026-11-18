@@ -79,7 +79,7 @@ def synthetic_integration_setup(
     prep = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
         dataset_sha256="cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
-        split_manifest_sha256="1b7fa7aebaf3560f27b3d23ec05919a83aacd1ed6ea5448f96a6a42c7a264e0a",
+        split_manifest_sha256="ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
     )
     df_train_only = df_full[list(ML_FEATURE_COLUMNS)].copy()
     prep.fit(df_train_only)
@@ -370,9 +370,7 @@ def test_prediction_reproducibility(
 def test_real_preprocessor_artifact_smoke():
     """Smoke test: verify that v2 preprocessor artifact loads and verifies in repo."""
     prep_art = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
-    prep_man = (
-        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
-    )
+    prep_man = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 
     if not prep_art.is_file() or not prep_man.is_file():
         pytest.skip("Real v2 preprocessor artifact not found in repository.")
@@ -385,13 +383,13 @@ def test_real_preprocessor_artifact_smoke():
 
     prep = TrainOnlyPreprocessor.load_verified(prep_art, manifest_path=prep_man)
     assert prep.is_fitted_ is True
-    assert prep.train_row_count_ == 1930219
+    assert prep.train_row_count_ == 2097891
 
     # Model status check
     rf_art = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
     if not rf_art.is_file():
         print(
-            "\n[SMOKE REPORT] Real v2 preprocessor: PASS (1,930,219 rows trained).\n"
+            "\n[SMOKE REPORT] Real v2 preprocessor: PASS (2,097,891 rows trained).\n"
             "[SMOKE REPORT] Real model: SKIPPED (RF baseline binary not present "
             "in working tree; excluded via .gitignore)."
         )

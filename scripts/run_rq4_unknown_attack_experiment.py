@@ -7,8 +7,8 @@ Protocol:
 - Supervised models (RF, XGBoost) are trained strictly on Train (Benign + Known Attacks)
   and threshold-calibrated strictly on Validation (Benign + Known Attacks).
 - Unsupervised models (Isolation Forest, Autoencoder) are loaded from verified
-  artifacts (trained Benign-only, thresholds calibrated on Validation with
-  Backdoor & Worms excluded).
+  artifacts (trained Benign-only) and threshold-calibrated strictly on
+  holdout-filtered Validation scores.
 - All 4 models are evaluated on real Test split (Known Attacks vs Benign AND
   Unseen Holdout Attacks vs Benign).
 - Explicitly states that holdout benchmark evaluation does not prove zero-day
@@ -43,6 +43,7 @@ from _rq_common import (  # noqa: E402
     load_partition_raw,
     load_verified_preprocessor,
 )
+from _v2_train_common import calibrate_unsupervised_threshold_on_validation  # noqa: E402
 
 from network_anomaly.config import RANDOM_SEED  # noqa: E402
 from network_anomaly.models.registry import ModelRegistry  # noqa: E402
@@ -92,11 +93,12 @@ def run_rq4_experiment(
             "blocked_reasons": {"missing_data_files": missing_paths},
         }
         output_json.parent.mkdir(parents=True, exist_ok=True)
-        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8")
+        output_json.write_text(json.dumps(blocked, indent=2) + "\n", encoding="utf-8", newline="\n")
         output_md.parent.mkdir(parents=True, exist_ok=True)
         output_md.write_text(
             f"# RQ4 Unknown Attack Holdout (BLOCKED)\n\nMissing: `{missing_paths}`\n",
             encoding="utf-8",
+            newline="\n",
         )
         return blocked
 
@@ -185,14 +187,19 @@ def run_rq4_experiment(
     ):
         st = registry.status(unsup_key)
         if st is not None and st.decision_ready:
-            raw_s, pred_s = registry.score_batch(unsup_key, X_test_np)
+            val_raw_u, _ = registry.score_batch(unsup_key, X_val_np)
+            cal_th, _, _ = calibrate_unsupervised_threshold_on_validation(
+                val_raw_u, y_val_known, target_fpr=0.05
+            )
+            raw_s, _ = registry.score_batch(unsup_key, X_test_np)
+            pred_s = (raw_s >= float(cal_th)).astype(np.int64)
             model_scores_and_preds[unsup_key] = (
                 raw_s,
                 pred_s,
                 {
                     "paradigm": paradigm,
-                    "threshold": st.threshold,
-                    "threshold_source": st.threshold_source,
+                    "threshold": float(cal_th),
+                    "threshold_source": "validation_holdout_known_benign_calibrated",
                     "artifact_sha256": st.artifact_sha256,
                 },
             )
@@ -264,7 +271,7 @@ def run_rq4_experiment(
     }
 
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     rows = []
     for mkey, vals in model_eval.items():
@@ -293,7 +300,7 @@ def run_rq4_experiment(
         *[f"- {lim}" for lim in results["limitations"]],
     ]
     output_md.parent.mkdir(parents=True, exist_ok=True)
-    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
+    output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
     print(f"RQ4 experiment completed: {output_json} and {output_md}")
     return results
 

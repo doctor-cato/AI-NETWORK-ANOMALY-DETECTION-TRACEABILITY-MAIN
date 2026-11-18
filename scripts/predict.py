@@ -157,10 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--preprocessor-manifest",
         type=str,
         default=str(
-            PROJECT_ROOT
-            / "reports"
-            / "preprocessing"
-            / "v2_flow_preprocessing_manifest.json"
+            PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
         ),
         help="Path to preprocessor companion manifest .json file",
     )

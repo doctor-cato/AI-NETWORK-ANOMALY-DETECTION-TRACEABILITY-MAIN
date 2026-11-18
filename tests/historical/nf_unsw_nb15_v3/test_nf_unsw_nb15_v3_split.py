@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from network_anomaly.data.nf_unsw_nb15_v3 import (
     ALL_COLUMNS,
     BEHAVIORAL_FINGERPRINT_COLUMNS,
