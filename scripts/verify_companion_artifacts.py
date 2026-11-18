@@ -41,6 +41,7 @@ from network_anomaly.inference.predict import (  # noqa: E402
     load_verified_model,
     load_verified_preprocessor,
 )
+from network_anomaly.ml.ood_gate import verify_ood_gate_artifact  # noqa: E402
 
 _TAURI_BUNDLE_MARKER_UNK = b"BUNDLE_TYPE_VAR_UNK"
 _TAURI_BUNDLE_MARKER_NSS = b"BUNDLE_TYPE_VAR_NSS"
@@ -75,10 +76,13 @@ MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
             Path("artifacts/models/autoencoder/autoencoder_manifest.json"),
             Path("artifacts/models/autoencoder/model_config.json"),
             Path("artifacts/models/autoencoder/threshold.json"),
+            Path("artifacts/models/autoencoder/score_normalization.json"),
         ],
     ),
 }
 
+AE_SCORE_NORMALIZATION_REL = Path("artifacts/models/autoencoder/score_normalization.json")
+OOD_REFERENCE_GATE_REL = Path("artifacts/ml/ood_reference_gate.json")
 PREPROCESSOR_REL = Path("artifacts/preprocessing/v2_flow_preprocessor.joblib")
 PREPROCESSOR_MANIFEST_REL = Path("reports/preprocessing/v2_flow_preprocessing_manifest.json")
 SPLIT_MANIFEST_REL = Path("data/V2_SPLIT_MANIFEST.json")
@@ -142,6 +146,7 @@ SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
     "artifacts/models/xgboost/xgboost_manifest.json": "reports/models/xgboost_manifest.json",
     "artifacts/models/autoencoder/autoencoder_manifest.json": "reports/models/autoencoder_manifest.json",
     "artifacts/models/random_forest/random_forest_manifest.json": "reports/models/random_forest_manifest.json",
+    "artifacts/models/isolation_forest/isolation_forest_manifest.json": "reports/models/isolation_forest_manifest.json",
 }
 
 
@@ -220,6 +225,12 @@ def verify_companion_artifacts(
                 manifest_path=manifest_abs,
                 expected_preprocessor_sha256=prep_sha,
             )
+            if model_key == "autoencoder":
+                ae_norm_abs = resolved_runtime / AE_SCORE_NORMALIZATION_REL
+                if not ae_norm_abs.is_file():
+                    raise FileNotFoundError(
+                        f"Missing required Autoencoder companion sidecar: {AE_SCORE_NORMALIZATION_REL.as_posix()}"
+                    )
             ready_models.append(model_key)
             models_status[model_key] = {
                 "ready": True,
@@ -298,7 +309,65 @@ def verify_companion_artifacts(
             demo_ready = False
             demo_error = str(exc)
 
-    all_four_ready = prep_status["ready"] and len(ready_models) == len(MODEL_SPECS) and demo_ready
+    ood_gate_abs = resolved_runtime / OOD_REFERENCE_GATE_REL
+    ood_gate_status: Dict[str, Any]
+    if not ood_gate_abs.is_file():
+        ood_gate_status = {
+            "ready": False,
+            "status": "NOT_FITTED",
+            "path": OOD_REFERENCE_GATE_REL.as_posix(),
+            "sha256": None,
+            "fit_rows": None,
+            "feature_count": 0,
+            "preprocessor_artifact_sha256": None,
+            "reason": f"Missing OOD reference gate artifact: {OOD_REFERENCE_GATE_REL.as_posix()}",
+        }
+    elif not prep_status["ready"] or prep_sha is None:
+        ood_gate_status = {
+            "ready": False,
+            "status": "ERROR",
+            "path": OOD_REFERENCE_GATE_REL.as_posix(),
+            "sha256": _sha256_file(ood_gate_abs).lower(),
+            "fit_rows": None,
+            "feature_count": 0,
+            "preprocessor_artifact_sha256": None,
+            "reason": "Preprocessor artifact is not verified.",
+        }
+    else:
+        try:
+            _, ood_meta = verify_ood_gate_artifact(
+                ood_gate_abs,
+                expected_preprocessor_sha256=prep_sha,
+            )
+            ood_gate_status = {
+                "ready": True,
+                "status": "FITTED",
+                "path": OOD_REFERENCE_GATE_REL.as_posix(),
+                "sha256": ood_meta["sha256"],
+                "fit_rows": ood_meta["fit_rows"],
+                "feature_count": ood_meta["feature_count"],
+                "preprocessor_artifact_sha256": ood_meta["preprocessor_artifact_sha256"],
+                "reason": None,
+            }
+            staged_files.append(OOD_REFERENCE_GATE_REL)
+        except Exception as exc:
+            ood_gate_status = {
+                "ready": False,
+                "status": "ERROR",
+                "path": OOD_REFERENCE_GATE_REL.as_posix(),
+                "sha256": None,
+                "fit_rows": None,
+                "feature_count": 0,
+                "preprocessor_artifact_sha256": None,
+                "reason": str(exc),
+            }
+
+    all_four_ready = (
+        prep_status["ready"]
+        and len(ready_models) == len(MODEL_SPECS)
+        and demo_ready
+        and ood_gate_status["ready"]
+    )
     unique_staged = sorted({p.as_posix() for p in staged_files})
 
     return {
@@ -306,6 +375,7 @@ def verify_companion_artifacts(
         "ready_models": ready_models,
         "preprocessor": prep_status,
         "models": models_status,
+        "ood_gate": ood_gate_status,
         "demo": demo_status,
         "demo_ready": demo_ready,
         "demo_verification_error": demo_error,
@@ -706,6 +776,14 @@ def stage_embedded_bundle(
             key: {"sha256": info["sha256"], "run_id": info["run_id"]}
             for key, info in staged["models"].items()
         },
+        "ood_gate": {
+            "status": (staged.get("ood_gate") or {}).get("status"),
+            "sha256": (staged.get("ood_gate") or {}).get("sha256"),
+            "fit_rows": (staged.get("ood_gate") or {}).get("fit_rows"),
+            "preprocessor_artifact_sha256": (staged.get("ood_gate") or {}).get(
+                "preprocessor_artifact_sha256"
+            ),
+        },
         "demo_sha256": {key: info["sha256"] for key, info in staged["demo"].items()},
         "files": embedded_files,
     }
@@ -724,6 +802,7 @@ def stage_embedded_bundle(
         "manifest_file": str(manifest_path),
         "preprocessor": staged["preprocessor"],
         "models": staged["models"],
+        "ood_gate": staged.get("ood_gate"),
         "demo": staged["demo"],
     }
 
@@ -778,11 +857,31 @@ def verify_installed_standalone_layout(
         resolved_install / "EMBEDDED_ARTIFACTS_MANIFEST.json",
         "installed EMBEDDED_ARTIFACTS_MANIFEST.json",
     )
+    for req_companion in (OOD_REFERENCE_GATE_REL.as_posix(), AE_SCORE_NORMALIZATION_REL.as_posix()):
+        if req_companion not in sums_map:
+            raise RuntimeError(
+                f"Installed standalone bundle missing {req_companion!r} in EMBEDDED_SHA256SUMS.txt"
+            )
     summary = verify_companion_artifacts(root=resolved_install, runtime_dir=resolved_install)
+    ood_gate_info = summary.get("ood_gate") or {}
+    if not ood_gate_info.get("ready") or ood_gate_info.get("status") != "FITTED":
+        raise RuntimeError(
+            "Installed standalone OOD gate verification failed (must be FITTED): "
+            f"{ood_gate_info}"
+        )
+    expected_ood_sha = (manifest_data.get("ood_gate") or {}).get("sha256")
+    if (
+        expected_ood_sha
+        and str(expected_ood_sha).lower() != str(ood_gate_info.get("sha256", "")).lower()
+    ):
+        raise RuntimeError(
+            "Installed standalone OOD gate SHA-256 mismatch with EMBEDDED_ARTIFACTS_MANIFEST.json"
+        )
     if summary["overall_status"] != "READY" or len(summary["ready_models"]) != len(MODEL_SPECS):
         raise RuntimeError(
             "Installed standalone artifacts verification failed: "
-            f"ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']}"
+            f"ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']}, "
+            f"ood_gate={ood_gate_info.get('status')}"
         )
 
     return {
@@ -792,6 +891,7 @@ def verify_installed_standalone_layout(
         "sidecar_size_bytes": sidecar_exe.stat().st_size,
         "embedded_file_count": len(sums_map),
         "distribution_scope": manifest_data.get("distribution_scope"),
+        "ood_gate": ood_gate_info,
         "summary": summary,
     }
 

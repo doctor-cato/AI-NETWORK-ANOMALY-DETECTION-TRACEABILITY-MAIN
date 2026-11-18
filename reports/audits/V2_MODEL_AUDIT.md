@@ -263,16 +263,77 @@ Sau khi khắc phục `DATA-A01..A04` (phục hồi đủ `3,464,400` flows có 
 | `XGBoost` | `33d201f8f3d842c0b71547532c74f3d107bd402d8a65e20241ff5f407723aa48` | `v2-xgb-20261117T231609Z` | Sửa `provenance_note` verified, relative POSIX path |
 | `Isolation Forest` | `11b1690088bca1984df9280b3c5662fbb13a76ca31e55258b9de43d6a10a6885` | `v2-if-20261118T020525Z` (`th=0.031268`, `>=` FPR `0.049991`) | Đổi `target="label_binary"`, thêm `top_features` permutation importance |
 | `Autoencoder` | `e6afecefdc939a09e3c7fedd3e994a10c404f74e9b52c9ab95dfd984aae0cd4f` | `v2-ae-20261118T020635Z` (`(16,8,16)` Benign std, `th=0.000467`, FPR `0.049996`) | Thêm per-feature Benign standardization, check `expected_split_manifest_sha256`, `top_features` |
-| `OODRejectionGate` | Persisted JSON | `artifacts/ml/ood_reference_gate.json` (`2,097,891` raw train rows) | Khớp không gian raw `feature_dict` trong `RealtimeInferenceEngine` |
+| `OODRejectionGate` | `8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825` | `artifacts/ml/ood_reference_gate.json` (`2,097,891` raw train rows) | Khớp không gian raw `feature_dict`; đã stage standalone & khóa fail-closed ở `deployment` mode |
+| `AE score_normalization.json` | `d7bcb78f7439930ee61b53e6e970ff1535d52ad10f2a025ad4877629a7478847` | `artifacts/models/autoencoder/score_normalization.json` | Sidecar chuẩn hóa điểm AE; cross-checked lúc load (`_validate_ae_contract_before_deserialize`) & stage standalone |
 
 ### 6.2. So sánh Thực nghiệm Trước vs Sau Khắc phục (Cohort Đầy đủ `AIT-Test = 988,805`)
 
 | Mô hình | Baseline `AIT-Test` F1 | Post-Fix `AIT-Test` F1 | Delta `AIT-Test` | Baseline `CTU-Echo` F1 | Post-Fix `CTU-Echo` F1 | Post-Fix `CTU-Win7AD` F1 / ROC-AUC |
 |---|---:|---:|---:|---:|---:|---:|
 | **Random Forest** | `0.8997` | **`0.9950`** (`ROC=0.9994`) | **`+0.0953`** | `0.0000` | **`0.0474`** (`AUC=0.6137`) | **`0.0712`** / `0.8392` |
-| **XGBoost** | `0.8910` | **`0.9013`** (`ROC=0.9885`) | **`+0.0103`** | `0.0000` | **`0.1436`** (`AUC=0.7017`) | **`0.0738`** / `0.6978` |
+| **XGBoost** | `0.8910` | **`0.9013`** (`ROC=0.9884`) | **`+0.0103`** | `0.0000` | **`0.1436`** (`AUC=0.7017`) | **`0.0738`** / `0.6978` |
 | **Isolation Forest** | `0.5766` | **`0.5842`** (`ROC=0.8330`, `FPR=0.0290`) | **`+0.0076`** | `0.8527` | **`0.8853`** | `0.0464` (`FPR=0.4722`) |
 | **Autoencoder** | `0.5788` | **`0.5877`** (`FPR=0.0276`) | **`+0.0089`** | `0.7000` | **`0.7325`** | `0.0326` (`FPR=0.6925` vs `0.8545`) |
 
 - **Ghi chú trung thực về giới hạn còn lại:** Mặc dù `CTU-Echo` và `AIT-Test` đều cải thiện rõ trên cả 4 mô hình (và `XGB CTU-Echo ROC-AUC` hết bị đảo dấu `0.0373 -> 0.7017`), `supervised zero-shot` trên `CTU-SME-11` vẫn suy giảm mạnh về Recall tuyệt đối tại ngưỡng `0.5` do chênh lệch lưu lượng nền, nên `random_forest`/`xgboost` chỉ hợp lệ cho phân tích in-domain hoặc multi-source domain-adapted, còn `isolation_forest`/`autoencoder` giữ `deployment_tier = "RESEARCH_ONLY"`.
+
+---
+
+### 6.3. Đối chiếu Toàn diện Baseline `E0` trên Toàn Bộ Chỉ số & Nhóm Tấn công Hiếm (`wp3_controlled_ablation_report.json`)
+
+Bảng đối chiếu đầy đủ trích xuất trực tiếp từ 4 model manifest và `reports/experiments/ml/wp3_controlled_ablation_report.json` (`canonical-flow-v2-18`, `split_manifest_sha256 = ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8`, `preprocessor_sha256 = 0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`):
+
+| Mô hình / Split | Precision | Recall | F1 | Macro-F1 | ROC-AUC | PR-AUC | FPR | Confusion Matrix (`tn, fp, fn, tp`) | Latency (`s` / `us/flow`) |
+|---|---:|---:|---:|---:|---:|---:|---:|---|---|
+| **RF** (`AIT-Val`) | `0.9998` | `0.9996` | `0.9997` | `0.9997` | `0.9999` | `0.9999` | `0.0002` | `206635 / 41 / 76 / 170952` | `0.5992s` / `1.5865us` |
+| **RF** (`AIT-Test`) | `0.9989` | `0.9911` | `0.9950` | `0.9969` | `0.9994` | `0.9977` | `0.0002` | `812780 / 200 / 1563 / 174262` | `1.8561s` / `1.8771us` |
+| **RF** (`CTU-Echo`) | `0.2318` | `0.0264` | `0.0474` | `0.3495` | `0.6137` | `0.6180` | `0.0811` | `36295 / 3202 / 35610 / 966` | `0.1499s` / `1.9709us` |
+| **RF** (`CTU-Win7AD`) | `0.0381` | `0.5412` | `0.0712` | `0.4906` | `0.8392` | `0.4948` | `0.1608` | `145280 / 27828 / 935 / 1103` | `0.2682s` / `1.5311us` |
+| **XGB** (`AIT-Val`) | `0.9998` | `0.9993` | `0.9996` | `0.9996` | `0.9999` | `0.9999` | `0.0002` | `206643 / 33 / 119 / 170909` | `0.1844s` / `0.4882us` |
+| **XGB** (`AIT-Test`) | `0.9989` | `0.8211` | `0.9013` | `0.9411` | `0.9884` | `0.9728` | `0.0002` | `812819 / 161 / 31461 / 144364` | `0.4992s` / `0.5048us` |
+| **XGB** (`CTU-Echo`) | `0.5240` | `0.0832` | `0.1436` | `0.4065` | `0.7017` | `0.6747` | `0.0700` | `36733 / 2764 / 33533 / 3043` | `0.0413s` / `0.5424us` |
+| **XGB** (`CTU-Win7AD`) | `0.0395` | `0.5623` | `0.0738` | `0.4918` | `0.6978` | `0.4774` | `0.1611` | `145215 / 27893 / 892 / 1146` | `0.0905s` / `0.5170us` |
+| **IF** (`AIT-Val`) | `0.9375` | `0.9057` | `0.9213` | `0.9291` | `0.9705` | `0.9718` | `0.0500` | `196344 / 10332 / 16129 / 154899` | `2.6781s` / `7.0904us` |
+| **IF** (`AIT-Test`) | `0.7775` | `0.4678` | `0.5842` | `0.7576` | `0.8330` | `0.6587` | `0.0290` | `789443 / 23537 / 93566 / 82259` | `8.4309s` / `8.5264us` |
+| **IF** (`CTU-Echo`) | `0.8001` | `0.9908` | `0.8853` | `0.8759` | `0.9571` | `0.9237` | `0.2292` | `30445 / 9052 / 336 / 36240` | `0.3866s` / `5.0816us` |
+| **IF** (`CTU-Win7AD`) | `0.0238` | `0.9760` | `0.0464` | `0.3686` | `0.7649` | `0.1002` | `0.4722` | `91369 / 81739 / 49 / 1989` | `1.4767s` / `8.4314us` |
+| **AE** (`AIT-Val`) | `0.9375` | `0.9061` | `0.9215` | `0.9293` | `0.9192` | `0.9501` | `0.0500` | `196343 / 10333 / 16064 / 154964` | `0.1558s` / `0.4126us` |
+| **AE** (`AIT-Test`) | `0.7860` | `0.4693` | `0.5877` | `0.7597` | `0.5544` | `0.5664` | `0.0276` | `790512 / 22468 / 93317 / 82508` | `0.4961s` / `0.5017us` |
+| **AE** (`CTU-Echo`) | `0.5783` | `0.9990` | `0.7325` | `0.6116` | `0.7810` | `0.7146` | `0.6746` | `12851 / 26646 / 37 / 36539` | `0.0294s` / `0.3869us` |
+| **AE** (`CTU-Win7AD`) | `0.0166` | `0.9921` | `0.0326` | `0.2515` | `0.7280` | `0.0204` | `0.6925` | `53227 / 119881 / 16 / 2022` | `0.0819s` / `0.4678us` |
+
+- **Per-attack Recall trên `AIT-Test` (`N = 988,805`):**
+  - `Reconnaissance` (`N = 95,628`): RF `0.9962`, XGB `0.9960`, IF `0.8597`, AE `0.8623`.
+  - `Data_Exfiltration` (`N = 80,075` — `wheeler` + `shaw` DNS tunneling): RF `0.9860`, XGB `0.6128`, IF `0.0000`, AE `0.0005` *(IF/AE hoàn toàn mù với slow DNS tunneling ở mức flow đơn lẻ; XGB sụt mạnh trên `wheeler`/`shaw` chưa thấy)*.
+  - `Credential_Attack` (`N = 78` — mẫu hiếm): RF `0.1410`, XGB `0.1410`, IF `0.1410`, AE `0.0641` *(nút thắt single-flow overlap với benign HTTPS/SSH)*.
+  - `Post_Exploitation_Discovery` (`N = 39` — mẫu rất hiếm): RF `0.8974`, XGB `0.8974`, IF `0.8974`, AE `0.1026`.
+  - `Exploitation_And_C2` (**`N = 5` — không đủ lực thống kê**): Cả 4 mô hình đạt `1.0000` (`5/5`), **KHÔNG được phép diễn giải thành khả năng tổng quát hóa `100%`**.
+
+---
+
+### 6.4. Thí nghiệm Kiểm soát WP3 (`E1`–`E5`) & Quyết định Lựa chọn Candidate (`RETAIN_E0_BASELINE_ARTIFACTS`)
+
+Toàn bộ thí nghiệm được thực thi bằng [`scripts/run_wp3_controlled_ablation.py`](../../scripts/run_wp3_controlled_ablation.py) (tổng thời gian `986.03s`, kết quả tại [`reports/experiments/ml/wp3_controlled_ablation_report.json`](../experiments/ml/wp3_controlled_ablation_report.json)); **không** dùng `AIT-Test` hay `CTU` để chọn feature, hyperparameter hoặc threshold (`test_touched_for_selection_or_threshold = false`).
+
+| Thí nghiệm | Thiết lập đặc trưng / Split | Phát hiện định lượng chính | Kết luận kiểm soát |
+|---|---|---|---|
+| **E1 (6 base features)** | `duration_ms, bytes_in, bytes_out, pkts_in, pkts_out, protocol_num` | RF Test `F1=0.9184` (`Exfil=0.7081`), Val `FPR=0.0031`; XGB Test `F1=0.7324` (`Exfil=0.0803`), Win7AD `F1=0.3632 / FPR=0.0176`; IF Test `0.5921` (Echo `FPR=0.3328`); AE Test `0.5914` (`Exploit=0.0`, `PostEx=0.0`, Win7AD `FPR=0.5999`) | Bỏ 12 engineered features làm sụp đổ `Data_Exfiltration` của XGB (`0.6128 -> 0.0803`) và AE/RF recall; XGB Win7AD cải thiện nhẹ nhưng vẫn bất ổn giữa Echo/AIT |
+| **E2 (12 non-byte/rate features)** | Bỏ `bytes_in, bytes_out, total_bytes, bytes_per_sec_in, bytes_per_sec_out, pkts_per_sec` | RF Test `F1=0.9944` (`Exfil=0.9837`), Win7AD `F1=0.0707 / FPR=0.1599`; XGB Test `F1=0.7989` (`Exfil=0.2722`), Echo `F1=0.1473`; IF Test `0.5756`, Echo `0.8845`; AE Test `0.5679`, Win7AD `FPR=0.8308` | Cắt 6 biến byte/rate thô chưa đủ triệt tiêu shift `CTU-Win7AD` vì `bytes_per_pkt_{in,out}` vẫn giữ shortcut phân bố payload (`RF` giữ `AIT` tốt nhưng Win7AD FPR vẫn `0.1599`) |
+| **E2b (10 pure non-byte features)** | Bỏ thêm `bytes_per_pkt_{in,out}` | RF Win7AD nhảy vọt **`F1=0.5665, P=0.6709, R=0.4902, FPR=0.0028, AUC=0.8869`**, NHƯNG RF AIT-Val `FPR` tăng 388x (`0.0002 -> 0.0770`), Test `Exfil` giảm (`0.9380`), và CTU-Echo sụp xuống **`F1=0.0067 (R=0.0034)`**; XGB Test `0.7862`, Win7AD `0.0723` | **Bằng chứng nhân quả:** `bytes_per_pkt_{in,out}` và byte counts chính là nguồn phát sinh Win7AD FP cho RF, nhưng loại bỏ hoàn toàn byte features đánh đổi quá nặng: phá vỡ `AIT-Val FPR` (`0.0770`) và xóa sổ recall trên `CTU-Echo` |
+| **E3a (Protocol semantic one-hot, IF & AE)** | Thay ordinal `protocol_num` bằng `[proto_is_tcp, proto_is_udp, proto_is_icmp, proto_is_other]` (`21` dims) | AE AIT-Test `F1` tăng `0.5877 -> 0.6496` (`AUC 0.5544 -> 0.6357`), CTU-Echo `F1` tăng `0.7325 -> 0.8134` (`FPR 0.6746 -> 0.4222`), CTU-Win7AD `AUC 0.7280 -> 0.8075` (`FPR 0.6925 -> 0.6335`). IF ổn định (`Test 0.5845`, `Echo 0.8815`, `Win7AD 0.0479`) | Mã hóa ngữ nghĩa protocol cải thiện rõ AE (triệt tiêu giả định khoảng cách tuyến tính `protocol_num=1`) và cắt `-0.2524` FPR ở `CTU-Echo`, nhưng FPR trên `CTU-Win7AD` (`0.6335`) vẫn quá cao do mismatch `duration ~ 2ms` trên UDP benign của Zeek |
+| **E3b (Semantic one-hot + `floor=0.25`)** | One-hot protocol + `min_scale_floor=0.25` trên ratio/flag `[0,1]` | AE AIT-Test `F1=0.5920` (`AUC=0.8080`, `FPR=0.0245`), Echo `F1=0.7912` (`FPR=0.4866`), nhưng Win7AD `FPR=0.8395` | Cắt bớt trọng số bất thường trên `protocol` khiến AE nhạy quá mức với biến lệch duration/bytes ở Win7AD |
+| **E4 (5-fold LOSO CV trong `AIT-Train`)** | GroupKFold theo 5 scenario `{fox, harrison, santos, wardbeck, wilson}` | RF: `F1 = 0.9876 ± 0.0062` (`[0.9782 wardbeck, 0.9956 fox]`, `FPR mean=0.00035`, `Exfil min=0.9977`); XGB: `F1 = 0.9224 ± 0.0900` (`min=0.7585 harrison`, `Exfil min=0.0230 harrison`); IF: `F1 = 0.5179 ± 0.2361` (`[0.2072 wardbeck, 0.7971 harrison]`, `Exfil mean=0.0003`) | Khẳng định phương sai liên-kịch bản rất lớn ở XGB (`Exfil 0.023` khi hold-out `harrison`) và IF; đánh giá trên một scenario `AIT-Val` duy nhất (`russellmitchell`) không đại diện hết phương sai `AIT` |
+| **E5 (Domain Adaptation 3 tầng)** | Tier 1 (`Zero-Shot`), Tier 2 (`AIT+Echo -> unseen Win7AD`, `RESEARCH_ONLY`), Tier 3 (`CTU Early->Late`, `RESEARCH_ONLY`) | Tier 2 Win7AD: RF `F1=0.0928 / AUC=0.8280` (nhưng AIT-Test tụt `0.9950 -> 0.7904`), XGB `0.0923 / AUC=0.8465`, AE `AUC=0.9520` (`FPR=0.4688`). Tier 3 `CTU-Echo late`: RF `0.9634`, XGB `0.9589`, IF `0.9132`, AE `0.2875` (`Win7AD late`: không còn attack sau ngày cắt, `FPR RF=0.0005 / AE=0.0413`) | Chỉ **adaptation cùng nguồn/thiết bị (`Tier 3`)** mới đạt FPR thấp & F1 > 0.95 trên Zeek; fine-tuning hay thay ngưỡng không biến `AIT-only` thành `production_ready` cross-source |
+
+- **Quyết định chọn Candidate (`RETAIN_E0_BASELINE_ARTIFACTS`):** Giữ nguyên 4 artifact E0 đã ký SHA-256 trên hợp đồng `canonical-flow-v2-18` và preprocessor `0866dec7...`, toàn bộ giữ `deployment_tier = "RESEARCH_ONLY"` và `cross_source_validated = false`. Lý do: (i) `E1/E2/E2b` làm suy giảm in-domain FPR hoặc sụp đổ recall ở nguồn còn lại; (ii) `E3a/E3b` đổi vector schema từ `18` sang `21` chiều mà không giảm được FPR `CTU-Win7AD` xuống vùng vận hành (`<= 0.05`); (iii) `E5 Tiers 2–3` yêu cầu telemetry/nhãn từ môi trường đích nên không hợp lệ cho `zero-shot` baseline của PR `#156`.
+
+---
+
+### 6.5. Tách bạch Ba Trạng thái Provenance (WP4)
+
+| Trục Provenance | Phán quyết | Bằng chứng & Lý do |
+|---|---|---|
+| `artifact_integrity_verified` | **`PASS`** | Toàn bộ 4 model `.joblib`/`.pt`, `v2_flow_preprocessor.joblib` (`0866dec7...`), `V2_SPLIT_MANIFEST.json` (`ed542ee8...`), `ood_reference_gate.json` (`8a52bfe5...`) và AE `score_normalization.json` (`d7bcb78f...`) đều khớp SHA-256 trong `verify_companion_artifacts.py`. |
+| `dataset_provenance_verified` | **`PASS`** *(AIT & CTU)* / **`BLOCKED`** *(UGR'16)* | `fetch_multi_source_dataset.py --verify-only` xác nhận 10 archive `AIT-NDS-v2`, 2 `AIT-LDS-v2.1` (cách ly không trộn vào weights/demo), 2 `AIT-ADS`, 4 `CTU-SME-11`; `UGR'16` trả `HTTP 403` nên giữ `BLOCKED`. |
+| `source_reproducibility_verified` | **`DIRTY_DISCLOSED`** | 4 model manifest ghi trung thực `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f` và `git_dirty = true`. Theo nguyên tắc kiểm toán, không sửa giả `git_dirty = false`; tái huấn luyện từ clean commit thuộc `#154` sau khi chốt mã nguồn PR `#156`. |
 

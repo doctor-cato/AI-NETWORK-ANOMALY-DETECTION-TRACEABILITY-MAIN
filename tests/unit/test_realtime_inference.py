@@ -62,6 +62,60 @@ class TestOODGate:
         assert decision.is_ood is False
         assert decision.ood_gate_status == "NOT_FITTED"
 
+    def test_deployment_mode_fails_closed_when_ood_gate_missing(self, tmp_path, baseline_features):
+        engine = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            runtime_mode="deployment",
+            demo_heuristics=True,
+        )
+        assert engine.ood_gate_status == "NOT_FITTED"
+        assert engine.model_ready is False
+        readiness = engine.readiness()
+        assert readiness["runtime_mode"] == "deployment"
+        assert readiness["require_ood_gate"] is True
+        assert readiness["ai_ready"] is False
+        assert readiness["inference_mode"] == "UNAVAILABLE"
+
+        decision = engine.infer_event(_Event(), baseline_features(bytes_out=200_000.0))
+        assert decision.inference_mode == "UNAVAILABLE"
+        assert decision.ensemble_is_anomaly is False
+        assert decision.abstained_due_to_ood is True
+        assert decision.is_ood is True
+        assert decision.ood_gate_status == "NOT_FITTED"
+        assert "deployment_mode" in (decision.ood_reason or "")
+
+        with pytest.raises(ValueError, match="require_ood_gate cannot be False"):
+            RealtimeInferenceEngine(
+                registry=_empty_registry(tmp_path),
+                runtime_mode="deployment",
+                require_ood_gate=False,
+                demo_heuristics=True,
+            )
+
+    def test_corrupted_ood_gate_file_fails_closed_even_in_research_mode(
+        self, tmp_path, baseline_features
+    ):
+        gate_file = tmp_path / "artifacts" / "ml" / "ood_reference_gate.json"
+        gate_file.parent.mkdir(parents=True, exist_ok=True)
+        gate_file.write_text("{corrupt json", encoding="utf-8")
+
+        engine = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            runtime_mode="research",
+            demo_heuristics=True,
+        )
+        assert engine.ood_gate_status == "ERROR"
+        assert engine.ood_gate_error is not None
+        assert engine.readiness()["inference_mode"] == "UNAVAILABLE"
+
+        decision = engine.infer_event(_Event(), baseline_features(bytes_out=200_000.0))
+        assert decision.inference_mode == "UNAVAILABLE"
+        assert decision.ensemble_is_anomaly is False
+        assert decision.abstained_due_to_ood is True
+        assert decision.is_ood is True
+        assert decision.ood_gate_status == "ERROR"
+        assert "ood_gate_invalid" in (decision.ood_reason or "")
+
     def test_fitted_gate_abstains_on_out_of_distribution_row(self, tmp_path, baseline_features):
         rng = np.random.default_rng(42)
         gate = OODRejectionGate()
@@ -74,6 +128,38 @@ class TestOODGate:
         assert decision.is_ood is True
         assert decision.abstained_due_to_ood is True
         assert decision.ensemble_is_anomaly is False
+
+    def test_real_artifacts_reject_ood_gate_with_mismatched_preprocessor_sha(
+        self, tmp_path, baseline_features, real_artifacts_available
+    ):
+        import json
+        from pathlib import Path
+
+        if not real_artifacts_available:
+            pytest.skip("model artifacts are not present in this environment")
+
+        src_gate = Path("artifacts/ml/ood_reference_gate.json")
+        gate_payload = json.loads(src_gate.read_text(encoding="utf-8"))
+        gate_payload["provenance"]["preprocessor_artifact_sha256"] = "0" * 64
+        alt_artifacts = tmp_path / "artifacts"
+        alt_gate = alt_artifacts / "ml" / "ood_reference_gate.json"
+        alt_gate.parent.mkdir(parents=True, exist_ok=True)
+        alt_gate.write_text(json.dumps(gate_payload), encoding="utf-8")
+
+        real_prep = Path("artifacts/preprocessing/v2_flow_preprocessor.joblib").resolve()
+        real_prep_man = Path("reports/preprocessing/v2_flow_preprocessing_manifest.json").resolve()
+        registry = ModelRegistry(
+            artifacts_dir=alt_artifacts,
+            preprocessor_path=real_prep,
+            preprocessor_manifest_path=real_prep_man,
+            warmup=False,
+        )
+        engine = RealtimeInferenceEngine(registry=registry, runtime_mode="research")
+        assert engine.ood_gate_status == "ERROR"
+        assert "preprocessor_artifact_sha256 mismatch" in (engine.ood_gate_error or "")
+        decision = engine.infer_event(_Event(), baseline_features())
+        assert decision.inference_mode == "UNAVAILABLE"
+        assert decision.abstained_due_to_ood is True
 
 
 class TestRealInference:

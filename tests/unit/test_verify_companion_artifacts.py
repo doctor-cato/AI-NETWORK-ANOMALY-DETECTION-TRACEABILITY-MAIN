@@ -1845,6 +1845,8 @@ def test_tauri_standalone_config_covers_all_required_embedded_resources():
         "artifacts/models/autoencoder/autoencoder_manifest.json",
         "artifacts/models/autoencoder/model_config.json",
         "artifacts/models/autoencoder/threshold.json",
+        "artifacts/models/autoencoder/score_normalization.json",
+        "artifacts/ml/ood_reference_gate.json",
         "data/demo/demo_flows.csv",
         "data/demo/demo_labels.csv",
         "data/demo/demo_manifest.json",
@@ -1891,6 +1893,59 @@ def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
     )
     assert layout["status"] == "READY"
     assert layout["sidecar_sha256"] == expected_sidecar_sha
+    assert layout["ood_gate"]["status"] == "FITTED"
+    assert layout["ood_gate"]["ready"] is True
+
+    # Corrupted OOD gate in installed standalone dir must fail closed
+    ood_installed = install_dir / "artifacts/ml/ood_reference_gate.json"
+    saved_ood = ood_installed.read_text(encoding="utf-8")
+    ood_installed.write_text("{corrupted_ood", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        vca.verify_installed_standalone_layout(
+            install_dir, expected_sidecar_sha256=expected_sidecar_sha
+        )
+    ood_installed.write_text(saved_ood, encoding="utf-8")
+
+    # Corrupted OR missing score_normalization.json in runtime dir must fail Autoencoder & overall verification
+    bad_runtime = tmp_path / "bad_runtime"
+    shutil.copytree(stage_dir, bad_runtime)
+    (bad_runtime / "artifacts/models/autoencoder/score_normalization.json").write_text(
+        "{corrupted_norm", encoding="utf-8"
+    )
+    bad_summary = vca.verify_companion_artifacts(root=REPO_ROOT, runtime_dir=bad_runtime)
+    assert bad_summary["overall_status"] == "BLOCKED / NOT READY"
+    assert bad_summary["models"]["autoencoder"]["ready"] is False
+
+    missing_norm_runtime = tmp_path / "missing_norm_runtime"
+    shutil.copytree(stage_dir, missing_norm_runtime)
+    (missing_norm_runtime / "artifacts/models/autoencoder/score_normalization.json").unlink()
+    missing_norm_summary = vca.verify_companion_artifacts(
+        root=REPO_ROOT, runtime_dir=missing_norm_runtime
+    )
+    assert missing_norm_summary["overall_status"] == "BLOCKED / NOT READY"
+    assert missing_norm_summary["models"]["autoencoder"]["ready"] is False
+    from network_anomaly.inference.predict import load_verified_model
+
+    ae_man_payload = json.loads(
+        (missing_norm_runtime / "artifacts/models/autoencoder/autoencoder_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    with pytest.raises(ValueError, match="score_normalization.json"):
+        load_verified_model(
+            missing_norm_runtime / "artifacts/models/autoencoder/autoencoder_model.joblib",
+            manifest_path=missing_norm_runtime
+            / "artifacts/models/autoencoder/autoencoder_manifest.json",
+            expected_preprocessor_sha256=ae_man_payload["preprocessor_artifact_sha256"],
+        )
+
+    # Missing OOD gate in runtime dir must fail overall readiness fail-closed
+    no_ood_runtime = tmp_path / "no_ood_runtime"
+    shutil.copytree(stage_dir, no_ood_runtime)
+    (no_ood_runtime / "artifacts/ml/ood_reference_gate.json").unlink()
+    no_ood_summary = vca.verify_companion_artifacts(root=REPO_ROOT, runtime_dir=no_ood_runtime)
+    assert no_ood_summary["overall_status"] == "BLOCKED / NOT READY"
+    assert no_ood_summary["ood_gate"]["status"] == "NOT_FITTED"
 
     # Tamper sidecar or embedded file must fail closed
     with pytest.raises(RuntimeError, match="sidecar SHA-256 mismatch"):

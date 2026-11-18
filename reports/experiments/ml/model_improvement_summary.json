@@ -953,5 +953,16 @@
         }
       }
     }
-  ]
+  ],
+  "wp3_controlled_ablation_report": "reports/experiments/ml/wp3_controlled_ablation_report.json",
+  "wp3_selection_recommendation": {
+    "official_registered_artifacts_action": "RETAIN_E0_BASELINE_ARTIFACTS",
+    "rationale": [
+      "Zero-shot feature ablations (E1 6-feature, E2 byte/rate 12-feature, E2b 10-feature) confirm extreme dependence on byte/rate features for AIT-Test Data_Exfiltration while still failing to enable zero-shot generalization on unseen CTU-Win7AD (FPR/recall trade-off remains unviable).",
+      "Semantic protocol one-hot encoding (E3a) eliminates the synthetic protocol_num=1 (ICMP) MSE spike for IF & AE, and adding bounded_scale_floor=0.25 (E3b) further reduces ratio inflation, yet Zeek short-duration (~2ms) benign UDP flows continue to trigger high CTU FPR without changing the frozen canonical-flow-v2-18 preprocessor contract.",
+      "5-fold Leave-One-Scenario-Out CV inside AIT-Train (E4) demonstrates substantial inter-scenario variance, proving why validating threshold/hyperparameters against a single AIT-Val scenario (russellmitchell) cannot predict cross-source stability.",
+      "Multi-source and same-device temporal adaptation (E5 Tiers 2-3) improve target recall/F1 only when labeled target/related captures are permitted and therefore remain tagged RESEARCH_ONLY rather than zero-shot.",
+      "All four verified E0 artifacts (RF b2e42f85..., XGB 33d201f8..., IF 11b16900..., AE e6afecef...) remain the single verified artifact set on the frozen canonical-flow-v2-18 + preprocessor 0866dec7... contract."
+    ]
+  }
 }

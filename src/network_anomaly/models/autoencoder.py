@@ -28,6 +28,7 @@ from sklearn.neural_network import MLPRegressor
 
 from network_anomaly.config import AUTOENCODER_DEFAULTS, PROJECT_ROOT
 from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
+from network_anomaly.models.scoring import validate_score_normalization
 from network_anomaly.preprocessing import FEATURE_CONTRACT_VERSION
 
 SUPPORTED_PARAMS = (
@@ -561,6 +562,36 @@ def _load_verified_ae_sidecar(
     return payload, actual_sha
 
 
+def _verify_ae_score_normalization_payload(
+    sidecar_norm: Any,
+    manifest_score_norm: Any,
+) -> None:
+    """Validate score_normalization.json structure and consistency with manifest."""
+    if not isinstance(sidecar_norm, dict) or validate_score_normalization(sidecar_norm) is None:
+        raise ValueError(
+            "Autoencoder score_normalization.json failed schema or monotonicity validation"
+        )
+    if isinstance(manifest_score_norm, dict):
+        if sidecar_norm.get("calibration_partition") != manifest_score_norm.get(
+            "calibration_partition"
+        ) or sidecar_norm.get("score_direction") != manifest_score_norm.get("score_direction"):
+            raise ValueError(
+                "Autoencoder score_normalization.json metadata disagrees with manifest"
+            )
+        side_curve = validate_score_normalization(sidecar_norm)
+        man_curve = validate_score_normalization(manifest_score_norm)
+        if side_curve is None or man_curve is None:
+            raise ValueError("Autoencoder manifest score_normalization curve is invalid")
+        if (
+            len(side_curve[0]) != len(man_curve[0])
+            or not np.allclose(side_curve[0], man_curve[0], rtol=0.0, atol=1e-12)
+            or not np.allclose(side_curve[1], man_curve[1], rtol=0.0, atol=1e-12)
+        ):
+            raise ValueError(
+                "Autoencoder score_normalization.json curve values disagree with manifest"
+            )
+
+
 def _validate_ae_contract_before_deserialize(
     model_path: Path,
     manifest_path: Path,
@@ -734,6 +765,51 @@ def _validate_ae_contract_before_deserialize(
         if sorted(map(str, manifest_unknown)) != sorted(map(str, cal_unknown)):
             raise ValueError(
                 "Autoencoder manifest unknown_attack_categories disagrees with threshold_calibration"
+            )
+
+    score_norm_file = manifest.get("score_normalization_file")
+    score_norm_sha = manifest.get("score_normalization_sha256")
+    manifest_score_norm = manifest.get("score_normalization")
+    if score_norm_file is not None:
+        sidecar_norm, _ = _load_verified_ae_sidecar(
+            manifest_path.parent,
+            model_path.parent,
+            manifest,
+            "score_normalization_file",
+            "score_normalization_sha256",
+            "score_normalization",
+        )
+        _verify_ae_score_normalization_payload(sidecar_norm, manifest_score_norm)
+    else:
+        found_sidecar = False
+        for candidate_norm in (
+            model_path.parent / "score_normalization.json",
+            manifest_path.parent / "score_normalization.json",
+        ):
+            if candidate_norm.is_file():
+                found_sidecar = True
+                try:
+                    sidecar_norm = json.loads(candidate_norm.read_text(encoding="utf-8"))
+                except Exception as exc:
+                    raise ValueError(
+                        f"Autoencoder score_normalization sidecar JSON unreadable: {exc}"
+                    ) from exc
+                if isinstance(score_norm_sha, str) and _is_valid_sha256(score_norm_sha):
+                    actual_sn_sha = _sha256_file(candidate_norm).lower()
+                    if actual_sn_sha != score_norm_sha.strip().lower():
+                        raise ValueError(
+                            f"Autoencoder score_normalization.json SHA-256 mismatch: "
+                            f"expected {score_norm_sha}, got {actual_sn_sha}"
+                        )
+                _verify_ae_score_normalization_payload(sidecar_norm, manifest_score_norm)
+                break
+        if (
+            not found_sidecar
+            and isinstance(manifest_score_norm, dict)
+            and manifest.get("feature_contract_version") == "canonical-flow-v2-18"
+        ):
+            raise ValueError(
+                "Autoencoder score_normalization.json sidecar missing for canonical-flow-v2-18 manifest"
             )
 
     provenance = manifest.get("provenance")

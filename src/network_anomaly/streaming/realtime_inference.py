@@ -20,6 +20,7 @@ explicitly. Every demo decision carries ``inference_mode="DEMO_HEURISTIC"``.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
@@ -40,6 +41,7 @@ from network_anomaly.risk.aggregation import (
 
 ENSEMBLE_SCORE_SEMANTICS = "weighted_normalized_anomaly_score_not_probability"
 DEMO_SCORE_SEMANTICS = "demo_heuristic_score_not_model_output"
+SUPPORTED_RUNTIME_MODES = ("research", "deployment")
 
 
 @dataclass
@@ -64,29 +66,62 @@ class LiveInferenceDecision:
         return asdict(self)
 
 
+def _resolve_runtime_policy(
+    runtime_mode: Optional[str],
+    require_ood_gate: Optional[bool],
+) -> tuple[str, bool]:
+    raw_mode = (
+        runtime_mode
+        if runtime_mode is not None
+        else os.environ.get("NETFLOW_RUNTIME_MODE", "research")
+    )
+    norm_mode = str(raw_mode).strip().lower() or "research"
+    if norm_mode not in SUPPORTED_RUNTIME_MODES:
+        raise ValueError(
+            f"Unsupported runtime_mode {raw_mode!r}; expected one of {SUPPORTED_RUNTIME_MODES}"
+        )
+    if norm_mode == "deployment" and require_ood_gate is False:
+        raise ValueError("require_ood_gate cannot be False when runtime_mode='deployment'")
+    effective_require = (
+        bool(require_ood_gate) if require_ood_gate is not None else (norm_mode == "deployment")
+    )
+    return norm_mode, effective_require
+
+
 def _load_ood_gate(
     gate: Optional[OODRejectionGate],
     artifacts_dir: Optional[Any] = None,
-) -> tuple[Optional[OODRejectionGate], str]:
-    """Use the supplied gate when fitted; otherwise attempt the persisted reference stats."""
-    if gate is not None and gate.is_fitted:
-        return gate, "FITTED"
+    expected_preprocessor_sha256: Optional[str] = None,
+) -> tuple[Optional[OODRejectionGate], str, Optional[str], Optional[str]]:
+    """Use supplied fitted gate or strictly verify persisted reference artifact.
+
+    Distinguishes missing artifact (``NOT_FITTED``) from corrupted or mismatched
+    artifact (``ERROR``) so broken OOD artifacts never silently pass as unfitted.
+    """
+    if gate is not None:
+        if gate.is_fitted:
+            return gate, "FITTED", None, None
+        return None, "NOT_FITTED", "Explicitly supplied OODRejectionGate is not fitted", None
+
+    from pathlib import Path
+
+    from network_anomaly.ml.ood_gate import DEFAULT_OOD_GATE_PATH, verify_ood_gate_artifact
+
+    gate_path = (
+        Path(artifacts_dir) / "ml" / "ood_reference_gate.json"
+        if artifacts_dir is not None
+        else DEFAULT_OOD_GATE_PATH
+    )
+    if not gate_path.is_file():
+        return None, "NOT_FITTED", None, None
     try:
-        from pathlib import Path
-
-        from network_anomaly.ml.ood_gate import load_persisted_ood_gate
-
-        gate_path = (
-            Path(artifacts_dir) / "ml" / "ood_reference_gate.json"
-            if artifacts_dir is not None
-            else None
+        verified_gate, meta = verify_ood_gate_artifact(
+            gate_path,
+            expected_preprocessor_sha256=expected_preprocessor_sha256,
         )
-        persisted = load_persisted_ood_gate(path=gate_path)
-    except Exception:
-        persisted = None
-    if persisted is not None and persisted.is_fitted:
-        return persisted, "FITTED"
-    return None, "NOT_FITTED"
+        return verified_gate, "FITTED", None, str(meta["sha256"])
+    except Exception as exc:
+        return None, "ERROR", f"{type(exc).__name__}: {exc}", None
 
 
 class RealtimeInferenceEngine:
@@ -98,16 +133,30 @@ class RealtimeInferenceEngine:
         ood_gate: Optional[OODRejectionGate] = None,
         aggregator: Optional[MultiModelDecisionAggregator] = None,
         demo_heuristics: bool = False,
+        runtime_mode: Optional[str] = None,
+        require_ood_gate: Optional[bool] = None,
     ):
         self.registry = registry or ModelRegistry()
         self.aggregator = aggregator or MultiModelDecisionAggregator(
             policy=AggregationPolicy.WEIGHTED_ENSEMBLE
         )
         self.demo_heuristics = demo_heuristics
-        self.ood_gate, self.ood_gate_status = _load_ood_gate(
-            ood_gate,
-            artifacts_dir=getattr(self.registry, "artifacts_dir", None),
+        self.runtime_mode, self.require_ood_gate = _resolve_runtime_policy(
+            runtime_mode, require_ood_gate
         )
+        self.ood_gate, self.ood_gate_status, self.ood_gate_error, self.ood_gate_sha256 = (
+            _load_ood_gate(
+                ood_gate,
+                artifacts_dir=getattr(self.registry, "artifacts_dir", None),
+                expected_preprocessor_sha256=getattr(self.registry, "preprocessor_sha256", None),
+            )
+        )
+        if (
+            self.require_ood_gate
+            and self.ood_gate_status == "NOT_FITTED"
+            and not self.ood_gate_error
+        ):
+            self.ood_gate_error = "ood_gate_artifact_missing_in_deployment_mode"
 
         self.total_inferences: int = 0
         self.total_anomalies_detected: int = 0
@@ -116,15 +165,33 @@ class RealtimeInferenceEngine:
         self.total_demo_decisions: int = 0
         self.total_inference_errors: int = 0
 
+    def _ood_policy_blocked_reason(self) -> Optional[str]:
+        """Return fail-closed block reason when OOD gate state violates policy."""
+        if self.ood_gate_status == "ERROR":
+            return f"ood_gate_invalid: {self.ood_gate_error or 'verification_failed'}"
+        if self.require_ood_gate and self.ood_gate_status != "FITTED":
+            return f"ood_gate_required_in_{self.runtime_mode}_mode"
+        return None
+
     # ------------------------------------------------------------ readiness
     def readiness(self) -> Dict[str, Any]:
         summary = self.registry.summary()
+        ood_block = self._ood_policy_blocked_reason()
+        summary["runtime_mode"] = self.runtime_mode
+        summary["require_ood_gate"] = self.require_ood_gate
         summary["ood_gate_status"] = self.ood_gate_status
-        summary["inference_mode"] = (
-            "REAL_MODELS"
-            if self.registry.ready_count > 0
-            else ("DEMO_HEURISTIC" if self.demo_heuristics else "UNAVAILABLE")
-        )
+        summary["ood_gate_error"] = self.ood_gate_error
+        summary["ood_gate_sha256"] = self.ood_gate_sha256
+        if ood_block is not None:
+            summary["ai_ready"] = False
+            summary["inference_mode"] = "UNAVAILABLE"
+            summary["ood_policy_error"] = ood_block
+        else:
+            summary["inference_mode"] = (
+                "REAL_MODELS"
+                if self.registry.ready_count > 0
+                else ("DEMO_HEURISTIC" if self.demo_heuristics else "UNAVAILABLE")
+            )
         summary["total_inferences"] = self.total_inferences
         summary["total_unavailable_events"] = self.total_unavailable_events
         summary["total_inference_errors"] = self.total_inference_errors
@@ -132,7 +199,7 @@ class RealtimeInferenceEngine:
 
     @property
     def model_ready(self) -> bool:
-        return self.registry.ready_count > 0
+        return self.registry.ready_count > 0 and self._ood_policy_blocked_reason() is None
 
     # ------------------------------------------------------------ inference
     def infer_event(
@@ -144,6 +211,30 @@ class RealtimeInferenceEngine:
         """Run OOD checks and genuine four-model inference for one security event."""
         start_t = time.perf_counter()
         self.total_inferences += 1
+
+        ood_block_reason = self._ood_policy_blocked_reason()
+        if ood_block_reason is not None:
+            if self.ood_gate_status == "ERROR":
+                self.total_inference_errors += 1
+            self.total_unavailable_events += 1
+            self.total_ood_events += 1
+            return LiveInferenceDecision(
+                event_id=event.event_id,
+                inference_mode="UNAVAILABLE",
+                ensemble_is_anomaly=False,
+                ensemble_score=0.0,
+                ensemble_score_semantics=ENSEMBLE_SCORE_SEMANTICS,
+                is_ood=True,
+                ood_reason=ood_block_reason,
+                model_predictions={},
+                total_inference_latency_us=round((time.perf_counter() - start_t) * 1e6, 2),
+                per_model_latency_us={},
+                participating_models=[],
+                unavailable_models=[status.model_key for status in self.registry.statuses()],
+                abstained_due_to_ood=True,
+                ood_gate_status=self.ood_gate_status,
+                ensemble_policy=self.aggregator.policy.value,
+            )
 
         ood_dec = None
         if self.ood_gate is not None and self.ood_gate.is_fitted:

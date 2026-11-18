@@ -15,6 +15,8 @@
       "staged_bundle/artifacts/models/autoencoder/autoencoder_manifest.json": "artifacts/models/autoencoder/autoencoder_manifest.json",
       "staged_bundle/artifacts/models/autoencoder/model_config.json": "artifacts/models/autoencoder/model_config.json",
       "staged_bundle/artifacts/models/autoencoder/threshold.json": "artifacts/models/autoencoder/threshold.json",
+      "staged_bundle/artifacts/models/autoencoder/score_normalization.json": "artifacts/models/autoencoder/score_normalization.json",
+      "staged_bundle/artifacts/ml/ood_reference_gate.json": "artifacts/ml/ood_reference_gate.json",
       "staged_bundle/data/demo/demo_flows.csv": "data/demo/demo_flows.csv",
       "staged_bundle/data/demo/demo_labels.csv": "data/demo/demo_labels.csv",
       "staged_bundle/data/demo/demo_manifest.json": "data/demo/demo_manifest.json",

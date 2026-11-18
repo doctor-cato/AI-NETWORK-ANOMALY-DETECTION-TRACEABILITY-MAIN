@@ -90,13 +90,15 @@ class LiveSystemOrchestrator:
         keystore_dir: Optional[Path] = None,
         inference_engine: Optional[RealtimeInferenceEngine] = None,
         demo_heuristics: bool = False,
+        runtime_mode: Optional[str] = None,
     ):
         self.max_active_entities = max_active_entities
 
         # Subsystems
         self.feature_extractor = RealtimeFeatureExtractor()
         self.inference_engine = inference_engine or RealtimeInferenceEngine(
-            demo_heuristics=demo_heuristics
+            demo_heuristics=demo_heuristics,
+            runtime_mode=runtime_mode,
         )
         self.key_manager = KeyManager(keystore_dir=keystore_dir)
         self.key_rotator = KeyRotationPolicy(
