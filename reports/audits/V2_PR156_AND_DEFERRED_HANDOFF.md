@@ -5,7 +5,9 @@
 - **Historical Implementation Snapshots (`feat/v2-integration`):**
   - `a6c87ae8397e466ab1bd3d19f82d880e71084b88` (`14` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; CI Workflow **Run `#211` / ID `44278751854`**, `7/7` `SUCCESS`).
   - `5483794160e877bf2d65144f30fd1ffc181372c3` (`15` commits ahead, `0` behind `main`; CI Workflow **Run `#212` / ID `44312426631`**, `7/7` `SUCCESS`; nhận **`1` submitted GitHub review `CHANGES_REQUESTED` bởi `ViolaPeracia`** ngày `2026-11-18T13:46:21Z`, nêu `P1-01`, `P2-01..P2-03`, `P3-01`, `P3-02`).
-- **Current Remediation Snapshot (`feat/v2-integration` sau `5483794`):** Khắc phục `P1-01` (nối mặc định fail-closed `"deployment"` vào Tauri sidecar + Python fallback, `run_api.py`, `create_app`, `LiveRuntime`, `LiveTelemetryService`, `LiveSystemOrchestrator`, `RealtimeInferenceEngine`; giữ inference `UNAVAILABLE` nếu thiếu `NETFLOW_OOD_GATE_SHA256`), `P2-02` (đồng bộ docs + trạng thái review), `P2-03` (`PARTIAL_UNANCHORED` khi thiếu trusted SHA), `P3-01` (`pytest -rs` trong `ci.yml`), và `P3-02` (`E0_frozen_18f_reference` khớp RF `is_canonical_baseline=false`).
+- **Current Remediation Snapshot (`feat/v2-integration`):**
+  - `5cfa5fe0f4ee7ea83730e8db7f472539f2bdccc4` (CI Workflow **Run `#213` / ID `44330918241`**, `7/7` `SUCCESS`; cục bộ `612 passed, 0 skipped`, `11/11` Rust tests, `34/34` Vitest): hoàn tất `P1-01` (nối mặc định fail-closed `"deployment"` vào Tauri sidecar + Python fallback, `run_api.py`, `create_app`, `LiveRuntime`, `LiveTelemetryService`, `LiveSystemOrchestrator`, `RealtimeInferenceEngine`; giữ inference `UNAVAILABLE` nếu thiếu `NETFLOW_OOD_GATE_SHA256`), `P2-02` (đồng bộ docs + trạng thái review), `P2-03` (`PARTIAL_UNANCHORED` khi thiếu trusted SHA), `P3-01` (`pytest -rs` trong `ci.yml`), và `P3-02` (`E0_frozen_18f_reference` khớp RF `is_canonical_baseline=false`).
+  - Commit docs kế tiếp cập nhật số liệu Run `#213` & exact Ubuntu/Windows skip reasons trước khi xác nhận CI trên HEAD cuối.
 - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f` (`git_dirty = true`, `git_clean = false`, `worktree_provenance = "DIRTY_DISCLOSED"`).
 - **Nhánh Website tham chiếu (`origin/site-source`):** `a01bd38ad705577fc210fdeeeb61ccbd80a0ac42` (`77` tệp: `15` MDX VI + `15` MDX EN = `30` tệp MDX, các trang `.astro`, views, scripts, workflow)
 - **Pull Request `#156`:** `OPEN`, `isDraft: true`, `feat/v2-integration` $\to$ `main` *(giữ nguyên trạng thái **DRAFT / DO NOT MERGE**; không push lên `main`, không tự ý bỏ Draft hay merge, không build `.exe`/`.msi`/NSIS và không sửa nhánh `site-source`)*
@@ -228,8 +230,12 @@ Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích h
 - **CI / Test Evidence:**
   - Historical `a6c87ae8397e466ab1bd3d19f82d880e71084b88`: `7/7` CI jobs trên [Run #211 (ID 44278751854)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44278751854) (`test (ubuntu-latest)` `585 passed, 21 skipped`, `test (windows-latest)` `587 passed, 19 skipped`).
   - Historical `5483794160e877bf2d65144f30fd1ffc181372c3`: `7/7` CI jobs trên [Run #212 (ID 44312426631)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44312426631) (`1` submitted review `CHANGES_REQUESTED` bởi `ViolaPeracia`).
-  - **Lưu ý CI:** Kiểm tra raw dataset integrity (`verify_ait_manifest` / `fetch_multi_source_dataset`) trên CI bị **`SKIPPED`** do không có raw archives tại `data/raw/ait_nds_v2`, tách biệt với test-level skips được hiển thị qua `pytest -q -rs --tb=short`.
-  - Kết quả kiểm thử cục bộ & CI run gắn với HEAD SHA mới nhất sau đợt khắc phục `P1-01`/`P2`/`P3` được cập nhật trực tiếp ở đầu PR `#156` sau khi push.
+  - Remediation verification `5cfa5fe0f4ee7ea83730e8db7f472539f2bdccc4`: `7/7` CI jobs `SUCCESS` trên [Run #213 (ID 44330918241)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44330918241):
+    - `test (ubuntu-latest, 3.11 & 3.12)`: **`590 passed, 22 skipped`** (`2` platform skips: `test_controller_target_vm_e2e.py:683` Windows PowerShell & `test_key_manager_hardening.py:99` Windows DPAPI; `20` skips do runner checkout không có `.joblib`/OOD/demo binaries bị `.gitignore`).
+    - `test (windows-latest, 3.11 & 3.12)`: **`592 passed, 20 skipped`** (chỉ `20` skips binary bị `.gitignore`; cả `2` test Windows PowerShell & DPAPI đều chạy & `PASS`).
+    - `desktop-tauri-windows`: `clippy`, `11/11` Rust tests, Windows `.exe` dev build `PASS`; `lint` & `desktop-frontend` (`34/34` Vitest + Vite build) `PASS`; cục bộ đủ artifact `612 passed, 0 skipped`.
+  - **Lưu ý CI (Tách biệt với test skips):** Step `Verify AIT multi-source dataset manifest & checksums` báo riêng `[fetch_multi_source_dataset] SOURCE_INTEGRITY: SKIPPED — official raw files absent (data/raw/ait_nds_v2)`.
+  - CI run cuối gắn với HEAD SHA mới nhất của commit đồng bộ docs được cập nhật ở đầu PR `#156`.
 
 ---
 

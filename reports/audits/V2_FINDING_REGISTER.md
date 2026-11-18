@@ -750,7 +750,11 @@
 17. **`P3-01` — Hiển thị Lý do Test Skip trong CI (`.github/workflows/ci.yml`)**
     - **Severity:** `P3`
     - **Original Finding:** CI hiện count `21 skipped` (Ubuntu) / `19 skipped` (Windows) ở Run `#211`/`#212` nhưng không in skip reasons tách biệt với raw dataset `SKIPPED`.
-    - **Remediation & Status:** **`PASS`** — Cập nhật `.github/workflows/ci.yml` thành `python -m pytest tests -q -rs --tb=short` (không xóa hoặc làm yếu test) và ghi nhận skip counts + exact reasons từ CI Ubuntu/Windows.
+    - **Remediation & Status:** **`PASS`** — Đã cập nhật `.github/workflows/ci.yml` thành `python -m pytest tests -q -rs --tb=short` (không xóa/làm yếu test). Kết quả xác minh trên CI **Run `#213` (ID `44330918241`, `5cfa5fe`)**:
+      - **Ubuntu 3.11/3.12 (`590 passed, 22 skipped`):** `2` skip đặc thù Windows (`test_controller_target_vm_e2e.py:683` PowerShell, `test_key_manager_hardening.py:99` DPAPI) + `20` skip do checkout Git không chứa binary `.joblib`/OOD/demo bị `.gitignore` (`test_four_model_integrity_e2e.py:288`, `test_full_system_e2e.py:166`, `test_inference_e2e.py:376`, `test_m6_desktop_e2e.py:182`, `test_multi_source_inference.py:116`, `test_pipeline.py:616,650`, `test_security_dry_run_integration.py:24,107`, `test_desktop_csv_api.py:366,1129`, `test_inference_pipeline.py:251`, `test_model_registry.py:108 [2], 171 [1]`, `test_preprocessing_pipeline.py:628`, `test_realtime_inference.py:150,547`, `test_verify_companion_artifacts.py:1900,2415`).
+      - **Windows 3.11/3.12 (`592 passed, 20 skipped`):** Cùng `20` skip binary `.gitignore` trên runner (`2` test Windows PowerShell/DPAPI đều `PASS`).
+      - **Local full environment:** `612 passed, 0 skipped`.
+      - **Tách biệt với raw dataset integrity step:** Step `Verify AIT multi-source dataset manifest & checksums` ghi riêng `[fetch_multi_source_dataset] SOURCE_INTEGRITY: SKIPPED — official raw files absent (data/raw/ait_nds_v2)`.
 
 18. **`P3-02` — Thống nhất Thuật ngữ RF Reference (`is_canonical_baseline=false` vs `E0`)**
     - **Severity:** `P3`
