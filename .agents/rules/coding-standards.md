@@ -1,14 +1,10 @@
 # Quy chuẩn code — rules/coding-standards.md
 
-- Python theo `pyproject.toml` (hiện >=3.11, CI 3.12); seed tập trung (`config.RANDOM_SEED = 42`).
-- Ưu tiên code dễ đọc, ít abstraction, dễ kiểm thử. Không tạo module/class không cần.
-- Dùng `pathlib` cho đường dẫn khi phù hợp (`config.DATA_RAW`, `DATA_PROCESSED`).
-- Không hardcode đường dẫn tuyệt đối máy cá nhân.
-- Không `except: pass`; không `|| true` để che lỗi (đã sửa `.github/workflows/ci.yml`).
-- Xử lý lỗi rõ ràng. Kiểm tra dữ liệu tùy chọn có thể ghi `SKIPPED` nếu thiếu dataset; bước bắt buộc cần dataset phải báo chưa đủ điều kiện, không tuyên bố thành công. Không biến dữ liệu sai hoặc lỗi runtime thành skip.
-- Dependency: chỉ thêm khi thực sự cần; cập nhật `requirements.txt`/`pyproject.toml` nhất quán.
-- Test: viết cho hành vi quan trọng (import, model build, pipeline load, metric tính đúng). Không tạo test giả chỉ để tăng coverage.
-- Thay đổi nhỏ, có mục tiêu, dễ review; không sửa file ngoài phạm vi nếu không có lý do rõ ràng.
-- Không đưa thông tin nhạy cảm vào Git; không commit dataset hoặc model artifact lớn.
-- Không thêm trailer AI: không `Co-Authored-By: <AI>`, `Generated with <AI>`, không ký emoji/bot và không nêu tên công cụ, vendor hay model trong commit message, PR description, comment issue/milestone. Nội dung phải nêu thay đổi và bằng chứng, không nêu tác giả là AI. Trailer có sẵn trong lịch sử cũ thì giữ nguyên — không rewrite history để dọn.
-- Commit message dùng Conventional Commits, body ghi lệnh kiểm chứng và giới hạn; không dán diff hay log dài vào message.
+- **Python:** Theo `pyproject.toml` (`>=3.11`, CI `3.11` & `3.12`); định dạng bằng `black` và lint bằng `ruff`; seed tập trung (`config.RANDOM_SEED = 42`). Dùng `newline="\n"` (LF) khi ghi file từ script.
+- **Desktop Frontend & Rust/Tauri:** TypeScript/Svelte 5 trong `desktop/` (`npm --prefix desktop run check`, `test`, `build`); Rust trong `desktop/src-tauri/` (`cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --lib`).
+- **API & Contract Sync:** Mọi thay đổi Pydantic schema / FastAPI endpoints (`src/network_anomaly/api/`) phải đồng bộ lại `reports/api/openapi.json` & `API_CONTRACT.md` bằng `python scripts/export_openapi_spec.py` và kiểm chứng bằng `--check`. Giữ nhất quán `desktop/src/lib/types.ts` và phiên bản (`scripts/check_desktop_version.py --check`).
+- **Kiến trúc & Độ sạch:** Ưu tiên code đơn giản, rõ ràng, ít abstraction thừa, dùng `pathlib` (`PROJECT_ROOT`, `DATA_RAW`, `DATA_PROCESSED`), tuyệt đối không hardcode đường dẫn tuyệt đối máy cá nhân.
+- **Xử lý lỗi & Skip:** Không `except: pass`; không `|| true` để che lỗi; kiểm tra fail-closed đối với artifact SHA-256, OOD gate trong `deployment` mode và token API (`X-Sentinel-Session-Token`). Kiểm tra thiếu raw/binary bên ngoài có thể trả `SKIPPED` có lý do rõ; không biến lỗi dữ liệu hoặc lỗi runtime thành `SKIPPED`.
+- **Dependency & Testing:** Chỉ thêm dependency khi thật sự cần (`pyproject.toml`, `requirements*.txt`, `desktop/package.json`). Test phải kiểm chứng hành vi thực tế (bao gồm fail-closed path, schema/label order, migration rollback); trên GitHub Actions CI (`artifacts/` gitignored), test không phụ thuộc binary vắng mặt hoặc phải tách rõ điều kiện skip qua `pytest -rs`.
+- **Git & Quyền riêng tư:** Không commit secret, keystore, raw/processed dataset hay model `.joblib` lớn. Thay đổi gọn, đúng phạm vi được giao; không sửa/xóa `E0` `.joblib` hoặc `DISTRIBUTION_AUTHORIZATION.json` ngoài nhiệm vụ cho phép.
+- **Chuẩn Commit / PR (Không dấu ấn AI):** Không thêm `Co-Authored-By`, `Generated with`, emoji/bot tag và không nêu tên công cụ, vendor hay model AI trong commit message, PR description hay comment GitHub. Dùng Conventional Commits nêu rõ thay đổi, lệnh kiểm chứng và giới hạn.

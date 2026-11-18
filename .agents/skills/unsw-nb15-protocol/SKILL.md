@@ -1,48 +1,39 @@
 ---
 name: unsw-nb15-protocol
-description: "Xác minh, kiểm tra và ghi provenance cho các biến thể UNSW-NB15, schema, nhãn, official split và rủi ro leakage. Dùng khi task đọc, validate, chia hoặc mô tả dữ liệu UNSW-NB15; không tự tải dữ liệu."
+description: "Xác minh, kiểm tra và ghi provenance cho các bộ dữ liệu trong dự án: active v2 (AIT-NDS-v2, CTU-SME-11, UWF-ZeekData24 evaluation-only) và di sản v1 UNSW-NB15 / NF-UNSW-NB15-v3 trong historical/. Dùng khi task đọc, validate, chia hoặc mô tả dữ liệu; không tự tải dữ liệu."
 ---
 
-# UNSW-NB15 Dataset Protocol
+# Dataset Provenance & Split Protocol (v2 Active + v1 Historical)
 
-Đọc [DATASET.md](../../../docs/DATASET.md), [REPRODUCIBILITY.md](../../../docs/REPRODUCIBILITY.md) và code validator
-thực tế trước khi thay đổi. Nguồn chính thức là
-[UNSW Research](https://research.unsw.edu.au/projects/unsw-nb15-dataset); đường tải, điều khoản và checksum phải
-được xác minh tại thời điểm lấy dữ liệu.
+> **Lưu ý Hard Cutover v2:** Tên skill `unsw-nb15-protocol` được giữ để tương thích validator workflow, nhưng theo [MIGRATION_V1_TO_V2.md](../../../docs/MIGRATION_V1_TO_V2.md), dataset **`NF-UNSW-NB15-v3` đã nghỉ hưu sang `historical/`**. Mọi pipeline active v2 sử dụng **`canonical-flow-v2-18`** trên `AIT-NDS-v2`, `CTU-SME-11` và nguồn kiểm chứng bổ sung `UWF-ZeekData24`.
 
-## Phân biệt biến thể và trạng thái dữ liệu
+Đọc [DATASET.md](../../../docs/DATASET.md), [REPRODUCIBILITY.md](../../../docs/REPRODUCIBILITY.md) và [V2_SOURCE_AUDIT.md](../../../docs/dataset/V2_SOURCE_AUDIT.md) trước khi sửa code dữ liệu.
 
-- Bộ bốn CSV gốc và file feature/ground-truth không có cùng layout với official partition
-  `UNSW_NB15_training-set.csv` / `UNSW_NB15_testing-set.csv`.
-- Official training/testing partition được công bố với 45 cột gồm feature, `attack_cat` và binary `label`; đối chiếu
-  tài liệu feature, file thật và validator hiện hành trước khi code. Không áp schema này cho biến thể khác chỉ vì tên
-  chứa `UNSW-NB15`, và không coi validator header tối thiểu là xác minh đủ 45 cột.
-- Báo rõ một trong ba trạng thái: **ABSENT** (chưa có dữ liệu), **SYNTHETIC** (fixture/test-only), hoặc
-  **REAL UNSW-NB15** (file đã xác minh provenance). Không dùng kết quả của trạng thái trước làm bằng chứng cho trạng
-  thái sau.
+## Phân loại nguồn dữ liệu & Ranh giới bản quyền
 
-Không tự tải/tạo bản sao dataset để làm cho check đi qua và không sửa file raw tại chỗ.
+1. **Active Training/Validation/Test (`AIT-NDS-v2`, `CC BY 4.0`, DOI `10.5281/zenodo.13168643`):**
+   - `3,464,400` flows có nhãn + `942` unmapped = `3,465,342` raw flows (`data/V2_SPLIT_MANIFEST.json`, split theo scenario `v2-scenario-group-purged-v1`: `ait_train = 2,097,891`, `ait_val = 377,704`, `ait_test = 988,805`). Zero overlap scenario & `(scenario, 5-tuple, timestamp)`.
+2. **External Zero-Shot Cross-Source (`evaluation_only = true`):**
+   - **`CTU-SME-11`** (`10.5281/zenodo.7958258`, `CC BY 4.0`): `ctu_echo` (`76,073`) & `ctu_windows7ad` (`175,146` labeled, xử lý overlap minh bạch).
+   - **`UWF-ZeekData24`** (`CC BY 4.0`): kiểm chứng L4 payload độc lập (`95,871` flows, `93,000` strict complete, `UWFZeekAdapter`). Không dùng để train hay calibrate `E0`.
+3. **Cách ly & Bị chặn:**
+   - **`AIT-LDS-v2.1`** (`10.5281/zenodo.19483937`, **`CC BY-NC-SA 4.0`**): **Cấm** đưa vào trọng số ML và `data/demo/`. Không có UID nối trực tiếp sang `AIT-NDS-v2` (`#85` `DIRECT_UID_LINK=NO`).
+   - **`UGR'16`**: giữ trạng thái **`BLOCKED`** (`HTTP 403`).
+4. **Historical v1 (`UNSW-NB15` / `NF-UNSW-NB15-v3`, `*/historical/nf_unsw_nb15_v3/`):**
+   - Chỉ đọc khi đối chiếu lịch sử; không cho phép fallback trong `ModelRegistry`, `TrainOnlyPreprocessor`, FastAPI hay Desktop UI.
 
-## Protocol bắt buộc khi dữ liệu thật được giao
+Báo rõ trạng thái dữ liệu khi kiểm tra: **ABSENT**, **SYNTHETIC**, **REAL V2 (`AIT`/`CTU`/`UWF`)**, hoặc **HISTORICAL V1**. Không tự tải hay sửa file raw tại chỗ.
 
-1. Ghi source URL, ngày lấy, điều khoản/citation, biến thể, tên file, byte size và SHA-256; so khớp manifest nếu có.
-2. Xác minh header/thứ tự cột, data type, finite numeric values, missing values, duplicate names/rows và số bản ghi.
-3. Xác minh `label` chỉ dùng representation đã ghi (thường `0=normal`, `1=attack`) và kiểm tra tính nhất quán với
-   `attack_cat`; category phải được chuẩn hóa/ánh xạ có bằng chứng, không đoán từ chính tả.
-4. Báo distribution của binary label và attack category, bao gồm lớp ít mẫu; không suy ra tính đại diện chỉ từ tổng
-   số hàng.
-5. Mặc định giữ official train/test partition. Nếu cần tuning, tách validation chỉ từ training partition. Không trộn
-   rồi random-split lại nếu chưa có lý do và đánh giá ảnh hưởng.
-6. Audit exact duplicate, near-duplicate và flow/session/group overlap qua split. Xem các feature tổng hợp, ID, IP,
-   port, timestamp và feature liên quan trực tiếp nhãn như ứng viên leakage/memorization, không tự động loại toàn bộ.
-7. Ghi decision log cho mỗi feature giữ/loại/biến đổi: mục tiêu, bằng chứng, quyết định và ảnh hưởng.
+## Protocol bắt buộc khi đọc / kiểm chứng dữ liệu thật
+
+1. Kiểm chứng manifest, SHA-256, byte size (`scripts/fetch_multi_source_dataset.py --verify-only`, `data/UWF_ZEEKDATA24_MANIFEST.json`).
+2. Kiểm tra schema `canonical-flow-v2-18`, kiểu dữ liệu, finite values, missing/unset Zeek tokens (tách `strict` vs `allow_zeek_unset_zero`), và mapping taxonomy v2 (`src/network_anomaly/data/taxonomy.py`), giữ dòng unmapped tách biệt thay vì ép nhãn.
+3. Báo phân bố binary label & `attack_category`, nêu rõ lớp hiếm (`Exploitation_And_C2`, `Credential_Attack`, `Post_Exploitation_Discovery`).
+4. Bảo toàn split `v2-scenario-group-purged-v1`; không trộn train/val/test, không fit preprocessing ngoài `ait_train`.
 
 ## PASS/FAIL và giới hạn
 
-- `PASS`: check đã chạy trên file được định danh và đáp ứng invariant được kiểm tra; kèm lệnh, exit code, hash/report.
-- `FAIL`: checksum/schema/type/label/integrity không hợp lệ hoặc protocol split bị vi phạm.
-- `SKIPPED`: check chủ đích không chạy vì dữ liệu vắng mặt; exit 0 không biến thành PASS.
-- `NOT VERIFIED`: thiếu provenance, chưa kiểm tra near-duplicate/group leakage, hoặc không đủ bằng chứng.
-
-Validator cấu trúc không chứng minh dataset đại diện, leakage-safe hay phù hợp production. Không train/evaluate từ
-skill này trừ khi issue hiện tại cho phép riêng.
+- `PASS`: checksum, schema, label mapping và split invariants đạt theo log/exit code thực tế.
+- `FAIL`: sai checksum/schema/label coercion hoặc vi phạm split boundary.
+- `SKIPPED`: dữ liệu raw chưa có trên runner (như CI GitHub checkout); `exit 0` vẫn báo `SKIPPED`.
+- `NOT VERIFIED`: thiếu provenance hoặc chưa chạy đối chiếu đầy đủ.

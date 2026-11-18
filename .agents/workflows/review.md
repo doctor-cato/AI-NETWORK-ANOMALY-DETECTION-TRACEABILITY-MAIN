@@ -2,14 +2,14 @@
 
 Review sau triển khai:
 
-- So sánh diff với yêu cầu ban đầu.
-- Tìm lỗi logic, regression, leakage, xử lý nhãn sai, sai lệch metric, vấn đề tái lập.
-- Kiểm tra ranh giới dữ liệu và trường hợp lỗi.
-- Phát hiện code thừa, abstraction quá mức, dependency không cần, tài liệu mâu thuẫn.
-- Kiểm tra test có xác minh hành vi thực tế hay chỉ import.
-- Kiểm tra schema/label/split, fit boundary, test-set tuning, duplicate/group leakage, threshold, metric/label order và artifact metadata khi diff liên quan ML.
-- Phân loại: `BLOCKER`, `HIGH`, `MEDIUM`, `LOW`; cung cấp đường dẫn file + dòng nếu có.
-- Chỉ kết luận dựa trên bằng chứng; không sửa thêm ngoài phạm vi review nếu chưa được yêu cầu.
-- Nếu không phát hiện lỗi: nêu rõ các phần đã kiểm tra và giới hạn còn lại (ví dụ: chưa có dataset thật, chưa kiểm thử IF protocol đầy đủ).
-
-Input: yêu cầu, base/phạm vi diff, file mới và bằng chứng VERIFY. Tự đọc yêu cầu, diff, code và test trước khi đối chiếu báo cáo implementer; tìm phản ví dụ và đường lỗi. Ưu tiên security, compatibility, regression và thiếu test hành vi. Output: findings có mức độ, file:dòng, điều kiện tái hiện, tác động và gợi ý; không bịa finding. Review-only không sửa file hoặc cập nhật GitHub. Khi runtime hỗ trợ và task đủ phức tạp, có thể giao reviewer subagent tự đọc yêu cầu + diff + test trước khi xem kết luận implementer. Chỉ gọi là independent review khi reviewer khác thực sự làm lượt này; nếu cùng agent, ghi rõ self-review. Lỗi cần sửa chuyển IMPLEMENT chỉ khi nhiệm vụ cho phép; giữ giới hạn số lượt sửa theo bộ điều phối đang dùng.
+- Tự đọc yêu cầu, diff thực tế (`git diff`, staged/unstaged, untracked files), code và test trước khi đối chiếu nhận xét của implementer.
+- Tìm lỗi logic, regression, leakage, fail-open bypass, xử lý nhãn sai, sai lệch metric và vấn đề tái lập.
+- Kiểm tra ranh giới trọng yếu của v2:
+  - Fail-closed `"deployment"` OOD policy & trusted `NETFLOW_OOD_GATE_SHA256` (không tự downgrade về `"research"`).
+  - Ranh giới dữ liệu (`AIT-LDS-v2.1` `CC BY-NC-SA 4.0` cách ly khỏi ML/demo; không dùng `ait_test` hay target dataset để tune/calibrate; không fallback v1 `NF-UNSW-NB15-v3`).
+  - Bảo toàn frozen `E0` artifacts (`RESEARCH_ONLY`, `production_ready=false`) và governance (`DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`).
+  - Đồng bộ FastAPI schemas ↔ `reports/api/openapi.json` ↔ `desktop/src/lib/types.ts` ↔ Svelte/Tauri IPC.
+  - Non-attribution (`Trace`/`Behavioral`), `executed=false` security dry-run, và không có dấu ấn/trailer AI trong code/docs/commit/PR.
+- Kiểm tra test có xác minh hành vi thực tế và đường lỗi (bao gồm CI compatibility khi vắng `artifacts/`), không chỉ import/constructor.
+- Phân loại findings: `BLOCKER`, `HIGH`, `MEDIUM`, `LOW`, kèm `file:dòng`, tình huống tái hiện và tác động.
+- Chỉ kết luận dựa trên bằng chứng; `REVIEW-only` không tự sửa file hay cập nhật GitHub. Nếu cùng agent thực hiện kiểm tra lại, nêu rõ đây là self-review, không phải independent review.

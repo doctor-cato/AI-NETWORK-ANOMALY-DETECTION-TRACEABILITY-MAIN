@@ -1,0 +1,21 @@
+{
+  "artifact_type": "ood-reference-gate-manifest",
+  "artifact_version": 1,
+  "artifact_path": "artifacts/ml/ood_reference_gate.json",
+  "sha256": "8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825",
+  "size_bytes": 2658,
+  "schema_version": 1,
+  "fitted_at_utc": "2026-11-17T23:20:03.591539+00:00",
+  "dataset_name": "AIT-NDS-v2",
+  "partition": "train",
+  "feature_contract_version": "canonical-flow-v2-18",
+  "feature_space": "raw_ml_features_18",
+  "feature_count": 18,
+  "fit_rows": 2097891,
+  "split_protocol_version": "v2-scenario-group-purged-v1",
+  "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
+  "preprocessor_artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
+  "std_margin": 4.0,
+  "statistical_threshold": 5.0,
+  "trust_model_note": "Repo-tracked provenance manifest cross-checked by verify_companion_artifacts.py; not an independent external deployment trust anchor (deployment mode still requires explicit/env/build-embedded NETFLOW_OOD_GATE_SHA256)."
+}

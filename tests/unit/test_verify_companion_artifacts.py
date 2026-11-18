@@ -2422,6 +2422,8 @@ def test_verify_companion_artifacts_distinguishes_unanchored_vs_trusted_ood_sha(
     assert ood_un["ready"] is True
     assert ood_un["structural_schema_verified"] is True
     assert ood_un["preprocessor_linkage_verified"] is True
+    assert ood_un["repo_manifest_verified"] is True
+    assert ood_un["repo_manifest_cross_check"] == "verified"
     assert ood_un["trusted_digest_verified"] is False
     assert ood_un["integrity_verification_status"] == "PARTIAL_UNANCHORED"
     assert ood_un["trust_anchor_source"] == "none"
@@ -2433,6 +2435,7 @@ def test_verify_companion_artifacts_distinguishes_unanchored_vs_trusted_ood_sha(
     )
     ood_ok = anchored["ood_gate"]
     assert ood_ok["ready"] is True
+    assert ood_ok["repo_manifest_verified"] is True
     assert ood_ok["trusted_digest_verified"] is True
     assert ood_ok["integrity_verification_status"] == "PASS"
     assert ood_ok["trust_anchor_source"] == "explicit_expected_sha256"
@@ -2447,3 +2450,34 @@ def test_verify_companion_artifacts_distinguishes_unanchored_vs_trusted_ood_sha(
     assert wrong["ood_gate"]["status"] == "ERROR"
     assert wrong["ood_gate"]["trusted_digest_verified"] is False
     assert wrong["ood_gate"]["integrity_verification_status"] == "FAIL"
+
+
+def test_verify_repo_ood_gate_manifest_matches_and_fails_closed_on_tamper(
+    tmp_path: Path,
+):
+    import json
+
+    import scripts.verify_companion_artifacts as vca
+
+    tracked_manifest = REPO_ROOT / vca.OOD_REFERENCE_GATE_MANIFEST_REL
+    assert tracked_manifest.is_file()
+    payload = json.loads(tracked_manifest.read_text(encoding="utf-8"))
+    ood_meta = {
+        "sha256": payload["sha256"],
+        "preprocessor_artifact_sha256": payload["preprocessor_artifact_sha256"],
+        "fit_rows": payload["fit_rows"],
+        "feature_count": payload["feature_count"],
+    }
+
+    assert vca._verify_repo_ood_gate_manifest(REPO_ROOT, ood_meta) == "verified"
+    assert vca._verify_repo_ood_gate_manifest(tmp_path, ood_meta) == "absent"
+
+    tampered_dir = tmp_path / "tampered"
+    tampered_manifest = tampered_dir / vca.OOD_REFERENCE_GATE_MANIFEST_REL
+    tampered_manifest.parent.mkdir(parents=True, exist_ok=True)
+    bad_payload = dict(payload)
+    bad_payload["sha256"] = "0" * 64
+    tampered_manifest.write_text(json.dumps(bad_payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="SHA-256 mismatch with repo manifest"):
+        vca._verify_repo_ood_gate_manifest(tampered_dir, ood_meta)

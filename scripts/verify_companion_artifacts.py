@@ -87,6 +87,7 @@ MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
 
 AE_SCORE_NORMALIZATION_REL = Path("artifacts/models/autoencoder/score_normalization.json")
 OOD_REFERENCE_GATE_REL = Path("artifacts/ml/ood_reference_gate.json")
+OOD_REFERENCE_GATE_MANIFEST_REL = Path("reports/ml/ood_reference_gate_manifest.json")
 PREPROCESSOR_REL = Path("artifacts/preprocessing/v2_flow_preprocessor.joblib")
 PREPROCESSOR_MANIFEST_REL = Path("reports/preprocessing/v2_flow_preprocessing_manifest.json")
 SPLIT_MANIFEST_REL = Path("data/V2_SPLIT_MANIFEST.json")
@@ -165,6 +166,48 @@ def _select_existing_manifest(
         if candidate.is_file():
             return candidate
     return manifest_root / candidates[0]
+
+
+def _verify_repo_ood_gate_manifest(
+    manifest_root: Path,
+    ood_meta: Dict[str, Any],
+) -> str:
+    """Cross-check OOD gate metadata against the repo-tracked manifest when present."""
+    manifest_abs = manifest_root / OOD_REFERENCE_GATE_MANIFEST_REL
+    if not manifest_abs.is_file():
+        return "absent"
+    payload = _read_json_dict(manifest_abs, "OOD reference gate manifest")
+    if payload.get("artifact_path") != OOD_REFERENCE_GATE_REL.as_posix():
+        raise ValueError(
+            "OOD reference gate manifest artifact_path mismatch: "
+            f"{payload.get('artifact_path')!r} != {OOD_REFERENCE_GATE_REL.as_posix()!r}"
+        )
+    man_sha = payload.get("sha256")
+    if not _is_hex_sha256(man_sha) or str(man_sha).lower() != str(ood_meta["sha256"]).lower():
+        raise ValueError(
+            "OOD reference gate SHA-256 mismatch with repo manifest: "
+            f"{man_sha!r} != {ood_meta['sha256']!r}"
+        )
+    man_prep_sha = payload.get("preprocessor_artifact_sha256")
+    if (
+        not _is_hex_sha256(man_prep_sha)
+        or str(man_prep_sha).lower() != str(ood_meta["preprocessor_artifact_sha256"]).lower()
+    ):
+        raise ValueError(
+            "OOD reference gate preprocessor_artifact_sha256 mismatch with repo manifest: "
+            f"{man_prep_sha!r} != {ood_meta['preprocessor_artifact_sha256']!r}"
+        )
+    if payload.get("fit_rows") != ood_meta["fit_rows"]:
+        raise ValueError(
+            "OOD reference gate fit_rows mismatch with repo manifest: "
+            f"{payload.get('fit_rows')!r} != {ood_meta['fit_rows']!r}"
+        )
+    if payload.get("feature_count") != ood_meta["feature_count"]:
+        raise ValueError(
+            "OOD reference gate feature_count mismatch with repo manifest: "
+            f"{payload.get('feature_count')!r} != {ood_meta['feature_count']!r}"
+        )
+    return "verified"
 
 
 def verify_companion_artifacts(
@@ -338,6 +381,8 @@ def verify_companion_artifacts(
             "preprocessor_artifact_sha256": None,
             "structural_schema_verified": False,
             "preprocessor_linkage_verified": False,
+            "repo_manifest_verified": False,
+            "repo_manifest_cross_check": "none",
             "trusted_digest_verified": False,
             "integrity_verification_status": "FAIL",
             "trust_anchor_source": ood_trust_source or "none",
@@ -357,6 +402,8 @@ def verify_companion_artifacts(
             "preprocessor_artifact_sha256": None,
             "structural_schema_verified": False,
             "preprocessor_linkage_verified": False,
+            "repo_manifest_verified": False,
+            "repo_manifest_cross_check": "none",
             "trusted_digest_verified": False,
             "integrity_verification_status": "FAIL",
             "trust_anchor_source": ood_trust_source,
@@ -375,6 +422,8 @@ def verify_companion_artifacts(
             "preprocessor_artifact_sha256": None,
             "structural_schema_verified": False,
             "preprocessor_linkage_verified": False,
+            "repo_manifest_verified": False,
+            "repo_manifest_cross_check": "none",
             "trusted_digest_verified": False,
             "integrity_verification_status": "FAIL",
             "trust_anchor_source": ood_trust_source or "none",
@@ -388,6 +437,7 @@ def verify_companion_artifacts(
                 expected_preprocessor_sha256=prep_sha,
                 expected_sha256=trusted_ood_sha,
             )
+            repo_manifest_status = _verify_repo_ood_gate_manifest(resolved_root, ood_meta)
             same_boundary = cross_check_same_boundary_embedded_manifest(
                 ood_gate_abs, str(ood_meta["sha256"])
             )
@@ -403,6 +453,8 @@ def verify_companion_artifacts(
                 "preprocessor_artifact_sha256": ood_meta["preprocessor_artifact_sha256"],
                 "structural_schema_verified": True,
                 "preprocessor_linkage_verified": True,
+                "repo_manifest_verified": repo_manifest_status == "verified",
+                "repo_manifest_cross_check": repo_manifest_status,
                 "trusted_digest_verified": trusted_verified,
                 "integrity_verification_status": (
                     "PASS" if trusted_verified else "PARTIAL_UNANCHORED"
@@ -424,6 +476,8 @@ def verify_companion_artifacts(
                 "preprocessor_artifact_sha256": None,
                 "structural_schema_verified": False,
                 "preprocessor_linkage_verified": False,
+                "repo_manifest_verified": False,
+                "repo_manifest_cross_check": "none",
                 "trusted_digest_verified": False,
                 "integrity_verification_status": "FAIL",
                 "trust_anchor_source": ood_trust_source or "none",

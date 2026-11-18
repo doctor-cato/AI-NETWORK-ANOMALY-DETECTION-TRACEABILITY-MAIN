@@ -1,15 +1,14 @@
 name: pytest-skill
-source_global: C:\Users\Admin\.agents\skills\pytest-skill
-license: MIT (SKILL.md line 9; source_repo: LambdaTest/agent-skills)
-date_checked: 2026-10-16
+source_local: .agents/skills/pytest-skill/INTEGRATION.md
+license: MIT
+date_updated: 2026-11-19
 
-trigger: viết/chạy test cho `tests/unit/test_basic.py`, `tests/integration/test_pipeline.py`; thêm fixture cho synthetic data; kiểm tra import và pipeline load.
+trigger: viết/chạy test trong `tests/unit/` và `tests/integration/`; viết test CI-safe cho FastAPI, streaming, migration, adapters và OOD gate.
 
 repo_notes:
-- Test hiện có bao gồm config/model constructors, validator CSV, contract exit code và pipeline integration. Bằng chứng M0 lịch sử ghi 36 test; chạy lại suite trước khi dùng như trạng thái hiện tại.
-- Khi thêm test cho preprocessing hoặc evaluation: dùng fixture nhỏ (numpy synthetic), không cần dataset lớn.
-- Phân biệt rõ `test synthetic` vs `test on UNSW-NB15` trong tên/test case hoặc comment.
-- Không tạo test chỉ để tăng coverage qua import kiểm tra; phải kiểm tra hành vi thực tế (fit, predict, metrics tính đúng).
-- Nếu thiếu dataset thật, không bắt buộc toàn bộ pipeline test chạy; nhưng phải ghi `SKIP` / giới hạn.
+- Suite v2 chạy toàn phần bằng `python -m pytest tests -q -rs --tb=short` (trên CI Ubuntu/Windows các binary `.joblib`/OOD/demo bị `.gitignore` và test Windows DPAPI/PowerShell được skip có kiểm soát qua `-rs`).
+- Khi viết test mới cho API/CSV/streaming/scripts: dùng fixture nhỏ trong `tmp_path` hoặc mock pipeline/gate để pass 100% cả trên GitHub Actions CI khi thiếu `artifacts/` và raw datasets.
+- Kiểm tra hành vi thực tế (fail-closed `"deployment"` OOD gate, SHA-256 tamper rejection, DB rollback, 10k `tracemalloc` bounds, migration errors), không tạo test chỉ để tăng coverage.
+- Phân biệt rõ `synthetic` / `localhost UDP replay` với dữ liệu benchmark v2 thật hoặc thiết bị router/switch vật lý.
 
-activation: tham chiếu SKILL.md toàn cục khi cần mẫu `parametrize`, `fixture`, `conftest`. Kiểm tra `.agents/workflows/verify.md` trước khi thêm test mới.
+activation: đọc `.agents/workflows/verify.md` và `.github/workflows/ci.yml` trước khi thêm test mới.
