@@ -16,7 +16,7 @@ import threading
 import uuid
 import zlib
 from collections import Counter, OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -28,6 +28,7 @@ from network_anomaly.api.schemas import (
     AttackBreakdownRow,
     BehavioralSummarySchema,
     BehavioralTopItem,
+    BehavioralVectorItemSchema,
     CompatibilityGateSummarySchema,
     CsvAnalyzeResponse,
     CsvEvaluateResponse,
@@ -41,6 +42,14 @@ from network_anomaly.api.schemas import (
     canonicalize_model_name,
 )
 from network_anomaly.api.service import ApiService, ModelNotReadyError
+from network_anomaly.behavioral.sessionizer import EventSessionizer
+from network_anomaly.behavioral.vector import BehavioralVectorBuilder
+from network_anomaly.canonical.event import (
+    CanonicalSecurityEvent,
+    EventKind,
+    FlowMetrics,
+    RawProvenance,
+)
 from network_anomaly.config import PROJECT_ROOT
 from network_anomaly.data.v2_schema import (
     FEATURE_CONTRACT_ID,
@@ -385,6 +394,102 @@ def compute_netflow_behavioral_summary(df: pd.DataFrame) -> BehavioralSummarySch
         excluded_from_ml_features=present_trace,
         non_attribution_notice=_NON_ATTRIBUTION_NOTICE,
     )
+
+
+def compute_csv_behavioral_vectors(
+    df: pd.DataFrame,
+    *,
+    source_file: str = "csv",
+    max_events: int = 5000,
+    max_vectors: int = 100,
+) -> List[BehavioralVectorItemSchema]:
+    """Sessionize canonical CSV flows and build 16-D behavioral vectors (#106 AC1)."""
+    if len(df) == 0:
+        return []
+
+    sub = df.iloc[:max_events]
+    n_rows = len(sub)
+
+    def _col(name: str) -> List[Any]:
+        return sub[name].tolist() if name in sub.columns else [None] * n_rows
+
+    src_ips = _col("source_ip")
+    dst_ips = _col("dest_ip")
+    src_ports = _col("source_port")
+    dst_ports = _col("dest_port")
+    ts_vals = _col("timestamp_ms")
+    dur_vals = _col("duration_ms")
+    bin_vals = _col("bytes_in")
+    bout_vals = _col("bytes_out")
+    pin_vals = _col("pkts_in")
+    pout_vals = _col("pkts_out")
+    proto_vals = _col("protocol_num")
+    raw_proto_vals = _col("raw_protocol_str")
+
+    base_fallback = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    events: List[CanonicalSecurityEvent] = []
+    for idx in range(n_rows):
+        src_ip = _optional_str(src_ips[idx])
+        dst_ip = _optional_str(dst_ips[idx])
+        sp = _optional_int(src_ports[idx])
+        dp = _optional_int(dst_ports[idx])
+        if sp is not None and not (0 <= sp <= 65535):
+            sp = None
+        if dp is not None and not (0 <= dp <= 65535):
+            dp = None
+
+        ts_ms = _optional_int(ts_vals[idx])
+        if ts_ms is not None and ts_ms > 0:
+            ev_ts = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+        else:
+            ev_ts = base_fallback + timedelta(milliseconds=idx)
+
+        dur = _optional_float(dur_vals[idx])
+        b_in = _optional_int(bin_vals[idx])
+        b_out = _optional_int(bout_vals[idx])
+        p_in = _optional_int(pin_vals[idx])
+        p_out = _optional_int(pout_vals[idx])
+        p_num = _optional_int(proto_vals[idx])
+        proto_str = _optional_str(raw_proto_vals[idx]) or (
+            str(p_num) if p_num is not None else None
+        )
+
+        entity_id = f"host:{src_ip}" if src_ip else "csv:anonymous"
+        events.append(
+            CanonicalSecurityEvent(
+                event_timestamp=ev_ts,
+                event_kind=EventKind.FLOW,
+                source_id="csv_analyze",
+                entity_id=entity_id,
+                source_ip=src_ip,
+                source_port=sp,
+                dest_ip=dst_ip,
+                dest_port=dp,
+                protocol=proto_str,
+                flow_metrics=FlowMetrics(
+                    duration_ms=dur if dur is not None and dur >= 0.0 else None,
+                    bytes_in=max(0, b_in) if b_in is not None else None,
+                    bytes_out=max(0, b_out) if b_out is not None else None,
+                    pkts_in=max(0, p_in) if p_in is not None else None,
+                    pkts_out=max(0, p_out) if p_out is not None else None,
+                ),
+                raw_provenance=RawProvenance(
+                    source_file=source_file,
+                    line_or_offset=idx + 1,
+                    adapter_name="desktop_csv",
+                ),
+            )
+        )
+
+    sessions = EventSessionizer(session_timeout_seconds=300.0).sessionize(events)
+    if not sessions:
+        return []
+    builder = BehavioralVectorBuilder()
+    items: List[BehavioralVectorItemSchema] = []
+    for session in sessions[:max_vectors]:
+        vec_dict = builder.build_vector(session).to_dict()
+        items.append(BehavioralVectorItemSchema(**vec_dict))
+    return items
 
 
 def compute_deterministic_risk_score(
@@ -1399,6 +1504,7 @@ def analyze_csv_file(
 
     timeline = build_deterministic_evidence_timeline(prediction_items) if include_timeline else []
     behavioral = compute_netflow_behavioral_summary(df)
+    behavioral_vectors = compute_csv_behavioral_vectors(df, source_file=str(resolved.name))
     _, model_type_display, _ = _MODEL_DISPLAY_META[canonical_model]
     evaluated_rows = len(accepted_indices)
     abstained_rows = len(abstained_set)
@@ -1429,6 +1535,7 @@ def analyze_csv_file(
         compatibility_gate=gate_summary,
         ood_report=_ood_to_schema(phys_ood_report, abstain_report=raw_ood_report),
         behavioral_summary=behavioral,
+        behavioral_vectors=behavioral_vectors,
         security_notice=_SECURITY_NOTICE,
         results=prediction_items,
         timeline=timeline,

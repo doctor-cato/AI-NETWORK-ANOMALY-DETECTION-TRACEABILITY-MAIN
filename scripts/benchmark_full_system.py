@@ -63,7 +63,20 @@ def _summary_us(samples_us: List[float]) -> Dict[str, float]:
     }
 
 
-def run_benchmark(batch_events: int = 200, micro_iters: int = 100) -> Dict[str, Any]:
+def _variance_stats(samples: List[float]) -> Dict[str, Any]:
+    mean_v = statistics.mean(samples)
+    std_v = statistics.stdev(samples) if len(samples) > 1 else 0.0
+    cv_pct = (std_v / mean_v * 100.0) if mean_v > 0.0 else 0.0
+    return {
+        "n_runs": len(samples),
+        "samples": [round(float(x), 3) for x in samples],
+        "mean": round(float(mean_v), 3),
+        "std": round(float(std_v), 3),
+        "cv_pct": round(float(cv_pct), 2),
+    }
+
+
+def _run_single_benchmark_pass(batch_events: int, micro_iters: int) -> Dict[str, Any]:
     env = collect_environment_metadata()
     contract = get_flow_feature_contract_v2()
     orchestrator = LiveSystemOrchestrator()
@@ -210,32 +223,72 @@ def run_benchmark(batch_events: int = 200, micro_iters: int = 100) -> Dict[str, 
             "Component microbenchmarks and full end-to-end event processing latency are reported separately because Python loop/dispatch and SQLite/sessionizer overhead are not additive across isolated microbenchmarks.",
         ],
     }
+    return results
+
+
+def run_benchmark(
+    batch_events: int = 200, micro_iters: int = 100, repeats: int = 3
+) -> Dict[str, Any]:
+    repeats = max(1, int(repeats))
+    runs = [
+        _run_single_benchmark_pass(batch_events=batch_events, micro_iters=micro_iters)
+        for _ in range(repeats)
+    ]
+    results = dict(runs[-1])
+    comp_keys = list(results["component_microbenchmarks_us"].keys())
+    repeatability = {
+        "repeats": repeats,
+        "end_to_end_throughput_events_per_sec": _variance_stats(
+            [r["end_to_end_measured"]["throughput_events_per_sec"] for r in runs]
+        ),
+        "end_to_end_median_latency_us": _variance_stats(
+            [r["end_to_end_measured"]["latency_us"]["median_us"] for r in runs]
+        ),
+        "replay_mode_throughput_events_per_sec": _variance_stats(
+            [r["replay_mode_measured"]["throughput_events_per_sec"] for r in runs]
+        ),
+        "component_medians_us": {
+            ck: _variance_stats([r["component_microbenchmarks_us"][ck]["median_us"] for r in runs])
+            for ck in comp_keys
+        },
+    }
+    results["repeatability_summary"] = repeatability
 
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_JSON.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
+    env = results["hardware_environment"]
+    readiness = results["inference_readiness"]
+    events_n = results["end_to_end_measured"]["events_processed"]
+    e2e_throughput = results["end_to_end_measured"]["throughput_events_per_sec"]
     e2e_lat = results["end_to_end_measured"]["latency_us"]
+    peak_util_pct = results["ring_buffer_measured"]["peak_utilization_pct"]
+    dropped_events = results["ring_buffer_measured"]["dropped_events"]
     md_lines = [
         "# System Performance Benchmark Report (Dynamic Measurement)",
         "",
         f"- **Executed At (UTC):** `{results['benchmark_executed_at_utc']}`",
         f"- **Host OS / CPU / RAM:** `{env['os']}` / `{env['cpu_count']} vCPU` / `{env['total_ram_gb']} GB`",
         f"- **Python:** `{env['python_version']}` | **AI Readiness:** `{readiness['ready_count']}/4 ({readiness['inference_mode']})`",
+        f"- **Repeatability Runs:** `{repeats}`",
         "",
         "## 1. End-to-End Orchestrator Measurement",
-        f"- **Events Processed:** `{len(events)}`",
-        f"- **Throughput:** `{e2e_throughput:,.2f} flow/s`",
-        f"- **E2E Latency (Med / P95 / P99):** `{e2e_lat['median_us']} / {e2e_lat['p95_us']} / {e2e_lat['p99_us']} us`",
-        f"- **Ring Buffer Peak Utilization:** `{peak_util_pct}%` (`dropped={ring_metrics.total_dropped}`)",
+        f"- **Events Processed:** `{events_n}` (latest run)",
+        f"- **Throughput (Latest / Mean ± Std / CV%):** `{e2e_throughput:,.2f} flow/s` / `{repeatability['end_to_end_throughput_events_per_sec']['mean']:,.2f} ± {repeatability['end_to_end_throughput_events_per_sec']['std']:,.2f}` (`CV={repeatability['end_to_end_throughput_events_per_sec']['cv_pct']}%`)",
+        f"- **E2E Latency (Med / P95 / P99):** `{e2e_lat['median_us']} / {e2e_lat['p95_us']} / {e2e_lat['p99_us']} us` (Med CV=`{repeatability['end_to_end_median_latency_us']['cv_pct']}%`)",
+        f"- **Replay Throughput (Mean ± Std / CV%):** `{repeatability['replay_mode_throughput_events_per_sec']['mean']:,.2f} ± {repeatability['replay_mode_throughput_events_per_sec']['std']:,.2f} flow/s` (`CV={repeatability['replay_mode_throughput_events_per_sec']['cv_pct']}%`)",
+        f"- **Ring Buffer Peak Utilization:** `{peak_util_pct}%` (`dropped={dropped_events}`)",
         "",
         "## 2. Isolated Component Microbenchmarks (Separate from E2E)",
         "",
-        "| Component | Median (us) | P95 (us) | P99 (us) |",
-        "|---|---:|---:|---:|",
+        "| Component | Median (us) | P95 (us) | P99 (us) | Repeat Mean ± Std (us) | CV (%) |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
     for cname, cstats in results["component_microbenchmarks_us"].items():
+        rstats = repeatability["component_medians_us"][cname]
         md_lines.append(
-            f"| {cname} | {cstats['median_us']} | {cstats['p95_us']} | {cstats['p99_us']} |"
+            f"| {cname} | {cstats['median_us']} | {cstats['p95_us']} | {cstats['p99_us']} | "
+            f"{rstats['mean']} ± {rstats['std']} | {rstats['cv_pct']}% |"
         )
     md_lines.extend(["", "## 3. Limitations", *[f"- {lim}" for lim in results["limitations"]]])
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
@@ -248,8 +301,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Dynamic System Performance Benchmark")
     parser.add_argument("--events", type=int, default=200)
     parser.add_argument("--micro-iters", type=int, default=100)
+    parser.add_argument("--repeats", type=int, default=3)
     args = parser.parse_args()
-    run_benchmark(batch_events=args.events, micro_iters=args.micro_iters)
+    run_benchmark(batch_events=args.events, micro_iters=args.micro_iters, repeats=args.repeats)
 
 
 if __name__ == "__main__":

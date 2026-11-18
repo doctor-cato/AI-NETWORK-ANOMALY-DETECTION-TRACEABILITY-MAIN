@@ -11,6 +11,8 @@
 
   export let initialDemoMode: boolean = false;
   export let pollIntervalMs: number = 3000;
+  export let initialAlerts: LiveAlertRow[] | null = null;
+  export let pageSize: number = 100;
 
   interface LiveAlertRow {
     alert_id: string;
@@ -36,13 +38,20 @@
     },
   ];
 
-  let dataState: PanelDataState = initialDemoMode ? "DEMO" : "LOADING";
+  let dataState: PanelDataState = initialDemoMode
+    ? "DEMO"
+    : initialAlerts !== null
+      ? initialAlerts.length > 0
+        ? "CONNECTED"
+        : "EMPTY"
+      : "LOADING";
   let errorMessage: string | null = null;
   let lastUpdatedAt: string | null = null;
   let demoEnabled = initialDemoMode;
   let liveStatus: LiveStatusResponse | null = null;
-  let alerts: LiveAlertRow[] = initialDemoMode ? DEMO_ALERTS : [];
+  let alerts: LiveAlertRow[] = initialDemoMode ? DEMO_ALERTS : (initialAlerts ?? []);
   let filterSeverity = "ALL";
+  let currentPage = 1;
   let actionBusy = false;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -197,6 +206,13 @@
   $: filteredAlerts = alerts.filter(
     (a) => filterSeverity === "ALL" || a.risk_level === filterSeverity
   );
+  $: effectivePageSize = Math.max(1, pageSize);
+  $: totalPages = Math.max(1, Math.ceil(filteredAlerts.length / effectivePageSize));
+  $: if (currentPage > totalPages) currentPage = totalPages;
+  $: pagedAlerts = filteredAlerts.slice(
+    (currentPage - 1) * effectivePageSize,
+    currentPage * effectivePageSize
+  );
 </script>
 
 <div class="panel-container">
@@ -274,12 +290,48 @@
 
   <div class="filter-bar">
     <label for="filter">Filter Severity:</label>
-    <select id="filter" bind:value={filterSeverity}>
+    <select
+      id="filter"
+      bind:value={filterSeverity}
+      on:change={() => {
+        currentPage = 1;
+      }}
+    >
       <option value="ALL">All Severities</option>
       <option value="CRITICAL">Critical (Risk &gt;= 85)</option>
       <option value="HIGH">High (Risk &gt;= 70)</option>
       <option value="MEDIUM">Medium (Risk &gt;= 30)</option>
     </select>
+    {#if filteredAlerts.length > effectivePageSize}
+      <div class="pagination-controls" data-testid="alerts-pagination">
+        <span class="page-info">
+          Showing {(currentPage - 1) * effectivePageSize + 1}–{Math.min(
+            currentPage * effectivePageSize,
+            filteredAlerts.length
+          )} of {filteredAlerts.length} (Page {currentPage}/{totalPages})
+        </span>
+        <button
+          type="button"
+          class="btn-ctl"
+          disabled={currentPage <= 1}
+          on:click={() => {
+            currentPage = Math.max(1, currentPage - 1);
+          }}
+        >
+          Prev
+        </button>
+        <button
+          type="button"
+          class="btn-ctl"
+          disabled={currentPage >= totalPages}
+          on:click={() => {
+            currentPage = Math.min(totalPages, currentPage + 1);
+          }}
+        >
+          Next
+        </button>
+      </div>
+    {/if}
   </div>
 
   <div class="table-container">
@@ -296,7 +348,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each filteredAlerts as alert (alert.alert_id)}
+        {#each pagedAlerts as alert (alert.alert_id)}
           <tr class="row-{alert.risk_level.toLowerCase()}">
             <td><code>{alert.alert_id}</code></td>
             <td><strong>{alert.entity_id}</strong></td>
@@ -351,7 +403,8 @@
   .metric-card .value { font-size: 1.35rem; font-weight: 700; color: #f8fafc; margin: 0.25rem 0; }
   .metric-card .sub { font-size: 0.7rem; color: #64748b; }
   .alert-count { color: #f87171; }
-  .filter-bar { margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: #cbd5e1; }
+  .filter-bar { margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.875rem; color: #cbd5e1; }
+  .pagination-controls { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; font-size: 0.78rem; color: #94a3b8; }
   select { background: #1e293b; color: #f8fafc; border: 1px solid #334155; padding: 0.25rem 0.5rem; border-radius: 4px; }
   .table-container { overflow-x: auto; }
   .alert-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }

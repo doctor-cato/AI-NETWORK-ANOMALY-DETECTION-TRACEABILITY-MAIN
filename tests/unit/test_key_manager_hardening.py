@@ -263,3 +263,40 @@ class TestNonceRegistry:
             km.generate_key(domain="behavioral")
         # No metadata entry was published for the failed key.
         assert [meta for meta in km.list_keys() if meta.domain == "behavioral"] == []
+
+
+class TestKeystoreBackupRestore:
+    def test_backup_corruption_fails_closed_and_restore_recovers_ciphertext(self, tmp_path):
+        import shutil
+
+        from network_anomaly.crypto.aead import AESGCMCipher
+
+        keystore = tmp_path / "keys"
+        backup_dir = tmp_path / "keys_backup"
+        km = KeyManager(keystore_dir=keystore)
+        key_id, raw_key = km.get_active_key(domain="behavioral")
+        cipher = AESGCMCipher(key=raw_key, key_id=key_id)
+        env = cipher.encrypt_json({"entity": "host:10.0.0.1", "score": 0.42})
+
+        shutil.copytree(keystore, backup_dir)
+
+        # Corrupt DEK file -> key must not load and load_error_count must increment
+        dek_file = keystore / f"{key_id}.key"
+        dek_file.write_bytes(b"CORRUPTED_DEK")
+        km_broken = KeyManager(keystore_dir=keystore)
+        assert km_broken.get_key(key_id) is None
+        assert km_broken.storage_protection()["load_error_count"] >= 1
+
+        # Corrupt master.key -> must fail-closed with KeyStorageError
+        (keystore / "master.key").write_bytes(b"CORRUPTED_MASTER")
+        with pytest.raises(KeyStorageError):
+            KeyManager(keystore_dir=keystore)
+
+        # Restore from backup -> historical ciphertext decrypts identically
+        shutil.rmtree(keystore)
+        shutil.copytree(backup_dir, keystore)
+        km_restored = KeyManager(keystore_dir=keystore)
+        restored_key = km_restored.get_key(key_id)
+        assert restored_key == raw_key
+        restored_cipher = AESGCMCipher(key=restored_key, key_id=key_id)
+        assert restored_cipher.decrypt_json(env) == {"entity": "host:10.0.0.1", "score": 0.42}

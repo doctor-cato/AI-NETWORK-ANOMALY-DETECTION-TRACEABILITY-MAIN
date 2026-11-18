@@ -254,6 +254,54 @@
     </div>
 
     <div class="comparison-section">
+      <h3>Entity Baseline Profile (EntityBaselineProfiler)</h3>
+      {#if demoEnabled}
+        <div class="comp-card">
+          <div class="comp-metrics">
+            <div class="metric">
+              <span class="m-label">Baseline Samples (DEMO):</span>
+              <span class="m-val">8 / 50</span>
+            </div>
+            <div class="metric">
+              <span class="m-label">Cosine Similarity vs Centroid (DEMO):</span>
+              <span class="m-val">0.9410</span>
+            </div>
+            <div class="metric">
+              <span class="m-label">Deviation Score (DEMO):</span>
+              <span class="m-val">0.0590</span>
+            </div>
+          </div>
+        </div>
+      {:else if selectedDetail?.baseline_profile}
+        <div class="comp-card" data-testid="entity-baseline-card">
+          <div class="comp-row">
+            <span>Entity Key: <strong><code>{selectedDetail.baseline_profile.entity_key}</code></strong></span>
+            <span>
+              Baseline Status:
+              <strong>
+                {selectedDetail.baseline_profile.has_baseline
+                  ? `ACTIVE (${selectedDetail.baseline_profile.sample_count}/${selectedDetail.baseline_profile.window_size ?? 50} prior vectors)`
+                  : "NO PRIOR BASELINE (first vector for entity)"}
+              </strong>
+            </span>
+          </div>
+          <div class="comp-metrics">
+            <div class="metric">
+              <span class="m-label">Cosine Similarity vs Entity Centroid:</span>
+              <span class="m-val">{selectedDetail.baseline_profile.cosine_similarity.toFixed(4)}</span>
+            </div>
+            <div class="metric">
+              <span class="m-label">Baseline Deviation Score (1 - cos):</span>
+              <span class="m-val">{selectedDetail.baseline_profile.deviation_score.toFixed(4)}</span>
+            </div>
+          </div>
+        </div>
+      {:else}
+        <div class="state-banner banner-empty">No EntityBaselineProfiler profile available for this vector dimension.</div>
+      {/if}
+    </div>
+
+    <div class="comparison-section">
       <h3>Behavioral Similarity &amp; IPSpoofingSessionCorrelator</h3>
       {#if demoEnabled}
         <div class="comp-card">

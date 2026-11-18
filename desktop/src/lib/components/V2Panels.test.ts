@@ -226,4 +226,97 @@ describe("V2 Backend API Client State Contracts (CONNECTED / DISCONNECTED / EMPT
     expect(resp.items[0].risk_score).toBe(84.0);
     expect(resp.items[0].occurrence_count).toBe(2);
   });
+
+  it("LiveMonitoringPanel paginates 2,000 alerts at 100 rows per page (#140 AC3)", () => {
+    const bulkAlerts = Array.from({ length: 2000 }, (_, idx) => ({
+      alert_id: `alert-bulk-${idx}`,
+      entity_id: `host:10.0.${Math.floor(idx / 250)}.${(idx % 250) + 1}`,
+      risk_score: idx % 2 === 0 ? 88.0 : 52.0,
+      risk_level: idx % 2 === 0 ? "CRITICAL" : "MEDIUM",
+      trigger_reason: "High flow burst",
+      status: "NEW",
+      last_seen_utc: "2026-11-18T06:00:00Z",
+      source: "LIVE",
+    }));
+
+    const t0 = performance.now();
+    const out = render(LiveMonitoringPanel, {
+      props: { initialDemoMode: false, initialAlerts: bulkAlerts, pageSize: 100 },
+    });
+    const renderMs = performance.now() - t0;
+
+    expect(out.body).toContain("STATE: CONNECTED");
+    expect(out.body).toContain("Showing 1–100 of 2000 (Page 1/20)");
+    expect(out.body).toContain("alert-bulk-0");
+    expect(out.body).toContain("alert-bulk-99");
+    expect(out.body).not.toContain("alert-bulk-100\"");
+    expect(out.body).not.toContain("alert-bulk-1999");
+    expect(renderMs).toBeLessThan(2000);
+  });
+
+  it("AttackTimelinePanel renders multi-stage replay correlation with observed vs inferred tags (#142 AC1)", () => {
+    const replayStages = [
+      {
+        stage_order: 1,
+        stage_name: "RECONNAISSANCE",
+        description: "SYN port sweep across /24 subnet",
+        timestamp: "2026-11-18T10:00:01Z",
+        entity: "host:10.10.1.5 -> host:10.10.2.20",
+        tactic_id: "TA0043",
+        is_observed: true,
+        confidence: 0.96,
+        evidence_ids: ["ev-recon-1"],
+      },
+      {
+        stage_order: 2,
+        stage_name: "CREDENTIAL_ACCESS",
+        description: "SSH/LDAP brute-force authentication burst",
+        timestamp: "2026-11-18T10:02:15Z",
+        entity: "host:10.10.1.5 -> host:10.10.2.20",
+        tactic_id: "TA0006",
+        is_observed: true,
+        confidence: 0.91,
+        evidence_ids: ["ev-cred-2"],
+      },
+      {
+        stage_order: 3,
+        stage_name: "LATERAL_MOVEMENT",
+        description: "Behavioral pivot inferred across pivoted source IP",
+        timestamp: "2026-11-18T10:05:40Z",
+        entity: "host:10.10.2.20 -> host:10.10.3.50",
+        tactic_id: "TA0008",
+        is_observed: false,
+        confidence: 0.78,
+        evidence_ids: [],
+      },
+      {
+        stage_order: 4,
+        stage_name: "EXFILTRATION",
+        description: "Outbound high-asymmetry transfer",
+        timestamp: "2026-11-18T10:09:10Z",
+        entity: "host:10.10.3.50 -> host:198.51.100.8",
+        tactic_id: "TA0010",
+        is_observed: true,
+        confidence: 0.94,
+        evidence_ids: ["ev-exfil-4"],
+      },
+    ];
+
+    const out = render(AttackTimelinePanel, {
+      props: {
+        initialDemoMode: false,
+        initialCampaign: "REPLAY-CAMPAIGN-4PHASE",
+        initialStages: replayStages,
+      },
+    });
+
+    expect(out.body).toContain("STATE: CONNECTED");
+    expect(out.body).toContain("RECONNAISSANCE");
+    expect(out.body).toContain("CREDENTIAL_ACCESS");
+    expect(out.body).toContain("LATERAL_MOVEMENT");
+    expect(out.body).toContain("EXFILTRATION");
+    expect(out.body).toContain("OBSERVED TELEMETRY");
+    expect(out.body).toContain("INFERRED RELATIONSHIP");
+    expect(out.body).toContain("ev-exfil-4");
+  });
 });

@@ -4,6 +4,8 @@
   import type { PanelDataState, TimelineStageItem } from "../types";
 
   export let initialDemoMode: boolean = false;
+  export let initialStages: TimelineStageRow[] | null = null;
+  export let initialCampaign: string = "";
 
   interface TimelineStageRow {
     stage_order: number;
@@ -42,12 +44,22 @@
     },
   ];
 
-  let dataState: PanelDataState = initialDemoMode ? "DEMO" : "LOADING";
+  let dataState: PanelDataState = initialDemoMode
+    ? "DEMO"
+    : initialStages !== null
+      ? initialStages.length > 0
+        ? "CONNECTED"
+        : "EMPTY"
+      : "LOADING";
   let errorMessage: string | null = null;
   let demoEnabled = initialDemoMode;
-  let availableCampaigns: string[] = initialDemoMode ? ["DEMO-CAMPAIGN-01"] : [];
-  let selectedCampaign: string = initialDemoMode ? "DEMO-CAMPAIGN-01" : "";
-  let stages: TimelineStageRow[] = initialDemoMode ? DEMO_STAGES : [];
+  let availableCampaigns: string[] = initialDemoMode
+    ? ["DEMO-CAMPAIGN-01"]
+    : initialCampaign
+      ? [initialCampaign]
+      : [];
+  let selectedCampaign: string = initialDemoMode ? "DEMO-CAMPAIGN-01" : initialCampaign;
+  let stages: TimelineStageRow[] = initialDemoMode ? DEMO_STAGES : (initialStages ?? []);
   let overallConfidence: number | null = initialDemoMode ? 0.84 : null;
   let exportStatus: string = "";
   let exportError: string | null = null;

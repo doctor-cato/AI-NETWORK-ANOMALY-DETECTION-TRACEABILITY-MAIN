@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from network_anomaly.api.db import SCHEMA_SQL
-from scripts.migrate_v1_to_v2 import migrate_database
+from scripts.migrate_v1_to_v2 import migrate_database, rollback_database
 
 
 def test_v1_to_v2_migration_lifecycle(tmp_path: Path):
@@ -92,3 +92,35 @@ def test_v1_to_v2_migration_lifecycle(tmp_path: Path):
     # 4. Test Idempotency: running migration again succeeds with no errors
     res_again = migrate_database(db_path, dry_run=False, create_backup=False)
     assert res_again is True
+
+
+def test_v1_to_v2_migration_auto_rollback_on_failure(tmp_path: Path):
+    db_path = tmp_path / "sentinel_rollback.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(SCHEMA_SQL)
+    with conn:
+        conn.execute(
+            "INSERT INTO events (event_id, timestamp, source_ip, dest_ip, features, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?);",
+            ("evt-rb", "2026-11-16T10:00:00Z", "1.1.1.1", "2.2.2.2", "{}", "2026-11-16T10:00:00Z"),
+        )
+    conn.close()
+
+    # Inject failing SQL after partial table creation to verify automatic rollback
+    broken_sql = "CREATE TABLE partial_bad (id TEXT PRIMARY KEY); INVALID SQL STATEMENT;"
+    ok = migrate_database(db_path, dry_run=False, create_backup=True, migration_sql=broken_sql)
+    assert ok is False
+
+    conn = sqlite3.connect(str(db_path))
+    tables = [
+        r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table';").fetchall()
+    ]
+    row = conn.execute("SELECT event_id FROM events WHERE event_id = 'evt-rb';").fetchone()
+    conn.close()
+    assert "partial_bad" not in tables
+    assert "schema_version" not in tables
+    assert row == ("evt-rb",)
+
+    backups = list(tmp_path.glob("*_backup_*.db"))
+    assert len(backups) == 1
+    assert rollback_database(db_path, backups[0]) is True

@@ -24,7 +24,11 @@ from typing import Any, Dict, List, Optional, Union
 
 from network_anomaly.behavioral.correlation import IPSpoofingSessionCorrelator
 from network_anomaly.behavioral.similarity import BehavioralSimilarityCalculator
-from network_anomaly.behavioral.vector import BehavioralVector, BehavioralVectorBuilder
+from network_anomaly.behavioral.vector import (
+    BehavioralVector,
+    BehavioralVectorBuilder,
+    EntityBaselineProfiler,
+)
 from network_anomaly.crypto.key_manager import KeyManager, KeyStorageError
 from network_anomaly.crypto.rotation import KeyRotationPolicy
 from network_anomaly.ml.ood_gate import resolve_expected_ood_gate_sha256
@@ -433,7 +437,9 @@ class LiveRuntime:
             "data_status": CONNECTED if items else EMPTY,
         }
 
-    def load_behavioral_vector(self, vector_id: str) -> Optional[Dict[str, Any]]:
+    def load_behavioral_vector(
+        self, vector_id: str, *, include_baseline: bool = True
+    ) -> Optional[Dict[str, Any]]:
         from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
 
         path = self.sqlite_path
@@ -443,6 +449,7 @@ class LiveRuntime:
         connection = self._connect()
         if connection is None:
             return None
+        peer_rows = []
         try:
             if not self._table_exists(connection, "behavioral_vectors"):
                 return None
@@ -454,6 +461,16 @@ class LiveRuntime:
                 """,
                 (vector_id,),
             ).fetchone()
+            if row is not None and include_baseline:
+                peer_rows = connection.execute(
+                    """
+                    SELECT vector_id, entity_id, window_start, window_end
+                    FROM behavioral_vectors
+                    WHERE entity_id = ? AND vector_id != ? AND dimensions = ?
+                    ORDER BY created_at DESC LIMIT 50;
+                    """,
+                    (row["entity_id"], vector_id, len(BehavioralVectorBuilder.FEATURE_NAMES)),
+                ).fetchall()
         finally:
             connection.close()
         if row is None:
@@ -472,6 +489,37 @@ class LiveRuntime:
             name_status = "CANONICAL_16D_ORDER"
         float_features = [float(value) for value in features]
         sha256 = hashlib.sha256(json.dumps(float_features).encode("ascii")).hexdigest()
+
+        baseline_profile: Optional[Dict[str, Any]] = None
+        if include_baseline and dimensions == len(BehavioralVectorBuilder.FEATURE_NAMES):
+            profiler = EntityBaselineProfiler(window_size=50)
+            for peer in reversed(peer_rows):
+                peer_features = vault.load_behavioral_vector(peer["vector_id"])
+                if peer_features is None or len(peer_features) != dimensions:
+                    continue
+                peer_floats = [float(v) for v in peer_features]
+                peer_bv = BehavioralVector(
+                    vector_id=peer["vector_id"],
+                    entity_key=peer["entity_id"],
+                    window_start=peer["window_start"],
+                    window_end=peer["window_end"],
+                    features=peer_floats,
+                    feature_names=BehavioralVectorBuilder.FEATURE_NAMES,
+                    sha256_hash="",
+                )
+                profiler.update(peer_bv)
+            target_bv = BehavioralVector(
+                vector_id=row["vector_id"],
+                entity_key=row["entity_id"],
+                window_start=row["window_start"],
+                window_end=row["window_end"],
+                features=float_features,
+                feature_names=BehavioralVectorBuilder.FEATURE_NAMES,
+                sha256_hash=sha256,
+            )
+            baseline_profile = profiler.score_deviation(target_bv)
+            baseline_profile["window_size"] = profiler.window_size
+
         return {
             "vector_id": row["vector_id"],
             "entity_id": row["entity_id"],
@@ -485,6 +533,7 @@ class LiveRuntime:
             "is_encrypted_at_rest": bool(row["is_encrypted"]),
             "key_id": row["key_id"],
             "created_at": row["created_at"],
+            "baseline_profile": baseline_profile,
         }
 
     @staticmethod
@@ -505,8 +554,8 @@ class LiveRuntime:
         return sum(abs(x - y) for x, y in zip(a, b))
 
     def behavioral_similarity(self, vector_a_id: str, vector_b_id: str) -> Optional[Dict[str, Any]]:
-        vector_a = self.load_behavioral_vector(vector_a_id)
-        vector_b = self.load_behavioral_vector(vector_b_id)
+        vector_a = self.load_behavioral_vector(vector_a_id, include_baseline=False)
+        vector_b = self.load_behavioral_vector(vector_b_id, include_baseline=False)
         if vector_a is None or vector_b is None:
             return None
         if vector_a["dimensions"] != vector_b["dimensions"]:
@@ -565,7 +614,7 @@ class LiveRuntime:
         vectors: List[BehavioralVector] = []
         session_ip_map: Dict[str, str] = {}
         for vid in target_ids:
-            detail = self.load_behavioral_vector(vid)
+            detail = self.load_behavioral_vector(vid, include_baseline=False)
             if detail is None or detail["dimensions"] != len(BehavioralVectorBuilder.FEATURE_NAMES):
                 continue
             bv = BehavioralVector(

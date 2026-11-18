@@ -1,5 +1,7 @@
 # Cross-Source & Real-Capture CTU-SME-11 Evaluation (Experiments A–E)
 
+> **Quan hệ kế thừa (#97 AC4 vs #25 / #48):** Tài liệu này đại diện cho phạm vi v2 (`canonical-flow-v2-18`, `AIT-NDS-v2` + `CTU-SME-11`, script `scripts/run_ctu_cross_source_eval.py` và `scripts/run_wp3_controlled_ablation.py`). Các thực nghiệm v1 (`NF-UNSW-NB15-v3`, `PR #49`, `MIN_TTL` ablation trên `ToN-IoT` thuộc `#25` và `#48`) đã được đóng băng chỉ đọc tại [`docs/historical/nf_unsw_nb15_v3/MODEL_AUDIT_TTL_ABLATION.md`](../historical/nf_unsw_nb15_v3/MODEL_AUDIT_TTL_ABLATION.md); `#97` thay thế `#25/#48` trong pipeline v2 mà không trùng lặp dữ liệu hay số liệu.
+
 Real captured evaluation on **CTU-SME-11** (`Honeypot-Assistant-Amazon-Echo1stGen-1`: 76,073 flows; `Experiment-VM-Microsoft-Windows7AD-1`: 175,146 labeled flows (175,101 after deduplicating 45 5-tuple/300s-bucket overlaps with Echo); plus 9,394 `unknown`/`Unmapped` Windows7AD flows excluded from supervised binary metrics). **UGR'16** (Exp E) remains `BLOCKED` (official NESG portal returned HTTP 403 / Portal en Mantenimiento).
 
 ## Exp A — In-Domain AIT-NDS-v2 Reference

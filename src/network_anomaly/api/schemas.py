@@ -644,6 +644,24 @@ class BehavioralSummarySchema(BaseModel):
     non_attribution_notice: str
 
 
+class BehavioralVectorItemSchema(BaseModel):
+    """16-D session behavioral vector extracted during CSV analysis (#106)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vector_id: str
+    entity_key: str
+    window_start: str
+    window_end: str
+    dimensions: int = Field(..., ge=1)
+    version: str
+    features: List[float]
+    feature_names: List[str]
+    sha256_hash: str
+    missing_feature_count: int = Field(default=0, ge=0)
+    missing_feature_names: List[str] = Field(default_factory=list)
+
+
 class CsvInspectResponse(BaseModel):
     """Validated CSV contract inspection and preview response."""
 
@@ -782,6 +800,7 @@ class CsvAnalyzeResponse(BaseModel):
     compatibility_gate: CompatibilityGateSummarySchema
     ood_report: OodSummarySchema
     behavioral_summary: BehavioralSummarySchema
+    behavioral_vectors: List[BehavioralVectorItemSchema] = Field(default_factory=list)
     security_notice: str
     results: List[CsvFlowPredictionItem]
     timeline: List[CsvTimelineItem] = Field(default_factory=list)
@@ -1270,6 +1289,17 @@ class BehavioralVectorListResponse(BaseModel):
     reason: Optional[str] = None
 
 
+class EntityBaselineProfileSchema(BaseModel):
+    """Entity baseline profile deviation metrics from EntityBaselineProfiler (#141)."""
+
+    entity_key: str
+    has_baseline: bool
+    deviation_score: float
+    cosine_similarity: float
+    sample_count: int = Field(..., ge=0)
+    window_size: int = Field(default=50, ge=1)
+
+
 class BehavioralVectorDetailResponse(BaseModel):
     vector_id: str
     entity_id: str
@@ -1284,6 +1314,7 @@ class BehavioralVectorDetailResponse(BaseModel):
     key_id: Optional[str] = None
     created_at: str
     data_status: str = "CONNECTED"
+    baseline_profile: Optional[EntityBaselineProfileSchema] = None
 
 
 class BehavioralSimilarityResponse(BaseModel):

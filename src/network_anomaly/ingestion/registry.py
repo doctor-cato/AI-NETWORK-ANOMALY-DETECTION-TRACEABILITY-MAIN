@@ -78,6 +78,36 @@ class SourceRegistry:
             )
         )
 
+        # 3b. UWF-ZeekData24 (Supplemental Cyber Range Zeek L4-Payload Evaluation Only)
+        self.register(
+            SourceDefinition(
+                source_id="source:uwf-zeek24",
+                name="UWF-ZeekData24 Supplemental Zeek Flow Benchmark (CC BY 4.0)",
+                physical_format="csv/parquet",
+                schema_version="2.0.0",
+                ml_supported=True,
+                trace_supported=True,
+                description=(
+                    "MITRE ATT&CK labeled Cyber Range Zeek logs (orig_bytes/resp_bytes L4 payload); "
+                    "evaluation_only=true, does not replace UGR'16 ISP traffic."
+                ),
+                expected_columns=[
+                    "duration",
+                    "orig_bytes",
+                    "resp_bytes",
+                    "orig_pkts",
+                    "resp_pkts",
+                    "proto",
+                    "src_ip_zeek",
+                    "dest_ip_zeek",
+                    "src_port_zeek",
+                    "dest_port_zeek",
+                    "ts",
+                ],
+                adapter_name="UWFZeekAdapter",
+            )
+        )
+
         # 4. Unverified v2 Flow CSV
         self.register(
             SourceDefinition(
@@ -300,6 +330,7 @@ class SourceRegistry:
 
     def get_adapter_class(self, source_id: str) -> Type[Any]:
         """Resolve a registered v2 source_id or adapter_name to its adapter class."""
+        from network_anomaly.ingestion.adapters.uwf_zeek import UWFZeekAdapter
         from network_anomaly.ingestion.adapters.v2_adapter import (
             ApplicationDNSAdapter,
             ApplicationWebAdapter,
@@ -314,6 +345,8 @@ class SourceRegistry:
             "source:ait-nds-v2": UnifiedNetFlowAdapter,
             "source:ctu-sme-11": UnifiedNetFlowAdapter,
             "source:canonical-flow-v2": UnifiedNetFlowAdapter,
+            "source:uwf-zeek24": UWFZeekAdapter,
+            "UWFZeekAdapter": UWFZeekAdapter,
             "v2_dns": ApplicationDNSAdapter,
             "ApplicationDNSAdapter": ApplicationDNSAdapter,
             "v2_web": ApplicationWebAdapter,
@@ -358,6 +391,9 @@ class SourceRegistry:
             col_set
         ):
             return self.get_source("source:ait-nds-v2")
+
+        if {"src_ip_zeek", "dest_ip_zeek", "orig_bytes", "resp_bytes"}.issubset(col_set):
+            return self.get_source("source:uwf-zeek24")
 
         if {"id.orig_h", "id.orig_p", "id.resp_h", "id.resp_p"}.issubset(col_set):
             return self.get_source("source:zeek-conn")

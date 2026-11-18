@@ -68,13 +68,29 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
         },
         {
             "id": "ev-7",
+            "phase": AttackPhase.LATERAL_MOVEMENT,
+            "type": "winrm",
+            "port": 5985,
+            "src": "10.0.0.2",
+            "dst": "10.0.0.4",
+        },
+        {
+            "id": "ev-8",
+            "phase": AttackPhase.LATERAL_MOVEMENT,
+            "type": "rdp",
+            "port": 3389,
+            "src": "10.0.0.3",
+            "dst": "10.0.0.4",
+        },
+        {
+            "id": "ev-9",
             "phase": AttackPhase.EXFILTRATION_IMPACT,
             "type": "exfiltration",
             "port": 8443,
             "bytes": 800000,
         },
         {
-            "id": "ev-8",
+            "id": "ev-10",
             "phase": AttackPhase.EXFILTRATION_IMPACT,
             "type": "ddos",
             "port": 53,
@@ -169,7 +185,7 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
         "conclusion": (
             f"Trace Engine v2 achieved {stage_accuracy * 100:.1f}% stage attribution accuracy "
             f"and {trace_completeness * 100:.1f}% path completeness across the {len(ground_truth_stages)}-event "
-            "4-phase attack progression, empirically validating Attack Traceability against ground truth."
+            "4-phase synthetic attack progression (TESTED on synthetic scenario, not production telemetry)."
         ),
     }
 
@@ -185,7 +201,7 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
 
 > **Evaluation ID:** {results["evaluation_id"]}
 > **Evaluation Date:** {results["timestamp"]}
-> **Status:** EXPERIMENTALLY VALIDATED
+> **Status:** TESTED (Synthetic {len(ground_truth_stages)}-Event 4-Phase Scenario)
 
 ## 1. Executive Summary
 - **Stage Attribution Accuracy:** **{stage_accuracy * 100:.1f}%** (Đạt phân loại chính xác các giai đoạn Reconnaissance, Initial Access, Lateral Movement, Exfiltration).

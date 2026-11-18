@@ -1,6 +1,7 @@
 # Kế hoạch triển khai — NetFlow Sentinel v2 (C0–C11 & Lộ trình Milestone)
 
 > Bảng lịch sử `v1.0.0` (`NF-UNSW-NB15-v3`) đã được lưu trữ chỉ đọc tại [`docs/historical/nf_unsw_nb15_v3/`](historical/nf_unsw_nb15_v3/). Bảng dưới đây phản ánh trạng thái **NetFlow Sentinel v2** trên nhánh `feat/v2-integration`.
+> **Ranh giới tài liệu (#151 AC4 vs #18 / #19 & #128):** Bộ tài liệu kỹ thuật v2 (`#151`: `ARCHITECTURE_V2.md`, `DATASET.md`, `EVALUATION.md`, `V2_SOURCE_AUDIT.md`, `CTU_CROSS_SOURCE_EVAL.md`) phủ riêng kiến trúc và số liệu v2 (`AIT-NDS-v2`, `CTU-SME-11`, `canonical-flow-v2-18`), tách biệt khỏi `#18` (hồ sơ v1 `NF-UNSW-NB15-v3`) và `#19`/`#153` (slide/PDF bảo vệ). Hạng mục Rust collector (`#128`) giữ trạng thái `DEFERRED` ngoài phạm vi v2.0 và được thay thế trong thực thi bằng Python `UDPFlowCollector` (`#131`).
 
 ## Thứ tự Milestone Roadmap v2 (7 Giai đoạn Chuẩn hóa)
 

@@ -2125,3 +2125,78 @@ def test_collect_models_status_does_not_mask_missing_manifest_threshold(
     assert items["random_forest"].decision_threshold is None
     assert items["xgboost"].ready is True
     assert items["xgboost"].decision_threshold == 0.5
+
+
+def test_csv_analyze_extracts_16d_behavioral_vectors(client: TestClient, tmp_path: Path):
+    """#106 AC1: CSV analyze builds 16-D BehavioralVector items per entity session."""
+    df = _make_synthetic_flow_df(4)
+    df["source_ip"] = ["10.0.0.10", "10.0.0.10", "10.0.0.20", "10.0.0.20"]
+    df["dest_ip"] = ["192.168.1.5", "192.168.1.6", "192.168.1.5", "192.168.1.7"]
+    df["source_port"] = [50001, 50002, 51001, 51002]
+    df["dest_port"] = [443, 80, 22, 443]
+    df["timestamp_ms"] = [
+        1_700_000_000_000,
+        1_700_000_005_000,
+        1_700_000_001_000,
+        1_700_000_010_000,
+    ]
+    csv_path = tmp_path / "behavioral_flows.csv"
+    df.to_csv(csv_path, index=False)
+
+    class _IdentityPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-beh-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_IdentityPrep(),
+        predict=lambda frame: pd.DataFrame(
+            {
+                "prediction": [0] * len(frame),
+                "probability_Attack": [0.1] * len(frame),
+                "probability_Benign": [0.9] * len(frame),
+                "run_id": ["rf-beh-test"] * len(frame),
+            }
+        ),
+    )
+
+    svc = client.app.state.service
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch(
+            "network_anomaly.api.desktop_csv._evaluate_gate",
+            return_value=(
+                CompatibilityGateSummarySchema(
+                    model_key="random_forest",
+                    model_identifier="rf-beh-test",
+                    eligible=True,
+                    eligibility_status="ELIGIBLE",
+                    compatibility_status="MODEL_VALIDATED",
+                    reasons=[],
+                    warnings=[],
+                    missing_features=[],
+                ),
+                True,
+            ),
+        ),
+    ):
+        resp = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(csv_path), "model_name": "random_forest"},
+        )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    vectors = payload["behavioral_vectors"]
+    assert len(vectors) == 2
+    assert {v["entity_key"] for v in vectors} == {"host:10.0.0.10", "host:10.0.0.20"}
+    for vec in vectors:
+        assert vec["dimensions"] == 16
+        assert len(vec["features"]) == 16
+        assert len(vec["feature_names"]) == 16
+        assert len(vec["sha256_hash"]) == 64

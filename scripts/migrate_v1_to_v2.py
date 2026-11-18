@@ -91,8 +91,31 @@ def backup_database(db_path: Path) -> Path:
     return backup_path
 
 
+def rollback_database(db_path: Union[str, Path], backup_path: Union[str, Path]) -> bool:
+    """Restore SQLite database cleanly from a pre-migration backup and verify integrity."""
+    target = Path(db_path)
+    backup = Path(backup_path)
+    if not backup.is_file():
+        print(f"[ERROR] Rollback backup file not found: {backup}")
+        return False
+    conn_b = sqlite3.connect(str(backup))
+    try:
+        integrity = conn_b.execute("PRAGMA integrity_check;").fetchone()[0]
+    finally:
+        conn_b.close()
+    if integrity != "ok":
+        print(f"[ERROR] Backup integrity check failed: {integrity}")
+        return False
+    shutil.copy2(backup, target)
+    print(f"[ROLLBACK] Restored database {target} from {backup}")
+    return True
+
+
 def migrate_database(
-    db_path: Union[str, Path], dry_run: bool = False, create_backup: bool = True
+    db_path: Union[str, Path],
+    dry_run: bool = False,
+    create_backup: bool = True,
+    migration_sql: str = V2_MIGRATION_SQL,
 ) -> bool:
     """Execute v1.0.0 -> v2.0.0 migration idempotently."""
     path = Path(db_path)
@@ -142,6 +165,7 @@ def migrate_database(
 
     conn.close()
 
+    backup: Path | None = None
     if create_backup:
         backup = backup_database(path)
         print(f"[+] Backup successfully created at: {backup}")
@@ -150,7 +174,7 @@ def migrate_database(
     conn = sqlite3.connect(str(path))
     try:
         with conn:
-            conn.executescript(V2_MIGRATION_SQL)
+            conn.executescript(migration_sql)
             now_iso = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "INSERT OR REPLACE INTO schema_version (version, description, applied_at) VALUES (?, ?, ?);",
@@ -160,6 +184,9 @@ def migrate_database(
         return True
     except Exception as e:
         print(f"[ERROR] Migration failed: {e}")
+        conn.close()
+        if backup is not None:
+            rollback_database(path, backup)
         return False
     finally:
         conn.close()
@@ -172,7 +199,17 @@ def main():
         "--dry-run", action="store_true", help="Simulate migration without modifying DB"
     )
     parser.add_argument("--no-backup", action="store_true", help="Skip creating backup")
+    parser.add_argument(
+        "--rollback-from",
+        type=str,
+        default=None,
+        help="Restore database from an explicit pre-migration backup path",
+    )
     args = parser.parse_args()
+
+    if args.rollback_from:
+        ok = rollback_database(args.db_path, args.rollback_from)
+        sys.exit(0 if ok else 1)
 
     success = migrate_database(args.db_path, dry_run=args.dry_run, create_backup=not args.no_backup)
     sys.exit(0 if success else 1)

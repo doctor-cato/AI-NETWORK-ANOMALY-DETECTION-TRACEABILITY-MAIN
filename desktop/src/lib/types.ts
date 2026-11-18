@@ -233,6 +233,19 @@ export interface CsvAnalyzeResponse {
   compatibility_gate: CompatibilityGateSummary;
   ood_report: OodSummary;
   behavioral_summary: BehavioralSummary;
+  behavioral_vectors?: Array<{
+    vector_id: string;
+    entity_key: string;
+    window_start: string;
+    window_end: string;
+    dimensions: number;
+    version: string;
+    features: number[];
+    feature_names: string[];
+    sha256_hash: string;
+    missing_feature_count: number;
+    missing_feature_names: string[];
+  }>;
   security_notice: string;
   results: CsvFlowPredictionItem[];
   timeline: CsvTimelineItem[];
@@ -641,6 +654,15 @@ export interface BehavioralVectorListResponse {
   reason?: string | null;
 }
 
+export interface EntityBaselineProfile {
+  entity_key: string;
+  has_baseline: boolean;
+  deviation_score: number;
+  cosine_similarity: number;
+  sample_count: number;
+  window_size?: number;
+}
+
 export interface BehavioralVectorDetailResponse {
   vector_id: string;
   entity_id: string;
@@ -655,6 +677,7 @@ export interface BehavioralVectorDetailResponse {
   key_id: string | null;
   created_at: string;
   data_status: string;
+  baseline_profile?: EntityBaselineProfile | null;
 }
 
 export interface BehavioralSimilarityResponse {

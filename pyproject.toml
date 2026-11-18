@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.11"
 authors = [
-    {name = "Project Team", email = "example@institution.edu"},
+    {name = "doctor-cato", email = "nguyenhuy14057@gmail.com"},
 ]
 keywords = ["network anomaly", "machine learning", "AIT-NDS-v2", "CTU-SME-11", "security"]
 classifiers = [

@@ -59,3 +59,20 @@ Mỗi `BehavioralVector` khi lưu vào cơ sở dữ liệu được mã hóa b�
 - `vector_json` trên đĩa là `NULL`.
 - Dữ liệu vector được lưu dưới dạng `ciphertext`, `nonce`, `tag` kèm khóa `key_id`.
 - Khi cần so sánh tương đồng (similarity matching), vector được giải mã trong RAM an toàn và thực hiện phép nhân vô hướng.
+
+---
+
+## 5. Phân phối Thực nghiệm Similarity & Tác động Baseline Profiler (`#103 AC3`)
+
+Đo đạc chỉ-đọc qua `scripts/evaluate_behavioral_and_risk_policies.py` (kết quả lưu ở [behavioral_risk_aggregation_eval.json](file:///reports/experiments/risk/behavioral_risk_aggregation_eval.json)) trên mẫu gom phiên theo entity (`session_timeout = 300.0 s`, tối đa `20,000` flows/partition, tối đa `40` vector/nhóm cho ma trận cặp):
+
+| Partition | Benign / Attack Sessions | Cosine Intra-Benign (Match ≥ 0.85) | Cosine Intra-Attack | Cosine Cross Benign–Attack (Match ≥ 0.85) | Norm-Euc (IB / Cross) | Manhattan (IB / Cross) |
+|---|---:|---:|---:|---:|---:|---:|
+| `ait_val` | `2,611` / `3` | `0.9024` (`78.46%`) | `0.6155` | `0.7194` (`58.33%`) | `0.7864` / `0.6239` | `0.6428` / `0.4169` |
+| `ait_test` | `3,721` / `6` | `0.9002` (`69.49%`) | `0.9593` | `0.8573` (`59.58%`) | `0.7727` / `0.6772` | `0.6035` / `0.4616` |
+| `ctu_echo` | `539` / `51` | `0.9544` (`95.00%`) | `0.9999` | `0.6560` (`0.00%`) | `0.8692` / `0.5477` | `0.8183` / `0.4063` |
+| `ctu_windows7ad` | `827` / `4` | `0.6895` (`30.51%`) | `0.8028` | `0.6870` (`19.38%`) | `0.6272` / `0.5811` | `0.4634` / `0.3808` |
+
+- **Diễn giải & Giới hạn:**
+  - Trên `ctu_echo` (nơi lưu lượng botnet tách phiên rõ khỏi máy sạch), ngưỡng `Cosine >= 0.85` giữ tỷ lệ khớp nội-lớp benign `95.00%`, nội-lớp attack `0.9999` mean và `0.00%` nhầm chéo lớp (`Cross mean = 0.6560`).
+  - Trên `ait_val` và `ait_test`, một số phiên tấn công chia sẻ host IP doanh nghiệp trong cùng cửa sổ `300 s`, làm độ tương đồng chéo tăng (`0.7194–0.8573`); do đó Behavioral Similarity nên đóng vai trò tín hiệu bổ trợ cho **EntityBaselineProfiler** + Risk Engine thay vì bộ phân loại độc lập.

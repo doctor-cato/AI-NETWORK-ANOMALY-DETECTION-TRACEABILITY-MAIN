@@ -57,3 +57,29 @@ Hệ thống hỗ trợ 4 chính sách tổng hợp quyết định từ 4 mô h
 2. **`RANDOM_FOREST_PRIMARY`:** Lấy quyết định của Random Forest làm chủ đạo, IF và AE làm kiểm chứng chéo.
 3. **`STRICT_CONSENSUS`:** Chỉ kết luận bất thường khi cả 4 mô hình đồng thuận $P \ge 0.50$ (giảm tối đa False Positive).
 4. **`MAX_SEVERITY`:** Lấy xác suất cao nhất giữa các mô hình (chiến lược fail-safe bảo vệ tối đa, chấp nhận FPR cao hơn).
+
+---
+
+## 5. So sánh Thực nghiệm 4 Chính sách & Calibration Độ nhạy Rủi ro (`#108 AC2`, `#109 AC1/AC2`)
+
+Kết quả chạy chỉ-đọc trên toàn bộ các partition canonical (`ait_val`: `377,704` flows; `ait_test`: `988,805` flows; `ctu_echo`: `76,073` flows; `ctu_windows7ad`: `175,146` flows) với 4 mô hình `E0` đóng băng (`scripts/evaluate_behavioral_and_risk_policies.py`, báo cáo tại [behavioral_risk_aggregation_eval.json](file:///reports/experiments/risk/behavioral_risk_aggregation_eval.json)):
+
+| Partition | Policy | Accuracy | Precision | Recall | F1 | FPR | ROC-AUC | Mean Risk (Benign / Attack) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `ait_test` | `WEIGHTED_ENSEMBLE` | `0.9671` | `0.9985` | `0.8160` | `0.8981` | `0.0003` | `0.9991` | `14.15` / `46.32` |
+| `ait_test` | `RANDOM_FOREST_PRIMARY` | `0.9982` | `0.9989` | `0.9911` | `0.9950` | `0.0002` | `0.9994` | `7.23` / `50.04` |
+| `ait_test` | `STRICT_CONSENSUS` | `0.9184` | `0.9984` | `0.5419` | `0.7025` | `0.0002` | `0.9709` | `18.93` / `43.83` |
+| `ait_test` | `MAX_SEVERITY` | `0.4319` | `0.2383` | `0.9996` | `0.3849` | `0.6908` | `0.8999` | `38.14` / `51.68` |
+| `ctu_echo` | `WEIGHTED_ENSEMBLE` | `0.4522` | `0.2739` | `0.0843` | `0.1290` | `0.2071` | `0.7276` | `24.14` / `21.55` |
+| `ctu_echo` | `RANDOM_FOREST_PRIMARY` | `0.4898` | `0.2318` | `0.0264` | `0.0474` | `0.0811` | `0.6137` | `12.98` / `8.60` |
+| `ctu_echo` | `STRICT_CONSENSUS` | `0.4974` | `0.2672` | `0.0260` | `0.0473` | `0.0660` | `0.7589` | `31.36` / `30.10` |
+| `ctu_echo` | `MAX_SEVERITY` | `0.4808` | `0.4808` | `1.0000` | `0.6494` | `1.0000` | `0.7964` | `53.54` / `52.63` |
+| `ctu_windows7ad` | `WEIGHTED_ENSEMBLE` | `0.8336` | `0.0391` | `0.5643` | `0.0731` | `0.1633` | `0.8562` | `23.98` / `40.37` |
+| `ctu_windows7ad` | `RANDOM_FOREST_PRIMARY` | `0.8358` | `0.0381` | `0.5412` | `0.0712` | `0.1608` | `0.8392` | `11.71` / `34.55` |
+| `ctu_windows7ad` | `STRICT_CONSENSUS` | `0.8375` | `0.0384` | `0.5397` | `0.0717` | `0.1590` | `0.8653` | `30.36` / `43.93` |
+| `ctu_windows7ad` | `MAX_SEVERITY` | `0.0119` | `0.0116` | `1.0000` | `0.0230` | `0.9997` | `0.7367` | `52.97` / `55.42` |
+
+### Kết luận Calibration & Adaptive Key Rotation (`#108 AC2`)
+1. **Bảo vệ chống xoay khóa giả trên flow đơn lẻ (`critical_rotation_trigger_rate = 0.0`):** Khi chỉ có NetFlow (`behavioral_deviation = 0.0`, `auth_failures = 0`), trần điểm lý thuyết của `RiskScorer` là $50.0 + 15.0 = 65.0 < 85.0$, nên cả 4 chính sách đều cho **0% false-positive adaptive key rotation trên lưu lượng Benign**.
+2. **Điều kiện kích hoạt `CRITICAL (>= 85.0)`:** Xoay khóa thích ứng chỉ kích hoạt khi có xác nhận đa tín hiệu (AI consensus $\ge 0.90$ cho $\ge 45$ điểm + dịch vụ nhạy cảm $15$ điểm + độ lệch hành vi $\ge 0.60$ cho $\ge 15$ điểm + chuỗi auth failures cho $\ge 10$ điểm).
+3. **Chọn chính sách vận hành:** Khuyến nghị giữ `WEIGHTED_ENSEMBLE` (mặc định cân bằng cross-source) hoặc `RANDOM_FOREST_PRIMARY` (đạt in-domain `F1 = 0.9950`, `FPR = 0.0002`); tránh dùng `MAX_SEVERITY` trong vận hành mặc định vì `FPR = 0.6908–1.0000` do percentile score của mô hình unsupervised thường vượt `0.50` khi dịch miền.

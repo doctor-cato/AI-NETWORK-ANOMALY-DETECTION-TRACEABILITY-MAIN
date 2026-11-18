@@ -5,6 +5,7 @@ from __future__ import annotations
 import socket
 import struct
 import time
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -143,6 +144,9 @@ def test_live_and_behavioral_api_end_to_end(tmp_path, monkeypatch, baseline_feat
         assert len(detail_json["features"]) == 16
         assert detail_json["feature_names"] == list(BehavioralVectorBuilder.FEATURE_NAMES)
         assert detail_json["is_encrypted_at_rest"] is True
+        assert detail_json["baseline_profile"] is not None
+        assert detail_json["baseline_profile"]["entity_key"] == detail_json["entity_id"]
+        assert "deviation_score" in detail_json["baseline_profile"]
 
         sim = client.get(
             f"/api/v1/behavioral/similarity?vector_a_id={vec_id_a}&vector_b_id={vec_id_b}",
@@ -180,3 +184,46 @@ def test_live_and_behavioral_api_end_to_end(tmp_path, monkeypatch, baseline_feat
         assert stop_resp.status_code == 200
         assert stop_resp.json()["mode"] == "STOPPED"
         assert stop_resp.json()["running"] is False
+
+
+def test_behavioral_vector_detail_computes_entity_baseline_profile(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """#141 AC1: Load behavioral vector computes EntityBaselineProfiler deviation when prior vectors exist."""
+    from datetime import datetime, timezone
+
+    from fastapi.testclient import TestClient
+
+    from network_anomaly.api.main import create_app
+    from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
+
+    db_path = tmp_path / "baseline_profile.db"
+    monkeypatch.setenv("NETWORK_ANOMALY_DB_PATH", str(db_path))
+
+    app = create_app(db_path=str(db_path))
+    km = app.state.live_runtime.key_manager()
+    vault = EncryptedStorageVault(km, db_path)
+    ts = datetime(2026, 11, 18, 12, 0, tzinfo=timezone.utc).isoformat()
+    _ = vault.store_behavioral_vector(
+        entity_id="host:10.0.0.5",
+        window_start=ts,
+        window_end=ts,
+        vector=[0.8, 0.2] + [0.1] * 14,
+    )
+    vid2 = vault.store_behavioral_vector(
+        entity_id="host:10.0.0.5",
+        window_start=ts,
+        window_end=ts,
+        vector=[0.1, 0.9] + [0.05] * 14,
+    )
+
+    with TestClient(app) as client:
+        resp = client.get(f"/api/v1/behavioral/vectors/{vid2}")
+        assert resp.status_code == 200
+        bp = resp.json()["baseline_profile"]
+        assert bp is not None
+        assert bp["entity_key"] == "host:10.0.0.5"
+        assert bp["has_baseline"] is True
+        assert bp["sample_count"] == 1
+        assert bp["deviation_score"] > 0.0
+        assert 0.0 <= bp["cosine_similarity"] <= 1.0

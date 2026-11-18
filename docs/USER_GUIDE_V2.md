@@ -29,4 +29,19 @@ Tài liệu này hướng dẫn vận hành giao diện Desktop **NetFlow Sentin
 ## 3. Giới hạn an toàn & Bản quyền Dữ liệu v2
 
 - **Chỉ giám sát mạng được cấp phép:** Không tự động chỉnh sửa tường lửa OS (`executed=false` ở Security Dry-Run).
-- **Bản quyền dữ liệu v2:** Các mô hình v2 được huấn luyện và đánh giá trên `AIT-NDS-v2` (`10.5281/zenodo.13168643`) và `CTU-SME-11` (`10.5281/zenodo.7958258`) theo giấy phép **CC BY 4.0**. Nguồn `UGR'16` đang `BLOCKED` (HTTP 403) và không sử dụng.
+- **Bản quyền dữ liệu v2:** Các mô hình v2 được huấn luyện và đánh giá trên `AIT-NDS-v2` (`10.5281/zenodo.13168643`) và `CTU-SME-11` (`10.5281/zenodo.7958258`) theo giấy phép **CC BY 4.0**. Nguồn `UGR'16` đang `BLOCKED` (HTTP 403) và không sử dụng; nguồn `UWF-ZeekData24` (`CC BY 4.0`) được dùng làm kiểm chứng bổ sung chỉ-đọc (`evaluation_only = true`).
+
+---
+
+## 4. Kịch bản Demo Chuẩn & Thời lượng Kỳ vọng (Clean-State Verification, #150)
+
+Bảng dưới đây mô tả đầu ra và thời lượng kỳ vọng khi chạy trên trạng thái sạch (empty SQLite DB + verified `E0` artifacts):
+
+| Chế độ Demo | Thao tác thực hiện | Thời lượng kỳ vọng | Đầu ra / Trạng thái quan sát được |
+|---|---|---:|---|
+| **Offline CSV Analysis** | Chọn CSV canonical 18-feature (`Analyze Flows`) | **1–4 s** (1k–10k flows) | `CompatibilityGate = ELIGIBLE`, điểm OOD + tỷ lệ abstention, `behavioral_vectors` 16-D theo phiên, Evidence Timeline & Risk summary (`executed=false` chỉ gợi ý). |
+| **Scenario Replay** | Kích hoạt Replay trên file canonical hoặc PCAP-to-flow | **2–6 s** (200–1,000 events) | `throughput_events_per_sec` đo thực tế từ `StreamingModeManager.run_replay_scenario()`, alert theo từng phase + stage timeline quan sát được (`observed_evidence`). |
+| **Live Telemetry (Loopback UDP)** | `POST /api/v1/live/start` (`127.0.0.1`) + gửi gói NetFlow v9/IPFIX | **< 2 s** tới trạng thái `LIVE` | `STATE: CONNECTED`, readiness thật `ready_count/4`, ciphertexts AES-256-GCM trong `behavioral_vectors`, cảnh báo đã deduplicate theo entity/severity. |
+
+- **Lưu ý fail-closed khi artifact vắng mặt hoặc không hợp lệ:** Nếu thiếu SHA-256 manifest, thiếu `.joblib` preprocessor hoặc dùng CSV thiếu cột contract, giao diện hiển thị `UNAVAILABLE` / HTTP `400` / `503` thay vì tạo kết quả giả.
+- **Lưu ý Demo Mode trên UI:** Chỉ kích hoạt khi nhấn nút `Demo Mode` trên từng panel (`STATE: DEMO`); mặc định khi mở ứng dụng mọi panel đều ở `LOADING` / `DISCONNECTED` / `EMPTY` tùy trạng thái backend thật.

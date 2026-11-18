@@ -2499,6 +2499,16 @@
             "type": "string",
             "title": "Data Status",
             "default": "CONNECTED"
+          },
+          "baseline_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityBaselineProfileSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2514,6 +2524,81 @@
           "created_at"
         ],
         "title": "BehavioralVectorDetailResponse"
+      },
+      "BehavioralVectorItemSchema": {
+        "properties": {
+          "vector_id": {
+            "type": "string",
+            "title": "Vector Id"
+          },
+          "entity_key": {
+            "type": "string",
+            "title": "Entity Key"
+          },
+          "window_start": {
+            "type": "string",
+            "title": "Window Start"
+          },
+          "window_end": {
+            "type": "string",
+            "title": "Window End"
+          },
+          "dimensions": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Dimensions"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "features": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "feature_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Feature Names"
+          },
+          "sha256_hash": {
+            "type": "string",
+            "title": "Sha256 Hash"
+          },
+          "missing_feature_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Missing Feature Count",
+            "default": 0
+          },
+          "missing_feature_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Feature Names"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "vector_id",
+          "entity_key",
+          "window_start",
+          "window_end",
+          "dimensions",
+          "version",
+          "features",
+          "feature_names",
+          "sha256_hash"
+        ],
+        "title": "BehavioralVectorItemSchema",
+        "description": "16-D session behavioral vector extracted during CSV analysis (#106)."
       },
       "BehavioralVectorListItem": {
         "properties": {
@@ -2937,6 +3022,13 @@
           },
           "behavioral_summary": {
             "$ref": "#/components/schemas/BehavioralSummarySchema"
+          },
+          "behavioral_vectors": {
+            "items": {
+              "$ref": "#/components/schemas/BehavioralVectorItemSchema"
+            },
+            "type": "array",
+            "title": "Behavioral Vectors"
           },
           "security_notice": {
             "type": "string",
@@ -3794,6 +3886,47 @@
         ],
         "title": "CsvTimelineItem",
         "description": "Deterministic forensic timeline event ordered by (flow_start_ms asc, row_id asc) (#24)."
+      },
+      "EntityBaselineProfileSchema": {
+        "properties": {
+          "entity_key": {
+            "type": "string",
+            "title": "Entity Key"
+          },
+          "has_baseline": {
+            "type": "boolean",
+            "title": "Has Baseline"
+          },
+          "deviation_score": {
+            "type": "number",
+            "title": "Deviation Score"
+          },
+          "cosine_similarity": {
+            "type": "number",
+            "title": "Cosine Similarity"
+          },
+          "sample_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sample Count"
+          },
+          "window_size": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Window Size",
+            "default": 50
+          }
+        },
+        "type": "object",
+        "required": [
+          "entity_key",
+          "has_baseline",
+          "deviation_score",
+          "cosine_similarity",
+          "sample_count"
+        ],
+        "title": "EntityBaselineProfileSchema",
+        "description": "Entity baseline profile deviation metrics from EntityBaselineProfiler (#141)."
       },
       "EntityGraphEdgeItem": {
         "properties": {
