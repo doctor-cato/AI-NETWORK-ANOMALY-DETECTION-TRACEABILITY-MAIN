@@ -94,6 +94,10 @@ class LiveTelemetryService:
 
         self._results: Deque[LiveProcessingResult] = collections.deque(maxlen=self.history_capacity)
         self._alerts: Deque[Dict[str, Any]] = collections.deque(maxlen=self.history_capacity)
+        for persisted_alert in reversed(
+            self.orchestrator.alert_manager.list_alerts(limit=self.history_capacity)
+        ):
+            self._alerts.append(persisted_alert.to_dict())
         self._metrics = ServiceMetrics()
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -170,7 +174,14 @@ class LiveTelemetryService:
                     )
                 if result.alert_generated is not None:
                     self._metrics.alerts_raised += 1
-                    self._alerts.append(result.alert_generated.to_dict())
+                    alert_dict = result.alert_generated.to_dict()
+                    alert_id = alert_dict.get("alert_id")
+                    if alert_id:
+                        self._alerts = collections.deque(
+                            (a for a in self._alerts if a.get("alert_id") != alert_id),
+                            maxlen=self.history_capacity,
+                        )
+                    self._alerts.append(alert_dict)
                 self._metrics.last_event_at_utc = datetime.now(timezone.utc).isoformat()
                 self._results.append(result)
 
@@ -192,7 +203,7 @@ class LiveTelemetryService:
 
     def recent_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
         with self._lock:
-            return list(self._alerts)[-max(0, limit) :]
+            return list(reversed(self._alerts))[: max(0, limit)]
 
     def status(self) -> Dict[str, Any]:
         pipeline_metrics = self.pipeline.get_metrics()

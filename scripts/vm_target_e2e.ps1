@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Clean Windows Test Target E2E runner for NetFlow Sentinel v1.0.0 standalone installer.
+Clean Windows Test Target E2E runner for NetFlow Sentinel v2.0.0 standalone installer.
 
 .DESCRIPTION
 Executes exclusively on the Clean Windows Test Target without requiring Git, Python, Rust,
@@ -454,7 +454,7 @@ try {
             if ($az.inference_mode -ne "verified_model") {
                 throw "${mk}: expected inference_mode='verified_model', got '$($az.inference_mode)'"
             }
-            if ($az.total_rows -ne 200 -or $az.evaluated_rows -ne 198 -or $az.abstained_rows -ne 2) {
+            if ($az.total_rows -ne 200 -or -not (($az.evaluated_rows -eq 200 -and $az.abstained_rows -eq 0) -or ($az.evaluated_rows -eq 198 -and $az.abstained_rows -eq 2))) {
                 throw "${mk}: unexpected row counts total=$($az.total_rows) eval=$($az.evaluated_rows) abstained=$($az.abstained_rows)"
             }
 
@@ -523,7 +523,7 @@ try {
             model_key          = "xgboost"
             inference_mode     = "verified_model"
             compatibility_gate = @{
-                source_id            = "source:nf-v3-canonical"
+                source_id            = "source:ait-nds-v2"
                 provenance_verified  = $true
                 model_key            = "xgboost"
                 eligible             = $true

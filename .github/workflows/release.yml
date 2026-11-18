@@ -9,7 +9,7 @@ on:
       tag_label:
         description: 'Artifact label for private/authorized testing without a tag'
         required: false
-        default: 'v1.0.0-dryrun'
+        default: 'v2.0.0-dryrun'
       model_bundle_url:
         description: 'Build-time allowlisted HTTPS URL to authorized 4-model bundle ZIP (overrides vars.MODEL_BUNDLE_URL)'
         required: false
@@ -309,7 +309,7 @@ jobs:
           } else { "" }
 
           if (-not [string]::IsNullOrWhiteSpace($env:INPUT_DEP_URL) -or -not [string]::IsNullOrWhiteSpace($env:VAR_DEP_URL) -or -not [string]::IsNullOrWhiteSpace($env:INPUT_DEP_RUN_ID) -or -not [string]::IsNullOrWhiteSpace($env:VAR_DEP_RUN_ID)) {
-            Write-Warning "[DEPRECATED] COMPANION_* variables/inputs are deprecated for v1.0.0 standalone builds. Migrate to MODEL_BUNDLE_URL / MODEL_ARTIFACT_RUN_ID / MODEL_BUNDLE_SHA256 (build-time acquisition)."
+            Write-Warning "[DEPRECATED] COMPANION_* variables/inputs are deprecated for v2.0.0 standalone builds. Migrate to MODEL_BUNDLE_URL / MODEL_ARTIFACT_RUN_ID / MODEL_BUNDLE_SHA256 (build-time acquisition)."
           }
 
           $acquiredDir = Join-Path $PWD "build/acquired_models"

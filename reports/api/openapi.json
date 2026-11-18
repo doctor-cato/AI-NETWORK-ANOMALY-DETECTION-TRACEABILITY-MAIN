@@ -2610,7 +2610,7 @@
           "source_id": {
             "type": "string",
             "title": "Source Id",
-            "default": "source:nf-v3-unverified"
+            "default": "source:flow-v2-unverified"
           },
           "provenance_verified": {
             "type": "boolean",
@@ -4945,6 +4945,26 @@
               }
             ],
             "title": "Reason"
+          },
+          "artifact_verified": {
+            "type": "boolean",
+            "title": "Artifact Verified",
+            "default": false
+          },
+          "in_domain_evaluated": {
+            "type": "boolean",
+            "title": "In Domain Evaluated",
+            "default": false
+          },
+          "cross_source_validated": {
+            "type": "boolean",
+            "title": "Cross Source Validated",
+            "default": false
+          },
+          "deployment_tier": {
+            "type": "string",
+            "title": "Deployment Tier",
+            "default": "RESEARCH_ONLY"
           }
         },
         "additionalProperties": false,

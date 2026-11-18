@@ -24,6 +24,7 @@ an explicit status and no prediction for that model.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -76,6 +77,106 @@ class FeatureContractError(ValueError):
     """Raised when a live event cannot satisfy the 18-feature v2 flow contract."""
 
 
+RESEARCH_ONLY_MODEL_KEYS = frozenset({"xgboost", "isolation_forest", "autoencoder"})
+CROSS_SOURCE_REQUIRED_SPLITS = ("ctu_echo", "ctu_windows7ad")
+MIN_CERTIFICATION_RECALL = 0.70
+MAX_CERTIFICATION_FPR = 0.10
+
+
+def _is_valid_metric_ratio(value: Any) -> Optional[float]:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    val = float(value)
+    if val != val or abs(val) == float("inf") or val < 0.0 or val > 1.0:
+        return None
+    return val
+
+
+def _extract_split_metrics(manifest: Dict[str, Any], split_key: str) -> Optional[Dict[str, Any]]:
+    for parent_key in ("evaluation", "evaluation_summary"):
+        parent = manifest.get(parent_key)
+        if isinstance(parent, dict) and isinstance(parent.get(split_key), dict):
+            return parent[split_key]
+    if split_key == "ait_test":
+        for fallback_key in ("test_evaluation", "evaluation_metrics"):
+            payload = manifest.get(fallback_key)
+            if isinstance(payload, dict):
+                return payload
+    if split_key in CROSS_SOURCE_REQUIRED_SPLITS:
+        cross = manifest.get("cross_source_evaluation")
+        if isinstance(cross, dict) and isinstance(cross.get(split_key), dict):
+            return cross[split_key]
+    return None
+
+
+def _split_eval_status(metrics: Any) -> tuple[bool, bool]:
+    if not isinstance(metrics, dict):
+        return False, False
+    recall = _is_valid_metric_ratio(metrics.get("recall"))
+    fpr = _is_valid_metric_ratio(metrics.get("false_positive_rate", metrics.get("fpr")))
+    if recall is None or fpr is None:
+        return False, False
+    return True, (recall >= MIN_CERTIFICATION_RECALL and fpr <= MAX_CERTIFICATION_FPR)
+
+
+def _evaluate_manifest_readiness_tiers(
+    model_key: str,
+    manifest: Dict[str, Any],
+    *,
+    threshold: Optional[float],
+    threshold_source: str,
+    artifact_sha256: Optional[str],
+    expected_prep_sha256: Optional[str],
+    expected_split_sha256: Optional[str],
+) -> tuple[bool, bool, bool, str]:
+    """Compute separated artifact, in-domain, cross-source, and deployment readiness tiers."""
+    tp = manifest.get("threshold_provenance")
+    tp_clean = not (
+        isinstance(tp, dict)
+        and (
+            tp.get("test_touched") is True
+            or str(tp.get("selected_on", "")).strip().lower()
+            in ("test", "ait_test", "holdout_test")
+        )
+    )
+    if str(threshold_source).startswith("unavailable") or threshold is None:
+        tp_clean = False
+    prep_sha = manifest.get("preprocessor_artifact_sha256") or manifest.get("preprocessor_sha256")
+    split_sha = manifest.get("split_manifest_sha256")
+    prep_ok = (not expected_prep_sha256) or (
+        bool(prep_sha) and str(prep_sha) == str(expected_prep_sha256)
+    )
+    split_ok = (not expected_split_sha256) or (
+        bool(split_sha) and str(split_sha) == str(expected_split_sha256)
+    )
+    artifact_verified = bool(
+        artifact_sha256
+        and manifest.get("feature_contract_version")
+        and tp_clean
+        and prep_ok
+        and split_ok
+    )
+    in_domain_evaluated, in_domain_passed = _split_eval_status(
+        _extract_split_metrics(manifest, "ait_test")
+    )
+    cross_source_validated = all(
+        _split_eval_status(_extract_split_metrics(manifest, split_name))[1]
+        for split_name in CROSS_SOURCE_REQUIRED_SPLITS
+    )
+    is_research_only = bool(manifest.get("is_research_only", model_key in RESEARCH_ONLY_MODEL_KEYS))
+    deployment_tier = (
+        "PRODUCTION_ELIGIBLE"
+        if (
+            artifact_verified
+            and in_domain_passed
+            and cross_source_validated
+            and not is_research_only
+        )
+        else "RESEARCH_ONLY"
+    )
+    return artifact_verified, in_domain_evaluated, cross_source_validated, deployment_tier
+
+
 @dataclass
 class ModelStatus:
     model_key: str
@@ -99,6 +200,9 @@ class ModelStatus:
     training_run_id: Optional[str] = None
     capabilities: List[str] = field(default_factory=list)
     deployment_tier: str = "RESEARCH_ONLY"
+    artifact_verified: bool = False
+    in_domain_evaluated: bool = False
+    cross_source_validated: bool = False
 
     @property
     def decision_ready(self) -> bool:
@@ -127,6 +231,9 @@ class ModelStatus:
             "training_run_id": self.training_run_id,
             "capabilities": list(self.capabilities),
             "deployment_tier": self.deployment_tier,
+            "artifact_verified": self.artifact_verified,
+            "in_domain_evaluated": self.in_domain_evaluated,
+            "cross_source_validated": self.cross_source_validated,
         }
 
 
@@ -324,6 +431,22 @@ class ModelRegistry:
             )
             self._preprocessor = preprocessor
             self._preprocessor_metadata = dict(metadata)
+            if (
+                not self._preprocessor_metadata.get("split_manifest_sha256")
+                and self.preprocessor_manifest_path.is_file()
+            ):
+                try:
+                    prep_manifest_json = json.loads(
+                        self.preprocessor_manifest_path.read_text(encoding="utf-8")
+                    )
+                    if isinstance(prep_manifest_json, dict) and prep_manifest_json.get(
+                        "split_manifest_sha256"
+                    ):
+                        self._preprocessor_metadata["split_manifest_sha256"] = prep_manifest_json[
+                            "split_manifest_sha256"
+                        ]
+                except (OSError, json.JSONDecodeError, ValueError):
+                    pass
             median_row = pd.DataFrame(
                 [{name: float(preprocessor.imputed_values_[name]) for name in ML_FEATURE_COLUMNS}]
             )
@@ -374,8 +497,6 @@ class ModelRegistry:
             return
 
         try:
-            import json
-
             manifest = json.loads(Path(spec.manifest_path).read_text(encoding="utf-8"))
             if not isinstance(manifest, dict):
                 raise ValueError("model manifest must be a JSON object")
@@ -394,6 +515,18 @@ class ModelRegistry:
                 )
 
             expected_prep = self.preprocessor_sha256
+            expected_split = (
+                self._preprocessor_metadata.get("split_manifest_sha256")
+                if isinstance(self._preprocessor_metadata, dict)
+                else None
+            )
+            manifest_split = manifest.get("split_manifest_sha256")
+            if expected_split and (
+                not manifest_split or str(manifest_split) != str(expected_split)
+            ):
+                raise ValueError(
+                    f"split_manifest_sha256 mismatch: {manifest_split} != {expected_split}"
+                )
             backend, threshold, threshold_source = self._load_backend(
                 model_key, spec.model_path, spec.manifest_path, manifest, expected_prep
             )
@@ -412,23 +545,41 @@ class ModelRegistry:
             status.loaded_at_utc = datetime.now(timezone.utc).isoformat()
             self._backends[model_key] = backend
 
+            art_ver, in_dom_eval, cross_val, dep_tier = _evaluate_manifest_readiness_tiers(
+                model_key,
+                manifest,
+                threshold=threshold,
+                threshold_source=threshold_source,
+                artifact_sha256=status.artifact_sha256,
+                expected_prep_sha256=expected_prep,
+                expected_split_sha256=str(expected_split) if expected_split else None,
+            )
+
             if threshold is None:
                 status.readiness = ModelReadiness.RESEARCH
                 status.reason = "calibrated decision threshold unavailable"
                 status.capabilities = ["raw_anomaly_scoring"]
+                status.artifact_verified = False
+                status.in_domain_evaluated = in_dom_eval
+                status.cross_source_validated = False
                 status.deployment_tier = "RESEARCH_ONLY"
             else:
                 status.readiness = ModelReadiness.LOADED
                 if model_key in ("random_forest", "xgboost"):
                     status.capabilities = ["binary_classification", "probability_scoring"]
-                    status.deployment_tier = "PRODUCTION_ELIGIBLE"
                 else:
                     status.capabilities = ["anomaly_scoring", "percentile_normalization"]
-                    status.deployment_tier = "RESEARCH_ONLY"
+                status.artifact_verified = art_ver
+                status.in_domain_evaluated = in_dom_eval
+                status.cross_source_validated = cross_val
+                status.deployment_tier = dep_tier
         except Exception as exc:
             status.readiness = ModelReadiness.ERROR
             status.reason = f"{type(exc).__name__}: {exc}"
             status.capabilities = []
+            status.artifact_verified = False
+            status.in_domain_evaluated = False
+            status.cross_source_validated = False
             status.deployment_tier = "RESEARCH_ONLY"
             self._backends.pop(model_key, None)
 
@@ -564,6 +715,7 @@ class ModelRegistry:
         return [self._statuses[key] for key in MODEL_KEYS if key in self._statuses]
 
     def summary(self) -> Dict[str, Any]:
+        statuses = self.statuses()
         return {
             "preprocessor": {
                 "ready": self.preprocessor_ready,
@@ -574,11 +726,20 @@ class ModelRegistry:
                     "feature_contract_version"
                 ),
             },
-            "models": [status.to_dict() for status in self.statuses()],
+            "models": [status.to_dict() for status in statuses],
             "ready_count": self.ready_count,
             "validated_count": self.validated_count,
+            "cross_source_validated_count": sum(
+                1 for status in statuses if status.cross_source_validated
+            ),
             "total_models": len(MODEL_KEYS),
             "ai_ready": self.all_ready,
+            "ai_ready_semantics": (
+                "verified_artifacts_loaded_for_scoped_inference_not_production_certified"
+            ),
+            "production_ready": any(
+                status.deployment_tier == "PRODUCTION_ELIGIBLE" for status in statuses
+            ),
             "demo_heuristics_enabled": self.demo_heuristics,
         }
 

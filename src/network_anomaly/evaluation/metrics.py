@@ -440,7 +440,8 @@ def compute_wilson_confidence_interval(
     """Compute Wilson score confidence interval for a binomial proportion.
 
     Used to quantify statistical uncertainty of Recall, Precision, FPR, and
-    per-attack-category detection rates (especially rare classes such as Worms).
+    per-attack-category detection rates (especially low-support classes such as
+    Exploitation_And_C2 with N=5 test flows in AIT-NDS-v2).
 
     Parameters
     ----------

@@ -253,7 +253,7 @@ def run_rq2_experiment(
             "h2_full_confirmed": cost_sens_all_ge_070 and ae_all_ge_070,
         },
         "limitations": [
-            "One-vs-benign rare-class precision/F1 treats all Benign false positives as denominator against a single rare attack class, making F1 sensitive to benign FPR when category support is tiny (e.g., Worms).",
+            "One-vs-benign rare-class precision/F1 treats all Benign false positives as denominator against a single rare attack class, making F1 sensitive to benign FPR when category support is tiny (e.g., Exploitation_And_C2 with N=5 test flows).",
             "No SMOTE or synthetic oversampling was applied to Train, Validation, or Test.",
         ],
     }

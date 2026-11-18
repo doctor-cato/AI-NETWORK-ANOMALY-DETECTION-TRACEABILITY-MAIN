@@ -49,6 +49,7 @@ from network_anomaly.api.schemas import (
     SecuritySimulationHistoryItem,
 )
 from network_anomaly.api.service import ROTATION_COOLDOWN_SECONDS, ApiService
+from network_anomaly.models.registry import RESEARCH_ONLY_MODEL_KEYS
 
 DEFERRED_CAPABILITIES: Tuple[str, ...] = (
     "production_aes256_gcm_keyring",
@@ -86,6 +87,8 @@ def _evaluate_containment_authority(
     eligible: bool,
     compatibility_status: str,
     eligibility_status: str,
+    model_key: Optional[str] = None,
+    deployment_tier: Optional[str] = None,
 ) -> Tuple[bool, str, str]:
     """Fail-closed check determining if an analysis can issue isolation or rotation escalation."""
     if not (provenance_verification == "server_verified_analysis" and bool(analysis_id)):
@@ -100,7 +103,13 @@ def _evaluate_containment_authority(
             "HOLD_UNVERIFIED_GATE",
             f"inference_mode {inference_mode!r} is not verified_model",
         )
-    if compatibility_status == "RESEARCH_ONLY" or eligibility_status == "RESEARCH_ONLY":
+    normalized_model_key = (model_key or "").strip().lower()
+    if (
+        compatibility_status == "RESEARCH_ONLY"
+        or eligibility_status == "RESEARCH_ONLY"
+        or deployment_tier == "RESEARCH_ONLY"
+        or normalized_model_key in RESEARCH_ONLY_MODEL_KEYS
+    ):
         return (
             False,
             "HOLD_RESEARCH_ONLY_MODEL",
@@ -165,7 +174,7 @@ def evaluate_flow_response_policy(
     model_type: str = "Random Forest",
     run_id: Optional[str] = None,
     model_sha256: Optional[str] = None,
-    source_id: str = "source:nf-v3-unverified",
+    source_id: str = "source:flow-v2-unverified",
     provenance_verified: bool = False,
     provenance_verification: str = "client_supplied_unverified",
     compatibility_status: str = "VALIDATION_NOT_VERIFIED",
@@ -259,6 +268,7 @@ def evaluate_flow_response_policy(
             eligible=eligible,
             compatibility_status=compatibility_status,
             eligibility_status=eligibility_status,
+            model_key=model_key,
         )
         is_critical = risk_tier == "CRITICAL" or (risk_val is not None and risk_val >= 80.0)
         score_txt = f"{risk_val:.1f}" if risk_val is not None else "N/A"
@@ -338,6 +348,8 @@ def evaluate_adaptive_key_rotation(
     eligible: bool = False,
     compatibility_status: str = "VALIDATION_NOT_VERIFIED",
     eligibility_status: str = "VALIDATION_NOT_VERIFIED",
+    model_key: Optional[str] = None,
+    deployment_tier: Optional[str] = None,
 ) -> AdaptiveKeyRotationSimulation:
     """Simulate an adaptive key rotation readiness decision without generating or changing keys."""
     with service.db.transaction() as conn:
@@ -368,6 +380,8 @@ def evaluate_adaptive_key_rotation(
         eligible=eligible,
         compatibility_status=compatibility_status,
         eligibility_status=eligibility_status,
+        model_key=model_key,
+        deployment_tier=deployment_tier,
     )
     isolate_count = sum(1 for r in recommendations if r.action == "ISOLATE_RECOMMENDED")
     investigate_non_ood = sum(
@@ -702,6 +716,7 @@ def simulate_security_response(
         eligible=gate.eligible,
         compatibility_status=gate.compatibility_status,
         eligibility_status=gate.eligibility_status,
+        model_key=model_key,
     )
 
     stored_recommendations = _bound_recommendations_for_storage(recommendations)

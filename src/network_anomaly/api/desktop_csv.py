@@ -59,6 +59,7 @@ from network_anomaly.ingestion.compatibility import (
 )
 from network_anomaly.ingestion.gate import InferenceEligibilityGate
 from network_anomaly.ingestion.ood import OODReport, OODValidator
+from network_anomaly.models.registry import _evaluate_manifest_readiness_tiers
 from network_anomaly.preprocessing.pipeline import audit_column_tokens
 
 MAX_CSV_FILE_BYTES = 100 * 1024 * 1024
@@ -501,6 +502,49 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
                 ),
                 None,
             )
+            expected_prep = (
+                _sha256_file(_prep_path)
+                if _prep_path is not None and _prep_path.is_file()
+                else (
+                    raw_manifest.get("preprocessor_artifact_sha256")
+                    or raw_manifest.get("preprocessor_sha256")
+                )
+            )
+            prep_obj_meta = getattr(getattr(pipeline, "preprocessor", None), "metadata", None)
+            expected_split = (
+                prep_obj_meta.get("split_manifest_sha256")
+                if isinstance(prep_obj_meta, dict)
+                else None
+            )
+            if not expected_split and _prep_manifest is not None and _prep_manifest.is_file():
+                try:
+                    prep_manifest_data = json.loads(_prep_manifest.read_text(encoding="utf-8"))
+                    if isinstance(prep_manifest_data, dict):
+                        expected_split = prep_manifest_data.get("split_manifest_sha256")
+                except Exception:
+                    expected_split = None
+            if not expected_split:
+                expected_split = raw_manifest.get("split_manifest_sha256")
+            artifact_sha = (
+                meta.get("model_artifact_sha256")
+                or raw_manifest.get("model_artifact_sha256")
+                or raw_manifest.get("model_sha256")
+            )
+            thresh_val = _optional_float(thresh)
+            thresh_src = str(
+                raw_manifest.get("threshold_source")
+                or meta.get("threshold_source")
+                or ("unavailable" if thresh_val is None else "manifest")
+            )
+            art_ver, in_dom_eval, cross_val, dep_tier = _evaluate_manifest_readiness_tiers(
+                key,
+                raw_manifest,
+                threshold=thresh_val,
+                threshold_source=thresh_src,
+                artifact_sha256=str(artifact_sha) if artifact_sha else None,
+                expected_prep_sha256=str(expected_prep) if expected_prep else None,
+                expected_split_sha256=str(expected_split) if expected_split else None,
+            )
             items.append(
                 ModelStatusItem(
                     model_key=key,
@@ -512,9 +556,13 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
                     manifest_path=str(model_manifest) if model_manifest else None,
                     artifact_sha256=meta.get("model_artifact_sha256"),
                     run_id=raw_manifest.get("run_id") or meta.get("run_id"),
-                    decision_threshold=_optional_float(thresh),
+                    decision_threshold=thresh_val,
                     score_semantics=semantics,
                     reason=None,
+                    artifact_verified=art_ver,
+                    in_domain_evaluated=in_dom_eval,
+                    cross_source_validated=cross_val,
+                    deployment_tier=dep_tier,
                 )
             )
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
@@ -532,6 +580,10 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
                     decision_threshold=None,
                     score_semantics=semantics,
                     reason=str(exc),
+                    artifact_verified=False,
+                    in_domain_evaluated=False,
+                    cross_source_validated=False,
+                    deployment_tier="RESEARCH_ONLY",
                 )
             )
     return items

@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from network_anomaly.api import service as service_mod
 from network_anomaly.api.desktop_csv import resolve_csv_source_provenance
 from network_anomaly.api.main import create_app
+from network_anomaly.api.response_policy import _evaluate_containment_authority
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
 from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.inference.predict import InferencePipeline
@@ -417,3 +418,25 @@ def test_all_four_verified_models_real_demo_csv_parity_and_eval(tmp_path: Path):
                 assert sim_body["action_counts"]["ISOLATE_RECOMMENDED"] == 0
                 assert sim_body["key_rotation_simulation"]["decision"] == "HOLD_RESEARCH_ONLY_MODEL"
                 assert sim_body["key_rotation_simulation"]["recommended"] is False
+
+        status_resp = client.get("/api/v1/models")
+        assert status_resp.status_code == 200, status_resp.text
+        models_payload = {m["model_key"]: m for m in status_resp.json()}
+        for k in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
+            assert models_payload[k]["artifact_verified"] is True
+            assert models_payload[k]["in_domain_evaluated"] is True
+            assert models_payload[k]["cross_source_validated"] is False
+            assert models_payload[k]["deployment_tier"] == "RESEARCH_ONLY"
+
+        # Even if compatibility gate were spoofed, xgboost never clears containment authority.
+        xgb_ok, xgb_code, _ = _evaluate_containment_authority(
+            provenance_verification="server_verified_analysis",
+            analysis_id="analysis-spoof-check",
+            inference_mode="verified_model",
+            eligible=True,
+            compatibility_status="MODEL_VALIDATED",
+            eligibility_status="PREDICTION_AVAILABLE",
+            model_key="xgboost",
+        )
+        assert xgb_ok is False
+        assert xgb_code == "HOLD_RESEARCH_ONLY_MODEL"

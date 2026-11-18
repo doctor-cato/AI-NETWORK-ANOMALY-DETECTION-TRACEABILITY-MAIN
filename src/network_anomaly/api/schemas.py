@@ -560,6 +560,10 @@ class ModelStatusItem(BaseModel):
     decision_threshold: Optional[float] = None
     score_semantics: Optional[str] = None
     reason: Optional[str] = None
+    artifact_verified: bool = False
+    in_domain_evaluated: bool = False
+    cross_source_validated: bool = False
+    deployment_tier: str = "RESEARCH_ONLY"
 
 
 class CsvInspectRequest(BaseModel):
@@ -597,7 +601,7 @@ class CompatibilityGateSummarySchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str = Field(default="source:nf-v3-unverified")
+    source_id: str = Field(default="source:flow-v2-unverified")
     provenance_verified: bool = Field(default=False)
     model_key: str
     model_identifier: Optional[str] = None

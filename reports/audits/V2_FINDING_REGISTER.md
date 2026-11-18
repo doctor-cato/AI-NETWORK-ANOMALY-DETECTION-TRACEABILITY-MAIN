@@ -564,6 +564,83 @@
 | `PROD-02` | `PASS` | Fit & lưu `artifacts/ml/ood_reference_gate.json` trên `2,097,891` raw train flows; scope `_load_ood_gate()` theo `artifacts_dir`; `run_live_lab_acceptance.py` báo `ood_gate=FITTED`. |
 | `PROD-03` | `PASS` | Bổ sung `missing_feature_count`/`missing_feature_names` vào `BehavioralVector`, triển khai & export `EntityBaselineProfiler` (`fit` trên baseline), và gắn summary/contract rõ ràng. |
 | `PROD-04` | `PASS` | Tách `V2_SCHEMA_SQL` (`initialize_schema(include_v2=True)`) + query theo `entity`/`time_range`, thêm `clock_fn` & SQLite cooldown/rate-limit persistence vào `KeyRotationPolicy`, sửa `evaluate_traceability.py` (`1.0` vs dynamic grep `0.375`, `+62.5%`), bổ sung `cryptography` vào `THIRD_PARTY_NOTICES.md`. |
-| `PROD-05` | `PASS` | Mở track `docs/audits/` khỏi `.gitignore`, sửa tên test trong `THREAT_MODEL_V2.md`, đồng bộ route API trong `USER_GUIDE_V2.md` theo OpenAPI `0.1.0`, chốt `#128` Python collector trong `ARCHITECTURE_V2.md`. |
+| `PROD-05` | `PASS` | Mở track `docs/audits/` khỏi `.gitignore`, sửa tên test & API routes trong `USER_GUIDE_V2.md`, chốt `#128` Python collector trong `ARCHITECTURE_V2.md`. |
 | `PROD-06` | `BLOCKED` | Giữ trung thực `DISTRIBUTION_AUTHORIZATION.json` (`approved: false`), chưa chạy Clean Windows 10/11 VM installer E2E (`#73`, `#148`), và nhánh `site-source` nằm ngoài nhánh này (`#152`). |
+
+---
+
+## 6. Kiểm toán Hậu `HEAD 121a43e9` & Khắc phục Bổ sung (`F-01..F-04`, `#137`, `Governance / Deferred`)
+
+- **Commit tham chiếu trực tiếp:** `feat/v2-integration` @ `121a43e93f99326336186ae11301aeae800853bf` (kèm cụm remediation working tree chưa commit).
+
+| Finding ID | Severity | Location | Trạng thái |
+|---|---|---|---|
+| `F-01` | `P1` | `docs/audits/THREAT_MODEL_V2.md` | **`PASS` (Fixed)** |
+| `F-02` | `P2` | `scripts/run_rq2_rare_attack_experiment.py`, `rq2_imbalance_report.{json,md}`, `metrics.py`, `V2_CURRENT_AUDIT.md` | **`PASS` (Fixed)** |
+| `F-03` | `P1` | `reports/models/*_manifest.json` (`git_dirty: true`) | **`DISCLOSED / BLOCKED_REPRODUCIBLE_CLEAN_COMMIT`** |
+| `F-04` | `P0` | `registry.py`, `compatibility.py`, `response_policy.py`, `schemas.py`, `desktop_csv.py`, `types.ts`, `openapi.json` | **`PASS` (Fixed & Tested)** |
+| `R-137` | `P1` | `alert_manager.py`, `live_service.py`, `live_runtime.py`, `LiveMonitoringPanel.svelte`, `run_live_lab_acceptance.py` | **`PARTIAL` (Synthetic+GUI `PASS`; Physical Lab `BLOCKED`)** |
+| `R-GOV` | `P1` | `DISTRIBUTION_AUTHORIZATION.json`, `LICENSE`, `tauri.standalone.conf.json`, `vm_target_e2e.ps1` | **`BLOCKED / DEFERRED` (Audit Logged)** |
+
+### Chi tiết Findings (9 Trường Chuẩn)
+
+1. **`F-01` — Threat Model `THREAT_MODEL_V2.md` mâu thuẫn kiến trúc Collector & đánh giá SR1/SR8**
+   - **Severity:** `P1`
+   - **Location:** `docs/audits/THREAT_MODEL_V2.md:34,43,50`
+   - **Evidence:** Phiên bản trước ghi `"trong Rust Collector (#131)"`, gắn `SR1` là `VERIFIED` theo `>= 85%` correlation bằng `test_behavioral_engine.py`, và ghi `SR8` không cấp phát quá `256MB`.
+   - **Root Cause:** Tài liệu Threat Model chưa đồng bộ sau khi chốt Python `UDPFlowCollector` (`#128` Rust Collector hoãn) và sau kết quả âm của `RQ3` (`simulation_hypothesis_met = false`).
+   - **Impact:** Sai lệch kiến trúc thực thi và phóng đại mức kiểm chứng của liên kết hành vi `16-D`.
+   - **Fix Implemented / Status:** **`PASS` (Fixed)** — Sửa dòng `34` nêu đúng Python `UDPFlowCollector` (`queue_capacity=10_000`) + `StreamingEventPipeline` (`capacity=10_000`, `#128 DEFERRED`); chuyển `SR1` sang `VERIFIED_UNIT_ONLY` kèm tham chiếu trung thực `RQ3` (`F1=0.3191/0.5556`) & `#85` (`BLOCKED`); chuẩn hóa `SR8` theo giới hạn hàng đợi sự kiện `10,000` events thay vì ngưỡng heap byte cứng `256MB`.
+   - **Tests Added / Verified:** Đối chiếu trực tiếp `THREAT_MODEL_V2.md`, `test_telemetry_collector.py`, `test_behavioral_engine.py`, `rq3_session_correlation_experiment.json`.
+   - **Residual Risk / Open Gate:** `SR1` vẫn `BLOCKED` ở mức liên kết thực nghiệm đa nguồn AIT (`#85`); `SR11` giữ `PENDING_CLEAN_VM` (`#73`/`#148`).
+
+2. **`F-02` — Ví dụ taxonomy v1 `(e.g., Worms)` trong RQ2 & `metrics.py`**
+   - **Severity:** `P2`
+   - **Location:** `scripts/run_rq2_rare_attack_experiment.py:256`, `reports/experiments/imbalance/rq2_imbalance_report.{json,md}`, `src/network_anomaly/evaluation/metrics.py:443`, `.agents/reports/V2_CURRENT_AUDIT.md:422`
+   - **Evidence:** Chuỗi giải thích Limitations vẫn nhắc `"tiny (e.g., Worms)"` dù `Worms` là lớp của `NF-UNSW-NB15-v3`, không phải `taxonomy-v2` trên `AIT-NDS-v2`.
+   - **Root Cause:** Ví dụ văn bản còn sót từ đặc tả v1 khi viết template RQ2.
+   - **Impact:** Dễ gây nhầm lẫn dữ liệu nền khi bảo vệ RQ2 dù toàn bộ tính toán sử dụng đúng dữ liệu `AIT-NDS-v2`.
+   - **Fix Implemented / Status:** **`PASS` (Fixed)** — Cập nhật thành `(e.g., Exploitation_And_C2 with N=5 test flows)` trong script/JSON/MD và `metrics.py`; bổ sung chú giải lịch sử ở `.agents/reports/V2_CURRENT_AUDIT.md:422`; không thay đổi bất kỳ số metric hay `h2_full_confirmed=false`.
+   - **Tests Added / Verified:** `ruff check`, `black --check`, kiểm tra toàn vẹn JSON và số liệu không đổi trong `rq2_imbalance_report.json`.
+   - **Residual Risk / Open Gate:** Kết quả khoa học `H2` giữ nguyên kết quả âm trung thực (`Credential_Attack` Recall `0.1410` RF/XGB/IF, `0.0641` AE).
+
+3. **`F-03` — Dirty Worktree Provenance trên 4 Model Manifests (`git_dirty=true`)**
+   - **Severity:** `P1`
+   - **Location:** `reports/models/{random_forest,xgboost,isolation_forest,autoencoder}_manifest.json` (`environment.git`), `artifacts/models/*/*_manifest.json`
+   - **Evidence:** Cả 4 manifest ghi `git_commit: "79ebb678b87de19cc6b664b587726983fecaf98f"`, `git_dirty: true`, `git_clean: false`, `worktree_provenance: "DIRTY_DISCLOSED"`.
+   - **Root Cause:** 4 mô hình được tái huấn luyện tại thời điểm working tree chưa commit trước khi tạo commit `121a43e`.
+   - **Impact:** Ảnh hưởng tính tái lập từ một commit Git sạch và bị chặn bởi `--require-clean-git` trong `.github/workflows/release.yml` (Bước `02` kế hoạch đóng gói).
+   - **Fix Implemented / Status:** **`DISCLOSED / BLOCKED_REPRODUCIBLE_CLEAN_COMMIT`** — Kiểm toán giữ nguyên bản provenance trên đĩa (tuyệt đối không sửa tay `git_dirty=false`), gắn rõ giới hạn `DIRTY_DISCLOSED` trong tài liệu audit & outline bảo vệ.
+   - **Tests Added / Verified:** Đối chiếu trực tiếp 4 manifest + `verify_companion_artifacts.py` + đối chiếu `verify_companion_artifacts.py` gate `--require-clean-git`.
+   - **Residual Risk / Open Gate:** Bắt buộc commit sạch mã nguồn trước và tái xác minh/tái huấn luyện artifact gắn commit sạch nếu mở khóa `#148` / `#154`.
+
+4. **`F-04` — Lệch tầng `ModelRegistry` vs `compatibility.py`, fallback hash-only & kiểm chứng `split_manifest_sha256`**
+   - **Severity:** `P0`
+   - **Location:** `src/network_anomaly/models/registry.py`, `src/network_anomaly/ingestion/compatibility.py`, `src/network_anomaly/api/{response_policy.py,schemas.py,desktop_csv.py}`, `desktop/src/lib/types.ts`, `reports/api/openapi.json`
+   - **Evidence:** Trước sửa đổi, `ModelRegistry` gán `deployment_tier="PRODUCTION_ELIGIBLE"` cho cả `random_forest` và `xgboost` chỉ dựa trên `threshold is not None`; `load_v2_benchmark_registry()` có fallback `True if (model_sha and prep_sha)` khi thiếu `benchmark_passed`, đọc nhầm khóa `test_evaluation` thay vì `evaluation.ait_test`, và `_load_preprocessor()` bỏ sót `split_manifest_sha256`.
+   - **Root Cause:** Trộn lẫn cổng tính toàn vẹn artifact (`ARTIFACT_VERIFIED`) với cổng chứng nhận triển khai (`PRODUCTION_ELIGIBLE`), và lệch mapping schema giữa manifest v2 thực tế với `compatibility.py`.
+   - **Impact:** Nguy cơ cấp nhầm `PRODUCTION_ELIGIBLE` cho `xgboost` hoặc mô hình chưa vượt qua kiểm định cross-source (`CTU-Echo` / `CTU-Win7AD`), hoặc cấp `benchmark_passed` khi thiếu metric thực đo.
+   - **Fix Implemented / Status:** **`PASS` (Fixed & Tested)** — (a) Tách rõ 4 cờ/tầng `artifact_verified`, `in_domain_evaluated`, `cross_source_validated`, `deployment_tier` trên `ModelStatus`, `BenchmarkEvidence`, `ModelStatusItem`, và `collect_models_status()`; (b) Dùng chung helper `_evaluate_manifest_readiness_tiers`, đọc `evaluation.ait_test`, `ctu_echo`, `ctu_windows7ad`, bỏ fallback hash-only và cưỡng chế `UNVALIDATED` nếu thiếu hash hoặc metric; (c) Trích `split_manifest_sha256` từ `preprocessor_manifest_path` trong `_load_preprocessor()` và reject fail-closed `ModelReadiness.ERROR` khi thiếu hoặc lệch; (d) Giữ `xgboost`/`isolation_forest`/`autoencoder` trong `RESEARCH_ONLY_MODEL_KEYS` và khóa `HOLD_RESEARCH_ONLY_MODEL` trong `_evaluate_containment_authority()`, đồng thời đổi fallback mặc định ở `schemas.py:604` & `response_policy.py:177` sang `"source:flow-v2-unverified"`; (e) Bổ sung `production_ready`, `cross_source_validated_count`, `ai_ready_semantics` vào `ModelRegistry.summary()`.
+   - **Tests Added / Verified:** 6 kịch bản test mới (bao gồm missing/mismatched `split_manifest_sha256` & containment hold) tại `tests/unit/test_model_registry.py`, `tests/unit/test_compatibility_evaluator.py`, `tests/integration/test_four_model_integrity_e2e.py`, kèm `export_openapi_spec.py` và `verify_companion_artifacts.py`.
+   - **Residual Risk / Open Gate:** Tất cả 4 mô hình hiện giữ `deployment_tier = "RESEARCH_ONLY"` và `production_ready = false` trên `ModelRegistry` do `cross_source_validated = false` (`CTU-Echo`/`CTU-Win7AD`), trong khi `compatibility.py` giữ `random_forest` ở `MODEL_VALIDATED` riêng cho in-domain CSV dry-run (`AIT-NDS-v2`).
+
+5. **`R-137` — Pipeline cảnh báo Live `#137`, độ trễ/mất đồng bộ SQLite & giao diện Svelte**
+   - **Severity:** `P1`
+   - **Location:** `src/network_anomaly/streaming/{alert_manager.py,live_service.py}`, `src/network_anomaly/api/live_runtime.py`, `desktop/src/lib/components/LiveMonitoringPanel.svelte`, `scripts/run_live_lab_acceptance.py`
+   - **Evidence:** `LiveTelemetryService` append trùng alert theo batch; `LiveAlertManager` không nạp lại bảng SQLite `live_alerts` và `_dedup_cache` khi khởi tạo; `LiveRuntime.recent_alerts()` trước sửa trả rỗng hoặc ẩn alert phiên cũ sau restart, lệch thứ tự FIFO vs DESC; `LiveMonitoringPanel` hiển thị sai nhãn `Risk >= 45`; fixture `large_outbound_transfer` chỉ đạt `62.8`.
+   - **Root Cause:** Thiếu đồng bộ giữa `LiveAlertManager`, cache service, merge đa phiên SQLite+live, UI filter text và tham số fixture synthetic loopback.
+   - **Impact:** Cảnh báo `HIGH` không được kích hoạt trong acceptance và có nguy cơ lặp dòng, lệch thứ tự hoặc che mất cảnh báo phiên trước sau restart.
+   - **Fix Implemented / Status:** **`PARTIAL` (Synthetic + GUI `PASS`; Physical Lab `BLOCKED`)** — Hydrate `live_alerts` + rehydrate `_dedup_cache` trong `LiveAlertManager._load_existing_alerts()`, seed và trả newest-first `list(reversed(self._alerts))` trong `LiveTelemetryService`, merge dedup SQLite + live theo `alert_id` và sort `last_seen_utc DESC` trong `LiveRuntime.recent_alerts()`, sửa nhãn `Medium (Risk >= 30)` + keyed `{#each}` trong `LiveMonitoringPanel.svelte`, hiệu chỉnh `large_outbound_transfer` (`duration_ms=1.0, bytes_out=60000.0`) tạo `1` alert thật (`risk_score=84.035`, `HIGH`) và chụp ảnh GUI thực tế `reports/acceptance/live_gui_alert_synthetic_loopback.png`.
+   - **Tests Added / Verified:** `scripts/run_live_lab_acceptance.py` (`ACCEPTED`, `13/13` stages `PASS`), `test_e2e_api_live_udp_loopback_generates_deduplicated_persisted_alert` (phủ cả restart + merge newest-first trong `test_full_system_e2e.py`), `V2Panels.test.ts` (`34 passed`), `svelte-check` (`0 errors`).
+   - **Residual Risk / Open Gate:** Chưa test trên router/switch phần cứng thật (`real_device_tested: false`, `#137` giữ `OPEN 3/5 AC`).
+
+6. **`R-GOV` — Khoảng trống Pháp lý, Staging Bundle & Target VM Trước Release (`DISTRIBUTION_AUTHORIZATION` / `#73` / `#148` / `#152`)**
+   - **Severity:** `P1`
+   - **Location:** `reports/governance/DISTRIBUTION_AUTHORIZATION.json`, `LICENSE:1`, `pyproject.toml:12-13`, `THIRD_PARTY_NOTICES.md`, `desktop/src-tauri/tauri.standalone.conf.json`, `scripts/vm_target_e2e.ps1`, `docs/RELEASE_PROCESS.md:92`, `.github/workflows/release.yml`, `origin/site-source` (`a01bd38ad`)
+   - **Evidence:** `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`; trước sửa `tauri.standalone.conf.json` trỏ 3 file `isolation_forest` không tồn tại, `vm_target_e2e.ps1:457` ép `(198, 2)` và `source:nf-v3-canonical`, `RELEASE_PROCESS.md:92` & `release.yml` còn dấu vết `v1.0.0`, `THIRD_PARTY_NOTICES.md` thiếu liệt kê Rust crates; `origin/site-source` còn 77 tệp ở `v0.6.0` / `NF-UNSW-NB15-v3`.
+   - **Root Cause:** Các tác vụ đóng gói Windows (`#73`/`#148`) và website (`#152`) đang `DEFERRED` khỏi đợt kiểm toán hiện tại.
+   - **Impact:** Chặn phát hành công khai (`public_github_release`) và cần xử lý trước khi build NSIS installer hoặc cập nhật website.
+   - **Fix Implemented / Status:** **`PARTIAL_SPEC_FIXED / DEFERRED`** — Đã sửa trên working tree `tauri.standalone.conf.json:13`, `vm_target_e2e.ps1:3,457,526`, `RELEASE_PROCESS.md:92`, `release.yml:12,312`, và bổ sung direct + `MPL-2.0` transitive Rust crates vào `THIRD_PARTY_NOTICES.md`. Phần còn lại (nhúng `ood_reference_gate.json` vào staging standalone, thay placeholder `LICENSE:1`/`pyproject.toml:12-13`, build sidecar/NSIS, Clean VM E2E, `DISTRIBUTION_AUTHORIZATION.json`, `site-source`) tiếp tục giữ `BLOCKED / DEFERRED` theo kế hoạch 12 bước tại `V2_PR156_AND_DEFERRED_HANDOFF.md`.
+   - **Tests Added / Verified:** Read-only matrix trên `verify_companion_artifacts.py --verify-distribution-permission`, `cargo metadata`, `build_installer_v2.py --check-only`, `git show origin/site-source:...`.
+   - **Residual Risk / Open Gate:** Cần Maintainer signoff (`DISTRIBUTION_AUTHORIZATION.json`), Clean VM Windows 10/11 E2E (`#73`/`#148`), và merge PR `#156` trước khi mở `#152` / `#154`.
 

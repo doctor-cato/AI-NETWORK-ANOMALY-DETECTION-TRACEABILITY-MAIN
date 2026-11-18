@@ -99,6 +99,61 @@ class LiveAlertManager:
                         detection_latency_ms REAL NOT NULL
                     )
                     """)
+                self._load_existing_alerts(conn)
+
+    def _load_existing_alerts(self, conn: sqlite3.Connection) -> None:
+        try:
+            rows = conn.execute("""
+                SELECT alert_id, created_at_utc, entity_id, risk_score, risk_level,
+                       trigger_reason, status, occurrence_count, first_seen_utc,
+                       last_seen_utc, associated_event_ids, adaptive_key_rotated,
+                       detection_latency_ms
+                FROM live_alerts
+                ORDER BY last_seen_utc DESC
+                LIMIT 200
+                """).fetchall()
+        except Exception:
+            return
+        now_epoch = time.time()
+        for row in rows:
+            try:
+                status_val = AlertStatus(str(row[6]))
+            except ValueError:
+                status_val = AlertStatus.NEW
+            try:
+                ev_ids = json.loads(row[10]) if row[10] else []
+            except Exception:
+                ev_ids = []
+            if not isinstance(ev_ids, list):
+                ev_ids = []
+            alert = LiveSecurityAlert(
+                alert_id=str(row[0]),
+                created_at_utc=str(row[1]),
+                entity_id=str(row[2]),
+                risk_score=float(row[3]),
+                risk_level=str(row[4]),
+                trigger_reason=str(row[5]),
+                status=status_val,
+                occurrence_count=int(row[7]),
+                first_seen_utc=str(row[8]),
+                last_seen_utc=str(row[9]),
+                associated_event_ids=[str(item) for item in ev_ids],
+                adaptive_key_rotated=bool(row[11]),
+                detection_latency_ms=float(row[12]),
+            )
+            self._active_alerts[alert.alert_id] = alert
+            try:
+                parsed_dt = datetime.fromisoformat(alert.last_seen_utc)
+                if parsed_dt.tzinfo is None:
+                    parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                last_seen_epoch = parsed_dt.timestamp()
+            except ValueError:
+                last_seen_epoch = 0.0
+            if (
+                now_epoch - last_seen_epoch <= self.dedup_window_sec
+                and alert.entity_id not in self._dedup_cache
+            ):
+                self._dedup_cache[alert.entity_id] = (alert.alert_id, last_seen_epoch)
 
     def process_event_risk(
         self,

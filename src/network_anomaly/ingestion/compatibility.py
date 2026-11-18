@@ -24,6 +24,12 @@ from network_anomaly.ingestion.schemas import (
     InferenceEligibility,
     ValidationStatus,
 )
+from network_anomaly.models.registry import (
+    CROSS_SOURCE_REQUIRED_SPLITS,
+    _extract_split_metrics,
+    _is_valid_metric_ratio,
+    _split_eval_status,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,10 @@ class BenchmarkEvidence:
     model_version: str = ""
     model_family: Optional[str] = None
     is_research_only: bool = False
+    artifact_verified: bool = True
+    in_domain_evaluated: bool = False
+    cross_source_validated: bool = False
+    deployment_tier: str = "RESEARCH_ONLY"
 
     def __post_init__(self) -> None:
         if not self.model_version and self.model_identifier:
@@ -137,17 +147,80 @@ def load_v2_benchmark_registry(
         if data.get("feature_contract_version") != FEATURE_CONTRACT_ID:
             continue
         run_id = str(data.get("training_run_id") or data.get("run_id") or "")
-        model_sha = str(data.get("artifact_sha256") or data.get("model_artifact_sha256") or "")
+        model_sha = str(
+            data.get("artifact_sha256")
+            or data.get("model_artifact_sha256")
+            or data.get("model_sha256")
+            or ""
+        )
         prep_sha = str(
             data.get("preprocessor_artifact_sha256") or data.get("preprocessor_sha256") or ""
         )
-        test_eval = data.get("test_evaluation") or data.get("evaluation_metrics") or {}
-        recall = float(test_eval.get("recall", 0.0) or 0.0)
-        fpr = float(test_eval.get("fpr", test_eval.get("false_positive_rate", 0.0)) or 0.0)
-        acc = float(test_eval.get("accuracy", 0.0) or 0.0)
+        split_sha = str(data.get("split_manifest_sha256") or "")
+        tp = data.get("threshold_provenance")
+        tp_src = str(data.get("threshold_source") or "").lower()
+        tp_clean = not (
+            (
+                isinstance(tp, dict)
+                and (
+                    tp.get("test_touched") is True
+                    or str(tp.get("selected_on", "")).strip().lower()
+                    in ("test", "ait_test", "holdout_test")
+                )
+            )
+            or ("test" in tp_src and "val" not in tp_src)
+        )
+        artifact_verified = bool(model_sha and prep_sha and split_sha and tp_clean)
+
+        test_eval = _extract_split_metrics(data, "ait_test")
+        in_domain_eval, in_domain_pass = _split_eval_status(test_eval)
+        recall = (
+            float(_is_valid_metric_ratio(test_eval.get("recall")) or 0.0)
+            if isinstance(test_eval, dict)
+            else 0.0
+        )
+        fpr = (
+            float(
+                _is_valid_metric_ratio(test_eval.get("false_positive_rate", test_eval.get("fpr")))
+                or 0.0
+            )
+            if isinstance(test_eval, dict)
+            else 0.0
+        )
+        acc = (
+            float(_is_valid_metric_ratio(test_eval.get("accuracy")) or 0.0)
+            if isinstance(test_eval, dict)
+            else 0.0
+        )
+        cross_source_validated = all(
+            _split_eval_status(_extract_split_metrics(data, s))[1]
+            for s in CROSS_SOURCE_REQUIRED_SPLITS
+        )
         is_research = bool(data.get("is_research_only", default_research))
-        passed = bool(data.get("benchmark_passed", True if (model_sha and prep_sha) else False))
-        status = "RESEARCH_ONLY" if is_research else ("VERIFIED" if passed else "UNVALIDATED")
+        has_explicit_passed = "benchmark_passed" in data
+        if has_explicit_passed:
+            passed = bool(data["benchmark_passed"]) and artifact_verified
+        else:
+            passed = bool(artifact_verified and in_domain_eval and in_domain_pass)
+
+        if not artifact_verified or (not in_domain_eval and not has_explicit_passed):
+            passed = False
+            status = "UNVALIDATED"
+        else:
+            status = "RESEARCH_ONLY" if is_research else ("VERIFIED" if passed else "UNVALIDATED")
+        deployment_tier = (
+            "PRODUCTION_ELIGIBLE"
+            if (artifact_verified and passed and cross_source_validated and not is_research)
+            else "RESEARCH_ONLY"
+        )
+        reason_detail = (
+            f"Unvalidated v2 manifest ({fname}): missing provenance, clean threshold, or test metrics."
+            if status == "UNVALIDATED"
+            else (
+                f"Verified v2 manifest ({fname}) under {FEATURE_CONTRACT_ID} "
+                f"(cross_source_validated={cross_source_validated})."
+            )
+        )
 
         for src_id in ("source:canonical-flow-v2", "source:ait-nds-v2"):
             ev = BenchmarkEvidence(
@@ -168,11 +241,19 @@ def load_v2_benchmark_registry(
                 fpr=fpr,
                 accuracy=acc,
                 metrics={"recall": recall, "fpr": fpr, "accuracy": acc},
-                validation_timestamp_utc=str(data.get("trained_at_utc") or ""),
+                validation_timestamp_utc=str(
+                    data.get("trained_at_utc")
+                    or (data.get("environment") or {}).get("timestamp_utc")
+                    or ""
+                ),
                 verification_status=status,
                 is_passed=passed,
                 is_research_only=is_research,
-                reason=f"Verified v2 manifest ({fname}) under {FEATURE_CONTRACT_ID}.",
+                artifact_verified=artifact_verified,
+                in_domain_evaluated=in_domain_eval,
+                cross_source_validated=cross_source_validated,
+                deployment_tier=deployment_tier,
+                reason=reason_detail,
             )
             if model_key == "random_forest":
                 registry[src_id] = ev

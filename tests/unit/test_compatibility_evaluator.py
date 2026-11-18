@@ -1,11 +1,17 @@
 """Unit tests for FeatureCompatibilityEvaluator, Anti-Imputation, and Benchmark Binding."""
 
+import json
+
 import numpy as np
 import pandas as pd
 
-from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import FEATURE_CONTRACT_ID, ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import CanonicalFlowV2Adapter, ZeekConnAdapter
-from network_anomaly.ingestion.compatibility import BenchmarkEvidence, FeatureCompatibilityEvaluator
+from network_anomaly.ingestion.compatibility import (
+    BenchmarkEvidence,
+    FeatureCompatibilityEvaluator,
+    load_v2_benchmark_registry,
+)
 from network_anomaly.ingestion.schemas import (
     FeatureMappingStatus,
     InferenceEligibility,
@@ -147,3 +153,90 @@ def test_evaluator_dataframe_with_nan_fails_anti_imputation():
     assert report.inference_eligibility == InferenceEligibility.FEATURE_INCOMPLETE
     assert not report.is_eligible_for_inference
     assert "bytes_in" in report.missing_features
+
+
+def _write_synthetic_manifest(path, payload):
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_v2_benchmark_registry_removes_hash_only_fallback_and_enforces_provenance(tmp_path):
+    """F-04 regression: hashes alone must NOT grant benchmark_passed; missing hashes/metrics stay UNVALIDATED."""
+    # Case 1: random_forest missing artifact_sha256 -> UNVALIDATED
+    _write_synthetic_manifest(
+        tmp_path / "random_forest_manifest.json",
+        {
+            "feature_contract_version": FEATURE_CONTRACT_ID,
+            "run_id": "rf-no-hash",
+            "preprocessor_artifact_sha256": "p" * 64,
+            "split_manifest_sha256": "s" * 64,
+            "evaluation": {"ait_test": {"recall": 0.99, "false_positive_rate": 0.001}},
+        },
+    )
+    # Case 2: xgboost missing preprocessor_artifact_sha256 -> UNVALIDATED (even as research default)
+    _write_synthetic_manifest(
+        tmp_path / "xgboost_manifest.json",
+        {
+            "feature_contract_version": FEATURE_CONTRACT_ID,
+            "run_id": "xgb-no-prep",
+            "model_artifact_sha256": "m" * 64,
+            "split_manifest_sha256": "s" * 64,
+            "evaluation": {"ait_test": {"recall": 0.85, "false_positive_rate": 0.001}},
+        },
+    )
+    # Case 3: isolation_forest has hashes & split sha, but NO ait_test and NO benchmark_passed -> UNVALIDATED
+    _write_synthetic_manifest(
+        tmp_path / "isolation_forest_manifest.json",
+        {
+            "feature_contract_version": FEATURE_CONTRACT_ID,
+            "run_id": "if-hash-only",
+            "model_artifact_sha256": "m" * 64,
+            "preprocessor_artifact_sha256": "p" * 64,
+            "split_manifest_sha256": "s" * 64,
+        },
+    )
+
+    reg = load_v2_benchmark_registry(manifest_root=tmp_path)
+    rf_ev = reg["source:ait-nds-v2::random_forest"]
+    assert rf_ev.artifact_verified is False
+    assert rf_ev.is_passed is False
+    assert rf_ev.verification_status == "UNVALIDATED"
+    assert rf_ev.deployment_tier == "RESEARCH_ONLY"
+
+    xgb_ev = reg["source:ait-nds-v2::xgboost"]
+    assert xgb_ev.artifact_verified is False
+    assert xgb_ev.is_passed is False
+    assert xgb_ev.verification_status == "UNVALIDATED"
+
+    if_ev = reg["source:ait-nds-v2::isolation_forest"]
+    assert if_ev.artifact_verified is True
+    assert if_ev.in_domain_evaluated is False
+    assert if_ev.is_passed is False
+    assert if_ev.verification_status == "UNVALIDATED"
+
+    # Binding rejects UNVALIDATED evidence even if marked is_research_only=True
+    evaluator = FeatureCompatibilityEvaluator(benchmark_registry={"source:ait-nds-v2": if_ev})
+    rec = {col: 1.0 for col in ML_FEATURE_COLUMNS}
+    rec["protocol_num"] = 6.0
+    event = CanonicalFlowV2Adapter(source_id="source:ait-nds-v2").adapt_record(rec)
+    rep = evaluator.evaluate_events([event])
+    assert rep.validation_status == ValidationStatus.BENCHMARK_FAILED
+    assert rep.is_eligible_for_inference is False
+
+
+def test_real_v2_benchmark_registry_separates_in_domain_and_cross_source_tiers():
+    """Real v2 manifests keep xgboost RESEARCH_ONLY and keep all 4 models off PRODUCTION_ELIGIBLE."""
+    reg = load_v2_benchmark_registry()
+    rf_ev = reg["source:ait-nds-v2::random_forest"]
+    assert rf_ev.artifact_verified is True
+    assert rf_ev.in_domain_evaluated is True
+    assert rf_ev.cross_source_validated is False
+    assert rf_ev.verification_status == "VERIFIED"
+    assert rf_ev.deployment_tier == "RESEARCH_ONLY"
+
+    xgb_ev = reg["source:ait-nds-v2::xgboost"]
+    assert xgb_ev.artifact_verified is True
+    assert xgb_ev.in_domain_evaluated is True
+    assert xgb_ev.cross_source_validated is False
+    assert xgb_ev.is_research_only is True
+    assert xgb_ev.verification_status == "RESEARCH_ONLY"
+    assert xgb_ev.deployment_tier == "RESEARCH_ONLY"

@@ -3,9 +3,14 @@
 Validates Issue #138 for NetFlow Sentinel v2.0.
 """
 
+import importlib.util
+import socket
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 from network_anomaly.canonical.event import (
     CanonicalSecurityEvent,
@@ -13,6 +18,7 @@ from network_anomaly.canonical.event import (
     FlowMetrics,
     RawProvenance,
 )
+from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
 from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
 from network_anomaly.crypto.key_manager import KeyManager
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
@@ -144,3 +150,105 @@ class TestFullSystemE2E:
         """Ensure missing external benchmark dataset is detected explicitly without crashing."""
         missing_dataset = Path("data/raw/non_existent_huge_dataset.csv")
         assert not missing_dataset.exists()
+
+    def test_e2e_api_live_udp_loopback_generates_deduplicated_persisted_alert(self, tmp_path: Path):
+        """Verify live UDP loopback -> API -> real 4 models -> deduplicated alert -> SQLite fallback."""
+        fastapi = pytest.importorskip("fastapi")
+        _ = fastapi
+        pytest.importorskip("httpx")
+        from fastapi.testclient import TestClient
+
+        from network_anomaly.api.main import create_app
+
+        rf_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
+        if not rf_path.is_file():
+            pytest.skip("Model artifacts unavailable in this environment.")
+
+        script_path = PROJECT_ROOT / "scripts" / "run_live_lab_acceptance.py"
+        spec = importlib.util.spec_from_file_location("run_live_lab_acceptance", script_path)
+        assert spec is not None and spec.loader is not None
+        acc_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(acc_mod)
+
+        high_risk_flow = next(
+            item for item in acc_mod.LAB_FLOWS if item["label"] == "large_outbound_transfer"
+        )
+        packet = acc_mod.build_netflow_v9_packet([high_risk_flow], include_template=True)
+
+        with TestClient(create_app(tmp_path / "live_alert_e2e.db")) as client:
+            start_resp = client.post(
+                "/api/v1/live/start",
+                json={"host": "127.0.0.1", "port": 0, "demo_heuristics": False},
+            )
+            assert start_resp.status_code == 200, start_resp.text
+            port = start_resp.json()["bound_port"]
+            assert isinstance(port, int) and port > 0
+
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                    sock.sendto(packet, ("127.0.0.1", port))
+                    time.sleep(0.05)
+                    sock.sendto(packet, ("127.0.0.1", port))
+
+                deadline = time.monotonic() + 8.0
+                processed = 0
+                while time.monotonic() < deadline:
+                    st = client.get("/api/v1/live/status")
+                    assert st.status_code == 200
+                    processed = int(st.json().get("metrics", {}).get("events_processed", 0))
+                    if processed >= 2:
+                        break
+                    time.sleep(0.05)
+                assert processed >= 2
+
+                alerts_resp = client.get("/api/v1/live/alerts?limit=50")
+                assert alerts_resp.status_code == 200, alerts_resp.text
+                items = alerts_resp.json()["items"]
+                assert len(items) == 1
+                alert = items[0]
+                assert alert["risk_score"] >= 70.0
+                assert alert["risk_level"] in ("HIGH", "CRITICAL")
+                assert alert["occurrence_count"] == 2
+                alert_id = alert["alert_id"]
+            finally:
+                stop_resp = client.post("/api/v1/live/stop")
+                assert stop_resp.status_code == 200
+
+            persisted_resp = client.get("/api/v1/live/alerts?limit=50")
+            assert persisted_resp.status_code == 200, persisted_resp.text
+            persisted_items = persisted_resp.json()["items"]
+            assert any(item["alert_id"] == alert_id for item in persisted_items)
+
+        # Restart API against same DB and ingest an event for a second entity
+        second_flow = dict(high_risk_flow, src_ip="192.0.2.99", dst_ip="198.51.100.8")
+        second_packet = acc_mod.build_netflow_v9_packet([second_flow], include_template=True)
+        with TestClient(create_app(tmp_path / "live_alert_e2e.db")) as client2:
+            pre_restart_resp = client2.get("/api/v1/live/alerts?limit=50")
+            assert pre_restart_resp.status_code == 200
+            assert any(item["alert_id"] == alert_id for item in pre_restart_resp.json()["items"])
+
+            start_resp2 = client2.post(
+                "/api/v1/live/start",
+                json={"host": "127.0.0.1", "port": 0, "demo_heuristics": False},
+            )
+            assert start_resp2.status_code == 200
+            port2 = start_resp2.json()["bound_port"]
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                    sock.sendto(second_packet, ("127.0.0.1", port2))
+                deadline2 = time.monotonic() + 8.0
+                while time.monotonic() < deadline2:
+                    st2 = client2.get("/api/v1/live/status")
+                    if int(st2.json().get("metrics", {}).get("events_processed", 0)) >= 1:
+                        break
+                    time.sleep(0.05)
+
+                merged_resp = client2.get("/api/v1/live/alerts?limit=50")
+                assert merged_resp.status_code == 200
+                merged_items = merged_resp.json()["items"]
+                merged_ids = [item["alert_id"] for item in merged_items]
+                assert alert_id in merged_ids
+                assert len(merged_items) == 2
+                assert merged_items[0]["last_seen_utc"] >= merged_items[1]["last_seen_utc"]
+            finally:
+                client2.post("/api/v1/live/stop")

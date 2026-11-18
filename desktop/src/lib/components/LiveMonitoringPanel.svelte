@@ -278,7 +278,7 @@
       <option value="ALL">All Severities</option>
       <option value="CRITICAL">Critical (Risk &gt;= 85)</option>
       <option value="HIGH">High (Risk &gt;= 70)</option>
-      <option value="MEDIUM">Medium (Risk &gt;= 45)</option>
+      <option value="MEDIUM">Medium (Risk &gt;= 30)</option>
     </select>
   </div>
 
@@ -296,7 +296,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each filteredAlerts as alert}
+        {#each filteredAlerts as alert (alert.alert_id)}
           <tr class="row-{alert.risk_level.toLowerCase()}">
             <td><code>{alert.alert_id}</code></td>
             <td><strong>{alert.entity_id}</strong></td>

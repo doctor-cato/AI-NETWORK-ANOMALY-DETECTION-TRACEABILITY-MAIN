@@ -32,5 +32,7 @@ The standalone Windows installer bundles compiled/packaged binaries of open-sour
 | cryptography (pyca/cryptography) | AES-256-GCM authenticated encryption & key lifecycle | Apache-2.0 / BSD-3-Clause |
 | httpx | HTTP client for testing & loopback checks | BSD-3-Clause |
 | Tauri 2 | Native Windows desktop shell & IPC bridge | Apache-2.0 / MIT |
+| Rust direct crates (`tauri-plugin-dialog`, `serde`, `serde_json`, `reqwest`, `tokio`, `getrandom`) | Desktop IPC dialogs, JSON serialization, loopback HTTP client, async runtime & entropy | MIT / Apache-2.0 |
+| Rust transitive `MPL-2.0` crates (`cssparser`, `cssparser-macros`, `dtoa-short`, `option-ext`, `selectors`) | Transitive WebView/CSS/desktop shell dependencies resolved in `desktop/src-tauri/Cargo.lock` | MPL-2.0 (source availability notice per MPL-2.0 Sec. 3.2) |
 | Svelte 5 | Desktop frontend UI framework | MIT |
 | Microsoft Edge WebView2 Runtime | Windows desktop HTML/JS rendering engine (when bundled/installed) | Microsoft Software License Terms |

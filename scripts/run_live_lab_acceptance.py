@@ -93,11 +93,11 @@ LAB_FLOWS: List[Dict[str, Any]] = [
         "dest_port": 445,
         "tcp_flags": 24,
         "overrides": {
-            "duration_ms": 220.0,
-            "bytes_in": 5000.0,
-            "bytes_out": 150000.0,
-            "pkts_in": 20.0,
-            "pkts_out": 200.0,
+            "duration_ms": 1.0,
+            "bytes_in": 0.0,
+            "bytes_out": 60000.0,
+            "pkts_in": 1.0,
+            "pkts_out": 50.0,
         },
     },
     {
@@ -450,6 +450,7 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
         "Loopback UDP with a synthetic Python exporter; no physical router or switch was tested.",
         f"The {len(ML_FEATURE_COLUMNS)} canonical v2 model features use a private lab IE convention (PEN 50000 / IE 50000+i, float64).",
         "Synthetic feature values are fixtures, not real benchmark samples from AIT-NDS-v2 or CTU-SME-11.",
+        "Physical lab hardware acceptance for Issue #137 remains BLOCKED (AC #4-#5 unchecked; Issue #137 remains OPEN).",
     ]
     if inference_mode != "REAL_MODELS":
         limitations.append(
@@ -544,7 +545,7 @@ def run_lab_acceptance_scenario() -> Dict[str, Any]:
 
 {chr(10).join(f"- {item}" for item in limitations)}
 
-Artifacts: `{OUTPUT_JSON.as_posix()}`.
+Artifacts: `{OUTPUT_JSON.as_posix()}`, `reports/acceptance/live_gui_alert_synthetic_loopback.png`.
 """
     OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_MD.write_text(md, encoding="utf-8", newline="\n")

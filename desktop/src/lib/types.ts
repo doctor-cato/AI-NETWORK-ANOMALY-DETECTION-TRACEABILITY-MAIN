@@ -84,6 +84,10 @@ export interface ModelStatusItem {
   decision_threshold: number | null;
   score_semantics: string | null;
   reason: string | null;
+  artifact_verified?: boolean;
+  in_domain_evaluated?: boolean;
+  cross_source_validated?: boolean;
+  deployment_tier?: string;
 }
 
 export interface OodSummary {
@@ -582,8 +586,11 @@ export interface LiveServiceMetrics {
 export interface LiveInferenceSummary {
   inference_mode?: string;
   ai_ready?: boolean;
+  ai_ready_semantics?: string;
+  production_ready?: boolean;
   ready_count?: number;
   validated_count?: number;
+  cross_source_validated_count?: number;
   models?: Array<Record<string, unknown>>;
   ood_gate_status?: string;
 }

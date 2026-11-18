@@ -39,6 +39,8 @@ _PLACEHOLDER_INFERENCE: Dict[str, Any] = {
     "ai_ready": False,
     "ready_count": 0,
     "validated_count": 0,
+    "cross_source_validated_count": 0,
+    "production_ready": False,
     "models": [],
     "ood_gate_status": "NOT_FITTED",
 }
@@ -185,10 +187,74 @@ class LiveRuntime:
             return self._service.recent_results(limit=limit)
 
     def recent_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
+        safe_limit = max(1, int(limit))
+        live_items: List[Dict[str, Any]] = []
         with self._lock:
-            if self._service is None:
+            if self._service is not None:
+                live_items = self._service.recent_alerts(limit=safe_limit)
+        persisted_items = self._read_persisted_alerts(limit=safe_limit)
+        if not persisted_items:
+            return live_items[:safe_limit]
+        merged: Dict[str, Dict[str, Any]] = {}
+        for item in persisted_items:
+            aid = str(item.get("alert_id") or "")
+            if aid:
+                merged[aid] = item
+        for item in live_items:
+            aid = str(item.get("alert_id") or "")
+            if aid:
+                merged[aid] = item
+        return sorted(
+            merged.values(),
+            key=lambda item: str(item.get("last_seen_utc") or ""),
+            reverse=True,
+        )[:safe_limit]
+
+    def _read_persisted_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
+        connection = self._connect()
+        if connection is None:
+            return []
+        try:
+            if not self._table_exists(connection, "live_alerts"):
                 return []
-            return self._service.recent_alerts(limit=limit)
+            rows = connection.execute(
+                """
+                SELECT alert_id, created_at_utc, entity_id, risk_score, risk_level,
+                       trigger_reason, status, occurrence_count, first_seen_utc,
+                       last_seen_utc, associated_event_ids, adaptive_key_rotated,
+                       detection_latency_ms
+                FROM live_alerts
+                ORDER BY last_seen_utc DESC
+                LIMIT ?;
+                """,
+                (max(1, int(limit)),),
+            ).fetchall()
+            items: List[Dict[str, Any]] = []
+            for row in rows:
+                try:
+                    event_ids = json.loads(row["associated_event_ids"] or "[]")
+                except Exception:
+                    event_ids = []
+                items.append(
+                    {
+                        "alert_id": row["alert_id"],
+                        "created_at_utc": row["created_at_utc"],
+                        "entity_id": row["entity_id"],
+                        "risk_score": float(row["risk_score"]),
+                        "risk_level": row["risk_level"],
+                        "trigger_reason": row["trigger_reason"],
+                        "status": row["status"],
+                        "occurrence_count": int(row["occurrence_count"]),
+                        "first_seen_utc": row["first_seen_utc"],
+                        "last_seen_utc": row["last_seen_utc"],
+                        "associated_event_ids": event_ids if isinstance(event_ids, list) else [],
+                        "adaptive_key_rotated": bool(row["adaptive_key_rotated"]),
+                        "detection_latency_ms": float(row["detection_latency_ms"]),
+                    }
+                )
+            return items
+        finally:
+            connection.close()
 
     def entity_graph(self) -> Optional[Dict[str, Any]]:
         with self._lock:

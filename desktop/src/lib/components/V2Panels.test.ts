@@ -5,6 +5,7 @@ import {
   fetchBehavioralSimilarity,
   fetchBehavioralVectors,
   fetchCryptoStatus,
+  fetchLiveAlerts,
   fetchLiveStatus,
   fetchTraceTimeline,
 } from "../api";
@@ -32,6 +33,8 @@ describe("V2 Dynamic Desktop Panels — No Hardcoded Fake Data", () => {
     expect(out.body).toContain("STATE: DEMO");
     expect(out.body).toContain("DEMO MODE ACTIVE");
     expect(out.body).toContain("demo-alert-01");
+    expect(out.body).toContain("Medium (Risk >= 30)");
+    expect(out.body).not.toContain("Risk >= 45");
   });
 
   it("BehavioralAnalysisPanel defaults to LOADING without hardcoded 16D vector or fake SHA-256", () => {
@@ -190,5 +193,37 @@ describe("V2 Backend API Client State Contracts (CONNECTED / DISCONNECTED / EMPT
     const crypto = await fetchCryptoStatus();
     expect(crypto.data_status).toBe("CONNECTED");
     expect(crypto.storage_protection_status?.master_key_protection).toBe("WINDOWS_DPAPI");
+  });
+
+  it("fetchLiveAlerts decodes live alert rows including deduplicated occurrence counts", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data_status: "CONNECTED",
+          total: 1,
+          items: [
+            {
+              alert_id: "alert-loopback-01",
+              entity_id: "host:192.0.2.10",
+              risk_score: 84.0,
+              risk_level: "HIGH",
+              trigger_reason: "Ensemble Attack Consensus; High outbound asymmetry",
+              status: "NEW",
+              occurrence_count: 2,
+              last_seen_utc: "2026-11-18T05:44:32Z",
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const resp = await fetchLiveAlerts(50);
+    expect(resp.data_status).toBe("CONNECTED");
+    expect(resp.total).toBe(1);
+    expect(resp.items[0].alert_id).toBe("alert-loopback-01");
+    expect(resp.items[0].risk_score).toBe(84.0);
+    expect(resp.items[0].occurrence_count).toBe(2);
   });
 });

@@ -926,3 +926,21 @@ Ngoài ra, lệnh `python scripts/fetch_multi_source_dataset.py --verify-only` (
 
 4. **Nhóm Kế thừa `M7` / `None` (`8` issues):**
    - `#18` (`1/8`), `#19` (`0/4`), `#20` (`1/6`), `#25` (`0/3`), `#48` (`0/3`), `#60` (`3/11`), `#71` (`6/15`), `#73` (`0/8`) đã được bỏ tick các mục v1 không còn hiệu lực hoặc chưa merge vào `main`.
+
+---
+
+## 10. Đối chiếu Trực tiếp GitHub Issues Trọng tâm trên `HEAD 121a43e9` + Working Tree (`2026-11-18`)
+
+> [!IMPORTANT]
+> Trong đợt khắc phục trên `feat/v2-integration` @ `121a43e93f99326336186ae11301aeae800853bf`, **không thực hiện bất kỳ thao tác ghi nào lên GitHub API** (`gh issue edit`, `gh issue close`, `gh pr edit` đều không chạy). Bảng dưới đây ghi nhận **trạng thái checkbox thực tế trực tiếp từ `gh issue view`** đối chiếu với bằng chứng mới nhất trên working tree.
+
+| Issue | Milestone | Trạng thái GH | Checkboxes Hiện tại trên GH | Đánh giá Bằng chứng Mới Nhất (`121a43e` + Working Tree) & Quyết định AC |
+|---|---|---|---|---|
+| **`#73`** | `None` | `OPEN` | **`0 / 8`** `[x]` | **`DEFERRED / BLOCKED`:** AC-14 (UQ `454104` trên `NF-UNSW-NB15-v3`) đã bị thay thế bởi v2 hard cutover (`CC BY 4.0` trong `DISTRIBUTION_AUTHORIZATION.json`, hiện vẫn `approved=false`); `AC-03,07,08,10,12,13,15` (Clean Windows 10/11 VM E2E) được kế thừa sang `#148`. **Không tick thêm.** |
+| **`#85`** | `M6.2` | `OPEN` | **`2 / 3`** `[x]` | **`BLOCKED` cho AC#3 (`2/3` giữ nguyên):** Đã hoàn tất kiểm toán Zenodo `5789064` (`v2.0`) vs `19483937` (`v2.1`), `2_label_logs.ipynb` vs `AIT-ADS`, và phân tầng 3 cấp (`DIRECT_UID_LINK: NO`) trong `AIT_LINKAGE_FEASIBILITY.md`. AC#3 (empirical cross-version/log-to-flow alignment) không có UID chung và thiếu PCAP `v2.0` -> **giữ mở, không tick**. |
+| **`#131`** | `M6.6` | `OPEN` | **`4 / 4`** `[x]` | **`PASS` (Chờ merge `main`):** Python `UDPFlowCollector` (`queue_capacity=10_000`) + `StreamingEventPipeline` (`capacity=10_000`) pass toàn bộ `test_telemetry_collector.py`; tài liệu `THREAT_MODEL_V2.md` đã sửa khớp (`F-01`), `#128` Rust collector giữ `DEFERRED`. |
+| **`#137`** | `M6.6` | `OPEN` | **`3 / 5`** `[x]` | **`PARTIAL` (`3/5` giữ nguyên trên GH):** Pipeline synthetic UDP loopback -> 4 models thật -> Risk Engine (`84.0`) -> Deduplicated SQLite alert -> API -> Desktop UI (`live_gui_alert_synthetic_loopback.png`) đã PASS và chứng minh đầy đủ (`13/13` stages trong `synthetic_udp_loopback_report.json`); **tuy nhiên AC#1 yêu cầu thiết bị/mạng lab vật lý (`real_device_tested=false`) và DoD yêu cầu kiểm chứng trên môi trường thực nên giữ `OPEN` (`3/5`)**. |
+| **`#148`** | `M6.7` | `OPEN` | **`0 / 4`** `[x]` | **`DEFERRED / NOT VERIFIED` (`0/4`):** Đã lập kế hoạch phụ thuộc 12 bước tại `V2_PR156_AND_DEFERRED_HANDOFF.md`; chưa build sidecar/NSIS (`.venv` thiếu `pyinstaller`, `makensis`), chưa sửa `tauri.standalone.conf.json` / `vm_target_e2e.ps1`, chưa chạy Clean Windows VM E2E. |
+| **`#152`** | `M6.7` | `OPEN` | **`1 / 4`** `[x]` | **`DEFERRED / STALE V1` (`1/4` giữ nguyên):** Kiểm toán read-only `origin/site-source` (`a01bd38ad`, `77` tệp) xác nhận toàn bộ site vẫn ở `v0.6.0` / `NF-UNSW-NB15-v3` (`d1d16e1c...`); chỉ AC#4 (`[x]` không đưa dataset lên web) đạt. Chờ merge PR `#156` để mở khóa cập nhật. |
+| **`#153`** | `M6.7` | `OPEN` | **`0 / 4`** `[x]` | **`OUTLINE_ONLY` (`0/4` giữ nguyên):** `docs/PRESENTATION_OUTLINE.md` đã hoàn thiện đủ 12 chủ đề + bảng truy vết số liệu/negative results/blockers; chưa xuất file slide `.pptx`/`.pdf` hay bản PDF báo cáo hoàn chỉnh. |
+| **`#154`** | `M6.7` | `OPEN` | **`0 / 4`** `[x]` | **`HOLD` (`0/4` giữ nguyên):** Đã cập nhật sổ audit & Evidence Ledger hậu `121a43e`, thống nhất `RESEARCH_ONLY` / `production_ready=false` trên codebase (`F-04`); vẫn còn blocker P0 (`UGR'16`, `#85` empirical, `#137` physical lab, `#148` Clean VM, `DISTRIBUTION_AUTHORIZATION` `approved=false`, working tree `git_dirty` chưa commit/CI). |

@@ -89,4 +89,4 @@ Workflow `.github/workflows/release.yml` thực hiện fail-closed theo trình t
 7. **Always Cleanup:** dọn các tệp build, staging, ứng viên và release assets khỏi workspace của runner ở cuối job.
 8. **Database & Artifact Migration for v2.0 (Issue #80):**
    - Khi cài đặt đè hoặc nâng cấp từ v1.0.0 lên v2.0.0, bộ cài tự động gọi `scripts/migrate_v1_to_v2.py --db-path <db_path>` để cập nhật schema SQLite idempotent và tạo backup.
-   - Các artifact mô hình và preprocessor từ v1.0.0 tiếp tục được tái sử dụng trực tiếp nếu SHA-256 không đổi.
+   - Bản v2.0.0 thực hiện **hard cutover** (`canonical-flow-v2-18`, `AIT-NDS-v2` CC BY 4.0): **không** tái sử dụng artifact/mô hình/preprocessor v1 (`NF-UNSW-NB15-v3`, UQ `454104`); mọi model và preprocessor v2 phải khớp SHA-256 trên `staged_bundle/EMBEDDED_SHA256SUMS.txt` và bị từ chối fail-closed nếu phát hiện artifact v1.
