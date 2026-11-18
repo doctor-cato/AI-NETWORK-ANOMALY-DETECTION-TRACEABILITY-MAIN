@@ -91,15 +91,33 @@ class LiveSystemOrchestrator:
         inference_engine: Optional[RealtimeInferenceEngine] = None,
         demo_heuristics: bool = False,
         runtime_mode: Optional[str] = None,
+        require_ood_gate: Optional[bool] = None,
     ):
         self.max_active_entities = max_active_entities
 
         # Subsystems
         self.feature_extractor = RealtimeFeatureExtractor()
-        self.inference_engine = inference_engine or RealtimeInferenceEngine(
-            demo_heuristics=demo_heuristics,
-            runtime_mode=runtime_mode,
-        )
+        if inference_engine is not None:
+            if runtime_mode is not None:
+                norm_mode = str(runtime_mode).strip().lower()
+                engine_mode = getattr(inference_engine, "runtime_mode", None)
+                if engine_mode != norm_mode:
+                    raise ValueError(
+                        f"inference_engine.runtime_mode ({engine_mode!r}) does not match "
+                        f"requested runtime_mode ({norm_mode!r})"
+                    )
+            if require_ood_gate is not None and hasattr(inference_engine, "require_ood_gate"):
+                if bool(inference_engine.require_ood_gate) != bool(require_ood_gate):
+                    raise ValueError(
+                        "inference_engine.require_ood_gate does not match requested require_ood_gate"
+                    )
+            self.inference_engine = inference_engine
+        else:
+            self.inference_engine = RealtimeInferenceEngine(
+                demo_heuristics=demo_heuristics,
+                runtime_mode=runtime_mode,
+                require_ood_gate=require_ood_gate,
+            )
         self.key_manager = KeyManager(keystore_dir=keystore_dir)
         self.key_rotator = KeyRotationPolicy(
             key_manager=self.key_manager,

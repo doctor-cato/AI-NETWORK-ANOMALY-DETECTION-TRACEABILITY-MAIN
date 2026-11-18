@@ -93,3 +93,54 @@ def test_rq6_crypto_benchmark_multi_size_and_percentiles(tmp_path):
         assert entry["encryption"]["p99_us"] >= entry["encryption"]["p95_us"]
         assert entry["plaintext_json_roundtrip"]["throughput_ops_sec"] > 0
     assert res["environment"]["cpu_count"] is not None
+
+
+def test_wp3_leakage_policy_and_report_schema_consistency():
+    import json
+
+    wp3 = _load_script("run_wp3_controlled_ablation", "scripts/run_wp3_controlled_ablation.py")
+    root = Path(__file__).resolve().parents[2]
+    report_path = root / "reports" / "experiments" / "ml" / "wp3_controlled_ablation_report.json"
+    summary_path = root / "reports" / "experiments" / "ml" / "model_improvement_summary.json"
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    policy = report["leakage_policy"]
+    assert policy == wp3._build_leakage_policy()
+    assert summary["wp3_leakage_policy"] == policy
+    for legacy_key in ("ait_test_touched_for_selection", "ctu_touched_for_zero_shot_selection"):
+        assert legacy_key not in policy
+
+    assert policy["ait_test_used_for_training"] is False
+    assert policy["ait_test_used_for_feature_transform_fitting"] is False
+    assert policy["ait_test_used_for_threshold_calibration"] is False
+    assert policy["ait_test_used_for_hyperparameter_tuning"] is False
+    assert policy["ait_test_used_for_posthoc_evaluation"] is True
+    assert policy["ait_test_used_for_posthoc_candidate_selection"] is True
+    assert policy["ctu_used_for_training_in_zero_shot_experiments"] is False
+    assert policy["ctu_used_for_zero_shot_evaluation"] is True
+    assert policy["ctu_used_for_posthoc_candidate_selection"] is True
+    assert policy["independent_holdout_selection_claim"] is False
+
+    rec = report["selection_recommendation"]
+    assert rec == wp3._build_selection_recommendation()
+    assert summary["wp3_selection_recommendation"] == rec
+    assert rec["official_registered_artifacts_action"] == "RETAIN_E0_BASELINE_ARTIFACTS"
+    assert rec["selection_type"] == "posthoc_holdout_informed_retention_decision"
+    assert rec["holdout_independent_selection"] is False
+
+    for exp_key in (
+        "E1_base_6f_ablation",
+        "E2_byte_rate_ablation",
+        "E2b_pure_non_byte_ablation",
+        "E3a_protocol_semantic_onehot",
+        "E3b_protocol_semantic_onehot_floor",
+    ):
+        exp = report["experiments"][exp_key]
+        assert "test_touched_for_selection_or_threshold" not in exp
+        assert exp["test_used_for_training_or_transform"] is False
+        assert exp["test_used_for_threshold_calibration"] is False
+        assert exp["test_used_for_hyperparameter_tuning"] is False
+        assert exp["test_used_for_posthoc_evaluation"] is True
+        assert exp["test_referenced_in_posthoc_selection_rationale"] is True

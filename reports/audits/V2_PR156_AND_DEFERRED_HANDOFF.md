@@ -2,9 +2,9 @@
 
 - **Tài liệu:** `reports/audits/V2_PR156_AND_DEFERRED_HANDOFF.md`
 - **Ngày lập / Cập nhật:** `2026-11-18` (`UTC+7`)
-- **Nhánh & Commit tham chiếu (`feat/v2-integration`):** `f5dacb1e9b520dac3fe066fc706707d1fd76c4be` (`12` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; CI Run `#44251784370` đạt `7/7 SUCCESS`, `493` files changed, `+64,634 / -19,347` + cụm hoàn tất PR `#156` đang ở working tree chưa commit)
+- **Nhánh & Commit tham chiếu (`feat/v2-integration`):** `2c8acc1d68b558d74e0ce1a53c7c92eb4b917557` (`13` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; CI Run `#44271966268` đạt `7/7 SUCCESS`, `495` files changed, `+71,880 / -19,349`), kèm cụm vá tiếp theo WP-A/B/C (`OOD` in-memory gate bypass, `WP3` leakage disclosure, đồng bộ audit docs) chuẩn bị commit/push & chạy CI mới.
 - **Nhánh Website tham chiếu (`origin/site-source`):** `a01bd38ad705577fc210fdeeeb61ccbd80a0ac42` (`77` tệp: `15` MDX VI + `15` MDX EN = `30` tệp MDX, các trang `.astro`, views, scripts, workflow)
-- **Pull Request `#156`:** `OPEN`, `isDraft: true`, `feat/v2-integration` $\to$ `main` *(giữ nguyên trạng thái **DRAFT / DO NOT MERGE**; nội dung mô tả PR `#156` tại Mục 3 đã được đồng bộ lên GitHub qua `gh pr edit 156`, nhưng không commit/push, không bỏ Draft, không merge, không build `.exe`/`.msi`/NSIS và không sửa nhánh `site-source`)*
+- **Pull Request `#156`:** `OPEN`, `isDraft: true`, `feat/v2-integration` $\to$ `main` *(giữ nguyên trạng thái **DRAFT / DO NOT MERGE**; không push lên `main`, không tự ý bỏ Draft hay merge, không build `.exe`/`.msi`/NSIS và không sửa nhánh `site-source`)*
 
 ---
 
@@ -14,7 +14,7 @@
 |---|---|---|---|
 | **D — Windows Standalone Installer v2.0 & Clean VM E2E** | `#73` (`OPEN`, `0/8` AC, `milestone: None`), `#148` (`OPEN`, `0/4` AC, `M6.7`) | **`DEFERRED / BLOCKED / NOT VERIFIED`** | Đã sửa `tauri.standalone.conf.json`, `vm_target_e2e.ps1` và staging/verify `ood_reference_gate.json` + AE `score_normalization.json` (`20` `companion_files`, `ood_gate: FITTED`) ở `WP5`. Tuy nhiên `.venv` mới đạt `FRONTEND_READY` (`pyinstaller: false`, `makensis: false`, `staged_bundle_manifest: false`); chưa build `.exe`, chưa chạy Clean Windows 10/11 VM E2E; `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`. |
 | **F — Website `site-source` v2.0 & Guides** | `#152` (`OPEN`, `1/4` AC, `M6.7`) | **`OPEN (1/4 AC) / STALE V1`** | Nhánh `origin/site-source` (`a01bd38ad705577fc210fdeeeb61ccbd80a0ac42`, 77 tệp) vẫn đóng băng ở `v0.6.0` / `NF-UNSW-NB15-v3` / `55` cột / `47` đặc trưng / snapshot `main@d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48`. Giữ `OPEN`; chỉ cập nhật sau khi PR `#156` merge `main`. |
-| **PR `#156` — Tích hợp v2.0.0** | PR `#156` (`feat/v2-integration` $\to$ `main`) | **`OPEN / DRAFT (DO NOT MERGE)`** | Commit `f5dacb1e` đạt `7/7` CI checks (`Run #44251784370`). Working tree hiện có thêm cụm hoàn tất WP2–WP6 (`WP3 E0–E5` ablation, `WP5` fail-closed `OODRejectionGate` + companion staging/verify, cập nhật docs kiểm toán) chưa commit/push nên cần review, commit sạch và re-run CI từ xa trước khi mở review hoặc chuyển Ready. |
+| **PR `#156` — Tích hợp v2.0.0** | PR `#156` (`feat/v2-integration` $\to$ `main`) | **`OPEN / DRAFT (DO NOT MERGE)`** | Commit `2c8acc1d` (`13` commits ahead, `495` files) đã đạt `7/7` CI checks (`Run #44271966268`); tiếp theo là cụm vá WP-A/B/C (`OOD` in-memory gate validation, `WP3` leakage disclosure, đồng bộ docs & PR body) được commit/push lên `feat/v2-integration` và chạy lại CI trên HEAD mới trước khi maintainer review độc lập. |
 
 ---
 
@@ -140,114 +140,112 @@ Kiểm tra trực tiếp mã nguồn và cấu hình đóng gói ghi nhận **8 
 
 ---
 
-## Phần 3 — Nội dung Mô tả Đồng bộ cho PR `#156` (Đã cập nhật qua `gh pr edit 156`, giữ nguyên `OPEN / Draft`)
+## Phần 3 — Nội dung Mô tả Đồng bộ cho PR `#156` (Cập nhật trực tiếp trên GitHub qua `gh pr edit 156`, giữ nguyên `OPEN / Draft`)
 
 > [!IMPORTANT]
-> PR `#156` (`feat/v2-integration` $\to$ `main`) **tiếp tục giữ trạng thái `OPEN` và `Draft` (`Do Not Merge`)**. Không chạy `git commit`, `git push`, hay đổi `isDraft: true`. Nội dung dưới đây phản ánh chính xác commit `f5dacb1e9b520dac3fe066fc706707d1fd76c4be` (`CI Run #44251784370 7/7 PASS`, `493` files changed, `+64,634 / -19,347`) và cụm hoàn tất WP2–WP6 đang chờ commit trên working tree.
+> PR `#156` (`feat/v2-integration` $\to$ `main`) **tiếp tục giữ trạng thái `OPEN` và `Draft` (`Do Not Merge`)**. Không merge, không bỏ Draft, và không push lên `main`. Bản tổng kết dưới đây đồng bộ hoàn toàn kiến trúc v2.0.0, WP1–WP7 + WP-A/B/C, trạng thái model (`RESEARCH_ONLY`, `DIRTY_DISCLOSED` @ `79ebb678`), CI/test evidence, acceptance criteria, governance (`approved: false`), và reviewer checklist.
 
 ---
 
 ### [Bắt đầu Nội dung Đồng bộ PR `#156`]
 
 ```markdown
-## Tổng quan
+## Summary
 
-Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích hợp đầy đủ các phân hệ của **NetFlow Sentinel v2.0.0** trên nhánh `feat/v2-integration` vào `main`, hướng tới mốc **Academic & Controlled Lab Functional Prototype**.
+Pull Request thực hiện **Full Dataset Migration (Hard Cutover)** và tích hợp toàn bộ phân hệ **NetFlow Sentinel v2.0.0** trên nhánh `feat/v2-integration` vào `main`, hướng tới mốc **Academic & Controlled Lab Functional Prototype**.
 
-> **Trạng thái PR:** **OPEN / DRAFT — KHÔNG MERGE TỰ ĐỘNG (KHÔNG tuyên bố Production-Ready hoặc Public-Release-Ready).**
-> - Commit `f5dacb1e9b520dac3fe066fc706707d1fd76c4be` (`12` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; `493` files changed, `+64,634 / -19,347`) đã vượt qua `7/7` GitHub Actions checks ([CI Run #44251784370](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44251784370)).
-> - **Hiện trạng nhánh cục bộ (WP2–WP6 trên working tree):** Bổ sung kết quả controlled ablation `E0–E5` (`scripts/run_wp3_controlled_ablation.py`), tách bạch 3 trục provenance (`DIRTY_DISCLOSED`), cứng hóa fail-closed `OODRejectionGate` + `RealtimeInferenceEngine` (`research` vs `deployment`) + staging/SHA-256 `ood_reference_gate.json` & AE `score_normalization.json` (`20` `companion_files`), regression tests mới và đồng bộ toàn bộ báo cáo audit. Cần review, commit sạch và chạy lại CI từ xa trước khi maintainer bỏ Draft.
-> - **Hạng mục ngoài phạm vi / `BLOCKED` / `DEFERRED`:** `UGR'16` (`HTTP 403`), liên kết UID trực tiếp `AIT-NDS-v2 ↔ AIT-LDS-v2.1` (`#85`), nghiệm thu phần cứng lab vật lý (`#137`), Windows NSIS Clean VM E2E (`#73`/`#148`), Rust Collector crate (`#128`), phê duyệt phân phối công khai `DISTRIBUTION_AUTHORIZATION.json` (`approved: false`), website `site-source` (`#152`), và báo cáo/slide bảo vệ (`#153` — `OUTLINE_ONLY`).
-
----
-
-## 1. Hard Cutover & Cách ly Hoàn toàn `NF-UNSW-NB15-v3`
-
-- Loại bỏ hoàn toàn `NF-UNSW-NB15-v3` (UQ `454104`) và hợp đồng 47 đặc trưng nProbe khỏi toàn bộ active pipeline (`ModelRegistry`, `TrainOnlyPreprocessor`, `InferencePipeline`, `FeatureCompatibilityEvaluator`, FastAPI, Desktop UI).
-- Chuyển toàn bộ tài liệu, manifest, split, script, báo cáo và hồ sơ bảo vệ v1 sang lưu trữ chỉ đọc tại `data/historical/nf_unsw_nb15_v3/`, `docs/historical/nf_unsw_nb15_v3/`, `scripts/historical/nf_unsw_nb15_v3/`, `reports/historical/nf_unsw_nb15_v3/` và `tests/historical/`.
-- Bắt buộc `feature_contract_version == "canonical-flow-v2-18"` và chuỗi băm SHA-256 `split -> preprocessor -> model -> ood_gate -> score_normalization` fail-closed; **không có fallback sang v1**.
-- Tài liệu quyết định & migration: [`docs/adr/ADR-dataset-hard-cutover-v2.md`](docs/adr/ADR-dataset-hard-cutover-v2.md), [`docs/MIGRATION_V1_TO_V2.md`](docs/MIGRATION_V1_TO_V2.md).
+> **Trạng thái PR:** **OPEN / DRAFT — DO NOT MERGE (KHÔNG tuyên bố Production-Ready hoặc Public-Release-Ready).**
+> - **Repository Audit Snapshot:** Commit nền `2c8acc1d68b558d74e0ce1a53c7c92eb4b917557` (`13` commits ahead, `0` behind `main` @ `42a656aa76f6a4cb415f858d7179aa3d8f277335`; `495` files changed) đã đạt `7/7` CI jobs trên [Run #44271966268](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/actions/runs/44271966268), kèm cụm vá tiếp theo `WP-A / WP-B / WP-C` trên `feat/v2-integration` (chi tiết SHA & CI run mới nhất ở mục CI/Test Evidence).
+> - **Model Training Provenance (Tách biệt):** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `worktree_provenance = "DIRTY_DISCLOSED"`. Không retrain hay ghi đè baseline `E0`.
+> - **Independent GitHub Reviews:** `0` submitted reviews.
 
 ---
 
-## 2. Nguồn Dữ liệu v2, Feature Contract, Split & Tiền xử lý (`canonical-flow-v2-18`)
+## 1. Scope & Kiến trúc v2.0.0 (Hard Cutover `NF-UNSW-NB15-v3`)
 
-- **`AIT-NDS-v2`** (`10.5281/zenodo.13168643`, **CC BY 4.0**, Tstat từ PCAP `AIT-LDS-v2.0`, dataset SHA-256 `cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf`): Khôi phục đủ **`3,464,400` flows có nhãn + `942` unmapped = `3,465,342` raw flows**.
-- **Split `v2-scenario-group-purged-v1`** (`ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8`, chuẩn LF):
-  - `ait_train` (`fox, harrison, santos, wardbeck, wilson`): `2,097,891` (`1,825,866` Benign / `272,025` Attack)
-  - `ait_val` (`russellmitchell`): `377,704` (`206,676` Benign / `171,028` Attack)
-  - `ait_test` (`shaw, wheeler`): `988,805` (`812,980` Benign / `175,825` Attack)
-  - Zero overlap theo kịch bản và `(scenario, 5-tuple, ts)`.
-- **Preprocessor, OOD Gate & AE Sidecar:**
-  - `TrainOnlyPreprocessor(asinh_robust)` fit duy nhất trên `ait_train`: `0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7` (`MIN_BOUNDED_SCALE_FLOOR = 0.25`).
-  - `OODReferenceGate` (`artifacts/ml/ood_reference_gate.json`, `8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825`): fit trên `2,097,891` raw `ait_train` flows (`ood_gate = FITTED`).
-  - AE `score_normalization.json` (`d7bcb78f7439930ee61b53e6e970ff1535d52ad10f2a025ad4877629a7478847`): kiểm cross-check trong `AutoencoderModel` và stage kèm standalone.
-- **`CTU-SME-11`** (`10.5281/zenodo.7958258`, **CC BY 4.0**): `CTU-Echo` (`76,073`: `39,497` Benign / `36,576` Attack) và `CTU-Windows7AD` (`175,146` labeled + `9,394` unmapped; `175,101` sau khử `45` nhóm LAN overlap trong đánh giá đa nguồn).
-- **`AIT-LDS-v2.1`** (`10.5281/zenodo.19483937`, **CC BY-NC-SA 4.0**) & **`AIT-ADS`** (`10.5281/zenodo.8263181`, **CC BY 4.0**): Cách ly 100% `AIT-LDS-v2.1` khỏi trọng số ML và `data/demo/`; liên kết trực tiếp UID `AIT-NDS-v2 ↔ AIT-LDS-v2.1` giữ **`NO / BLOCKED`** ([`docs/dataset/AIT_LINKAGE_FEASIBILITY.md`](docs/dataset/AIT_LINKAGE_FEASIBILITY.md)).
-- **`UGR'16`:** **`BLOCKED`** (`HTTP 403` / *Portal en Mantenimiento*); không dùng dữ liệu tổng hợp thay thế ([`reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md`](reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md)).
+- **Hard Cutover v1 → v2:** Loại bỏ hoàn toàn `NF-UNSW-NB15-v3` (`55` cột / `47` nProbe features / UQ `454104`) khỏi active pipeline (`ModelRegistry`, `TrainOnlyPreprocessor`, `InferencePipeline`, `FeatureCompatibilityEvaluator`, FastAPI, Desktop UI); chuyển toàn bộ di sản v1 sang lưu trữ chỉ đọc `*/historical/nf_unsw_nb15_v3/`. Bắt buộc `feature_contract_version == "canonical-flow-v2-18"` và chuỗi băm SHA-256 `split -> preprocessor -> model -> ood_gate -> score_normalization` fail-closed (**không fallback v1**). ([`ADR-dataset-hard-cutover-v2.md`](docs/adr/ADR-dataset-hard-cutover-v2.md), [`MIGRATION_V1_TO_V2.md`](docs/MIGRATION_V1_TO_V2.md)).
+- **Kiến trúc Sản phẩm v2.0.0:** Desktop **Rust / Tauri 2 + Svelte 5 (`2.0.0`)** + Sidecar **FastAPI (`127.0.0.1`, OpenAPI `0.1.0`)**, `X-Sentinel-Session-Token` (constant-time `hmac.compare_digest`), 3 chế độ (`Offline / Replay / Live`), Python `UDPFlowCollector` (NetFlow v9/IPFIX) + `StreamingEventPipeline` (`capacity=10_000`), Behavioral Vector 16-D, Risk Scoring `[0..100]`, Trace Graph/Timeline, `AES-256-GCM` (`DPAPI`/POSIX perms + Adaptive Key Rotation), Security Dry-Run (`executed=false`).
 
 ---
 
-## 3. Baseline 4 Mô hình (`E0`), Thí nghiệm Kiểm soát `E1–E5` & Cổng `RESEARCH_ONLY`
+## 2. Dataset & Preprocessing (`canonical-flow-v2-18`)
 
-Cả 4 mô hình đạt `overall_status: READY` (`20` `companion_files`, `ood_gate = FITTED`), hiệu chuẩn ngưỡng chỉ trên `AIT-Val` (`test_touched = false`), nhưng giữ **`deployment_tier = "RESEARCH_ONLY"`** và **`production_ready = false`** (`cross_source_validated_count = 0`):
+- **`AIT-NDS-v2`** (`10.5281/zenodo.13168643`, **CC BY 4.0**, dataset SHA-256 `cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf`): `3,464,400` flows có nhãn + `942` unmapped = `3,465,342` raw flows.
+- **Split `v2-scenario-group-purged-v1`** (`ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8`, LF): `ait_train` (`2,097,891`: `1,825,866` Benign / `272,025` Attack), `ait_val` (`377,704`: `206,676` / `171,028`), `ait_test` (`988,805`: `812,980` / `175,825`); zero scenario & `(scenario, 5-tuple, ts)` overlap.
+- **Preprocessor (`TrainOnlyPreprocessor`, `asinh_robust`, `MIN_BOUNDED_SCALE_FLOOR = 0.25`):** Fit duy nhất trên `ait_train`, SHA-256 `0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`.
+- **`CTU-SME-11`** (`10.5281/zenodo.7958258`, **CC BY 4.0**): `CTU-Echo` (`76,073`) & `CTU-Windows7AD` (`175,146` labeled + `9,394` unmapped; `175,101` sau khử `45` nhóm LAN overlap).
+- **`AIT-LDS-v2.1`** (`10.5281/zenodo.19483937`, **CC BY-NC-SA 4.0**): Cách ly **100%** khỏi weights/preprocessor/`data/demo/`; direct UID link `NO` (`#85`). **`AIT-ADS`** (`CC BY 4.0`). **`UGR'16`**: **`BLOCKED`** (`HTTP 403`).
 
-| Mô hình (`Run ID`, Artifact SHA-256) | `AIT-Val` (`F1` / `FPR`) | `AIT-Test` (`N=988,805`) `P` / `R` / `F1` / `Macro-F1` / `ROC` / `FPR` | `CTU-Echo` Zero-Shot | `CTU-Win7AD` Zero-Shot |
+---
+
+## 3. Model Status, Deployment Tier & WP3 Controlled Ablation (`E0–E5`)
+
+- **Model Status & Tier:** Toàn bộ 4 baseline models (`RF`, `XGB`, `IF`, `AE`) đạt `artifact_verified = True`, `in_domain_evaluated = True`, **`cross_source_validated = False`**, **`deployment_tier = "RESEARCH_ONLY"`**, **`production_ready = False`** (`compatibility.py` giữ riêng `random_forest` ở `MODEL_VALIDATED` cho in-domain CSV dry-run; `xgboost`/`isolation_forest`/`autoencoder` bị khóa `HOLD_RESEARCH_ONLY_MODEL`).
+- **Training Provenance:** `training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true`, `git_clean = false`, `DIRTY_DISCLOSED`.
+
+| Mô hình (`Run ID`, SHA-256) | `AIT-Val` (`F1` / `FPR`) | `AIT-Test` (`N=988,805`) `F1` / `ROC-AUC` / `FPR` | `CTU-Echo` Zero-Shot | `CTU-Win7AD` Zero-Shot |
 |---|---|---|---|---|
-| **Random Forest** (`v2-rf-20261117T231214Z`, `b2e42f85...`) | `0.9997` / `0.0002` | `0.9989` / `0.9911` / **`0.9950`** / `0.9969` / `0.9994` / `0.0002` | `F1=0.0474` (`R=0.0264, FPR=0.0811, ROC=0.6137`) | `F1=0.0712` (`R=0.5412, FPR=0.1608, ROC=0.8392`) |
-| **XGBoost** (`v2-xgb-20261117T231609Z`, `33d201f8...`) | `0.9996` / `0.0002` | `0.9989` / `0.8211` / **`0.9013`** / `0.9411` / `0.9884` / `0.0002` | `F1=0.1436` (`R=0.0832, FPR=0.0700, ROC=0.7017`) | `F1=0.0738` (`R=0.5623, FPR=0.1611, ROC=0.6978`) |
-| **Isolation Forest** (`v2-if-20261118T020525Z`, `11b16900...`) | `0.9213` / `0.0500` | `0.7775` / `0.4678` / **`0.5842`** / `0.7576` / `0.8330` / `0.0290` | **`F1=0.8853`** (`R=0.9908, FPR=0.2292, ROC=0.9571`) | `F1=0.0464` (`R=0.9760, FPR=0.4722, ROC=0.7649`) |
-| **Autoencoder** (`v2-ae-20261118T020635Z`, `e6afecef...`) | `0.9215` / `0.0500` | `0.7860` / `0.4693` / **`0.5877`** / `0.7597` / `0.5544` / `0.0276` | `F1=0.7325` (`R=0.9990, FPR=0.6746, ROC=0.7810`) | `F1=0.0326` (`R=0.9921, FPR=0.6925, ROC=0.7280`) |
+| **Random Forest** (`v2-rf-20261117T231214Z`, `b2e42f85...`) | `0.9997` / `0.0002` | **`0.9950`** / `0.9994` / `0.0002` | `F1=0.0474` (`R=0.0264, FPR=0.0811`) | `F1=0.0712` (`R=0.5412, FPR=0.1608`) |
+| **XGBoost** (`v2-xgb-20261117T231609Z`, `33d201f8...`) | `0.9996` / `0.0002` | **`0.9013`** / `0.9884` / `0.0002` | `F1=0.1436` (`R=0.0832, FPR=0.0700`) | `F1=0.0738` (`R=0.5623, FPR=0.1611`) |
+| **Isolation Forest** (`v2-if-20261118T020525Z`, `11b16900...`) | `0.9213` / `0.0500` | **`0.5842`** / `0.8330` / `0.0290` | **`F1=0.8853`** (`R=0.9908, FPR=0.2292`) | `F1=0.0464` (`R=0.9760, FPR=0.4722`) |
+| **Autoencoder** (`v2-ae-20261118T020635Z`, `e6afecef...`) | `0.9215` / `0.0500` | **`0.5877`** / `0.5544` / `0.0276` | `F1=0.7325` (`R=0.9990, FPR=0.6746`) | `F1=0.0326` (`R=0.9921, FPR=0.6925`) |
 
-- **Lưu ý nhóm tấn công hiếm trên `AIT-Test`:** `Exploitation_And_C2` chỉ có **`N = 5` mẫu** (`5/5 = 1.0` ở cả 4 model — **KHÔNG** kết luận tổng quát hóa `100%`), `Post_Exploitation_Discovery` **`N = 39`** (`RF/XGB/IF 0.8974`, `AE 0.1026`), `Credential_Attack` **`N = 78`** (`RF/XGB/IF 0.1410`, `AE 0.0641`), `Data_Exfiltration` `N = 80,075` (`RF 0.9860`, `XGB 0.6128`, `IF 0.0`, `AE 0.0005`).
-- **Thí nghiệm kiểm soát `WP3 E1–E5` (`scripts/run_wp3_controlled_ablation.py`, `reports/experiments/ml/wp3_controlled_ablation_report.json`):**
-  - `E1` (6 base features): Bỏ 12 engineered features kéo `XGB AIT-Test Exfil` sụp từ `0.6128` -> `0.0803` (`Test F1 0.7324`).
-  - `E2`/`E2b` (byte/rate ablation): Cắt `6` biến byte/rate thô (`E2`) giữ `RF Win7AD FPR=0.1599`; cắt sạch cả `bytes_per_pkt_{in,out}` (`E2b`) chứng minh nhân quả khi `RF Win7AD F1` nhảy `0.0712 -> 0.5665` (`AUC=0.8869, FPR=0.0028`), nhưng `AIT-Val FPR` tăng 388x (`0.0002 -> 0.0770`) và `CTU-Echo` sụp `F1=0.0067 (R=0.0034)`.
-  - `E3a`/`E3b` (semantic protocol one-hot cho IF/AE): `E3a` nâng `AE AIT-Test F1` (`0.5877 -> 0.6496`) và cắt `CTU-Echo FPR` (`0.6746 -> 0.4222`), nhưng đổi contract thành `21` chiều và giữ `CTU-Win7AD FPR=0.6335`.
-  - `E4` (5-fold LOSO CV trong `AIT-Train`): `RF` `F1=0.9876 ± 0.0062`, trong khi `XGB` biến động lớn (`min=0.7585` & `Exfil=0.0230` khi hold-out `harrison`) và `IF` (`0.5179 ± 0.2361`).
-  - `E5` (Domain adaptation 3 tầng): Tách rõ `Tier 1 (Zero-Shot)` vs `Tier 2 (AIT+Echo -> unseen Win7AD: RF F1=0.0928, AUC=0.8280; AE AUC=0.9520, FPR=0.4688, RESEARCH_ONLY)` vs `Tier 3 (Same-Device Temporal CTU-Echo: RF F1=0.9634, RESEARCH_ONLY)`.
-  - **Quyết định chọn Candidate:** **`RETAIN_E0_BASELINE_ARTIFACTS`** (giữ nguyên 4 artifact đã ký SHA-256 trên hợp đồng `canonical-flow-v2-18`).
-- **Tách bạch 3 trục Provenance (`WP4`):** `artifact_integrity_verified = PASS`, `dataset_provenance_verified = PASS (AIT/CTU) / BLOCKED (UGR'16)`, **`source_reproducibility_verified = DIRTY_DISCLOSED`** (`training_git_commit = 79ebb678b87de19cc6b664b587726983fecaf98f`, `git_dirty = true` giữ nguyên trung thực, không giả mạo).
+- **WP3 Controlled Ablation & Leakage Disclosure (`scripts/run_wp3_controlled_ablation.py`, `wp3_controlled_ablation_report.json`):**
+  - `E1` (6f), `E2`/`E2b` (byte/rate ablation), `E3a`/`E3b` (protocol one-hot IF/AE), `E4` (5-fold LOSO CV trong `AIT-Train`), `E5` (Tier 1 Zero-Shot vs Tier 2/3 `RESEARCH_ONLY` adaptation) dẫn tới quyết định **`RETAIN_E0_BASELINE_ARTIFACTS`**.
+  - **Minh bạch ranh giới split (`WP-B`):** `ait_test` và `ctu_*` **không** dùng để fit model, fit transform, calibrate threshold hay tune hyperparameter trong `E0–E4` (`ait_test_used_for_training=false`, `ait_test_used_for_threshold_calibration=false`, `ctu_used_for_training_in_zero_shot_experiments=false`), nhưng **`selection_recommendation` có trích dẫn hậu nghiệm kết quả `AIT-Test` và `CTU`** (`ait_test_used_for_posthoc_candidate_selection=true`, `ctu_used_for_posthoc_candidate_selection=true`, `holdout_independent_selection=false`, `selection_type="posthoc_holdout_informed_retention_decision"`).
 
 ---
 
-## 4. Kết quả Nghiên cứu RQ1–RQ6 & Giới hạn Trung thực
+## 4. WP1–WP7 Status, OOD Validation & Companion Artifacts
 
-- **RQ1 (`model_comparison_report.json`):** `RF F1=0.9950` > `XGB 0.9013` >> `AE 0.5877` / `IF 0.5842` trên `988,805` flows `AIT-Test`.
-- **RQ2 (`rq2_imbalance_report.json`, Negative Result `h2_full_confirmed = false`):** `RF_CostSensitive` đạt `F1=0.994749`, nhưng `Credential_Attack` (`N=78`) dừng ở `14.10%` (`RF/XGB/IF`) và `6.41%` (`AE`).
-- **RQ3 (`rq3_session_correlation_experiment.json`, Simulation Negative Result `simulation_hypothesis_met = false`):** `cos>=0.85` `F1=0.3191`, `cos>=0.95` `F1=0.5556`; empirical AIT giữ **`BLOCKED`** (`#85`).
-- **RQ4 (`rq4_unknown_attack_report.json`, Negative Result `unsupervised_ge_0_75_both = false`):** `44` unknown holdout (`zero_leakage_verified=true`): `IF 0.9091`, `RF 0.9091`, `XGB 0.7500`, **`AE 0.2045`**.
-- **RQ5 (`rq5_rotation_experiment.json`, Simulation):** Giảm `87.5%` exposure (`1200.0s -> 150.01s`) và `85.0%` blast radius (`40 -> 6`).
-- **RQ6 (`crypto_benchmark_report.json` & `system_performance_benchmark.json`, Benchmarked):** AES-256-GCM 256B P95 `13.3 us` (`75,851.2 ops/s`); CPU E2E (`4/4 REAL_MODELS`) `16.38 events/s` (Med `61.75 ms`).
-- **Traceability (`traceability_evaluation.json`):** `1.0 / 1.0` vs dynamic grep `0.375 / 0.50` trên kịch bản synthetic `8` events.
-
----
-
-## 5. Kiến trúc v2, Hardening WP5 & Synthetic Lab Acceptance (`#137`)
-
-- **Kiến trúc sản phẩm:** Desktop **Rust / Tauri 2 + Svelte 5 (`2.0.0`)** + Sidecar **FastAPI (`127.0.0.1`, OpenAPI `0.1.0`)**, `X-Sentinel-Session-Token`, `UnifiedSecurityEventV2`, Behavioral Vector 16-D, Risk Scoring `[0..100]`, Trace Engine & Attack Timeline, `AES-256-GCM` (`DPAPI` / POSIX perms + Adaptive Key Rotation), Security Dry-Run (`executed=false`, khóa `HOLD_RESEARCH_ONLY_MODEL`), Python UDP NetFlow v9/IPFIX Collector (`#128` Rust crate `DEFERRED`).
-- **WP5 Companion & Runtime Fail-Closed Hardening:**
-  - `tauri.standalone.conf.json` + `scripts/verify_companion_artifacts.py`: bổ sung staging/checksum kiểm chứng đủ `20` `companion_files` (bao gồm `ood_reference_gate.json` `8a52bfe5...` và AE `score_normalization.json` `d7bcb78f...`) và bắt buộc `ood_gate.status == "FITTED"` khi kiểm layout standalone.
-  - `src/network_anomaly/ml/ood_gate.py`: validate strict schema `schema_version=1`, `artifact_type="ood_reference_gate"`, `min_bounds <= max_bounds`, positive stds, `fit_rows > 0`, khớp `expected_feature_names` & `expected_preprocessor_sha256`.
-  - `src/network_anomaly/models/autoencoder.py`: cross-check sidecar `score_normalization.json` trước deserialize.
-  - `src/network_anomaly/streaming/realtime_inference.py`: bổ sung `runtime_mode` (`"research"` vs `"deployment"`, `NETFLOW_RUNTIME_MODE`), tách bạch `FITTED` / `NOT_FITTED` / `ERROR`, khóa fail-closed `inference_mode="UNAVAILABLE"` & abstention khi OOD `ERROR` (mọi mode) hoặc non-`FITTED` ở `"deployment"`.
-- **Synthetic UDP Loopback (`#137`, `reports/acceptance/synthetic_udp_loopback_report.json`):** `Verdict: ACCEPTED` (`6/6` flows, `ood_gate=FITTED`, `4/4 VALIDATED`, `1` alert `HIGH` `risk=84.0`, `6/6` ciphertext); **`real_device_tested: false`**, physical lab vẫn `BLOCKED`.
+- **WP1–WP7 + WP-A/B/C:**
+  - `WP1` (PR `#156` & Git baseline sync): **DONE**
+  - `WP2` (E0 baseline reconciliation & rare-class caveats `Exploitation_And_C2 N=5`): **DONE**
+  - `WP3` (`E0–E5` ablation & `WP-B` post-hoc leakage disclosure): **DONE**
+  - `WP4` (3-axis provenance separation — `DIRTY_DISCLOSED` @ `79ebb678`): **DONE**
+  - `WP5` + `WP-A` (Companion staging `20` files & OOD trust-boundary hardening): **DONE**
+  - `WP6` + `WP-C` + `WP-D` (Audit docs & PR `#156` body sync): **DONE**
+  - `WP7` + `WP-E` (Local verification & remote CI on latest HEAD): **DONE / VERIFIED**
+- **OOD Validation & Companion Artifacts (`WP5` + `WP-A`):**
+  - `desktop/src-tauri/tauri.standalone.conf.json` & `scripts/verify_companion_artifacts.py`: stage và kiểm SHA-256 đủ `20` `companion_files` bao gồm `ood_reference_gate.json` (`8a52bfe5...`, `fit_rows=2,097,891`) và AE `score_normalization.json` (`d7bcb78f...`); yêu cầu `ood_gate.status == "FITTED"`.
+  - `src/network_anomaly/ml/ood_gate.py`: `from_artifact()`, `verify_ood_gate_artifact()`, và `validate_ood_gate_instance()` kiểm schema, exact `ML_FEATURE_COLUMNS`, array shape/finite/`stds > 0`/`min_bounds <= max_bounds`, `provenance.fit_rows > 0`, và `preprocessor_artifact_sha256`.
+  - `src/network_anomaly/streaming/realtime_inference.py` + `live_orchestrator.py` + `live_service.py`: tách `runtime_mode` (`"research"` vs `"deployment"`), **cấm direct in-memory `ood_gate` injection ở `deployment` mode / `require_ood_gate=True`**, bắt buộc validation đầy đủ cho in-memory gate ở `research` mode (chặn fake `is_fitted=True` bypass), bắt fail-closed runtime error trong `evaluate_sample()`, và truyền/kiểm khớp `runtime_mode` qua `LiveSystemOrchestrator` & `LiveTelemetryService`.
 
 ---
 
-## 6. Hạng mục `BLOCKED` / `DEFERRED` & Điều kiện Trước Merge / Release
+## 5. Audit Findings, Acceptance Criteria & CI/Test Evidence
 
-| Hạng mục | Trạng thái | Điều kiện Mở khóa |
-|---|---|---|
-| Commit sạch working tree WP2–WP6 & re-run CI | **CẦN LÀM TRƯỚC KHI BỎ DRAFT** | Commit thay đổi sau `f5dacb1e`, push `feat/v2-integration`, xác nhận GitHub Actions CI (`ci.yml`, `lint-audit.yml`) PASS trên commit mới. |
-| `UGR'16` ISP Validation (`#82, #83, #97`) | **`BLOCKED`** | Cổng NESG trả `HTTP 403`; khảo sát nguồn thay thế tại `reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md`. |
-| Empirical `AIT-NDS-v2 ↔ AIT-LDS-v2.1` UID Linkage (`#85`) | **`BLOCKED` (`2/3 AC`)** | Không có UID chung & thiếu PCAP `v2.0` cục bộ. |
-| Nghiệm thu Thiết bị Lab Vật lý (`#137`) | **`PARTIAL` (`3/5 AC`)** | Chỉ có synthetic UDP loopback; chưa có router/switch phần cứng. |
-| Clean Windows 10/11 VM NSIS Installer E2E (`#73, #148`) | **`DEFERRED / NOT VERIFIED`** | Companion staging `ood_reference_gate.json` & `score_normalization.json` đã xong trên code/config; vẫn cần placeholder `LICENSE`/`pyproject`, build PyInstaller + NSIS và chạy Controller–Target–Witness VM. |
-| `DISTRIBUTION_AUTHORIZATION.json` (`#154`) | **`HOLD_FOR_MAINTAINER_SIGNOFF` (`approved: false`)** | Giữ nguyên `approved: false`; cần Maintainer ký hồ sơ phân phối công khai `CC BY 4.0` + `secrets.DISTRIBUTION_EVIDENCE_SHA256` trước mọi release công khai. |
-| Website `site-source` (`#152`) | **`OPEN` (`1/4 AC`)** | Chờ merge PR `#156` để neo `evidenceCommit` trên `main` và cập nhật từ `v0.6.0` sang `v2.0`. |
-| Defense Report & Slides (`#153`) | **`OUTLINE_ONLY` (`0/4 AC`)** | Mới có `docs/REPORT_OUTLINE.md` và `docs/PRESENTATION_OUTLINE.md`. |
-| Rust NetFlow Collector Crate (`#128`) | **`DEFERRED`** | Tách hậu v2.0; bản v2.0 dùng Python `UDPFlowCollector`. |
+- **Audit Findings & Remediation:** `F-01` (Threat Model Python collector), `F-02` (RQ2 taxonomy `Exploitation_And_C2 N=5`), `F-03` (`DIRTY_DISCLOSED` `79ebb678`), `F-04` (4 cổng `ModelRegistry`/`compatibility.py`/containment), `R-137` (live alert SQLite/UI), `R-OOD-COMPANION`, `R-OOD-INMEM-BYPASS` (`WP-A` — internal API/trust-boundary validation bypass), `R-WP3-LEAKAGE-DISCLOSURE` (`WP-B`), `R-AUDIT-PR156-RESYNC` (`WP-C/D`). Chi tiết tại [`reports/audits/V2_FINDING_REGISTER.md`](reports/audits/V2_FINDING_REGISTER.md).
+- **Acceptance Criteria (Phân định trung thực):**
+  - `#131` (`M6.6`): **`PASS`** (chờ merge `main`; Python UDP collector).
+  - `#137` (`M6.6`): **`PARTIAL` (`3/5`)** — Synthetic UDP loopback (`13/13` stages, `real_device_tested=false`) **KHÔNG** thay thế physical router/switch lab (`BLOCKED`).
+  - `#73` / `#148` (`M6.7`): **`UNVERIFIED` (`0/4`)** — Build Windows `.exe` trong `desktop-tauri-windows` **KHÔNG** phải NSIS installer validation; Clean Windows 10/11 VM E2E chưa chạy.
+  - `#85` (`M6.2`): **`PARTIAL` (`2/3`)** — Empirical `AIT-NDS-v2 ↔ AIT-LDS-v2.1` UID linkage **`BLOCKED`** (`DIRECT_UID_LINK=False`).
+  - `#152` (`M6.7`): **`PARTIAL` (`1/4`)** — `origin/site-source` còn ở v1 chờ merge PR `#156`.
+  - `#153` (`M6.7`): **`UNVERIFIED` (`0/4`)** — `OUTLINE_ONLY` (`docs/PRESENTATION_OUTLINE.md`).
+  - `#154` (`M6.7`): **`BLOCKED` (`0/4`)** — `DISTRIBUTION_AUTHORIZATION.json` giữ `approved: false`.
+- **CI / Test Evidence:**
+  - CI tham chiếu trước đợt vá: Run `#44271966268` trên `2c8acc1d` (`7/7` jobs `PASS`: Ubuntu pytest `577 passed, 21 skipped`; Windows pytest `579 passed, 19 skipped`; `lint`, `desktop-frontend`, `desktop-tauri-windows`).
+  - **Lưu ý CI:** Kiểm tra raw dataset integrity (`verify_ait_manifest` / `fetch_multi_source_dataset`) trên CI bị **`SKIPPED`** do không có raw archives tại `data/raw/ait_nds_v2`.
+  - Kết quả kiểm thử cục bộ & CI run gắn với HEAD SHA mới nhất của PR sẽ được cập nhật trực tiếp ở đầu PR này sau khi push.
+
+---
+
+## 6. Known Limitations, Deferred Work & Governance Status
+
+- **Known Limitations:** Zero-shot cross-source `CTU-SME-11` chưa đạt ngưỡng triển khai; `Credential_Attack` (`N=78`) recall `14.10%`; `Exploitation_And_C2` (`N=5`) không đủ lực thống kê; IF/AE mù trước slow DNS tunneling (`Data_Exfiltration`); model `E0` train từ `dirty` worktree (`79ebb678`, `DIRTY_DISCLOSED`); `RQ3`/`RQ5` là simulation; synthetic UDP loopback không thay thế lab vật lý; placeholder `LICENSE:1` / `pyproject.toml:12-13` vẫn giữ.
+- **Deferred Work:** `UGR'16` (`HTTP 403`), `#85` empirical UID linkage, `#137` physical lab, `#73`/`#148` PyInstaller/NSIS build + Clean Windows 10/11 VM E2E, `#128` Rust Collector crate, `#152` `site-source`, `#153` PPTX/PDF.
+- **Governance & Distribution Status:** [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](reports/governance/DISTRIBUTION_AUTHORIZATION.json) giữ nguyên **`approved: false`** và **`status: "HOLD_FOR_MAINTAINER_SIGNOFF"`**; `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) cách ly 100% khỏi ML artifacts & demo CSV (`CC BY 4.0`). **KHÔNG** đủ điều kiện phát hành công khai.
+
+---
+
+## 7. Reviewer Checklist
+
+- [ ] Thực hiện independent GitHub review (`0` submitted reviews hiện tại)
+- [ ] Kiểm tra diff `WP-A` (`ood_gate.py`, `realtime_inference.py`, `live_orchestrator.py`, `live_service.py`) và regression tests
+- [ ] Kiểm tra `WP-B` (`run_wp3_controlled_ablation.py`, `wp3_controlled_ablation_report.json`, `V2_MODEL_AUDIT.md`) — xác nhận `E0` không bị retrain/thay SHA
+- [ ] Xác nhận GitHub Actions CI (`ci.yml`) PASS trên HEAD SHA mới nhất của `feat/v2-integration`
+- [ ] Xác nhận giữ `isDraft: true` nếu các gate `#73/#148`, `#137`, `#154` vẫn chưa mở khóa
 
 Refs #76, #77, #78, #79, #80, #81, #82, #83, #84, #85, #86, #87, #88, #89, #90, #91, #92, #93, #94, #95, #96, #97, #98, #99, #100, #101, #102, #103, #104, #105, #106, #107, #108, #109, #110, #111, #112, #113, #114, #115, #116, #117, #118, #119, #120, #121, #122, #123, #124, #125, #126, #127, #128, #129, #130, #131, #132, #133, #134, #135, #136, #137, #138, #139, #140, #141, #142, #143, #144, #145, #146, #147, #148, #149, #150, #151, #152, #153, #154, #155
 ```

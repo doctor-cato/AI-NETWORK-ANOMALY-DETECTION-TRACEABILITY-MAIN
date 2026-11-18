@@ -37,9 +37,59 @@
     "timestamp_utc": "2026-11-18T08:18:01.818348+00:00"
   },
   "leakage_policy": {
-    "ait_test_touched_for_selection": false,
-    "ctu_touched_for_zero_shot_selection": false,
-    "threshold_selection_split": "ait_val (except E4 fold train benign quantile)"
+    "ait_test_used_for_training": false,
+    "ait_test_used_for_feature_transform_fitting": false,
+    "ait_test_used_for_threshold_calibration": false,
+    "ait_test_used_for_hyperparameter_tuning": false,
+    "ait_test_used_for_posthoc_evaluation": true,
+    "ait_test_used_for_posthoc_candidate_selection": true,
+    "ctu_used_for_training_in_zero_shot_experiments": false,
+    "ctu_used_for_feature_transform_fitting_in_zero_shot_experiments": false,
+    "ctu_used_for_threshold_calibration_in_zero_shot_experiments": false,
+    "ctu_used_for_hyperparameter_tuning_in_zero_shot_experiments": false,
+    "ctu_used_for_zero_shot_evaluation": true,
+    "ctu_used_for_posthoc_candidate_selection": true,
+    "ctu_used_for_training_in_e5_adaptation_tiers": true,
+    "independent_holdout_selection_claim": false,
+    "threshold_selection_split": "ait_val (except E4 fold train benign 95th percentile)",
+    "split_usage_by_activity": {
+      "model_fitting_e0_to_e3b": [
+        "ait_train"
+      ],
+      "feature_transformation_fitting_e0_to_e3b": [
+        "ait_train"
+      ],
+      "threshold_calibration_if_ae_e0_to_e3b": [
+        "ait_val"
+      ],
+      "threshold_policy_rf_xgb": "fixed_binary_0.5",
+      "e4_loso_cv_fit_and_if_threshold": [
+        "ait_train (4-of-5 scenario folds)"
+      ],
+      "e5_tier2_adaptation_fit": [
+        "ait_train",
+        "ctu_echo (RESEARCH_ONLY)"
+      ],
+      "e5_tier3_temporal_adaptation_fit": [
+        "ctu_echo_early_days",
+        "ctu_win7ad_early_days (RESEARCH_ONLY)"
+      ],
+      "posthoc_evaluation": [
+        "ait_val",
+        "ait_test",
+        "ctu_echo",
+        "ctu_windows7ad"
+      ],
+      "posthoc_candidate_retention_decision": [
+        "ait_val",
+        "ait_test",
+        "ctu_echo",
+        "ctu_windows7ad",
+        "e4_ait_train_loso",
+        "e5_adaptation_tiers"
+      ]
+    },
+    "disclosure": "Neither AIT-Test nor CTU partitions were used for model fitting, feature transform fitting, threshold calibration, or hyperparameter tuning in E0-E4. However, selection_recommendation (RETAIN_E0_BASELINE_ARTIFACTS) is a post-hoc holdout-informed retention decision that explicitly references AIT-Test Data_Exfiltration, CTU-Win7AD, CTU-Echo, AIT-Val FPR, E4 LOSO CV, and E5 adaptation results; therefore candidate retention is NOT holdout-independent."
   },
   "experiments": {
     "E0_baseline": {
@@ -909,7 +959,6 @@
         "protocol_num"
       ],
       "bounded_scale_floor": 0.0,
-      "test_touched_for_selection_or_threshold": false,
       "models": {
         "random_forest": {
           "hyperparameters": {
@@ -1817,7 +1866,12 @@
             }
           }
         }
-      }
+      },
+      "test_used_for_training_or_transform": false,
+      "test_used_for_threshold_calibration": false,
+      "test_used_for_hyperparameter_tuning": false,
+      "test_used_for_posthoc_evaluation": true,
+      "test_referenced_in_posthoc_selection_rationale": true
     },
     "E2_byte_rate_ablation": {
       "exp_id": "E2_byte_rate_ablation_12f",
@@ -1838,7 +1892,6 @@
         "is_udp"
       ],
       "bounded_scale_floor": 0.0,
-      "test_touched_for_selection_or_threshold": false,
       "models": {
         "random_forest": {
           "hyperparameters": {
@@ -2746,7 +2799,12 @@
             }
           }
         }
-      }
+      },
+      "test_used_for_training_or_transform": false,
+      "test_used_for_threshold_calibration": false,
+      "test_used_for_hyperparameter_tuning": false,
+      "test_used_for_posthoc_evaluation": true,
+      "test_referenced_in_posthoc_selection_rationale": true
     },
     "E2b_pure_non_byte_ablation": {
       "exp_id": "E2b_pure_non_byte_ablation_10f",
@@ -2765,7 +2823,6 @@
         "is_udp"
       ],
       "bounded_scale_floor": 0.0,
-      "test_touched_for_selection_or_threshold": false,
       "models": {
         "random_forest": {
           "hyperparameters": {
@@ -3243,7 +3300,12 @@
             }
           }
         }
-      }
+      },
+      "test_used_for_training_or_transform": false,
+      "test_used_for_threshold_calibration": false,
+      "test_used_for_hyperparameter_tuning": false,
+      "test_used_for_posthoc_evaluation": true,
+      "test_referenced_in_posthoc_selection_rationale": true
     },
     "E3a_protocol_semantic_onehot": {
       "exp_id": "E3a_protocol_semantic_onehot_only",
@@ -3273,7 +3335,6 @@
         "proto_is_other"
       ],
       "bounded_scale_floor": 0.0,
-      "test_touched_for_selection_or_threshold": false,
       "models": {
         "isolation_forest": {
           "hyperparameters": {
@@ -3705,7 +3766,12 @@
             }
           }
         }
-      }
+      },
+      "test_used_for_training_or_transform": false,
+      "test_used_for_threshold_calibration": false,
+      "test_used_for_hyperparameter_tuning": false,
+      "test_used_for_posthoc_evaluation": true,
+      "test_referenced_in_posthoc_selection_rationale": true
     },
     "E3b_protocol_semantic_onehot_floor": {
       "exp_id": "E3b_protocol_semantic_onehot_plus_bounded_floor",
@@ -3735,7 +3801,6 @@
         "proto_is_other"
       ],
       "bounded_scale_floor": 0.25,
-      "test_touched_for_selection_or_threshold": false,
       "models": {
         "isolation_forest": {
           "hyperparameters": {
@@ -4167,7 +4232,12 @@
             }
           }
         }
-      }
+      },
+      "test_used_for_training_or_transform": false,
+      "test_used_for_threshold_calibration": false,
+      "test_used_for_hyperparameter_tuning": false,
+      "test_used_for_posthoc_evaluation": true,
+      "test_referenced_in_posthoc_selection_rationale": true
     },
     "E4_scenario_grouped_cv": {
       "exp_id": "E4_scenario_grouped_loso_cv",
@@ -5567,6 +5637,9 @@
   },
   "selection_recommendation": {
     "official_registered_artifacts_action": "RETAIN_E0_BASELINE_ARTIFACTS",
+    "selection_type": "posthoc_holdout_informed_retention_decision",
+    "holdout_independent_selection": false,
+    "epistemic_note": "Retaining E0 is a post-hoc analytical decision informed by holdout evaluations (AIT-Test, CTU-Echo, CTU-Win7AD) alongside AIT-Val and E4 LOSO CV; no E0 model weights, thresholds, or features were re-tuned or replaced on holdouts.",
     "rationale": [
       "Zero-shot feature ablations (E1 6-feature, E2 byte/rate 12-feature, E2b 10-feature) confirm extreme dependence on byte/rate features for AIT-Test Data_Exfiltration while still failing to enable zero-shot generalization on unseen CTU-Win7AD (FPR/recall trade-off remains unviable).",
       "Semantic protocol one-hot encoding (E3a) eliminates the synthetic protocol_num=1 (ICMP) MSE spike for IF & AE, and adding bounded_scale_floor=0.25 (E3b) further reduces ratio inflation, yet Zeek short-duration (~2ms) benign UDP flows continue to trigger high CTU FPR without changing the frozen canonical-flow-v2-18 preprocessor contract.",
@@ -5574,5 +5647,6 @@
       "Multi-source and same-device temporal adaptation (E5 Tiers 2-3) improve target recall/F1 only when labeled target/related captures are permitted and therefore remain tagged RESEARCH_ONLY rather than zero-shot.",
       "All four verified E0 artifacts (RF b2e42f85..., XGB 33d201f8..., IF 11b16900..., AE e6afecef...) remain the single verified artifact set on the frozen canonical-flow-v2-18 + preprocessor 0866dec7... contract."
     ]
-  }
+  },
+  "policy_metadata_updated_at_utc": "2026-11-18T09:35:52.538829+00:00"
 }

@@ -54,23 +54,65 @@ class OODRejectionGate:
         self.min_bounds: np.ndarray = np.array([])
         self.max_bounds: np.ndarray = np.array([])
         self.is_fitted: bool = False
+        self.provenance: Optional[Dict[str, Any]] = None
+        self.artifact_sha256: Optional[str] = None
 
-    def fit(self, X: np.ndarray, feature_names: List[str]) -> OODRejectionGate:
+    def fit(
+        self,
+        X: np.ndarray,
+        feature_names: List[str],
+        provenance: Optional[Dict[str, Any]] = None,
+    ) -> OODRejectionGate:
         """Fit empirical distribution bounding box and statistical moments."""
-        if X.ndim != 2 or X.shape[0] == 0:
-            raise ValueError("X must be a non-empty 2D array")
-        if X.shape[1] != len(feature_names):
-            raise ValueError(f"Feature count mismatch: {X.shape[1]} vs {len(feature_names)}")
+        if (
+            isinstance(self.std_margin, bool)
+            or not isinstance(self.std_margin, (int, float))
+            or not math.isfinite(float(self.std_margin))
+            or float(self.std_margin) <= 0.0
+        ):
+            raise ValueError(f"Invalid std_margin: {self.std_margin!r}")
+        if (
+            isinstance(self.statistical_threshold, bool)
+            or not isinstance(self.statistical_threshold, (int, float))
+            or not math.isfinite(float(self.statistical_threshold))
+            or float(self.statistical_threshold) <= 0.0
+        ):
+            raise ValueError(f"Invalid statistical_threshold: {self.statistical_threshold!r}")
 
-        self.feature_names = list(feature_names)
-        self.means = np.mean(X, axis=0)
-        self.stds = np.std(X, axis=0)
+        X_arr = np.asarray(X, dtype=np.float64)
+        if X_arr.ndim != 2 or X_arr.shape[0] == 0:
+            raise ValueError("X must be a non-empty 2D array")
+        if not np.all(np.isfinite(X_arr)):
+            raise ValueError("X must contain only finite values")
+        if X_arr.shape[1] != len(feature_names):
+            raise ValueError(f"Feature count mismatch: {X_arr.shape[1]} vs {len(feature_names)}")
+
+        norm_features = [str(name) for name in feature_names]
+        if any(not isinstance(name, str) or not name.strip() for name in feature_names):
+            raise ValueError("feature_names must contain non-empty strings")
+        if len(set(norm_features)) != len(norm_features):
+            raise ValueError("feature_names must not contain duplicates")
+
+        if provenance is not None and not isinstance(provenance, dict):
+            raise ValueError("provenance must be a dict when supplied")
+        prov = dict(provenance) if provenance is not None else {}
+        prov.setdefault("fit_rows", int(X_arr.shape[0]))
+        prov.setdefault("source", "in_memory_fit")
+        fit_rows = prov.get("fit_rows")
+        if isinstance(fit_rows, bool) or not isinstance(fit_rows, int) or fit_rows <= 0:
+            raise ValueError(f"provenance fit_rows must be positive int, got {fit_rows!r}")
+
+        self.feature_names = norm_features
+        self.means = np.mean(X_arr, axis=0)
+        self.stds = np.std(X_arr, axis=0)
         # Avoid division by zero for constant features
         self.stds = np.where(self.stds < 1e-6, 1.0, self.stds)
 
         # Robust bounding box with margin
         self.min_bounds = self.means - self.std_margin * self.stds
         self.max_bounds = self.means + self.std_margin * self.stds
+        self.provenance = prov
+        self.artifact_sha256 = None
         self.is_fitted = True
         return self
 
@@ -269,6 +311,8 @@ class OODRejectionGate:
         gate.stds = arrays["stds"]
         gate.min_bounds = arrays["min_bounds"]
         gate.max_bounds = arrays["max_bounds"]
+        gate.provenance = dict(provenance)
+        gate.artifact_sha256 = None
         gate.is_fitted = True
         return gate
 
@@ -326,6 +370,7 @@ def verify_ood_gate_artifact(
         expected_feature_names=expected_feature_names,
         expected_preprocessor_sha256=expected_preprocessor_sha256,
     )
+    gate.artifact_sha256 = actual_sha256
     prep_sha = provenance.get("preprocessor_artifact_sha256")
     return gate, {
         "status": "FITTED",
@@ -341,6 +386,113 @@ def verify_ood_gate_artifact(
             str(prep_sha).strip().lower()
             if isinstance(prep_sha, str) and prep_sha.strip()
             else None
+        ),
+    }
+
+
+def validate_ood_gate_instance(
+    gate: Any,
+    *,
+    expected_feature_names: Optional[Sequence[str]] = ML_FEATURE_COLUMNS,
+    expected_preprocessor_sha256: Optional[str] = None,
+    require_provenance: bool = True,
+    require_preprocessor_sha256: bool = False,
+) -> Dict[str, Any]:
+    """Validate an in-memory OODRejectionGate against contract, array invariants, and provenance."""
+    if not isinstance(gate, OODRejectionGate):
+        raise ValueError(
+            f"OOD gate must be an OODRejectionGate instance, got {type(gate).__name__}"
+        )
+    if type(gate.is_fitted) is not bool or not gate.is_fitted:
+        raise ValueError("OODRejectionGate is not fitted")
+
+    for param_name, param_val in (
+        ("std_margin", getattr(gate, "std_margin", None)),
+        ("statistical_threshold", getattr(gate, "statistical_threshold", None)),
+    ):
+        if (
+            isinstance(param_val, bool)
+            or not isinstance(param_val, (int, float))
+            or not math.isfinite(float(param_val))
+            or float(param_val) <= 0.0
+        ):
+            raise ValueError(f"OOD gate invalid {param_name}: {param_val!r}")
+
+    feature_names = getattr(gate, "feature_names", None)
+    if not isinstance(feature_names, (list, tuple)) or not feature_names:
+        raise ValueError("OOD gate is missing feature_names")
+    if any(not isinstance(name, str) or not name.strip() for name in feature_names):
+        raise ValueError("OOD gate feature_names must contain non-empty strings")
+    norm_features = [str(name) for name in feature_names]
+    if len(set(norm_features)) != len(norm_features):
+        raise ValueError("OOD gate feature_names contains duplicates")
+    if expected_feature_names is not None and norm_features != [
+        str(name) for name in expected_feature_names
+    ]:
+        raise ValueError("OOD gate feature_names mismatch against expected feature contract")
+
+    expected_shape = (len(norm_features),)
+    arrays: Dict[str, np.ndarray] = {}
+    for label in ("means", "stds", "min_bounds", "max_bounds"):
+        raw = getattr(gate, label, None)
+        if raw is None or isinstance(raw, (str, bytes)):
+            raise ValueError(f"OOD gate missing array '{label}'")
+        try:
+            arr = np.asarray(raw, dtype=np.float64)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"OOD gate '{label}' is not numeric: {exc}") from exc
+        if arr.shape != expected_shape:
+            raise ValueError(
+                f"OOD gate '{label}' shape mismatch: expected {expected_shape}, got {arr.shape}"
+            )
+        if not np.all(np.isfinite(arr)):
+            raise ValueError(f"OOD gate '{label}' contains non-finite values")
+        arrays[label] = arr
+
+    if np.any(arrays["stds"] <= 0.0):
+        raise ValueError("OOD gate contains non-positive standard deviations")
+    if np.any(arrays["min_bounds"] > arrays["max_bounds"]):
+        raise ValueError("OOD gate has min_bounds > max_bounds")
+
+    provenance = getattr(gate, "provenance", None)
+    fit_rows: Optional[int] = None
+    prep_sha: Optional[str] = None
+    if require_provenance or provenance is not None:
+        if not isinstance(provenance, dict):
+            raise ValueError("OOD gate missing required 'provenance' metadata")
+        raw_fit_rows = provenance.get("fit_rows")
+        if isinstance(raw_fit_rows, bool) or not isinstance(raw_fit_rows, int) or raw_fit_rows <= 0:
+            raise ValueError(
+                f"OOD gate provenance fit_rows must be positive int, got {raw_fit_rows!r}"
+            )
+        fit_rows = raw_fit_rows
+        raw_prep_sha = provenance.get("preprocessor_artifact_sha256")
+        if raw_prep_sha is not None:
+            if not isinstance(raw_prep_sha, str) or not raw_prep_sha.strip():
+                raise ValueError(
+                    "OOD gate provenance preprocessor_artifact_sha256 must be non-empty str"
+                )
+            prep_sha = raw_prep_sha.strip().lower()
+
+    if expected_preprocessor_sha256 is not None:
+        exp_prep = str(expected_preprocessor_sha256).strip().lower()
+        if prep_sha is None:
+            if require_preprocessor_sha256:
+                raise ValueError("OOD gate missing preprocessor_artifact_sha256 in provenance")
+        elif prep_sha != exp_prep:
+            raise ValueError(
+                "OOD gate preprocessor_artifact_sha256 mismatch: "
+                f"gate={prep_sha!r} != expected={expected_preprocessor_sha256!r}"
+            )
+
+    art_sha = getattr(gate, "artifact_sha256", None)
+    return {
+        "status": "FITTED",
+        "feature_count": len(norm_features),
+        "fit_rows": fit_rows,
+        "preprocessor_artifact_sha256": prep_sha,
+        "artifact_sha256": (
+            str(art_sha).strip().lower() if isinstance(art_sha, str) and art_sha.strip() else None
         ),
     }
 

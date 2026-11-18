@@ -28,7 +28,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
-from network_anomaly.ml.ood_gate import OODRejectionGate
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
+from network_anomaly.ml.ood_gate import OODRejectionGate, validate_ood_gate_instance
 from network_anomaly.models.registry import (
     FeatureContractError,
     ModelRegistry,
@@ -92,16 +93,43 @@ def _load_ood_gate(
     gate: Optional[OODRejectionGate],
     artifacts_dir: Optional[Any] = None,
     expected_preprocessor_sha256: Optional[str] = None,
+    *,
+    runtime_mode: str = "research",
+    require_ood_gate: bool = False,
 ) -> tuple[Optional[OODRejectionGate], str, Optional[str], Optional[str]]:
-    """Use supplied fitted gate or strictly verify persisted reference artifact.
+    """Verify supplied research gate or persisted reference artifact.
 
-    Distinguishes missing artifact (``NOT_FITTED``) from corrupted or mismatched
-    artifact (``ERROR``) so broken OOD artifacts never silently pass as unfitted.
+    Distinguishes missing artifact (``NOT_FITTED``) from corrupted, mismatched,
+    unprovenanced, or disallowed gate injection (``ERROR``) so broken or unverified
+    OOD artifacts never silently pass as ``FITTED``.
     """
     if gate is not None:
-        if gate.is_fitted:
-            return gate, "FITTED", None, None
-        return None, "NOT_FITTED", "Explicitly supplied OODRejectionGate is not fitted", None
+        if runtime_mode == "deployment" or require_ood_gate:
+            return (
+                None,
+                "ERROR",
+                "ValueError: Direct in-memory ood_gate injection is disallowed when "
+                "runtime_mode='deployment' or require_ood_gate=True; persisted verified "
+                "artifact is required",
+                None,
+            )
+        if (
+            isinstance(gate, OODRejectionGate)
+            and type(getattr(gate, "is_fitted", None)) is bool
+            and not gate.is_fitted
+        ):
+            return None, "NOT_FITTED", "Explicitly supplied OODRejectionGate is not fitted", None
+        try:
+            meta = validate_ood_gate_instance(
+                gate,
+                expected_feature_names=ML_FEATURE_COLUMNS,
+                expected_preprocessor_sha256=expected_preprocessor_sha256,
+                require_provenance=True,
+                require_preprocessor_sha256=bool(expected_preprocessor_sha256),
+            )
+            return gate, "FITTED", None, meta.get("artifact_sha256")
+        except Exception as exc:
+            return None, "ERROR", f"{type(exc).__name__}: {exc}", None
 
     from pathlib import Path
 
@@ -149,6 +177,8 @@ class RealtimeInferenceEngine:
                 ood_gate,
                 artifacts_dir=getattr(self.registry, "artifacts_dir", None),
                 expected_preprocessor_sha256=getattr(self.registry, "preprocessor_sha256", None),
+                runtime_mode=self.runtime_mode,
+                require_ood_gate=self.require_ood_gate,
             )
         )
         if (
@@ -201,6 +231,31 @@ class RealtimeInferenceEngine:
     def model_ready(self) -> bool:
         return self.registry.ready_count > 0 and self._ood_policy_blocked_reason() is None
 
+    def _unavailable_ood_decision(
+        self,
+        event_id: str,
+        start_t: float,
+        ood_reason: str,
+        ood_gate_status: str,
+    ) -> LiveInferenceDecision:
+        return LiveInferenceDecision(
+            event_id=event_id,
+            inference_mode="UNAVAILABLE",
+            ensemble_is_anomaly=False,
+            ensemble_score=0.0,
+            ensemble_score_semantics=ENSEMBLE_SCORE_SEMANTICS,
+            is_ood=True,
+            ood_reason=ood_reason,
+            model_predictions={},
+            total_inference_latency_us=round((time.perf_counter() - start_t) * 1e6, 2),
+            per_model_latency_us={},
+            participating_models=[],
+            unavailable_models=[status.model_key for status in self.registry.statuses()],
+            abstained_due_to_ood=True,
+            ood_gate_status=ood_gate_status,
+            ensemble_policy=self.aggregator.policy.value,
+        )
+
     # ------------------------------------------------------------ inference
     def infer_event(
         self,
@@ -218,27 +273,35 @@ class RealtimeInferenceEngine:
                 self.total_inference_errors += 1
             self.total_unavailable_events += 1
             self.total_ood_events += 1
-            return LiveInferenceDecision(
-                event_id=event.event_id,
-                inference_mode="UNAVAILABLE",
-                ensemble_is_anomaly=False,
-                ensemble_score=0.0,
-                ensemble_score_semantics=ENSEMBLE_SCORE_SEMANTICS,
-                is_ood=True,
-                ood_reason=ood_block_reason,
-                model_predictions={},
-                total_inference_latency_us=round((time.perf_counter() - start_t) * 1e6, 2),
-                per_model_latency_us={},
-                participating_models=[],
-                unavailable_models=[status.model_key for status in self.registry.statuses()],
-                abstained_due_to_ood=True,
-                ood_gate_status=self.ood_gate_status,
-                ensemble_policy=self.aggregator.policy.value,
+            return self._unavailable_ood_decision(
+                event.event_id, start_t, ood_block_reason, self.ood_gate_status
             )
 
         ood_dec = None
-        if self.ood_gate is not None and self.ood_gate.is_fitted:
-            ood_dec = self.ood_gate.evaluate_sample(feature_dict)
+        if self.ood_gate_status == "FITTED":
+            if (
+                self.ood_gate is None
+                or type(getattr(self.ood_gate, "is_fitted", None)) is not bool
+                or not self.ood_gate.is_fitted
+            ):
+                self.total_inference_errors += 1
+                self.total_unavailable_events += 1
+                self.total_ood_events += 1
+                return self._unavailable_ood_decision(
+                    event.event_id, start_t, "ood_gate_unavailable_after_init", "ERROR"
+                )
+            try:
+                ood_dec = self.ood_gate.evaluate_sample(feature_dict)
+            except Exception as exc:
+                self.total_inference_errors += 1
+                self.total_unavailable_events += 1
+                self.total_ood_events += 1
+                return self._unavailable_ood_decision(
+                    event.event_id,
+                    start_t,
+                    f"ood_gate_runtime_error: {type(exc).__name__}: {exc}",
+                    "ERROR",
+                )
         is_ood = bool(ood_dec.is_ood) if ood_dec else False
         ood_reason = ood_dec.reason if ood_dec else None
         if is_ood:

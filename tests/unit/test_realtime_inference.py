@@ -161,6 +161,213 @@ class TestOODGate:
         assert decision.inference_mode == "UNAVAILABLE"
         assert decision.abstained_due_to_ood is True
 
+    def test_fake_fitted_object_without_provenance_is_rejected(self, tmp_path, baseline_features):
+        from types import SimpleNamespace
+
+        fake_gate = SimpleNamespace(is_fitted=True)
+        engine = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            ood_gate=fake_gate,  # type: ignore[arg-type]
+            runtime_mode="research",
+            demo_heuristics=True,
+        )
+        assert engine.ood_gate_status == "ERROR"
+        assert engine.ood_gate is None
+        assert "OODRejectionGate instance" in (engine.ood_gate_error or "")
+        assert engine.readiness()["inference_mode"] == "UNAVAILABLE"
+
+        manual_gate = OODRejectionGate()
+        manual_gate.is_fitted = True
+        manual_gate.feature_names = list(baseline_features().keys())
+        manual_gate.means = np.zeros(len(manual_gate.feature_names))
+        manual_gate.stds = np.ones(len(manual_gate.feature_names))
+        manual_gate.min_bounds = -np.ones(len(manual_gate.feature_names))
+        manual_gate.max_bounds = np.ones(len(manual_gate.feature_names))
+        manual_engine = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            ood_gate=manual_gate,
+            runtime_mode="research",
+            demo_heuristics=True,
+        )
+        assert manual_engine.ood_gate_status == "ERROR"
+        assert "provenance" in (manual_engine.ood_gate_error or "")
+        dec = manual_engine.infer_event(_Event(), baseline_features())
+        assert dec.inference_mode == "UNAVAILABLE"
+        assert dec.abstained_due_to_ood is True
+        assert dec.ood_gate_status == "ERROR"
+
+    def test_injected_gate_with_mismatched_features_or_non_finite_arrays_is_rejected(
+        self, tmp_path, baseline_features
+    ):
+        rng = np.random.default_rng(17)
+        wrong_feat_gate = OODRejectionGate().fit(rng.normal(size=(50, 4)), ["a", "b", "c", "d"])
+        eng_wrong_feat = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            ood_gate=wrong_feat_gate,
+            runtime_mode="research",
+        )
+        assert eng_wrong_feat.ood_gate_status == "ERROR"
+        assert "feature_names mismatch" in (eng_wrong_feat.ood_gate_error or "")
+
+        nan_gate = OODRejectionGate().fit(
+            rng.normal(size=(50, 18)), list(baseline_features().keys())
+        )
+        nan_gate.stds[2] = float("nan")
+        eng_nan = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            ood_gate=nan_gate,
+            runtime_mode="research",
+        )
+        assert eng_nan.ood_gate_status == "ERROR"
+        assert "non-finite" in (eng_nan.ood_gate_error or "")
+
+        bad_shape_gate = OODRejectionGate().fit(
+            rng.normal(size=(50, 18)), list(baseline_features().keys())
+        )
+        bad_shape_gate.max_bounds = np.ones(5)
+        eng_shape = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            ood_gate=bad_shape_gate,
+            runtime_mode="research",
+        )
+        assert eng_shape.ood_gate_status == "ERROR"
+        assert "shape mismatch" in (eng_shape.ood_gate_error or "")
+
+    def test_injected_gate_with_wrong_preprocessor_sha_is_rejected(
+        self, tmp_path, baseline_features
+    ):
+        rng = np.random.default_rng(19)
+        registry = _empty_registry(tmp_path)
+        registry._preprocessor_metadata = {"artifact_sha256": "a" * 64}
+
+        wrong_sha_gate = OODRejectionGate().fit(
+            rng.normal(size=(50, 18)),
+            list(baseline_features().keys()),
+            provenance={"fit_rows": 50, "preprocessor_artifact_sha256": "b" * 64},
+        )
+        engine = RealtimeInferenceEngine(
+            registry=registry,
+            ood_gate=wrong_sha_gate,
+            runtime_mode="research",
+        )
+        assert engine.ood_gate_status == "ERROR"
+        assert "preprocessor_artifact_sha256 mismatch" in (engine.ood_gate_error or "")
+
+        missing_sha_gate = OODRejectionGate().fit(
+            rng.normal(size=(50, 18)),
+            list(baseline_features().keys()),
+        )
+        engine_missing_sha = RealtimeInferenceEngine(
+            registry=registry,
+            ood_gate=missing_sha_gate,
+            runtime_mode="research",
+        )
+        assert engine_missing_sha.ood_gate_status == "ERROR"
+        assert "missing preprocessor_artifact_sha256" in (engine_missing_sha.ood_gate_error or "")
+
+    def test_deployment_mode_rejects_injected_gate_and_accepts_verified_persisted_artifact(
+        self, tmp_path, baseline_features
+    ):
+        import json
+
+        rng = np.random.default_rng(23)
+        in_memory_gate = OODRejectionGate().fit(
+            rng.normal(size=(50, 18)),
+            list(baseline_features().keys()),
+            provenance={"fit_rows": 50, "preprocessor_artifact_sha256": "a" * 64},
+        )
+        registry = _empty_registry(tmp_path)
+        registry._preprocessor_metadata = {"artifact_sha256": "a" * 64}
+
+        rejected_engine = RealtimeInferenceEngine(
+            registry=registry,
+            ood_gate=in_memory_gate,
+            runtime_mode="deployment",
+            demo_heuristics=True,
+        )
+        assert rejected_engine.ood_gate_status == "ERROR"
+        assert "disallowed" in (rejected_engine.ood_gate_error or "")
+        assert rejected_engine.readiness()["ai_ready"] is False
+        assert rejected_engine.readiness()["inference_mode"] == "UNAVAILABLE"
+        dec = rejected_engine.infer_event(_Event(), baseline_features())
+        assert dec.inference_mode == "UNAVAILABLE"
+        assert dec.abstained_due_to_ood is True
+
+        gate_path = registry.artifacts_dir / "ml" / "ood_reference_gate.json"
+        gate_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = in_memory_gate.to_artifact(
+            {
+                "dataset_name": "AIT-NDS-v2",
+                "partition": "train",
+                "fit_rows": 50,
+                "preprocessor_artifact_sha256": "a" * 64,
+            }
+        )
+        gate_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        verified_engine = RealtimeInferenceEngine(
+            registry=registry,
+            runtime_mode="deployment",
+        )
+        assert verified_engine.ood_gate_status == "FITTED"
+        assert verified_engine.ood_gate_error is None
+        assert verified_engine.ood_gate_sha256 is not None
+        assert verified_engine.readiness()["runtime_mode"] == "deployment"
+        assert verified_engine.readiness()["ood_gate_status"] == "FITTED"
+
+    def test_ood_runtime_error_during_evaluate_sample_fails_closed(
+        self, tmp_path, baseline_features
+    ):
+        rng = np.random.default_rng(29)
+        gate = OODRejectionGate().fit(rng.normal(size=(50, 18)), list(baseline_features().keys()))
+        engine = RealtimeInferenceEngine(
+            registry=_empty_registry(tmp_path),
+            ood_gate=gate,
+            runtime_mode="research",
+            demo_heuristics=True,
+        )
+        assert engine.ood_gate_status == "FITTED"
+
+        def _boom(_features):
+            raise RuntimeError("corrupted runtime state")
+
+        engine.ood_gate.evaluate_sample = _boom  # type: ignore[method-assign]
+        dec = engine.infer_event(_Event(), baseline_features())
+        assert dec.inference_mode == "UNAVAILABLE"
+        assert dec.abstained_due_to_ood is True
+        assert dec.ood_gate_status == "ERROR"
+        assert "ood_gate_runtime_error" in (dec.ood_reason or "")
+        assert engine.total_inference_errors == 1
+
+    def test_live_orchestrator_forwards_runtime_mode_and_rejects_mismatched_engine(
+        self, tmp_path, monkeypatch
+    ):
+        from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator
+        from network_anomaly.streaming.live_service import LiveTelemetryService
+
+        orch_deploy = LiveSystemOrchestrator(runtime_mode="deployment")
+        assert orch_deploy.inference_engine.runtime_mode == "deployment"
+        assert orch_deploy.inference_engine.require_ood_gate is True
+
+        svc_deploy = LiveTelemetryService(
+            db_path=tmp_path / "svc.db",
+            keystore_dir=tmp_path / "keys",
+            runtime_mode="deployment",
+        )
+        assert svc_deploy.orchestrator.inference_engine.runtime_mode == "deployment"
+        assert svc_deploy.orchestrator.inference_engine.require_ood_gate is True
+
+        monkeypatch.setenv("NETFLOW_RUNTIME_MODE", "research")
+        orch_research = LiveSystemOrchestrator()
+        assert orch_research.inference_engine.runtime_mode == "research"
+        assert orch_research.inference_engine.require_ood_gate is False
+
+        with pytest.raises(ValueError, match="runtime_mode"):
+            LiveSystemOrchestrator(
+                inference_engine=orch_research.inference_engine,
+                runtime_mode="deployment",
+            )
+
 
 class TestRealInference:
     def test_all_four_artifacts_are_invoked_per_event(

@@ -248,7 +248,11 @@ def _run_ablation_suite(
         "feature_count": len(feature_columns),
         "feature_columns": list(feature_columns),
         "bounded_scale_floor": bounded_scale_floor,
-        "test_touched_for_selection_or_threshold": False,
+        "test_used_for_training_or_transform": False,
+        "test_used_for_threshold_calibration": False,
+        "test_used_for_hyperparameter_tuning": False,
+        "test_used_for_posthoc_evaluation": True,
+        "test_referenced_in_posthoc_selection_rationale": True,
         "models": {},
     }
 
@@ -722,6 +726,115 @@ def _load_raw_partition(path: Path, need_scenario: bool = False) -> Dict[str, An
     }
 
 
+def _build_leakage_policy() -> Dict[str, Any]:
+    """Return explicit, non-conflated split-usage and leakage disclosure metadata."""
+    return {
+        "ait_test_used_for_training": False,
+        "ait_test_used_for_feature_transform_fitting": False,
+        "ait_test_used_for_threshold_calibration": False,
+        "ait_test_used_for_hyperparameter_tuning": False,
+        "ait_test_used_for_posthoc_evaluation": True,
+        "ait_test_used_for_posthoc_candidate_selection": True,
+        "ctu_used_for_training_in_zero_shot_experiments": False,
+        "ctu_used_for_feature_transform_fitting_in_zero_shot_experiments": False,
+        "ctu_used_for_threshold_calibration_in_zero_shot_experiments": False,
+        "ctu_used_for_hyperparameter_tuning_in_zero_shot_experiments": False,
+        "ctu_used_for_zero_shot_evaluation": True,
+        "ctu_used_for_posthoc_candidate_selection": True,
+        "ctu_used_for_training_in_e5_adaptation_tiers": True,
+        "independent_holdout_selection_claim": False,
+        "threshold_selection_split": "ait_val (except E4 fold train benign 95th percentile)",
+        "split_usage_by_activity": {
+            "model_fitting_e0_to_e3b": ["ait_train"],
+            "feature_transformation_fitting_e0_to_e3b": ["ait_train"],
+            "threshold_calibration_if_ae_e0_to_e3b": ["ait_val"],
+            "threshold_policy_rf_xgb": "fixed_binary_0.5",
+            "e4_loso_cv_fit_and_if_threshold": ["ait_train (4-of-5 scenario folds)"],
+            "e5_tier2_adaptation_fit": ["ait_train", "ctu_echo (RESEARCH_ONLY)"],
+            "e5_tier3_temporal_adaptation_fit": [
+                "ctu_echo_early_days",
+                "ctu_win7ad_early_days (RESEARCH_ONLY)",
+            ],
+            "posthoc_evaluation": ["ait_val", "ait_test", "ctu_echo", "ctu_windows7ad"],
+            "posthoc_candidate_retention_decision": [
+                "ait_val",
+                "ait_test",
+                "ctu_echo",
+                "ctu_windows7ad",
+                "e4_ait_train_loso",
+                "e5_adaptation_tiers",
+            ],
+        },
+        "disclosure": (
+            "Neither AIT-Test nor CTU partitions were used for model fitting, feature "
+            "transform fitting, threshold calibration, or hyperparameter tuning in E0-E4. "
+            "However, selection_recommendation (RETAIN_E0_BASELINE_ARTIFACTS) is a "
+            "post-hoc holdout-informed retention decision that explicitly references AIT-Test "
+            "Data_Exfiltration, CTU-Win7AD, CTU-Echo, AIT-Val FPR, E4 LOSO CV, and E5 "
+            "adaptation results; therefore candidate retention is NOT holdout-independent."
+        ),
+    }
+
+
+def _build_selection_recommendation() -> Dict[str, Any]:
+    """Return the canonical post-hoc candidate retention recommendation."""
+    return {
+        "official_registered_artifacts_action": "RETAIN_E0_BASELINE_ARTIFACTS",
+        "selection_type": "posthoc_holdout_informed_retention_decision",
+        "holdout_independent_selection": False,
+        "epistemic_note": (
+            "Retaining E0 is a post-hoc analytical decision informed by holdout evaluations "
+            "(AIT-Test, CTU-Echo, CTU-Win7AD) alongside AIT-Val and E4 LOSO CV; no E0 "
+            "model weights, thresholds, or features were re-tuned or replaced on holdouts."
+        ),
+        "rationale": [
+            "Zero-shot feature ablations (E1 6-feature, E2 byte/rate 12-feature, E2b 10-feature) confirm extreme dependence on byte/rate features for AIT-Test Data_Exfiltration while still failing to enable zero-shot generalization on unseen CTU-Win7AD (FPR/recall trade-off remains unviable).",
+            "Semantic protocol one-hot encoding (E3a) eliminates the synthetic protocol_num=1 (ICMP) MSE spike for IF & AE, and adding bounded_scale_floor=0.25 (E3b) further reduces ratio inflation, yet Zeek short-duration (~2ms) benign UDP flows continue to trigger high CTU FPR without changing the frozen canonical-flow-v2-18 preprocessor contract.",
+            "5-fold Leave-One-Scenario-Out CV inside AIT-Train (E4) demonstrates substantial inter-scenario variance, proving why validating threshold/hyperparameters against a single AIT-Val scenario (russellmitchell) cannot predict cross-source stability.",
+            "Multi-source and same-device temporal adaptation (E5 Tiers 2-3) improve target recall/F1 only when labeled target/related captures are permitted and therefore remain tagged RESEARCH_ONLY rather than zero-shot.",
+            "All four verified E0 artifacts (RF b2e42f85..., XGB 33d201f8..., IF 11b16900..., AE e6afecef...) remain the single verified artifact set on the frozen canonical-flow-v2-18 + preprocessor 0866dec7... contract.",
+        ],
+    }
+
+
+def _apply_policy_metadata_to_report(report_doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize leakage_policy, per-experiment flags, and selection_recommendation."""
+    leakage_policy = _build_leakage_policy()
+    recommendation = _build_selection_recommendation()
+    report_doc["leakage_policy"] = leakage_policy
+    experiments = report_doc.get("experiments") or {}
+    for exp_key in (
+        "E1_base_6f_ablation",
+        "E2_byte_rate_ablation",
+        "E2b_pure_non_byte_ablation",
+        "E3a_protocol_semantic_onehot",
+        "E3b_protocol_semantic_onehot_floor",
+    ):
+        exp_block = experiments.get(exp_key)
+        if isinstance(exp_block, dict):
+            exp_block.pop("test_touched_for_selection_or_threshold", None)
+            exp_block["test_used_for_training_or_transform"] = False
+            exp_block["test_used_for_threshold_calibration"] = False
+            exp_block["test_used_for_hyperparameter_tuning"] = False
+            exp_block["test_used_for_posthoc_evaluation"] = True
+            exp_block["test_referenced_in_posthoc_selection_rationale"] = True
+    report_doc["selection_recommendation"] = recommendation
+    report_doc["policy_metadata_updated_at_utc"] = datetime.now(timezone.utc).isoformat()
+    return report_doc
+
+
+def _sync_improvement_summary(output_json: Path) -> None:
+    if not IMPROVEMENT_SUMMARY_JSON.is_file():
+        return
+    summary_doc = json.loads(IMPROVEMENT_SUMMARY_JSON.read_text(encoding="utf-8"))
+    summary_doc["wp3_controlled_ablation_report"] = output_json.relative_to(PROJECT_ROOT).as_posix()
+    summary_doc["wp3_leakage_policy"] = _build_leakage_policy()
+    summary_doc["wp3_selection_recommendation"] = _build_selection_recommendation()
+    IMPROVEMENT_SUMMARY_JSON.write_text(
+        json.dumps(summary_doc, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run WP3 controlled ablation & domain experiments")
     parser.add_argument(
@@ -730,10 +843,34 @@ def main() -> int:
     parser.add_argument(
         "--refresh-e5-only",
         action="store_true",
-        help="Refresh E0 manifest reconciliation & E5 target adaptation block inside existing report JSON",
+        help="Refresh E0 manifest reconciliation, E5 adaptation summary, and policy metadata inside existing report JSON",
+    )
+    parser.add_argument(
+        "--refresh-metadata-only",
+        action="store_true",
+        help="Refresh leakage_policy, per-experiment split flags, and selection_recommendation without re-running experiments",
     )
     parser.add_argument("--output-json", type=Path, default=DEFAULT_REPORT_JSON)
     args = parser.parse_args()
+
+    if args.refresh_metadata_only:
+        if not args.output_json.is_file():
+            print(
+                f"ERROR: Existing report not found for --refresh-metadata-only: {args.output_json}",
+                file=sys.stderr,
+            )
+            return 1
+        existing = json.loads(args.output_json.read_text(encoding="utf-8"))
+        _apply_policy_metadata_to_report(existing)
+        args.output_json.write_text(
+            json.dumps(existing, indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
+        _sync_improvement_summary(args.output_json)
+        print(
+            f"[WP3] Refreshed leakage_policy & selection_recommendation in {args.output_json}",
+            flush=True,
+        )
+        return 0
 
     if args.refresh_e5_only:
         if not args.output_json.is_file():
@@ -746,10 +883,12 @@ def main() -> int:
         existing.setdefault("experiments", {})
         existing["experiments"]["E0_baseline"] = _reconcile_e0_from_manifests()
         existing["experiments"]["E5_target_adaptation"] = _compile_e5_target_adaptation_summary()
+        _apply_policy_metadata_to_report(existing)
         args.output_json.write_text(
             json.dumps(existing, indent=2) + "\n", encoding="utf-8", newline="\n"
         )
-        print(f"[WP3] Refreshed E0 & E5 summary in {args.output_json}", flush=True)
+        _sync_improvement_summary(args.output_json)
+        print(f"[WP3] Refreshed E0, E5 & policy metadata in {args.output_json}", flush=True)
         return 0
 
     ok, errors, info = check_v2_training_prerequisites()
@@ -839,16 +978,8 @@ def main() -> int:
     e5_adaptation = _compile_e5_target_adaptation_summary()
 
     # Candidate selection verdict
-    recommendation = {
-        "official_registered_artifacts_action": "RETAIN_E0_BASELINE_ARTIFACTS",
-        "rationale": [
-            "Zero-shot feature ablations (E1 6-feature, E2 byte/rate 12-feature, E2b 10-feature) confirm extreme dependence on byte/rate features for AIT-Test Data_Exfiltration while still failing to enable zero-shot generalization on unseen CTU-Win7AD (FPR/recall trade-off remains unviable).",
-            "Semantic protocol one-hot encoding (E3a) eliminates the synthetic protocol_num=1 (ICMP) MSE spike for IF & AE, and adding bounded_scale_floor=0.25 (E3b) further reduces ratio inflation, yet Zeek short-duration (~2ms) benign UDP flows continue to trigger high CTU FPR without changing the frozen canonical-flow-v2-18 preprocessor contract.",
-            "5-fold Leave-One-Scenario-Out CV inside AIT-Train (E4) demonstrates substantial inter-scenario variance, proving why validating threshold/hyperparameters against a single AIT-Val scenario (russellmitchell) cannot predict cross-source stability.",
-            "Multi-source and same-device temporal adaptation (E5 Tiers 2-3) improve target recall/F1 only when labeled target/related captures are permitted and therefore remain tagged RESEARCH_ONLY rather than zero-shot.",
-            "All four verified E0 artifacts (RF b2e42f85..., XGB 33d201f8..., IF 11b16900..., AE e6afecef...) remain the single verified artifact set on the frozen canonical-flow-v2-18 + preprocessor 0866dec7... contract.",
-        ],
-    }
+    recommendation = _build_selection_recommendation()
+    leakage_policy = _build_leakage_policy()
 
     report: Dict[str, Any] = {
         "schema_version": "wp3-controlled-ablation-v1",
@@ -857,11 +988,7 @@ def main() -> int:
         "split_manifest_sha256": info["split_manifest_sha256"],
         "preprocessor_sha256": info["preprocessor_sha256"],
         "environment": build_environment_block(),
-        "leakage_policy": {
-            "ait_test_touched_for_selection": False,
-            "ctu_touched_for_zero_shot_selection": False,
-            "threshold_selection_split": "ait_val (except E4 fold train benign quantile)",
-        },
+        "leakage_policy": leakage_policy,
         "experiments": {
             "E0_baseline": e0_baseline,
             "E1_base_6f_ablation": e1_base6,
@@ -877,16 +1004,7 @@ def main() -> int:
 
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
-
-    if IMPROVEMENT_SUMMARY_JSON.is_file():
-        summary_doc = json.loads(IMPROVEMENT_SUMMARY_JSON.read_text(encoding="utf-8"))
-        summary_doc["wp3_controlled_ablation_report"] = args.output_json.relative_to(
-            PROJECT_ROOT
-        ).as_posix()
-        summary_doc["wp3_selection_recommendation"] = recommendation
-        IMPROVEMENT_SUMMARY_JSON.write_text(
-            json.dumps(summary_doc, indent=2) + "\n", encoding="utf-8", newline="\n"
-        )
+    _sync_improvement_summary(args.output_json)
 
     print(
         f"\n[WP3] Completed all E0-E5 experiments in {report['total_runtime_seconds']}s -> {args.output_json}",

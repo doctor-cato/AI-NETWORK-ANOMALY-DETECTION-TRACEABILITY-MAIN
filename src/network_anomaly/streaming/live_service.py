@@ -76,6 +76,8 @@ class LiveTelemetryService:
         db_path: Optional[Path] = None,
         keystore_dir: Optional[Path] = None,
         demo_heuristics: bool = False,
+        runtime_mode: Optional[str] = None,
+        require_ood_gate: Optional[bool] = None,
         queue_capacity: int = 10_000,
         batch_size: int = 32,
         history_capacity: int = 500,
@@ -89,6 +91,8 @@ class LiveTelemetryService:
             keystore_dir=keystore_dir,
             inference_engine=inference_engine,
             demo_heuristics=demo_heuristics,
+            runtime_mode=runtime_mode,
+            require_ood_gate=require_ood_gate,
         )
         self.history_capacity = max(1, int(history_capacity))
 

@@ -15,6 +15,7 @@ from network_anomaly.ml.ood_gate import (
     OODAction,
     OODRejectionGate,
     load_persisted_ood_gate,
+    validate_ood_gate_instance,
     verify_ood_gate_artifact,
 )
 from network_anomaly.ml.threshold_calibration import (
@@ -153,6 +154,60 @@ class TestOODRejectionGate:
             assert real_gate.is_fitted is True
             assert real_meta["fit_rows"] > 0
             assert real_meta["feature_count"] == len(ML_FEATURE_COLUMNS)
+
+    def test_validate_ood_gate_instance_enforces_schema_arrays_and_provenance(self):
+        from types import SimpleNamespace
+
+        rng = np.random.default_rng(11)
+        valid_gate = OODRejectionGate().fit(
+            rng.normal(size=(40, len(ML_FEATURE_COLUMNS))),
+            list(ML_FEATURE_COLUMNS),
+            provenance={"fit_rows": 40, "preprocessor_artifact_sha256": "c" * 64},
+        )
+        meta = validate_ood_gate_instance(
+            valid_gate,
+            expected_feature_names=ML_FEATURE_COLUMNS,
+            expected_preprocessor_sha256="c" * 64,
+            require_provenance=True,
+            require_preprocessor_sha256=True,
+        )
+        assert meta["status"] == "FITTED"
+        assert meta["fit_rows"] == 40
+        assert meta["preprocessor_artifact_sha256"] == "c" * 64
+
+        fake_obj = SimpleNamespace(is_fitted=True)
+        with pytest.raises(ValueError, match="OODRejectionGate instance"):
+            validate_ood_gate_instance(fake_obj)
+
+        no_prov_gate = OODRejectionGate()
+        no_prov_gate.is_fitted = True
+        no_prov_gate.feature_names = list(ML_FEATURE_COLUMNS)
+        no_prov_gate.means = np.zeros(len(ML_FEATURE_COLUMNS))
+        no_prov_gate.stds = np.ones(len(ML_FEATURE_COLUMNS))
+        no_prov_gate.min_bounds = -np.ones(len(ML_FEATURE_COLUMNS))
+        no_prov_gate.max_bounds = np.ones(len(ML_FEATURE_COLUMNS))
+        with pytest.raises(ValueError, match="provenance"):
+            validate_ood_gate_instance(no_prov_gate, require_provenance=True)
+
+        bad_features_gate = OODRejectionGate().fit(
+            rng.normal(size=(20, 4)), ["f1", "f2", "f3", "f4"]
+        )
+        with pytest.raises(ValueError, match="feature_names mismatch"):
+            validate_ood_gate_instance(bad_features_gate, expected_feature_names=ML_FEATURE_COLUMNS)
+
+        bad_array_gate = OODRejectionGate().fit(
+            rng.normal(size=(20, len(ML_FEATURE_COLUMNS))), list(ML_FEATURE_COLUMNS)
+        )
+        bad_array_gate.means[0] = float("nan")
+        with pytest.raises(ValueError, match="non-finite"):
+            validate_ood_gate_instance(bad_array_gate)
+
+        with pytest.raises(ValueError, match="preprocessor_artifact_sha256 mismatch"):
+            validate_ood_gate_instance(
+                valid_gate,
+                expected_preprocessor_sha256="d" * 64,
+                require_preprocessor_sha256=True,
+            )
 
 
 class TestThresholdCalibration:

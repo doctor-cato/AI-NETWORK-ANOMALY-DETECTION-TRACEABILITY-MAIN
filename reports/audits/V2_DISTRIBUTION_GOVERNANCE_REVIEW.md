@@ -2,7 +2,7 @@
 
 - **Vai trò thực hiện:** Agent F — Kiểm toán viên Quản trị Phân phối & Bản quyền (`Distribution Authorization & Licensing Governance Auditor`) *(đồng bộ hậu kiểm PR `#156` ngày `2026-11-18`)*
 - **Ngày kiểm toán:** `2026-11-18` (`UTC+7`)
-- **Nhánh / Commit kiểm toán:** `feat/v2-integration` @ `f5dacb1e9b520dac3fe066fc706707d1fd76c4be` *(cập nhật từ snapshot gốc `79ebb678`; kèm thay đổi hoàn tất PR `#156` trên working tree chưa commit)*
+- **Nhánh / Commit kiểm toán:** `feat/v2-integration` @ `2c8acc1d68b558d74e0ce1a53c7c92eb4b917557` *(cập nhật từ `f5dacb1e` / `79ebb678`; kèm bản vá PR `#156` WP-A/B/C đang chuẩn bị commit sạch — riêng `training_git_commit` của 4 model manifests giữ nguyên `79ebb678b87de19cc6b664b587726983fecaf98f` với `git_dirty: true`, `DIRTY_DISCLOSED`)*
 - **Phương pháp:** Đọc trực tiếp toàn bộ hồ sơ bản quyền, manifest dữ liệu, manifest 4 mô hình + preprocessor + demo, `scripts/verify_companion_artifacts.py`, cấu hình Tauri/Cargo/npm/PyInstaller, CI/Release workflows và chạy lệnh kiểm chứng read-only. Không chỉnh sửa [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](../governance/DISTRIBUTION_AUTHORIZATION.json), không giả mạo phê duyệt và không thay đổi mã nguồn.
 
 ---
