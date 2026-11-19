@@ -1,19 +1,32 @@
 ---
-title: Phương pháp nghiên cứu
-description: Quy tắc chia tập, fit trên benign-only, hiệu chuẩn ngưỡng và diễn giải cross-dataset.
-order: 10
+title: Phương pháp nghiên cứu & Split v2
+description: Giao thức split theo kịch bản không chồng lấn v2-scenario-group-purged-v1, TrainOnlyPreprocessor(asinh_robust) và 6 câu hỏi nghiên cứu RQ1-RQ6.
+order: 7
 ---
 
-## Chia tập trước khi fit
+## Giao thức chia tập không chồng lấn kịch bản (`v2-scenario-group-purged-v1`)
 
-Bộ dữ liệu v3 là một CSV duy nhất. Giao thức chia theo thời gian và nhóm luồng giữ khoảng đệm (purge gap) 5 phút giữa Train (`1.655.797`), Validation (`345.371`) và Test (`345.953`). Tham số xử lý thiếu và thống kê học từ dữ liệu chỉ được fit trên Train; chọn mô hình và hiệu chuẩn ngưỡng chỉ thực hiện trên Validation; Test được đánh giá sau khi đóng băng mô hình.
+Khác với cách chia ngẫu nhiên hoặc chia theo thời gian trên một kịch bản đơn lẻ, NetFlow Sentinel v2.0 áp dụng giao thức **`v2-scenario-group-purged-v1`** được đóng băng tại [V2_SPLIT_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/V2_SPLIT_MANIFEST.json) trên `3,464,400` dòng `AIT-NDS-v2`:
 
-## Giao thức supervised và unsupervised
+- **Tập Train (`ait_train`)**: **`2,097,891` dòng** (5 kịch bản: `fox`, `harrison`, `russellmitchell`, `shaw`, `wardbeck`).
+- **Tập Validation (`ait_val`)**: **`377,704` dòng** (1 kịch bản độc lập: `wilson`).
+- **Tập Held-out Test (`ait_test`)**: **`988,805` dòng** (2 kịch bản độc lập: `asaki`, `santos`).
+- **Kiểm chứng chống rò rỉ**: **`0`** kịch bản chồng lấn và **`0`** bản ghi trùng bộ `(5-tuple + timestamp)` giữa Train, Validation và Test.
 
-Phân loại nhị phân dùng `Label=1` cho Attack theo thứ tự nhãn `[0, 1]`. Mô hình supervised xuất `attack_probability` trong `[0, 1]`. Mô hình unsupervised (Isolation Forest, Autoencoder) chỉ fit trên Train lành tính (`1.590.608` dòng), cô lập `{Backdoor, Worms}` làm họ tấn công chưa biết, chọn ngưỡng trên Validation (`max-F1-on-known-attacks` cho Isolation Forest; `fpr_constrained` với `FPR <= 0,05` cho Autoencoder) và xuất `raw_anomaly_score` với `attack_probability = null`.
+## Tiền xử lý chỉ trên tập huấn luyện (`TrainOnlyPreprocessor`)
 
-## Diễn giải kết quả
+Để xử lý phân phối lệch nặng (heavy-tailed) của lưu lượng mạng mà không bị rò rỉ thống kê từ Validation/Test và không bị nổ gradient khi phương sai gần bằng 0, [src/network_anomaly/preprocessing/pipeline.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/preprocessing/pipeline.py) cài đặt `TrainOnlyPreprocessor`:
 
-[Kiểm toán chẩn đoán RF](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/models/rf_baseline_validation_audit.json) chỉ ra đường tắt TTL, [kiểm toán rò rỉ split](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md) ghi nhận tỷ lệ trùng lặp vector đặc trưng cao, và [báo cáo cross-dataset](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/cross_dataset_generalization_report.md) xác nhận mô hình sụp đổ khi sang `NF-CSE-CIC-IDS2018-v3`.
+- Biến đổi `asinh_robust`: kết hợp hàm `arcsinh` với chuẩn hóa trung vị / khoảng tứ phân vị (IQR) chỉ học từ `ait_train`.
+- Áp đặt sàn tỷ lệ **`MIN_BOUNDED_SCALE_FLOOR = 0.25`** cho các đặc trưng có IQR quá hẹp, ngăn hiện tượng khuếch đại nhiễu cực đoan khi chuyển miền sang `CTU-SME-11` hoặc `UWF-ZeekData24`.
 
-Xem chi tiết [phương pháp luận](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/METHODOLOGY.md) và [quy tắc đánh giá](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/EVALUATION.md).
+## Giao thức thực nghiệm 6 câu hỏi nghiên cứu (RQ1–RQ6)
+
+Phương pháp luận của dự án được tổ chức xoay quanh 6 câu hỏi nghiên cứu có kiểm chứng thực nghiệm (xem [Tài liệu câu hỏi nghiên cứu](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/RESEARCH_QUESTIONS.md) và [Báo cáo nghiên cứu v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/RESEARCH_REPORT_V2.md)):
+
+- **RQ1 (Khái quát hóa liên kịch bản & liên miền)**: Đánh giá 4 họ mô hình `E0` trên `ait_test` kịch bản độc lập, đo mức suy giảm zero-shot trên `CTU-SME-11` / `UWF-ZeekData24` và kiểm chứng hiệu quả của huấn luyện đa miền `E1` + cổng `OOD_AWARE_ENSEMBLE`.
+- **RQ2 (Mất cân bằng lớp & phân loại đa lớp Stage-2)**: So sánh các chiến lược xử lý mất cân bằng tại [rq2_imbalance_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/imbalance/rq2_imbalance_report.json) và phân loại 6 họ tấn công tại [multiclass_attack_classification_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/multiclass_attack_classification_report.json).
+- **RQ3 (Tương quan phiên hành vi có trạng thái)**: Đánh giá khả năng phát hiện các pha tấn công có tín hiệu đơn luồng yếu (như `Credential_Attack`) thông qua `BehavioralVector` 16 chiều tại [rq3_session_correlation_experiment.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/behavioral/rq3_session_correlation_experiment.json).
+- **RQ4 (Phát hiện tấn công chưa biết / Zero-day holdout)**: Đánh giá khả năng phát hiện họ tấn công bị giấu khỏi tập huấn luyện tại [rq4_unknown_attack_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/rq4_unknown_attack_report.json).
+- **RQ5 (Xoay vòng khóa thích ứng theo rủi ro)**: Định lượng mức giảm thời gian phơi nhiễm khóa và bán kính ảnh hưởng khi bị lộ khóa tại [rq5_rotation_experiment.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/crypto/rq5_rotation_experiment.json).
+- **RQ6 (Chi phí hiệu năng mật mã & thông lượng toàn hệ thống)**: Đo đạc thông lượng `AES-256-GCM`, xoay khóa và suy luận theo lô tại [crypto_benchmark_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/benchmarks/crypto_benchmark_report.json) và [system_performance_benchmark.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/benchmarks/system_performance_benchmark.json).

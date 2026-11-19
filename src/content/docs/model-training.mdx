@@ -1,21 +1,33 @@
 ---
-title: Huấn luyện mô hình
-description: Hợp đồng đầu vào baseline và cả 4 mô hình đã huấn luyện, đánh giá trên Held-out Test.
-order: 6
+title: Huấn luyện & Đánh giá mô hình
+description: Kết quả 4 mô hình baseline E0 trên ait_test, cổng ModelRegistry 4/4 RESEARCH_ONLY, thích nghi đa miền E1 và phân loại 6 lớp Stage-2.
+order: 8
 ---
 
-## Ranh giới đầu vào
+## 4 mô hình Baseline `E0` đóng băng trên `ait_test`
 
-Baseline chuẩn sử dụng đúng 47 đặc trưng NetFlow theo thứ tự (`nf-unsw-nb15-v3-baseline-47`). `Label`, `Attack`, timestamp, địa chỉ IP và cổng L4 bị loại khỏi ma trận `X`. Phân vùng split được ấn định trước khi fit các phép biến đổi thống kê. Dữ liệu huấn luyện và tệp `.joblib` không nằm trong Git hoặc trên website này.
+Bốn họ mô hình baseline `E0` được huấn luyện trên `ait_train` (`2,097,891` dòng, trong đó mô hình không giám sát chỉ học từ luồng lành tính), hiệu chuẩn ngưỡng trên `ait_val` (`377,704` dòng) và đánh giá trên `ait_test` (`988,805` dòng). Kết quả chi tiết được ghi nhận tại [model_comparison_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/model_comparison_report.json):
 
-## Giao thức và các lượt chạy thực nghiệm
+| Mô hình (`E0` Frozen Baseline) | Loại học                   | `ait_test` F1 | Đặc điểm & Quan sát chính                                                                    |
+| :----------------------------- | :------------------------- | :------------ | :------------------------------------------------------------------------------------------- |
+| **`Random Forest`**            | Supervised                 | **`0.9950`**  | Đạt độ chính xác cao nhất trên các kịch bản `AIT-NDS-v2` chưa từng thấy (`asaki`, `santos`). |
+| **`XGBoost`**                  | Supervised                 | **`0.9013`**  | Độ nhạy cao nhưng nhạy cảm hơn với biến thiên tỷ lệ luồng giữa các kịch bản.                 |
+| **`Autoencoder`**              | Unsupervised (Benign-only) | **`0.5877`**  | Phát hiện bất thường dựa trên sai số tái tạo trong không gian 18 đặc trưng `asinh_robust`.   |
+| **`Isolation Forest`**         | Unsupervised (Benign-only) | **`0.5842`**  | Cô lập ngoại lai không cần nhãn tấn công, đóng vai trò tín hiệu bổ trợ cho cổng OOD.         |
 
-- [Giao thức Random Forest baseline](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RF_BASELINE_PROTOCOL.md) — Held-out Test `rf-heldout-ea330b9` (`F1 = 0,999853`).
-- [Giao thức XGBoost baseline](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/XGB_BASELINE_PROTOCOL.md) — Held-out Test `xgb-baseline-1794755807` (`F1 = 0,999984`).
-- [Đánh giá Isolation Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) — Train benign-only (`1.590.608` dòng), ngưỡng Validation `max-F1-on-known-attacks` (`-0,033527`), Held-out Test `F1 = 0,5064`, Unknown `{Backdoor, Worms}` `Recall = 0,8657`.
-- [Đánh giá Autoencoder](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md) — Train benign-only, ngưỡng Validation `fpr_constrained` `17234985,79` (`Val FPR = 0,0500 <= 0,05`), Held-out Test `F1 = 0,1361`, `Recall = 0,1093`, Unknown `Recall = 0,0625`.
-- [Chính sách tiền xử lý train-only](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md).
+## 4 cổng kiểm định `ModelRegistry` & Phân hạng `RESEARCH_ONLY`
 
-## Ranh giới tái lập
+[src/network_anomaly/models/registry.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/models/registry.py) áp dụng 4 cổng kiểm định tự động (toàn vẹn SHA-256, hiệu năng in-domain, độ ổn định hiệu chuẩn và khả năng khái quát hóa liên nguồn). Khi đánh giá zero-shot liên nguồn trên `CTU-SME-11` ([ctu_cross_source_eval.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/ctu_cross_source_eval.json)) và `UWF-ZeekData24` ([uwf_zeekdata24_cross_source_eval.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/uwf_zeekdata24_cross_source_eval.json)), các mô hình `E0` chỉ học từ `AIT-NDS-v2` gặp hiện tượng suy giảm hiệu năng do dịch chuyển phân phối nền (xem [DOMAIN_SHIFT_ANALYSIS.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/domain_analysis/DOMAIN_SHIFT_ANALYSIS.md)).
 
-Tệp `.joblib` kích thước lớn không lưu trong Git. Trên máy mới chưa có Companion Bundle hoặc artifact tự tái lập, `InferencePipeline` và `/api/v1/models` kiểm tra SHA-256 fail-closed và báo `BLOCKED / NOT READY` (`HTTP 503`). Lưu ý thêm: `xgb-baseline-1794755807` được train tại commit `7f51390` với `git_dirty=True`, và đối chiếu chỉ mục split RF cũ với bộ mới vẫn ở trạng thái `MEMBERSHIP_EQUIVALENCE: NOT_VERIFIED` trong [báo cáo đối chiếu split](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/split_membership_audit_report.md).
+Do đó, `ModelRegistry` xếp hạng cả **4/4 mô hình `E0` ở mức `RESEARCH_ONLY`** (`cross_source_validated = false`).
+
+## Thực nghiệm Đa miền `E1` & Giảm báo động giả trên Windows 7 AD (`AE_E3b`)
+
+Để giải quyết hiện tượng dịch chuyển miền mà không vi phạm ranh giới tập kiểm tra, thực nghiệm `E1` ([e1_multidomain_experiment_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/e1_multidomain_experiment_report.json)) kết hợp dữ liệu huấn luyện đa miền và hiệu chuẩn lại Autoencoder trên nền lưu lượng doanh nghiệp:
+
+- Mô hình giám sát đa miền `E1` nâng hiệu năng trên tập kiểm tra độc lập **`CTU_Test` lên `F1 = 0.9564`**.
+- Biến thể **`AE_E3b`** giảm tỷ lệ báo động giả (FPR) trên lưu lượng nền **Windows 7 Active Directory (`Win7AD`) từ `72.14%` xuống còn `13.79%`**.
+
+## Phân loại đa lớp Stage-2 (6 họ tấn công)
+
+Sau khi tầng phát hiện nhị phân gắn cờ luồng bất thường, bộ phân loại đa lớp Stage-2 phân tách luồng vào 6 lớp chuẩn (`Benign`, `Recon_Scan`, `DoS_Flood`, `BruteForce_Auth`, `Exploit_Delivery`, `C2_Exfil`). Kết quả tại [multiclass_attack_classification_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/multiclass_attack_classification_report.json) ghi nhận **`RF_multiclass` đạt `Macro-F1 = 0.7347`**; trong đó các lớp có đặc trưng đơn luồng rõ ràng đạt F1 cao, còn lớp tấn công xác thực rời rạc cần kết hợp thêm tương quan phiên hành vi (`RQ3`).

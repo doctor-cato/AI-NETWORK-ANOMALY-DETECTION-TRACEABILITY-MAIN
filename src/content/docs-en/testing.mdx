@@ -1,22 +1,32 @@
 ---
 title: Testing
-description: Automated checks, companion E2E verification and how to read skipped real-data steps.
-order: 7
+description: Full v2.0 test pyramid (676 pytest, 41 Vitest, 11 desktop Rust + 6 netflow-rs Rust tests), CI 7/7 checks and benchmark boundaries.
+order: 12
 ---
 
-## Automated behavior checks
+## Multi-layer test pyramid (`7/7` CI jobs passing)
+
+NetFlow Sentinel v2.0 verifies every layer across Python, TypeScript/Svelte and Rust:
+
+- **Python suite (`676 passed`)**: Unit, API, crypto, behavioral, OOD gate, multi-source ingestion and end-to-end integration tests under `tests/`.
+- **Frontend desktop suite (`41 passed` across 7 test files)**: Svelte 5 / Vitest checks (`npm --prefix desktop run test`) plus `svelte-check` (`0 errors, 0 warnings`) and production Vite build (`npm --prefix desktop run build`).
+- **Rust Tauri host (`11 passed`) & pure-Rust NetFlow collector (`6 passed`)**: `cargo test --lib`, `cargo fmt --check` and `cargo clippy -- -D warnings` in both `desktop/src-tauri` and [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs).
+- **Static & contract gates**: `ruff check`, `black --check`, `export_openapi_spec.py --check` (`33` paths / `35` operations), `check_desktop_version.py --check` (`2.0.0`), `parse_dag.py --check` and `verify_companion_artifacts.py`.
 
 ```powershell
 python scripts/check_environment.py
-python -m pytest tests -q
 python scripts/export_openapi_spec.py --check
 python scripts/check_desktop_version.py --check
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
+python -m ruff check src scripts tests
+python -m black --check src scripts tests
+python -m pytest tests -q -rs --tb=short
 ```
 
-The Python CI workflow runs on Windows and Ubuntu (Python 3.11 and 3.12) and checks imports, syntax, unit, API and integration behavior. It does not download the restricted raw dataset in CI. Synthetic tests verify code behavior, not model performance on NF-UNSW-NB15-v3.
+## Honest distinction between unit tests, localhost replay and physical labs
 
-## Companion E2E & research verification
+The audit reports in [docs/audits/PR156_HEAD_AUDIT_2026-11-19.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md) and [reports/audits/V2_FINAL_AUDIT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md) enforce strict verification semantics:
 
-A stable release requires running `python scripts/verify_companion_artifacts.py --verify-e2e` on a host with the four verified `.joblib` binaries and `data/demo/` slice present. A `SKIPPED` dataset step, even with exit code 0, must stay `SKIPPED` in any report.
-
-See the [testing guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md), [CI workflow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/.github/workflows/ci.yml) and [v0.6.0 E2E attestation](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+- Passing constructor tests or synthetic fixtures verifies **code correctness (`TESTED`)**, not real-dataset performance (`EXPERIMENTALLY VALIDATED`).
+- Localhost UDP packet replay verifies the NetFlow v9/IPFIX parser and streaming pipeline, but **does not substitute for physical hardware switch/router export (`real_device_tested = false`)**.
+- Any dataset check that exits `0` when optional raw archives are absent is reported honestly as **`SKIPPED`**, never as a real-data `PASS`.

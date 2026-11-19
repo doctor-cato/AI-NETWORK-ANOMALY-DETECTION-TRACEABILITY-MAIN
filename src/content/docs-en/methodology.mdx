@@ -1,19 +1,28 @@
 ---
-title: Research methodology
-description: Split, benign-only fitting, threshold calibration and cross-dataset interpretation rules.
-order: 10
+title: Research methodology & split
+description: Scenario-disjoint split (v2-scenario-group-purged-v1), TrainOnlyPreprocessor (asinh_robust) and RQ1-RQ6 experimental protocol.
+order: 7
 ---
 
-## Split before fit
+## Scenario-disjoint split (`v2-scenario-group-purged-v1`)
 
-The v3 dataset is a single CSV. The repository's chronological, group-aware split places 5-minute purge gaps between Train (`1,655,797`), Validation (`345,371`) and Test (`345,953`). Imputation and other learned statistics are fitted only on Train; model selection and score thresholds belong exclusively to Validation; Test is evaluated once after freezing.
+To eliminate within-scenario temporal and topological leakage, [data/V2_SPLIT_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/V2_SPLIT_MANIFEST.json) partitions `AIT-NDS-v2` (`3,464,400` labeled flows) by **entire cyber-range scenarios** under contract `v2-scenario-group-purged-v1`:
 
-## Supervised vs unsupervised protocols
+- **Train (`2,097,891` rows, 5 scenarios)**: `fox`, `harrison`, `russellmitchell`, `santos`, `shaw` (`2,051,908` Benign + `45,983` Attack).
+- **Validation (`377,704` rows, 1 scenario)**: `wardbeck` (`368,263` Benign + `9,441` Attack).
+- **Held-out Test (`988,805` rows, 2 scenarios)**: `wheeler`, `wilson` (`981,392` Benign + `7,413` Attack).
+- **Zero leakage invariant**: **`0` scenario overlap** and **`0` `(5-tuple + timestamp)` overlap** across Train, Validation and Test.
 
-Binary classification uses `Label=1` for Attack and label order `[0, 1]`. Supervised baselines emit `attack_probability` in `[0, 1]`. Unsupervised detectors (Isolation Forest, Autoencoder) fit on benign-only Train (`1,590,608` rows), isolate `{Backdoor, Worms}` as unknown holdout families, calibrate thresholds on Validation (`max-F1-on-known-attacks` for Isolation Forest; `fpr_constrained` at `FPR <= 0.05` for Autoencoder), and emit `raw_anomaly_score` with `attack_probability = null`.
+## `TrainOnlyPreprocessor` (`asinh_robust`)
 
-## Interpretation
+Implemented in [src/network_anomaly/preprocessing/pipeline.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/preprocessing/pipeline.py), `TrainOnlyPreprocessor` fits exclusively on the Train partition (and on **benign-only Train** `2,051,908` rows for unsupervised detectors). Heavy-tailed flow counters and rates are transformed via `asinh_robust` scaling (`arcsinh(x)` followed by median/IQR centering) with **`MIN_BOUNDED_SCALE_FLOOR = 0.25`** to prevent near-zero IQR collapse on sparse features from exploding test-time z-scores.
 
-The [RF diagnostic audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/models/rf_baseline_validation_audit.json) identifies TTL shortcuts, the [split leakage audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md) records repeated feature vectors, and the [cross-dataset report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/cross_dataset_generalization_report.md) confirms collapse on `NF-CSE-CIC-IDS2018-v3`.
+## RQ1–RQ6 research protocol
 
-See [methodology](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/METHODOLOGY.md) and [evaluation rules](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/EVALUATION.md).
+Full experimental hypotheses and results are documented in [docs/RESEARCH_QUESTIONS.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/RESEARCH_QUESTIONS.md) and [docs/thesis/RESEARCH_REPORT_V2.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/RESEARCH_REPORT_V2.md):
+
+- **RQ1 (Cross-Source Generalization & OOD Gate)**: Evaluates zero-shot transfer from `AIT-NDS-v2` (`E0`) to `CTU-SME-11` and `UWF-ZeekData24`, plus `E1` multi-domain adaptation and `OODRejectionGate` abstention ([DOMAIN_SHIFT_ANALYSIS.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/domain_analysis/DOMAIN_SHIFT_ANALYSIS.md)).
+- **RQ2 (Severe Class Imbalance & Calibration)**: Compares class weighting, resampling and threshold calibration on `AIT-NDS-v2` ([rq2_imbalance_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/imbalance/rq2_imbalance_report.json)).
+- **RQ3 (16-D Behavioral Session Correlation)**: Measures how 5-minute `src_ip` behavioral vectors lift stealthy `Credential_Attack` detection ([rq3_session_correlation_experiment.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/behavioral/rq3_session_correlation_experiment.json)).
+- **RQ4 (Leave-One-Attack-Family-Out Zero-Day Detection)**: Benchmarks unsupervised `Isolation Forest` and `Autoencoder` on unseen attack families ([rq4_unknown_attack_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/rq4_unknown_attack_report.json)).
+- **RQ5 & RQ6 (Adaptive Key Rotation & AEAD Throughput)**: Quantifies exposure window reduction (`-87.5%`), blast radius reduction (`-85.0%`) and `AES-256-GCM` latency/throughput ([rq5_rotation_experiment.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/crypto/rq5_rotation_experiment.json), [crypto_benchmark_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/benchmarks/crypto_benchmark_report.json)).

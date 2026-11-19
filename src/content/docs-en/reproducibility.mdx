@@ -1,15 +1,25 @@
 ---
 title: Reproducibility
-description: Dataset, split, configuration and artifact evidence needed to repeat a result.
-order: 8
+description: SHA-256 dataset and split manifests, companion artifact verification, 2x clean-state repeatability and v1.0.0 tag preservation.
+order: 11
 ---
 
-## Provenance chain
+## Cryptographic provenance chain
 
-Each experiment records the source CSV hash (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`), split manifest (`bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`), ordered 47-feature contract, train-only preprocessor hash (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`), model parameters, dependency versions and commands.
+Every v2.0 experiment and runtime artifact is anchored to versioned SHA-256 manifests:
 
-## Current record
+- **Dataset provenance**: [data/AIT_DATASETS_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/AIT_DATASETS_MANIFEST.json) and [data/EXTERNAL_DATASETS_PROVENANCE.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/EXTERNAL_DATASETS_PROVENANCE.json) record upstream DOIs, licenses (`CC BY 4.0`, `evaluation_only = true`, isolated `CC BY-NC-SA 4.0`) and row counts (`3,464,400` labeled `AIT-NDS-v2`, `251,219` `CTU-SME-11`, `95,871` `UWF-ZeekData24`).
+- **Scenario-disjoint split manifest**: [data/V2_SPLIT_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/V2_SPLIT_MANIFEST.json) freezes `v2-scenario-group-purged-v1` (`Train 2,097,891`, `Val 377,704`, `Test 988,805`, `0` overlap).
+- **Model & OOD gate verification**: [scripts/verify_companion_artifacts.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_companion_artifacts.py) validates the 4 frozen `E0` `.joblib` models, `TrainOnlyPreprocessor`, `OODRejectionGate` (`NETFLOW_OOD_GATE_SHA256`) and distribution permission policy ([reports/governance/DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json)).
 
-The [split manifest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_split_manifest.json) records Train (`1,655,797`), Validation (`345,371`), Test (`345,953`) and purge-gap row counts. Held-out Test evidence is published for [Random Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/error_analysis_report.md), [XGBoost](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/xgboost/evaluation_report.md), [Isolation Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) and [Autoencoder](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md).
+## 2x clean-state repeatability & AIT alignment verification
 
-Follow the canonical [reproducibility document](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) and [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md) before running any resource-intensive step or verifying installer attestations.
+```powershell
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
+python scripts/verify_clean_state_demo.py
+python scripts/verify_ait_timestamp_alignment.py
+```
+
+- **2x isolated clean-state repeatability**: [scripts/verify_clean_state_demo.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_clean_state_demo.py) executes two independent clean-state runs across Offline CSV, Dataset Replay, Live UDP collector, 16-D behavioral scoring, composite risk (`dry_run = True`) and `AES-256-GCM` + Adaptive Key Rotation, confirming **`repeatable_100pct = true`** in [reports/demo/clean_state_demo_verification.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/demo/clean_state_demo_verification.json).
+- **AIT timestamp alignment**: [scripts/verify_ait_timestamp_alignment.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_ait_timestamp_alignment.py) reproduces [reports/datasets/ait_timestamp_alignment_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/datasets/ait_timestamp_alignment_report.json).
+- **Standalone `v1.0.0` historical archive**: The frozen `v1.0.0` git tag remains independently reproducible in an isolated worktree (`143 passed, 2 skipped`), while `historical/` preserves v1 documentation without polluting v2 runtime code. See [reports/audits/V2_FINAL_AUDIT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md).

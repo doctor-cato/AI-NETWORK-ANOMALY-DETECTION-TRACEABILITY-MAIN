@@ -1,24 +1,40 @@
 ---
 title: Desktop Windows & Phát hành
-description: Bộ cài Tauri 2 + Svelte 5, Python 3.12+ runtime và nạp Companion Bundle.
-order: 13
+description: Ứng dụng Tauri 2 (2.0.0) + Svelte 5 + FastAPI (0.1.0), 7 bảng điều khiển, DPAPI keystore và trạng thái đóng gói Windows.
+order: 3
 ---
 
-## Kiến trúc đóng gói (v0.6.0)
+## Kiến trúc Desktop Tauri 2 + Svelte 5 + FastAPI
 
-Bộ cài đặt Windows x64 NSIS (`NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`) đóng gói giao diện **Svelte 5**, nhân điều phối **Rust / Tauri 2**, mã nguồn **Python backend** (`src/network_anomaly/`, `scripts/run_api.py`, `requirements-runtime.txt`) và các **manifest SHA-256** (`reports/`). Người dùng không cần `git clone` hay khai báo `NETWORK_ANOMALY_REPO_ROOT`. Dữ liệu người dùng (`.venv`, `.joblib`, `data/demo/`, `network_anomaly.db`) được lưu tại `%LOCALAPPDATA%\NetFlowSentinelM6` (chạy được với tài khoản Standard User).
-
-Do `NF-UNSW-NB15-v3` có điều khoản phi thương mại và tệp `.joblib` không lưu trong Git, máy Windows đích cần:
-
-- **Windows 10/11 (x64)** kèm **Microsoft Edge WebView2 Runtime**.
-- **Python `>= 3.12` (x64)** phù hợp `requirements-runtime.txt`.
-- **Gói Companion Bundle ZIP** (4 mô hình + preprocessor + 200 dòng demo Validation), được kiểm chứng SHA-256 fail-closed với `COMPANION_SHA256SUMS.txt` và tracked manifests.
-
-## Kiểm chứng & attestation phát hành
+Ứng dụng Desktop NetFlow Sentinel v2.0 kết hợp nhân **Rust / Tauri 2 (`2.0.0`)**, giao diện **Svelte 5** và dịch vụ sidecar **Python FastAPI (`0.1.0`) + SQLite**. Giao tiếp giữa giao diện và sidecar chỉ diễn ra qua loopback `127.0.0.1` và bắt buộc xác thực bằng header `X-Sentinel-Session-Token` (so sánh hằng thời gian bằng `hmac.compare_digest`).
 
 ```powershell
-python scripts/check_desktop_version.py --check --expect-version 0.6.0
-python scripts/verify_companion_artifacts.py --verify-attestation .\release_e2e_verification.json --expect-installer-sha256 <SHA256> --require-nsis-e2e --require-demo-files
+python scripts/check_desktop_version.py --check
+npm --prefix desktop run check
+npm --prefix desktop run test
 ```
 
-Xem chi tiết [hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md), [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md), [ghi chú v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md) và [biên bản E2E](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+## 7 bảng điều khiển (UI Panels) & 3 chế độ vận hành
+
+Giao diện điều hành cung cấp **7 bảng điều khiển chuyên biệt**:
+
+1. **Tổng quan & Trạng thái hệ thống (Dashboard & Readiness)**: Theo dõi trạng thái mô hình, cổng OOD và thông lượng luồng.
+2. **Phân tích CSV Ngoại tuyến (Offline CSV Ingestion)**: Nạp tệp CSV theo hợp đồng `canonical-flow-v2-18`, hiển thị kết quả phân loại và tỷ lệ `ABSTAINED_OOD`.
+3. **Phát lại Tập dữ liệu (Dataset Replay)**: Điều khiển phát lại luồng từ tập dữ liệu chuẩn với tốc độ cấu hình được (`399.44 flow/s`).
+4. **Giám sát Lab Trực tiếp (Live Lab Stream)**: Kết nối bộ thu thập UDP NetFlow v9 / IPFIX Rust (`telemetry/netflow-rs`) và điều phối suy luận theo lô.
+5. **Hành vi & Chuỗi thời gian sự cố (Behavioral & Incident Timeline)**: Trực quan hóa vector hành vi 16 chiều trên cửa sổ `10s / 60s / 300s` và chuỗi sự kiện tấn công.
+6. **Quản lý khóa & Bằng chứng mật mã (Crypto & Key Lifecycle)**: Quản lý khóa `AES-256-GCM`, bảo vệ khóa gốc bằng **Windows `DPAPI`** (`CryptProtectData` / `CryptUnprotectData`), theo dõi `NonceRegistry` và xoay vòng khóa thích ứng.
+7. **Mô phỏng Phản ứng An ninh (Dry-Run Response Policy)**: Đánh giá khuyến nghị phản ứng với khóa an toàn `dry_run = True` (`executed = false`).
+
+## Trạng thái đóng gói NSIS & ủy quyền phân phối
+
+Để đảm bảo tính trung thực của báo cáo kỹ thuật, trạng thái đóng gói và phát hành Windows hiện tại được ghi nhận rõ ràng:
+
+- **Bộ cài NSIS Windows & Kiểm thử E2E trên máy ảo Windows 10/11 sạch (`#148`)**: Đang ở trạng thái **DEFERRED** (hoãn sang giai đoạn đóng gói phân phối sau khi hoàn tất phê duyệt phát hành).
+- **Ủy quyền phân phối nhị phân (`#154`)**: Tệp [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) hiện đặt `approved = false`. Toàn bộ 4 mô hình baseline `E0` giữ phân hạng `RESEARCH_ONLY` và chỉ được phép chạy trên kênh `local_offline` phục vụ nghiên cứu.
+
+```powershell
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
+```
+
+Xem chi tiết tại [Hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/WINDOWS_INSTALLATION.md), [Đánh giá sẵn sàng phát hành v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/V2_RELEASE_READINESS.md) và [Báo cáo kiểm toán PR #156](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md).

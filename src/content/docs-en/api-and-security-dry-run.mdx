@@ -1,17 +1,29 @@
 ---
 title: FastAPI & security dry-run
-description: Localhost 18-endpoint contract, session token auth, deterministic risk/timeline and dry-run #27.
-order: 15
+description: Loopback FastAPI contract (33 paths / 35 ops), X-Sentinel-Session-Token, AES-256-GCM + Windows DPAPI + Adaptive Key Rotation and dry_run=True policy.
+order: 10
 ---
 
-## Localhost REST contract
+## Loopback FastAPI contract (`33` paths / `35` operations)
 
-`scripts/run_api.py` binds strictly to loopback (`127.0.0.1`, rejecting `0.0.0.0`) with single-writer SQLite persistence and 18 documented endpoints (`/health`, `/api/v1/models`, `/api/v1/csv/*`, `/api/v1/incidents/*`, `/api/v1/timeline`, `/api/v1/keys`, `/api/v1/rotation*`, `/api/v1/security/simulate-response`, `/api/v1/security/simulations*`). When launched from Tauri, a 256-bit `NETWORK_ANOMALY_API_TOKEN` is required via `X-Sentinel-Session-Token`.
+The v2.0 sidecar API (`version 0.1.0`) binds strictly to `127.0.0.1` and exposes **`33` REST paths (`35` HTTP operations)** documented in [reports/api/API_CONTRACT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/api/API_CONTRACT.md) and [reports/api/openapi.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/api/openapi.json). Every non-health endpoint enforces **`X-Sentinel-Session-Token`** verification via constant-time `hmac.compare_digest` (returning `HTTP 401/403` on missing or invalid tokens).
 
-## Deterministic trace, risk & Dry-Run (#27)
+Endpoint groups cover:
 
-- **Behavioral summary (#28)** and **deterministic timeline (#24)** aggregate NetFlow metadata (`FLOW_START_MILLISECONDS`, IPs, ports, protocols) with explicit non-attribution notices and `[OOD ABSTAINED]` tags.
-- **Deterministic priority scoring (#32)** maps probabilities or threshold margins to `[0, 100]` and returns `ABSTAINED_OOD` for OOD rows.
-- **Adaptive security response dry-run (#27)** emits deterministic policy actions (`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`) and simulated key-rotation readiness with **`executed = false`**. Containment escalation is granted only for server-verified `MODEL_VALIDATED` + `PREDICTION_AVAILABLE` analyses and is blocked on `ABSTAINED_OOD` rows. Live OS firewall automation and AES-256-GCM keyring operations remain **DEFERRED**.
+- System readiness, model registry (`RESEARCH_ONLY` badges) and OOD gate status (`/health`, `/api/v1/models`, `/api/v1/system/*`).
+- Offline CSV ingestion, dataset replay and live UDP NetFlow v9/IPFIX streaming control (`/api/v1/csv/*`, `/api/v1/stream/*`).
+- Incident queue, 16-D behavioral session timelines and composite 0–100 risk breakdown (`/api/v1/incidents/*`, `/api/v1/timeline`, `/api/v1/behavioral/*`).
+- Cryptographic telemetry storage, Windows `DPAPI` keystore status and adaptive key rotation (`/api/v1/keys*`, `/api/v1/rotation*`, `/api/v1/crypto/*`).
+- Deterministic dry-run containment policy evaluation (`/api/v1/security/simulate-response`, `/api/v1/security/simulations*`).
 
-Inspect the [API contract](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/api/API_CONTRACT.md) and [OpenAPI specification](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/api/openapi.json).
+## `AES-256-GCM` + `NonceRegistry` + Windows `DPAPI` + Adaptive Key Rotation
+
+Implemented in [src/network_anomaly/crypto/aead.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/aead.py), [src/network_anomaly/crypto/key_manager.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/key_manager.py) and [src/network_anomaly/crypto/rotation.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/rotation.py):
+
+- **Authenticated encryption & nonce safety**: Flow records are encrypted with `AES-256-GCM` (`96-bit` nonce, associated provenance metadata) guarded by `NonceRegistry` to prevent nonce reuse. On Windows hosts, master keys are wrapped with **Windows `DPAPI`**.
+- **RQ5 Adaptive Key Rotation**: Risk-triggered key rotation in [rq5_rotation_experiment.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/crypto/rq5_rotation_experiment.json) reduces key exposure window by **`-87.5%`** and compromise blast radius by **`-85.0%`** compared to static 24-hour schedules.
+- **RQ6 Cryptographic Throughput**: In [crypto_benchmark_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/benchmarks/crypto_benchmark_report.json), `AES-256-GCM` reaches **`72,177.2 ops/s`** (`17.62 MiB/s`) at `256B` payloads with mean latency `11.55 us` and **P95 latency `13.3 us`**.
+
+## `ResponsePolicy` locked at `dry_run = True` (`executed = false`)
+
+In [src/network_anomaly/api/response_policy.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/api/response_policy.py), `ResponsePolicy` is hard-locked at **`dry_run = True`** (`executed = false`). It emits deterministic advisory recommendations (`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`) without modifying OS firewall rules or disrupting host network interfaces.

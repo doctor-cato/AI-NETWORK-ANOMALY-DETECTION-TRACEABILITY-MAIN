@@ -1,23 +1,37 @@
 ---
 title: Project overview
-description: Research scope, current v0.6.0 capabilities and where to start.
+description: NetFlow Sentinel v2.0 research scope, 3 operational modes, 7 modules and evidence boundaries.
 order: 1
 ---
 
 ## Purpose
 
-This repository studies network-flow anomaly detection and an evidence-linked traceability architecture. The public website is a static research portal. It does not run a detector or monitor traffic.
+NetFlow Sentinel v2.0 studies multi-source network-flow anomaly detection, cross-domain shift and an evidence-linked traceability architecture on a hybrid desktop-sidecar platform. The public website is a static research portal; it does not run a detector, capture packets or monitor live traffic.
 
-The current `main` branch contains the NF-UNSW-NB15-v3 data contract, quality and EDA records, chronological split and train-only preprocessing code, **real-data Validation and Held-out Test evidence for all four models** (Random Forest, XGBoost, Isolation Forest and Autoencoder), a cross-dataset audit on `NF-CSE-CIC-IDS2018-v3`, an OOD abstention and provenance gate, a localhost FastAPI + SQLite service, and the **Rust / Tauri 2 + Svelte 5 desktop prototype (`v0.6.0`)**. Live OS firewall actions and production AES-256-GCM OS keyring storage remain deferred.
+Version `2.0.0` completes a hard cutover from the v1 `NF-UNSW-NB15-v3` baseline (archived under `historical/`) to the **`canonical-flow-v2-18`** contract (6 base + 12 derived flow features). It integrates three active v2 datasets (**`AIT-NDS-v2`**, **`CTU-SME-11`** and evaluation-only **`UWF-ZeekData24`**), a scenario-disjoint split (`v2-scenario-group-purged-v1`), **four frozen `E0` baseline models** (`Random Forest`, `XGBoost`, `Isolation Forest` and `Autoencoder`) plus `E1` multi-domain and Stage-2 6-class taxonomy extensions, a fail-closed `"deployment"` OOD gate, a 16-D behavioral session engine, a 0–100 composite risk engine, `AES-256-GCM` + Windows `DPAPI` + Adaptive Key Rotation cryptography, a pure-Rust NetFlow v9/IPFIX collector (`telemetry/netflow-rs/`), and a **Tauri 2 (`2.0.0`) + Svelte 5 + FastAPI (`0.1.0`) + SQLite** desktop workstation supporting three operational modes:
+
+1. **Mode 1 — Offline CSV Analysis**: Batch upload and SHA-256-verified scoring of canonical 18-feature CSV slices.
+2. **Mode 2 — Dataset Replay**: Controlled streaming replay (`399.44 flow/s` median throughput) through `LiveStreamOrchestrator`.
+3. **Mode 3 — Live Lab Monitoring**: Real-time UDP NetFlow v9 (RFC 3954) / IPFIX (RFC 7011) ingestion via the pure-Rust collector or Python UDP receiver.
+
+## Seven core modules
+
+- **Data & Provenance Layer**: Multi-source ingestion (`AIT-NDS-v2`, `CTU-SME-11`, `UWF-ZeekData24`), anti-imputation contract (`FEATURE_INCOMPATIBLE`) and scenario-disjoint split manifest.
+- **Train-Only Preprocessing**: `TrainOnlyPreprocessor` with `asinh_robust` scaling and `MIN_BOUNDED_SCALE_FLOOR = 0.25`.
+- **Dual-Stage ML & OOD Gate**: 4 `E0` baselines (`4/4 RESEARCH_ONLY`), `E1` multi-domain models, Stage-2 6-class classifier (`Macro-F1 = 0.7347`), `OODValidator`, `OODRejectionGate` and `OOD_AWARE_ENSEMBLE` with `ABSTAINED_OOD` abstention.
+- **Behavioral Engine**: 16-D session window aggregation (`src_ip`, 5-minute tumbling window) and multi-flow sequence tracking.
+- **Composite Risk & Dry-Run Response**: Deterministic 0–100 risk scoring and `ResponsePolicy` locked at `dry_run = True` (`executed = false`).
+- **Cryptographic Telemetry & Key Lifecycle**: `AES-256-GCM` AEAD, `NonceRegistry`, Windows `DPAPI` keystore and Adaptive Key Rotation (`RQ5`/`RQ6`).
+- **Desktop Workstation & Localhost Sidecar**: Tauri 2 + Svelte 5 7-panel UI coupled to a loopback FastAPI (`127.0.0.1`) + SQLite backend (`33` paths / `35` operations) protected by `X-Sentinel-Session-Token`.
 
 ## Start here
 
-- [README and current project summary](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md)
-- [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md)
-- [Project charter](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/PROJECT_CHARTER.md)
-- [Implementation checkpoints](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/IMPLEMENTATION_CHECKPOINTS.md)
-- [Traceability matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TRACEABILITY_MATRIX.md)
+- [README and v2.0 project summary](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/README.md)
+- [System architecture (v2.0)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/ARCHITECTURE.md)
+- [User guide (v2.0)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/USER_GUIDE_V2.md)
+- [Research report (RQ1–RQ6)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/RESEARCH_REPORT_V2.md)
+- [V2 final audit report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md)
 
-## Evidence levels
+## Evidence levels and legal boundaries
 
-**Implemented** means code exists on `main`; **Tested** means behavior has an automated check; **Experimentally validated** requires a real-data run with provenance and metrics; **Deferred** means an operational capability (such as live firewall automation or OS keyring rotation) is intentionally excluded from runtime execution. A synthetic fixture or a closed Issue alone does not establish experimental validation.
+Every claim is classified as **PLANNED**, **IMPLEMENTED**, **TESTED**, **EXPERIMENTALLY VALIDATED** or **DEFERRED**. All four `E0` models hold tier **`RESEARCH_ONLY`** (`cross_source_validated = false`) due to zero-shot domain shift on `CTU-SME-11`. `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) is strictly isolated in `.gitignored` storage, `UGR'16` remains **`BLOCKED`** (`HTTP 403`), and public binary distribution remains locked (`DISTRIBUTION_AUTHORIZATION.json: approved = false`).

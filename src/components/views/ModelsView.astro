@@ -15,82 +15,83 @@ const models = isVi
         id: "random-forest",
         index: "01",
         name: "Random Forest",
-        type: "Supervised · baseline chính",
-        status: "Đã đánh giá Held-out Test",
+        type: "Supervised (E0) · baseline nhị phân chính",
+        status: "RESEARCH_ONLY · Đã đánh giá ait_test",
         statusClass: "validated",
         principle:
-          "Tổ hợp nhiều cây quyết định bỏ phiếu nhãn nhị phân của flow, đóng vai trò điểm chuẩn giải thích được cho các so sánh sau.",
-        role: "Phân loại Benign và Attack theo đúng hợp đồng 47 đặc trưng baseline.",
+          "Tổ hợp cây quyết định bỏ phiếu xác suất tấn công trên hợp đồng 18 đặc trưng canonical-flow-v2-18; đóng vai trò mô hình supervised có F1 cao nhất trên AIT-NDS-v2.",
+        role: "Phân loại nhị phân Benign và Attack (E0), đồng thời cung cấp biến thể E1 đa miền và Stage-2 RF_multiclass 6 lớp (Test Macro-F1 = 0.7347).",
         input:
-          "Đầu vào: 47 đặc trưng NetFlow theo thứ tự; loại trừ 2 nhãn và 6 trường metadata truy vết.",
+          "Đầu vào: 18 đặc trưng canonical-flow-v2-18 sau TrainOnlyPreprocessor(asinh_robust, floor 0.25); loại trừ 5 trường truy vết, 5 trường provenance và 4 cột nhãn.",
         method:
-          "Run chuẩn: 200 cây, max_depth=16, seed=42; huấn luyện trên Train (1.655.797 dòng), tiền xử lý train-only, kiểm định Validation và Held-out Test một lần.",
+          "Huấn luyện với seed=42 trên Train AIT-NDS-v2 (2,097,891 dòng: 1,825,866 Benign / 272,025 Attack), ngưỡng quyết định 0.5, kiểm định trên Validation (377,704 dòng) và Held-out Test (988,805 dòng: shaw, wheeler).",
         evaluation:
-          "Validation F1 0,999869; Held-out Test (rf-heldout-ea330b9, 345.953 dòng): F1 0,999853, Precision 0,999771, Recall 0,999935, FPR 0,000022 (TN=315.350, FP=7, FN=2, TP=30.594).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.9989, Recall 0.9911, F1 0.9950, FPR 0.000246, ROC-AUC 0.9994 (TN=812,780, FP=200, FN=1,563, TP=174,262). Huấn luyện đa miền E1 (N_train=442,960) nâng CTU_Test F1 lên 0.9564.",
         limit:
-          "Phân tích độ quan trọng và cây 1 đặc trưng cho thấy đường tắt testbed (MIN_TTL + MAX_TTL chiếm 45,48%). Sụp đổ trên NF-CSE-CIC-IDS2018-v3 (Recall 0,0, FPR 0,3802). Tệp .joblib nằm ngoài Git.",
-        link: source("reports/evaluation/error_analysis_report.md"),
+          "Đánh giá zero-shot cross-source của E0 tụt xuống F1=0.0474 trên CTU-Echo và 0.0326–0.0738 trên CTU-Win7AD; Recall lớp thiểu số Credential_Attack ở RQ2 chỉ đạt 0.1410 (h2_full_confirmed = false). Giữ phân tầng RESEARCH_ONLY; tệp .joblib nằm ngoài Git.",
+        link: source("reports/experiments/ml/model_comparison_report.json"),
       },
       {
         id: "xgboost",
         index: "02",
         name: "XGBoost",
-        type: "Supervised · baseline đối chiếu",
-        status: "Đã đánh giá Held-out Test",
+        type: "Supervised (E0) · baseline đối chiếu",
+        status: "RESEARCH_ONLY · Đã đánh giá ait_test",
         statusClass: "validated",
         principle:
-          "Gradient-boosted trees xây dựng các cây tuần tự để giảm sai số phân loại trên dữ liệu flow có nhãn.",
-        role: "Đối chiếu một mô hình supervised thứ hai với Random Forest trên cùng hợp đồng 47 đặc trưng và split.",
-        input: "Đầu vào: cùng bộ 47 đặc trưng NetFlow với Random Forest.",
+          "Gradient-boosted decision trees tối ưu hàm mục tiêu nhị phân trên không gian 18 đặc trưng hành vi luồng L4 đã chuẩn hóa asinh_robust.",
+        role: "Đối chiếu bộ phân loại supervised thứ hai với Random Forest trên cùng split tách biệt kịch bản v2-scenario-group-purged-v1.",
+        input:
+          "Đầu vào: cùng bộ 18 đặc trưng canonical-flow-v2-18 với Random Forest (6 đặc trưng cơ sở + 12 đặc trưng dẫn xuất).",
         method:
-          "Run xgb-baseline-1794755807: XGBClassifier (binary:logistic), 200 cây, max_depth=6, learning_rate=0,1, subsample=0,8, colsample_bytree=0,8, tree_method=hist, seed=42.",
+          "Huấn luyện với seed=42 trên 2,097,891 dòng Train, ngưỡng quyết định 0.5; đặc trưng quan trọng hàng đầu gồm bytes_in (0.3579) và bytes_per_sec_in (0.2121).",
         evaluation:
-          "Validation F1 0,999984; Held-out Test (345.953 dòng): F1 0,999984, Precision 0,999967, Recall 1,000000, FPR 0,000003, ROC-AUC 1,000000 (TN=315.356, FP=1, FN=0, TP=30.596).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.9989, Recall 0.8211, F1 0.9013, FPR 0.000198, ROC-AUC 0.9884 (TN=812,819, FP=161, FN=31,461, TP=144,364).",
         limit:
-          "Huấn luyện tại commit 7f51390 với git_dirty=True trước commit phát hành; tệp .joblib nằm ngoài Git (BLOCKED / NOT READY nếu thiếu). Chịu chung rủi ro shortcut TTL và trùng lặp vector.",
-        link: source("reports/evaluation/xgboost/evaluation_report.md"),
+          "Zero-shot cross-source trên CTU-Echo chỉ đạt F1=0.1436 và trên CTU-Win7AD đạt 0.0326–0.0738 khi chưa qua thích nghi đa miền E1. Giữ phân tầng RESEARCH_ONLY; tệp .joblib nằm ngoài Git.",
+        link: source("reports/experiments/ml/model_comparison_report.json"),
       },
       {
         id: "isolation-forest",
         index: "03",
         name: "Isolation Forest",
-        type: "Unsupervised · điểm bất thường",
-        status: "Đã đánh giá Held-out Test",
+        type: "Unsupervised (E0) · cô lập điểm dị biệt",
+        status: "RESEARCH_ONLY · Đã đánh giá ait_test",
         statusClass: "validated",
         principle:
-          "Phân hoạch ngẫu nhiên cô lập các điểm dị biệt nhanh hơn; đường đi ngắn tạo ra điểm bất thường thô (raw_anomaly_score) cao hơn.",
-        role: "Cung cấp bộ phát hiện bất thường huấn luyện hoàn toàn không dùng nhãn tấn công.",
+          "Phân hoạch ngẫu nhiên cô lập các vector 18 chiều khác biệt so với phân phối Benign; điểm bất thường được chuẩn hóa theo phân vị thực nghiệm trên Validation Benign.",
+        role: "Phát hiện bất thường không dùng nhãn Attack khi huấn luyện; đóng vai trò chủ lực cho phát hiện họ tấn công chưa biết (RQ4) và zero-shot sang CTU-Echo.",
         input:
-          "Đầu vào: 1.590.608 flow lành tính (Benign) của tập Train sau biến đổi train-only.",
+          "Đầu vào: 1,825,866 flow Benign của tập Train AIT-NDS-v2 sau biến đổi TrainOnlyPreprocessor(asinh_robust).",
         method:
-          "Run if-c4-20261115T055359Z (commit sạch bf0f3ec, 100 cây, contamination=0,1, seed=42). Ngưỡng -0,033527 chọn trên Validation theo max-F1-on-known-attacks, tách Backdoor & Worms.",
+          "Huấn luyện chỉ trên Benign Train (seed=42), đóng băng ngưỡng 0.031268 từ manifest hiệu chuẩn trên Validation.",
         evaluation:
-          "Held-out Test (345.953 dòng): F1 0,5064, Precision 0,3523, Recall 0,8997, FPR 0,1605, ROC-AUC 0,893730. Họ tấn công chưa biết {Backdoor, Worms}: Recall 0,8657 (1.122 / 1.296).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.7775, Recall 0.4678, F1 0.5842, FPR 0.028952, ROC-AUC 0.8330 (TN=789,443, FP=23,537, FN=93,566, TP=82,259). Zero-shot trên CTU-Echo đạt F1=0.8853; RQ4 zero-day holdout (44 flows) đạt Recall=0.9091.",
         limit:
-          "Tỷ lệ báo động giả trên Benign Test còn cao (16,05%); xuất raw_anomaly_score (attack_probability là null). Tệp .joblib nằm ngoài Git.",
-        link: source(
-          "reports/experiments/isolation_forest/evaluation_report.md",
-        ),
+          "Recall tổng thể trên ait_test đạt 0.4678 do các luồng Reconnaissance mật độ thấp gần giống Benign; suy giảm trên CTU-Win7AD (F1 trong khoảng 0.0326–0.0738). Giữ phân tầng RESEARCH_ONLY; tệp .joblib nằm ngoài Git.",
+        link: source("reports/experiments/ml/rq4_unknown_attack_report.json"),
       },
       {
         id: "autoencoder",
         index: "04",
         name: "Autoencoder",
-        type: "Unsupervised · lỗi tái tạo",
-        status: "Đã đánh giá Held-out Test",
+        type: "Unsupervised (E0) · lỗi tái tạo MLP",
+        status: "RESEARCH_ONLY · Đã đánh giá ait_test",
         statusClass: "validated",
         principle:
-          "Mạng mã hóa-giải mã đối xứng (47 → 32 → 16 → 32 → 47) học tái tạo flow lành tính; sai số tái tạo MSE lớn báo hiệu bất thường.",
-        role: "Đối chiếu phương pháp lỗi tái tạo với Isolation Forest dưới ngân sách FPR chặt chẽ trên Validation.",
+          "Mạng nơ-ron MLP đối xứng 18-16-8-16-18 học tái tạo biểu diễn asinh_robust của luồng Benign; sai số tái tạo vượt ngưỡng báo hiệu bất thường.",
+        role: "Đối chiếu phát hiện bất thường dựa trên lỗi tái tạo với Isolation Forest và khảo sát hiệu chuẩn ngưỡng đa miền (Autoencoder_E3b).",
         input:
-          "Đầu vào: 1.590.608 flow lành tính (Benign) của tập Train sau biến đổi train-only.",
+          "Đầu vào: 1,825,866 flow Benign của tập Train AIT-NDS-v2 trên hợp đồng 18 đặc trưng canonical-flow-v2-18.",
         method:
-          "Run active ae_fpr_constrained_20261115T163000Z: ReLU + Adam, ngưỡng 17234985,792476 đóng băng trên Validation theo fpr_constrained (FPR mục tiêu ≤ 0,05; thực đo Val FPR 0,0500), tách Backdoor & Worms.",
+          "Kiến trúc MLP 18-16-8-16-18 (seed=42), ngưỡng quyết định 0.000467 đóng băng từ Validation Benign; biến thể Autoencoder_E3b đánh giá hiệu chuẩn giảm FPR trên miền đích.",
         evaluation:
-          "Held-out Test (345.953 dòng): F1 0,1361, Precision 0,1804, Recall 0,1093, FPR 0,0482, ROC-AUC 0,6303, PR-AUC 0,1615. Họ tấn công chưa biết {Backdoor, Worms}: Recall 0,0625 (81 / 1.296).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.7860, Recall 0.4693, F1 0.5877, FPR 0.027637, ROC-AUC 0.5544 (TN=790,512, FP=22,468, FN=93,317, TP=82,508). Zero-shot trên CTU-Echo đạt F1=0.7325; Autoencoder_E3b giảm FPR trên CTU-Win7AD từ 72.14% xuống 13.79%.",
         limit:
-          "Recall thấp dưới ràng buộc FPR ≤ 0,05; run cũ ae_benign_quantile lưu riêng tại runs/. Tệp .joblib nằm ngoài Git (thiếu sẽ báo HTTP 503 fail-closed).",
-        link: source("reports/evaluation/autoencoder/evaluation_report.md"),
+          "Trên tập holdout zero-day 44 flow (RQ4), Recall chỉ đạt 0.2045 nên giả thuyết unsupervised_ge_0_75_both = false. Giữ phân tầng RESEARCH_ONLY; tệp .joblib nằm ngoài Git.",
+        link: source(
+          "reports/experiments/ml/e1_multidomain_experiment_report.json",
+        ),
       },
     ]
   : [
@@ -98,82 +99,83 @@ const models = isVi
         id: "random-forest",
         index: "01",
         name: "Random Forest",
-        type: "Supervised · primary baseline",
-        status: "Held-out Test verified",
+        type: "Supervised (E0) · primary binary baseline",
+        status: "RESEARCH_ONLY · Verified on ait_test",
         statusClass: "validated",
         principle:
-          "An ensemble of decision trees votes on the binary flow label. It provides a strong, interpretable reference for later comparisons.",
-        role: "Classify known benign versus attack flows under the 47-feature baseline contract.",
+          "An ensemble of decision trees votes on binary attack probability over the 18-feature canonical-flow-v2-18 contract, serving as the highest-F1 supervised baseline on AIT-NDS-v2.",
+        role: "Binary Benign vs Attack classification (E0), plus multi-domain E1 adaptation and Stage-2 6-class RF_multiclass attribution (Test Macro-F1 = 0.7347).",
         input:
-          "Inputs: 47 ordered NetFlow features; targets and six trace metadata fields are excluded.",
+          "Inputs: 18 canonical-flow-v2-18 features transformed via TrainOnlyPreprocessor(asinh_robust, floor 0.25); 5 trace metadata, 5 provenance and 4 label columns are excluded.",
         method:
-          "Canonical run: 200 trees, max depth 16, seed 42; chronological Train partition (1,655,797 rows), frozen train-only preprocessing, Validation and one-shot Held-out Test.",
+          "Trained with seed=42 on AIT-NDS-v2 Train (2,097,891 rows: 1,825,866 Benign / 272,025 Attack), decision threshold 0.5, validated on 377,704 rows and tested on 988,805 Held-out Test rows (shaw, wheeler).",
         evaluation:
-          "Validation F1 0.999869; Held-out Test (rf-heldout-ea330b9, 345,953 rows): F1 0.999853, Precision 0.999771, Recall 0.999935, FPR 0.000022 (TN=315,350, FP=7, FN=2, TP=30,594).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.9989, Recall 0.9911, F1 0.9950, FPR 0.000246, ROC-AUC 0.9994 (TN=812,780, FP=200, FN=1,563, TP=174,262). Multi-domain E1 (N_train=442,960) lifts CTU_Test F1 to 0.9564.",
         limit:
-          "Feature importance and a shallow TTL-only diagnostic expose a strong testbed shortcut (MIN_TTL + MAX_TTL = 45.48%). Collapses on NF-CSE-CIC-IDS2018-v3 (Recall 0.0, FPR 0.3802). Binary .joblib stays outside Git.",
-        link: source("reports/evaluation/error_analysis_report.md"),
+          "Zero-shot cross-source E0 drops to F1=0.0474 on CTU-Echo and 0.0326–0.0738 on CTU-Win7AD; minority Credential_Attack recall in RQ2 is 0.1410 (h2_full_confirmed = false). Tier remains RESEARCH_ONLY; .joblib stays outside Git.",
+        link: source("reports/experiments/ml/model_comparison_report.json"),
       },
       {
         id: "xgboost",
         index: "02",
         name: "XGBoost",
-        type: "Supervised · comparison baseline",
-        status: "Held-out Test verified",
+        type: "Supervised (E0) · comparison baseline",
+        status: "RESEARCH_ONLY · Verified on ait_test",
         statusClass: "validated",
         principle:
-          "Gradient-boosted trees add models sequentially to reduce classification error on labelled flow data.",
-        role: "Compare a second supervised learner with Random Forest under the same 47-feature contract and chronological split.",
-        input: "Inputs: the same 47 ordered NetFlow features as Random Forest.",
+          "Gradient-boosted decision trees optimize binary classification over the asinh_robust-scaled 18-dimensional L4 flow feature space.",
+        role: "Compare a second supervised family against Random Forest under the same scenario-disjoint split (v2-scenario-group-purged-v1).",
+        input:
+          "Inputs: the same 18 canonical-flow-v2-18 features as Random Forest (6 base observed + 12 deterministic derived).",
         method:
-          "Run xgb-baseline-1794755807: XGBClassifier (binary:logistic), 200 estimators, max depth 6, learning rate 0.1, subsample 0.8, colsample_bytree 0.8, tree_method hist, seed 42.",
+          "Trained with seed=42 on 2,097,891 Train rows, decision threshold 0.5; top tree importance features are bytes_in (0.3579) and bytes_per_sec_in (0.2121).",
         evaluation:
-          "Validation F1 0.999984; Held-out Test (345,953 rows): F1 0.999984, Precision 0.999967, Recall 1.000000, FPR 0.000003, ROC-AUC 1.000000 (TN=315,356, FP=1, FN=0, TP=30,596).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.9989, Recall 0.8211, F1 0.9013, FPR 0.000198, ROC-AUC 0.9884 (TN=812,819, FP=161, FN=31,461, TP=144,364).",
         limit:
-          "Trained at commit 7f51390 with git_dirty=True prior to release commit; .joblib binary is outside Git (BLOCKED / NOT READY if missing locally). Same testbed TTL/overlap risks apply.",
-        link: source("reports/evaluation/xgboost/evaluation_report.md"),
+          "Zero-shot cross-source evaluation reaches F1=0.1436 on CTU-Echo and 0.0326–0.0738 on CTU-Win7AD without multi-domain E1 training. Tier remains RESEARCH_ONLY; .joblib stays outside Git.",
+        link: source("reports/experiments/ml/model_comparison_report.json"),
       },
       {
         id: "isolation-forest",
         index: "03",
         name: "Isolation Forest",
-        type: "Unsupervised · anomaly score",
-        status: "Held-out Test verified",
+        type: "Unsupervised (E0) · anomaly isolation",
+        status: "RESEARCH_ONLY · Verified on ait_test",
         statusClass: "validated",
         principle:
-          "Random partitions isolate unusual observations quickly; shorter paths produce higher raw anomaly scores.",
-        role: "Provide an anomaly-score detector fitted solely on benign flows without using attack labels for training.",
+          "Random tree partitions isolate 18-D flow vectors that diverge from the benign training manifold, scored via empirical percentiles against Validation benign flows.",
+        role: "Provide an unsupervised detector trained without attack labels; primary candidate for unknown attack holdouts (RQ4) and zero-shot CTU-Echo transfer.",
         input:
-          "Inputs: 1,590,608 benign-only Train flows after frozen train-only preprocessing.",
+          "Inputs: 1,825,866 benign-only Train flows from AIT-NDS-v2 after frozen TrainOnlyPreprocessor(asinh_robust).",
         method:
-          "Run if-c4-20261115T055359Z (clean commit bf0f3ec, 100 trees, contamination 0.1, seed 42). Threshold -0.033527 selected on Validation via max-F1-on-known-attacks with Backdoor & Worms held out.",
+          "Fitted on benign-only Train (seed=42) with decision threshold 0.031268 frozen from Validation calibration.",
         evaluation:
-          "Held-out Test (345,953 rows): F1 0.5064, Precision 0.3523, Recall 0.8997, FPR 0.1605, ROC-AUC 0.893730. Unknown holdout {Backdoor, Worms}: Recall 0.8657 (1,122 / 1,296).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.7775, Recall 0.4678, F1 0.5842, FPR 0.028952, ROC-AUC 0.8330 (TN=789,443, FP=23,537, FN=93,566, TP=82,259). Reaches zero-shot F1=0.8853 on CTU-Echo and Recall=0.9091 on the 44-flow zero-day holdout (RQ4).",
         limit:
-          "High false-positive rate (16.05%) on benign Test flows; emits raw_anomaly_score (attack_probability is null). Binary .joblib stays outside Git.",
-        link: source(
-          "reports/experiments/isolation_forest/evaluation_report.md",
-        ),
+          "Overall ait_test recall is 0.4678 due to low-rate Reconnaissance flows overlapping benign density; degrades on CTU-Win7AD (F1 0.0326–0.0738). Tier remains RESEARCH_ONLY; .joblib stays outside Git.",
+        link: source("reports/experiments/ml/rq4_unknown_attack_report.json"),
       },
       {
         id: "autoencoder",
         index: "04",
         name: "Autoencoder",
-        type: "Unsupervised · reconstruction error",
-        status: "Held-out Test verified",
+        type: "Unsupervised (E0) · MLP reconstruction error",
+        status: "RESEARCH_ONLY · Verified on ait_test",
         statusClass: "validated",
         principle:
-          "A symmetric neural encoder-decoder (47 → 32 → 16 → 32 → 47) reconstructs benign inputs; larger MSE reconstruction error flags anomalous flows.",
-        role: "Compare reconstruction-error anomaly detection against Isolation Forest under a strict Validation false-positive budget.",
+          "A symmetric 18-16-8-16-18 MLP neural network reconstructs asinh_robust benign flow representations; elevated reconstruction error flags anomalies.",
+        role: "Compare neural reconstruction-error anomaly detection against Isolation Forest and evaluate multi-domain false-positive reduction (Autoencoder_E3b).",
         input:
-          "Inputs: 1,590,608 benign-only Train flows after frozen train-only preprocessing.",
+          "Inputs: 1,825,866 benign-only Train flows from AIT-NDS-v2 under the 18-feature canonical-flow-v2-18 contract.",
         method:
-          "Active run ae_fpr_constrained_20261115T163000Z: ReLU + Adam, threshold 17234985.792476 frozen on Validation via fpr_constrained (target FPR ≤ 0.05; empirical Val FPR 0.0500), isolating Backdoor & Worms.",
+          "MLP architecture 18-16-8-16-18 (seed=42) with decision threshold 0.000467 frozen on Validation benign flows; Autoencoder_E3b tests domain-calibrated thresholding.",
         evaluation:
-          "Held-out Test (345,953 rows): F1 0.1361, Precision 0.1804, Recall 0.1093, FPR 0.0482, ROC-AUC 0.6303, PR-AUC 0.1615. Unknown holdout {Backdoor, Worms}: Recall 0.0625 (81 / 1,296).",
+          "Held-out Test ait_test (N = 988,805): Precision 0.7860, Recall 0.4693, F1 0.5877, FPR 0.027637, ROC-AUC 0.5544 (TN=790,512, FP=22,468, FN=93,317, TP=82,508). Reaches zero-shot F1=0.7325 on CTU-Echo; Autoencoder_E3b reduces CTU-Win7AD FPR from 72.14% to 13.79%.",
         limit:
-          "Low recall under the FPR ≤ 0.05 constraint; earlier ae_benign_quantile run archived separately in runs/. Binary .joblib stays outside Git (fail-closed HTTP 503 if missing).",
-        link: source("reports/evaluation/autoencoder/evaluation_report.md"),
+          "On the 44-flow zero-day holdout (RQ4), Recall is 0.2045, leaving unsupervised_ge_0_75_both = false. Tier remains RESEARCH_ONLY; .joblib stays outside Git.",
+        link: source(
+          "reports/experiments/ml/e1_multidomain_experiment_report.json",
+        ),
       },
     ];
 ---
@@ -181,21 +183,21 @@ const models = isVi
 <Layout
   title={isVi ? "Các mô hình AI" : "AI Models"}
   description={isVi
-    ? "Bốn họ mô hình và kết quả Validation, Held-out Test trên dữ liệu thật."
-    : "Four model families and their real-data Validation and Held-out Test status."}
+    ? "Bốn họ mô hình E0 (RESEARCH_ONLY), biến thể đa miền E1/E3b và phân loại 6 lớp trên hợp đồng canonical-flow-v2-18."
+    : "Four E0 model families (RESEARCH_ONLY), multi-domain E1/E3b variants and 6-class attribution under canonical-flow-v2-18."}
   section="Models"
   lang={lang}
   routePath="models/"
 >
   <PageIntro
-    eyebrow={isVi ? "03 / Phương pháp mô hình" : "03 / Model methods"}
+    eyebrow={isVi ? "03 / Phương pháp mô hình v2.0" : "03 / Model methods v2.0"}
     current={isVi ? "Mô hình AI" : "AI Models"}
     title={isVi
-      ? "Bốn hướng tiếp cận. Một chuẩn bằng chứng."
-      : "Four approaches. One evidence standard."}
+      ? "Bốn họ mô hình E0. Một hợp đồng 18 đặc trưng."
+      : "Four E0 model families. One 18-feature contract."}
     description={isVi
-      ? "Mỗi mô hình có cơ chế học, giao thức chọn ngưỡng và ngữ nghĩa đầu ra riêng. Cả bốn họ mô hình đều đã có báo cáo Train, Validation và Held-out Test trên NF-UNSW-NB15-v3."
-      : "Each model has a distinct learning mechanism and evaluation protocol. All four families now have recorded Train, Validation and Held-out Test evidence on NF-UNSW-NB15-v3."}
+      ? "Tất cả bốn họ mô hình E0 (Random Forest, XGBoost, Isolation Forest, Autoencoder) đều được huấn luyện với seed = 42 trên AIT-NDS-v2, đánh giá trên 988,805 dòng ait_test và giữ phân tầng RESEARCH_ONLY."
+      : "All four E0 model families (Random Forest, XGBoost, Isolation Forest, Autoencoder) are trained with seed = 42 on AIT-NDS-v2, evaluated on 988,805 ait_test rows and classified as RESEARCH_ONLY."}
     lang={lang}
   />
   <div class="container model-nav">
@@ -266,27 +268,30 @@ const models = isVi
   }
   <div class="container section">
     <div class="callout">
-      <strong>{isVi ? "Ranh giới chung:" : "Shared boundary:"}</strong>{" "}
+      <strong>
+        {
+          isVi
+            ? "Ranh giới chung & quản trị mô hình:"
+            : "Shared boundary & model governance:"
+        }
+      </strong>{" "}
       {
         isVi
-          ? "CSV gốc có 55 cột. Baseline dùng 47 đặc trưng mô hình, loại 6 trường metadata truy vết và 2 nhãn. Mô hình supervised trả về "
-          : "The raw CSV has 55 columns. The baseline uses 47 model features, with six trace metadata fields and both targets excluded. Supervised models emit "
-      }<code>attack_probability</code>{" "}
+          ? "Hợp đồng canonical-flow-v2-18 sử dụng 18 đặc trưng ML (6 cơ sở + 12 dẫn xuất), loại trừ hoàn toàn TTL và metadata định danh. Cả 4 mô hình E0 hiện giữ cấp độ "
+          : "The canonical-flow-v2-18 contract uses 18 ML features (6 base + 12 derived), excluding lab TTLs and identity metadata. All 4 E0 models remain classified as "
+      }<code>RESEARCH_ONLY</code>{" "}
+      {isVi ? "trong " : "in "}<a
+        href={source("src/network_anomaly/models/registry.py")}
+        ><code>models/registry.py</code> ↗</a
+      >;{" "}
       {
         isVi
-          ? "trong [0, 1]; mô hình unsupervised trả về "
-          : "in [0, 1]; unsupervised detectors emit unclamped "
-      }<code>raw_anomaly_score</code>{" "}
-      {isVi ? "không cắt ngưỡng (và " : "(and Validation-calibrated "}<code
-        >normalized_anomaly_score</code
-      >{" "}
-      {isVi ? "hiệu chuẩn theo Validation) với " : ") with "}<code
-        >attack_probability = null</code
-      >.{" "}
-      {isVi ? "Thiếu tệp " : "Missing local "}<code>.joblib</code>{" "}
-      {
-        isVi ? "cục bộ sẽ bị khóa fail-closed ở " : "artifacts fail closed as "
-      }<code>BLOCKED / NOT READY</code> (HTTP 503).
+          ? "chế độ mặc định fail-closed runtime_mode = 'deployment' bắt buộc xác minh "
+          : "the default fail-closed runtime_mode = 'deployment' requires a trusted "
+      }<code>NETFLOW_OOD_GATE_SHA256</code>{" "}
+      {isVi ? "và từ chối nguồn " : "and blocks "}<code
+        >FEATURE_INCOMPATIBLE</code
+      >.
     </div>
   </div>
 </Layout>

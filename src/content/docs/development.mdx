@@ -1,22 +1,33 @@
 ---
 title: Môi trường phát triển
-description: Cấu trúc thư mục repository, kiểm tra nhanh và ranh giới giữa website với mã nguồn ML.
-order: 3
+description: Quy trình phát triển cục bộ Python 3.12, Svelte 5 / Tauri 2, Rust telemetry/netflow-rs, đồng bộ OpenAPI và di trú v1 sang v2.
+order: 14
 ---
 
-## Ranh giới thư mục trong repository
+## Cấu trúc thư mục repository v2.0
 
-Trên `main`, `src/network_anomaly/` chứa mã nghiên cứu, ingestion, inference và FastAPI; `desktop/` chứa ứng dụng desktop Rust Tauri 2 + Svelte 5 (`v0.6.0`); `scripts/` chứa các điểm vào CLI; `data/` chứa manifest và đường dẫn dataset/demo CSV bị Git bỏ qua; `reports/` lưu bằng chứng chất lượng, đánh giá, OpenAPI và kiểm thử E2E; `artifacts/` lưu file nhị phân `.joblib` cục bộ ngoài Git. Cổng thông tin này nằm riêng trên nhánh `site-source` và build thành HTML tĩnh.
+Repository được tổ chức tách biệt giữa mã nguồn runtime, thư viện thu thập Rust, ứng dụng Desktop và bằng chứng thực nghiệm:
 
-## Kiểm tra cơ bản
+- `src/network_anomaly/`: Gói Python cốt lõi gồm `data/` ([v2_schema.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/data/v2_schema.py), [taxonomy.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/data/taxonomy.py)), `preprocessing/` ([pipeline.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/preprocessing/pipeline.py)), `models/` ([registry.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/models/registry.py)), `behavioral/` ([vector.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/behavioral/vector.py)), `crypto/` ([aead.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/aead.py), [key_manager.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/key_manager.py), [rotation.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/rotation.py)), `streaming/` ([live_orchestrator.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/streaming/live_orchestrator.py)) và `api/` ([response_policy.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/api/response_policy.py)).
+- `telemetry/netflow-rs/`: Crate Rust độc lập giải mã NetFlow v9 / IPFIX ([telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs)).
+- `desktop/`: Ứng dụng Desktop Tauri 2 (`2.0.0`) + Svelte 5.
+- `data/` & `reports/`: Manifest chia tập, provenance, đặc tả OpenAPI và báo cáo thực nghiệm có kiểm chứng SHA-256.
+- `historical/`: Lưu trữ di sản v1 (`UNSW-NB15` / `NF-UNSW-NB15-v3`).
+
+## Quy trình kiểm tra & đồng bộ hợp đồng
+
+Khi sửa đổi mã nguồn Python, giao diện Svelte hoặc crate Rust, chạy đầy đủ các cổng kiểm tra định dạng, kiểu dữ liệu và đồng bộ hợp đồng OpenAPI:
 
 ```powershell
-python scripts/check_environment.py
-python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
+python -m ruff check src scripts tests
+python -m black --check src scripts tests
+python scripts/export_openapi_spec.py --check
 python scripts/check_desktop_version.py --check
-python -m ruff check .
-python -m black --check .
+python -m pytest tests -q -rs --tb=short
+npm --prefix desktop run check
+npm --prefix desktop run test
+cargo test --manifest-path telemetry/netflow-rs/Cargo.toml
 git diff --check
 ```
 
-Các lệnh trên dùng để kiểm tra mã nguồn, không thay thế cho đánh giá trên dữ liệu thật. CI chạy pytest bằng fixture tổng hợp; các bước phụ thuộc dữ liệu thật hoặc companion `.joblib` sẽ báo `SKIPPED` khi thiếu tệp. Xem thêm [hướng dẫn kiểm thử](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md) và [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md).
+Để di trú dữ liệu cấu hình cục bộ từ phiên bản v1 sang v2.0, sử dụng [scripts/migrate_v1_to_v2.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/migrate_v1_to_v2.py) theo hướng dẫn tại [docs/MIGRATION_V1_TO_V2.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MIGRATION_V1_TO_V2.md).

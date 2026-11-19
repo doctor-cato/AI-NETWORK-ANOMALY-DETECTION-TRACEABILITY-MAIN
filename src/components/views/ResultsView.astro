@@ -13,21 +13,23 @@ const isVi = lang === "vi";
 <Layout
   title={isVi ? "Thực nghiệm & Kết quả" : "Experiments & Results"}
   description={isVi
-    ? "Chỉ số Held-out Test của 4 mô hình, thất bại cross-dataset và các giới hạn phương pháp."
-    : "Held-out Test metrics across four models, cross-dataset failure and methodological limitations."}
+    ? "Kết quả thực nghiệm RQ1–RQ6 trên AIT-NDS-v2 (988,805 dòng Test), đánh giá đa nguồn CTU-SME-11 / UWF-ZeekData24 và hiệu năng hệ thống v2.0."
+    : "RQ1–RQ6 experimental results on AIT-NDS-v2 (988,805 Test rows), CTU-SME-11 / UWF-ZeekData24 cross-source benchmarks and v2.0 system performance."}
   section="Results"
   lang={lang}
   routePath="results/"
 >
   <PageIntro
-    eyebrow={isVi ? "04 / Hồ sơ thực nghiệm" : "04 / Experiment record"}
+    eyebrow={isVi
+      ? "04 / Hồ sơ thực nghiệm v2.0"
+      : "04 / Experiment record v2.0"}
     current={isVi ? "Kết quả" : "Results"}
     title={isVi
-      ? "Đã hoàn tất Test trong miền. Chuyển miền vẫn thất bại."
-      : "In-domain Test is complete. Cross-dataset shifts still fail."}
+      ? "Sáu câu hỏi nghiên cứu (RQ1–RQ6). Giữ nguyên cả kết quả âm."
+      : "Six research questions (RQ1–RQ6). Negative results preserved."}
     description={isVi
-      ? "Cả bốn họ mô hình đều đã có đánh giá Validation và Held-out Test trên NF-UNSW-NB15-v3. Đánh giá ngoại vi trên NF-CSE-CIC-IDS2018-v3 cho thấy đường tắt testbed sụp đổ khi ra khỏi miền huấn luyện."
-      : "All four model families now have recorded Validation and Held-out Test evaluations on NF-UNSW-NB15-v3. External evaluation on NF-CSE-CIC-IDS2018-v3 exposes how testbed shortcuts collapse outside the training domain."}
+      ? "NetFlow Sentinel v2.0 báo cáo đầy đủ kết quả 4 mô hình E0 trên 988,805 dòng Held-out Test của AIT-NDS-v2, độ sụt giảm zero-shot trên CTU-SME-11, sự cải thiện của E1/E3b và các giả thuyết không đạt toàn phần (RQ2, RQ3 AIT, RQ4)."
+      : "NetFlow Sentinel v2.0 reports all four E0 models on the 988,805-row AIT-NDS-v2 Held-out Test partition, zero-shot degradation on CTU-SME-11, multi-domain E1/E3b gains, and unconfirmed or blocked hypotheses (RQ2, RQ3 AIT, RQ4)."}
     lang={lang}
   />
   <section class="section">
@@ -35,49 +37,62 @@ const isVi = lang === "vi";
       <div class="result-banner">
         <div>
           <span class="eyebrow"
-            >{isVi ? "Ranh giới bằng chứng" : "Evidence boundary"}</span
+            >{
+              isVi
+                ? "Ranh giới bằng chứng · RQ1–RQ6"
+                : "Evidence boundary · RQ1–RQ6"
+            }</span
           ><h2>
             {
               isVi
-                ? "Đã xác minh Held-out Test 4 mô hình · Tổng quát hóa ngoại vi thất bại"
-                : "4-model Held-out Test verified · External generalization failed"
+                ? "Đã xác minh 4 mô hình E0 (N = 988,805) · Đánh giá đa miền CTU-SME-11 & UWF-ZeekData24"
+                : "4 E0 models verified (N = 988,805) · Multi-domain CTU-SME-11 & UWF-ZeekData24 evaluated"
             }
           </h2><p>
             {
               isVi
-                ? "Hai mô hình cây supervised đạt ~0,9999 F1 trên 345,953 dòng Held-out Test của NF-UNSW-NB15-v3, nhưng Random Forest tụt xuống 0,0000 Recall (0,3802 FPR) trên mẫu 100,000 dòng NF-CSE-CIC-IDS2018-v3."
-                : "Supervised trees achieve ~0.9999 F1 on the 345,953-row NF-UNSW-NB15-v3 Held-out Test partition, but Random Forest collapses to 0.0000 Recall (0.3802 FPR) on a 100,000-row NF-CSE-CIC-IDS2018-v3 sample."
+                ? "Trên ait_test (shaw, wheeler), Random Forest đạt F1 0.9950 và XGBoost đạt F1 0.9013; khi chuyển zero-shot sang CTU-Echo, Isolation Forest đạt F1 0.8853 và Autoencoder đạt 0.7325 trong khi RF/XGB sụt mạnh (0.0474 / 0.1436) trước khi thích nghi đa miền E1 (CTU_Test F1 = 0.9564)."
+                : "On ait_test (shaw, wheeler), Random Forest reaches F1 0.9950 and XGBoost 0.9013; under zero-shot transfer to CTU-Echo, Isolation Forest reaches F1 0.8853 and Autoencoder 0.7325 while RF/XGB drop (0.0474 / 0.1436) prior to multi-domain E1 training (CTU_Test F1 = 0.9564)."
             }
           </p>
         </div><a
           class="button"
           href={source(
-            "reports/evaluation/cross_dataset_generalization_report.md",
+            "reports/experiments/ml/domain_analysis/DOMAIN_SHIFT_ANALYSIS.md",
           )}
           >{
             isVi
-              ? "Xem báo cáo cross-dataset ↗"
-              : "Inspect cross-dataset report ↗"
+              ? "Xem phân tích dịch chuyển miền ↗"
+              : "Inspect domain shift analysis ↗"
           }</a
         >
       </div>
       <div
         class="split-summary"
         aria-label={isVi
-          ? "Kích thước phân vùng đã ghi nhận"
-          : "Recorded split sizes"}
+          ? "Kích thước phân vùng v2.0 đã ghi nhận"
+          : "Recorded v2.0 split sizes"}
       >
-        <div><small>TRAIN</small><strong>1,655,797</strong></div>
-        <div><small>VALIDATION</small><strong>345,371</strong></div>
-        <div><small>HELD-OUT TEST</small><strong>345,953</strong></div>
+        <div>
+          <small>AIT TRAIN (5 SCENARIOS)</small><strong>2,097,891</strong>
+        </div>
+        <div>
+          <small>AIT VALIDATION (RUSSELLMITCHELL)</small><strong>377,704</strong
+          >
+        </div>
+        <div>
+          <small>AIT HELD-OUT TEST (SHAW, WHEELER)</small><strong
+            >988,805</strong
+          >
+        </div>
       </div>
       <p class="source-line">
         {
           isVi
-            ? "Phân chia theo thời gian và nhóm luồng cũng loại bỏ 9,443 và 8,860 dòng ở hai khoảng đệm purge gap. "
-            : "The chronological, group-aware split also excludes 9,443 and 8,860 rows in purge gaps. "
-        }<a href={source("reports/splits/nf_unsw_nb15_v3_split_manifest.json")}
-          >Split manifest ↗</a
+            ? "Tập đánh giá ngoại vi CTU-SME-11 gồm 251,219 dòng có nhãn: CTU-Echo (76,073 dòng) và CTU-Win7AD (175,146 dòng + 9,394 unmapped); UWF-ZeekData24 (evaluation_only = true) gồm 95,871 dòng có nhãn (93,000 strict complete). "
+            : "External CTU-SME-11 evaluation totals 251,219 labeled flows: CTU-Echo (76,073 rows) and CTU-Win7AD (175,146 rows + 9,394 unmapped); UWF-ZeekData24 (evaluation_only = true) adds 95,871 labeled flows (93,000 strict complete). "
+        }<a href={source("data/V2_SPLIT_MANIFEST.json")}
+          >V2_SPLIT_MANIFEST.json ↗</a
         >
       </p>
     </div>
@@ -87,89 +102,114 @@ const isVi = lang === "vi";
       <span class="eyebrow"
         >{
           isVi
-            ? "So sánh Held-out Test · 345,953 dòng"
-            : "Held-out Test comparison · 345,953 rows"
+            ? "RQ1 · So sánh 4 mô hình E0 trên ait_test · 988,805 dòng"
+            : "RQ1 · Four-model E0 comparison on ait_test · 988,805 rows"
         }</span
       ><h2>
         {
           isVi
-            ? "Benchmark 4 mô hình trên NF-UNSW-NB15-v3"
-            : "Four-model benchmark on NF-UNSW-NB15-v3"
+            ? "Benchmark E0 trên AIT-NDS-v2 (seed = 42, RESEARCH_ONLY)"
+            : "E0 benchmark on AIT-NDS-v2 (seed = 42, RESEARCH_ONLY)"
         }
       </h2><p class="lede">
         {
           isVi
-            ? "Các baseline supervised dùng ngưỡng chuẩn 0,5; Isolation Forest và Autoencoder fit chỉ trên Train lành tính (1,590,608 dòng), đóng băng ngưỡng trên Validation và tách Backdoor, Worms làm họ tấn công chưa biết."
-            : "Supervised baselines use canonical threshold 0.5; Isolation Forest and Autoencoder are fitted on benign-only Train (1,590,608 rows) with thresholds frozen on Validation while holding out Backdoor and Worms as unknown attack families."
+            ? "Tập Held-out Test (shaw, wheeler) gồm 812,980 dòng Benign và 175,825 dòng Attack. Ngoài phân loại nhị phân E0, bộ phân loại tầng 2 RF_multiclass 6 lớp đạt Test Macro-F1 = 0.7347."
+            : "The Held-out Test partition (shaw, wheeler) comprises 812,980 Benign and 175,825 Attack rows. Beyond E0 binary detection, Stage-2 6-class RF_multiclass reaches Test Macro-F1 = 0.7347."
         }
       </p><div class="table-wrap surface">
         <table class="data-table">
           <caption
             >{
               isVi
-                ? "Held-out Test (345,953 dòng: 315,357 Benign, 30,596 Attack). Lớp dương: Attack (1). FPR = FP / (FP + TN)."
-                : "Held-out Test (345,953 rows: 315,357 Benign, 30,596 Attack). Positive class: Attack (1). FPR = FP / (FP + TN)."
+                ? "Held-out Test ait_test (988,805 dòng: 812,980 Benign, 175,825 Attack). Tất cả 4 mô hình E0 giữ cấp độ RESEARCH_ONLY."
+                : "Held-out Test ait_test (988,805 rows: 812,980 Benign, 175,825 Attack). All 4 E0 models remain RESEARCH_ONLY."
             }</caption
           ><thead
             ><tr
               ><th scope="col">{isVi ? "Chỉ số" : "Metric"}</th><th scope="col"
                 >Random Forest</th
-              ><th scope="col">XGBoost</th><th scope="col">Isolation Forest</th
-              ><th scope="col">Autoencoder</th></tr
+              ><th scope="col">XGBoost</th><th scope="col">Autoencoder (MLP)</th
+              ><th scope="col">Isolation Forest</th></tr
             ></thead
           ><tbody
             ><tr
-              ><th scope="row">Accuracy</th><td>0.999974</td><td>0.999997</td
-              ><td>0.844863</td><td>0.877321</td></tr
+              ><th scope="row">Precision</th><td>0.9989</td><td>0.9989</td><td
+                >0.7860</td
+              ><td>0.7775</td></tr
             ><tr
-              ><th scope="row">Precision</th><td>0.999771</td><td>0.999967</td
-              ><td>0.352336</td><td>0.180400</td></tr
+              ><th scope="row">Recall</th><td>0.9911</td><td>0.8211</td><td
+                >0.4693</td
+              ><td>0.4678</td></tr
             ><tr
-              ><th scope="row">Recall</th><td>0.999935</td><td>1.000000</td><td
-                >0.899725</td
-              ><td>0.109263</td></tr
-            ><tr
-              ><th scope="row">F1-score</th><td>0.999853</td><td>0.999984</td
-              ><td>0.506374</td><td>0.136096</td></tr
+              ><th scope="row">F1-score</th><td>0.9950</td><td>0.9013</td><td
+                >0.5877</td
+              ><td>0.5842</td></tr
             ><tr
               ><th scope="row"
                 >{isVi ? "Tỷ lệ báo giả (FPR)" : "False positive rate"}</th
-              ><td>0.000022</td><td>0.000003</td><td>0.160459</td><td
-                >0.048161</td
+              ><td>0.000246</td><td>0.000198</td><td>0.027637</td><td
+                >0.028952</td
               ></tr
             ><tr
-              ><th scope="row">ROC-AUC</th><td
-                >{isVi ? "Không tính" : "Not computed"}</td
-              ><td>1.000000</td><td>0.893730</td><td>0.630310</td></tr
+              ><th scope="row">ROC-AUC</th><td>0.9994</td><td>0.9884</td><td
+                >0.5544</td
+              ><td>0.8330</td></tr
+            ><tr
+              ><th scope="row">CTU-Echo Zero-shot F1</th><td>0.0474</td><td
+                >0.1436</td
+              ><td>0.7325</td><td>0.8853</td></tr
             ><tr
               ><th scope="row"
                 >{
                   isVi
-                    ? "Recall nhóm Unknown holdout"
-                    : "Unknown holdout Recall"
+                    ? "RQ4 Zero-day Holdout Recall (44 flows)"
+                    : "RQ4 Zero-day Holdout Recall (44 flows)"
                 }</th
-              ><td>1.0000 (supervised)</td><td>1.0000 (supervised)</td><td
-                >0.8657 (1,122 / 1,296)</td
-              ><td>0.0625 (81 / 1,296)</td></tr
+              ><td
+                >{
+                  isVi ? "Chỉ đánh giá unsupervised" : "Unsupervised protocol"
+                }</td
+              ><td
+                >{
+                  isVi ? "Chỉ đánh giá unsupervised" : "Unsupervised protocol"
+                }</td
+              ><td>0.2045</td><td>0.9091</td></tr
             ></tbody
           >
         </table>
       </div><p class="source-line">
         {isVi ? "Nguồn: " : "Sources: "}<a
-          href={source("reports/evaluation/rf-heldout-ea330b9/metrics.json")}
-          >{isVi ? "Metric Test RF ↗" : "RF Test metrics ↗"}</a
-        > · <a href={source("reports/evaluation/xgboost/metrics.json")}
-          >{isVi ? "Metric Test XGBoost ↗" : "XGBoost Test metrics ↗"}</a
-        > · <a
-          href={source("reports/experiments/isolation_forest/metrics.json")}
+          href={source("reports/experiments/ml/model_comparison_report.json")}
           >{
             isVi
-              ? "Metric Test Isolation Forest ↗"
-              : "Isolation Forest Test metrics ↗"
+              ? "model_comparison_report.json ↗"
+              : "model_comparison_report.json ↗"
           }</a
-        > · <a href={source("reports/evaluation/autoencoder/metrics.json")}
+        > · <a
+          href={source("reports/experiments/ml/ctu_cross_source_eval.json")}
           >{
-            isVi ? "Metric Test Autoencoder ↗" : "Autoencoder Test metrics ↗"
+            isVi
+              ? "ctu_cross_source_eval.json ↗"
+              : "ctu_cross_source_eval.json ↗"
+          }</a
+        > · <a
+          href={source(
+            "reports/experiments/ml/uwf_zeekdata24_cross_source_eval.json",
+          )}
+          >{
+            isVi
+              ? "uwf_zeekdata24_cross_source_eval.json ↗"
+              : "uwf_zeekdata24_cross_source_eval.json ↗"
+          }</a
+        > · <a
+          href={source(
+            "reports/experiments/ml/multiclass_attack_classification_report.json",
+          )}
+          >{
+            isVi
+              ? "multiclass_attack_classification_report.json ↗"
+              : "multiclass_attack_classification_report.json ↗"
           }</a
         >
       </p>
@@ -180,15 +220,19 @@ const isVi = lang === "vi";
       <span class="eyebrow"
         >{
           isVi
-            ? "Thứ tự nhãn [0, 1] · Held-out Test"
-            : "Label order [0, 1] · Held-out Test"
+            ? "Thứ tự nhãn [0, 1] · Held-out Test ait_test (N = 988,805)"
+            : "Label order [0, 1] · Held-out Test ait_test (N = 988,805)"
         }</span
       ><h2>
-        {isVi ? "Ma trận nhầm lẫn trên tập Test" : "Test confusion matrices"}
+        {
+          isVi
+            ? "Ma trận nhầm lẫn trên ait_test"
+            : "Test confusion matrices on ait_test"
+        }
       </h2><div class="matrix-grid">
         <div class="surface matrix">
-          <h3>Random Forest</h3><p>
-            Run rf-heldout-ea330b9 (Validation F1: 0.999869)
+          <h3>Random Forest (E0)</h3><p>
+            Threshold 0.5 · F1: 0.9950 · ROC-AUC: 0.9994
           </p><div class="table-wrap">
             <table class="data-table">
               <caption class="sr-only"
@@ -202,19 +246,20 @@ const isVi = lang === "vi";
                 ></thead
               ><tbody
                 ><tr
-                  ><th scope="row">Benign (0)</th><td>315,350 TN</td><td
-                    >7 FP</td
+                  ><th scope="row">Benign (0)</th><td>812,780 TN</td><td
+                    >200 FP</td
                   ></tr
                 ><tr
-                  ><th scope="row">Attack (1)</th><td>2 FN</td><td>30,594 TP</td
+                  ><th scope="row">Attack (1)</th><td>1,563 FN</td><td
+                    >174,262 TP</td
                   ></tr
                 ></tbody
               >
             </table>
           </div>
         </div><div class="surface matrix">
-          <h3>XGBoost</h3><p>
-            Run xgb-baseline-1794755807 (Validation F1: 0.999984)
+          <h3>XGBoost (E0)</h3><p>
+            Threshold 0.5 · F1: 0.9013 · ROC-AUC: 0.9884
           </p><div class="table-wrap">
             <table class="data-table">
               <caption class="sr-only"
@@ -228,20 +273,20 @@ const isVi = lang === "vi";
                 ></thead
               ><tbody
                 ><tr
-                  ><th scope="row">Benign (0)</th><td>315,356 TN</td><td
-                    >1 FP</td
+                  ><th scope="row">Benign (0)</th><td>812,819 TN</td><td
+                    >161 FP</td
                   ></tr
                 ><tr
-                  ><th scope="row">Attack (1)</th><td>0 FN</td><td>30,596 TP</td
+                  ><th scope="row">Attack (1)</th><td>31,461 FN</td><td
+                    >144,364 TP</td
                   ></tr
                 ></tbody
               >
             </table>
           </div>
         </div><div class="surface matrix">
-          <h3>Isolation Forest</h3><p>
-            Run if-c4-20261115T055359Z ({isVi ? "Ngưỡng" : "Threshold"}:
-            -0.033527)
+          <h3>Isolation Forest (E0)</h3><p>
+            Threshold 0.031268 · F1: 0.5842 · ROC-AUC: 0.8330
           </p><div class="table-wrap">
             <table class="data-table">
               <caption class="sr-only"
@@ -255,20 +300,20 @@ const isVi = lang === "vi";
                 ></thead
               ><tbody
                 ><tr
-                  ><th scope="row">Benign (0)</th><td>264,755 TN</td><td
-                    >50,602 FP</td
+                  ><th scope="row">Benign (0)</th><td>789,443 TN</td><td
+                    >23,537 FP</td
                   ></tr
                 ><tr
-                  ><th scope="row">Attack (1)</th><td>3,068 FN</td><td
-                    >27,528 TP</td
+                  ><th scope="row">Attack (1)</th><td>93,566 FN</td><td
+                    >82,259 TP</td
                   ></tr
                 ></tbody
               >
             </table>
           </div>
         </div><div class="surface matrix">
-          <h3>Autoencoder</h3><p>
-            Run ae_fpr_constrained_20261115T163000Z (Val FPR 0.0500)
+          <h3>Autoencoder (E0 · MLP 18-16-8-16-18)</h3><p>
+            Threshold 0.000467 · F1: 0.5877 · ROC-AUC: 0.5544
           </p><div class="table-wrap">
             <table class="data-table">
               <caption class="sr-only"
@@ -282,12 +327,12 @@ const isVi = lang === "vi";
                 ></thead
               ><tbody
                 ><tr
-                  ><th scope="row">Benign (0)</th><td>300,169 TN</td><td
-                    >15,188 FP</td
+                  ><th scope="row">Benign (0)</th><td>790,512 TN</td><td
+                    >22,468 FP</td
                   ></tr
                 ><tr
-                  ><th scope="row">Attack (1)</th><td>27,253 FN</td><td
-                    >3,343 TP</td
+                  ><th scope="row">Attack (1)</th><td>93,317 FN</td><td
+                    >82,508 TP</td
                   ></tr
                 ></tbody
               >
@@ -302,142 +347,191 @@ const isVi = lang === "vi";
       <span class="eyebrow"
         >{
           isVi
-            ? "Kiểm tra thực tế Cross-dataset · 100,000 dòng"
-            : "Cross-dataset reality check · 100,000 rows"
+            ? "Tổng hợp RQ2–RQ6 · Dịch chuyển miền, Hành vi, Zero-day & Mật mã"
+            : "RQ2–RQ6 synthesis · Domain shift, Behavioral, Zero-day & Crypto"
         }</span
       ><h2>
         {
           isVi
-            ? "Vì sao điểm benchmark cao vẫn thất bại ngoài phòng lab."
-            : "Why high benchmark scores fail outside the lab."
+            ? "Kết quả định lượng trên toàn bộ 6 câu hỏi nghiên cứu."
+            : "Quantitative findings across all six research questions."
         }
       </h2><p class="lede">
         {
           isVi
-            ? "Đánh giá mô hình Random Forest chuẩn đã đóng băng trên mẫu 100,000 dòng của "
-            : "Evaluating the frozen canonical Random Forest model on a 100,000-row sample of "
-        }<code>NF-CSE-CIC-IDS2018-v3</code>{" "}
-        {
-          isVi
-            ? "(70,020 Benign, 29,980 FTP-BruteForce) cho thấy sự sụp đổ hoàn toàn khi lệch miền dữ liệu."
-            : "(70,020 Benign, 29,980 FTP-BruteForce) demonstrates complete collapse under domain shift."
+            ? "Mỗi câu hỏi nghiên cứu gắn với một báo cáo JSON có kiểm chứng SHA-256 trong repository; các giả thuyết chỉ đạt một phần hoặc bị chặn đều được giữ nguyên."
+            : "Every research question maps to a versioned JSON artifact in the repository; partially confirmed or blocked hypotheses are reported transparently."
         }
       </p><div class="table-wrap surface">
         <table class="data-table">
           <caption
             >{
               isVi
-                ? "Random Forest chuẩn: NF-UNSW-NB15-v3 Validation so với mẫu ngoại vi NF-CSE-CIC-IDS2018-v3."
-                : "Canonical Random Forest: NF-UNSW-NB15-v3 Validation vs NF-CSE-CIC-IDS2018-v3 External Sample."
+                ? "Tóm tắt kết quả thực nghiệm RQ1–RQ6 trong NetFlow Sentinel v2.0."
+                : "Summary of RQ1–RQ6 experimental findings in NetFlow Sentinel v2.0."
             }</caption
           ><thead
             ><tr
-              ><th scope="col">{isVi ? "Chỉ số" : "Metric"}</th><th scope="col"
-                >NF-UNSW-NB15-v3 (Val)</th
-              ><th scope="col">NF-CSE-CIC-IDS2018-v3 (100k)</th><th scope="col"
-                >{isVi ? "Độ lệch" : "Delta"}</th
+              ><th scope="col">RQ</th><th scope="col"
+                >{isVi ? "Nội dung & giao thức" : "Protocol & scope"}</th
+              ><th scope="col"
+                >{isVi ? "Kết quả đo đạc chính xác" : "Measured result"}</th
+              ><th scope="col"
+                >{isVi ? "Kết luận / Ranh giới" : "Verdict / Boundary"}</th
               ></tr
             ></thead
           ><tbody
             ><tr
-              ><th scope="row">Accuracy</th><td>0.999977</td><td>0.433990</td
-              ><td>-0.565987</td></tr
+              ><th scope="row">RQ1</th><td
+                >{
+                  isVi
+                    ? "Đánh giá đa nguồn & thích nghi miền (AIT-NDS-v2 → CTU-SME-11)"
+                    : "Cross-source evaluation & domain adaptation (AIT-NDS-v2 → CTU-SME-11)"
+                }</td
+              ><td
+                >Zero-shot CTU-Echo: IF F1=0.8853, AE=0.7325, XGB=0.1436,
+                RF=0.0474; CTU-Win7AD: 0.0326–0.0738. Multi-domain E1
+                (N_train=442,960): CTU_Test F1=0.9564; Autoencoder_E3b
+                CTU-Win7AD FPR: 72.14% → 13.79%</td
+              ><td>EXPERIMENTALLY VALIDATED</td></tr
             ><tr
-              ><th scope="row">Precision</th><td>0.999836</td><td>0.000000</td
-              ><td>-0.999836</td></tr
-            ><tr
-              ><th scope="row">Recall</th><td>0.999902</td><td>0.000000</td><td
-                >-0.999902</td
+              ><th scope="row">RQ2</th><td
+                >{
+                  isVi
+                    ? "Mất cân bằng lớp (tỷ lệ Train 6.7121:1) & lớp tấn công thiểu số"
+                    : "Class imbalance (6.7121:1 Train ratio) & minority attack recall"
+                }</td
+              ><td>Credential_Attack recall = 0.1410</td><td
+                >h2_full_confirmed = false</td
               ></tr
             ><tr
-              ><th scope="row">F1-score</th><td>0.999869</td><td>0.000000</td
-              ><td>-0.999869</td></tr
+              ><th scope="row">RQ3</th><td
+                >{
+                  isVi
+                    ? "Tương quan phiên bằng 16-D BehavioralVector (canonical-behavioral-v2-16)"
+                    : "Session correlation via 16-D BehavioralVector (canonical-behavioral-v2-16)"
+                }</td
+              ><td
+                >Simulation L2 cosine F1 = 0.5556; UWF-ZeekData24 standardized
+                cosine F1 = 0.7192 &gt; IP baseline 0.6919</td
+              ><td>AIT empirical BLOCKED (#85: 72.87–87.91% ambiguity)</td></tr
             ><tr
-              ><th scope="row"
-                >{isVi ? "Tỷ lệ báo giả (FPR)" : "False positive rate"}</th
-              ><td>0.000016</td><td>0.380191</td><td>+0.380175</td></tr
+              ><th scope="row">RQ4</th><td
+                >{
+                  isVi
+                    ? "Phát hiện họ tấn công chưa biết (Zero-day holdout: 44 flows)"
+                    : "Unknown attack detection (Zero-day holdout: 44 flows)"
+                }</td
+              ><td
+                >Isolation Forest Recall = 0.9091; Autoencoder Recall = 0.2045</td
+              ><td>unsupervised_ge_0_75_both = false</td></tr
+            ><tr
+              ><th scope="row">RQ5</th><td
+                >{
+                  isVi
+                    ? "Xoay khóa thích ứng khi Risk >= 85.0 (mô phỏng có kiểm soát)"
+                    : "Adaptive key rotation at Risk >= 85.0 (controlled simulation)"
+                }</td
+              ><td
+                >Exposure window: -87.5% (1,200.0s → 150.01s); Blast radius:
+                -85.0% (40 → 6)</td
+              ><td>SIMULATION VALIDATED (dry_run = True)</td></tr
+            ><tr
+              ><th scope="row">RQ6</th><td
+                >{
+                  isVi
+                    ? "Chi phí mật mã AES-256-GCM & thông lượng suy luận theo lô"
+                    : "AES-256-GCM cryptographic overhead & batch inference throughput"
+                }</td
+              ><td
+                >AES-256-GCM 256B: 72,177.2 ops/s (P95 13.3 µs; 1KB P95 11.4 µs;
+                4KB P95 38.4 µs); process_batch(32): 386.37 flow/s (&gt;23x vs
+                16.75 flow/s)</td
+              ><td>BENCHMARK VALIDATED</td></tr
             ></tbody
           >
         </table>
       </div><div class="risk-grid">
         <article>
           <span>01</span><h3>
-            {isVi ? "Sụp đổ đường tắt TTL" : "TTL shortcut collapse"}
-          </h3><p>
-            {isVi ? "Trong NF-UNSW-NB15-v3, " : "In NF-UNSW-NB15-v3, "}<code
-              >MIN_TTL</code
-            >
-            {isVi ? "và" : "and"}
-            <code>MAX_TTL</code>{" "}
             {
               isVi
-                ? "chiếm 45,48% độ quan trọng RF; cây chỉ dùng "
-                : "carry 45.48% of RF importance; a single-feature tree on "
-            }<code>MIN_TTL</code>{" "}
-            {
-              isVi
-                ? "đạt Accuracy Validation 0,99985. Trên NF-CSE-CIC-IDS2018-v3, 99,990 / 100,000 dòng nằm ngoài các giá trị TTL phòng lab này."
-                : "reaches 0.99985 Validation accuracy. On NF-CSE-CIC-IDS2018-v3, 99,990 of 100,000 rows fall outside those lab TTL values."
+                ? "Từ bỏ hoàn toàn shortcut v1"
+                : "Complete retirement of v1 shortcuts"
             }
+          </h3><p>
+            {
+              isVi
+                ? "Bộ dữ liệu v1 (NF-UNSW-NB15-v3) bị phụ thuộc vào MIN_TTL/MAX_TTL và sụp đổ trên NF-CSE-CIC-IDS2018-v3 (Recall=0.0, FPR=0.3802). Hợp đồng v2.0 loại bỏ hoàn toàn TTL và chuyển v1 sang "
+                : "Legacy v1 (NF-UNSW-NB15-v3) relied on MIN_TTL/MAX_TTL shortcuts and collapsed on NF-CSE-CIC-IDS2018-v3 (Recall=0.0, FPR=0.3802). Contract v2.0 removes TTL features and isolates v1 under "
+            }<code>historical/nf_unsw_nb15_v3/</code>.
           </p>
         </article><article>
           <span>02</span><h3>
-            {isVi ? "Vector lặp tương đương" : "Equivalent vectors"}
+            {
+              isVi
+                ? "Dịch chuyển miền CTU-SME-11 & giải pháp E1/E3b"
+                : "CTU-SME-11 domain shift & E1/E3b mitigation"
+            }
           </h3><p>
             {
               isVi
-                ? "Kiểm toán split ghi nhận 49,98% dòng Validation (172,621 / 345,371) và 53,21% dòng Test trùng nguyên vector 47 đặc trưng với Train, làm thổi phồng điểm số trong miền."
-                : "The split audit records 49.98% of Validation rows (172,621 / 345,371) and 53.21% of Test rows sharing identical 47-feature vectors with Train, inflating in-domain scores."
+                ? "Khi chuyển từ testbed AIT sang mạng SME thực tế (CTU-SME-11), mô hình cây E0 bị sụt F1 nghiêm trọng nhưng Isolation Forest giữ được F1=0.8853 trên CTU-Echo. Huấn luyện đa miền E1 nâng F1 lên 0.9564 và Autoencoder_E3b hạ FPR trên CTU-Win7AD từ 72.14% xuống 13.79%."
+                : "Moving from the AIT testbed to real SME Zeek traffic (CTU-SME-11) degrades zero-shot E0 trees, whereas Isolation Forest retains F1=0.8853 on CTU-Echo. Multi-domain E1 lifts CTU_Test F1 to 0.9564 and Autoencoder_E3b cuts CTU-Win7AD FPR from 72.14% to 13.79%."
             }
           </p>
         </article><article>
           <span>03</span><h3>
-            {isVi ? "Cổng từ chối OOD" : "OOD abstention gate"}
+            {
+              isVi
+                ? "Hiệu năng micro-batch & mật mã học"
+                : "Micro-batch & cryptographic throughput"
+            }
           </h3><p>
             {
               isVi
-                ? "Vì lưu lượng ngoại vi phá vỡ giả định testbed, pipeline runtime chặn các dòng "
-                : "Because external traffic breaks testbed assumptions, the runtime pipeline rejects "
-            }<code>MIN_TTL == 0</code>{" "}
-            {
-              isVi
-                ? "và dòng vi phạm bất biến mạng thành "
-                : "and invariant-violating rows as "
-            }<code>ABSTAINED_OOD</code>{" "}
-            {
-              isVi
-                ? "trước khi suy luận ML hoặc chấm điểm rủi ro."
-                : "before model inference or risk scoring."
+                ? "Vector hóa process_batch(32) đạt 386.37 flow/s (>23x so với xử lý đơn luồng 16.75 flow/s) và Dataset Replay đạt 399.44 flow/s, trong khi AES-256-GCM duy trì P95 chỉ 11.4–38.4 µs từ 256B đến 4KB."
+                : "Vectorized process_batch(32) achieves 386.37 flow/s (>23x over single-flow 16.75 flow/s) and Dataset Replay streams at 399.44 flow/s, while AES-256-GCM encryption keeps P95 latency at 11.4–38.4 µs across 256B–4KB payloads."
             }
           </p>
         </article>
       </div><div class="callout">
         <strong>
-          {isVi ? "Không bảo đảm cho production:" : "No production guarantee:"}
+          {
+            isVi
+              ? "Phân loại mức độ sẵn sàng (Readiness classification):"
+              : "Readiness classification:"
+          }
         </strong>{" "}
         {
           isVi
-            ? "Dù cả 4 mô hình đã đánh giá Held-out Test, điểm số cao trên NF-UNSW-NB15-v3 chỉ có giá trị trong giao thức testbed 2015 này. CSV bên ngoài chưa xác minh bị gắn cờ "
-            : "Even with all four models evaluated on Held-out Test, high NF-UNSW-NB15-v3 scores apply only to this 2015 testbed protocol. External and unverified CSV inputs are explicitly gated as "
-        }<code>source:nf-v3-unverified</code>.
+            ? "NetFlow Sentinel v2.0.0 là "
+            : "NetFlow Sentinel v2.0.0 is classified as a "
+        }<strong>Functional Prototype / Academic & Controlled Lab Pilot</strong
+        >{" "}
+        (<code>RESEARCH_ONLY</code>,{" "}
+        <code>DISTRIBUTION_AUTHORIZATION.json: approved = false</code>).
       </div><p class="source-line">
-        <a href={source("reports/models/rf_baseline_validation_audit.json")}
-          >{isVi ? "Chẩn đoán TTL ↗" : "TTL diagnostics ↗"}</a
+        <a
+          href={source(
+            "reports/experiments/imbalance/rq2_imbalance_report.json",
+          )}>{isVi ? "Báo cáo RQ2 ↗" : "RQ2 imbalance JSON ↗"}</a
         > · <a
           href={source(
-            "reports/splits/nf_unsw_nb15_v3_leakage_audit_report.md",
-          )}
-          >{
-            isVi
-              ? "Kiểm toán split & trùng lặp ↗"
-              : "Split and equivalence audit ↗"
-          }</a
+            "reports/experiments/behavioral/rq3_session_correlation_experiment.json",
+          )}>{isVi ? "Báo cáo RQ3 ↗" : "RQ3 behavioral JSON ↗"}</a
+        > · <a
+          href={source("reports/experiments/ml/rq4_unknown_attack_report.json")}
+          >{isVi ? "Báo cáo RQ4 ↗" : "RQ4 zero-day JSON ↗"}</a
         > · <a
           href={source(
-            "reports/evaluation/cross_dataset_evaluation_results.json",
-          )}>{isVi ? "JSON cross-dataset ↗" : "Cross-dataset JSON ↗"}</a
-        > · <a href={source("docs/EVALUATION.md")}
-          >{isVi ? "Phương pháp đánh giá ↗" : "Evaluation methodology ↗"}</a
+            "reports/experiments/crypto/rq5_rotation_experiment.json",
+          )}>{isVi ? "Báo cáo RQ5 ↗" : "RQ5 key rotation JSON ↗"}</a
+        > · <a href={source("reports/benchmarks/crypto_benchmark_report.json")}
+          >{isVi ? "Benchmark mật mã RQ6 ↗" : "RQ6 crypto benchmark ↗"}</a
+        > · <a
+          href={source("reports/benchmarks/system_performance_benchmark.json")}
+          >{isVi ? "Benchmark hệ thống RQ6 ↗" : "RQ6 system benchmark ↗"}</a
         >
       </p>
     </div>
@@ -447,48 +541,50 @@ const isVi = lang === "vi";
       <div>
         <span class="eyebrow"
           >{
-            isVi ? "Đóng gói & runtime cục bộ" : "Packaging & local runtime"
+            isVi
+              ? "Kiểm chứng lặp lại 2x trạng thái sạch"
+              : "2x clean-state repeatability verification"
           }</span
         ><h2>
           {
             isVi
-              ? "Đã xác minh Desktop E2E; tệp nhị phân giữ ngoài Git."
-              : "Desktop E2E verified; binaries stay outside Git."
+              ? "4/4 REAL_MODELS và OOD=FITTED trên demo_flows.csv."
+              : "4/4 REAL_MODELS and OOD=FITTED on demo_flows.csv."
           }
         </h2><p>
           {
             isVi
-              ? "Lát cắt demo 200 dòng Validation ("
-              : "A 200-row Validation demo slice ("
-          }<code>demo_flows.csv</code>:{" "}
-          {isVi ? "198 dòng hợp lệ + 2 dòng " : "198 eligible flows + 2 "}<code
-            >ABSTAINED_OOD</code
-          >{" "}
+              ? "Script kiểm chứng tự động "
+              : "The automated verification harness "
+          }<code>scripts/verify_clean_state_demo.py</code>{" "}
           {
             isVi
-              ? ") đã vượt qua kiểm thử E2E trên bộ cài Windows NSIS và FastAPI cho cả 4 mô hình; khi thiếu file "
-              : "flows) passed end-to-end through the installed Windows NSIS desktop app and FastAPI for all four models, while missing local "
-          }<code>.joblib</code>{" "}
-          {
+              ? "chạy lặp lại 2 lượt từ trạng thái sạch trên lát cắt 200 dòng ("
+              : "executes a 2x clean-state repeatability check on the 200-flow slice ("
+          }<code>data/demo/demo_flows.csv</code>{
             isVi
-              ? "cục bộ, hệ thống khóa fail-closed ở "
-              : "files fail closed as "
-          }<code>BLOCKED / NOT READY</code>.
+              ? ") với cả 4 mô hình thực (4/4 REAL_MODELS) và cổng OOD=FITTED. Các hạng mục vẫn giữ trạng thái DEFERRED / BLOCKED gồm: lab router/switch vật lý (#137, real_device_tested = false), bộ cài Windows NSIS + kiểm thử VM sạch (#148), UGR'16 (HTTP 403) và phát hành nhị phân công khai (#154, approved = false)."
+              : ") with 4/4 REAL_MODELS and OOD=FITTED. Explicitly DEFERRED / BLOCKED items remain: physical router/switch lab (#137, real_device_tested = false), Windows NSIS installer + clean Windows 10/11 VM E2E (#148), UGR'16 (HTTP 403) and public binary release (#154, approved = false)."
+          }
         </p>
       </div><div class="surface empty-state">
         <strong>
-          {isVi ? "Biên bản E2E v0.6.0" : "v0.6.0 E2E Attestation"}
+          {
+            isVi
+              ? "Biên bản Clean-State v2.0.0"
+              : "v2.0.0 Clean-State Attestation"
+          }
         </strong><span
           >{
             isVi
-              ? "4 mô hình READY với Companion Bundle · đã xác minh Dry-Run #27 (executed = false)"
-              : "4 models READY with companion bundle · dry-run Issue #27 verified (executed = false)"
+              ? "200 flows · 4/4 REAL_MODELS · OOD=FITTED · 2x repeatability · ResponsePolicy dry_run = True (executed = false)"
+              : "200 flows · 4/4 REAL_MODELS · OOD=FITTED · 2x repeatability · ResponsePolicy dry_run = True (executed = false)"
           }</span
-        ><a href={source("reports/releases/v0.6.0_e2e_verification.json")}
+        ><a href={source("reports/demo/clean_state_demo_verification.json")}
           >{
             isVi
-              ? "Xem biên bản kiểm chứng E2E ↗"
-              : "Inspect E2E verification ↗"
+              ? "Xem clean_state_demo_verification.json ↗"
+              : "Inspect clean_state_demo_verification.json ↗"
           }</a
         >
       </div>

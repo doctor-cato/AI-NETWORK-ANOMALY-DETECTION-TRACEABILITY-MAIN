@@ -1,23 +1,29 @@
 ---
 title: Tài liệu tham khảo
-description: Hồ sơ nhà xuất bản, bài báo liên quan, báo cáo đánh giá và tài liệu v0.6.0.
-order: 12
+description: Danh mục DOI bộ dữ liệu v2.0 và lịch sử v1, chuẩn RFC 3954 / RFC 7011, báo cáo khóa luận và hồ sơ kiểm toán.
+order: 15
 ---
 
-## Bộ dữ liệu và nghiên cứu liên quan
+## Bộ dữ liệu nghiên cứu & Định danh DOI
 
-- [Hồ sơ dữ liệu Đại học Queensland — DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1).
-- Majed Luay và cộng sự, [_Temporal Analysis of NetFlow Datasets for Network Intrusion Detection Systems_](https://arxiv.org/abs/2503.04404).
-- [Phân tích provenance và điều khoản sử dụng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md).
+- **AIT-NDS-v2 (Austrian Institute of Technology Network Data Set v2)**: [DOI 10.5281/zenodo.13168643](https://doi.org/10.5281/zenodo.13168643) (`CC BY 4.0`) — nguồn dữ liệu luồng chính của NetFlow Sentinel v2.0 ([data/AIT_DATASETS_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/AIT_DATASETS_MANIFEST.json)).
+- **AIT-LDS-v2.1 (AIT Log Data Set v2.1)**: [DOI 10.5281/zenodo.19483937](https://doi.org/10.5281/zenodo.19483937) (`CC BY-NC-SA 4.0`) — cách ly trong `.gitignored`, chỉ dùng để kiểm toán khả năng liên kết dấu thời gian (`#85`, [docs/dataset/AIT_LINKAGE_FEASIBILITY.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/dataset/AIT_LINKAGE_FEASIBILITY.md)).
+- **AIT-ADS (AIT Alert Data Set)**: [DOI 10.5281/zenodo.8263181](https://doi.org/10.5281/zenodo.8263181).
+- **CTU-SME-11 (Czech Technical University Small- and Medium-sized Enterprise Dataset)**: [DOI 10.5281/zenodo.7958258](https://doi.org/10.5281/zenodo.7958258) (`CC BY 4.0`) — kiểm định liên miền và thực nghiệm đa miền `E1` ([data/EXTERNAL_DATASETS_PROVENANCE.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/EXTERNAL_DATASETS_PROVENANCE.json)).
+- **UWF-ZeekData24 (University of West Florida ZeekData24)**: `CC BY 4.0` — chỉ sử dụng để đánh giá ngoại vi (`evaluation_only = true`, [reports/experiments/ml/uwf_zeekdata24_cross_source_eval.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/uwf_zeekdata24_cross_source_eval.json)).
+- **Di sản lịch sử v1 — NF-UNSW-NB15-v3 (University of Queensland)**: [DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1) (đã chuyển vào `historical/` theo [docs/adr/ADR-dataset-hard-cutover-v2.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/adr/ADR-dataset-hard-cutover-v2.md)).
 
-## Bằng chứng đánh giá & tài liệu hệ thống
+## Tiêu chuẩn giao thức mạng (IETF RFC)
 
-- [Lược đồ dữ liệu đã xác minh](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) và [Split manifest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_split_manifest.json)
-- [Phân tích lỗi Held-out Test Random Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/error_analysis_report.md)
-- [Báo cáo Held-out Test XGBoost](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/xgboost/evaluation_report.md)
-- [Báo cáo đánh giá Isolation Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md)
-- [Báo cáo đánh giá Autoencoder](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md)
-- [Báo cáo tổng quát hóa cross-dataset](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/cross_dataset_generalization_report.md)
-- [Hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md), [Quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md) và [Hợp đồng API](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/api/API_CONTRACT.md)
+- **RFC 3954**: Cisco Systems NetFlow Services Export Version 9 ([IETF RFC 3954](https://datatracker.ietf.org/doc/html/rfc3954)).
+- **RFC 7011**: Specification of the IP Flow Information Export (IPFIX) Protocol for the Exchange of Flow Information ([IETF RFC 7011](https://datatracker.ietf.org/doc/html/rfc7011)).
 
-Giấy phép Apache-2.0 áp dụng cho mã nguồn; dữ liệu NF-UNSW-NB15-v3 tuân theo điều khoản phi thương mại riêng của nhà xuất bản.
+## Báo cáo khóa luận, Thuyết trình & Hồ sơ kiểm toán v2.0
+
+- [Báo cáo nghiên cứu khóa luận v2.0 (`RESEARCH_REPORT_V2.md`)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/RESEARCH_REPORT_V2.md)
+- [Đề cương slide bảo vệ v2.0 (`DEFENSE_SLIDES_V2.md`)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/DEFENSE_SLIDES_V2.md)
+- [Ngân hàng câu hỏi & trả lời bảo vệ v2.0 (`DEFENSE_QA_V2.md`)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/DEFENSE_QA_V2.md)
+- [Báo cáo kiểm toán tổng kết v2.0 (`V2_FINAL_AUDIT.md`)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md)
+- [Đánh giá sẵn sàng phát hành v2.0 (`V2_RELEASE_READINESS.md`)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/V2_RELEASE_READINESS.md)
+- [Kiểm toán nhánh PR #156 (`PR156_HEAD_AUDIT_2026-11-19.md`)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md)
+- [Giấy phép Apache-2.0 (`LICENSE`)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/LICENSE), [NOTICE](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/NOTICE) và [THIRD_PARTY_NOTICES.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/THIRD_PARTY_NOTICES.md)
