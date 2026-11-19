@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -43,7 +44,13 @@ from _v2_train_common import (  # noqa: E402
     build_environment_block,
 )
 
+from network_anomaly.data.split import _sha256_file  # noqa: E402
 from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.models.stage2_multiclass import (  # noqa: E402
+    CANONICAL_6_CLASSES,
+    DEFAULT_STAGE2_ARTIFACT_PATH,
+    DEFAULT_STAGE2_MANIFEST_PATH,
+)
 from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
 
 OUT_JSON = (
@@ -51,14 +58,7 @@ OUT_JSON = (
 )
 OUT_MD = PROJECT_ROOT / "docs" / "experiments" / "MULTICLASS_ATTACK_CLASSIFICATION.md"
 
-CANONICAL_CLASSES: Tuple[str, ...] = (
-    "Benign",
-    "Credential_Attack",
-    "Data_Exfiltration",
-    "Exploitation_And_C2",
-    "Post_Exploitation_Discovery",
-    "Reconnaissance",
-)
+CANONICAL_CLASSES: Tuple[str, ...] = CANONICAL_6_CLASSES
 CLASS_TO_IDX: Dict[str, int] = {name: idx for idx, name in enumerate(CANONICAL_CLASSES)}
 
 
@@ -168,6 +168,46 @@ def main() -> int:
         "validation": _evaluate_predictions(y_val, rf.predict(X_val)),
         "test": _evaluate_predictions(y_test, rf.predict(X_test)),
     }
+
+    # Save Stage-2 RandomForest artifact + tracked lightweight centroid manifest
+    DEFAULT_STAGE2_ARTIFACT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(rf, DEFAULT_STAGE2_ARTIFACT_PATH, compress=3)
+    stage2_model_sha = _sha256_file(DEFAULT_STAGE2_ARTIFACT_PATH)
+    preproc_sha = _sha256_file(PREPROC_ARTIFACT_PATH)
+
+    class_centroids: Dict[str, Any] = {}
+    class_stds: Dict[str, Any] = {}
+    for idx, cname in enumerate(CANONICAL_CLASSES):
+        mask = y_train == idx
+        if np.any(mask):
+            subset = X_train[mask].astype(np.float64)
+            centroid = np.mean(subset, axis=0)
+            std = np.maximum(np.std(subset, axis=0), 1e-3)
+        else:
+            centroid = np.zeros(X_train.shape[1], dtype=np.float64)
+            std = np.ones(X_train.shape[1], dtype=np.float64)
+        class_centroids[cname] = [round(float(v), 6) for v in centroid]
+        class_stds[cname] = [round(float(v), 6) for v in std]
+
+    stage2_manifest = {
+        "schema_version": "stage2-multiclass-manifest-v1",
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "model_artifact_relpath": str(
+            DEFAULT_STAGE2_ARTIFACT_PATH.relative_to(PROJECT_ROOT)
+        ).replace("\\", "/"),
+        "model_artifact_sha256": stage2_model_sha,
+        "preprocessor_artifact_sha256": preproc_sha,
+        "feature_columns": list(ML_FEATURE_COLUMNS),
+        "classes": list(CANONICAL_CLASSES),
+        "validation_macro_f1": models_out["random_forest_multiclass"]["validation"]["macro_f1"],
+        "test_macro_f1": models_out["random_forest_multiclass"]["test"]["macro_f1"],
+        "class_centroids": class_centroids,
+        "class_stds": class_stds,
+    }
+    DEFAULT_STAGE2_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DEFAULT_STAGE2_MANIFEST_PATH.write_text(
+        json.dumps(stage2_manifest, indent=2) + "\n", encoding="utf-8", newline="\n"
+    )
 
     # 2. XGBoost Multiclass (hist + sqrt bounded weights)
     print("[multiclass] Training XGBClassifier multi:softprob (6 classes)...", flush=True)

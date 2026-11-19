@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -81,6 +81,11 @@ RESEARCH_ONLY_MODEL_KEYS = frozenset({"xgboost", "isolation_forest", "autoencode
 CROSS_SOURCE_REQUIRED_SPLITS = ("ctu_echo", "ctu_windows7ad")
 MIN_CERTIFICATION_RECALL = 0.70
 MAX_CERTIFICATION_FPR = 0.10
+VALIDATED_YOUDEN_J_THRESHOLDS: Dict[str, float] = {
+    "random_forest": 0.382282,
+    "xgboost": 0.200761,
+}
+SUPPORTED_THRESHOLD_PROFILES = ("frozen_default", "validation_youden_j")
 
 
 def _is_valid_metric_ratio(value: Any) -> Optional[float]:
@@ -313,6 +318,25 @@ class _SupervisedBackend:
             return attack_probability, attack_probability, None, "missing_calibrated_threshold"
         return attack_probability, attack_probability, attack_probability >= self.threshold, None
 
+    def score_batch_detailed(
+        self, X: np.ndarray
+    ) -> List[Tuple[float, Optional[float], Optional[bool], Optional[str]]]:
+        """Score a 2D batch matrix in a single vectorized predict_proba call."""
+        X_arr = np.asarray(X)
+        if X_arr.shape[0] == 0:
+            return []
+        X_in = _as_estimator_input(self.estimator, X_arr)
+        proba = np.asarray(self.estimator.predict_proba(X_in), dtype=float)
+        if proba.ndim != 2 or proba.shape[1] < 2:
+            raise ValueError("Supervised model must expose two-class predict_proba output")
+        probs = proba[:, 1]
+        if self.threshold is None:
+            return [
+                (float(prob), float(prob), None, "missing_calibrated_threshold") for prob in probs
+            ]
+        thresh = float(self.threshold)
+        return [(float(prob), float(prob), bool(float(prob) >= thresh), None) for prob in probs]
+
 
 class _ThresholdBackend:
     """Unsupervised backend: raw score plus empirical percentile normalization."""
@@ -338,6 +362,25 @@ class _ThresholdBackend:
             return raw, normalized, None, note or "missing_calibrated_threshold"
         return raw, normalized, raw >= float(self.threshold), note
 
+    def score_batch_detailed(
+        self, X: np.ndarray
+    ) -> List[Tuple[float, Optional[float], Optional[bool], Optional[str]]]:
+        """Score a 2D batch matrix in a single vectorized anomaly_scores call."""
+        X_arr = np.asarray(X)
+        if X_arr.shape[0] == 0:
+            return []
+        raw_arr = self.raw_scores(X_arr)
+        results: List[Tuple[float, Optional[float], Optional[bool], Optional[str]]] = []
+        for raw_val in raw_arr:
+            raw = float(raw_val)
+            normalized = normalize_anomaly_score(raw, self.calibration)
+            note = None if normalized is not None else "score_normalization_unavailable"
+            if self.threshold is None:
+                results.append((raw, normalized, None, note or "missing_calibrated_threshold"))
+            else:
+                results.append((raw, normalized, bool(raw >= float(self.threshold)), note))
+        return results
+
 
 class ModelRegistry:
     """Discover, verify, load and score the four canonical model artifacts."""
@@ -350,7 +393,14 @@ class ModelRegistry:
         preprocessor_manifest_path: Optional[Path] = None,
         warmup: bool = True,
         demo_heuristics: bool = False,
+        threshold_profile: str = "frozen_default",
     ):
+        if threshold_profile not in SUPPORTED_THRESHOLD_PROFILES:
+            raise ValueError(
+                f"Unsupported threshold_profile {threshold_profile!r}; "
+                f"expected one of {SUPPORTED_THRESHOLD_PROFILES}"
+            )
+        self.threshold_profile = threshold_profile
         self.artifacts_dir = Path(artifacts_dir) if artifacts_dir else resolve_artifacts_dir()
         self.manifest_root = (
             Path(manifest_root) if manifest_root else PROJECT_ROOT / "reports" / "models"
@@ -597,10 +647,17 @@ class ModelRegistry:
                 manifest_path,
                 expected_preprocessor_artifact_sha256=expected_preprocessor_sha256,
             )
-            threshold, source = extract_threshold(manifest)
-            if threshold is None:
-                threshold = 0.5
-                source = "default_binary_decision_0.5"
+            if (
+                self.threshold_profile == "validation_youden_j"
+                and model_key in VALIDATED_YOUDEN_J_THRESHOLDS
+            ):
+                threshold = VALIDATED_YOUDEN_J_THRESHOLDS[model_key]
+                source = "ait_val_youden_j_profile"
+            else:
+                threshold, source = extract_threshold(manifest)
+                if threshold is None:
+                    threshold = 0.5
+                    source = "default_binary_decision_0.5"
             return _SupervisedBackend(model, threshold, None), threshold, source
 
         if model_key == "xgboost":
@@ -609,10 +666,17 @@ class ModelRegistry:
                 manifest_path,
                 expected_preprocessor_artifact_sha256=expected_preprocessor_sha256,
             )
-            threshold, source = extract_threshold(manifest)
-            if threshold is None:
-                threshold = 0.5
-                source = "default_binary_decision_0.5"
+            if (
+                self.threshold_profile == "validation_youden_j"
+                and model_key in VALIDATED_YOUDEN_J_THRESHOLDS
+            ):
+                threshold = VALIDATED_YOUDEN_J_THRESHOLDS[model_key]
+                source = "ait_val_youden_j_profile"
+            else:
+                threshold, source = extract_threshold(manifest)
+                if threshold is None:
+                    threshold = 0.5
+                    source = "default_binary_decision_0.5"
             return _SupervisedBackend(model, threshold, None), threshold, source
 
         if model_key == "isolation_forest":
@@ -741,6 +805,7 @@ class ModelRegistry:
                 status.deployment_tier == "PRODUCTION_ELIGIBLE" for status in statuses
             ),
             "demo_heuristics_enabled": self.demo_heuristics,
+            "threshold_profile": self.threshold_profile,
         }
 
     # ------------------------------------------------------------ inference
@@ -765,6 +830,57 @@ class ModelRegistry:
         frame = pd.DataFrame([validated], columns=list(ML_FEATURE_COLUMNS))
         transformed = self._preprocessor.transform(frame)
         return np.asarray(transformed.to_numpy(dtype=float), dtype=float)
+
+    def transform_features_batch(self, feature_dicts: Sequence[Mapping[str, Any]]) -> np.ndarray:
+        """Apply the frozen train-only preprocessor to a batch of validated feature mappings."""
+        if not self.preprocessor_ready:
+            raise FeatureContractError(
+                f"preprocessor unavailable: {self._preprocessor_error or 'not loaded'}"
+            )
+        if not feature_dicts:
+            return np.empty((0, len(ML_FEATURE_COLUMNS)), dtype=float)
+        validated_rows = [self.validate_features(f) for f in feature_dicts]
+        frame = pd.DataFrame(validated_rows, columns=list(ML_FEATURE_COLUMNS))
+        transformed = self._preprocessor.transform(frame)
+        return np.asarray(transformed.to_numpy(dtype=float), dtype=float)
+
+    def predict_batch_all(
+        self, feature_dicts: Sequence[Mapping[str, Any]]
+    ) -> List[Dict[str, ModelScore]]:
+        """Score a batch of feature mappings with every decision-ready model in vectorized calls."""
+        if not feature_dicts:
+            return []
+        X_batch = self.transform_features_batch(feature_dicts)
+        n_rows = len(feature_dicts)
+        row_results: List[Dict[str, ModelScore]] = [{} for _ in range(n_rows)]
+        for model_key in MODEL_KEYS:
+            backend = self._backends.get(model_key)
+            status = self._statuses.get(model_key)
+            if backend is None or status is None or not status.decision_ready:
+                continue
+            start = time.perf_counter()
+            try:
+                batch_tuples = backend.score_batch_detailed(X_batch)
+                per_sample_latency_us = ((time.perf_counter() - start) * 1e6) / n_rows
+                status.inference_count += n_rows
+                status.last_latency_us = round(per_sample_latency_us, 3)
+                for row_idx, (raw, normalized, is_anomaly, note) in enumerate(batch_tuples):
+                    row_results[row_idx][model_key] = ModelScore(
+                        model_key=model_key,
+                        raw_score=raw,
+                        normalized_score=normalized,
+                        is_anomaly=is_anomaly,
+                        threshold=status.threshold,
+                        score_semantics=backend.score_semantics,
+                        latency_us=per_sample_latency_us,
+                        normalization_note=note,
+                    )
+            except Exception as exc:
+                status.error_count += 1
+                status.reason = f"inference failed: {type(exc).__name__}: {exc}"
+                for row_map in row_results:
+                    row_map.pop(model_key, None)
+        return row_results
 
     def predict_all(self, features: Mapping[str, Any]) -> Dict[str, ModelScore]:
         """Score one validated feature row with every decision-ready model.

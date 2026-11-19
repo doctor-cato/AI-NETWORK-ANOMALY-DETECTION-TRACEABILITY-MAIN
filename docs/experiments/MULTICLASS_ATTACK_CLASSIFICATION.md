@@ -1,6 +1,6 @@
 # Multi-Class Attack Classification Experiment (6 Classes, `AIT-NDS-v2`)
 
-- **Executed At (UTC):** `2026-11-18T18:02:38.857551+00:00` | **Elapsed:** `163.36s`
+- **Executed At (UTC):** `2026-11-19T12:50:31.432910+00:00` | **Elapsed:** `172.76s`
 - **Isolation Guarantee:** `separate_experimental_run = true`, `e0_artifacts_untouched = true`
 - **Model Selected on Validation (`Macro-F1`):** `xgboost_multiclass`
 

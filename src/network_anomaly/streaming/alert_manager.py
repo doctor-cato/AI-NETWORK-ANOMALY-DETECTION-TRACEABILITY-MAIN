@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.crypto.rotation import KeyRotationPolicy, RotationDecision
@@ -159,6 +159,8 @@ class LiveAlertManager:
         self,
         event: CanonicalSecurityEvent,
         inference_decision: Optional[LiveInferenceDecision] = None,
+        behavioral_vector: Optional[Any] = None,
+        persist: bool = True,
     ) -> Tuple[RiskScoreOutput, Optional[LiveSecurityAlert]]:
         """Compute multi-criteria risk score and generate deduplicated alert if threshold exceeded."""
         now = time.time()
@@ -186,6 +188,31 @@ class LiveAlertManager:
                 else 0
             )
         )
+
+        if behavioral_vector is not None:
+            named_features = getattr(behavioral_vector, "named_features", None)
+            if not isinstance(named_features, Mapping):
+                feat_names = getattr(behavioral_vector, "feature_names", None)
+                feat_vals = getattr(behavioral_vector, "features", None)
+                if feat_names and feat_vals and len(feat_names) == len(feat_vals):
+                    named_features = dict(zip(feat_names, feat_vals))
+                else:
+                    named_features = None
+            if isinstance(named_features, Mapping):
+                dns_int = float(named_features.get("dns_intensity", 0) or 0)
+                port_ent = float(named_features.get("port_entropy", 0) or 0)
+                pkt_rate = float(named_features.get("pkt_rate", 0) or 0)
+                auth_ratio = float(named_features.get("auth_failure_ratio", 0) or 0)
+                if dns_int > 0.5 or port_ent > 2.0 or pkt_rate > 50.0:
+                    beh_score = max(
+                        beh_score,
+                        min(
+                            1.0,
+                            0.45 + 0.25 * dns_int + 0.15 * min(2.0, port_ent / 2.0),
+                        ),
+                    )
+                if auth_ratio >= 0.5:
+                    auth_fails = max(auth_fails, 4)
 
         # 1. Compute multi-criteria risk score
         risk_assess = self.risk_scorer.compute_risk(
@@ -221,7 +248,8 @@ class LiveAlertManager:
                     if event.event_id not in curr.associated_event_ids:
                         curr.associated_event_ids.append(event.event_id)
                     self._dedup_cache[entity] = (existing_alert_id, now)
-                    self._persist_alert(curr)
+                    if persist:
+                        self._persist_alert(curr)
                     return risk_assess, curr
 
             # Trigger Adaptive Key Rotation if Critical (Risk >= 85.0)
@@ -253,10 +281,29 @@ class LiveAlertManager:
 
             self._active_alerts[new_alert_id] = new_alert
             self._dedup_cache[entity] = (new_alert_id, now)
-            self._persist_alert(new_alert)
+            if persist:
+                self._persist_alert(new_alert)
             alert = new_alert
 
         return risk_assess, alert
+
+    @staticmethod
+    def _alert_row(alert: LiveSecurityAlert) -> Tuple[Any, ...]:
+        return (
+            alert.alert_id,
+            alert.created_at_utc,
+            alert.entity_id,
+            alert.risk_score,
+            alert.risk_level,
+            alert.trigger_reason,
+            alert.status.value,
+            alert.occurrence_count,
+            alert.first_seen_utc,
+            alert.last_seen_utc,
+            json.dumps(alert.associated_event_ids),
+            1 if alert.adaptive_key_rotated else 0,
+            alert.detection_latency_ms,
+        )
 
     def _persist_alert(self, alert: LiveSecurityAlert) -> None:
         if not self.db_path:
@@ -272,21 +319,29 @@ class LiveAlertManager:
                             associated_event_ids, adaptive_key_rotated, detection_latency_ms
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (
-                            alert.alert_id,
-                            alert.created_at_utc,
-                            alert.entity_id,
-                            alert.risk_score,
-                            alert.risk_level,
-                            alert.trigger_reason,
-                            alert.status.value,
-                            alert.occurrence_count,
-                            alert.first_seen_utc,
-                            alert.last_seen_utc,
-                            json.dumps(alert.associated_event_ids),
-                            1 if alert.adaptive_key_rotated else 0,
-                            alert.detection_latency_ms,
-                        ),
+                        self._alert_row(alert),
+                    )
+        except Exception:
+            pass
+
+    def persist_alerts_batch(self, alerts: Sequence[LiveSecurityAlert]) -> None:
+        """Persist a batch of alerts in a single SQLite transaction."""
+        if not self.db_path or not alerts:
+            return
+        deduped = {alert.alert_id: alert for alert in alerts}
+        rows = [self._alert_row(alert) for alert in deduped.values()]
+        try:
+            with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+                with conn:
+                    conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO live_alerts (
+                            alert_id, created_at_utc, entity_id, risk_score, risk_level,
+                            trigger_reason, status, occurrence_count, first_seen_utc, last_seen_utc,
+                            associated_event_ids, adaptive_key_rotated, detection_latency_ms
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        rows,
                     )
         except Exception:
             pass

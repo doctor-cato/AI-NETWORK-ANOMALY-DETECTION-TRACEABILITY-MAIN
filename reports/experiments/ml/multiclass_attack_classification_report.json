@@ -1,7 +1,7 @@
 {
   "experiment_id": "EXP-MULTICLASS-6CLASS-01",
-  "executed_at_utc": "2026-11-18T18:02:38.857551+00:00",
-  "elapsed_seconds": 163.36,
+  "executed_at_utc": "2026-11-19T12:50:31.432910+00:00",
+  "elapsed_seconds": 172.76,
   "separate_experimental_run": true,
   "e0_artifacts_untouched": true,
   "split_manifest": "reports/splits/v2_split_manifest.json",
@@ -22,7 +22,7 @@
   "selected_model_on_validation": "xgboost_multiclass",
   "models": {
     "random_forest_multiclass": {
-      "train_seconds": 87.32,
+      "train_seconds": 98.44,
       "hyperparameters": {
         "n_estimators": 80,
         "max_depth": 20,
@@ -236,7 +236,7 @@
       }
     },
     "xgboost_multiclass": {
-      "train_seconds": 62.94,
+      "train_seconds": 59.22,
       "hyperparameters": {
         "objective": "multi:softprob",
         "n_estimators": 120,
@@ -457,30 +457,28 @@
     "scikit_learn": "1.9.1",
     "pandas": "3.1.1",
     "numpy": "2.5.5",
-    "git_commit": "ac709f3da5c991ef3a7f91d96ce8066579cfb265",
+    "git_commit": "97d8e588c70827b377c08b0eefa978a8b13fd447",
     "git_dirty": true,
     "git": {
-      "git_commit": "ac709f3da5c991ef3a7f91d96ce8066579cfb265",
+      "git_commit": "97d8e588c70827b377c08b0eefa978a8b13fd447",
       "git_dirty": true,
       "git_clean": false,
       "git_dirty_paths": [
-        "M docs/USER_GUIDE_V2.md",
-        "M reports/benchmarks/crypto_benchmark_report.json",
-        "M reports/benchmarks/crypto_benchmark_report.md",
-        "M scripts/benchmark_crypto_overhead.py",
-        "M src/network_anomaly/streaming/live_orchestrator.py",
-        "?? docs/telemetry/REAL_DATASET_UDP_REPLAY.md",
-        "?? reports/acceptance/real_dataset_udp_replay_report.json",
-        "?? scripts/replay_real_netflow_udp.py",
-        "?? scripts/run_cross_source_calibration_diagnostic.py",
-        "?? scripts/run_multiclass_attack_classifier.py"
+        "M scripts/run_multiclass_attack_classifier.py",
+        "M scripts/run_rq2_rare_attack_experiment.py",
+        "M src/network_anomaly/ml/ood_gate.py",
+        "M src/network_anomaly/models/registry.py",
+        "M src/network_anomaly/risk/aggregation.py",
+        "?? reports/experiments/ml/multiclass_stage2_manifest.json",
+        "?? scripts/run_e1_multidomain_experiment.py",
+        "?? src/network_anomaly/models/stage2_multiclass.py"
       ],
-      "git_dirty_disclosure": "Trained from commit ac709f3 with uncommitted worktree changes (10 modified/untracked path(s)).",
+      "git_dirty_disclosure": "Trained from commit 97d8e58 with uncommitted worktree changes (9 modified/untracked path(s)).",
       "worktree_provenance": "DIRTY_DISCLOSED",
       "provenance_complete": true,
       "provenance_status": "VERIFIED"
     },
-    "timestamp_utc": "2026-11-18T18:02:39.023083+00:00"
+    "timestamp_utc": "2026-11-19T12:50:31.596538+00:00"
   },
   "limitations": [
     "Rare attack classes in AIT-NDS-v2 have extremely small evaluation counts (Exploitation_And_C2: N=2 val / N=5 test; Post_Exploitation_Discovery: N=56 val / N=39 test; Credential_Attack: N=11 val / N=78 test), so Macro-F1 variance on those classes is high.",

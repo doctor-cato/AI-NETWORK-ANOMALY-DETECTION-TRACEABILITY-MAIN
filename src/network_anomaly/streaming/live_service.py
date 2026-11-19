@@ -189,11 +189,14 @@ class LiveTelemetryService:
         self.pipeline.enqueue_batch(pending)
 
     def _process_batch(self, batch: List[CanonicalSecurityEvent]) -> None:
-        for event in batch:
-            result = self.orchestrator.process_event(event)
-            decision = result.inference_decision
-            latency = decision.total_inference_latency_us if decision else 0.0
-            with self._lock:
+        if not batch:
+            return
+        results = self.orchestrator.process_batch(batch)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            for result in results:
+                decision = result.inference_decision
+                latency = decision.total_inference_latency_us if decision else 0.0
                 self._metrics.events_processed += 1
                 if result.is_ml_flow:
                     self._metrics.ml_ready_events += 1
@@ -214,7 +217,7 @@ class LiveTelemetryService:
                             maxlen=self.history_capacity,
                         )
                     self._alerts.append(alert_dict)
-                self._metrics.last_event_at_utc = datetime.now(timezone.utc).isoformat()
+                self._metrics.last_event_at_utc = now_iso
                 self._results.append(result)
 
     # --------------------------------------------------------------- queries

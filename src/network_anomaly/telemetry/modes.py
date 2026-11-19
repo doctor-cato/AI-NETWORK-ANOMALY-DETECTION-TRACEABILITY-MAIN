@@ -56,6 +56,7 @@ class ModeOrchestrator:
         source_name: str = "benchmark_replay",
         speed_factor: float = float("inf"),
         callback: Optional[Callable[[LiveProcessingResult], None]] = None,
+        batch_size: int = 32,
     ) -> ModeExecutionSummary:
         """Replay recorded security events with controlled temporal pacing."""
         start_utc = datetime.now(timezone.utc).isoformat()
@@ -69,27 +70,41 @@ class ModeOrchestrator:
         sorted_events = sorted(events, key=lambda e: e.event_timestamp)
         last_event_ts = sorted_events[0].event_timestamp.timestamp() if sorted_events else 0.0
 
-        for ev in sorted_events:
-            curr_ts = ev.event_timestamp.timestamp()
-            delta_sec = curr_ts - last_event_ts
+        if speed_factor == float("inf") and batch_size > 1:
+            for i in range(0, len(sorted_events), batch_size):
+                chunk = sorted_events[i : i + batch_size]
+                batch_results = self.orchestrator.process_batch(chunk)
+                for res in batch_results:
+                    if res.inference_decision and res.inference_decision.ensemble_is_anomaly:
+                        anomalies += 1
+                    if res.alert_generated:
+                        alerts += 1
+                    if res.key_rotated:
+                        rotations += 1
+                    if callback:
+                        callback(res)
+        else:
+            for ev in sorted_events:
+                curr_ts = ev.event_timestamp.timestamp()
+                delta_sec = curr_ts - last_event_ts
 
-            if speed_factor != float("inf") and speed_factor > 0 and delta_sec > 0:
-                sleep_time = min(0.5, delta_sec / speed_factor)
-                time.sleep(sleep_time)
+                if speed_factor != float("inf") and speed_factor > 0 and delta_sec > 0:
+                    sleep_time = min(0.5, delta_sec / speed_factor)
+                    time.sleep(sleep_time)
 
-            last_event_ts = curr_ts
+                last_event_ts = curr_ts
 
-            # Process through unified live orchestrator
-            res = self.orchestrator.process_event(ev)
-            if res.inference_decision and res.inference_decision.ensemble_is_anomaly:
-                anomalies += 1
-            if res.alert_generated:
-                alerts += 1
-            if res.key_rotated:
-                rotations += 1
+                # Process through unified live orchestrator
+                res = self.orchestrator.process_event(ev)
+                if res.inference_decision and res.inference_decision.ensemble_is_anomaly:
+                    anomalies += 1
+                if res.alert_generated:
+                    alerts += 1
+                if res.key_rotated:
+                    rotations += 1
 
-            if callback:
-                callback(res)
+                if callback:
+                    callback(res)
 
         elapsed = max(0.001, time.perf_counter() - start_perf)
         throughput = round(len(sorted_events) / elapsed, 2)

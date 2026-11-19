@@ -12,6 +12,9 @@ from typing import Dict, Optional
 
 class AggregationPolicy(str, Enum):
     WEIGHTED_ENSEMBLE = "WEIGHTED_ENSEMBLE"  # Default recommended: calibrated linear blend
+    OOD_AWARE_ENSEMBLE = (
+        "OOD_AWARE_ENSEMBLE"  # Shift weights toward XGB+IF under moderate OOD drift
+    )
     RANDOM_FOREST_PRIMARY = "RANDOM_FOREST_PRIMARY"  # RF is primary, IF/AE supplementary
     STRICT_CONSENSUS = "STRICT_CONSENSUS"  # All active models must agree
     MAX_SEVERITY = "MAX_SEVERITY"  # Pessimistic fail-closed policy
@@ -36,6 +39,12 @@ class MultiModelDecisionAggregator:
         "isolation_forest": 0.15,
         "autoencoder": 0.15,
     }
+    OOD_SHIFT_WEIGHTS = {
+        "random_forest": 0.15,
+        "xgboost": 0.40,
+        "isolation_forest": 0.35,
+        "autoencoder": 0.10,
+    }
 
     def __init__(
         self,
@@ -51,6 +60,7 @@ class MultiModelDecisionAggregator:
         xgb_prob: Optional[float] = None,
         if_score: Optional[float] = None,
         ae_error_norm: Optional[float] = None,
+        ood_score: Optional[float] = None,
     ) -> AggregatedDecision:
         """Combine available model probability outputs into a single aggregated decision."""
         models: Dict[str, float] = {}
@@ -74,9 +84,21 @@ class MultiModelDecisionAggregator:
                 consensus_ratio=0.0,
             )
 
-        if self.policy == AggregationPolicy.WEIGHTED_ENSEMBLE:
+        if self.policy in (
+            AggregationPolicy.WEIGHTED_ENSEMBLE,
+            AggregationPolicy.OOD_AWARE_ENSEMBLE,
+        ):
+            active_weights = (
+                self.OOD_SHIFT_WEIGHTS
+                if (
+                    self.policy == AggregationPolicy.OOD_AWARE_ENSEMBLE
+                    and ood_score is not None
+                    and float(ood_score) >= 0.35
+                )
+                else self.weights
+            )
             # Re-normalize weights for available models
-            avail_weights = {m: self.weights.get(m, 0.25) for m in models}
+            avail_weights = {m: active_weights.get(m, 0.25) for m in models}
             total_w = sum(avail_weights.values())
             norm_w = {m: w / total_w for m, w in avail_weights.items()}
 

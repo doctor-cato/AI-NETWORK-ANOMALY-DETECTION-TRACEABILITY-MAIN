@@ -14,9 +14,10 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
@@ -37,10 +38,63 @@ from _rq_common import (  # noqa: E402
 )
 
 from network_anomaly.config import RANDOM_SEED  # noqa: E402
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS  # noqa: E402
 from network_anomaly.models.registry import ModelRegistry  # noqa: E402
 
 OUTPUT_JSON = Path("reports/experiments/imbalance/rq2_imbalance_report.json")
 OUTPUT_MD = Path("reports/experiments/imbalance/rq2_imbalance_report.md")
+
+
+def _oversample_rare_train_only(
+    X_train_np: np.ndarray,
+    y_train: np.ndarray,
+    attack_train: pd.Series,
+    rare_categories: Sequence[str],
+    target_per_rare_class: int = 15_000,
+    seed: int = RANDOM_SEED,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Deterministic train-only rare-attack oversampling with continuous-only Gaussian jitter.
+
+    Strictly operates ONLY on `X_train_np` / `y_train` (`ait_train`). Never touches val/test.
+    Binary flag columns (`has_response`, `is_tcp`, `is_udp`, `is_icmp`) and `protocol_num`
+    are preserved exact without jitter.
+    """
+    rng = np.random.default_rng(seed)
+    exact_cols = {"protocol_num", "has_response", "is_tcp", "is_udp", "is_icmp"}
+    cont_indices = [
+        idx
+        for idx, col in enumerate(ML_FEATURE_COLUMNS[: X_train_np.shape[1]])
+        if col not in exact_cols
+    ]
+    col_std = np.std(X_train_np, axis=0)
+    col_std = np.where(col_std > 1e-9, col_std, 1.0)
+
+    attack_arr = attack_train.astype(str).to_numpy()
+    X_parts: List[np.ndarray] = [X_train_np]
+    y_parts: List[np.ndarray] = [y_train]
+
+    for cat in rare_categories:
+        cat_indices = np.flatnonzero(attack_arr == str(cat))
+        current_count = int(len(cat_indices))
+        if current_count == 0 or current_count >= target_per_rare_class:
+            continue
+        n_to_add = int(target_per_rare_class - current_count)
+        sampled_idx = rng.choice(cat_indices, size=n_to_add, replace=True)
+        X_syn = X_train_np[sampled_idx].copy()
+        if cont_indices:
+            jitter = rng.normal(
+                loc=0.0,
+                scale=0.015 * col_std[cont_indices],
+                size=(n_to_add, len(cont_indices)),
+            )
+            X_syn[:, cont_indices] = X_syn[:, cont_indices] + jitter
+        y_syn = y_train[sampled_idx].copy()
+        X_parts.append(X_syn)
+        y_parts.append(y_syn)
+
+    if len(X_parts) == 1:
+        return X_train_np.copy(), y_train.copy()
+    return np.vstack(X_parts), np.concatenate(y_parts)
 
 
 def _rare_category_metrics(
@@ -158,20 +212,62 @@ def run_rq2_experiment(
     )
     xgb_cost_sensitive.fit(X_train_np, y_train)
 
+    # Exp 3 (RQ2): Train-only rare-attack oversampling (strictly ait_train; val/test untouched)
+    X_train_os, y_train_os = _oversample_rare_train_only(
+        X_train_np,
+        y_train,
+        attack_train,
+        rare_categories,
+        target_per_rare_class=15_000,
+        seed=RANDOM_SEED,
+    )
+    pos_os = int(np.sum(y_train_os == 1))
+    neg_os = int(np.sum(y_train_os == 0))
+    scale_pos_weight_os = float(neg_os / max(1, pos_os))
+
+    rf_oversampled = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=16,
+        class_weight="balanced_subsample",
+        random_state=RANDOM_SEED,
+        n_jobs=-1,
+    )
+    rf_oversampled.fit(X_train_os, y_train_os)
+
+    xgb_oversampled = XGBClassifier(
+        n_estimators=150,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        scale_pos_weight=scale_pos_weight_os,
+        tree_method="hist",
+        eval_metric="logloss",
+        random_state=RANDOM_SEED,
+        n_jobs=-1,
+    )
+    xgb_oversampled.fit(X_train_os, y_train_os)
+
     predictions: Dict[str, np.ndarray] = {
         "RandomForest_Unweighted": rf_unweighted.predict(X_test_np).astype(np.int64),
         "RandomForest_CostSensitive": rf_cost_sensitive.predict(X_test_np).astype(np.int64),
         "XGBoost_ScalePosWeight": xgb_cost_sensitive.predict(X_test_np).astype(np.int64),
+        "RandomForest_TrainOnlyOversampled": rf_oversampled.predict(X_test_np).astype(np.int64),
+        "XGBoost_TrainOnlyOversampled": xgb_oversampled.predict(X_test_np).astype(np.int64),
     }
     scores: Dict[str, Optional[np.ndarray]] = {
         "RandomForest_Unweighted": rf_unweighted.predict_proba(X_test_np)[:, 1],
         "RandomForest_CostSensitive": rf_cost_sensitive.predict_proba(X_test_np)[:, 1],
         "XGBoost_ScalePosWeight": xgb_cost_sensitive.predict_proba(X_test_np)[:, 1],
+        "RandomForest_TrainOnlyOversampled": rf_oversampled.predict_proba(X_test_np)[:, 1],
+        "XGBoost_TrainOnlyOversampled": xgb_oversampled.predict_proba(X_test_np)[:, 1],
     }
     artifact_hashes: Dict[str, Optional[str]] = {
         "RandomForest_Unweighted": "trained_in_experiment",
         "RandomForest_CostSensitive": "trained_in_experiment",
         "XGBoost_ScalePosWeight": "trained_in_experiment",
+        "RandomForest_TrainOnlyOversampled": "trained_in_experiment",
+        "XGBoost_TrainOnlyOversampled": "trained_in_experiment",
     }
 
     for unsup_key, label in (
@@ -236,9 +332,12 @@ def run_rq2_experiment(
         "dataset_provenance": provenance,
         "split_counts": {
             "train_total": total_train,
+            "train_oversampled_total": int(len(y_train_os)),
+            "train_oversampled_added_rows": int(len(y_train_os) - total_train),
             "train_benign": neg_train,
             "train_attack": pos_train,
             "scale_pos_weight_used": round(scale_pos_weight, 4),
+            "scale_pos_weight_oversampled_used": round(scale_pos_weight_os, 4),
             "test_total": total_test,
             "train_class_distribution": train_counts,
             "test_class_distribution": test_counts,
@@ -254,7 +353,7 @@ def run_rq2_experiment(
         },
         "limitations": [
             "One-vs-benign rare-class precision/F1 treats all Benign false positives as denominator against a single rare attack class, making F1 sensitive to benign FPR when category support is tiny (e.g., Exploitation_And_C2 with N=5 test flows).",
-            "No SMOTE or synthetic oversampling was applied to Train, Validation, or Test.",
+            "Train-Only Oversampling (target_per_rare_class=15,000 with 0.015*std Gaussian jitter on continuous features only, preserving binary flags exact) was applied strictly to ait_train (0 rows added or modified in ait_val or ait_test), fulfilling Section 6 Experiment 3 of the thesis proposal.",
         ],
     }
 

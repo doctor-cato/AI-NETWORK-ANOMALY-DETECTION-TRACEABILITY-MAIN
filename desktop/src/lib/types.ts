@@ -632,10 +632,17 @@ export interface LiveAlertsResponse {
   items: Array<Record<string, unknown>>;
 }
 
+export interface LiveEventResult {
+  predicted_attack_category?: string | null;
+  attack_category_confidence?: number | null;
+  attack_type?: string | null;
+  [key: string]: unknown;
+}
+
 export interface LiveResultsResponse {
   data_status: string;
   total: number;
-  items: Array<Record<string, unknown>>;
+  items: LiveEventResult[];
 }
 
 export interface BehavioralVectorListItem {

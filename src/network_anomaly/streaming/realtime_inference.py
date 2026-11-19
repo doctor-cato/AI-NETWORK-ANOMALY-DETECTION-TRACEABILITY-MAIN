@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -67,6 +67,9 @@ class LiveInferenceDecision:
     abstained_due_to_ood: bool = False
     ood_gate_status: str = "NOT_FITTED"
     ensemble_policy: str = AggregationPolicy.WEIGHTED_ENSEMBLE.value
+    predicted_attack_category: Optional[str] = None
+    attack_category_confidence: Optional[float] = None
+    stage2_classifier_status: str = "DISABLED"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -236,12 +239,17 @@ class RealtimeInferenceEngine:
         runtime_mode: Optional[str] = None,
         require_ood_gate: Optional[bool] = None,
         expected_ood_gate_sha256: Optional[str] = None,
+        stage2_classifier: Optional[Any] = None,
+        enable_stage2_multiclass: bool = True,
     ):
         self.registry = registry or ModelRegistry()
         self.aggregator = aggregator or MultiModelDecisionAggregator(
             policy=AggregationPolicy.WEIGHTED_ENSEMBLE
         )
         self.demo_heuristics = demo_heuristics
+        self.enable_stage2_multiclass = bool(enable_stage2_multiclass)
+        self._stage2_classifier: Optional[Any] = stage2_classifier
+        self._stage2_load_attempted: bool = stage2_classifier is not None
         self.expected_ood_gate_sha256 = (
             expected_ood_gate_sha256.strip().lower()
             if isinstance(expected_ood_gate_sha256, str) and expected_ood_gate_sha256.strip()
@@ -353,66 +361,38 @@ class RealtimeInferenceEngine:
             ensemble_policy=self.aggregator.policy.value,
         )
 
-    # ------------------------------------------------------------ inference
-    def infer_event(
+    def _get_stage2_classifier(self) -> Optional[Any]:
+        """Lazily resolve the Stage-2 multi-class attack classifier if enabled and available."""
+        if not self.enable_stage2_multiclass:
+            return None
+        if self._stage2_classifier is not None:
+            return self._stage2_classifier
+        if self._stage2_load_attempted:
+            return None
+        self._stage2_load_attempted = True
+        try:
+            from network_anomaly.models.stage2_multiclass import Stage2MulticlassClassifier
+
+            self._stage2_classifier = Stage2MulticlassClassifier.try_load_default()
+        except Exception:
+            self._stage2_classifier = None
+        return self._stage2_classifier
+
+    def _build_decision_from_scores(
         self,
         event: CanonicalSecurityEvent,
         feature_dict: Dict[str, float],
-        feature_vector: Optional[np.ndarray] = None,
+        start_t: float,
+        ood_dec: Optional[Any],
+        model_scores: Dict[str, ModelScore],
+        failure_reason: Optional[str],
+        *,
+        run_stage2: bool = True,
     ) -> LiveInferenceDecision:
-        """Run OOD checks and genuine four-model inference for one security event."""
-        start_t = time.perf_counter()
-        self.total_inferences += 1
-
-        ood_block_reason = self._ood_policy_blocked_reason()
-        if ood_block_reason is not None:
-            if self.ood_gate_status == "ERROR":
-                self.total_inference_errors += 1
-            self.total_unavailable_events += 1
-            self.total_ood_events += 1
-            return self._unavailable_ood_decision(
-                event.event_id, start_t, ood_block_reason, self.ood_gate_status
-            )
-
-        ood_dec = None
-        if self.ood_gate_status == "FITTED":
-            if (
-                self.ood_gate is None
-                or type(getattr(self.ood_gate, "is_fitted", None)) is not bool
-                or not self.ood_gate.is_fitted
-            ):
-                self.total_inference_errors += 1
-                self.total_unavailable_events += 1
-                self.total_ood_events += 1
-                return self._unavailable_ood_decision(
-                    event.event_id, start_t, "ood_gate_unavailable_after_init", "ERROR"
-                )
-            try:
-                ood_dec = self.ood_gate.evaluate_sample(feature_dict)
-            except Exception as exc:
-                self.total_inference_errors += 1
-                self.total_unavailable_events += 1
-                self.total_ood_events += 1
-                return self._unavailable_ood_decision(
-                    event.event_id,
-                    start_t,
-                    f"ood_gate_runtime_error: {type(exc).__name__}: {exc}",
-                    "ERROR",
-                )
         is_ood = bool(ood_dec.is_ood) if ood_dec else False
         ood_reason = ood_dec.reason if ood_dec else None
         if is_ood:
             self.total_ood_events += 1
-
-        model_scores: Dict[str, ModelScore] = {}
-        failure_reason: Optional[str] = None
-        if self.registry.ready_count > 0:
-            try:
-                model_scores = self.registry.predict_all(feature_dict)
-            except FeatureContractError as exc:
-                failure_reason = str(exc)
-            except Exception as exc:  # pragma: no cover - defensive
-                failure_reason = f"{type(exc).__name__}: {exc}"
 
         if not model_scores:
             if failure_reason:
@@ -497,12 +477,28 @@ class RealtimeInferenceEngine:
             xgb_prob=aggregate_inputs.get("xgboost"),
             if_score=aggregate_inputs.get("isolation_forest"),
             ae_error_norm=aggregate_inputs.get("autoencoder"),
+            ood_score=ood_dec.ood_score if ood_dec is not None else None,
         )
 
         abstained = is_ood
         ensemble_is_anomaly = bool(agg_res.is_anomaly) and not is_ood
         if ensemble_is_anomaly:
             self.total_anomalies_detected += 1
+
+        predicted_cat: Optional[str] = None
+        cat_conf: Optional[float] = None
+        stage2_status = "DISABLED"
+        if run_stage2 and ensemble_is_anomaly:
+            clf = self._get_stage2_classifier()
+            if clf is not None:
+                try:
+                    X_s2 = self.registry.transform_features(feature_dict)
+                    cat, conf = clf.predict_one(X_s2[0])
+                    predicted_cat = str(cat)
+                    cat_conf = round(float(conf), 4)
+                    stage2_status = "ACTIVE"
+                except Exception:
+                    stage2_status = "ERROR"
 
         return LiveInferenceDecision(
             event_id=event.event_id,
@@ -522,7 +518,207 @@ class RealtimeInferenceEngine:
             abstained_due_to_ood=abstained,
             ood_gate_status=self.ood_gate_status,
             ensemble_policy=agg_res.policy_used.value,
+            predicted_attack_category=predicted_cat,
+            attack_category_confidence=cat_conf,
+            stage2_classifier_status=stage2_status,
         )
+
+    # ------------------------------------------------------------ inference
+    def infer_event(
+        self,
+        event: CanonicalSecurityEvent,
+        feature_dict: Dict[str, float],
+        feature_vector: Optional[np.ndarray] = None,
+    ) -> LiveInferenceDecision:
+        """Run OOD checks and genuine four-model inference for one security event."""
+        start_t = time.perf_counter()
+        self.total_inferences += 1
+
+        ood_block_reason = self._ood_policy_blocked_reason()
+        if ood_block_reason is not None:
+            if self.ood_gate_status == "ERROR":
+                self.total_inference_errors += 1
+            self.total_unavailable_events += 1
+            self.total_ood_events += 1
+            return self._unavailable_ood_decision(
+                event.event_id, start_t, ood_block_reason, self.ood_gate_status
+            )
+
+        ood_dec = None
+        if self.ood_gate_status == "FITTED":
+            if (
+                self.ood_gate is None
+                or type(getattr(self.ood_gate, "is_fitted", None)) is not bool
+                or not self.ood_gate.is_fitted
+            ):
+                self.total_inference_errors += 1
+                self.total_unavailable_events += 1
+                self.total_ood_events += 1
+                return self._unavailable_ood_decision(
+                    event.event_id, start_t, "ood_gate_unavailable_after_init", "ERROR"
+                )
+            try:
+                ood_dec = self.ood_gate.evaluate_sample(feature_dict)
+            except Exception as exc:
+                self.total_inference_errors += 1
+                self.total_unavailable_events += 1
+                self.total_ood_events += 1
+                return self._unavailable_ood_decision(
+                    event.event_id,
+                    start_t,
+                    f"ood_gate_runtime_error: {type(exc).__name__}: {exc}",
+                    "ERROR",
+                )
+
+        model_scores: Dict[str, ModelScore] = {}
+        failure_reason: Optional[str] = None
+        if self.registry.ready_count > 0:
+            try:
+                model_scores = self.registry.predict_all(feature_dict)
+            except FeatureContractError as exc:
+                failure_reason = str(exc)
+            except Exception as exc:  # pragma: no cover - defensive
+                failure_reason = f"{type(exc).__name__}: {exc}"
+
+        return self._build_decision_from_scores(
+            event,
+            feature_dict,
+            start_t,
+            ood_dec,
+            model_scores,
+            failure_reason,
+            run_stage2=True,
+        )
+
+    def infer_batch(
+        self,
+        events: Sequence[CanonicalSecurityEvent],
+        feature_dicts: Sequence[Dict[str, float]],
+    ) -> List[LiveInferenceDecision]:
+        """Run vectorized OOD gate and four-model inference for a batch of events."""
+        if len(events) != len(feature_dicts):
+            raise ValueError("events and feature_dicts must have the same length")
+        if not events:
+            return []
+
+        start_t = time.perf_counter()
+        n_events = len(events)
+
+        ood_block_reason = self._ood_policy_blocked_reason()
+        if ood_block_reason is not None:
+            decisions: List[LiveInferenceDecision] = []
+            for event in events:
+                self.total_inferences += 1
+                if self.ood_gate_status == "ERROR":
+                    self.total_inference_errors += 1
+                self.total_unavailable_events += 1
+                self.total_ood_events += 1
+                decisions.append(
+                    self._unavailable_ood_decision(
+                        event.event_id, start_t, ood_block_reason, self.ood_gate_status
+                    )
+                )
+            return decisions
+
+        ood_decisions: List[Optional[Any]] = [None] * n_events
+        if self.ood_gate_status == "FITTED":
+            if (
+                self.ood_gate is None
+                or type(getattr(self.ood_gate, "is_fitted", None)) is not bool
+                or not self.ood_gate.is_fitted
+            ):
+                decisions = []
+                for event in events:
+                    self.total_inferences += 1
+                    self.total_inference_errors += 1
+                    self.total_unavailable_events += 1
+                    self.total_ood_events += 1
+                    decisions.append(
+                        self._unavailable_ood_decision(
+                            event.event_id, start_t, "ood_gate_unavailable_after_init", "ERROR"
+                        )
+                    )
+                return decisions
+            try:
+                ood_decisions = list(self.ood_gate.evaluate_batch(feature_dicts))
+            except Exception as exc:
+                err_reason = f"ood_gate_runtime_error: {type(exc).__name__}: {exc}"
+                decisions = []
+                for event in events:
+                    self.total_inferences += 1
+                    self.total_inference_errors += 1
+                    self.total_unavailable_events += 1
+                    self.total_ood_events += 1
+                    decisions.append(
+                        self._unavailable_ood_decision(event.event_id, start_t, err_reason, "ERROR")
+                    )
+                return decisions
+
+        batch_scores: List[Dict[str, ModelScore]] = [{} for _ in range(n_events)]
+        failure_reasons: List[Optional[str]] = [None] * n_events
+        if self.registry.ready_count > 0:
+            try:
+                batch_scores = self.registry.predict_batch_all(feature_dicts)
+            except FeatureContractError:
+                valid_indices: List[int] = []
+                valid_dicts: List[Dict[str, float]] = []
+                for idx, fdict in enumerate(feature_dicts):
+                    try:
+                        self.registry.validate_features(fdict)
+                        valid_indices.append(idx)
+                        valid_dicts.append(fdict)
+                    except FeatureContractError as exc:
+                        failure_reasons[idx] = str(exc)
+                if valid_dicts:
+                    try:
+                        valid_scores = self.registry.predict_batch_all(valid_dicts)
+                        for v_idx, orig_idx in enumerate(valid_indices):
+                            batch_scores[orig_idx] = valid_scores[v_idx]
+                    except Exception as exc:  # pragma: no cover - defensive
+                        err_msg = f"{type(exc).__name__}: {exc}"
+                        for orig_idx in valid_indices:
+                            failure_reasons[orig_idx] = err_msg
+            except Exception as exc:  # pragma: no cover - defensive
+                err_msg = f"{type(exc).__name__}: {exc}"
+                for idx in range(n_events):
+                    failure_reasons[idx] = err_msg
+
+        decisions = []
+        anomalous_indices: List[int] = []
+        for idx, event in enumerate(events):
+            self.total_inferences += 1
+            dec = self._build_decision_from_scores(
+                event,
+                feature_dicts[idx],
+                start_t,
+                ood_decisions[idx],
+                batch_scores[idx],
+                failure_reasons[idx],
+                run_stage2=False,
+            )
+            decisions.append(dec)
+            if dec.ensemble_is_anomaly and dec.inference_mode == "REAL_MODELS":
+                anomalous_indices.append(idx)
+
+        if anomalous_indices:
+            clf = self._get_stage2_classifier()
+            if clf is not None:
+                anom_dicts = [feature_dicts[i] for i in anomalous_indices]
+                try:
+                    X_s2_batch = self.registry.transform_features_batch(anom_dicts)
+                    if hasattr(clf, "predict_batch"):
+                        preds = clf.predict_batch(X_s2_batch)
+                    else:
+                        preds = [clf.predict_one(X_s2_batch[j]) for j in range(len(anom_dicts))]
+                    for orig_idx, (cat, conf) in zip(anomalous_indices, preds):
+                        decisions[orig_idx].predicted_attack_category = str(cat)
+                        decisions[orig_idx].attack_category_confidence = round(float(conf), 4)
+                        decisions[orig_idx].stage2_classifier_status = "ACTIVE"
+                except Exception:
+                    for orig_idx in anomalous_indices:
+                        decisions[orig_idx].stage2_classifier_status = "ERROR"
+
+        return decisions
 
     # ------------------------------------------------------------------ demo
     def _demo_decision(

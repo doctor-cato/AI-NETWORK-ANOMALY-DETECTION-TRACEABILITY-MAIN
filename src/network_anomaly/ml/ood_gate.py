@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -325,6 +325,78 @@ class OODRejectionGate:
             reason=None,
             metadata={"z_mean_distance": round(stat_distance, 3)},
         )
+
+    def evaluate_batch(self, feature_dicts: Sequence[Mapping[str, float]]) -> List[OODDecision]:
+        """Vectorized batch evaluation of feature dictionaries against OOD criteria."""
+        if not self.is_fitted:
+            raise RuntimeError("OODRejectionGate must be fitted before evaluation")
+        if not feature_dicts:
+            return []
+
+        decisions: List[Optional[OODDecision]] = [None] * len(feature_dicts)
+        valid_indices: List[int] = []
+        valid_rows: List[List[float]] = []
+
+        for idx, row in enumerate(feature_dicts):
+            if not all(name in row for name in self.feature_names):
+                decisions[idx] = self.evaluate_sample(dict(row))
+                continue
+            try:
+                vals = [float(row[name]) for name in self.feature_names]
+            except (TypeError, ValueError):
+                decisions[idx] = self.evaluate_sample(dict(row))
+                continue
+            if not all(math.isfinite(v) for v in vals):
+                decisions[idx] = self.evaluate_sample(dict(row))
+                continue
+            valid_indices.append(idx)
+            valid_rows.append(vals)
+
+        if valid_rows:
+            X_mat = np.asarray(valid_rows, dtype=np.float64)
+            breach_mask = (X_mat < self.min_bounds) | (X_mat > self.max_bounds)
+            breach_counts = np.sum(breach_mask, axis=1)
+            z_scores = np.abs((X_mat - self.means) / self.stds)
+            stat_distances = np.mean(z_scores, axis=1)
+
+            for row_i, orig_idx in enumerate(valid_indices):
+                if int(breach_counts[row_i]) >= 3:
+                    offending_bounds = [
+                        self.feature_names[int(col_i)]
+                        for col_i in np.flatnonzero(breach_mask[row_i])
+                    ]
+                    decisions[orig_idx] = OODDecision(
+                        action=OODAction.ABSTAIN,
+                        is_ood=True,
+                        ood_score=0.95,
+                        reason="FEATURE_BOUNDS_EXTREME_BREACH",
+                        offending_features=offending_bounds,
+                        metadata={"breach_count": len(offending_bounds)},
+                    )
+                    continue
+
+                stat_distance = float(stat_distances[row_i])
+                if stat_distance > self.statistical_threshold:
+                    top_idx = np.argsort(z_scores[row_i])[-3:][::-1]
+                    decisions[orig_idx] = OODDecision(
+                        action=OODAction.ABSTAIN,
+                        is_ood=True,
+                        ood_score=min(1.0, stat_distance / 10.0),
+                        reason="STATISTICAL_OUTLIER_DISTANCE",
+                        offending_features=[self.feature_names[int(i)] for i in top_idx],
+                        metadata={"z_mean_distance": round(stat_distance, 3)},
+                    )
+                    continue
+
+                decisions[orig_idx] = OODDecision(
+                    action=OODAction.PROCEED,
+                    is_ood=False,
+                    ood_score=round(stat_distance / 10.0, 4),
+                    reason=None,
+                    metadata={"z_mean_distance": round(stat_distance, 3)},
+                )
+
+        return [d for d in decisions if d is not None]
 
     def to_artifact(self, provenance: Dict[str, Any]) -> Dict[str, Any]:
         """Serialize the fitted reference distribution with explicit provenance."""

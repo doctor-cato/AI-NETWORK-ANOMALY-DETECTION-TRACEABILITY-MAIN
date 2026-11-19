@@ -9,7 +9,7 @@ import collections
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.behavioral.sessionizer import EventSessionizer
@@ -51,6 +51,8 @@ class LiveProcessingResult:
     dest_ip: Optional[str] = None
     dest_port: Optional[int] = None
     attack_type: Optional[str] = None
+    predicted_attack_category: Optional[str] = None
+    attack_category_confidence: Optional[float] = None
 
     def to_dict(self) -> Dict[str, object]:
         payload: Dict[str, object] = {
@@ -69,6 +71,8 @@ class LiveProcessingResult:
             "dest_ip": self.dest_ip,
             "dest_port": self.dest_port,
             "attack_type": self.attack_type,
+            "predicted_attack_category": self.predicted_attack_category,
+            "attack_category_confidence": self.attack_category_confidence,
             "behavioral_vector_id": self.behavioral_vector_id,
             "behavioral_vector_encrypted": self.behavioral_vector_encrypted,
         }
@@ -161,57 +165,31 @@ class LiveSystemOrchestrator:
         self._entity_events: Dict[str, List[CanonicalSecurityEvent]] = {}
         self.total_processed_events = 0
 
-    def process_event(self, event: CanonicalSecurityEvent) -> LiveProcessingResult:
-        """Process a single incoming security event through the complete live telemetry stack."""
-        self.total_processed_events += 1
+    def _prepare_entity_and_vector(
+        self, event: CanonicalSecurityEvent
+    ) -> Tuple[str, Optional[BehavioralVector]]:
+        """Update bounded entity tracking, sessionize, and build behavioral vector."""
         now = time.time()
         entity = event.entity_id or f"host:{event.source_ip or 'unknown'}"
 
-        # 1. Update bounded LRU entity tracker
         if entity in self._entity_access_times:
             self._entity_access_times.move_to_end(entity)
         self._entity_access_times[entity] = now
 
         if len(self._entity_access_times) > self.max_active_entities:
             oldest_entity, _ = self._entity_access_times.popitem(last=False)
-            # Evict inactive entity from graph to bound memory consumption
             if oldest_entity in self.entity_graph.nodes:
                 del self.entity_graph.nodes[oldest_entity]
             if oldest_entity in self._entity_events:
                 del self._entity_events[oldest_entity]
 
-        # 2. Behavioral Sessionization Event Buffer
         self._entity_events.setdefault(entity, []).append(event)
-        if len(self._entity_events[entity]) > 100:  # Cap history per entity
+        if len(self._entity_events[entity]) > 100:
             self._entity_events[entity] = self._entity_events[entity][-100:]
 
-        # 3. Entity Relationship Graph Update
         self.entity_graph.add_event(event)
 
-        # 4. Feature Extraction & Zero-Imputation Rejection
-        feat_res = self.feature_extractor.extract(event)
-        inf_dec: Optional[LiveInferenceDecision] = None
-
-        if feat_res.is_ml_ready and feat_res.feature_dict:
-            # 5. Real-time Multi-Model AI Inference
-            inf_dec = self.inference_engine.infer_event(
-                event=event,
-                feature_dict=feat_res.feature_dict,
-                feature_vector=feat_res.feature_vector,
-            )
-
-        # 6. Multi-Criteria Risk Scoring & Live Alert Management
-        risk_assess, alert = self.alert_manager.process_event_risk(event, inf_dec)
-
-        # 7. Attack Timeline Reconstruction
-        timeline_updated = False
-        if risk_assess.score >= 60.0:
-            timeline_updated = True
-
-        # 8. Behavioral Vector computation if session is active
         b_vec: Optional[BehavioralVector] = None
-        vector_id: Optional[str] = None
-        vector_encrypted = False
         sessions = self.sessionizer.sessionize(self._entity_events[entity])
         if sessions:
             latest_session = sessions[-1]
@@ -221,42 +199,52 @@ class LiveSystemOrchestrator:
                 if latest_session.start_time <= ev.event_timestamp <= latest_session.end_time
             ]
             b_vec = self.vector_builder.build_vector(latest_session, events=session_events)
-            if self.vault is not None and b_vec.features is not None:
-                vector_id = self.vault.store_behavioral_vector(
-                    entity_id=b_vec.entity_key,
-                    window_start=b_vec.window_start,
-                    window_end=b_vec.window_end,
-                    vector=list(b_vec.features),
-                    encrypt=self.encrypt_at_rest,
-                )
-                vector_encrypted = self.encrypt_at_rest
+        return entity, b_vec
 
-        # 9. Persist canonical event to unified_security_events when SQLite db_path is configured
-        if self._db_manager is not None:
-            payload = event.model_dump(mode="json")
-            payload["risk_score"] = risk_assess.score
-            payload["risk_level"] = risk_assess.severity.value
-            payload["feature_status"] = feat_res.status
-            self._db_manager.insert_unified_security_event(
-                {
-                    "event_id": event.event_id,
-                    "schema_version": event.schema_version,
-                    "event_timestamp": event.event_timestamp.isoformat(),
-                    "event_kind": event.event_kind.value,
-                    "source_id": event.source_id,
-                    "entity_id": entity,
-                    "source_ip": event.source_ip,
-                    "dest_ip": event.dest_ip,
-                    "source_port": event.source_port,
-                    "dest_port": event.dest_port,
-                    "protocol": event.protocol,
-                    "is_ml_complete": feat_res.is_ml_ready,
-                    "validation_status": event.validation_status.value,
-                    "raw_provenance": event.raw_provenance.model_dump(mode="json"),
-                    "payload_json": payload,
-                }
-            )
+    @staticmethod
+    def _build_unified_event_record(
+        event: CanonicalSecurityEvent,
+        entity: str,
+        feat_res: Any,
+        risk_assess: Any,
+    ) -> Dict[str, Any]:
+        payload = event.model_dump(mode="json")
+        payload["risk_score"] = risk_assess.score
+        payload["risk_level"] = risk_assess.severity.value
+        payload["feature_status"] = feat_res.status
+        return {
+            "event_id": event.event_id,
+            "schema_version": event.schema_version,
+            "event_timestamp": event.event_timestamp.isoformat(),
+            "event_kind": event.event_kind.value,
+            "source_id": event.source_id,
+            "entity_id": entity,
+            "source_ip": event.source_ip,
+            "dest_ip": event.dest_ip,
+            "source_port": event.source_port,
+            "dest_port": event.dest_port,
+            "protocol": event.protocol,
+            "is_ml_complete": feat_res.is_ml_ready,
+            "validation_status": event.validation_status.value,
+            "raw_provenance": event.raw_provenance.model_dump(mode="json"),
+            "payload_json": payload,
+        }
 
+    @staticmethod
+    def _build_processing_result(
+        event: CanonicalSecurityEvent,
+        entity: str,
+        feat_res: Any,
+        inf_dec: Optional[LiveInferenceDecision],
+        risk_assess: Any,
+        alert: Optional[LiveSecurityAlert],
+        b_vec: Optional[BehavioralVector],
+        vector_id: Optional[str],
+        vector_encrypted: bool,
+    ) -> LiveProcessingResult:
+        pred_cat = inf_dec.predicted_attack_category if inf_dec else None
+        pred_conf = inf_dec.attack_category_confidence if inf_dec else None
+        attack_type = event.attack_category if event.attack_category is not None else pred_cat
         return LiveProcessingResult(
             event_id=event.event_id,
             entity_id=entity,
@@ -268,7 +256,7 @@ class LiveSystemOrchestrator:
             behavioral_vector=b_vec,
             behavioral_vector_id=vector_id,
             behavioral_vector_encrypted=vector_encrypted,
-            timeline_updated=timeline_updated,
+            timeline_updated=risk_assess.score >= 60.0,
             key_rotated=alert.adaptive_key_rotated if alert else False,
             feature_status=feat_res.status,
             missing_features=list(feat_res.missing_features),
@@ -282,9 +270,150 @@ class LiveSystemOrchestrator:
             source_ip=event.source_ip,
             dest_ip=event.dest_ip,
             dest_port=event.dest_port,
-            attack_type=event.attack_category,
+            attack_type=attack_type,
+            predicted_attack_category=pred_cat,
+            attack_category_confidence=pred_conf,
+        )
+
+    def process_event(self, event: CanonicalSecurityEvent) -> LiveProcessingResult:
+        """Process a single incoming security event through the complete live telemetry stack."""
+        self.total_processed_events += 1
+        entity, b_vec = self._prepare_entity_and_vector(event)
+
+        feat_res = self.feature_extractor.extract(event)
+        inf_dec: Optional[LiveInferenceDecision] = None
+
+        if feat_res.is_ml_ready and feat_res.feature_dict:
+            inf_dec = self.inference_engine.infer_event(
+                event=event,
+                feature_dict=feat_res.feature_dict,
+                feature_vector=feat_res.feature_vector,
+            )
+
+        risk_assess, alert = self.alert_manager.process_event_risk(
+            event, inf_dec, behavioral_vector=b_vec
+        )
+
+        vector_id: Optional[str] = None
+        vector_encrypted = False
+        if self.vault is not None and b_vec is not None and b_vec.features is not None:
+            vector_id = self.vault.store_behavioral_vector(
+                entity_id=b_vec.entity_key,
+                window_start=b_vec.window_start,
+                window_end=b_vec.window_end,
+                vector=list(b_vec.features),
+                encrypt=self.encrypt_at_rest,
+            )
+            vector_encrypted = self.encrypt_at_rest
+
+        if self._db_manager is not None:
+            self._db_manager.insert_unified_security_event(
+                self._build_unified_event_record(event, entity, feat_res, risk_assess)
+            )
+
+        return self._build_processing_result(
+            event,
+            entity,
+            feat_res,
+            inf_dec,
+            risk_assess,
+            alert,
+            b_vec,
+            vector_id,
+            vector_encrypted,
         )
 
     def process_batch(self, events: List[CanonicalSecurityEvent]) -> List[LiveProcessingResult]:
-        """Process a stream batch through the pipeline."""
-        return [self.process_event(ev) for ev in events]
+        """Process a stream batch with vectorized ML inference and batched DB persistence."""
+        if not events:
+            return []
+
+        entities: List[str] = []
+        b_vecs: List[Optional[BehavioralVector]] = []
+        feat_results: List[Any] = []
+        ml_indices: List[int] = []
+        ml_events: List[CanonicalSecurityEvent] = []
+        ml_feature_dicts: List[Dict[str, float]] = []
+
+        for idx, event in enumerate(events):
+            self.total_processed_events += 1
+            entity, b_vec = self._prepare_entity_and_vector(event)
+            feat_res = self.feature_extractor.extract(event)
+            entities.append(entity)
+            b_vecs.append(b_vec)
+            feat_results.append(feat_res)
+            if feat_res.is_ml_ready and feat_res.feature_dict:
+                ml_indices.append(idx)
+                ml_events.append(event)
+                ml_feature_dicts.append(feat_res.feature_dict)
+
+        decisions_by_idx: Dict[int, LiveInferenceDecision] = {}
+        if ml_events:
+            ml_decisions = self.inference_engine.infer_batch(ml_events, ml_feature_dicts)
+            for orig_idx, dec in zip(ml_indices, ml_decisions):
+                decisions_by_idx[orig_idx] = dec
+
+        results: List[LiveProcessingResult] = []
+        alerts_to_persist: List[LiveSecurityAlert] = []
+        bv_items: List[Dict[str, Any]] = []
+        bv_result_indices: List[int] = []
+        db_event_records: List[Dict[str, Any]] = []
+
+        for idx, event in enumerate(events):
+            entity = entities[idx]
+            b_vec = b_vecs[idx]
+            feat_res = feat_results[idx]
+            inf_dec = decisions_by_idx.get(idx)
+
+            risk_assess, alert = self.alert_manager.process_event_risk(
+                event, inf_dec, behavioral_vector=b_vec, persist=False
+            )
+            if alert is not None:
+                alerts_to_persist.append(alert)
+
+            vector_encrypted = False
+            if self.vault is not None and b_vec is not None and b_vec.features is not None:
+                bv_items.append(
+                    {
+                        "entity_id": b_vec.entity_key,
+                        "window_start": b_vec.window_start,
+                        "window_end": b_vec.window_end,
+                        "vector": list(b_vec.features),
+                    }
+                )
+                bv_result_indices.append(idx)
+                vector_encrypted = self.encrypt_at_rest
+
+            if self._db_manager is not None:
+                db_event_records.append(
+                    self._build_unified_event_record(event, entity, feat_res, risk_assess)
+                )
+
+            results.append(
+                self._build_processing_result(
+                    event,
+                    entity,
+                    feat_res,
+                    inf_dec,
+                    risk_assess,
+                    alert,
+                    b_vec,
+                    None,
+                    vector_encrypted,
+                )
+            )
+
+        if self.vault is not None and bv_items:
+            vector_ids = self.vault.store_behavioral_vectors_batch(
+                bv_items, encrypt=self.encrypt_at_rest
+            )
+            for res_idx, vec_id in zip(bv_result_indices, vector_ids):
+                results[res_idx].behavioral_vector_id = vec_id
+
+        if alerts_to_persist:
+            self.alert_manager.persist_alerts_batch(alerts_to_persist)
+
+        if self._db_manager is not None and db_event_records:
+            self._db_manager.insert_unified_security_events_batch(db_event_records)
+
+        return results

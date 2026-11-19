@@ -11,7 +11,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from .aead import AESGCMCipher, CiphertextEnvelope
 from .key_manager import KeyManager
@@ -135,6 +135,103 @@ class EncryptedStorageVault:
             conn.close()
 
         return vector_id
+
+    def store_behavioral_vectors_batch(
+        self,
+        items: Sequence[Dict[str, Any]],
+        encrypt: bool = True,
+    ) -> List[str]:
+        """Store a batch of behavioral vectors in a single SQLite transaction."""
+        if not items:
+            return []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        vector_ids: List[str] = []
+
+        if encrypt:
+            key_id, raw_key = self.key_manager.get_active_key(domain="behavioral")
+            cipher = AESGCMCipher(raw_key, key_id=key_id)
+            rows = []
+            for item in items:
+                vector_id = str(uuid.uuid4())
+                vector_ids.append(vector_id)
+                entity_id = str(item["entity_id"])
+                window_start = str(item["window_start"])
+                window_end = str(item["window_end"])
+                vector = list(item["vector"])
+                aad = f"domain:behavioral|entity:{entity_id}|win:{window_start}".encode("utf-8")
+                envelope = cipher.encrypt_json(vector, aad=aad)
+                nonce_bytes = base64.b64decode(envelope.nonce_b64)
+                cipher_bytes = base64.b64decode(envelope.ciphertext_b64)
+                tag_bytes = base64.b64decode(envelope.tag_b64)
+                rows.append(
+                    (
+                        vector_id,
+                        entity_id,
+                        window_start,
+                        window_end,
+                        "2.0",
+                        len(vector),
+                        None,
+                        1,
+                        key_id,
+                        cipher_bytes,
+                        nonce_bytes,
+                        tag_bytes,
+                        now_iso,
+                    )
+                )
+
+            conn = sqlite3.connect(str(self.db_path))
+            try:
+                with conn:
+                    conn.executemany(
+                        """
+                        INSERT INTO behavioral_vectors (
+                            vector_id, entity_id, window_start, window_end, vector_version,
+                            dimensions, vector_json, is_encrypted, key_id, ciphertext, nonce, tag, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        """,
+                        rows,
+                    )
+            finally:
+                conn.close()
+            self.key_manager.record_usage(key_id, count=len(items))
+        else:
+            rows = []
+            for item in items:
+                vector_id = str(uuid.uuid4())
+                vector_ids.append(vector_id)
+                vector = list(item["vector"])
+                rows.append(
+                    (
+                        vector_id,
+                        str(item["entity_id"]),
+                        str(item["window_start"]),
+                        str(item["window_end"]),
+                        "2.0",
+                        len(vector),
+                        json.dumps(vector),
+                        0,
+                        now_iso,
+                    )
+                )
+
+            conn = sqlite3.connect(str(self.db_path))
+            try:
+                with conn:
+                    conn.executemany(
+                        """
+                        INSERT INTO behavioral_vectors (
+                            vector_id, entity_id, window_start, window_end, vector_version,
+                            dimensions, vector_json, is_encrypted, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        """,
+                        rows,
+                    )
+            finally:
+                conn.close()
+
+        return vector_ids
 
     def load_behavioral_vector(self, vector_id: str) -> Optional[List[float]]:
         """Retrieve and decrypt behavioral vector by ID using historical key lookup."""

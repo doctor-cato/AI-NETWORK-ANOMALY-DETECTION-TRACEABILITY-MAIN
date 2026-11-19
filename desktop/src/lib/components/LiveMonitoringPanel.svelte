@@ -24,6 +24,9 @@
     status: string;
     last_seen_utc: string;
     source: string;
+    attack_type?: string | null;
+    predicted_attack_category?: string | null;
+    attack_category_confidence?: number | null;
   }
 
   const DEMO_ALERTS: LiveAlertRow[] = [
@@ -360,7 +363,14 @@
             <td><strong>{alert.entity_id}</strong></td>
             <td><span class="score-pill">{alert.risk_score.toFixed(1)}</span></td>
             <td><span class="badge badge-{alert.risk_level.toLowerCase()}">{alert.risk_level}</span></td>
-            <td>{alert.trigger_reason}</td>
+            <td>
+              {alert.trigger_reason}
+              {#if alert.attack_type || alert.predicted_attack_category}
+                <span class="status-tag">
+                  {alert.predicted_attack_category ?? alert.attack_type}{#if alert.attack_category_confidence != null} ({(alert.attack_category_confidence * 100).toFixed(0)}%){/if}
+                </span>
+              {/if}
+            </td>
             <td><span class="status-tag">{alert.source}</span></td>
             <td>{alert.last_seen_utc}</td>
           </tr>

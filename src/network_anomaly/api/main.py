@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Union
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.desktop_csv import (
@@ -1309,6 +1310,14 @@ def create_app(
         persisted_rows = [item.model_dump() for item in persisted.items]
         payload = rt.crypto_status(domain=domain, persisted_rotations=persisted_rows)
         return CryptoStatusResponse(**payload)
+
+    _desktop_dist = PROJECT_ROOT / "desktop" / "dist"
+    if (_desktop_dist / "index.html").is_file():
+        app.mount(
+            "/app",
+            StaticFiles(directory=str(_desktop_dist), html=True),
+            name="desktop_web_spa",
+        )
 
     return app
 

@@ -139,6 +139,19 @@ def _run_single_benchmark_pass(
     e2e_elapsed = max(1e-9, time.perf_counter() - t0_batch)
     e2e_throughput = round(len(events) / e2e_elapsed, 2)
 
+    # 1b. Vectorized Micro-Batch Live Orchestrator throughput (process_batch, batch_size=32)
+    mb_batch_size = 32
+    per_event_amortized_us: List[float] = []
+    t0_mb = time.perf_counter()
+    for i in range(0, len(events), mb_batch_size):
+        chunk = events[i : i + mb_batch_size]
+        t_s = time.perf_counter_ns()
+        orchestrator.process_batch(chunk)
+        chunk_us = (time.perf_counter_ns() - t_s) / 1000.0
+        per_event_amortized_us.append(chunk_us / len(chunk))
+    mb_elapsed = max(1e-9, time.perf_counter() - t0_mb)
+    micro_batch_throughput = round(len(events) / mb_elapsed, 2)
+
     # 2. Replay mode throughput
     replay_summary = mode_mgr.run_replay_scenario(
         events=events,
@@ -218,6 +231,13 @@ def _run_single_benchmark_pass(
             "throughput_events_per_sec": e2e_throughput,
             "latency_us": _summary_us(e2e_latencies_us),
         },
+        "micro_batch_measured": {
+            "batch_size": 32,
+            "events_processed": len(events),
+            "elapsed_seconds": round(mb_elapsed, 4),
+            "throughput_events_per_sec": micro_batch_throughput,
+            "amortized_latency_us": _summary_us(per_event_amortized_us),
+        },
         "replay_mode_measured": {
             "events_processed": replay_summary.total_events_processed,
             "elapsed_seconds": replay_summary.elapsed_seconds,
@@ -277,6 +297,9 @@ def run_benchmark(
         "end_to_end_median_latency_us": _variance_stats(
             [r["end_to_end_measured"]["latency_us"]["median_us"] for r in runs]
         ),
+        "micro_batch_throughput_events_per_sec": _variance_stats(
+            [r["micro_batch_measured"]["throughput_events_per_sec"] for r in runs]
+        ),
         "replay_mode_throughput_events_per_sec": _variance_stats(
             [r["replay_mode_measured"]["throughput_events_per_sec"] for r in runs]
         ),
@@ -295,6 +318,8 @@ def run_benchmark(
     events_n = results["end_to_end_measured"]["events_processed"]
     e2e_throughput = results["end_to_end_measured"]["throughput_events_per_sec"]
     e2e_lat = results["end_to_end_measured"]["latency_us"]
+    mb_throughput = results["micro_batch_measured"]["throughput_events_per_sec"]
+    mb_lat = results["micro_batch_measured"]["amortized_latency_us"]
     peak_util_pct = results["ring_buffer_measured"]["peak_utilization_pct"]
     dropped_events = results["ring_buffer_measured"]["dropped_events"]
     md_lines = [
@@ -314,6 +339,7 @@ def run_benchmark(
         f"- **Events Processed:** `{events_n}` (latest run)",
         f"- **Throughput (Latest / Mean ± Std / CV%):** `{e2e_throughput:,.2f} flow/s` / `{repeatability['end_to_end_throughput_events_per_sec']['mean']:,.2f} ± {repeatability['end_to_end_throughput_events_per_sec']['std']:,.2f}` (`CV={repeatability['end_to_end_throughput_events_per_sec']['cv_pct']}%`)",
         f"- **E2E Latency (Med / P95 / P99):** `{e2e_lat['median_us']} / {e2e_lat['p95_us']} / {e2e_lat['p99_us']} us` (Med CV=`{repeatability['end_to_end_median_latency_us']['cv_pct']}%`)",
+        f"- **Vectorized Micro-Batch (`process_batch`, `batch_size=32`) Throughput (Latest / Mean ± Std / CV%):** `{mb_throughput:,.2f} flow/s` / `{repeatability['micro_batch_throughput_events_per_sec']['mean']:,.2f} ± {repeatability['micro_batch_throughput_events_per_sec']['std']:,.2f}` (`CV={repeatability['micro_batch_throughput_events_per_sec']['cv_pct']}%`, amortized Med=`{mb_lat['median_us']} us/event`)",
         f"- **Replay Throughput (Mean ± Std / CV%):** `{repeatability['replay_mode_throughput_events_per_sec']['mean']:,.2f} ± {repeatability['replay_mode_throughput_events_per_sec']['std']:,.2f} flow/s` (`CV={repeatability['replay_mode_throughput_events_per_sec']['cv_pct']}%`)",
         f"- **Ring Buffer Peak Utilization:** `{peak_util_pct}%` (`dropped={dropped_events}`)",
         "",

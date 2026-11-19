@@ -14,7 +14,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Union
+from typing import Any, Dict, Generator, List, Optional, Sequence, Union
 
 from network_anomaly.config import resolve_default_db_path
 
@@ -349,6 +349,55 @@ class DatabaseManager:
                 ),
             )
         return event_id
+
+    def insert_unified_security_events_batch(self, event_records: Sequence[Dict[str, Any]]) -> int:
+        """Persist a batch of canonical unified security events in a single transaction."""
+        if not event_records:
+            return 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+        rows = []
+        for event_record in event_records:
+            event_id = str(event_record["event_id"])
+            created_at = str(event_record.get("created_at") or now_iso)
+            payload = event_record.get("payload_json")
+            if payload is None:
+                payload = json.dumps(event_record, sort_keys=True, default=str)
+            elif not isinstance(payload, str):
+                payload = json.dumps(payload, sort_keys=True, default=str)
+            rows.append(
+                (
+                    event_id,
+                    str(event_record.get("schema_version") or "2.0.0"),
+                    str(event_record["event_timestamp"]),
+                    str(event_record["event_kind"]),
+                    str(event_record["source_id"]),
+                    str(event_record["entity_id"]),
+                    event_record.get("source_ip"),
+                    event_record.get("dest_ip"),
+                    event_record.get("source_port"),
+                    event_record.get("dest_port"),
+                    event_record.get("protocol"),
+                    int(bool(event_record.get("is_ml_complete", False))),
+                    str(event_record.get("validation_status") or "VALID"),
+                    json.dumps(
+                        event_record.get("raw_provenance") or {}, sort_keys=True, default=str
+                    ),
+                    payload,
+                    created_at,
+                )
+            )
+        with self.transaction() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO unified_security_events (
+                    event_id, schema_version, event_timestamp, event_kind, source_id, entity_id,
+                    source_ip, dest_ip, source_port, dest_port, protocol,
+                    is_ml_complete, validation_status, raw_provenance, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                rows,
+            )
+        return len(rows)
 
     def query_unified_security_events(
         self,
