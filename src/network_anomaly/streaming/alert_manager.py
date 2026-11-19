@@ -8,6 +8,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 import sqlite3
 import time
 import uuid
@@ -19,10 +20,17 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.crypto.rotation import KeyRotationPolicy, RotationDecision
-from network_anomaly.risk.scoring import RiskScoreOutput, RiskScorer
+from network_anomaly.risk.scoring import RiskScoreOutput, RiskScorer, SeverityLevel
 from network_anomaly.streaming.realtime_inference import LiveInferenceDecision
 
 logger = logging.getLogger(__name__)
+
+_SEVERITY_ORDER: Dict[str, int] = {
+    SeverityLevel.LOW.value: 0,
+    SeverityLevel.MEDIUM.value: 1,
+    SeverityLevel.HIGH.value: 2,
+    SeverityLevel.CRITICAL.value: 3,
+}
 
 
 class AlertStatus(str, Enum):
@@ -181,6 +189,7 @@ class LiveAlertManager:
         event: CanonicalSecurityEvent,
         inference_decision: Optional[LiveInferenceDecision] = None,
         behavioral_vector: Optional[Any] = None,
+        baseline_deviation_score: Optional[float] = None,
         persist: bool = True,
     ) -> Tuple[RiskScoreOutput, Optional[LiveSecurityAlert]]:
         """Compute multi-criteria risk score and generate deduplicated alert if threshold exceeded."""
@@ -221,19 +230,30 @@ class LiveAlertManager:
                     named_features = None
             if isinstance(named_features, Mapping):
                 dns_int = float(named_features.get("dns_intensity", 0) or 0)
-                port_ent = float(named_features.get("port_entropy", 0) or 0)
-                pkt_rate = float(named_features.get("pkt_rate", 0) or 0)
+                port_div = float(
+                    named_features.get("unique_ports_norm")
+                    or named_features.get("log_dest_port_diversity")
+                    or 0
+                )
+                pkt_activity = float(
+                    named_features.get("log_pkts_out")
+                    or named_features.get("log_pkts_per_sec")
+                    or 0
+                )
                 auth_ratio = float(named_features.get("auth_failure_ratio", 0) or 0)
-                if dns_int > 0.5 or port_ent > 2.0 or pkt_rate > 50.0:
+                if dns_int > 0.25 or port_div > 0.25 or pkt_activity > 0.55:
                     beh_score = max(
                         beh_score,
                         min(
                             1.0,
-                            0.45 + 0.25 * dns_int + 0.15 * min(2.0, port_ent / 2.0),
+                            0.45 + 0.30 * dns_int + 0.25 * port_div + 0.15 * pkt_activity,
                         ),
                     )
                 if auth_ratio >= 0.5:
                     auth_fails = max(auth_fails, 4)
+
+        if baseline_deviation_score is not None and math.isfinite(baseline_deviation_score):
+            beh_score = max(beh_score, min(1.0, max(0.0, float(baseline_deviation_score))))
 
         # 1. Compute multi-criteria risk score
         risk_assess = self.risk_scorer.compute_risk(
@@ -275,7 +295,12 @@ class LiveAlertManager:
                     curr = self._active_alerts[existing_alert_id]
                     curr.occurrence_count += 1
                     curr.last_seen_utc = now_iso
-                    curr.risk_score = max(curr.risk_score, risk_assess.score)
+                    if risk_assess.score > curr.risk_score:
+                        curr.risk_score = risk_assess.score
+                    if _SEVERITY_ORDER.get(risk_assess.severity.value, -1) > _SEVERITY_ORDER.get(
+                        curr.risk_level, -1
+                    ):
+                        curr.risk_level = risk_assess.severity.value
                     if pred_cat is not None:
                         curr.predicted_attack_category = pred_cat
                         curr.attack_category_confidence = cat_conf
@@ -283,14 +308,25 @@ class LiveAlertManager:
                         curr.associated_event_ids.append(event.event_id)
                         if len(curr.associated_event_ids) > 200:
                             curr.associated_event_ids = curr.associated_event_ids[-200:]
+                    if (
+                        risk_assess.trigger_adaptive_rotation
+                        and not curr.adaptive_key_rotated
+                        and self.key_rotator
+                    ):
+                        decision, _ = self.key_rotator.evaluate_adaptive_rotation(
+                            risk_score=risk_assess.score,
+                            context={"event_id": event.event_id, "alert_id": curr.alert_id},
+                        )
+                        if decision == RotationDecision.EXECUTED:
+                            curr.adaptive_key_rotated = True
                     self._dedup_cache[entity] = (existing_alert_id, now)
                     if persist:
                         self._persist_alert(curr)
                     return risk_assess, curr
 
-            # Trigger Adaptive Key Rotation if Critical (Risk >= 85.0)
+            # Trigger Adaptive Key Rotation if RiskScorer authorizes it (fail-closed on OOD/NaN)
             key_rotated = False
-            if risk_assess.score >= 85.0 and self.key_rotator:
+            if risk_assess.trigger_adaptive_rotation and self.key_rotator:
                 decision, _ = self.key_rotator.evaluate_adaptive_rotation(
                     risk_score=risk_assess.score,
                     context={"event_id": event.event_id},

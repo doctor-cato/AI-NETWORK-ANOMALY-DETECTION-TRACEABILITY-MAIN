@@ -482,13 +482,6 @@ def main() -> int:
         }
 
     env_block = build_environment_block()
-    git_info = env_block.get("git")
-    if isinstance(git_info, dict) and isinstance(git_info.get("dirty_files_sample"), list):
-        git_info["dirty_files_sample"] = [
-            entry
-            for entry in git_info["dirty_files_sample"]
-            if not str(entry).startswith("?? docs/audits/")
-        ]
 
     report = {
         "experiment_id": "EXP-E1-MULTIDOMAIN-AND-E3B-01",

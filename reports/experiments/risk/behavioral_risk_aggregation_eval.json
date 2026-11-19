@@ -1,8 +1,8 @@
 {
   "schema_version": "2.0.0",
   "evaluation_mode": "read_only_frozen_E0_no_retraining",
-  "generated_at_utc": "2026-11-19T14:25:02.250496+00:00",
-  "elapsed_seconds": 26.92,
+  "generated_at_utc": "2026-11-19T15:17:45.272839+00:00",
+  "elapsed_seconds": 44.81,
   "split_manifest": "reports/splits/v2_split_manifest.json",
   "environment": {
     "python_version": "3.12.10",
@@ -10,53 +10,33 @@
     "scikit_learn": "1.9.1",
     "pandas": "3.1.1",
     "numpy": "2.5.5",
-    "git_commit": "f1f41f48f4da87c385d74abd487cb00763872acd",
+    "git_commit": "93416ed9a88514376ef86e5d1212dc79cf6836d3",
     "git_dirty": true,
     "git": {
-      "git_commit": "f1f41f48f4da87c385d74abd487cb00763872acd",
+      "git_commit": "93416ed9a88514376ef86e5d1212dc79cf6836d3",
       "git_dirty": true,
       "git_clean": false,
       "git_dirty_paths": [
-        "M desktop/src/lib/components/BehavioralAnalysisPanel.svelte",
-        "M desktop/src/lib/components/LiveMonitoringPanel.svelte",
-        "M desktop/src/lib/components/V2Panels.test.ts",
-        "M desktop/vite.config.ts",
-        "M docs/PRESENTATION_OUTLINE.md",
-        "M docs/TEAM_TASKS.md",
-        "M docs/TESTING.md",
-        "M docs/TRACEABILITY_MATRIX.md",
-        "M docs/USER_GUIDE_V2.md",
-        "M docs/architecture/BEHAVIORAL_ENGINE.md",
-        "M docs/experiments/E1_MULTIDOMAIN_EXPERIMENT.md",
-        "M docs/experiments/MULTICLASS_ATTACK_CLASSIFICATION.md",
-        "M docs/experiments/TRACEABILITY_EVALUATION.md",
-        "M reports/experiments/imbalance/rq2_imbalance_report.json",
-        "M reports/experiments/imbalance/rq2_imbalance_report.md",
-        "M reports/experiments/ml/e1_multidomain_experiment_report.json",
+        "M docs/BEHAVIORAL_ENGINE.md",
+        "M docs/thesis/RESEARCH_REPORT_V2.md",
         "M reports/experiments/ml/multiclass_stage2_manifest.json",
-        "M reports/experiments/trace/traceability_evaluation.json",
+        "M reports/experiments/validation/rq_independent_rerun_log.json",
         "M scripts/evaluate_behavioral_and_risk_policies.py",
-        "M scripts/evaluate_traceability.py",
         "M scripts/run_e1_multidomain_experiment.py",
         "M scripts/run_multiclass_attack_classifier.py",
-        "M scripts/run_rq2_rare_attack_experiment.py",
-        "M src/network_anomaly/api/main.py",
+        "M src/network_anomaly/api/live_runtime.py",
         "M src/network_anomaly/models/stage2_multiclass.py",
         "M src/network_anomaly/streaming/alert_manager.py",
         "M src/network_anomaly/streaming/live_orchestrator.py",
-        "M src/network_anomaly/streaming/pipeline.py",
-        "M src/network_anomaly/trace/graph.py",
-        "M tests/unit/test_stage2_and_experiments.py",
-        "?? docs/audits/V2_RELEASE_READINESS.md",
-        "?? docs/thesis/",
-        "?? tests/unit/test_audit_fixes_2055930.py"
+        "M src/network_anomaly/streaming/realtime_inference.py",
+        "M src/network_anomaly/trace/graph.py"
       ],
-      "git_dirty_disclosure": "Trained from commit f1f41f4 with uncommitted worktree changes (34 modified/untracked path(s)).",
+      "git_dirty_disclosure": "Trained from commit 93416ed with uncommitted worktree changes (13 modified/untracked path(s)).",
       "worktree_provenance": "DIRTY_DISCLOSED",
       "provenance_complete": true,
       "provenance_status": "VERIFIED"
     },
-    "timestamp_utc": "2026-11-19T14:25:02.448154+00:00"
+    "timestamp_utc": "2026-11-19T15:17:45.455041+00:00"
   },
   "domain_parity_verified": true,
   "risk_scorer_formula": {
@@ -787,6 +767,7 @@
   "policy_and_risk_evaluation": {
     "ait_val": {
       "row_count": 377704,
+      "ood_shift_rate_ge_0_35": 0.0002,
       "policies": {
         "WEIGHTED_ENSEMBLE": {
           "classification": {
@@ -1022,6 +1003,7 @@
     },
     "ait_test": {
       "row_count": 988805,
+      "ood_shift_rate_ge_0_35": 0.0009,
       "policies": {
         "WEIGHTED_ENSEMBLE": {
           "classification": {
@@ -1072,33 +1054,33 @@
         "OOD_AWARE_ENSEMBLE": {
           "classification": {
             "accuracy": 0.9671,
-            "precision": 0.9985,
+            "precision": 0.9984,
             "recall": 0.816,
-            "f1": 0.8981,
+            "f1": 0.898,
             "fpr": 0.0003,
-            "roc_auc": 0.9991,
-            "tn": 812760,
-            "fp": 220,
+            "roc_auc": 0.9989,
+            "tn": 812755,
+            "fp": 225,
             "fn": 32351,
             "tp": 143474
           },
           "risk_flow_only_beh0": {
             "overall": {
               "count": 988805,
-              "mean_score": 19.87,
+              "mean_score": 19.88,
               "p95_score": 55.87,
-              "low_count": 845031,
-              "medium_count": 143774,
+              "low_count": 844998,
+              "medium_count": 143807,
               "high_count": 0,
               "critical_count": 0,
               "critical_rotation_trigger_rate": 0.0
             },
             "benign_flows": {
               "count": 812980,
-              "mean_score": 14.15,
-              "p95_score": 22.79,
-              "low_count": 812700,
-              "medium_count": 280,
+              "mean_score": 14.16,
+              "p95_score": 22.8,
+              "low_count": 812667,
+              "medium_count": 313,
               "high_count": 0,
               "critical_count": 0,
               "critical_rotation_trigger_rate": 0.0
@@ -1257,6 +1239,7 @@
     },
     "ctu_echo": {
       "row_count": 76073,
+      "ood_shift_rate_ge_0_35": 0.0004,
       "policies": {
         "WEIGHTED_ENSEMBLE": {
           "classification": {
@@ -1307,13 +1290,13 @@
         "OOD_AWARE_ENSEMBLE": {
           "classification": {
             "accuracy": 0.4522,
-            "precision": 0.2739,
+            "precision": 0.2738,
             "recall": 0.0843,
             "f1": 0.129,
             "fpr": 0.2071,
-            "roc_auc": 0.7276,
-            "tn": 31318,
-            "fp": 8179,
+            "roc_auc": 0.7272,
+            "tn": 31316,
+            "fp": 8181,
             "fn": 33491,
             "tp": 3085
           },
@@ -1322,18 +1305,18 @@
               "count": 76073,
               "mean_score": 22.9,
               "p95_score": 38.02,
-              "low_count": 59112,
-              "medium_count": 16961,
+              "low_count": 59110,
+              "medium_count": 16963,
               "high_count": 0,
               "critical_count": 0,
               "critical_rotation_trigger_rate": 0.0
             },
             "benign_flows": {
               "count": 39497,
-              "mean_score": 24.14,
+              "mean_score": 24.15,
               "p95_score": 48.05,
-              "low_count": 31038,
-              "medium_count": 8459,
+              "low_count": 31036,
+              "medium_count": 8461,
               "high_count": 0,
               "critical_count": 0,
               "critical_rotation_trigger_rate": 0.0
@@ -1492,6 +1475,7 @@
     },
     "ctu_windows7ad": {
       "row_count": 175146,
+      "ood_shift_rate_ge_0_35": 0.0002,
       "policies": {
         "WEIGHTED_ENSEMBLE": {
           "classification": {
@@ -1541,34 +1525,34 @@
         },
         "OOD_AWARE_ENSEMBLE": {
           "classification": {
-            "accuracy": 0.8336,
+            "accuracy": 0.8335,
             "precision": 0.0391,
             "recall": 0.5643,
             "f1": 0.0731,
             "fpr": 0.1633,
-            "roc_auc": 0.8562,
-            "tn": 144844,
-            "fp": 28264,
+            "roc_auc": 0.8561,
+            "tn": 144840,
+            "fp": 28268,
             "fn": 888,
             "tp": 1150
           },
           "risk_flow_only_beh0": {
             "overall": {
               "count": 175146,
-              "mean_score": 24.17,
+              "mean_score": 24.18,
               "p95_score": 49.62,
-              "low_count": 144822,
-              "medium_count": 30324,
+              "low_count": 144813,
+              "medium_count": 30333,
               "high_count": 0,
               "critical_count": 0,
               "critical_rotation_trigger_rate": 0.0
             },
             "benign_flows": {
               "count": 173108,
-              "mean_score": 23.98,
+              "mean_score": 23.99,
               "p95_score": 49.62,
-              "low_count": 144463,
-              "medium_count": 28645,
+              "low_count": 144454,
+              "medium_count": 28654,
               "high_count": 0,
               "critical_count": 0,
               "critical_rotation_trigger_rate": 0.0

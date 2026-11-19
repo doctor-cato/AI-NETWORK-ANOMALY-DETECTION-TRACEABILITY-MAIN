@@ -352,6 +352,11 @@ class TestRealtimeInferenceBatchAndStage2:
             pytest.skip("Stage-2 multiclass manifest not present")
 
         registry = _make_mock_registry(tmp_path)
+        manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest_data.get("preprocessor_artifact_sha256"):
+            registry._preprocessor_metadata["artifact_sha256"] = manifest_data[
+                "preprocessor_artifact_sha256"
+            ]
         engine = RealtimeInferenceEngine(
             registry=registry,
             runtime_mode="research",

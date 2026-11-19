@@ -52,6 +52,10 @@ from network_anomaly.canonical.event import (  # noqa: E402
     RawProvenance,
 )
 from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.ml.ood_gate import (  # noqa: E402
+    OODRejectionGate,
+    load_persisted_ood_gate,
+)
 from network_anomaly.models.registry import ModelRegistry  # noqa: E402
 from network_anomaly.models.scoring import validate_score_normalization  # noqa: E402
 from network_anomaly.preprocessing.pipeline import TrainOnlyPreprocessor  # noqa: E402
@@ -356,20 +360,45 @@ def _compute_policy_scores(
     raise ValueError(f"Unknown policy: {policy}")
 
 
+def _compute_ood_scores(
+    ood_gate: OODRejectionGate,
+    raw_features_df: pd.DataFrame,
+    *,
+    chunk_size: int = 50_000,
+) -> np.ndarray:
+    """Compute per-sample OOD scores via verified OODRejectionGate.evaluate_batch()."""
+    n = len(raw_features_df)
+    if n == 0:
+        return np.empty(0, dtype=np.float64)
+    scores: List[float] = []
+    for start in range(0, n, chunk_size):
+        chunk = raw_features_df.iloc[start : start + chunk_size]
+        decisions = ood_gate.evaluate_batch(chunk.to_dict(orient="records"))
+        scores.extend(float(d.ood_score) for d in decisions)
+    return np.asarray(scores, dtype=np.float64)
+
+
 def _verify_parity_with_domain_objects(
     rf_p: np.ndarray,
     xgb_p: np.ndarray,
     if_p: np.ndarray,
     ae_p: np.ndarray,
     dports: np.ndarray,
+    ood_scores: Optional[np.ndarray] = None,
 ) -> None:
     """Cross-check vectorized formulas against MultiModelDecisionAggregator & RiskScorer on 25 flows."""
     scorer = RiskScorer()
     n_check = min(25, len(rf_p))
+    ood_slice = ood_scores[:n_check] if ood_scores is not None else None
     for policy in AggregationPolicy:
         agg = MultiModelDecisionAggregator(policy=policy)
         vec_prob, vec_pred = _compute_policy_scores(
-            policy, rf_p[:n_check], xgb_p[:n_check], if_p[:n_check], ae_p[:n_check]
+            policy,
+            rf_p[:n_check],
+            xgb_p[:n_check],
+            if_p[:n_check],
+            ae_p[:n_check],
+            ood_scores=ood_slice,
         )
         for i in range(n_check):
             d = agg.aggregate(
@@ -377,6 +406,7 @@ def _verify_parity_with_domain_objects(
                 xgb_prob=float(xgb_p[i]),
                 if_score=float(if_p[i]),
                 ae_error_norm=float(ae_p[i]),
+                ood_score=float(ood_slice[i]) if ood_slice is not None else None,
             )
             assert abs(d.combined_probability - round(float(vec_prob[i]), 4)) <= 1e-4
             assert d.is_anomaly == bool(vec_pred[i])
@@ -619,6 +649,10 @@ def main() -> int:
     if not PREPROC_ARTIFACT_PATH.is_file():
         raise FileNotFoundError(f"Missing preprocessor: {PREPROC_ARTIFACT_PATH}")
     preproc = TrainOnlyPreprocessor.load(PREPROC_ARTIFACT_PATH)
+    ood_gate_path = PROJECT_ROOT / "artifacts" / "ml" / "ood_reference_gate.json"
+    ood_gate = load_persisted_ood_gate(ood_gate_path, strict=True)
+    if ood_gate is None:
+        raise FileNotFoundError(f"Missing OOD reference gate: {ood_gate_path}")
     registry = ModelRegistry(
         preprocessor_path=PREPROC_ARTIFACT_PATH,
         preprocessor_manifest_path=PREPROC_MANIFEST_PATH,
@@ -651,15 +685,22 @@ def main() -> int:
         ae_raw, _ = registry.score_batch("autoencoder", X_np)
         if_p = _vectorized_normalize_unsupervised(registry, "isolation_forest", if_raw)
         ae_p = _vectorized_normalize_unsupervised(registry, "autoencoder", ae_raw)
+        ood_scores = _compute_ood_scores(ood_gate, df[list(ML_FEATURE_COLUMNS)])
 
         if not parity_verified:
-            _verify_parity_with_domain_objects(rf_p, xgb_p, if_p, ae_p, dports)
+            _verify_parity_with_domain_objects(rf_p, xgb_p, if_p, ae_p, dports, ood_scores)
             parity_verified = True
 
         # Multi-model aggregation & RiskScorer across all flows
-        part_policies: Dict[str, Any] = {"row_count": int(len(df)), "policies": {}}
+        part_policies: Dict[str, Any] = {
+            "row_count": int(len(df)),
+            "ood_shift_rate_ge_0_35": round(float(np.mean(ood_scores >= 0.35)), 4),
+            "policies": {},
+        }
         for policy in AggregationPolicy:
-            comb_prob, pred = _compute_policy_scores(policy, rf_p, xgb_p, if_p, ae_p)
+            comb_prob, pred = _compute_policy_scores(
+                policy, rf_p, xgb_p, if_p, ae_p, ood_scores=ood_scores
+            )
             part_policies["policies"][policy.value] = {
                 "classification": _binary_metrics(y_true, pred, comb_prob),
                 "risk_flow_only_beh0": _risk_distribution(comb_prob, dports, y_true),

@@ -373,7 +373,10 @@ class RealtimeInferenceEngine:
         try:
             from network_anomaly.models.stage2_multiclass import Stage2MulticlassClassifier
 
-            self._stage2_classifier = Stage2MulticlassClassifier.try_load_default()
+            expected_preproc_sha = getattr(self.registry, "preprocessor_sha256", None)
+            self._stage2_classifier = Stage2MulticlassClassifier.try_load_default(
+                expected_preprocessor_sha256=expected_preproc_sha,
+            )
         except Exception:
             self._stage2_classifier = None
         return self._stage2_classifier

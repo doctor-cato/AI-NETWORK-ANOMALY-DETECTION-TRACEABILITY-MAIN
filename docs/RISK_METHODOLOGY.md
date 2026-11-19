@@ -61,24 +61,24 @@ Hệ thống hỗ trợ 5 chính sách tổng hợp quyết định từ 4 mô h
 
 ---
 
-## 5. So sánh Thực nghiệm 4 Chính sách & Calibration Độ nhạy Rủi ro (`#108 AC2`, `#109 AC1/AC2`)
+## 5. So sánh Thực nghiệm 5 Chính sách & Calibration Độ nhạy Rủi ro (`#108 AC2`, `#109 AC1/AC2`)
 
-Kết quả chạy chỉ-đọc trên toàn bộ các partition canonical (`ait_val`: `377,704` flows; `ait_test`: `988,805` flows; `ctu_echo`: `76,073` flows; `ctu_windows7ad`: `175,146` flows) với 4 mô hình `E0` đóng băng (`scripts/evaluate_behavioral_and_risk_policies.py`, báo cáo tại [behavioral_risk_aggregation_eval.json](file:///reports/experiments/risk/behavioral_risk_aggregation_eval.json)):
+Kết quả chạy chỉ-đọc trên toàn bộ các partition canonical (`ait_val`: `377,704` flows; `ait_test`: `988,805` flows; `ctu_echo`: `76,073` flows; `ctu_windows7ad`: `175,146` flows) với 4 mô hình `E0` đóng băng (`scripts/evaluate_behavioral_and_risk_policies.py`, báo cáo tại [behavioral_risk_aggregation_eval.json](../reports/experiments/risk/behavioral_risk_aggregation_eval.json)):
 
 | Partition | Policy | Accuracy | Precision | Recall | F1 | FPR | ROC-AUC | Mean Risk (Benign / Attack) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | `ait_test` | `WEIGHTED_ENSEMBLE` | `0.9671` | `0.9985` | `0.8160` | `0.8981` | `0.0003` | `0.9991` | `14.15` / `46.32` |
-| `ait_test` | `OOD_AWARE_ENSEMBLE` (`ood=None`) | `0.9671` | `0.9985` | `0.8160` | `0.8981` | `0.0003` | `0.9991` | `14.15` / `46.32` |
+| `ait_test` | `OOD_AWARE_ENSEMBLE` | `0.9671` | `0.9984` | `0.8160` | `0.8980` | `0.0003` | `0.9989` | `14.16` / `46.32` |
 | `ait_test` | `RANDOM_FOREST_PRIMARY` | `0.9982` | `0.9989` | `0.9911` | `0.9950` | `0.0002` | `0.9994` | `7.23` / `50.04` |
 | `ait_test` | `STRICT_CONSENSUS` | `0.9184` | `0.9984` | `0.5419` | `0.7025` | `0.0002` | `0.9709` | `18.93` / `43.83` |
 | `ait_test` | `MAX_SEVERITY` | `0.4319` | `0.2383` | `0.9996` | `0.3849` | `0.6908` | `0.8999` | `38.14` / `51.68` |
 | `ctu_echo` | `WEIGHTED_ENSEMBLE` | `0.4522` | `0.2739` | `0.0843` | `0.1290` | `0.2071` | `0.7276` | `24.14` / `21.55` |
-| `ctu_echo` | `OOD_AWARE_ENSEMBLE` (`ood=None`) | `0.4522` | `0.2739` | `0.0843` | `0.1290` | `0.2071` | `0.7276` | `24.14` / `21.55` |
+| `ctu_echo` | `OOD_AWARE_ENSEMBLE` | `0.4522` | `0.2738` | `0.0843` | `0.1290` | `0.2071` | `0.7272` | `24.15` / `21.55` |
 | `ctu_echo` | `RANDOM_FOREST_PRIMARY` | `0.4898` | `0.2318` | `0.0264` | `0.0474` | `0.0811` | `0.6137` | `12.98` / `8.60` |
 | `ctu_echo` | `STRICT_CONSENSUS` | `0.4974` | `0.2672` | `0.0260` | `0.0473` | `0.0660` | `0.7589` | `31.36` / `30.10` |
 | `ctu_echo` | `MAX_SEVERITY` | `0.4808` | `0.4808` | `1.0000` | `0.6494` | `1.0000` | `0.7964` | `53.54` / `52.63` |
 | `ctu_windows7ad` | `WEIGHTED_ENSEMBLE` | `0.8336` | `0.0391` | `0.5643` | `0.0731` | `0.1633` | `0.8562` | `23.98` / `40.37` |
-| `ctu_windows7ad` | `OOD_AWARE_ENSEMBLE` (`ood=None`) | `0.8336` | `0.0391` | `0.5643` | `0.0731` | `0.1633` | `0.8562` | `23.98` / `40.37` |
+| `ctu_windows7ad` | `OOD_AWARE_ENSEMBLE` | `0.8335` | `0.0391` | `0.5643` | `0.0731` | `0.1633` | `0.8561` | `23.99` / `40.37` |
 | `ctu_windows7ad` | `RANDOM_FOREST_PRIMARY` | `0.8358` | `0.0381` | `0.5412` | `0.0712` | `0.1608` | `0.8392` | `11.71` / `34.55` |
 | `ctu_windows7ad` | `STRICT_CONSENSUS` | `0.8375` | `0.0384` | `0.5397` | `0.0717` | `0.1590` | `0.8653` | `30.36` / `43.93` |
 | `ctu_windows7ad` | `MAX_SEVERITY` | `0.0119` | `0.0116` | `1.0000` | `0.0230` | `0.9997` | `0.7367` | `52.97` / `55.42` |

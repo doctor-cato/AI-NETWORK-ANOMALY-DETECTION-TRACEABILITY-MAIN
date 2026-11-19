@@ -115,18 +115,21 @@ flowchart LR
 - **`Stage2MulticlassClassifier` (6 lớp, `e0_artifacts_untouched = true`):**
   - `random_forest_multiclass`: `Val Macro-F1 = 0.8282` → **`Test Macro-F1 = 0.7347`** (`Weighted-F1 = 0.9778`).
   - `xgboost_multiclass`: `Test Macro-F1 = 0.6378` (`Reconnaissance F1 = 0.9971`, `Data_Exfiltration F1 = 0.7608`, nhưng `Credential_Attack F1 = 0.0455`).
-- **Thực nghiệm Đa miền `E1` (`N_train = 442,961`: `AIT=200,001 + CTU=175,853 + UWF=67,107`):**
+- **Thực nghiệm Đa miền `E1` (`N_train = 442,960`: `AIT=200,001 + CTU=175,852 + UWF=67,107`):**
 
 | Tập Kiểm thử | Mô hình (`E0` Zero-Shot vs `E1 / E3b`) | F1 (`E0` → `E1/E3b`) | FPR (`E0` → `E1/E3b`) | ROC-AUC |
 |---|---|---:|---:|---:|
-| **`CTU_Test`** | `RandomForest_Binary` | `0.0501` → **`0.9703`** | `0.1435` → **`0.0047`** | `0.9979` |
-| **`CTU_Test`** | `XGBoost_Binary` | `0.1960` → **`0.9698`** | `0.1427` → **`0.0050`** | `0.9977` |
-| **`UWF_Test`** | `RandomForest_Binary` | `0.0942` → **`0.9992`** | `0.0429` → **`0.0015`** | `1.0000` |
-| **`CTU_Win7AD_Test`** | `Autoencoder_E3b_VarianceNormalized` | `—` | **`72.09%`** → **`4.42%`** | `CTU ROC 0.8156` |
+| **`AIT_Test`** | `RandomForest_Binary` | `0.9935` → **`0.9200`** | `0.0002` → `0.0026` | `0.9974` |
+| **`CTU_Test`** | `RandomForest_Binary` | `0.0612` → **`0.9564`** | `0.1432` → **`0.0047`** | `0.9977` |
+| **`CTU_Test`** | `XGBoost_Binary` | `0.2051` → **`0.9552`** | `0.1425` → **`0.0008`** | `0.9973` |
+| **`CTU_Win7AD_Test`** | `RandomForest_Binary` | `0.0371` → **`0.3359`** | `0.1450` → **`0.0048`** | **`0.9883`** |
+| **`CTU_Win7AD_Test`** | `XGBoost_Binary` | `0.0462` → **`0.2560`** | `0.1430` → **`0.0008`** | **`0.9849`** |
+| **`UWF_Test`** *(in-domain với E1)* | `RandomForest_Binary` | `0.0942` → **`0.9992`** | `0.0429` → **`0.0017`** | `1.0000` |
+| **`CTU_Win7AD_Test`** | `Autoencoder_E3b_VarianceNormalized` | `0.0302` → **`0.1388`** | **`72.14%`** → **`13.79%`** | `0.9706` *(UWF `0.3102`)* |
 
 - **`LocalBenignCalibrator` & `OOD_AWARE_ENSEMBLE`:** Chẩn đoán hiệu chuẩn ngưỡng trên `UWF-ZeekData24` nâng `RF F1` từ `0.0924 @ 0.50` lên `0.6596 @ AIT-Val Youden J` và `0.9756 @ Target-Benign-P95`.
 
-> **Speaker Notes:** Để giải quyết bài toán domain shift mà không chạm vào 4 baseline E0, nhóm thực nghiệm huấn luyện đa miền E1 và chuẩn hóa phương sai Autoencoder E3b. Kết quả cho thấy khi có mẫu đa miền, CTU F1 tăng từ 0.05 lên 0.9703, UWF lên 0.9992, và FPR của Autoencoder trên Win7AD giảm mạnh từ 72.09% xuống 4.42%.
+> **Speaker Notes:** Để giải quyết bài toán domain shift mà không chạm vào 4 baseline E0, nhóm thực nghiệm huấn luyện đa miền E1 (`N_train = 442,960`) và chuẩn hóa phương sai Autoencoder E3b. Kết quả cho thấy khi có mẫu đa miền, CTU_Test RF F1 tăng từ 0.0612 lên 0.9564, CTU_Win7AD_Test ROC-AUC đạt 0.9883 (RF) và 0.9849 (XGB), UWF_Test (in-domain đối với E1) đạt 0.9992, và FPR của Autoencoder trên Win7AD giảm mạnh từ 72.14% xuống 13.79% (ROC-AUC 0.9706).
 
 ---
 
@@ -150,11 +153,11 @@ flowchart LR
 ## Slide 9 — Động cơ Hành vi 16-D Độc lập IP (`BehavioralVector`) & `RQ3` (01:15)
 
 - **Thiết kế `canonical-behavioral-v2-16` (`src/network_anomaly/behavioral/vector.py`):**
-  - `EventSessionizer` gom nhóm theo thực thể trong cửa sổ **`300 giây`**, loại bỏ hoàn toàn IP khỏi vector đặc trưng:
-    - *Flow & Volume (8):* `flow_count`, `bytes_total`, `packets_total`, `bytes_per_flow`, `packets_per_flow`, `unique_dst_ips`, `unique_dst_ports`, `unique_protocols`.
-    - *Graph & Temporal (5):* `fan_out_ratio`, `port_entropy`, `inter_arrival_mean_sec`, `inter_arrival_std_sec`, `burstiness_index`.
-    - *App & Identity (3):* `dns_intensity`, `http_intensity`, `auth_failure_ratio` (ghi nhận `completeness_status = "partial_flow_only"` nếu thiếu log L7).
-  - `EntityBaselineProfiler`: Thuật toán **Welford** + **EMA Z-score** qua cửa sổ trượt `50` phiên.
+  - `EventSessionizer` gom nhóm theo thực thể trong cửa sổ **`300 giây`**, loại bỏ hoàn toàn IP khỏi 16 đặc trưng chuẩn hóa L2 (`BehavioralVectorBuilder.FEATURE_NAMES`):
+    - *Thời lượng, Dung lượng & Tỷ lệ (7):* `log_duration`, `log_bytes_in`, `log_bytes_out`, `bytes_ratio_clipped`, `log_pkts_in`, `log_pkts_out`, `pkts_ratio_clipped`.
+    - *Đa dạng & Cờ TCP (4):* `unique_ports_norm`, `unique_protocols_norm`, `syn_flag_ratio`, `rst_flag_ratio`.
+    - *App, Identity & IAT (5):* `dns_intensity`, `http_intensity`, `auth_failure_ratio`, `log_mean_iat`, `log_std_iat` (khi thiếu sự kiện `DNS`/`WEB`/`AUTH`, giữ `0.0` và ghi tường minh `missing_feature_count`, `missing_feature_names`).
+  - `EntityBaselineProfiler` (`vector.py:178-224`): Cửa sổ trượt `deque(maxlen=50)` + centroid chuẩn hóa L2 + độ lệch cosine `deviation_score = 1 - cos_sim`.
 - **Kết quả `RQ3` (`IPSpoofingSessionCorrelator`):**
   - *Simulation L2 Cosine (`20` phiên / `190` cặp):* IP Exact `F1 = 0.0000` vs L2 `cos >= 0.95` `F1 = 0.5556` (`Recall = 1.0`, `FalseLink = 0.30`) → **`simulation_hypothesis_met = false`** (`< 0.85`).
   - *Nâng cấp Feature-Standardized 16-D Cosine:* Mô phỏng đạt `F1 = 1.0000`; thực nghiệm **`UWF-ZeekData24`** (`56` phiên / `8` tactic) đạt **`F1 = 0.7192`** (`FalseLink = 0.0449`) vượt IP Exact (`F1 = 0.6919`, `FalseLink = 0.1653`). Track AIT giữ **`BLOCKED`** (`#85`).
@@ -171,7 +174,7 @@ flowchart LR
   - **Fail-Closed Guard:** Luồng `is_ood = True` hoặc `NaN`/`Inf` bị kẹp **`<= 65.0`** và khóa `trigger_adaptive_rotation = False`.
 - **`LiveAlertManager` & Trace Engine:**
   - Gộp trùng cảnh báo `>= 70.0` theo `entity_id` trong **`60.0s`** (`live_alerts` SQLite).
-  - `EntityRelationshipGraph` + `AttackTimelineReconstructor` + `InvestigationReport`: đạt `1.0 / 1.0` trên kịch bản synthetic 8 sự kiện (vs `0.375 / 0.50` của log grep).
+  - `EntityRelationshipGraph` + `AttackTimelineReconstructor` + `InvestigationReport`: đạt **`Stage Attribution Accuracy = 90.0%`** (lỗi `1/10` tại `ev-7` WinRM `5985`) và **`Path Completeness = 100.0%`** trên kịch bản synthetic `10` sự kiện (vs `30.0% / 40.0%` của log grep).
 - **Chính sách Phản ứng Dry-Run (`response_policy.py`):**
   - Khóa cứng `executed = false`, `os_firewall_touched = false`. Cổng kép chặn `ABSTAINED_OOD` và mô hình `RESEARCH_ONLY` (`HOLD_RESEARCH_ONLY_MODEL`).
 
@@ -187,7 +190,7 @@ flowchart LR
   - `KeyRotationPolicy`: Lịch cố định `30 phút` (`1,800s`), khẩn cấp khi `risk_score >= 85.0`, kèm `cooldown >= 60s` và `rate_limit <= 10/giờ` lưu trong SQLite `rotation_audit`.
 - **Kết quả `RQ5` (Mô phỏng 60 phút, `120` events) & `RQ6` (Microbenchmark CPU):**
   - `RQ5`: Max exposure giảm **`87.5%`** (`1,200.0s -> 150.01s`); *blast radius* giảm **`85.0%`** (`40 -> 6` bản ghi tấn công/khóa).
-  - `RQ6`: `AES-256-GCM` 256 B Encrypt P95 = **`13.3 us`** (`75,851.2 ops/s`); 1 KB P95 = `17.3 us`; 4 KB P95 = `29.6 us` (đạt mục tiêu `<= 500 us`, `>= 5,000 ops/s`). A/B Exp 7: bật mã hóa giảm throughput từ `181.2` xuống `121.7 flow/s` (`CPU +53.56%`).
+  - `RQ6`: `AES-256-GCM` 256 B = **`72,177.2 ops/s`** (median `8.8 us`, P95 = **`13.3 us`**); 1 KB P95 = **`11.4 us`** (`74,807.5 ops/s`); 4 KB P95 = **`38.4 us`** (`36,351.0 ops/s`) — đạt mục tiêu `<= 500 us`, `>= 5,000 ops/s`. A/B Exp 7: bật mã hóa giảm throughput từ `181.2` xuống `121.7 flow/s` (`CPU +53.56%`).
 
 > **Speaker Notes:** Chi phí mã hóa một vector hành vi chỉ mất khoảng 13 micro-giây ở phân vị 95%, rất nhỏ so với chi phí suy luận AI (~61 ms), nhưng giúp giảm 87.5% thời gian phơi nhiễm khóa khi xảy ra sự cố.
 
@@ -206,7 +209,7 @@ flowchart LR
 - **Nghiệm thu Telemetry Loopback (`#137`):**
   - *Synthetic UDP Loopback (`127.0.0.1:51817`):* `13/13` stages `PASS`, `6/6` flows, `1` alert `HIGH (84.035)` trên GUI Svelte (`live_gui_alert_synthetic_loopback.png`).
   - *Real-Dataset UDP Replay:* `65/65` flows `ait_test.csv.gz` ở chế độ `deployment`, `1` chiến dịch đa giai đoạn (`real_hardware_switch = false`).
-- **Kiểm thử & CI:** **`665+` pytest**, **`39+` Vitest (`39/39`)**, **`11` Rust tests**, CI Run `#217` đạt **`7/7 SUCCESS`**.
+- **Kiểm thử & CI:** **`670+` pytest**, **`41/41` Vitest**, **`11/11` Rust tests (`cargo test --lib`)**, CI Run `44544489397` (`93416ed`) đạt **`7/7 SUCCESS`**.
 
 > **Speaker Notes:** Bằng việc gom nhóm xử lý vi lô `process_batch(32)`, thông lượng trên CPU tăng hơn 23 lần lên gần 390 flow/s với độ ổn định cao (CV 3.33%), đồng thời hệ thống vượt qua toàn bộ 7 job CI và kịch bản nghiệm thu UDP loopback.
 

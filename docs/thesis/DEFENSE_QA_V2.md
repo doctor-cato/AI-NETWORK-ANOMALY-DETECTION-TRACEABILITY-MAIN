@@ -56,9 +56,9 @@
 
 ### Q10. Nhóm đã làm gì để khắc phục sự sụp đổ *cross-source* của `E0` mà không vi phạm quy tắc đóng băng `E0`?
 - **Trả lời:** Nhóm thực hiện 3 hướng tối ưu hóa tách biệt hoàn toàn khỏi 4 artifact `E0` (`e0_artifacts_untouched = true`):
-  1. **Thực nghiệm Đa miền `E1` ([`docs/experiments/E1_MULTIDOMAIN_EXPERIMENT.md`](../experiments/E1_MULTIDOMAIN_EXPERIMENT.md)):** Huấn luyện trên `442,961` dòng kết hợp (`AIT=200,001 + CTU=175,853 + UWF=67,107`). `E1_RandomForest_Binary` nâng `CTU_Test F1` từ `0.0501` lên **`0.9703`** (`FPR = 0.004650`), `UWF_Test F1` lên **`0.9992`** (`ROC-AUC = 1.0000`), và giảm `CTU_Win7AD FPR` xuống `0.472%`.
-  2. **`Autoencoder_E3b_VarianceNormalized`:** Chuẩn hóa phương sai trên không gian đặc trưng giúp giảm `CTU-Win7AD FPR` từ **`72.09%`** (`0.720930`) xuống **`4.42%`** (`0.044190`) và nâng `CTU_Test ROC-AUC` từ `0.6302` lên `0.8156`.
-  3. **`LocalBenignCalibrator` & `OOD_AWARE_ENSEMBLE`:** Cho phép hiệu chuẩn ngưỡng trên phân vị dữ liệu sạch của mạng đích (`src/network_anomaly/ml/local_calibration.py`) và chuyển dịch trọng số ensemble sang `XGB + IF` khi có dịch chuyển OOD vừa phải (`src/network_anomaly/models/aggregation.py`).
+  1. **Thực nghiệm Đa miền `E1` ([`docs/experiments/E1_MULTIDOMAIN_EXPERIMENT.md`](../experiments/E1_MULTIDOMAIN_EXPERIMENT.md)):** Huấn luyện trên `442,960` dòng kết hợp (`AIT=200,001 + CTU=175,852 + UWF=67,107`). `E1_RandomForest_Binary` đạt `AIT_Test F1 = 0.9200`, nâng `CTU_Test F1` từ `0.0612` lên **`0.9564`** (`FPR = 0.004697`), `CTU_Win7AD_Test F1` từ `0.0371` lên **`0.3359`** (`ROC-AUC = 0.9883`; `E1_XGBoost_Binary` đạt `F1 = 0.2560`, `ROC-AUC = 0.9849`), và `UWF_Test` (*in-domain* đối với `E1`) đạt **`F1 = 0.9992`** (`ROC-AUC = 1.0000`).
+  2. **`Autoencoder_E3b_VarianceNormalized`:** Chuẩn hóa phương sai trên không gian đặc trưng giúp giảm `CTU_Win7AD_Test FPR` từ **`72.14%`** (`0.721377`) xuống **`13.79%`** (`0.137944`, `F1 = 0.1388`, `ROC-AUC = 0.9706`) và nâng `CTU_Test ROC-AUC` từ `0.6292` lên `0.8878` (lưu ý `UWF_Test ROC-AUC = 0.3102`).
+  3. **`LocalBenignCalibrator` & `OOD_AWARE_ENSEMBLE`:** Cho phép hiệu chuẩn ngưỡng trên phân vị dữ liệu sạch của mạng đích (`src/network_anomaly/ml/local_calibration.py`) và chuyển dịch trọng số ensemble sang `XGB + IF` khi có dịch chuyển OOD vừa phải (`src/network_anomaly/risk/aggregation.py`).
 
 ### Q11. Vì sao `Stage2MulticlassClassifier` chạy tách riêng, và vì sao dùng `sklearn MLPRegressor` thay cho PyTorch, dùng Feature/Permutation Importance thay cho SHAP?
 - **Trả lời:**
@@ -71,7 +71,7 @@
 ## Nhóm III — Động cơ Hành vi, Đánh giá Rủi ro & Truy vết (`Q12–Q15`)
 
 ### Q12. Nếu hệ thống chỉ nhận dữ liệu NetFlow/IPFIX (không có log DNS/HTTP/Auth), 3 chiều ứng dụng trong `BehavioralVector` 16-D có bị suy diễn giá trị giả không?
-- **Trả lời:** **Không suy diễn âm thầm.** Theo [`docs/architecture/BEHAVIORAL_ENGINE.md`](../architecture/BEHAVIORAL_ENGINE.md) và [`src/network_anomaly/behavioral/vector.py`](../../src/network_anomaly/behavioral/vector.py), khi thiếu sự kiện DNS/HTTP/Auth, 3 chiều `dns_intensity`, `http_intensity`, `auth_failure_ratio` mang giá trị `0.0`, đồng thời `BehavioralVector` ghi tường minh danh sách `missing_feature_names` và gắn cờ **`completeness_status = "partial_flow_only"`** thay vì `"complete"`.
+- **Trả lời:** **Không suy diễn âm thầm.** Theo [`docs/architecture/BEHAVIORAL_ENGINE.md`](../architecture/BEHAVIORAL_ENGINE.md) và [`src/network_anomaly/behavioral/vector.py`](../../src/network_anomaly/behavioral/vector.py), khi thiếu sự kiện DNS/HTTP/Auth, 3 chiều `dns_intensity`, `http_intensity`, `auth_failure_ratio` giữ giá trị `0.0` để tương thích số học, đồng thời `BehavioralVector` ghi tường minh `missing_feature_count` (`int`) và `missing_feature_names` (`tuple`, ví dụ `("dns_intensity", "http_intensity", "auth_failure_ratio")`).
 
 ### Q13. Tại sao thực nghiệm `RQ3` ban đầu thất bại (`F1 = 0.5556 < 0.85`), và bản nâng cấp đã cải thiện gì?
 - **Trả lời:** Trong [`docs/experiments/EXP5_SESSION_CORRELATION.md`](../experiments/EXP5_SESSION_CORRELATION.md), `BehavioralVector` ban đầu dùng chuẩn hóa L2 toàn vector, làm triệt tiêu thông tin quy mô tuyệt đối nên các chiến dịch khác nhau nhưng có tỷ lệ phân bố giống nhau bị va chạm cosine (`FalseLink = 0.80` ở `cos >= 0.85`, `0.30` ở `cos >= 0.95`, `F1 = 0.5556 < 0.85`). Khi nâng cấp `IPSpoofingSessionCorrelator` sang **Feature-Standardized 16-D Cosine**, mô phỏng đạt `F1 = 1.0000` và kiểm chứng trên `56` phiên / `8` tactic của `UWF-ZeekData24` đạt **`F1 = 0.7192`** (`Precision = 0.8022`, `FalseLink = 0.0449`), vượt mốc khớp IP truyền thống (`F1 = 0.6919`, `FalseLink = 0.1653`).
@@ -79,8 +79,8 @@
 ### Q14. Làm thế nào `RiskScorer` ngăn chặn một mẫu OOD kích hoạt cảnh báo giả mức `CRITICAL` và xoay khóa khẩn cấp?
 - **Trả lời:** Trong [`src/network_anomaly/risk/scoring.py`](../../src/network_anomaly/risk/scoring.py), `RiskScorer` tổng hợp 4 thành phần `[0..100]` (`AI 0–50`, `Behavioral 0–25`, `Sensitive Port 0–15`, `Auth 0–10`). Tuy nhiên, nếu `is_ood = True` hoặc đầu vào chứa `NaN`/`Inf`, hệ thống kích hoạt **OOD Guard**: ép điểm rủi ro tối đa **`<= 65.0`** (dưới ngưỡng `HIGH >= 70.0` và `CRITICAL >= 85.0`) và khóa cứng **`trigger_adaptive_rotation = False`**.
 
-### Q15. Độ chính xác `1.0 / 1.0` của Trace Engine được đo trong điều kiện nào?
-- **Trả lời:** Con số `Precision = 1.0 / Recall = 1.0` (so với `0.375 / 0.50` của phương pháp tìm kiếm log động) được đo tại [`reports/experiments/trace/traceability_evaluation.json`](../../reports/experiments/trace/traceability_evaluation.json) trên **kịch bản tổng hợp (`SYNTHETIC`) gồm `8` sự kiện**. Vì liên kết đa nguồn thực nghiệm trên AIT (`#85`) đang `BLOCKED`, đây chưa phải là đánh giá trên chiến dịch tấn công thực tế quy mô lớn.
+### Q15. Độ chính xác `90.0% / 100.0%` của Trace Engine được đo trong điều kiện nào?
+- **Trả lời:** Con số `Stage Attribution Accuracy = 90.0%` (lỗi `1/10` tại sự kiện `ev-7` WinRM cổng `5985` bị gán nhầm về `INITIAL_ACCESS` do `timeline.py:121-123` thiếu cổng WinRM) và `Path Completeness = 100.0%` (so với `30.0% / 40.0%` của phương pháp tìm kiếm log động) được đo tại [`reports/experiments/trace/traceability_evaluation.json`](../../reports/experiments/trace/traceability_evaluation.json) trên **kịch bản tổng hợp (`SYNTHETIC`) gồm `10` sự kiện 4 giai đoạn**. Vì liên kết đa nguồn thực nghiệm trên AIT (`#85`) đang `BLOCKED`, đây chưa phải là đánh giá trên chiến dịch tấn công thực tế quy mô lớn.
 
 ---
 
@@ -96,7 +96,7 @@
 - **Trả lời:** Không, nhờ `KeyRotationPolicy` (`src/network_anomaly/crypto/rotation.py`) áp dụng đồng thời hai lớp chống DoS: `cooldown >= 60s` giữa hai lần xoay khẩn cấp (`risk_score >= 85.0`) và `rate_limit <= 10 rotations/hour`, trạng thái bộ đếm được lưu bền vững qua khởi động lại trong bảng SQLite `rotation_audit`. Trong mô phỏng 60 phút (`RQ5`), cơ chế này giảm **`87.5%`** thời gian phơi nhiễm (`1,200.0s -> 150.01s`) và **`85.0%`** *blast radius* (`40 -> 6` bản ghi tấn công/khóa).
 
 ### Q19. Tại sao `RQ6` microbenchmark ghi nhận `13.3 us` P95 cho `AES-256-GCM`, nhưng thực nghiệm A/B `Exp 7` lại giảm `32.85%` thông lượng?
-- **Trả lời:** Microbenchmark `RQ6` (`reports/benchmarks/crypto_benchmark_report.json`) đo thuần túy hàm mã hóa `AES-256-GCM` trên bộ nhớ (`256 B`: P95 `13.3 us`, `75,851.2 ops/s`). Trong khi đó, thực nghiệm A/B `Exp 7` (`N=500 × 3`) đo toàn bộ chu trình ghi/đọc SQLite vault và quản lý khóa đi kèm (`Encryption OFF: 181.2 flow/s` → `Encryption ON: 121.7 flow/s`, CPU `+53.56%`). Cả hai con số đều nhất quán và bổ trợ cho nhau ở hai cấp độ đo khác nhau.
+- **Trả lời:** Microbenchmark `RQ6` (`reports/benchmarks/crypto_benchmark_report.json`) đo thuần túy hàm mã hóa `AES-256-GCM` trên bộ nhớ (`256 B`: `72,177.2 ops/s`, median `8.8 us`, P95 `13.3 us`; `1,024 B`: P95 `11.4 us`, `74,807.5 ops/s`; `4,096 B`: P95 `38.4 us`, `36,351.0 ops/s`). Trong khi đó, thực nghiệm A/B `Exp 7` (`N=500 × 3`) đo toàn bộ chu trình ghi/đọc SQLite vault và quản lý khóa đi kèm (`Encryption OFF: 181.2 flow/s` → `Encryption ON: 121.7 flow/s`, CPU `+53.56%`). Cả hai con số đều nhất quán và bổ trợ cho nhau ở hai cấp độ đo khác nhau.
 
 ---
 
@@ -110,7 +110,7 @@
 - Rust Collector (`#128`) chủ động hoãn (`DEFERRED`) ra ngoài phạm vi `v2.0.0` vì `Python UDPFlowCollector` + `StreamingEventPipeline` (`capacity = 10,000`) đã đáp ứng đầy đủ giải mã NetFlow v9/IPFIX trong phòng lab.
 
 ### Q22. Nếu một tiến trình độc hại trên cùng máy trạm gửi request vào FastAPI sidecar thì sao?
-- **Trả lời:** Sidecar chỉ lắng nghe trên loopback `127.0.0.1` và mọi endpoint nghiệp vụ (ngoại trừ `/health` và `OPTIONS`) đều kiểm tra header **`X-Sentinel-Session-Token`** bằng hàm so sánh hằng thời gian `hmac.compare_digest` (`src/network_anomaly/api/main.py`), trả HTTP `401` nếu thiếu hoặc sai token ngẫu nhiên theo phiên do Tauri cấp phát. Ngoài ra, ở chế độ mặc định `"deployment"`, nếu thiếu neo tin cậy `NETFLOW_OOD_GATE_SHA256`, suy luận AI tự khóa ở trạng thái `UNAVAILABLE`.
+- **Trả lời:** Sidecar chỉ lắng nghe trên loopback `127.0.0.1` và mọi endpoint nghiệp vụ (ngoại trừ `OPTIONS`, `/health` và tài nguyên tĩnh chỉ đọc `GET`/`HEAD /app*`, trong khi 100% các route `/api/v1/*` đều bắt buộc xác thực token) đều kiểm tra header **`X-Sentinel-Session-Token`** bằng hàm so sánh hằng thời gian `hmac.compare_digest` (`src/network_anomaly/api/main.py`), trả HTTP `401` nếu thiếu hoặc sai token ngẫu nhiên theo phiên do Tauri cấp phát. Ngoài ra, ở chế độ mặc định `"deployment"`, nếu thiếu neo tin cậy `NETFLOW_OOD_GATE_SHA256`, suy luận AI tự khóa ở trạng thái `UNAVAILABLE`.
 
 ---
 

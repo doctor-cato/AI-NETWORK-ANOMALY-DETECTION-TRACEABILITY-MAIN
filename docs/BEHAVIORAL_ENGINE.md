@@ -64,7 +64,7 @@ Mỗi `BehavioralVector` khi lưu vào cơ sở dữ liệu được mã hóa b�
 
 ## 5. Phân phối Thực nghiệm Similarity & Tác động Baseline Profiler (`#103 AC3`)
 
-Đo đạc chỉ-đọc qua `scripts/evaluate_behavioral_and_risk_policies.py` (kết quả lưu ở [behavioral_risk_aggregation_eval.json](file:///reports/experiments/risk/behavioral_risk_aggregation_eval.json)) trên mẫu gom phiên theo entity (`session_timeout = 300.0 s`, tối đa `20,000` flows/partition, tối đa `40` vector/nhóm cho ma trận cặp):
+Đo đạc chỉ-đọc qua `scripts/evaluate_behavioral_and_risk_policies.py` (kết quả lưu ở [behavioral_risk_aggregation_eval.json](../reports/experiments/risk/behavioral_risk_aggregation_eval.json)) trên mẫu gom phiên theo entity (`session_timeout = 300.0 s`, tối đa `20,000` flows/partition, tối đa `40` vector/nhóm cho ma trận cặp):
 
 | Partition | Benign / Attack Sessions | Cosine Intra-Benign (Match ≥ 0.85) | Cosine Intra-Attack | Cosine Cross Benign–Attack (Match ≥ 0.85) | Norm-Euc (IB / Cross) | Manhattan (IB / Cross) |
 |---|---:|---:|---:|---:|---:|---:|

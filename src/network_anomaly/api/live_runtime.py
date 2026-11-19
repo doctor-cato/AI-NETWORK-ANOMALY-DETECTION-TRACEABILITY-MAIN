@@ -324,12 +324,33 @@ class LiveRuntime:
         try:
             if not self._table_exists(connection, "live_alerts"):
                 return []
+            existing_cols = {
+                row[1] for row in connection.execute("PRAGMA table_info(live_alerts)").fetchall()
+            }
+            has_pred_cat = "predicted_attack_category" in existing_cols
+            has_cat_conf = "attack_category_confidence" in existing_cols
+            select_cols = [
+                "alert_id",
+                "created_at_utc",
+                "entity_id",
+                "risk_score",
+                "risk_level",
+                "trigger_reason",
+                "status",
+                "occurrence_count",
+                "first_seen_utc",
+                "last_seen_utc",
+                "associated_event_ids",
+                "adaptive_key_rotated",
+                "detection_latency_ms",
+            ]
+            if has_pred_cat:
+                select_cols.append("predicted_attack_category")
+            if has_cat_conf:
+                select_cols.append("attack_category_confidence")
             rows = connection.execute(
-                """
-                SELECT alert_id, created_at_utc, entity_id, risk_score, risk_level,
-                       trigger_reason, status, occurrence_count, first_seen_utc,
-                       last_seen_utc, associated_event_ids, adaptive_key_rotated,
-                       detection_latency_ms
+                f"""
+                SELECT {', '.join(select_cols)}
                 FROM live_alerts
                 ORDER BY last_seen_utc DESC
                 LIMIT ?;
@@ -342,6 +363,12 @@ class LiveRuntime:
                     event_ids = json.loads(row["associated_event_ids"] or "[]")
                 except Exception:
                     event_ids = []
+                pred_cat = row["predicted_attack_category"] if has_pred_cat else None
+                cat_conf = (
+                    float(row["attack_category_confidence"])
+                    if has_cat_conf and row["attack_category_confidence"] is not None
+                    else None
+                )
                 items.append(
                     {
                         "alert_id": row["alert_id"],
@@ -357,6 +384,10 @@ class LiveRuntime:
                         "associated_event_ids": event_ids if isinstance(event_ids, list) else [],
                         "adaptive_key_rotated": bool(row["adaptive_key_rotated"]),
                         "detection_latency_ms": float(row["detection_latency_ms"]),
+                        "predicted_attack_category": (
+                            str(pred_cat) if pred_cat is not None else None
+                        ),
+                        "attack_category_confidence": cat_conf,
                     }
                 )
             return items

@@ -13,7 +13,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.behavioral.sessionizer import EventSessionizer
-from network_anomaly.behavioral.vector import BehavioralVector, BehavioralVectorBuilder
+from network_anomaly.behavioral.vector import (
+    BehavioralVector,
+    BehavioralVectorBuilder,
+    EntityBaselineProfiler,
+)
 from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.crypto.encrypted_storage import EncryptedStorageVault
 from network_anomaly.crypto.key_manager import KeyManager
@@ -151,6 +155,7 @@ class LiveSystemOrchestrator:
         )
         self.sessionizer = EventSessionizer()
         self.vector_builder = BehavioralVectorBuilder()
+        self.baseline_profiler = EntityBaselineProfiler()
         self.entity_graph = EntityRelationshipGraph()
         self.timeline_reconstructor = AttackTimelineReconstructor()
         self.vault: Optional[EncryptedStorageVault] = (
@@ -274,10 +279,21 @@ class LiveSystemOrchestrator:
             attack_category_confidence=pred_conf,
         )
 
+    def _compute_baseline_deviation(self, b_vec: Optional[BehavioralVector]) -> Optional[float]:
+        """Score behavioral vector deviation against entity baseline and update sliding window."""
+        if b_vec is None:
+            return None
+        dev_info = self.baseline_profiler.score_deviation(b_vec)
+        self.baseline_profiler.update(b_vec)
+        if dev_info.get("has_baseline"):
+            return float(dev_info.get("deviation_score", 0.0))
+        return None
+
     def process_event(self, event: CanonicalSecurityEvent) -> LiveProcessingResult:
         """Process a single incoming security event through the complete live telemetry stack."""
         self.total_processed_events += 1
         entity, b_vec = self._prepare_entity_and_vector(event)
+        baseline_dev = self._compute_baseline_deviation(b_vec)
 
         feat_res = self.feature_extractor.extract(event)
         inf_dec: Optional[LiveInferenceDecision] = None
@@ -290,7 +306,10 @@ class LiveSystemOrchestrator:
             )
 
         risk_assess, alert = self.alert_manager.process_event_risk(
-            event, inf_dec, behavioral_vector=b_vec
+            event,
+            inf_dec,
+            behavioral_vector=b_vec,
+            baseline_deviation_score=baseline_dev,
         )
 
         vector_id: Optional[str] = None
@@ -329,6 +348,7 @@ class LiveSystemOrchestrator:
 
         entities: List[str] = []
         b_vecs: List[Optional[BehavioralVector]] = []
+        baseline_devs: List[Optional[float]] = []
         feat_results: List[Any] = []
         ml_indices: List[int] = []
         ml_events: List[CanonicalSecurityEvent] = []
@@ -337,6 +357,7 @@ class LiveSystemOrchestrator:
         for idx, event in enumerate(events):
             self.total_processed_events += 1
             entity, b_vec = self._prepare_entity_and_vector(event)
+            baseline_devs.append(self._compute_baseline_deviation(b_vec))
             feat_res = self.feature_extractor.extract(event)
             entities.append(entity)
             b_vecs.append(b_vec)
@@ -365,7 +386,11 @@ class LiveSystemOrchestrator:
             inf_dec = decisions_by_idx.get(idx)
 
             risk_assess, alert = self.alert_manager.process_event_risk(
-                event, inf_dec, behavioral_vector=b_vec, persist=False
+                event,
+                inf_dec,
+                behavioral_vector=b_vec,
+                baseline_deviation_score=baseline_devs[idx],
+                persist=False,
             )
             if alert is not None:
                 alerts_to_persist.append(alert)

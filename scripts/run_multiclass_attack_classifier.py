@@ -201,6 +201,8 @@ def main() -> int:
         "classes": list(CANONICAL_CLASSES),
         "validation_macro_f1": models_out["random_forest_multiclass"]["validation"]["macro_f1"],
         "test_macro_f1": models_out["random_forest_multiclass"]["test"]["macro_f1"],
+        "ait_test_used_for_posthoc_candidate_selection": True,
+        "holdout_independent_selection": False,
         "sidecar_selection_rationale": (
             "rf_multiclass_stage2 (val_macro_f1=0.8282, test_macro_f1=0.7347, pure sklearn/joblib) "
             "is exported as the Stage-2 sidecar because it generalizes better on AIT-Test "

@@ -2,7 +2,7 @@
 
 > **Phạm vi Kiểm toán:** Issue `#154` (v2.0 Release Readiness) & Issue `#20` (M7 System-Wide QA Gate)
 >
-> **Nhánh & Mốc Tham chiếu:** `feat/v2-integration` · PR `#156` (pushed HEAD `8e04960` / CI Run `#217` `7/7 SUCCESS` + đợt remediation cục bộ & bộ hồ sơ bảo vệ `#153`)
+> **Nhánh & Mốc Tham chiếu:** `feat/v2-integration` · PR `#156` (pushed HEAD `93416ed` / CI Run `44544489397` `7/7 SUCCESS` + bản vá review-remediation & bộ hồ sơ bảo vệ `#153`)
 >
 > **Phiên bản Sản phẩm:** Desktop Tauri/Svelte `2.0.0` · FastAPI Contract `0.1.0`
 
@@ -25,11 +25,11 @@ Thay vì gộp chung một nhãn nhị phân gây hiểu lầm, mức độ sẵ
 
 | Trục Kiểm tra | Kết quả | Bằng chứng & Giới hạn Thực tế |
 |---|---|---|
-| **Git & PR `#156` Governance** | `OPEN / BLOCKED` | PR `#156` (`isDraft: false`) tại `8e04960` có CI Run `#217` (`44377910551`) đạt `7/7 SUCCESS`, nhưng còn `1` review `CHANGES_REQUESTED` (`ViolaPeracia` từ `5483794`) và `mergeStateStatus = BLOCKED`; đợt remediation cục bộ cần commit & CI run mới trước khi review lại. |
+| **Git & PR `#156` Governance** | `OPEN / BLOCKED` | PR `#156` (`isDraft: false`) tại `93416ed` có CI Run `44544489397` đạt `7/7 SUCCESS`, nhưng còn `1` review `CHANGES_REQUESTED` (`ViolaPeracia` từ `5483794`) và `mergeStateStatus = BLOCKED`; bản vá review-remediation cần commit & CI run mới trước khi review lại. |
 | **Artifact & Companion Integrity** | `PASS` / `PARTIAL_UNANCHORED` | `verify_companion_artifacts.py` xác nhận `20` tệp companion, `4/4` model `.joblib`, preprocessor `0866dec7...`, split `ed542ee8...`, AE `score_normalization.json` (`d7bcb78f...`) và cross-check `reports/ml/ood_reference_gate_manifest.json`; báo `PARTIAL_UNANCHORED` khi thiếu external `NETFLOW_OOD_GATE_SHA256`. |
 | **Distribution & License Gate** | `PASS (local_offline)` / `BLOCKED (public)` | `100%` model `E0` và `demo_*.csv` dùng `AIT-NDS-v2` (`CC BY 4.0`); `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) cách ly `.gitignored` (`0%` rò rỉ). Còn placeholder tại `LICENSE:1` và `pyproject.toml:12-13` cần xử lý trước phát hành công khai. |
 | **Runtime Security & Fail-Closed OOD** | `PASS` | Toàn bộ entry points (`backend.rs`, `run_api.py`, `create_app`, `LiveRuntime`, `RealtimeInferenceEngine`) mặc định `"deployment"`, yêu cầu `X-Sentinel-Session-Token`, khóa `UNAVAILABLE` nếu thiếu `NETFLOW_OOD_GATE_SHA256`, và khóa `ResponsePolicy` ở `dry_run = True` (`executed = false`). |
-| **Test Suite & Contract Parity** | `PASS` | CI Run `#217`: `665+` pytest, `39/39` Vitest (`desktop-frontend`), `11/11` Rust (`cargo test --lib`), `export_openapi_spec.py --check`, `check_desktop_version.py --check`; `raw dataset integrity` trên CI giữ `SKIPPED` do không chứa raw archive trong runner. |
+| **Test Suite & Contract Parity** | `PASS` | HEAD `93416ed` (CI Run `44544489397`) + bản vá review-remediation: `670+` pytest, `41/41` Vitest (`desktop-frontend`), `11/11` Rust (`cargo test --lib`), `export_openapi_spec.py --check`, `check_desktop_version.py --check`; `raw dataset integrity` trên CI giữ `SKIPPED` do không chứa raw archive trong runner. |
 | **Physical Lab & External Datasets** | `BLOCKED` | `UGR'16` trả `HTTP 403`; liên kết UID `AIT-NDS-v2 ↔ AIT-LDS-v2.1` (`#85`) `DIRECT_UID_LINK = False`; nghiệm thu router/switch vật lý (`#137`) `real_device_tested = false`. |
 
 ---

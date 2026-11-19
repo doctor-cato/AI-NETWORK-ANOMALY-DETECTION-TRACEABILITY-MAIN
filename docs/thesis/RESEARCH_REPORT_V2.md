@@ -15,7 +15,7 @@
 Khác với các nghiên cứu chỉ báo cáo chỉ số cao trong một phòng lab đơn lẻ, đề tài thực hiện kiểm toán toàn diện theo nguyên tắc trung thực khoa học:
 1. **Loại bỏ hoàn toàn di sản v1 (`NF-UNSW-NB15-v3`)** sau khi phát hiện lỗi *shortcut learning* trên `MIN_TTL`/`MAX_TTL` và sụp đổ Out-of-Distribution (`Recall = 0.0` trên `NF-CSE-CIC-IDS2018-v3`), chuyển toàn bộ sang kho lưu trữ chỉ đọc `historical/nf_unsw_nb15_v3/`.
 2. **Đánh giá thực nghiệm trên dữ liệu đa nguồn `CC BY 4.0`:** Huấn luyện và kiểm thử tách kịch bản (*scenario-disjoint*) trên `AIT-NDS-v2` (`3,464,400` flows có nhãn), kiểm định *cross-source zero-shot* trên `CTU-SME-11` (`251,219` flows từ 2 thiết bị thực tế) và `UWF-ZeekData24` (`95,871` flows, `evaluation_only = true`), đồng thời cách ly tuyệt đối `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`).
-3. **Kết quả AI 2 tầng & Tối ưu hóa:** Trên `AIT-Test` (`N = 988,805`), mô hình `E0` đóng băng đạt `Random Forest F1 = 0.9950`, `XGBoost F1 = 0.9013`, `Autoencoder F1 = 0.5877`, `Isolation Forest F1 = 0.5842`. Thử nghiệm phân loại đa lớp `Stage-2` 6 lớp (`Stage2MulticlassClassifier`) đạt `Test Macro-F1 = 0.7347` (`RF_multiclass`). Trong thực nghiệm đa miền mở rộng `E1` (`N_train = 442,961`), `E1_RandomForest_Binary` nâng `CTU_Test F1` từ `0.0501` lên `0.9703` và `UWF_Test F1` lên `0.9992`, trong khi `Autoencoder_E3b_VarianceNormalized` giảm `CTU-Win7AD FPR` từ `72.09%` xuống `4.42%`.
+3. **Kết quả AI 2 tầng & Tối ưu hóa:** Trên `AIT-Test` (`N = 988,805`), mô hình `E0` đóng băng đạt `Random Forest F1 = 0.9950`, `XGBoost F1 = 0.9013`, `Autoencoder F1 = 0.5877`, `Isolation Forest F1 = 0.5842`. Thử nghiệm phân loại đa lớp `Stage-2` 6 lớp (`Stage2MulticlassClassifier`) đạt `Test Macro-F1 = 0.7347` (`RF_multiclass`). Trong thực nghiệm đa miền mở rộng `E1` (`N_train = 442,960`), `E1_RandomForest_Binary` đạt `AIT_Test F1 = 0.9200`, nâng `CTU_Test F1` từ `0.0612` lên `0.9564`, `CTU_Win7AD_Test F1` từ `0.0371` lên `0.3359` (`ROC-AUC = 0.9883`), và `UWF_Test F1` lên `0.9992` (*in-domain* đối với `E1`), trong khi `Autoencoder_E3b_VarianceNormalized` giảm `CTU_Win7AD_Test FPR` từ `72.14%` xuống `13.79%` (`ROC-AUC = 0.9706`).
 4. **Hành vi, Truy vết & Mật mã:** Động cơ hành vi 16 chiều (`BehavioralVector`) kết hợp `RiskScorer` `[0..100]`, đồ thị thực thể `EntityRelationshipGraph`, tái dựng chuỗi tấn công `AttackTimelineReconstructor` và kho lưu trữ mã hóa `AES-256-GCM` bọc khóa bằng Windows `DPAPI`. Trong mô phỏng `RQ5`, xoay khóa thích ứng theo rủi ro giảm `87.5%` cửa sổ phơi nhiễm (`1,200.0s -> 150.01s`) và `85.0%` *blast radius* (`40 -> 6` bản ghi tấn công/khóa).
 5. **Hiệu năng & Cổng an toàn:** Pipeline xử lý vi lô `process_batch(32)` đạt `386.37 ± 12.88 flow/s` (`>23x` so với xử lý đơn lẻ `16.75 ± 0.11 flow/s`), chế độ Replay đạt `399.44 ± 15.47 flow/s` ở chế độ `"deployment"` fail-closed với `4/4 REAL_MODELS`. Toàn bộ 4 mô hình `E0` hiện được cổng `ModelRegistry` khóa ở mức `RESEARCH_ONLY` (`cross_source_validated = false`) và `DISTRIBUTION_AUTHORIZATION.json` giữ `approved = false`.
 
@@ -53,7 +53,7 @@ Mục tiêu của **Đề tài 22 (NetFlow Sentinel v2.0)** là xây dựng mộ
 | **RQ3** | Vector hành vi 16 chiều (`BehavioralVector`) chuẩn hóa L2 không chứa IP có thể liên kết các phiên tấn công khi kẻ tấn công xoay IP đạt `F1 >= 0.85` hay không? | Mô phỏng `20` phiên / `190` cặp; `UWF-ZeekData24` (`56` phiên); `AIT` | **`SIMULATION`** (`simulation_hypothesis_met = false` với L2 cosine: `F1=0.5556`); `UWF` standardized cosine đạt `F1=0.7192 > IP 0.6919`; AIT empirical **`BLOCKED`** (`#85`) |
 | **RQ4** | Hai mô hình không giám sát (`Isolation Forest`, `Autoencoder`) có đồng thời đạt `Recall >= 0.75` đối với các họ tấn công bị loại hoàn toàn khỏi tập Train/Val hay không? (*Giả thuyết H4*) | `AIT-NDS-v2` holdout (`44` flows từ `Exploitation_And_C2` & `Post_Exploitation_Discovery`) | **`EXPERIMENTALLY VALIDATED`** (`unsupervised_ge_0_75_both = false`: `IF = 0.9091`, **`AE = 0.2045`**) |
 | **RQ5** | Chính sách xoay khóa thích ứng theo `Risk Score >= 85.0` có giảm đáng kể cửa sổ phơi nhiễm khóa và *blast radius* so với xoay khóa cố định `30 phút` hay không? (*Giả thuyết H5*) | Mô phỏng thời gian rời rạc `60 phút` (`120` events, bước `30s`) | **`SIMULATION VERIFIED`** (`hypothesis_confirmed = true`: giảm `87.5%` exposure, `85.0%` blast radius) |
-| **RQ6** | Chi phí tính toán mã hóa `AES-256-GCM` (`P95 <= 500 us`, `>= 5,000 ops/s`) và thông lượng toàn hệ thống ở chế độ `deployment` đáp ứng mức nào trên CPU? (*Giả thuyết H6*) | In-process CPU (`Windows 11`, `12 vCPU`, `15.27 GB RAM`, `4/4 REAL_MODELS`) | **`BENCHMARKED & CONFIRMED`** (`256B P95 = 13.3 us`, `75,851.2 ops/s`; `process_batch(32)` `386.37 flow/s`) |
+| **RQ6** | Chi phí tính toán mã hóa `AES-256-GCM` (`P95 <= 500 us`, `>= 5,000 ops/s`) và thông lượng toàn hệ thống ở chế độ `deployment` đáp ứng mức nào trên CPU? (*Giả thuyết H6*) | In-process CPU (`Windows 11`, `12 vCPU`, `15.27 GB RAM`, `4/4 REAL_MODELS`) | **`BENCHMARKED & CONFIRMED`** (`256B = 72,177.2 ops/s`, median `8.8 us`, P95 `13.3 us`; `1KB P95 = 11.4 us`; `4KB P95 = 38.4 us`; `process_batch(32)` `386.37 flow/s`) |
 
 ---
 
@@ -63,7 +63,7 @@ Mục tiêu của **Đề tài 22 (NetFlow Sentinel v2.0)** là xây dựng mộ
 
 Hệ thống vận hành theo mô hình **Hybrid Desktop-Sidecar** tách biệt lớp giao diện người dùng khỏi lớp tính toán AI và mật mã:
 - **Frontend / Desktop Shell (`desktop/`):** Xây dựng trên **Tauri 2 (`v2.0.0`)** và **Svelte 5**, áp dụng Content Security Policy (CSP) chặt (`default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*`). Shell Rust quản lý vòng đời tiến trình phụ (*sidecar*) và giao tiếp IPC, không tự xử lý trọng số ML.
-- **Backend / Sidecar (`src/network_anomaly/api/`):** **Python `3.12.10` + FastAPI (`0.1.0`)**, chỉ lắng nghe trên giao diện loopback `127.0.0.1` (`src/network_anomaly/api/main.py`). Toàn bộ endpoint nghiệp vụ bắt buộc header **`X-Sentinel-Session-Token`** được đối chiếu hằng thời gian qua `hmac.compare_digest` (trả HTTP `401` nếu thiếu hoặc sai; chỉ `/health` và `OPTIONS` được miễn trừ).
+- **Backend / Sidecar (`src/network_anomaly/api/`):** **Python `3.12.10` + FastAPI (`0.1.0`)**, chỉ lắng nghe trên giao diện loopback `127.0.0.1` (`src/network_anomaly/api/main.py`). Toàn bộ endpoint nghiệp vụ bắt buộc header **`X-Sentinel-Session-Token`** được đối chiếu hằng thời gian qua `hmac.compare_digest` (trả HTTP `401` nếu thiếu hoặc sai; chỉ `OPTIONS`, `/health` và tài nguyên tĩnh chỉ đọc `GET`/`HEAD /app*` được miễn trừ, trong khi 100% route `/api/v1/*` bắt buộc xác thực token).
 - **Persistence (`src/network_anomaly/api/db.py`):** Cơ sở dữ liệu **SQLite** *single-writer* lưu tại `%LOCALAPPDATA%\NetFlowSentinel\`, hỗ trợ nâng cấp schema *idempotent* từ v1 sang v2 qua `scripts/migrate_v1_to_v2.py` và lưu trữ các bảng `unified_security_events`, `behavioral_vectors`, `live_alerts`, `key_metadata`, `rotation_audit`, `security_response_simulations`.
 
 ```mermaid
@@ -109,7 +109,7 @@ flowchart LR
 ### 2.2. Chi tiết 7 Module Nghiệp vụ & 5 Hợp đồng Dữ liệu
 
 1. **Module 1 — Thu thập & Chuẩn hóa Đa nguồn (`src/network_anomaly/ingestion/`, `telemetry/`, `streaming/`):** Hỗ trợ `UDPFlowCollector` + `NetFlowIPFIXDecoder` (NetFlow v9 template caching và IPFIX), `LiveLogTailer` (theo dõi log Zeek/Suricata/Nginx/Auth), `NginxAccessLogAdapter`, `IdentityAuthAdapter`, `pcap_reader.py`. Luồng trực tiếp đi qua `StreamingEventPipeline` (`collections.deque` giới hạn `capacity = 10,000`, micro-batch `64`, `max_batch_latency_ms = 50.0`, chính sách tràn `DROP_OLDEST` hoặc `BLOCK`).
-2. **Module 2 — Động cơ Hành vi 16-D (`src/network_anomaly/behavioral/`):** `EventSessionizer` gom sự kiện theo thực thể trong cửa sổ `300s`, trích xuất `BehavioralVector` 16 chiều (`canonical-behavioral-v2-16`), cập nhật hồ sơ nền trực tuyến qua `EntityBaselineProfiler` (thuật toán Welford + EMA Z-score) và đối chiếu liên phiên qua `IPSpoofingSessionCorrelator`.
+2. **Module 2 — Động cơ Hành vi 16-D (`src/network_anomaly/behavioral/`):** `EventSessionizer` gom sự kiện theo thực thể trong cửa sổ `300s`, trích xuất `BehavioralVector` 16 chiều (`canonical-behavioral-v2-16`), cập nhật hồ sơ nền trực tuyến qua `EntityBaselineProfiler` (`src/network_anomaly/behavioral/vector.py:178-224`, cửa sổ trượt `deque(maxlen=50)` + centroid chuẩn hóa L2 + độ lệch cosine `deviation_score = 1 - cos_sim`) và đối chiếu liên phiên qua `IPSpoofingSessionCorrelator`.
 3. **Module 3 — Tầng Mật mã & Quản trị Khóa (`src/network_anomaly/crypto/`):** Mã hóa xác thực `AES-256-GCM` với `NonceRegistry` chống trùng nonce, bọc khóa DEK (`NETFLOW_WRAPPED_DEK_V2`) bằng `Windows DPAPI` fail-closed trên Windows, và `KeyRotationPolicy` (xoay định kỳ `1,800s` hoặc khẩn cấp khi `risk_score >= 85.0`, có `cooldown >= 60s` và `rate_limit <= 10/giờ`).
 4. **Module 4 — Động cơ AI 2 Tầng (`src/network_anomaly/models/`, `ml/`):** Quản lý 4 họ mô hình `E0` (`RandomForest`, `XGBoost`, `IsolationForest`, `Autoencoder`) thông qua `ModelRegistry` 4 cổng, tích hợp `OODRejectionGate`, `OOD_AWARE_ENSEMBLE`, `LocalBenignCalibrator` và bộ phân loại đa lớp `Stage2MulticlassClassifier` (6 lớp).
 5. **Module 5 — Động cơ Truy vết (`src/network_anomaly/trace/`):** Xây dựng `EntityRelationshipGraph` (đồ thị thực thể đa nguồn), `AttackTimelineReconstructor` (tái dựng chuỗi tấn công nhiều giai đoạn) và `InvestigationReport` (có `artifact_version` phục vụ xuất báo cáo điều tra).
@@ -221,21 +221,25 @@ Bốn mô hình cơ sở `E0` được huấn luyện trên `ait_train` (`2,097,
 ### 4.4. Thử nghiệm Kiểm soát `WP3`, Đa miền `E1`, `Autoencoder E3b` & Hiệu chuẩn Đích
 
 - **Kiểm soát `WP3` (`E0–E5`):** `E1` (chỉ 6 base features) làm `XGB Exfil` sụp `0.6128 -> 0.0803`; `E2b` (bỏ toàn bộ đặc trưng byte) nâng `RF Win7AD F1` lên `0.5665` nhưng đẩy `AIT-Val FPR` lên `0.0770` và xóa sổ `CTU-Echo` (`F1 = 0.0067`). Hệ thống giữ quyết định **`RETAIN_E0_BASELINE_ARTIFACTS`** (quyết định bảo lưu hậu nghiệm có tham khảo holdout).
-- **Thực nghiệm Đa miền `E1` & `Autoencoder E3b` (`docs/experiments/E1_MULTIDOMAIN_EXPERIMENT.md`):** Huấn luyện tách biệt trên `442,961` dòng (`AIT = 200,001`, `CTU = 175,853`, `UWF = 67,107`, giữ `e0_artifacts_untouched = true`):
+- **Thực nghiệm Đa miền `E1` & `Autoencoder E3b` (`docs/experiments/E1_MULTIDOMAIN_EXPERIMENT.md`):** Huấn luyện tách biệt trên `442,960` dòng (`AIT = 200,001`, `CTU = 175,852`, `UWF = 67,107`, giữ `e0_artifacts_untouched = true`):
 
 | Test Split | Mô hình | Precision | Recall | F1 | FPR | ROC-AUC |
 |---|---|---:|---:|---:|---:|---:|
 | `AIT_Test` | `E0_RandomForest_ZeroShot` | `0.9991` | `0.9880` | `0.9935` | `0.000195` | `0.9984` |
-| `AIT_Test` | `E1_RandomForest_Binary` | `0.9865` | `0.8316` | `0.9024` | `0.002484` | `0.9972` |
-| `CTU_Test` | `E0_RandomForest_ZeroShot` | `0.0647` | `0.0409` | `0.0501` | `0.143493` | `0.7875` |
-| `CTU_Test` | **`E1_RandomForest_Binary`** | `0.9804` | `0.9603` | **`0.9703`** | **`0.004650`** | `0.9979` |
-| `CTU_Test` | **`E1_XGBoost_Binary`** | `0.9790` | `0.9607` | **`0.9698`** | `0.005013` | `0.9977` |
-| `UWF_Test` | `E0_RandomForest_ZeroShot` | `0.5464` | `0.0515` | `0.0942` | `0.042855` | `0.9577` |
-| `UWF_Test` | **`E1_RandomForest_Binary`** | `0.9985` | `1.0000` | **`0.9992`** | **`0.001531`** | `1.0000` |
-| `CTU_Win7AD_Test` | `E0_Autoencoder_ZeroShot` | `0.0000` | `0.0000` | `0.0000` | **`0.720930`** | N/A |
-| `CTU_Win7AD_Test` | **`Autoencoder_E3b_VarianceNormalized`** | `0.0000` | `0.0000` | `0.0000` | **`0.044190`** | N/A |
+| `AIT_Test` | `E1_RandomForest_Binary` | `0.9864` | `0.8620` | `0.9200` | `0.002581` | `0.9974` |
+| `CTU_Test` | `E0_RandomForest_ZeroShot` | `0.0808` | `0.0493` | `0.0612` | `0.143224` | `0.7901` |
+| `CTU_Test` | **`E1_RandomForest_Binary`** | `0.9807` | `0.9332` | **`0.9564`** | **`0.004697`** | `0.9977` |
+| `CTU_Test` | **`E1_XGBoost_Binary`** | `0.9965` | `0.9172` | **`0.9552`** | `0.000833` | `0.9973` |
+| `CTU_Win7AD_Test` | `E0_RandomForest_ZeroShot` | `0.0200` | `0.2508` | `0.0371` | `0.145030` | `0.8639` |
+| `CTU_Win7AD_Test` | **`E1_RandomForest_Binary`** | `0.4123` | `0.2834` | **`0.3359`** | **`0.004775`** | **`0.9883`** |
+| `CTU_Win7AD_Test` | `E1_XGBoost_Binary` | `0.7059` | `0.1564` | `0.2560` | `0.000770` | `0.9849` |
+| `CTU_Win7AD_Test` | `E0_Autoencoder_ZeroShot` | `0.0153` | `0.9511` | `0.0302` | `0.721377` | `0.5872` |
+| `CTU_Win7AD_Test` | **`Autoencoder_E3b_VarianceNormalized`** | `0.0749` | `0.9446` | **`0.1388`** | **`0.137944`** | **`0.9706`** |
+| `UWF_Test` *(in-domain với E1)* | `E0_RandomForest_ZeroShot` | `0.5464` | `0.0515` | `0.0942` | `0.042855` | `0.9577` |
+| `UWF_Test` *(in-domain với E1)* | **`E1_RandomForest_Binary`** | `0.9983` | `1.0000` | **`0.9992`** | **`0.001670`** | `1.0000` |
+| `UWF_Test` *(in-domain với E1)* | `Autoencoder_E3b_VarianceNormalized` | `0.9828` | `0.0953` | `0.1737` | `0.001670` | `0.3102` |
 
-- **`Autoencoder_E3b_VarianceNormalized`** đồng thời cải thiện `CTU_Test ROC-AUC` từ `0.6302` lên `0.8156` và `UWF_Test ROC-AUC` từ `0.3869` lên `0.6901`.
+- **Lưu ý Quản trị `UWF_Test` & `Autoencoder_E3b_VarianceNormalized`:** Với `E1`, `UWF_Train` nằm trong `E1_Train` nên `UWF_Test` là tập kiểm thử **in-domain đa nguồn** (không phải *zero-shot* như `E0`). `Autoencoder_E3b_VarianceNormalized` cải thiện `CTU_Test ROC-AUC` từ `0.6292` lên `0.8878` và `CTU_Win7AD_Test ROC-AUC` từ `0.5872` lên `0.9706` (`FPR = 13.79%`), nhưng `UWF_Test ROC-AUC` đạt `0.3102`.
 - **Hiệu chuẩn Đích & Ensemble (`LocalBenignCalibrator` & `OOD_AWARE_ENSEMBLE`):** Lớp `LocalBenignCalibrator` (`src/network_anomaly/ml/local_calibration.py`) hỗ trợ hiệu chuẩn ngưỡng trên phân vị dữ liệu sạch tại mạng đích (chẩn đoán trên `UWF-ZeekData24` nâng `RF F1` từ `0.0924 @ 0.50` lên `0.6596 @ AIT-Val Youden J` và `0.9756 @ Target-Benign-P95`), kết hợp chính sách `AggregationPolicy.OOD_AWARE_ENSEMBLE` chuyển dịch trọng số sang `XGB + IF` khi xuất hiện dịch chuyển OOD vừa phải.
 
 ---
@@ -244,12 +248,12 @@ Bốn mô hình cơ sở `E0` được huấn luyện trên `ait_train` (`2,097,
 
 ### 5.1. Động cơ Hành vi 16-D (`BehavioralVector`) & Thực nghiệm `RQ3`
 
-`EventSessionizer` (`src/network_anomaly/behavioral/sessionizer.py`) gom nhóm `CanonicalSecurityEvent` theo thực thể nguồn trong cửa sổ **`300 giây`** và trích xuất `BehavioralVector` 16 chiều (`canonical-behavioral-v2-16`, `src/network_anomaly/behavioral/vector.py`):
-- **Nhóm Flow & Volume (8):** `flow_count`, `bytes_total`, `packets_total`, `bytes_per_flow`, `packets_per_flow`, `unique_dst_ips`, `unique_dst_ports`, `unique_protocols`.
-- **Nhóm Graph & Temporal (5):** `fan_out_ratio`, `port_entropy`, `inter_arrival_mean_sec`, `inter_arrival_std_sec`, `burstiness_index`.
-- **Nhóm Application & Identity (3):** `dns_intensity`, `http_intensity`, `auth_failure_ratio` (khi chạy dữ liệu flow-only không có log L7, hệ thống ghi nhận rõ `completeness_status = "partial_flow_only"` và `missing_feature_names`).
+`EventSessionizer` (`src/network_anomaly/behavioral/sessionizer.py`) gom nhóm `CanonicalSecurityEvent` theo thực thể nguồn trong cửa sổ **`300 giây`** và trích xuất `BehavioralVector` 16 chiều chuẩn hóa L2 (`canonical-behavioral-v2-16`, `BehavioralVectorBuilder.FEATURE_NAMES` tại `src/network_anomaly/behavioral/vector.py`):
+- **Nhóm Thời lượng, Dung lượng & Tỷ lệ Lưu lượng (7):** `log_duration`, `log_bytes_in`, `log_bytes_out`, `bytes_ratio_clipped`, `log_pkts_in`, `log_pkts_out`, `pkts_ratio_clipped`.
+- **Nhóm Đa dạng Kết nối & Cờ TCP (4):** `unique_ports_norm`, `unique_protocols_norm`, `syn_flag_ratio`, `rst_flag_ratio`.
+- **Nhóm Ứng dụng, Danh tính & Nhịp thời gian IAT (5):** `dns_intensity`, `http_intensity`, `auth_failure_ratio`, `log_mean_iat`, `log_std_iat` (khi chạy dữ liệu flow-only không có sự kiện `DNS`/`WEB`/`AUTH`, các chiều ứng dụng giữ `0.0` để tương thích số học và ghi tường minh `missing_feature_count` cùng `missing_feature_names`).
 
-`EntityBaselineProfiler` (`baseline.py`) duy trì thống kê trực tuyến theo thực thể bằng thuật toán **Welford** (mean/variance) và **EMA Z-score** qua cửa sổ trượt `50` phiên mà không cần lưu ma trận thô lịch sử.
+`EntityBaselineProfiler` (`src/network_anomaly/behavioral/vector.py:178-224`) duy trì cửa sổ trượt `collections.deque(maxlen=50)` các vector đã chuẩn hóa L2 theo từng `entity_key`, tính centroid trung bình chuẩn hóa L2 (`baseline_centroid`) và chấm điểm bất thường bằng khoảng cách cosine `deviation_score = max(0.0, 1.0 - cos_sim)`.
 
 Trong thực nghiệm **`RQ3`** (`IPSpoofingSessionCorrelator`):
 - **Track 1 — Mô phỏng xoay IP 20 phiên / 190 cặp (`EXP-RQ3-CORRELATION-01`):** Khớp chính xác IP sụp đổ xuống `F1 = 0.0000` (`0/30` TP). Chiến lược cosine chuẩn hóa L2 cứu toàn bộ `Recall = 1.0000` (`30/30` TP), nhưng do mất quy mô tuyệt đối nên va chạm giữa các chiến dịch (`cos >= 0.85`: `F1 = 0.3191`, `FalseLink = 0.80`; `cos >= 0.95`: `F1 = 0.5556`, `FalseLink = 0.30`) → **`simulation_hypothesis_met = false`** cho mục tiêu `F1 >= 0.85`. Khi nâng cấp sang **Feature-Standardized 16-D Cosine**, mô phỏng đạt `F1 = 1.0000` và thực nghiệm trên `56` phiên / `8` tactic của **`UWF-ZeekData24`** đạt **`F1 = 0.7192`** (`Precision = 0.8022`, `FalseLink = 0.0449`), vượt mốc khớp IP (`F1 = 0.6919`, `FalseLink = 0.1653`).
@@ -264,7 +268,7 @@ Trong thực nghiệm **`RQ3`** (`IPSpoofingSessionCorrelator`):
 
 ### 5.3. Truy vết Chiến dịch (`EntityRelationshipGraph`, `AttackTimelineReconstructor`)
 
-`EntityRelationshipGraph` và `AttackTimelineReconstructor` (`src/network_anomaly/trace/`) liên kết các nút thực thể (`IP`, `Host`, `Port`, `Alert`, `BehavioralSession`) thành đồ thị quan hệ có hướng, tái dựng dòng thời gian tấn công nhiều giai đoạn và đóng gói thành `InvestigationReport` (có `artifact_version` và phân trang API `offset`/`limit`). Trong kịch bản đánh giá tổng hợp 8 sự kiện (`reports/experiments/trace/traceability_evaluation.json`), `Trace v2` đạt `Precision = 1.0 / Recall = 1.0` so với phương pháp tìm kiếm log động (`0.375 / 0.50`).
+`EntityRelationshipGraph` và `AttackTimelineReconstructor` (`src/network_anomaly/trace/`) liên kết các nút thực thể (`IP`, `Host`, `Port`, `Alert`, `BehavioralSession`) thành đồ thị quan hệ có hướng, tái dựng dòng thời gian tấn công nhiều giai đoạn và đóng gói thành `InvestigationReport` (có `artifact_version` và phân trang API `offset`/`limit`). Trong kịch bản đánh giá tổng hợp 10 sự kiện 4 giai đoạn (`reports/experiments/trace/traceability_evaluation.json`), `Trace Engine v2` đạt **`Stage Attribution Accuracy = 90.0%`** (lỗi `1/10` tại sự kiện `ev-7` WinRM cổng `5985` bị gán về `INITIAL_ACCESS` do thiếu cổng WinRM trong nhánh `lateral` tại `timeline.py:121-123`) và **`Path Completeness = 100.0%`**, vượt trội so với phương pháp tìm kiếm log truyền thống (`30.0% / 40.0%`).
 
 ### 5.4. Bảo mật Mật mã At-Rest (`AES-256-GCM`, `DPAPI`) & Adaptive Key Rotation (`RQ5`, `RQ6`)
 
@@ -273,7 +277,7 @@ Trong thực nghiệm **`RQ3`** (`IPSpoofingSessionCorrelator`):
   - *Xoay cố định 30 phút (`1` lần xoay):* Thời gian phơi nhiễm tối đa **`1,200.0s` (`20.0 phút`)**, *blast radius* **`40` bản ghi tấn công / khóa**.
   - *Xoay thích ứng (`risk_score >= 85.0`, `10` lần xoay):* Thời gian phơi nhiễm tối đa **`150.01s` (`2.5002 phút`)**, *blast radius* **`6` bản ghi tấn công / khóa**, độ trễ kích hoạt `0.01s`.
   - **Hiệu quả:** Giảm **`87.5%`** thời gian phơi nhiễm khóa và **`85.0%`** *blast radius* (`hypothesis_confirmed = true`).
-- **Kết quả `RQ6` Crypto Microbenchmark (`BM-CRYPTO-OVERHEAD-RQ6`):** `AES-256-GCM` 256 B đạt Encrypt Median `9.2 us`, P95 **`13.3 us`** (`75,851.2 ops/s`); 1,024 B đạt P95 **`17.3 us`** (`59,259.3 ops/s`); 4,096 B đạt P95 **`29.6 us`** (`38,617.1 ops/s`). Trong thử nghiệm A/B toàn hệ thống `Exp 7` (`N=500 × 3`), bật mã hóa giảm thông lượng từ `181.2 flow/s` xuống `121.7 flow/s` (`-32.85%`, CPU `+53.56%`).
+- **Kết quả `RQ6` Crypto Microbenchmark (`BM-CRYPTO-OVERHEAD-RQ6`):** `AES-256-GCM` 256 B đạt Encrypt Median **`8.8 us`**, P95 **`13.3 us`** (`72,177.2 ops/s`); 1,024 B đạt P95 **`11.4 us`** (`74,807.5 ops/s`); 4,096 B đạt P95 **`38.4 us`** (`36,351.0 ops/s`). Trong thử nghiệm A/B toàn hệ thống `Exp 7` (`N=500 × 3`), bật mã hóa giảm thông lượng từ `181.2 flow/s` xuống `121.7 flow/s` (`-32.85%`, CPU `+53.56%`).
 
 ---
 
@@ -299,7 +303,7 @@ Trong thực nghiệm **`RQ3`** (`IPSpoofingSessionCorrelator`):
 
 - **Synthetic UDP Loopback (`#137`, `reports/acceptance/synthetic_udp_loopback_report.json`):** Nhận 4 datagram trên `127.0.0.1:51817` (v9 template+data, v9 data-only, IPFIX `PEN 50000`, và 1 gói lỗi bị từ chối `malformed_packet_count = 1`), tạo `6/6` sự kiện hợp lệ, `6/6` bản ghi mã hóa AES-256-GCM, `8` node / `6` cạnh đồ thị, phát sinh **`1` cảnh báo `HIGH` (`84.035`, port `445`)** hiển thị trên giao diện Svelte (`reports/acceptance/live_gui_alert_synthetic_loopback.png`).
 - **Real-Dataset UDP Replay:** Phát lại `65/65` luồng từ `ait_test.csv.gz` qua NetFlow v9 UDP Loopback ở chế độ `"deployment"` với trusted OOD SHA-256, tái dựng `1` chiến dịch đa giai đoạn (`real_hardware_switch = false`).
-- **Độ phủ Kiểm thử & CI:** Hệ thống sở hữu **`665+` kiểm thử `pytest`** (Python backend, ML, OOD, crypto, behavioral, trace), **`39+` kiểm thử `Vitest`** (`39/39` trên Svelte 5 frontend) và **`11` kiểm thử `Rust` (`cargo test --lib`)**. Trên GitHub Actions, CI Run `#217` (ID `44377910551` tại `8e04960`) đạt **`7/7 SUCCESS`** (`lint`, `desktop-frontend`, `desktop-tauri-windows`, và ma trận `test` Ubuntu/Windows × Python 3.11/3.12). Các công cụ kiểm tra đồng bộ `export_openapi_spec.py --check`, `check_desktop_version.py --check`, `verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline` đều đạt `PASS`.
+- **Độ phủ Kiểm thử & CI:** Hệ thống sở hữu **`670+` kiểm thử `pytest`** (Python backend, ML, OOD, crypto, behavioral, trace), **`41/41` kiểm thử `Vitest`** trên Svelte 5 frontend và **`11/11` kiểm thử `Rust` (`cargo test --lib`)**. Trên GitHub Actions, CI Run `44544489397` (tại `93416ed`) đạt **`7/7 SUCCESS`** (`lint`, `desktop-frontend`, `desktop-tauri-windows`, và ma trận `test` Ubuntu/Windows × Python 3.11/3.12). Các công cụ kiểm tra đồng bộ `export_openapi_spec.py --check`, `check_desktop_version.py --check`, `verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline` đều đạt `PASS`.
 
 ---
 
@@ -307,7 +311,7 @@ Trong thực nghiệm **`RQ3`** (`IPSpoofingSessionCorrelator`):
 
 ### 7.1. Giới hạn Nghiên cứu Đã Xác minh
 
-1. **Hiệu năng Cross-Source & Cấp độ `RESEARCH_ONLY`:** Cả 4 mô hình `E0` giữ `deployment_tier = RESEARCH_ONLY` vì chưa đạt ngưỡng `cross_source_validated` trên *zero-shot* `CTU-SME-11`. Thực nghiệm đa miền `E1` đã chứng minh khả năng cải thiện mạnh khi có dữ liệu đích (`CTU F1 = 0.9703`, `UWF F1 = 0.9992`), nhưng đây là kết quả thực nghiệm tách biệt, chưa thay thế chứng nhận triển khai công nghiệp.
+1. **Hiệu năng Cross-Source & Cấp độ `RESEARCH_ONLY`:** Cả 4 mô hình `E0` giữ `deployment_tier = RESEARCH_ONLY` vì chưa đạt ngưỡng `cross_source_validated` trên *zero-shot* `CTU-SME-11`. Thực nghiệm đa miền `E1` đã chứng minh khả năng cải thiện mạnh khi có dữ liệu đích (`CTU_Test F1 = 0.9564`, `CTU_Win7AD_Test F1 = 0.3359 / ROC-AUC = 0.9883`, `UWF_Test F1 = 0.9992` *in-domain* đối với `E1`), nhưng đây là kết quả thực nghiệm tách biệt, chưa thay thế chứng nhận triển khai công nghiệp.
 2. **Giới hạn Mẫu Nhỏ & Dạng Đơn-Flow (`RQ2`, `RQ4`):** `Exploitation_And_C2` chỉ có `N = 5` trong `AIT-Test` và tập holdout `RQ4` chỉ có `N = 44` flows; `Credential_Attack` (`N = 78`) chỉ đạt `14.10%` recall ở mức đơn-flow 18-D. Kết quả `RQ4` nội bộ `AIT-NDS-v2` không đồng nghĩa với khả năng phát hiện *zero-day* tổng quát.
 3. **Phạm vi Mô phỏng & Mạng Vật lý (`RQ3`, `RQ5`, `#85`, `#137`):** `RQ3` (phiên bản L2) không đạt `F1 >= 0.85` trong mô phỏng; liên kết thực nghiệm `AIT-NDS-v2 ↔ AIT-LDS-v2.1` giữ **`BLOCKED`** (`#85`). `RQ5` là mô phỏng 60 phút. Nghiệm thu `#137` mới dừng ở mức UDP loopback trên `127.0.0.1` (`real_device_tested = false`), chưa kiểm định trên switch/router vật lý.
 4. **Rào cản Dữ liệu Ngoài (`UGR'16`) & Phát hành Công khai (`#148`, `#154`, `F-03`):** `UGR'16` giữ **`BLOCKED`** (`HTTP 403`). Bộ cài Windows NSIS chưa kiểm định trên Clean Windows 10/11 VM (`#148`). Cả 4 manifest mô hình `E0` mang `git_dirty = true` (`training_git_commit = 79ebb678...`, `DIRTY_DISCLOSED`), và `DISTRIBUTION_AUTHORIZATION.json` giữ `approved = false` (`HOLD_FOR_MAINTAINER_SIGNOFF`).

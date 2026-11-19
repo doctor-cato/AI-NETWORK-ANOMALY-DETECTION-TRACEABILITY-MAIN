@@ -103,10 +103,10 @@
       "execution_mode": "SIMULATION",
       "key_metrics": {
         "hypothesis_confirmed": true,
-        "fixed_max_exposure_min": null,
-        "adaptive_max_exposure_min": null,
-        "fixed_blast_radius": null,
-        "adaptive_blast_radius": null
+        "fixed_max_exposure_min": 20.0,
+        "adaptive_max_exposure_min": 2.5002,
+        "fixed_blast_radius": 40,
+        "adaptive_blast_radius": 6
       }
     },
     "RQ6": {

@@ -168,10 +168,12 @@ class EntityRelationshipGraph:
                 )
 
     def evict_entity(self, entity_id: str) -> None:
-        """Remove an entity node (and its mapped ip: node if host:) and all incident edges."""
+        """Remove an entity node (and its mapped ip: node if host:), incident edges, and orphan neighbors."""
         targets = [entity_id]
         if entity_id.startswith("host:"):
             targets.append(f"ip:{entity_id[5:]}")
+        target_set = set(targets)
+        affected_neighbors: Set[str] = set()
 
         for node_id in targets:
             self.nodes.pop(node_id, None)
@@ -184,6 +186,19 @@ class EntityRelationshipGraph:
                         self._adj[edge.source_id].discard(eid)
                     if edge.target_id in self._rev_adj:
                         self._rev_adj[edge.target_id].discard(eid)
+                    if edge.source_id not in target_set:
+                        affected_neighbors.add(edge.source_id)
+                    if edge.target_id not in target_set:
+                        affected_neighbors.add(edge.target_id)
+
+        for neighbor_id in affected_neighbors:
+            if (
+                len(self._adj.get(neighbor_id, ())) == 0
+                and len(self._rev_adj.get(neighbor_id, ())) == 0
+            ):
+                self.nodes.pop(neighbor_id, None)
+                self._adj.pop(neighbor_id, None)
+                self._rev_adj.pop(neighbor_id, None)
 
     def get_neighbors(
         self, node_id: str, direction: str = "both"

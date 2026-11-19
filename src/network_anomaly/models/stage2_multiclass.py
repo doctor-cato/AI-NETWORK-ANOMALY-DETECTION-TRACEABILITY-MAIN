@@ -128,8 +128,13 @@ class Stage2MulticlassClassifier:
         expected_sha = str(manifest_data.get("model_artifact_sha256", "")).strip().lower()
 
         if artifact_path is not None and artifact_path.is_file():
+            if not expected_sha:
+                raise ValueError(
+                    "Stage-2 manifest missing model_artifact_sha256; "
+                    "refusing unverified joblib deserialization"
+                )
             actual_sha = _sha256_file(artifact_path)
-            if expected_sha and actual_sha != expected_sha:
+            if actual_sha != expected_sha:
                 raise ValueError(
                     f"Stage-2 artifact SHA-256 mismatch for {artifact_path}: "
                     f"expected {expected_sha}, got {actual_sha}"
