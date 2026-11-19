@@ -22,6 +22,10 @@
 | `Post_Exploitation_Discovery` | 39 | 0.8000 | 0.8205 | 0.8101 |
 | `Reconnaissance` | 95,628 | 0.9981 | 0.9960 | 0.9971 |
 
-## 3. Limitations
+## 3. Sidecar Export Rationale (`rf_multiclass_stage2` vs `xgboost_multiclass`)
+- Although `xgboost_multiclass` achieved higher validation Macro-F1 on `AIT-Val` (`0.9456` vs `0.8282`), its generalization dropped on `AIT-Test` (`test_macro_f1 = 0.6378`, `balanced_accuracy = 0.7618`) due to rare-class variance (`Exploitation_And_C2` N=2 val / N=5 test; `Credential_Attack` N=11 val / N=78 test).
+- `rf_multiclass_stage2` (`val_macro_f1 = 0.8282`, `test_macro_f1 = 0.7347`, `balanced_accuracy = 0.7791`) is exported as the Stage-2 sidecar because it generalizes better on `AIT-Test` and uses pure `scikit-learn`/`joblib` serialization without requiring `xgboost` at inference time.
+
+## 4. Limitations
 - Rare attack classes in AIT-NDS-v2 have extremely small evaluation counts (Exploitation_And_C2: N=2 val / N=5 test; Post_Exploitation_Discovery: N=56 val / N=39 test; Credential_Attack: N=11 val / N=78 test), so Macro-F1 variance on those classes is high.
 - This experiment uses canonical-flow-v2-18 (network flow features only, without L7 HTTP/Auth log payloads) and does NOT alter frozen E0 binary production/research artifacts.

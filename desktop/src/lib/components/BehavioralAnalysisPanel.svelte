@@ -15,6 +15,7 @@
   } from "../types";
 
   export let initialDemoMode: boolean = false;
+  export let initialSelectedDetail: BehavioralVectorDetailResponse | null = null;
 
   const DEMO_DIMENSIONS = [
     { index: 0, name: "log_duration", value: 0.42 },
@@ -35,13 +36,17 @@
     { index: 15, name: "log_std_iat", value: 0.04 },
   ];
 
-  let dataState: PanelDataState = initialDemoMode ? "DEMO" : "LOADING";
+  let dataState: PanelDataState = initialDemoMode
+    ? "DEMO"
+    : initialSelectedDetail !== null
+      ? "CONNECTED"
+      : "LOADING";
   let errorMessage: string | null = null;
   let demoEnabled = initialDemoMode;
   let vectors: BehavioralVectorListItem[] = [];
-  let selectedVectorId: string = "";
+  let selectedVectorId: string = initialSelectedDetail?.vector_id ?? "";
   let compareVectorId: string = "";
-  let selectedDetail: BehavioralVectorDetailResponse | null = null;
+  let selectedDetail: BehavioralVectorDetailResponse | null = initialSelectedDetail;
   let similarity: BehavioralSimilarityResponse | null = null;
   let clusters: BehavioralCorrelationClusterItem[] = [];
   let correlationVectorsCount = 0;

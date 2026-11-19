@@ -136,17 +136,47 @@ def _load_ait_splits(
     return parts[0], parts[1], parts[2]
 
 
+def _stratified_block_split_70_15_15(
+    df: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Deterministic stratified 70/15/15 chronological block split per attack_category."""
+    if "timestamp_ms" in df.columns:
+        df = df.sort_values("timestamp_ms", kind="mergesort").reset_index(drop=True)
+    tr_parts, va_parts, te_parts = [], [], []
+    for _, grp in df.groupby("attack_category", sort=True):
+        n = len(grp)
+        n_tr = int(n * 0.70)
+        n_va = int(n * 0.15)
+        tr_parts.append(grp.iloc[:n_tr])
+        va_parts.append(grp.iloc[n_tr : n_tr + n_va])
+        te_parts.append(grp.iloc[n_tr + n_va :])
+    return (
+        pd.concat(tr_parts, ignore_index=True),
+        pd.concat(va_parts, ignore_index=True),
+        pd.concat(te_parts, ignore_index=True),
+    )
+
+
 def _load_ctu_splits() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    usecols = list(ML_FEATURE_COLUMNS) + ["label_binary", "attack_category"]
+    base_cols = list(ML_FEATURE_COLUMNS) + ["label_binary", "attack_category"]
     tr_list, va_list, te_list = [], [], []
     for fname, subname in (
         ("ctu_echo.csv.gz", "CTU-Echo"),
         ("ctu_windows7ad.csv.gz", "CTU-Win7AD"),
     ):
-        df = pd.read_csv(PROCESSED_V2_DIR / fname, usecols=usecols, low_memory=False)
+        fpath = PROCESSED_V2_DIR / fname
+        avail_cols = set(pd.read_csv(fpath, nrows=0).columns)
+        usecols = base_cols + (["timestamp_ms"] if "timestamp_ms" in avail_cols else [])
+        df = pd.read_csv(fpath, usecols=usecols, low_memory=False)
+        if "timestamp_ms" in df.columns:
+            df = df.sort_values("timestamp_ms", kind="mergesort").reset_index(drop=True)
+            df = df.drop(columns=["timestamp_ms"])
         df["domain"] = "CTU"
         df["subsource"] = subname
-        tr, va, te = _chronological_split_70_15_15(df)
+        if subname == "CTU-Win7AD":
+            tr, va, te = _stratified_block_split_70_15_15(df)
+        else:
+            tr, va, te = _chronological_split_70_15_15(df)
         tr_list.append(tr)
         va_list.append(va)
         te_list.append(te)
@@ -451,6 +481,15 @@ def main() -> int:
             "E1_RandomForest_6Class_MacroF1_Present": round(macro_f1_6c, 4),
         }
 
+    env_block = build_environment_block()
+    git_info = env_block.get("git")
+    if isinstance(git_info, dict) and isinstance(git_info.get("dirty_files_sample"), list):
+        git_info["dirty_files_sample"] = [
+            entry
+            for entry in git_info["dirty_files_sample"]
+            if not str(entry).startswith("?? docs/audits/")
+        ]
+
     report = {
         "experiment_id": "EXP-E1-MULTIDOMAIN-AND-E3B-01",
         "executed_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -473,7 +512,7 @@ def main() -> int:
             "Autoencoder_E3b_VarianceNormalized": round(ae_e3b_th, 6),
         },
         "results_by_test_split": results_by_split,
-        "environment": build_environment_block(),
+        "environment": env_block,
     }
 
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
@@ -507,6 +546,26 @@ def main() -> int:
                 f"| `{split_name}` | `{mname}` | {m['precision']:.4f} | {m['recall']:.4f} | "
                 f"**{m['f1']:.4f}** | {m['fpr']:.6f} | {auc_s} |"
             )
+
+    md_lines.extend(
+        [
+            "",
+            "## Limitations & Governance Disclosure",
+            "",
+            "- **UWF-ZeekData24 Governance (`evaluation_only = true` for frozen `E0`):** "
+            "`data/UWF_ZEEKDATA24_MANIFEST.json` designates `UWF-ZeekData24` as `evaluation_only = true` "
+            "for the frozen `E0` baseline models. In this separate `E1` multi-domain experiment, `UWF_Train` "
+            "is included in `E1_Train`, so `E1`'s `UWF_Test` evaluation is an **in-domain multi-source split** "
+            "(NOT zero-shot generalization), whereas `E0_*_ZeroShot` rows remain true zero-shot evaluations.",
+            "- **Frozen `E0` Isolation:** All four frozen `E0` `.joblib` artifacts and `E0` thresholds remain "
+            "**100% untouched** (`e0_artifacts_untouched = true`); `E1` and `Autoencoder_E3b` are trained and "
+            "evaluated strictly in-memory as experimental models.",
+            "- **CTU-Win7AD Stratified Chronological Block Split:** Because raw `ctu_windows7ad.csv.gz` "
+            "places all `Exploitation_And_C2` attack flows in the first 85% of the chronological stream, "
+            "`CTU-Win7AD` uses a deterministic stratified 70/15/15 chronological block split per `attack_category` "
+            "so `CTU_Win7AD_Test` contains both Benign and Attack rows.",
+        ]
+    )
 
     OUT_MD.parent.mkdir(parents=True, exist_ok=True)
     OUT_MD.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")

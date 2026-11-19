@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import sqlite3
 import time
 import uuid
@@ -20,6 +21,8 @@ from network_anomaly.canonical.event import CanonicalSecurityEvent
 from network_anomaly.crypto.rotation import KeyRotationPolicy, RotationDecision
 from network_anomaly.risk.scoring import RiskScoreOutput, RiskScorer
 from network_anomaly.streaming.realtime_inference import LiveInferenceDecision
+
+logger = logging.getLogger(__name__)
 
 
 class AlertStatus(str, Enum):
@@ -45,6 +48,8 @@ class LiveSecurityAlert:
     associated_event_ids: List[str]
     adaptive_key_rotated: bool = False
     detection_latency_ms: float = 0.0
+    predicted_attack_category: Optional[str] = None
+    attack_category_confidence: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -96,9 +101,22 @@ class LiveAlertManager:
                         last_seen_utc TEXT NOT NULL,
                         associated_event_ids TEXT NOT NULL,
                         adaptive_key_rotated INTEGER NOT NULL,
-                        detection_latency_ms REAL NOT NULL
+                        detection_latency_ms REAL NOT NULL,
+                        predicted_attack_category TEXT,
+                        attack_category_confidence REAL
                     )
                     """)
+                existing_cols = {
+                    row[1] for row in conn.execute("PRAGMA table_info(live_alerts)").fetchall()
+                }
+                if "predicted_attack_category" not in existing_cols:
+                    conn.execute(
+                        "ALTER TABLE live_alerts ADD COLUMN predicted_attack_category TEXT"
+                    )
+                if "attack_category_confidence" not in existing_cols:
+                    conn.execute(
+                        "ALTER TABLE live_alerts ADD COLUMN attack_category_confidence REAL"
+                    )
                 self._load_existing_alerts(conn)
 
     def _load_existing_alerts(self, conn: sqlite3.Connection) -> None:
@@ -107,7 +125,8 @@ class LiveAlertManager:
                 SELECT alert_id, created_at_utc, entity_id, risk_score, risk_level,
                        trigger_reason, status, occurrence_count, first_seen_utc,
                        last_seen_utc, associated_event_ids, adaptive_key_rotated,
-                       detection_latency_ms
+                       detection_latency_ms, predicted_attack_category,
+                       attack_category_confidence
                 FROM live_alerts
                 ORDER BY last_seen_utc DESC
                 LIMIT 200
@@ -137,9 +156,11 @@ class LiveAlertManager:
                 occurrence_count=int(row[7]),
                 first_seen_utc=str(row[8]),
                 last_seen_utc=str(row[9]),
-                associated_event_ids=[str(item) for item in ev_ids],
+                associated_event_ids=[str(item) for item in ev_ids][-200:],
                 adaptive_key_rotated=bool(row[11]),
                 detection_latency_ms=float(row[12]),
+                predicted_attack_category=str(row[13]) if row[13] is not None else None,
+                attack_category_confidence=float(row[14]) if row[14] is not None else None,
             )
             self._active_alerts[alert.alert_id] = alert
             try:
@@ -232,6 +253,16 @@ class LiveAlertManager:
             trigger_reason = "; ".join(risk_assess.justification) or "High Risk Score"
             now_iso = datetime.now(timezone.utc).isoformat()
             latency_ms = round((time.perf_counter() - start_t) * 1000.0, 3)
+            pred_cat = (
+                getattr(inference_decision, "predicted_attack_category", None)
+                if inference_decision
+                else None
+            )
+            cat_conf = (
+                getattr(inference_decision, "attack_category_confidence", None)
+                if inference_decision
+                else None
+            )
 
             # Check deduplication window
             if entity in self._dedup_cache:
@@ -245,8 +276,13 @@ class LiveAlertManager:
                     curr.occurrence_count += 1
                     curr.last_seen_utc = now_iso
                     curr.risk_score = max(curr.risk_score, risk_assess.score)
+                    if pred_cat is not None:
+                        curr.predicted_attack_category = pred_cat
+                        curr.attack_category_confidence = cat_conf
                     if event.event_id not in curr.associated_event_ids:
                         curr.associated_event_ids.append(event.event_id)
+                        if len(curr.associated_event_ids) > 200:
+                            curr.associated_event_ids = curr.associated_event_ids[-200:]
                     self._dedup_cache[entity] = (existing_alert_id, now)
                     if persist:
                         self._persist_alert(curr)
@@ -277,15 +313,36 @@ class LiveAlertManager:
                 associated_event_ids=[event.event_id],
                 adaptive_key_rotated=key_rotated,
                 detection_latency_ms=latency_ms,
+                predicted_attack_category=pred_cat,
+                attack_category_confidence=cat_conf,
             )
 
             self._active_alerts[new_alert_id] = new_alert
             self._dedup_cache[entity] = (new_alert_id, now)
+            self._enforce_cache_bounds()
             if persist:
                 self._persist_alert(new_alert)
             alert = new_alert
 
         return risk_assess, alert
+
+    def _enforce_cache_bounds(self) -> None:
+        if len(self._active_alerts) > 2_000:
+            excess = len(self._active_alerts) - 2_000
+            oldest_ids = sorted(
+                self._active_alerts.keys(),
+                key=lambda aid: self._active_alerts[aid].last_seen_utc,
+            )[:excess]
+            for aid in oldest_ids:
+                self._active_alerts.pop(aid, None)
+        if len(self._dedup_cache) > 5_000:
+            excess = len(self._dedup_cache) - 5_000
+            oldest_entities = sorted(
+                self._dedup_cache.keys(),
+                key=lambda ent: self._dedup_cache[ent][1],
+            )[:excess]
+            for ent in oldest_entities:
+                self._dedup_cache.pop(ent, None)
 
     @staticmethod
     def _alert_row(alert: LiveSecurityAlert) -> Tuple[Any, ...]:
@@ -303,6 +360,8 @@ class LiveAlertManager:
             json.dumps(alert.associated_event_ids),
             1 if alert.adaptive_key_rotated else 0,
             alert.detection_latency_ms,
+            alert.predicted_attack_category,
+            alert.attack_category_confidence,
         )
 
     def _persist_alert(self, alert: LiveSecurityAlert) -> None:
@@ -316,13 +375,14 @@ class LiveAlertManager:
                         INSERT OR REPLACE INTO live_alerts (
                             alert_id, created_at_utc, entity_id, risk_score, risk_level,
                             trigger_reason, status, occurrence_count, first_seen_utc, last_seen_utc,
-                            associated_event_ids, adaptive_key_rotated, detection_latency_ms
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            associated_event_ids, adaptive_key_rotated, detection_latency_ms,
+                            predicted_attack_category, attack_category_confidence
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         self._alert_row(alert),
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to persist live alert %s: %s", alert.alert_id, exc)
 
     def persist_alerts_batch(self, alerts: Sequence[LiveSecurityAlert]) -> None:
         """Persist a batch of alerts in a single SQLite transaction."""
@@ -338,13 +398,14 @@ class LiveAlertManager:
                         INSERT OR REPLACE INTO live_alerts (
                             alert_id, created_at_utc, entity_id, risk_score, risk_level,
                             trigger_reason, status, occurrence_count, first_seen_utc, last_seen_utc,
-                            associated_event_ids, adaptive_key_rotated, detection_latency_ms
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            associated_event_ids, adaptive_key_rotated, detection_latency_ms,
+                            predicted_attack_category, attack_category_confidence
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         rows,
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to persist batch of %d live alerts: %s", len(rows), exc)
 
     def list_alerts(self, limit: int = 50) -> List[LiveSecurityAlert]:
         """List active alerts in descending order of creation."""

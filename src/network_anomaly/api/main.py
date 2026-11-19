@@ -332,8 +332,13 @@ def create_app(
 
         @app.middleware("http")
         async def _enforce_session_token(request: Request, call_next):
-            # Allow CORS preflight and lightweight /health liveness probe without exposing API routes
+            # Allow CORS preflight, /health liveness probe, and read-only /app SPA static assets
+            # without exposing any /api/v1/* routes.
             if request.method == "OPTIONS" or request.url.path == "/health":
+                return await call_next(request)
+            if request.method in ("GET", "HEAD") and (
+                request.url.path == "/app" or request.url.path.startswith("/app/")
+            ):
                 return await call_next(request)
             presented = request.headers.get("X-Sentinel-Session-Token", "")
             if not hmac.compare_digest(presented.encode("utf-8"), session_token.encode("utf-8")):

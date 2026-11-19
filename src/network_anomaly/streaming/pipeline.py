@@ -56,8 +56,8 @@ class StreamingEventPipeline:
         self.total_enqueued = 0
         self.total_processed = 0
         self.total_dropped = 0
-        self._batch_sizes: List[int] = []
-        self._latencies: List[float] = []
+        self._batch_sizes: collections.deque[int] = collections.deque(maxlen=1000)
+        self._latencies: collections.deque[float] = collections.deque(maxlen=1000)
         self._start_time = time.perf_counter()
 
     def enqueue(self, event: CanonicalSecurityEvent) -> bool:
@@ -124,17 +124,13 @@ class StreamingEventPipeline:
         with self._lock:
             q_len = len(self._queue)
             utilization = round((q_len / self.capacity) * 100.0, 2)
+            batch_sizes = list(self._batch_sizes)
+            latencies = list(self._latencies)
 
         elapsed = max(0.001, time.perf_counter() - self._start_time)
         throughput = round(self.total_processed / elapsed, 2)
-        avg_batch = (
-            round(sum(self._batch_sizes) / len(self._batch_sizes), 1) if self._batch_sizes else 0.0
-        )
-        avg_lat = (
-            round(sum(self._latencies[-1000:]) / len(self._latencies[-1000:]), 2)
-            if self._latencies
-            else 0.0
-        )
+        avg_batch = round(sum(batch_sizes) / len(batch_sizes), 1) if batch_sizes else 0.0
+        avg_lat = round(sum(latencies) / len(latencies), 2) if latencies else 0.0
 
         return StreamingPipelineMetrics(
             total_enqueued=self.total_enqueued,

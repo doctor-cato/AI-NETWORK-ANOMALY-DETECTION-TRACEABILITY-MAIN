@@ -1,0 +1,136 @@
+{
+  "validation_id": "RQ-INDEPENDENT-RERUN-LOG-V2",
+  "verified_at_utc": "2026-11-19T14:26:15.737670+00:00",
+  "status": "VERIFIED",
+  "research_questions": {
+    "RQ1": {
+      "artifacts": [
+        {
+          "path": "reports/experiments/ml/model_comparison_report.json",
+          "sha256": "e8d76b4efeeabca528f3d02c0c9e6ba5ef720b058808d8b98cd8e88ade823a57",
+          "bytes": 11587
+        },
+        {
+          "path": "reports/experiments/ml/ctu_cross_source_eval.json",
+          "sha256": "05cdc085a452bb484842c86db6260aab77863dabf082c54ccfc82432a970a716",
+          "bytes": 117088
+        }
+      ],
+      "status": "COMPLETED",
+      "key_metrics": {
+        "random_forest": {
+          "f1": 0.995,
+          "roc_auc": 0.9994,
+          "fpr": 0.000246
+        },
+        "xgboost": {
+          "f1": 0.9013,
+          "roc_auc": 0.9885,
+          "fpr": 0.000198
+        },
+        "isolation_forest": {
+          "f1": 0.5842,
+          "roc_auc": 0.833,
+          "fpr": 0.028952
+        },
+        "autoencoder": {
+          "f1": 0.5877,
+          "roc_auc": 0.5544,
+          "fpr": 0.027637
+        }
+      }
+    },
+    "RQ2": {
+      "artifacts": [
+        {
+          "path": "reports/experiments/imbalance/rq2_imbalance_report.json",
+          "sha256": "ecbe7d64901528b373ec25d6842629e3be96f02b494274019740b137a8463089",
+          "bytes": 17492
+        }
+      ],
+      "status": "COMPLETED",
+      "key_metrics": {
+        "h2_full_confirmed": false,
+        "train_total": 2097891,
+        "train_oversampled_total": 2140237,
+        "test_total": 988805,
+        "credential_attack_rf_recall": 0.141,
+        "post_exploitation_rf_recall": 0.8974
+      }
+    },
+    "RQ3": {
+      "artifacts": [
+        {
+          "path": "reports/experiments/behavioral/rq3_session_correlation_experiment.json",
+          "sha256": "8fa4fa5bdc6ab888d620a64c2650372bc6a7cf6e69d7245227af5f614f5689df",
+          "bytes": 5074
+        }
+      ],
+      "execution_mode": "SIMULATION",
+      "empirical_dataset_status": "BLOCKED",
+      "key_metrics": {
+        "simulation_hypothesis_met": false,
+        "simulation_standardized_hypothesis_met": true
+      }
+    },
+    "RQ4": {
+      "artifacts": [
+        {
+          "path": "reports/experiments/ml/rq4_unknown_attack_report.json",
+          "sha256": "04ec73c962169cac46b0b3c276ba2639b1e7fe3980c5f571417efa8adb43ae06",
+          "bytes": 10837
+        }
+      ],
+      "status": "COMPLETED",
+      "key_metrics": {
+        "supervised_min_unknown_recall": 0.75,
+        "supervised_max_unknown_recall": 0.909091,
+        "isolation_forest_unknown_recall": 0.909091,
+        "autoencoder_unknown_recall": 0.204545,
+        "unsupervised_ge_0_75_both": false,
+        "isolation_forest_ge_0_75": true,
+        "autoencoder_ge_0_75": false
+      }
+    },
+    "RQ5": {
+      "artifacts": [
+        {
+          "path": "reports/experiments/crypto/rq5_rotation_experiment.json",
+          "sha256": "7da7ebb8427cb819412cb616c725d8ef758affde6db1b593a9e60b9b1d76691f",
+          "bytes": 8063
+        }
+      ],
+      "execution_mode": "SIMULATION",
+      "key_metrics": {
+        "hypothesis_confirmed": true,
+        "fixed_max_exposure_min": null,
+        "adaptive_max_exposure_min": null,
+        "fixed_blast_radius": null,
+        "adaptive_blast_radius": null
+      }
+    },
+    "RQ6": {
+      "artifacts": [
+        {
+          "path": "reports/benchmarks/crypto_benchmark_report.json",
+          "sha256": "12f556448c53f37d05d6041c8656f41d7723b18e3e391d4f141b4420e2629b5e",
+          "bytes": 3888
+        },
+        {
+          "path": "reports/benchmarks/system_performance_benchmark.json",
+          "sha256": "dcf2a5cec29cd0413003272e7ca3c7b34d65452fac87f50d0c1ed512695c1c35",
+          "bytes": 5048
+        }
+      ],
+      "key_metrics": {
+        "aes_256b_p95_us": 13.3,
+        "aes_1024b_p95_us": 11.4,
+        "aes_4096b_p95_us": 38.4,
+        "e2e_single_event_mean_eps": 16.747,
+        "e2e_single_event_median_ms": 60.55,
+        "micro_batch_32_mean_flow_per_s": 386.37,
+        "replay_mode_mean_flow_per_s": 399.44
+      }
+    }
+  }
+}

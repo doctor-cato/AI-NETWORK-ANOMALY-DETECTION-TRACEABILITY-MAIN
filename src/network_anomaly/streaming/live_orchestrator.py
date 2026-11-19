@@ -178,8 +178,7 @@ class LiveSystemOrchestrator:
 
         if len(self._entity_access_times) > self.max_active_entities:
             oldest_entity, _ = self._entity_access_times.popitem(last=False)
-            if oldest_entity in self.entity_graph.nodes:
-                del self.entity_graph.nodes[oldest_entity]
+            self.entity_graph.evict_entity(oldest_entity)
             if oldest_entity in self._entity_events:
                 del self._entity_events[oldest_entity]
 

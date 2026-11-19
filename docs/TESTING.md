@@ -14,8 +14,8 @@ tests/
 └── historical/nf_unsw_nb15_v3/  # Lưu trữ lịch sử v1 (không thuộc active CI test suite)
 
 desktop/
-├── src/**/*.test.ts             # Frontend Unit Tests (Vitest 33 tests) & svelte-check
-└── src-tauri/src/*.rs           # Rust Backend Sidecar & IPC Unit Tests (cargo test / clippy / fmt)
+├── src/**/*.test.ts             # Frontend Unit Tests (Vitest 39+ tests) & svelte-check
+└── src-tauri/src/*.rs           # Rust Backend Sidecar & IPC Unit Tests (11 Cargo tests / clippy / fmt)
 ```
 
 ---
@@ -24,10 +24,10 @@ desktop/
 
 | Tầng kiểm thử | Công cụ | Mục tiêu & Dữ liệu | Điều **chứng minh được** | Điều **không chứng minh được** |
 |---|---|---|---|---|
-| **Python Unit & Contract** | `pytest` (`tests/unit`, `tests/contract`) | Minimal fixtures & synthetic arrays v2 | Logic hàm, `canonical-flow-v2-18`, chặn fallback v1, train-only fit boundary, OOD & API auth | Không thay thế kết quả F1/FPR trên `AIT-NDS-v2` / `CTU-SME-11` |
+| **Python Unit & Contract** | `pytest` (`tests/unit`, `tests/contract`, `665+` total pytest suite) | Minimal fixtures & synthetic arrays v2 | Logic hàm, `canonical-flow-v2-18`, chặn fallback v1, train-only fit boundary, OOD & API auth | Không thay thế kết quả F1/FPR trên `AIT-NDS-v2` / `CTU-SME-11` |
 | **Python Integration** | `pytest` (`tests/integration`) | Synthetic CSV & fixture/local v2 artifacts | Luồng E2E CSV/Live → Preprocessing → 4 Models → SQLite → Dry-Run → Export | Các case kiểm tra binary `.joblib` thật phụ thuộc môi trường có artifact cục bộ |
-| **Frontend Svelte 5** | `npm --prefix desktop run check` & `test` | Vitest (`33` tests) | State 4 model v2, 18-feature CSV upload/validation, `ABSTAINED_OOD` | Không thay thế WebView2 GUI tương tác trên Windows thật |
-| **Rust / Tauri 2** | `cargo fmt/clippy/test` | Sidecar launcher & IPC (`9` lib tests) | Spawning sidecar loopback, token auth, shutdown sạch | Clean Windows VM GUI E2E |
+| **Frontend Svelte 5** | `npm --prefix desktop run check` & `test` | Vitest (`39+` tests) | State 4 model v2, 18-feature CSV upload/validation, `ABSTAINED_OOD` | Không thay thế WebView2 GUI tương tác trên Windows thật |
+| **Rust / Tauri 2** | `cargo fmt/clippy/test` | Sidecar launcher & IPC (`11` lib tests) | Spawning sidecar loopback, token auth, shutdown sạch | Clean Windows VM GUI E2E |
 | **Artifact & Data Verification** | `fetch_multi_source_dataset.py --verify-only`, `verify_companion_artifacts.py` | Manifests, 4 v2 `.joblib`, `demo_flows.csv` (`200` dòng) | SHA-256 chain, `READY 4/4`, OpenAPI sync, CC BY 4.0 governance | Không chứng minh khả năng phát hiện zero-day ngoài thực tế |
 
 ---

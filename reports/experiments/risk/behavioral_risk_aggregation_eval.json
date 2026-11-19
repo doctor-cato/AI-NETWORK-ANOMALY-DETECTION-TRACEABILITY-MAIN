@@ -1,8 +1,8 @@
 {
   "schema_version": "2.0.0",
   "evaluation_mode": "read_only_frozen_E0_no_retraining",
-  "generated_at_utc": "2026-11-18T16:39:29.568570+00:00",
-  "elapsed_seconds": 27.22,
+  "generated_at_utc": "2026-11-19T14:25:02.250496+00:00",
+  "elapsed_seconds": 26.92,
   "split_manifest": "reports/splits/v2_split_manifest.json",
   "environment": {
     "python_version": "3.12.10",
@@ -10,60 +10,53 @@
     "scikit_learn": "1.9.1",
     "pandas": "3.1.1",
     "numpy": "2.5.5",
-    "git_commit": "20c4414f0470f55d499721442c3b13238c8c98ef",
+    "git_commit": "f1f41f48f4da87c385d74abd487cb00763872acd",
     "git_dirty": true,
     "git": {
-      "git_commit": "20c4414f0470f55d499721442c3b13238c8c98ef",
+      "git_commit": "f1f41f48f4da87c385d74abd487cb00763872acd",
       "git_dirty": true,
       "git_clean": false,
       "git_dirty_paths": [
-        "M LICENSE",
-        "M desktop/src/lib/components/AttackTimelinePanel.svelte",
         "M desktop/src/lib/components/BehavioralAnalysisPanel.svelte",
         "M desktop/src/lib/components/LiveMonitoringPanel.svelte",
         "M desktop/src/lib/components/V2Panels.test.ts",
-        "M desktop/src/lib/types.ts",
-        "M docs/DEVELOPMENT_PLAN.md",
+        "M desktop/vite.config.ts",
+        "M docs/PRESENTATION_OUTLINE.md",
+        "M docs/TEAM_TASKS.md",
+        "M docs/TESTING.md",
+        "M docs/TRACEABILITY_MATRIX.md",
         "M docs/USER_GUIDE_V2.md",
-        "M docs/audits/V2_GAP_ANALYSIS.md",
-        "M docs/benchmarks/SYSTEM_PERFORMANCE.md",
-        "M docs/dataset/V2_SOURCE_AUDIT.md",
-        "M docs/experiments/CTU_CROSS_SOURCE_EVAL.md",
+        "M docs/architecture/BEHAVIORAL_ENGINE.md",
+        "M docs/experiments/E1_MULTIDOMAIN_EXPERIMENT.md",
+        "M docs/experiments/MULTICLASS_ATTACK_CLASSIFICATION.md",
         "M docs/experiments/TRACEABILITY_EVALUATION.md",
-        "M pyproject.toml",
-        "M reports/api/openapi.json",
-        "M reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md",
-        "M reports/benchmarks/system_performance_benchmark.json",
+        "M reports/experiments/imbalance/rq2_imbalance_report.json",
+        "M reports/experiments/imbalance/rq2_imbalance_report.md",
+        "M reports/experiments/ml/e1_multidomain_experiment_report.json",
+        "M reports/experiments/ml/multiclass_stage2_manifest.json",
         "M reports/experiments/trace/traceability_evaluation.json",
-        "M scripts/benchmark_full_system.py",
-        "M scripts/build_backend_sidecar.py",
+        "M scripts/evaluate_behavioral_and_risk_policies.py",
         "M scripts/evaluate_traceability.py",
-        "M scripts/migrate_v1_to_v2.py",
-        "M src/network_anomaly/api/desktop_csv.py",
-        "M src/network_anomaly/api/live_runtime.py",
-        "M src/network_anomaly/api/schemas.py",
-        "M src/network_anomaly/ingestion/registry.py",
-        "M tests/integration/test_live_behavioral_api.py",
-        "M tests/integration/test_migration_v1_to_v2.py",
-        "M tests/unit/test_desktop_csv_api.py",
-        "M tests/unit/test_key_manager_hardening.py",
-        "?? data/UWF_ZEEKDATA24_MANIFEST.json",
-        "?? docs/experiments/UWF_ZEEK24_CROSS_SOURCE_EVAL.md",
-        "?? docs/security/",
-        "?? reports/experiments/ml/uwf_zeekdata24_cross_source_eval.json",
-        "?? reports/experiments/risk/",
-        "?? scripts/evaluate_behavioral_and_risk_policies.py",
-        "?? scripts/run_uwf_zeek_cross_source_eval.py",
-        "?? src/network_anomaly/ingestion/adapters/uwf_zeek.py",
-        "?? tests/integration/test_streaming_memory_10k.py",
-        "?? tests/unit/test_uwf_zeek_adapter.py"
+        "M scripts/run_e1_multidomain_experiment.py",
+        "M scripts/run_multiclass_attack_classifier.py",
+        "M scripts/run_rq2_rare_attack_experiment.py",
+        "M src/network_anomaly/api/main.py",
+        "M src/network_anomaly/models/stage2_multiclass.py",
+        "M src/network_anomaly/streaming/alert_manager.py",
+        "M src/network_anomaly/streaming/live_orchestrator.py",
+        "M src/network_anomaly/streaming/pipeline.py",
+        "M src/network_anomaly/trace/graph.py",
+        "M tests/unit/test_stage2_and_experiments.py",
+        "?? docs/audits/V2_RELEASE_READINESS.md",
+        "?? docs/thesis/",
+        "?? tests/unit/test_audit_fixes_2055930.py"
       ],
-      "git_dirty_disclosure": "Trained from commit 20c4414 with uncommitted worktree changes (40 modified/untracked path(s)).",
+      "git_dirty_disclosure": "Trained from commit f1f41f4 with uncommitted worktree changes (34 modified/untracked path(s)).",
       "worktree_provenance": "DIRTY_DISCLOSED",
       "provenance_complete": true,
       "provenance_status": "VERIFIED"
     },
-    "timestamp_utc": "2026-11-18T16:39:29.745729+00:00"
+    "timestamp_utc": "2026-11-19T14:25:02.448154+00:00"
   },
   "domain_parity_verified": true,
   "risk_scorer_formula": {
@@ -187,6 +180,76 @@
           "p10": 0.0649,
           "p90": 0.6974
         }
+      },
+      "multisignal_risk_distribution": {
+        "session_count": 2614,
+        "default_weights_distribution": {
+          "benign_sessions": {
+            "count": 2611,
+            "mean": 18.73,
+            "p10": 12.11,
+            "p50": 17.27,
+            "p90": 24.01,
+            "p95": 60.24,
+            "max": 72.54,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "attack_sessions": {
+            "count": 3,
+            "mean": 50.25,
+            "p10": 28.65,
+            "p50": 46.67,
+            "p90": 73.29,
+            "p95": 76.61,
+            "max": 79.94,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "overlap_rate": 0.0918
+        },
+        "weight_sensitivity_ablation": {
+          "default_50_25_15_10": {
+            "weights": {
+              "ai": 50.0,
+              "behavioral": 25.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 18.73,
+            "benign_p95": 60.24,
+            "attack_mean": 50.25,
+            "attack_p95": 76.61,
+            "mean_separation": 31.52,
+            "overlap_rate": 0.0918
+          },
+          "ai_heavy_70_15_10_5": {
+            "weights": {
+              "ai": 70.0,
+              "behavioral": 15.0,
+              "port": 10.0,
+              "auth": 5.0
+            },
+            "benign_mean": 22.27,
+            "benign_p95": 73.28,
+            "attack_mean": 56.32,
+            "attack_p95": 82.69,
+            "mean_separation": 34.05,
+            "overlap_rate": 0.1515
+          },
+          "behavioral_heavy_35_40_15_10": {
+            "weights": {
+              "ai": 35.0,
+              "behavioral": 40.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 15.49,
+            "benign_p95": 46.73,
+            "attack_mean": 46.24,
+            "attack_p95": 73.87,
+            "mean_separation": 30.75,
+            "overlap_rate": 0.075
+          }
+        }
       }
     },
     "ait_test": {
@@ -293,6 +356,76 @@
           "median": 0.0,
           "p10": 0.0,
           "p90": 0.0
+        }
+      },
+      "multisignal_risk_distribution": {
+        "session_count": 3727,
+        "default_weights_distribution": {
+          "benign_sessions": {
+            "count": 3721,
+            "mean": 19.84,
+            "p10": 12.19,
+            "p50": 18.24,
+            "p90": 46.76,
+            "p95": 50.19,
+            "max": 50.19,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "attack_sessions": {
+            "count": 6,
+            "mean": 45.86,
+            "p10": 36.97,
+            "p50": 46.34,
+            "p90": 54.27,
+            "p95": 56.32,
+            "max": 58.36,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "overlap_rate": 0.1116
+        },
+        "weight_sensitivity_ablation": {
+          "default_50_25_15_10": {
+            "weights": {
+              "ai": 50.0,
+              "behavioral": 25.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 19.84,
+            "benign_p95": 50.19,
+            "attack_mean": 45.86,
+            "attack_p95": 56.32,
+            "mean_separation": 26.02,
+            "overlap_rate": 0.1116
+          },
+          "ai_heavy_70_15_10_5": {
+            "weights": {
+              "ai": 70.0,
+              "behavioral": 15.0,
+              "port": 10.0,
+              "auth": 5.0
+            },
+            "benign_mean": 23.67,
+            "benign_p95": 59.26,
+            "attack_mean": 56.51,
+            "attack_p95": 68.0,
+            "mean_separation": 32.84,
+            "overlap_rate": 0.1113
+          },
+          "behavioral_heavy_35_40_15_10": {
+            "weights": {
+              "ai": 35.0,
+              "behavioral": 40.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 15.6,
+            "benign_p95": 39.63,
+            "attack_mean": 35.25,
+            "attack_p95": 43.92,
+            "mean_separation": 19.65,
+            "overlap_rate": 0.1116
+          }
         }
       }
     },
@@ -401,6 +534,76 @@
           "p10": 0.0,
           "p90": 0.0
         }
+      },
+      "multisignal_risk_distribution": {
+        "session_count": 590,
+        "default_weights_distribution": {
+          "benign_sessions": {
+            "count": 539,
+            "mean": 17.15,
+            "p10": 16.73,
+            "p50": 16.73,
+            "p90": 16.73,
+            "p95": 21.39,
+            "max": 24.77,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "attack_sessions": {
+            "count": 51,
+            "mean": 26.9,
+            "p10": 17.3,
+            "p50": 32.3,
+            "p90": 36.95,
+            "p95": 36.95,
+            "max": 36.95,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "overlap_rate": 0.9441
+        },
+        "weight_sensitivity_ablation": {
+          "default_50_25_15_10": {
+            "weights": {
+              "ai": 50.0,
+              "behavioral": 25.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 17.15,
+            "benign_p95": 21.39,
+            "attack_mean": 26.9,
+            "attack_p95": 36.95,
+            "mean_separation": 9.75,
+            "overlap_rate": 0.9441
+          },
+          "ai_heavy_70_15_10_5": {
+            "weights": {
+              "ai": 70.0,
+              "behavioral": 15.0,
+              "port": 10.0,
+              "auth": 5.0
+            },
+            "benign_mean": 23.64,
+            "benign_p95": 25.55,
+            "attack_mean": 31.01,
+            "attack_p95": 40.73,
+            "mean_separation": 7.37,
+            "overlap_rate": 0.9441
+          },
+          "behavioral_heavy_35_40_15_10": {
+            "weights": {
+              "ai": 35.0,
+              "behavioral": 40.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 12.15,
+            "benign_p95": 16.77,
+            "attack_mean": 21.55,
+            "attack_p95": 30.37,
+            "mean_separation": 9.4,
+            "overlap_rate": 0.9441
+          }
+        }
       }
     },
     "ctu_windows7ad": {
@@ -508,6 +711,76 @@
           "p10": 0.0,
           "p90": 0.0
         }
+      },
+      "multisignal_risk_distribution": {
+        "session_count": 831,
+        "default_weights_distribution": {
+          "benign_sessions": {
+            "count": 827,
+            "mean": 42.4,
+            "p10": 20.97,
+            "p50": 35.47,
+            "p90": 69.93,
+            "p95": 69.93,
+            "max": 69.93,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "attack_sessions": {
+            "count": 4,
+            "mean": 50.89,
+            "p10": 50.89,
+            "p50": 50.89,
+            "p90": 50.89,
+            "p95": 50.89,
+            "max": 50.89,
+            "critical_rotation_trigger_rate": 0.0
+          },
+          "overlap_rate": 0.0445
+        },
+        "weight_sensitivity_ablation": {
+          "default_50_25_15_10": {
+            "weights": {
+              "ai": 50.0,
+              "behavioral": 25.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 42.4,
+            "benign_p95": 69.93,
+            "attack_mean": 50.89,
+            "attack_p95": 50.89,
+            "mean_separation": 8.49,
+            "overlap_rate": 0.0445
+          },
+          "ai_heavy_70_15_10_5": {
+            "weights": {
+              "ai": 70.0,
+              "behavioral": 15.0,
+              "port": 10.0,
+              "auth": 5.0
+            },
+            "benign_mean": 50.05,
+            "benign_p95": 76.86,
+            "attack_mean": 60.24,
+            "attack_p95": 60.24,
+            "mean_separation": 10.19,
+            "overlap_rate": 0.0445
+          },
+          "behavioral_heavy_35_40_15_10": {
+            "weights": {
+              "ai": 35.0,
+              "behavioral": 40.0,
+              "port": 15.0,
+              "auth": 10.0
+            },
+            "benign_mean": 37.44,
+            "benign_p95": 69.48,
+            "attack_mean": 40.12,
+            "attack_p95": 40.12,
+            "mean_separation": 2.68,
+            "overlap_rate": 0.0445
+          }
+        }
       }
     }
   },
@@ -516,6 +789,52 @@
       "row_count": 377704,
       "policies": {
         "WEIGHTED_ENSEMBLE": {
+          "classification": {
+            "accuracy": 0.9997,
+            "precision": 0.9998,
+            "recall": 0.9996,
+            "f1": 0.9997,
+            "fpr": 0.0002,
+            "roc_auc": 0.9999,
+            "tn": 206636,
+            "fp": 40,
+            "fn": 69,
+            "tp": 170959
+          },
+          "risk_flow_only_beh0": {
+            "overall": {
+              "count": 377704,
+              "mean_score": 32.29,
+              "p95_score": 55.87,
+              "low_count": 206688,
+              "medium_count": 171016,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "benign_flows": {
+              "count": 206676,
+              "mean_score": 14.09,
+              "p95_score": 20.63,
+              "low_count": 206629,
+              "medium_count": 47,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "attack_flows": {
+              "count": 171028,
+              "mean_score": 54.28,
+              "p95_score": 55.87,
+              "low_count": 59,
+              "medium_count": 170969,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            }
+          }
+        },
+        "OOD_AWARE_ENSEMBLE": {
           "classification": {
             "accuracy": 0.9997,
             "precision": 0.9998,
@@ -750,6 +1069,52 @@
             }
           }
         },
+        "OOD_AWARE_ENSEMBLE": {
+          "classification": {
+            "accuracy": 0.9671,
+            "precision": 0.9985,
+            "recall": 0.816,
+            "f1": 0.8981,
+            "fpr": 0.0003,
+            "roc_auc": 0.9991,
+            "tn": 812760,
+            "fp": 220,
+            "fn": 32351,
+            "tp": 143474
+          },
+          "risk_flow_only_beh0": {
+            "overall": {
+              "count": 988805,
+              "mean_score": 19.87,
+              "p95_score": 55.87,
+              "low_count": 845031,
+              "medium_count": 143774,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "benign_flows": {
+              "count": 812980,
+              "mean_score": 14.15,
+              "p95_score": 22.79,
+              "low_count": 812700,
+              "medium_count": 280,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "attack_flows": {
+              "count": 175825,
+              "mean_score": 46.32,
+              "p95_score": 55.87,
+              "low_count": 32331,
+              "medium_count": 143494,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            }
+          }
+        },
         "RANDOM_FOREST_PRIMARY": {
           "classification": {
             "accuracy": 0.9982,
@@ -939,6 +1304,52 @@
             }
           }
         },
+        "OOD_AWARE_ENSEMBLE": {
+          "classification": {
+            "accuracy": 0.4522,
+            "precision": 0.2739,
+            "recall": 0.0843,
+            "f1": 0.129,
+            "fpr": 0.2071,
+            "roc_auc": 0.7276,
+            "tn": 31318,
+            "fp": 8179,
+            "fn": 33491,
+            "tp": 3085
+          },
+          "risk_flow_only_beh0": {
+            "overall": {
+              "count": 76073,
+              "mean_score": 22.9,
+              "p95_score": 38.02,
+              "low_count": 59112,
+              "medium_count": 16961,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "benign_flows": {
+              "count": 39497,
+              "mean_score": 24.14,
+              "p95_score": 48.05,
+              "low_count": 31038,
+              "medium_count": 8459,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "attack_flows": {
+              "count": 36576,
+              "mean_score": 21.55,
+              "p95_score": 36.72,
+              "low_count": 28074,
+              "medium_count": 8502,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            }
+          }
+        },
         "RANDOM_FOREST_PRIMARY": {
           "classification": {
             "accuracy": 0.4898,
@@ -1083,6 +1494,52 @@
       "row_count": 175146,
       "policies": {
         "WEIGHTED_ENSEMBLE": {
+          "classification": {
+            "accuracy": 0.8336,
+            "precision": 0.0391,
+            "recall": 0.5643,
+            "f1": 0.0731,
+            "fpr": 0.1633,
+            "roc_auc": 0.8562,
+            "tn": 144844,
+            "fp": 28264,
+            "fn": 888,
+            "tp": 1150
+          },
+          "risk_flow_only_beh0": {
+            "overall": {
+              "count": 175146,
+              "mean_score": 24.17,
+              "p95_score": 49.62,
+              "low_count": 144822,
+              "medium_count": 30324,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "benign_flows": {
+              "count": 173108,
+              "mean_score": 23.98,
+              "p95_score": 49.62,
+              "low_count": 144463,
+              "medium_count": 28645,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            },
+            "attack_flows": {
+              "count": 2038,
+              "mean_score": 40.37,
+              "p95_score": 55.88,
+              "low_count": 359,
+              "medium_count": 1679,
+              "high_count": 0,
+              "critical_count": 0,
+              "critical_rotation_trigger_rate": 0.0
+            }
+          }
+        },
+        "OOD_AWARE_ENSEMBLE": {
           "classification": {
             "accuracy": 0.8336,
             "precision": 0.0391,

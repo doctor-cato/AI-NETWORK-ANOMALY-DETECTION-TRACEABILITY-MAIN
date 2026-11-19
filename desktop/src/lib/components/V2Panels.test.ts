@@ -555,4 +555,68 @@ describe("V2 Backend API Client State Contracts (CONNECTED / DISCONNECTED / EMPT
     expect(outEmpty.body).toContain("So sánh 4 Mô hình Trên Cùng Batch CSV");
     expect(outEmpty.body).toContain("Chưa có dữ liệu Báo cáo Benchmark Chính thức");
   });
+
+  it("LiveMonitoringPanel renders Stage-2 predicted_attack_category and confidence badge on live alerts", () => {
+    const out = render(LiveMonitoringPanel, {
+      props: {
+        initialDemoMode: false,
+        initialAlerts: [
+          {
+            alert_id: "alert-stage2-01",
+            entity_id: "host:10.0.0.15",
+            risk_score: 91.5,
+            risk_level: "CRITICAL",
+            trigger_reason: "Ensemble Attack Consensus",
+            status: "NEW",
+            last_seen_utc: "2026-11-19T12:00:00Z",
+            source: "LIVE_ALERT_MANAGER",
+            predicted_attack_category: "DDoS_or_DoS",
+            attack_category_confidence: 0.92,
+          },
+        ],
+      },
+    });
+
+    expect(out.body).toContain("STATE: CONNECTED");
+    expect(out.body).toContain("alert-stage2-01");
+    expect(out.body).toContain("DDoS_or_DoS");
+    expect(out.body).toContain("(92%)");
+  });
+
+  it("BehavioralAnalysisPanel in CONNECTED state renders entity-baseline-card when baseline_profile is returned", () => {
+    const out = render(BehavioralAnalysisPanel, {
+      props: {
+        initialDemoMode: false,
+        initialSelectedDetail: {
+          vector_id: "vec-001",
+          entity_id: "host:10.0.0.42",
+          window_start: "2026-11-19T12:00:00Z",
+          window_end: "2026-11-19T12:01:00Z",
+          dimensions: 16,
+          features: Array(16).fill(0.1),
+          feature_names: null,
+          feature_name_status: "OK",
+          is_encrypted_at_rest: true,
+          key_id: "key-beh-1",
+          created_at: "2026-11-19T12:01:00Z",
+          data_status: "CONNECTED",
+          baseline_profile: {
+            entity_key: "host:10.0.0.42",
+            has_baseline: true,
+            deviation_score: 0.1234,
+            cosine_similarity: 0.8766,
+            sample_count: 12,
+            window_size: 50,
+          },
+        },
+      },
+    });
+
+    expect(out.body).toContain("STATE: CONNECTED");
+    expect(out.body).toContain('data-testid="entity-baseline-card"');
+    expect(out.body).toContain("host:10.0.0.42");
+    expect(out.body).toContain("ACTIVE (12/50 prior vectors)");
+    expect(out.body).toContain("0.8766");
+    expect(out.body).toContain("0.1234");
+  });
 });

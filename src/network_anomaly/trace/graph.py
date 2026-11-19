@@ -167,6 +167,24 @@ class EntityRelationshipGraph:
                     evidence_id=getattr(event, "event_id", None),
                 )
 
+    def evict_entity(self, entity_id: str) -> None:
+        """Remove an entity node (and its mapped ip: node if host:) and all incident edges."""
+        targets = [entity_id]
+        if entity_id.startswith("host:"):
+            targets.append(f"ip:{entity_id[5:]}")
+
+        for node_id in targets:
+            self.nodes.pop(node_id, None)
+            out_edges = self._adj.pop(node_id, set())
+            in_edges = self._rev_adj.pop(node_id, set())
+            for eid in out_edges | in_edges:
+                edge = self.edges.pop(eid, None)
+                if edge is not None:
+                    if edge.source_id in self._adj:
+                        self._adj[edge.source_id].discard(eid)
+                    if edge.target_id in self._rev_adj:
+                        self._rev_adj[edge.target_id].discard(eid)
+
     def get_neighbors(
         self, node_id: str, direction: str = "both"
     ) -> List[Tuple[EntityNode, RelationEdge]]:

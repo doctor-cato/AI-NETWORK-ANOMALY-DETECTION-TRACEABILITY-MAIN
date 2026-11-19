@@ -1,7 +1,7 @@
 {
   "experiment_id": "EXP-RQ2-IMBALANCE-001",
   "status": "COMPLETED",
-  "timestamp_utc": "2026-11-19T12:57:19.407340+00:00",
+  "timestamp_utc": "2026-11-19T14:23:25.889097+00:00",
   "hypothesis": "H2: Cost-sensitive weighting and anomaly reconstruction enable reliable detection (F1 / detection rate >= 0.70) of rare attack categories (prevalence < 0.5%) without synthetic oversampling of validation/test distributions.",
   "dataset_provenance": {
     "dataset_id": "AIT-NetFlow-v2-Suite",
@@ -66,7 +66,7 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-19T12:50:30.713199+00:00"
+    "captured_at_utc": "2026-11-19T14:16:43.212696+00:00"
   },
   "overall_test_metrics": {
     "RandomForest_Unweighted": {
@@ -79,8 +79,8 @@
       "f1": 0.800023181765496,
       "macro_f1": 0.8825975803524073,
       "false_positive_rate": 0.00021156732022927993,
-      "roc_auc": 0.9994084017702862,
-      "pr_auc": 0.9976968717593564,
+      "roc_auc": 0.9994084017702861,
+      "pr_auc": 0.9976956446284693,
       "confusion_matrix": [
         [
           812808,
@@ -108,8 +108,8 @@
       "f1": 0.9947488199836096,
       "macro_f1": 0.9968093993582985,
       "false_positive_rate": 0.00024354842677556644,
-      "roc_auc": 0.9981098287214445,
-      "pr_auc": 0.9948691320645228,
+      "roc_auc": 0.9981098287214443,
+      "pr_auc": 0.994869121794123,
       "confusion_matrix": [
         [
           812782,
@@ -166,7 +166,7 @@
       "f1": 0.9943858867986997,
       "macro_f1": 0.9965885468832794,
       "false_positive_rate": 0.00042067455533961474,
-      "roc_auc": 0.9989782195158963,
+      "roc_auc": 0.9989782195158962,
       "pr_auc": 0.9962289916340511,
       "confusion_matrix": [
         [

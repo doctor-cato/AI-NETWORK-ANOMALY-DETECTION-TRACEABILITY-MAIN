@@ -187,6 +187,40 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
             f"and {trace_completeness * 100:.1f}% path completeness across the {len(ground_truth_stages)}-event "
             "4-phase synthetic attack progression (TESTED on synthetic scenario, not production telemetry)."
         ),
+        "qualitative_error_analysis": {
+            "misclassified_events": [
+                {
+                    "event_id": "ev-7",
+                    "attack_type": "winrm",
+                    "dest_port": 5985,
+                    "source_ip": "10.0.0.2",
+                    "dest_ip": "10.0.0.4",
+                    "expected_phase": AttackPhase.LATERAL_MOVEMENT.value,
+                    "predicted_phase": AttackPhase.INITIAL_ACCESS.value,
+                    "root_cause": (
+                        "AttackTimelineReconstructor (src/network_anomaly/trace/timeline.py:121-123) "
+                        "matches lateral movement only on keywords ['lateral', 'internal', 'worm', 'smb'] "
+                        "or internal ports (445, 139, 3389, 22), missing WinRM ports (5985/5986) and "
+                        "falling through to the default INITIAL_ACCESS branch (timeline.py:135)."
+                    ),
+                }
+            ],
+            "missed_link_example": (
+                "If an attacker pivots across hosts (e.g., 198.51.100.1 -> 10.0.0.1 followed by "
+                "10.0.0.2 -> 10.0.0.4) without an explicit EntityRelationshipGraph CONNECTS_TO edge, "
+                "single-IP log grep stops at the perimeter host and misses lateral hops ev-5..ev-8."
+            ),
+            "false_link_example": (
+                "On shared NAT gateways or admin bastions (e.g., 10.0.0.2), purely IP-based CONNECTS_TO "
+                "edges can falsely merge benign administrative WinRM/RDP traffic into an active incident "
+                "cluster if behavioral or temporal window constraints are not enforced."
+            ),
+            "sample_size_caveat": (
+                f"Benchmark uses N={len(ground_truth_stages)} synthetic events across 4 ATT&CK phases; "
+                "each single event represents 10.0 percentage points of accuracy, so results are "
+                "illustrative functional verification rather than production telemetry statistics."
+            ),
+        },
     }
 
     # Save JSON manifest
@@ -214,7 +248,14 @@ def run_traceability_evaluation(output_dir: Optional[Path] = None) -> dict:
 | **Độ chính xác Gán giai đoạn (Stage Attribution)** | {grep_stage_acc * 100:.1f}% | **{stage_accuracy * 100:.1f}%** | **{stage_delta_pct:+.1f}%** |
 | **Độ hoàn chỉnh Chuỗi vết (Path Completeness)** | {grep_completeness * 100:.1f}% | **{trace_completeness * 100:.1f}%** | **{comp_delta_pct:+.1f}%** |
 
-## 3. Kết luận
+## 3. Qualitative Error Analysis & Sample-Size Caveats
+
+- **1/10 (`10%`) Stage Misclassification (`ev-7`):** Event `ev-7` (`type="winrm"`, `dest_port=5985`, `10.0.0.2 -> 10.0.0.4`) was misattributed to `INITIAL_ACCESS` instead of `LATERAL_MOVEMENT`. In `src/network_anomaly/trace/timeline.py:121-123`, `AttackTimelineReconstructor` checks keywords `["lateral", "internal", "worm", "smb"]` and internal ports `(445, 139, 3389, 22)`, missing WinRM ports `5985/5986` and falling through to the default `INITIAL_ACCESS` branch (`timeline.py:135`).
+- **Missed-Link Example:** Without explicit `EntityRelationshipGraph` `CONNECTS_TO` edges, source-IP-only correlation stops at the initial perimeter target (`198.51.100.1 -> 10.0.0.1`) and misses downstream internal lateral hops (`10.0.0.2 -> 10.0.0.4`).
+- **False-Link Example:** On shared admin bastions or NAT gateways (e.g., `10.0.0.2`), purely IP-based `CONNECTS_TO` edges can falsely link benign administrative WinRM/RDP flows into an attack campaign when temporal/behavioral constraints are absent.
+- **Sample-Size Caveat:** This evaluation uses `N={len(ground_truth_stages)}` synthetic events (`1` event = `10.0%` accuracy step); it validates deterministic graph traversal and timeline attribution logic, not production telemetry distribution.
+
+## 4. Kết luận
 {results["conclusion"]}
 """
     md_path.write_text(md_content, encoding="utf-8", newline="\n")

@@ -58,6 +58,33 @@ def test_stage2_classifier_default_and_centroid_fallback(tmp_path: Path) -> None
     batch_c = clf_centroid.predict_batch(sample_batch)
     assert len(batch_c) == 2
 
+    # Preprocessor SHA-256 verification (fail-closed on mismatch)
+    manifest_data = json.loads(DEFAULT_STAGE2_MANIFEST_PATH.read_text(encoding="utf-8"))
+    preproc_sha = manifest_data["preprocessor_artifact_sha256"]
+    clf_verified = Stage2MulticlassClassifier.from_manifest(
+        manifest_path=DEFAULT_STAGE2_MANIFEST_PATH,
+        artifact_path=tmp_path / "nonexistent_stage2.joblib",
+        expected_preprocessor_sha256=preproc_sha,
+    )
+    assert clf_verified.mode == "centroid"
+    try:
+        Stage2MulticlassClassifier.from_manifest(
+            manifest_path=DEFAULT_STAGE2_MANIFEST_PATH,
+            artifact_path=tmp_path / "nonexistent_stage2.joblib",
+            expected_preprocessor_sha256="0" * 64,
+        )
+        raise AssertionError("Expected ValueError on preprocessor SHA-256 mismatch")
+    except ValueError as exc:
+        assert "preprocessor SHA-256 mismatch" in str(exc)
+    assert (
+        Stage2MulticlassClassifier.try_load_default(
+            artifact_path=tmp_path / "nonexistent_stage2.joblib",
+            manifest_path=DEFAULT_STAGE2_MANIFEST_PATH,
+            expected_preprocessor_sha256="0" * 64,
+        )
+        is None
+    )
+
 
 def test_oversample_rare_train_only_preserves_binary_flags() -> None:
     rng = np.random.default_rng(123)

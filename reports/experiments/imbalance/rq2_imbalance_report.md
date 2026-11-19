@@ -1,7 +1,7 @@
 # RQ2 — Class Imbalance & Rare Attack Evaluation (Empirical AIT-NDS-v2)
 
 - **Status:** `COMPLETED`
-- **Timestamp (UTC):** `2026-11-19T12:57:19.407340+00:00`
+- **Timestamp (UTC):** `2026-11-19T14:23:25.889097+00:00`
 - **Dataset:** `AIT-NetFlow-v2-Suite` (`cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf`)
 - **Train Rows:** `2,097,891` (`scale_pos_weight=6.71`) | **Test Rows:** `988,805`
 - **Rare Categories (Test < 0.5%):** `Credential_Attack, Exploitation_And_C2, Post_Exploitation_Discovery`

@@ -108,9 +108,20 @@ class Stage2MulticlassClassifier:
         manifest_path: Path = DEFAULT_STAGE2_MANIFEST_PATH,
         *,
         artifact_path: Optional[Path] = DEFAULT_STAGE2_ARTIFACT_PATH,
+        expected_preprocessor_sha256: Optional[str] = None,
     ) -> "Stage2MulticlassClassifier":
         """Load classifier from manifest, using `.joblib` if present and hash-verified."""
         manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if expected_preprocessor_sha256 is not None:
+            expected_preproc = expected_preprocessor_sha256.strip().lower()
+            actual_preproc = (
+                str(manifest_data.get("preprocessor_artifact_sha256", "")).strip().lower()
+            )
+            if not actual_preproc or actual_preproc != expected_preproc:
+                raise ValueError(
+                    f"Stage-2 manifest preprocessor SHA-256 mismatch: "
+                    f"expected {expected_preproc}, got {actual_preproc or '<missing>'}"
+                )
         classes = tuple(manifest_data.get("classes", CANONICAL_6_CLASSES))
         class_centroids = manifest_data.get("class_centroids")
         class_stds = manifest_data.get("class_stds")
@@ -153,12 +164,17 @@ class Stage2MulticlassClassifier:
         *,
         artifact_path: Path = DEFAULT_STAGE2_ARTIFACT_PATH,
         manifest_path: Path = DEFAULT_STAGE2_MANIFEST_PATH,
+        expected_preprocessor_sha256: Optional[str] = None,
     ) -> Optional["Stage2MulticlassClassifier"]:
         """Attempt to load the default Stage-2 classifier; return None if manifest is absent."""
         if not manifest_path.is_file():
             return None
         try:
-            return cls.from_manifest(manifest_path=manifest_path, artifact_path=artifact_path)
+            return cls.from_manifest(
+                manifest_path=manifest_path,
+                artifact_path=artifact_path,
+                expected_preprocessor_sha256=expected_preprocessor_sha256,
+            )
         except Exception as exc:
             logger.warning("Failed to load default Stage-2 classifier: %s", exc)
             return None

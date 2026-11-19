@@ -1,39 +1,53 @@
 # Behavioral Engine Architecture (`canonical-behavioral-v2-16`)
 
 ## 1. Overview
-The Behavioral Engine (`src/network_anomaly/behavioral/`) extends NetFlow Sentinel v2.0 beyond single-flow classification by aggregating network and host telemetry into entity-level behavioral profiles over sliding/tumbling time windows, detecting longitudinal drift, correlating sessions across IP changes, and persisting behavioral vectors with authenticated encryption at rest.
+The Behavioral Engine (`src/network_anomaly/behavioral/`) extends NetFlow Sentinel v2.0 beyond single-flow classification by aggregating `CanonicalSecurityEvent` records into time-bounded entity sessions, projecting each session into a deterministic L2-normalized 16-dimensional `BehavioralVector`, profiling per-entity baselines via a sliding-window cosine centroid, correlating sessions across IP changes, and persisting vectors with authenticated encryption at rest.
 
-## 2. 16-D `BehavioralVector` Contract (`vector.py`)
-The `canonical-behavioral-v2-16` schema defines 16 deterministic features per entity session window:
+## 2. 16-D `BehavioralVector` Contract (`src/network_anomaly/behavioral/vector.py`)
+`BehavioralVectorBuilder` (`version = "2.0.0"`, `dimensions = 16`) maps each `SessionSummary` to the exact 16 features in `BehavioralVectorBuilder.FEATURE_NAMES`:
 
-| Group | Count | Features |
-|---|---|---|
-| Flow & Volume | 8 | `flow_count`, `bytes_total`, `packets_total`, `bytes_per_flow`, `packets_per_flow`, `unique_dst_ips`, `unique_dst_ports`, `unique_protocols` |
-| Graph & Temporal | 5 | `fan_out_ratio`, `port_entropy`, `inter_arrival_mean_sec`, `inter_arrival_std_sec`, `burstiness_index` |
-| Application & Identity | 3 | `dns_intensity`, `http_intensity`, `auth_failure_ratio` |
+| Index | Feature Name | Definition (`SessionSummary` mapping) |
+|---:|---|---|
+| 0 | `log_duration` | `log1p(duration_seconds)` |
+| 1 | `log_bytes_in` | `log1p(bytes_in)` |
+| 2 | `log_bytes_out` | `log1p(bytes_out)` |
+| 3 | `bytes_ratio_clipped` | `min(bytes_ratio, 10.0)` |
+| 4 | `log_pkts_in` | `log1p(pkts_in)` |
+| 5 | `log_pkts_out` | `log1p(pkts_out)` |
+| 6 | `pkts_ratio_clipped` | `min(pkts_ratio, 10.0)` |
+| 7 | `unique_ports_norm` | `min(unique_ports / 100.0, 1.0)` |
+| 8 | `unique_protocols_norm` | `min(unique_protocols / 10.0, 1.0)` |
+| 9 | `syn_flag_ratio` | `syn_flag_count / max(event_count, 1)` |
+| 10 | `rst_flag_ratio` | `rst_flag_count / max(event_count, 1)` |
+| 11 | `dns_intensity` | `min(dns_query_count / max(duration_seconds, 0.001), 50.0)` |
+| 12 | `http_intensity` | `min(http_request_count / max(duration_seconds, 0.001), 50.0)` |
+| 13 | `auth_failure_ratio` | `auth_failure_count / max(event_count, 1)` |
+| 14 | `log_mean_iat` | `log1p(max(mean_iat_ms, 0.0))` |
+| 15 | `log_std_iat` | `log1p(max(std_iat_ms, 0.0))` |
 
-### Flow-Only Telemetry Disclosure
-When operating on flow-only telemetry (e.g., NetFlow/IPFIX/Zeek flow records without DNS, HTTP, or authentication logs), the 3 application/identity dimensions (`dns_intensity`, `http_intensity`, `auth_failure_ratio`) default to `0.0`. Every `BehavioralVector` explicitly records:
-- `missing_feature_names`: list of unpopulated feature names (e.g., `["dns_intensity", "http_intensity", "auth_failure_ratio"]`).
-- `completeness_status`: `"partial_flow_only"` when application/identity features are absent, or `"complete"` when all 16 dimensions are populated.
+After replacing any `None`, `NaN`, or `Inf` values with `0.0`, the 16-D vector is L2-normalized onto the unit hypersphere (when `||x||_2 > 1e-7`), rounded to 6 decimal places, and hashed deterministically via `sha256_hash = SHA-256(json.dumps(normalized_features))`.
 
-## 3. Session Windowing (`sessionizer.py`)
-`EventSessionizer` groups incoming `CanonicalSecurityEvent` records by entity key (`src_ip` or host identifier) into **300-second** (5-minute) session windows. Closed or flushed windows are converted into `BehavioralVector` instances for baseline comparison, correlation, and encrypted persistence.
+### Flow-Only Telemetry & Missingness Tracking
+When operating on flow-only telemetry (where `EventKind.DNS`, `EventKind.WEB`, or `EventKind.AUTH` events are absent), `dns_intensity`, `http_intensity`, and `auth_failure_ratio` remain `0.0` for numeric compatibility, and every `BehavioralVector` explicitly records:
+- `missing_feature_count`: integer count of missing/unpopulated dimensions (`int`).
+- `missing_feature_names`: tuple/list of missing dimension names (e.g., `("dns_intensity", "http_intensity", "auth_failure_ratio")`).
 
-## 4. Online Per-Entity Baseline Profiling (`baseline.py`)
-`EntityBaselineProfiler` maintains per-entity running statistics without storing raw historical feature matrices:
-- **Welford's Online Algorithm**: Computes numerically stable running mean ($\mu$) and variance ($\sigma^2$) per feature dimension across observed windows.
-- **EMA Z-Score Deviation**: Applies an Exponential Moving Average (EMA) over standardized Z-score deviations to produce a bounded behavioral drift score (`behavioral_drift_score`) that adapts gradually to legitimate workload shifts while flagging sudden anomalies.
+## 3. Session Windowing (`src/network_anomaly/behavioral/sessionizer.py`)
+`EventSessionizer` (default `session_timeout_seconds = 300.0`) sorts incoming `CanonicalSecurityEvent` records chronologically by `event_timestamp` and groups them by `entity_id` (falling back to `flow:{source_ip}:{source_port}->{dest_ip}:{dest_port}` when `entity_id` is absent). Within each entity group, consecutive events with an inactivity gap `> session_timeout_seconds` start a new `SessionSummary`.
 
-## 5. Session Correlation Across IP Changes (`correlation.py`)
-`IPSpoofingSessionCorrelator` links behavioral sessions across IP reassignments, DHCP leases, or spoofing attempts using cosine similarity over normalized `BehavioralVector` representations.
-- **Empirical Evaluation (`RQ3` on `UWF-ZeekData24`)**: Cosine similarity achieved **`F1 = 0.7192`** compared to IP exact-match baseline **`F1 = 0.6919`**.
+## 4. Sliding-Window Entity Baseline Profiling (`src/network_anomaly/behavioral/vector.py`)
+`EntityBaselineProfiler` maintains per-entity behavioral baselines in `src/network_anomaly/behavioral/vector.py`:
+- **Sliding Window Buffer:** Stores up to `window_size` (default `50`) recent L2-normalized `BehavioralVector` arrays per `entity_key` using `collections.deque(maxlen=window_size)`.
+- **L2-Normalized Centroid:** `baseline_centroid(entity_key)` computes the element-wise mean across the entity's buffered vectors and L2-normalizes the resulting centroid (when `||centroid||_2 > 1e-9`).
+- **Cosine Deviation Scoring:** `score_deviation(vector)` computes `cos_sim = clip(dot(vec, centroid) / (||vec||_2 * ||centroid||_2), -1.0, 1.0)` and returns `deviation_score = max(0.0, 1.0 - cos_sim)` (plus `has_baseline`, `cosine_similarity`, and `sample_count`). When an entity has no prior baseline (`centroid is None`), it returns `has_baseline = False`, `deviation_score = 0.0`, `cosine_similarity = 1.0`, and `sample_count = 0`.
 
-## 6. Encrypted Storage at Rest (`crypto/encrypted_storage.py`)
-`EncryptedStorageVault` protects persisted behavioral vectors and telemetry metadata at rest:
-- **Cipher**: `AES-256-GCM` authenticated encryption.
-- **Key Wrapping**: `Windows DPAPI` wrapped data encryption keys (with POSIX fallback on non-Windows hosts).
-- **Batch Persistence**: `store_behavioral_vectors_batch()` encrypts and persists batches of `BehavioralVector` records atomically to SQLite.
+## 5. Similarity & Session Correlation Across IP Changes (`similarity.py`, `correlation.py`)
+- `BehavioralSimilarityCalculator` (`src/network_anomaly/behavioral/similarity.py`) implements `SimilarityMetric.COSINE`, `SimilarityMetric.NORMALIZED_EUCLIDEAN`, and `SimilarityMetric.MANHATTAN`, with `DEFAULT_MATCH_THRESHOLD = 0.85`.
+- `IPSpoofingSessionCorrelator` (`src/network_anomaly/behavioral/correlation.py`, default `match_threshold = 0.85`) greedily clusters `BehavioralVector` sessions whose cosine similarity meets `match_threshold`, producing `SessionCorrelationCluster` records with `member_session_ids`, normalized `centroid_vector`, `average_similarity`, and `ip_addresses_observed`.
+- See `reports/experiments/behavioral/rq3_session_correlation_experiment.json` for simulation evaluation results (`RQ3`).
+
+## 6. Encrypted Storage at Rest (`src/network_anomaly/crypto/encrypted_storage.py`)
+`EncryptedStorageVault` protects persisted behavioral vectors and telemetry metadata at rest using `AES-256-GCM` authenticated encryption with `Windows DPAPI` key wrapping (and POSIX fallback on non-Windows hosts), and supports atomic batch persistence via `store_behavioral_vectors_batch()`.
 
 ## 7. Session-Context Risk Fusion (`LiveAlertManager.process_event_risk()`)
-`LiveAlertManager.process_event_risk()` fuses single-flow AI ensemble scores with the entity's current `BehavioralVector` drift score and session context before applying cooldown/deduplication and emitting `LiveAlert` records.
+`LiveAlertManager.process_event_risk()` fuses the multi-model AI anomaly probability with the entity's `EntityBaselineProfiler` `deviation_score` and session context via `RiskScorer` before applying cooldown/deduplication and emitting `LiveAlert` records.

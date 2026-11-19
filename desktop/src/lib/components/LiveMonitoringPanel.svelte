@@ -70,6 +70,14 @@
       status: String(raw.status ?? "OPEN"),
       last_seen_utc: String(raw.last_seen_utc ?? raw.timestamp ?? new Date().toISOString()),
       source: "LIVE_ALERT_MANAGER",
+      attack_type: typeof raw.attack_type === "string" ? raw.attack_type : null,
+      predicted_attack_category:
+        typeof raw.predicted_attack_category === "string" ? raw.predicted_attack_category : null,
+      attack_category_confidence:
+        typeof raw.attack_category_confidence === "number" &&
+        Number.isFinite(raw.attack_category_confidence)
+          ? raw.attack_category_confidence
+          : null,
     };
   }
 
@@ -84,6 +92,9 @@
       status: item.status,
       last_seen_utc: item.created_at,
       source: "SQLITE_INCIDENTS",
+      attack_type: item.attack_type ?? null,
+      predicted_attack_category: item.attack_type ?? null,
+      attack_category_confidence: null,
     };
   }
 

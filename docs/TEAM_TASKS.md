@@ -9,7 +9,7 @@ nhưng owner/evidence của từng deliverable phải rõ.
 | Supervised ML và Evaluation | Chưa phân công | RF, XGBoost, metrics, error analysis | C3, C10 |
 | Unsupervised ML và Behavioral | Chưa phân công | IF, Autoencoder, unknown holdout, Behavioral Vector | C4–C5 |
 | Security Risk và Trace | Chưa phân công | Risk/Trace, AES-GCM, key lifecycle, dry-run response | C6–C8 |
-| Backend Integration và Delivery | Chưa phân công | FastAPI, SQLite, Streamlit, E2E, docs/report/slides/demo | C9–C11 |
+| Backend Integration và Delivery | Chưa phân công | FastAPI, SQLite, Tauri 2 + Svelte 5 Desktop App + FastAPI Sidecar (with optional `/app` Web SPA mount), E2E, docs/report/slides/demo | C9–C11 |
 
 Mỗi vai trò lưu lệnh kiểm chứng, artifact/result reference và giới hạn. Không tự điền tên
 hoặc suy đoán đóng góp.

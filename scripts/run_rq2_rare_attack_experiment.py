@@ -167,6 +167,14 @@ def run_rq2_experiment(
     total_test = len(y_test)
     total_train = len(y_train)
 
+    train_rare_categories: List[str] = []
+    for cat, cnt in sorted(train_counts.items()):
+        if cat == "Benign":
+            continue
+        prev = (cnt / total_train) * 100.0 if total_train else 0.0
+        if prev < rare_prevalence_pct:
+            train_rare_categories.append(cat)
+
     rare_categories: List[str] = []
     for cat, cnt in sorted(test_counts.items()):
         if cat == "Benign":
@@ -217,7 +225,7 @@ def run_rq2_experiment(
         X_train_np,
         y_train,
         attack_train,
-        rare_categories,
+        train_rare_categories,
         target_per_rare_class=15_000,
         seed=RANDOM_SEED,
     )

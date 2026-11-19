@@ -323,10 +323,20 @@ def _compute_policy_scores(
     xgb_p: np.ndarray,
     if_p: np.ndarray,
     ae_p: np.ndarray,
+    ood_scores: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Exact vectorized equivalent of MultiModelDecisionAggregator.aggregate()."""
     if policy == AggregationPolicy.WEIGHTED_ENSEMBLE:
         prob = 0.40 * rf_p + 0.30 * xgb_p + 0.15 * if_p + 0.15 * ae_p
+        pred = prob >= 0.50
+        return prob, pred
+    if policy == AggregationPolicy.OOD_AWARE_ENSEMBLE:
+        w_default = 0.40 * rf_p + 0.30 * xgb_p + 0.15 * if_p + 0.15 * ae_p
+        if ood_scores is not None:
+            w_shift = 0.15 * rf_p + 0.40 * xgb_p + 0.35 * if_p + 0.10 * ae_p
+            prob = np.where(ood_scores >= 0.35, w_shift, w_default)
+        else:
+            prob = w_default
         pred = prob >= 0.50
         return prob, pred
     if policy == AggregationPolicy.RANDOM_FOREST_PRIMARY:
@@ -384,6 +394,148 @@ def _verify_parity_with_domain_objects(
                 )
                 expected = min(100.0, float(vec_prob[i]) * 50.0 + c_port)
                 assert abs(rs.score - expected) <= 1e-6
+
+
+def _score_pct_summary(values: List[float]) -> Dict[str, Any]:
+    if not values:
+        return {
+            "count": 0,
+            "mean": None,
+            "p10": None,
+            "p50": None,
+            "p90": None,
+            "p95": None,
+            "max": None,
+            "critical_rotation_trigger_rate": None,
+        }
+    arr = np.asarray(values, dtype=np.float64)
+    crit_rate = float(np.mean(arr >= RiskScorer.CRITICAL_ROTATION_THRESHOLD))
+    return {
+        "count": int(arr.size),
+        "mean": round(float(np.mean(arr)), 2),
+        "p10": round(float(np.percentile(arr, 10)), 2),
+        "p50": round(float(np.percentile(arr, 50)), 2),
+        "p90": round(float(np.percentile(arr, 90)), 2),
+        "p95": round(float(np.percentile(arr, 95)), 2),
+        "max": round(float(np.max(arr)), 2),
+        "critical_rotation_trigger_rate": round(crit_rate, 6),
+    }
+
+
+def _evaluate_multisignal_risk_distribution(
+    sub_df: pd.DataFrame,
+    preproc: TrainOnlyPreprocessor,
+    registry: ModelRegistry,
+    profiler: EntityBaselineProfiler,
+    vectors: List[BehavioralVector],
+    is_attack: List[bool],
+    part_name: str,
+) -> Dict[str, Any]:
+    """Evaluate multi-signal RiskScorer (AI + EntityBaselineProfiler + port) & weight sensitivity."""
+    if not vectors or len(sub_df) == 0:
+        return {"session_count": 0}
+
+    X_sub = preproc.transform(
+        sub_df[list(ML_FEATURE_COLUMNS)].copy(), partition_name=f"{part_name}_sub"
+    ).to_numpy(dtype=np.float64)
+    rf_p, _ = registry.score_batch("random_forest", X_sub)
+    xgb_p, _ = registry.score_batch("xgboost", X_sub)
+    if_raw, _ = registry.score_batch("isolation_forest", X_sub)
+    ae_raw, _ = registry.score_batch("autoencoder", X_sub)
+    if_p = _vectorized_normalize_unsupervised(registry, "isolation_forest", if_raw)
+    ae_p = _vectorized_normalize_unsupervised(registry, "autoencoder", ae_raw)
+    ai_probs, _ = _compute_policy_scores(
+        AggregationPolicy.WEIGHTED_ENSEMBLE, rf_p, xgb_p, if_p, ae_p
+    )
+
+    dports = (
+        pd.to_numeric(sub_df["dest_port"], errors="coerce").to_numpy(dtype=np.float64)
+        if "dest_port" in sub_df.columns
+        else np.full(len(sub_df), np.nan, dtype=np.float64)
+    )
+    src_ips = (
+        sub_df["source_ip"].tolist() if "source_ip" in sub_df.columns else [None] * len(sub_df)
+    )
+    entity_keys = [
+        f"host:{str(ip)}" if (ip is not None and not pd.isna(ip)) else f"{part_name}:row_group"
+        for ip in src_ips
+    ]
+
+    # Map each session's entity_key to mean AI prob & max port sensitivity across its flows
+    ent_ai: Dict[str, List[float]] = {}
+    ent_cport: Dict[str, List[float]] = {}
+    for ek, ap, dp in zip(entity_keys, ai_probs, dports):
+        ent_ai.setdefault(ek, []).append(float(ap))
+        if not np.isnan(dp):
+            dp_i = int(dp)
+            cp = 1.0 if dp_i in RiskScorer.SENSITIVE_PORTS else (0.4 if dp_i < 1024 else 0.0)
+        else:
+            cp = 0.0
+        ent_cport.setdefault(ek, []).append(cp)
+
+    session_inputs: List[Tuple[float, float, float, bool]] = []
+    for vec, atk in zip(vectors, is_attack):
+        ai_val = float(np.mean(ent_ai.get(vec.entity_key, [0.0])))
+        beh_val = float(profiler.score_deviation(vec)["deviation_score"])
+        port_factor = float(np.max(ent_cport.get(vec.entity_key, [0.0])))
+        session_inputs.append((ai_val, beh_val, port_factor, bool(atk)))
+
+    weight_configs = {
+        "default_50_25_15_10": (50.0, 25.0, 15.0, 10.0),
+        "ai_heavy_70_15_10_5": (70.0, 15.0, 10.0, 5.0),
+        "behavioral_heavy_35_40_15_10": (35.0, 40.0, 15.0, 10.0),
+    }
+
+    def _eval_weights(
+        w_ai: float, w_beh: float, w_port: float
+    ) -> Tuple[List[float], List[float], float]:
+        ben_scores: List[float] = []
+        atk_scores: List[float] = []
+        for ai_v, beh_v, pf, atk in session_inputs:
+            sc = min(100.0, ai_v * w_ai + beh_v * w_beh + pf * w_port)
+            if atk:
+                atk_scores.append(sc)
+            else:
+                ben_scores.append(sc)
+        if ben_scores and atk_scores:
+            lo = max(min(ben_scores), min(atk_scores))
+            hi = min(max(ben_scores), max(atk_scores))
+            if hi >= lo:
+                all_s = ben_scores + atk_scores
+                overlap = float(np.mean([(lo <= s <= hi) for s in all_s]))
+            else:
+                overlap = 0.0
+        else:
+            overlap = 0.0
+        return ben_scores, atk_scores, round(overlap, 4)
+
+    ben_def, atk_def, ov_def = _eval_weights(50.0, 25.0, 15.0)
+    ablation: Dict[str, Any] = {}
+    for cfg_name, (w_ai, w_beh, w_port, w_auth) in weight_configs.items():
+        b_s, a_s, ov = _eval_weights(w_ai, w_beh, w_port)
+        b_mean = round(float(np.mean(b_s)), 2) if b_s else None
+        a_mean = round(float(np.mean(a_s)), 2) if a_s else None
+        ablation[cfg_name] = {
+            "weights": {"ai": w_ai, "behavioral": w_beh, "port": w_port, "auth": w_auth},
+            "benign_mean": b_mean,
+            "benign_p95": round(float(np.percentile(b_s, 95)), 2) if b_s else None,
+            "attack_mean": a_mean,
+            "attack_p95": round(float(np.percentile(a_s, 95)), 2) if a_s else None,
+            "mean_separation": (
+                round(a_mean - b_mean, 2) if (a_mean is not None and b_mean is not None) else None
+            ),
+            "overlap_rate": ov,
+        }
+
+    return {
+        "session_count": len(session_inputs),
+        "default_weights_distribution": {
+            "benign_sessions": _score_pct_summary(ben_def),
+            "attack_sessions": _score_pct_summary(atk_def),
+            "overlap_rate": ov_def,
+        },
+        "weight_sensitivity_ablation": ablation,
+    }
 
 
 def _binary_metrics(y_true: np.ndarray, y_pred: np.ndarray, scores: np.ndarray) -> Dict[str, Any]:
@@ -543,6 +695,9 @@ def main() -> int:
             "benign_sessions": _dist_summary(benign_devs),
             "attack_sessions": _dist_summary(attack_devs),
         }
+        sim_stats["multisignal_risk_distribution"] = _evaluate_multisignal_risk_distribution(
+            sub_df, preproc, registry, profiler, vectors, is_attack, part_name
+        )
         behavioral_results[part_name] = sim_stats
 
     report = {

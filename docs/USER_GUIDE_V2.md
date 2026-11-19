@@ -46,3 +46,21 @@ Bảng dưới đây mô tả đầu ra và thời lượng kỳ vọng khi ch�
 - **Lưu ý fail-closed khi artifact vắng mặt hoặc không hợp lệ:** Nếu thiếu SHA-256 manifest, thiếu `.joblib` preprocessor hoặc dùng CSV thiếu cột contract, giao diện hiển thị `UNAVAILABLE` / HTTP `400` / `503` thay vì tạo kết quả giả.
 - **Lưu ý kích hoạt `deployment` mode với Trusted OOD Anchor:** Mặc định API và Tauri desktop chạy fail-closed ở `deployment`. Để Live AI Inference chuyển từ `UNAVAILABLE` sang `4/4 READY` trong `deployment` mode, người vận hành phải cấp digest tin cậy ngoài trust boundary (`8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825` cho `ood_reference_gate.json` hiện tại) qua biến môi trường `NETFLOW_OOD_GATE_SHA256` hoặc cờ `python scripts/run_api.py --ood-gate-sha256 <SHA256>`.
 - **Lưu ý Demo Mode trên UI:** Chỉ kích hoạt khi nhấn nút `Demo Mode` trên từng panel (`STATE: DEMO`); mặc định khi mở ứng dụng mọi panel đều ở `LOADING` / `DISCONNECTED` / `EMPTY` tùy trạng thái backend thật.
+
+### 4.1. Checklist Tái lập 2x Clean-State (`#150` Repeatability Checklist)
+
+Thực hiện **2 lần liên tiếp** trên trạng thái sạch (xóa DB tạm / khởi động lại sidecar) với trusted OOD anchor:
+
+```powershell
+$env:NETFLOW_OOD_GATE_SHA256 = "8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825"
+```
+
+1. **Offline (`data/demo/demo_flows.csv`):** Nạp `demo_flows.csv` qua tab Offline CSV & 4-Model Compare; xác nhận `AI Ready 4/4`, `CompatibilityGate = ELIGIBLE`, kết quả nhất quán giữa lần 1 và lần 2.
+2. **Replay (`scripts/replay_real_netflow_udp.py`):** Chạy replay trên `demo_flows.csv` ở chế độ Replay; xác nhận `throughput_events_per_sec` và timeline `observed_evidence` lặp lại ổn định.
+3. **Loopback-Live (`127.0.0.1`):** Khởi động `/api/v1/live/start` và gửi gói UDP loopback; xác nhận `STATE: CONNECTED`, `4/4 READY`, AES-256-GCM ciphertext và alert deduplication giống nhau ở cả 2 lần chạy.
+
+---
+
+## 5. Ghi chú Loại trừ Trùng lặp Tài liệu (`#151` Deduplication Note)
+
+- Các issue tài liệu v1 trước đây (`#18`, `#19`) đã được **thay thế hoàn toàn (superseded)** bởi bộ issue tài liệu v2: **`#151`** (User Guide & Documentation Hygiene), **`#152`** (Documentation Website `site-source`) và **`#153`** (Thesis Report, Defense Slides & Q&A).
