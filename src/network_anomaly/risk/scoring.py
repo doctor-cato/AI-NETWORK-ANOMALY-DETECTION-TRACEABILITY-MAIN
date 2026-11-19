@@ -5,6 +5,7 @@ Implements Issue #108 for NetFlow Sentinel v2.0.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -62,12 +63,32 @@ class RiskScorer:
         known_attack_type: Optional[str] = None,
     ) -> RiskScoreOutput:
         """Compute composite risk score 0.0 .. 100.0."""
-        # Clean inputs
-        ai_prob = max(0.0, min(1.0, float(ai_probability)))
-        beh_score = max(0.0, min(1.0, float(behavioral_anomaly_score)))
+        reasons: List[str] = []
+        breakdown: Dict[str, float] = {}
+        non_finite_input = False
 
-        reasons = []
-        breakdown = {}
+        # Clean inputs (fail-closed on NaN / +/-Inf)
+        raw_ai = float(ai_probability)
+        if not math.isfinite(raw_ai):
+            non_finite_input = True
+            ai_prob = 0.0
+            reasons.append(
+                "Non-finite AI probability detected; fail-closed to 0.0 and adaptive rotation blocked"
+            )
+        else:
+            ai_prob = max(0.0, min(1.0, raw_ai))
+
+        raw_beh = float(behavioral_anomaly_score)
+        if not math.isfinite(raw_beh):
+            non_finite_input = True
+            beh_score = 0.0
+            reasons.append(
+                "Non-finite behavioral anomaly score detected; fail-closed to 0.0 and adaptive rotation blocked"
+            )
+        else:
+            beh_score = max(0.0, min(1.0, raw_beh))
+
+        auth_failure_count = max(0, int(auth_failure_count))
 
         # 1. AI Component (0 .. 50)
         c_ai = ai_prob * self.W_AI_CONFIDENCE
@@ -103,6 +124,10 @@ class RiskScorer:
         # Total Raw Score
         raw_score = c_ai + c_beh + c_port + c_auth
 
+        # Non-finite input handling: prevent corrupted telemetry from reaching CRITICAL or triggering rotation
+        if non_finite_input:
+            raw_score = min(raw_score, 65.0)
+
         # OOD handling: Out-of-distribution events should not get false CRITICAL without confirmation
         if is_ood:
             reasons.append(
@@ -122,7 +147,7 @@ class RiskScorer:
         else:
             sev = SeverityLevel.LOW
 
-        trigger_rotation = sev == SeverityLevel.CRITICAL and not is_ood
+        trigger_rotation = sev == SeverityLevel.CRITICAL and not is_ood and not non_finite_input
 
         return RiskScoreOutput(
             score=total_score,

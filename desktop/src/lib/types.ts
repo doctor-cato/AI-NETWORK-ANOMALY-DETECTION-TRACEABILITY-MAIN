@@ -465,6 +465,7 @@ export interface InvestigationReportResponse {
   evidence_provenance: Array<Record<string, unknown>>;
   recommended_actions: string[];
   markdown_content: string;
+  artifact_version?: string;
 }
 
 export interface StorageProtectionStatus {
@@ -553,6 +554,7 @@ export interface TraceGraphResponse {
   edges: EntityGraphEdgeItem[];
   data_status?: string;
   provenance?: Record<string, unknown>;
+  truncated?: boolean;
 }
 
 export interface LiveCollectorStats {
@@ -707,4 +709,43 @@ export interface BehavioralCorrelationResponse {
   total_vectors_evaluated: number;
   clusters: BehavioralCorrelationClusterItem[];
   reason?: string | null;
+}
+
+export interface BenchmarkSplitMetricsItem {
+  dataset: string;
+  f1?: number | null;
+  precision?: number | null;
+  recall?: number | null;
+  fpr?: number | null;
+  roc_auc?: number | null;
+  pr_auc?: number | null;
+  sample_count?: number | null;
+}
+
+export interface BenchmarkTopFeatureItem {
+  feature: string;
+  importance: number;
+  method?: string;
+}
+
+export interface ModelBenchmarkEntry {
+  model_key: string;
+  display_name: string;
+  model_type: string;
+  deployment_tier: string;
+  decision_threshold?: number | null;
+  threshold_source?: string | null;
+  in_domain?: BenchmarkSplitMetricsItem | null;
+  cross_source: BenchmarkSplitMetricsItem[];
+  top_features: BenchmarkTopFeatureItem[];
+}
+
+export interface ModelBenchmarkReportResponse {
+  data_status: string;
+  generated_at_utc?: string | null;
+  dataset_provenance?: string | null;
+  evaluation_partition?: string | null;
+  models: ModelBenchmarkEntry[];
+  limitations: string[];
+  sources_loaded: string[];
 }

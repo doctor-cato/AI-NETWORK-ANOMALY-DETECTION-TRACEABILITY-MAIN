@@ -1,5 +1,7 @@
 """Unit tests for Risk Scoring and Multi-Model Aggregation (Issues #108, #109)."""
 
+import pytest
+
 from network_anomaly.risk.aggregation import (
     AggregationPolicy,
     MultiModelDecisionAggregator,
@@ -73,3 +75,48 @@ def test_multi_model_decision_aggregation_policies():
     res_rf = agg_rf.aggregate(rf_prob=0.95, xgb_prob=0.1)
     assert res_rf.is_anomaly is True
     assert res_rf.combined_probability == 0.95
+
+
+def test_risk_scoring_non_finite_inputs_fail_closed():
+    scorer = RiskScorer()
+    non_finite_values = [float("nan"), float("inf"), float("-inf")]
+
+    for bad in non_finite_values:
+        # Non-finite AI probability with high behavioral/port/auth signals
+        res_ai = scorer.compute_risk(
+            ai_probability=bad,
+            behavioral_anomaly_score=0.95,
+            dest_port=445,
+            auth_failure_count=4,
+        )
+        assert res_ai.component_breakdown["ai_confidence"] == 0.0
+        assert res_ai.score <= 65.0
+        assert res_ai.severity != SeverityLevel.CRITICAL
+        assert res_ai.trigger_adaptive_rotation is False
+        assert any("Non-finite AI probability" in reason for reason in res_ai.justification)
+
+        # Non-finite behavioral score with max AI/port/auth signals (would be 75.0 without clamp)
+        res_beh = scorer.compute_risk(
+            ai_probability=1.0,
+            behavioral_anomaly_score=bad,
+            dest_port=445,
+            auth_failure_count=4,
+        )
+        assert res_beh.component_breakdown["behavioral_deviation"] == 0.0
+        assert res_beh.score <= 65.0
+        assert res_beh.severity != SeverityLevel.CRITICAL
+        assert res_beh.trigger_adaptive_rotation is False
+        assert any(
+            "Non-finite behavioral anomaly score" in reason for reason in res_beh.justification
+        )
+
+
+def test_risk_scoring_normalizes_negative_auth_failures():
+    scorer = RiskScorer()
+    res = scorer.compute_risk(
+        ai_probability=0.5,
+        behavioral_anomaly_score=0.2,
+        auth_failure_count=-5,
+    )
+    assert res.component_breakdown["auth_failures"] == 0.0
+    assert res.score == pytest.approx(30.0)

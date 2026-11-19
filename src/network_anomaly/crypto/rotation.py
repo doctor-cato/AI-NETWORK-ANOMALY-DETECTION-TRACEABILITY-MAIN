@@ -88,20 +88,35 @@ class KeyRotationPolicy:
             return rotation_id[4:].rsplit("-", 1)[0]
         return "general"
 
+    @staticmethod
+    def _ensure_risk_score_column(conn: sqlite3.Connection) -> None:
+        """Ensure rotation_audit includes risk_score for legacy DBs."""
+        cols = {
+            row["name"] if isinstance(row, sqlite3.Row) else row[1]
+            for row in conn.execute("PRAGMA table_info(rotation_audit);").fetchall()
+        }
+        if cols and "risk_score" not in cols:
+            conn.execute("ALTER TABLE rotation_audit ADD COLUMN risk_score REAL;")
+
     def _load_persisted_state(self) -> None:
         if not self.db_path or not self.db_path.exists():
             return
+        conn: Optional[sqlite3.Connection] = None
         try:
             conn = sqlite3.connect(str(self.db_path))
             conn.row_factory = sqlite3.Row
+            with conn:
+                self._ensure_risk_score_column(conn)
             rows = conn.execute("""
-                SELECT rotation_id, triggered_by, old_key_id, new_key_id, status, reason, created_at
+                SELECT rotation_id, triggered_by, old_key_id, new_key_id, risk_score, status, reason, created_at
                 FROM rotation_audit
                 ORDER BY created_at ASC;
                 """).fetchall()
-            conn.close()
         except Exception:
             return
+        finally:
+            if conn is not None:
+                conn.close()
 
         for row in rows:
             try:
@@ -112,6 +127,7 @@ class KeyRotationPolicy:
             new_kid = row["new_key_id"] or None
             old_kid = row["old_key_id"] or None
             domain = self._infer_domain(row["rotation_id"], new_kid or old_kid)
+            risk_score = float(row["risk_score"]) if row["risk_score"] is not None else None
             rec = RotationAuditRecord(
                 rotation_id=row["rotation_id"],
                 trigger=trigger,
@@ -119,7 +135,7 @@ class KeyRotationPolicy:
                 domain=domain,
                 old_key_id=old_kid,
                 new_key_id=new_kid,
-                risk_score=None,
+                risk_score=risk_score,
                 reason=row["reason"] or "",
                 timestamp=row["created_at"],
             )
@@ -290,14 +306,16 @@ class KeyRotationPolicy:
         """Persist audit record into SQLite rotation_audit table if db is provided."""
         if not self.db_path or not self.db_path.exists():
             return
+        conn: Optional[sqlite3.Connection] = None
         try:
             conn = sqlite3.connect(str(self.db_path))
             with conn:
+                self._ensure_risk_score_column(conn)
                 conn.execute(
                     """
                     INSERT INTO rotation_audit (
-                        rotation_id, triggered_by, old_key_id, new_key_id, dry_run, status, reason, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                        rotation_id, triggered_by, old_key_id, new_key_id, dry_run, risk_score, status, reason, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
                         record.rotation_id,
@@ -305,14 +323,17 @@ class KeyRotationPolicy:
                         record.old_key_id,
                         record.new_key_id or "",
                         0,  # real rotation
+                        record.risk_score,
                         record.decision.value,
                         record.reason,
                         record.timestamp,
                     ),
                 )
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn is not None:
+                conn.close()
 
     def get_audit_history(self) -> List[RotationAuditRecord]:
         return list(self._history)

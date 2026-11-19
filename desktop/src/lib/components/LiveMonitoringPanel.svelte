@@ -12,6 +12,7 @@
   export let initialDemoMode: boolean = false;
   export let pollIntervalMs: number = 3000;
   export let initialAlerts: LiveAlertRow[] | null = null;
+  export let initialLiveStatus: LiveStatusResponse | null = null;
   export let pageSize: number = 100;
 
   interface LiveAlertRow {
@@ -48,7 +49,7 @@
   let errorMessage: string | null = null;
   let lastUpdatedAt: string | null = null;
   let demoEnabled = initialDemoMode;
-  let liveStatus: LiveStatusResponse | null = null;
+  let liveStatus: LiveStatusResponse | null = initialLiveStatus;
   let alerts: LiveAlertRow[] = initialDemoMode ? DEMO_ALERTS : (initialAlerts ?? []);
   let filterSeverity = "ALL";
   let currentPage = 1;
@@ -203,6 +204,8 @@
     : liveStatus?.inference
       ? `${liveStatus.inference.ready_count ?? 0}/4 (${liveStatus.inference.inference_mode ?? "UNKNOWN"})`
       : "UNAVAILABLE";
+  $: droppedEventsCount =
+    (liveStatus?.collector?.events_dropped ?? 0) + (liveStatus?.pipeline?.total_dropped ?? 0);
   $: filteredAlerts = alerts.filter(
     (a) => filterSeverity === "ALL" || a.risk_level === filterSeverity
   );
@@ -250,6 +253,9 @@
       <span>AI Readiness: <code>{aiReadinessDisplay}</code></span>
       <span>Decoded flows: <code>{liveStatus?.collector?.flows_decoded ?? 0}</code></span>
       <span>Malformed packets: <code>{liveStatus?.collector?.decoder?.malformed_packet_count ?? 0}</code></span>
+      <span class:dropped-warning={droppedEventsCount > 0} data-testid="dropped-events-counter">
+        Dropped events: <code>{droppedEventsCount}</code>
+      </span>
     </div>
   </div>
 
@@ -375,6 +381,8 @@
   .title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
   .controls-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
   .meta-strip { display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.75rem; color: #94a3b8; margin-top: 0.75rem; }
+  .dropped-warning { color: #fca5a5; font-weight: 700; }
+  .dropped-warning code { background: #7f1d1d; color: #fecaca; padding: 0.1rem 0.35rem; border-radius: 4px; }
   h2 { margin: 0; font-size: 1.25rem; font-weight: 700; color: #38bdf8; }
   .subtitle { color: #94a3b8; font-size: 0.875rem; margin-top: 0.25rem; }
   .btn-ctl { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 0.35rem 0.75rem; border-radius: 4px; font-size: 0.75rem; cursor: pointer; font-weight: 600; }

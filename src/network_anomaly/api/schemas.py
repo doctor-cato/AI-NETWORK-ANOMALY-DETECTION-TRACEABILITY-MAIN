@@ -1190,6 +1190,7 @@ class TraceGraphResponse(BaseModel):
     edge_count: int
     nodes: List[EntityGraphNodeItem]
     edges: List[EntityGraphEdgeItem]
+    truncated: bool = False
     data_status: str = "OK"
     provenance: Dict[str, Any] = Field(default_factory=dict)
 
@@ -1211,6 +1212,7 @@ class InvestigationReportResponse(BaseModel):
     severity: str
     root_cause_summary: str
     artifact_hash: str
+    artifact_version: str = "2.0.0"
     timeline: TraceTimelineResponse
     evidence_provenance: List[Dict[str, Any]]
     recommended_actions: List[str]
@@ -1344,3 +1346,42 @@ class BehavioralCorrelationResponse(BaseModel):
     total_vectors_evaluated: int
     clusters: List[BehavioralCorrelationClusterItem] = Field(default_factory=list)
     reason: Optional[str] = None
+
+
+class BenchmarkSplitMetricsItem(BaseModel):
+    dataset: str
+    f1: Optional[float] = None
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    fpr: Optional[float] = None
+    roc_auc: Optional[float] = None
+    pr_auc: Optional[float] = None
+    sample_count: Optional[int] = None
+
+
+class BenchmarkTopFeatureItem(BaseModel):
+    feature: str
+    importance: float
+    method: str = ""
+
+
+class ModelBenchmarkEntry(BaseModel):
+    model_key: str
+    display_name: str
+    model_type: str
+    deployment_tier: str = "RESEARCH_ONLY"
+    decision_threshold: Optional[float] = None
+    threshold_source: Optional[str] = None
+    in_domain: Optional[BenchmarkSplitMetricsItem] = None
+    cross_source: List[BenchmarkSplitMetricsItem] = Field(default_factory=list)
+    top_features: List[BenchmarkTopFeatureItem] = Field(default_factory=list)
+
+
+class ModelBenchmarkReportResponse(BaseModel):
+    data_status: str = "EMPTY"
+    generated_at_utc: Optional[str] = None
+    dataset_provenance: Optional[str] = None
+    evaluation_partition: Optional[str] = None
+    models: List[ModelBenchmarkEntry] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    sources_loaded: List[str] = Field(default_factory=list)

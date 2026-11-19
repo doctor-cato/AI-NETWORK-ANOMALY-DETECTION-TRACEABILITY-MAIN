@@ -216,3 +216,122 @@ def test_model_status_exposes_capabilities_and_deployment_tier():
     payload = status.to_dict()
     assert payload["deployment_tier"] == "PRODUCTION_ELIGIBLE"
     assert payload["capabilities"] == ["binary_classification", "probability_scoring"]
+
+
+def test_query_unified_security_events_supports_time_range_filters(tmp_path: Path):
+    db = DatabaseManager(tmp_path / "events_time.db")
+    timestamps = [
+        ("evt-t1", "2026-05-01T10:00:00+00:00"),
+        ("evt-t2", "2026-05-01T12:00:00+00:00"),
+        ("evt-t3", "2026-05-01T14:00:00+00:00"),
+    ]
+    for eid, ts in timestamps:
+        db.insert_unified_security_event(
+            {
+                "event_id": eid,
+                "event_timestamp": ts,
+                "event_kind": "FLOW",
+                "source_id": "v2_netflow",
+                "entity_id": "host:10.0.0.5",
+            }
+        )
+
+    assert [e["event_id"] for e in db.query_unified_security_events()] == [
+        "evt-t3",
+        "evt-t2",
+        "evt-t1",
+    ]
+    ranged = db.query_unified_security_events(
+        start_time="2026-05-01T12:00:00+00:00",
+        end_time="2026-05-01T14:00:00+00:00",
+    )
+    assert [e["event_id"] for e in ranged] == ["evt-t3", "evt-t2"]
+    start_only = db.query_unified_security_events(start_time="2026-05-01T12:00:00+00:00")
+    assert [e["event_id"] for e in start_only] == ["evt-t3", "evt-t2"]
+    end_only = db.query_unified_security_events(end_time="2026-05-01T12:00:00+00:00")
+    assert [e["event_id"] for e in end_only] == ["evt-t2", "evt-t1"]
+
+
+def test_key_rotation_policy_persists_and_reloads_risk_score_including_legacy_db(tmp_path: Path):
+    legacy_db = tmp_path / "legacy_rot.db"
+    conn = sqlite3.connect(str(legacy_db))
+    conn.execute("""
+        CREATE TABLE rotation_audit (
+            rotation_id TEXT PRIMARY KEY,
+            triggered_by TEXT NOT NULL,
+            old_key_id TEXT,
+            new_key_id TEXT NOT NULL,
+            dry_run INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'SUCCESS',
+            reason TEXT,
+            created_at TEXT NOT NULL
+        );
+        """)
+    conn.commit()
+    conn.close()
+
+    current_time = [datetime(2026, 6, 1, 12, 0, 0, tzinfo=timezone.utc)]
+    km = KeyManager(keystore_dir=tmp_path / "keys")
+    policy1 = KeyRotationPolicy(
+        key_manager=km,
+        db_path=legacy_db,
+        cooldown_seconds=60,
+        clock_fn=lambda: current_time[0],
+    )
+    dec1, _ = policy1.evaluate_adaptive_rotation(
+        risk_score=91.25,
+        domain="behavioral",
+        context={"event_id": "evt-high-risk"},
+    )
+    assert dec1 == RotationDecision.EXECUTED
+
+    current_time[0] = current_time[0] + timedelta(seconds=120)
+    dec2, _ = policy1.execute_rotation(
+        trigger=RotationTrigger.MANUAL_ADMIN,
+        domain="behavioral",
+        risk_score=0.0,
+        reason="Zero risk manual rotation",
+    )
+    assert dec2 == RotationDecision.EXECUTED
+
+    current_time[0] = current_time[0] + timedelta(seconds=120)
+    dec3, _ = policy1.execute_rotation(
+        trigger=RotationTrigger.MANUAL_ADMIN,
+        domain="behavioral",
+        reason="No risk score provided",
+    )
+    assert dec3 == RotationDecision.EXECUTED
+
+    policy_reloaded = KeyRotationPolicy(
+        key_manager=KeyManager(keystore_dir=tmp_path / "keys"),
+        db_path=legacy_db,
+        cooldown_seconds=60,
+        clock_fn=lambda: current_time[0],
+    )
+    history = policy_reloaded.get_audit_history()
+    assert len(history) == 3
+    assert history[0].risk_score == pytest.approx(91.25)
+    assert history[1].risk_score == pytest.approx(0.0)
+    assert history[2].risk_score is None
+
+    # Also verify DatabaseManager idempotently handles rotation_audit migration
+    legacy_db_2 = tmp_path / "legacy_db_mgr.db"
+    conn2 = sqlite3.connect(str(legacy_db_2))
+    conn2.execute("""
+        CREATE TABLE rotation_audit (
+            rotation_id TEXT PRIMARY KEY,
+            triggered_by TEXT NOT NULL,
+            old_key_id TEXT,
+            new_key_id TEXT NOT NULL,
+            dry_run INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'SUCCESS',
+            reason TEXT,
+            created_at TEXT NOT NULL
+        );
+        """)
+    conn2.commit()
+    conn2.close()
+    db_mgr = DatabaseManager(legacy_db_2)
+    with db_mgr.transaction() as c:
+        cols = {row["name"] for row in c.execute("PRAGMA table_info(rotation_audit);").fetchall()}
+    assert "risk_score" in cols

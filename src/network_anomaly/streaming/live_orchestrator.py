@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from network_anomaly.api.db import DatabaseManager
 from network_anomaly.behavioral.sessionizer import EventSessionizer
 from network_anomaly.behavioral.vector import BehavioralVector, BehavioralVectorBuilder
 from network_anomaly.canonical.event import CanonicalSecurityEvent
@@ -151,6 +152,9 @@ class LiveSystemOrchestrator:
         self.vault: Optional[EncryptedStorageVault] = (
             EncryptedStorageVault(self.key_manager, Path(db_path)) if db_path else None
         )
+        self._db_manager: Optional[DatabaseManager] = (
+            DatabaseManager(Path(db_path)) if db_path else None
+        )
 
         # Bounded LRU-style entity eviction tracking for zero-leak memory stability
         self._entity_access_times: collections.OrderedDict[str, float] = collections.OrderedDict()
@@ -210,7 +214,13 @@ class LiveSystemOrchestrator:
         vector_encrypted = False
         sessions = self.sessionizer.sessionize(self._entity_events[entity])
         if sessions:
-            b_vec = self.vector_builder.build_vector(sessions[-1])
+            latest_session = sessions[-1]
+            session_events = [
+                ev
+                for ev in self._entity_events[entity]
+                if latest_session.start_time <= ev.event_timestamp <= latest_session.end_time
+            ]
+            b_vec = self.vector_builder.build_vector(latest_session, events=session_events)
             if self.vault is not None and b_vec.features is not None:
                 vector_id = self.vault.store_behavioral_vector(
                     entity_id=b_vec.entity_key,
@@ -220,6 +230,32 @@ class LiveSystemOrchestrator:
                     encrypt=self.encrypt_at_rest,
                 )
                 vector_encrypted = self.encrypt_at_rest
+
+        # 9. Persist canonical event to unified_security_events when SQLite db_path is configured
+        if self._db_manager is not None:
+            payload = event.model_dump(mode="json")
+            payload["risk_score"] = risk_assess.score
+            payload["risk_level"] = risk_assess.severity.value
+            payload["feature_status"] = feat_res.status
+            self._db_manager.insert_unified_security_event(
+                {
+                    "event_id": event.event_id,
+                    "schema_version": event.schema_version,
+                    "event_timestamp": event.event_timestamp.isoformat(),
+                    "event_kind": event.event_kind.value,
+                    "source_id": event.source_id,
+                    "entity_id": entity,
+                    "source_ip": event.source_ip,
+                    "dest_ip": event.dest_ip,
+                    "source_port": event.source_port,
+                    "dest_port": event.dest_port,
+                    "protocol": event.protocol,
+                    "is_ml_complete": feat_res.is_ml_ready,
+                    "validation_status": event.validation_status.value,
+                    "raw_provenance": event.raw_provenance.model_dump(mode="json"),
+                    "payload_json": payload,
+                }
+            )
 
         return LiveProcessingResult(
             event_id=event.event_id,

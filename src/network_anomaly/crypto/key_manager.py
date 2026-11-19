@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -61,6 +62,19 @@ NONCE_REGISTRY_FILENAME = "nonce_registry.json"
 
 PROTECTION_DPAPI = "WINDOWS_DPAPI"
 PROTECTION_POSIX = "POSIX_FILE_PERMISSIONS"
+
+_SAFE_IDENTIFIER_RE = re.compile(r"\A[A-Za-z0-9._-]+\Z")
+
+
+def _validate_safe_identifier(value: str, field_name: str) -> str:
+    """Validate that ``value`` is a safe identifier without path traversal."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Invalid {field_name}: must be a non-empty string")
+    if ".." in value or value == "." or not _SAFE_IDENTIFIER_RE.fullmatch(value):
+        raise ValueError(
+            f"Invalid {field_name} {value!r}: must match ^[A-Za-z0-9._-]+$ without '..'"
+        )
+    return value
 
 
 class KeyStorageError(RuntimeError):
@@ -397,9 +411,19 @@ class KeyManager:
     def _dek_aad(key_id: str, domain: str, version: int) -> bytes:
         return f"{key_id}|{domain}|{version}".encode("utf-8")
 
+    def _dek_file_path(self, key_id: str) -> Path:
+        """Return validated DEK path strictly confined to ``self.keystore_dir``."""
+        _validate_safe_identifier(key_id, "key_id")
+        keystore_resolved = self.keystore_dir.resolve()
+        candidate = (self.keystore_dir / f"{key_id}.key").resolve()
+        if candidate.parent != keystore_resolved:
+            raise ValueError(f"Invalid key_id {key_id!r}: path escapes keystore directory")
+        return candidate
+
     def _save_dek_file(self, key_id: str, raw_key: bytes, domain: str, version: int) -> None:
         """Wrap and persist a DEK under the master KEK (AES-256-GCM, v2 AAD)."""
-        kfile = self.keystore_dir / f"{key_id}.key"
+        _validate_safe_identifier(domain, "domain")
+        kfile = self._dek_file_path(key_id)
         nonce = self.nonce_registry.issue()
         aesgcm = AESGCM(self._master_key)
         ciphertext = aesgcm.encrypt(nonce, raw_key, self._dek_aad(key_id, domain, version))
@@ -407,7 +431,7 @@ class KeyManager:
 
     def _load_dek_file(self, key_id: str) -> Optional[bytes]:
         """Load and unwrap a DEK, or return ``None`` when the file is absent."""
-        kfile = self.keystore_dir / f"{key_id}.key"
+        kfile = self._dek_file_path(key_id)
         if not kfile.exists():
             return None
         raw = kfile.read_bytes()
@@ -458,6 +482,8 @@ class KeyManager:
         for item in data.get("keys", []):
             try:
                 metadata = KeyMetadata.from_dict(item)
+                _validate_safe_identifier(metadata.key_id, "key_id")
+                _validate_safe_identifier(metadata.domain, "domain")
             except (KeyError, TypeError, ValueError) as exc:
                 self.load_errors.append(
                     f"invalid metadata entry for key '{item.get('key_id', '?')}': "
@@ -528,6 +554,7 @@ class KeyManager:
 
     def derive_key(self, domain: str = "general", key_version: int = 1) -> bytes:
         """Derive domain-separated key using HKDF-SHA256 from master key."""
+        _validate_safe_identifier(domain, "domain")
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
             length=self.KEY_LENGTH_BYTES,
@@ -538,6 +565,7 @@ class KeyManager:
 
     def generate_key(self, domain: str = "general", version: Optional[int] = None) -> KeyMetadata:
         """Generate a new cryptographic key using CSPRNG and mark as ACTIVE."""
+        _validate_safe_identifier(domain, "domain")
         now = datetime.now(timezone.utc)
         if version is None:
             existing_versions = [
@@ -545,6 +573,7 @@ class KeyManager:
             ]
             version = max(existing_versions, default=0) + 1
         key_id = f"k-{domain}-{now.strftime('%Y%m%d%H%M%S')}-{version}"
+        _validate_safe_identifier(key_id, "key_id")
         raw_key = os.urandom(self.KEY_LENGTH_BYTES)
 
         prev_active_id = self._active_key_ids.get(domain)
@@ -571,6 +600,7 @@ class KeyManager:
 
     def get_active_key(self, domain: str = "general") -> Tuple[str, bytes]:
         """Get (key_id, key_bytes) for the active key. Fails closed if broken."""
+        _validate_safe_identifier(domain, "domain")
         active_id = self._active_key_ids.get(domain)
         if active_id:
             if active_id not in self._keys:
@@ -598,9 +628,11 @@ class KeyManager:
 
     def get_key(self, key_id: str) -> Optional[bytes]:
         """Retrieve key bytes by key_id for historical decryption."""
+        _validate_safe_identifier(key_id, "key_id")
         return self._keys.get(key_id)
 
     def get_metadata(self, key_id: str) -> Optional[KeyMetadata]:
+        _validate_safe_identifier(key_id, "key_id")
         return self._metadata.get(key_id)
 
     def list_keys(self) -> List[KeyMetadata]:
@@ -608,12 +640,14 @@ class KeyManager:
 
     def record_usage(self, key_id: str, count: int = 1) -> None:
         """Increment count of records encrypted under this key."""
+        _validate_safe_identifier(key_id, "key_id")
         if key_id in self._metadata:
             self._metadata[key_id].records_encrypted_count += count
             self._save_metadata()
 
     def revoke_key(self, key_id: str, active_references: int = 0) -> bool:
         """Revoke key if it has no active references. Guard against breaking data."""
+        _validate_safe_identifier(key_id, "key_id")
         if active_references > 0:
             raise ValueError(
                 f"Cannot revoke key '{key_id}': key still has {active_references} "

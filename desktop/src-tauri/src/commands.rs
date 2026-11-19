@@ -256,6 +256,13 @@ pub async fn fetch_models_status(backend: State<'_, BackendManager>) -> Result<V
 }
 
 #[tauri::command]
+pub async fn get_model_benchmark_report(
+    backend: State<'_, BackendManager>,
+) -> Result<Value, String> {
+    get_json(backend.inner(), "/api/v1/models/benchmark-report").await
+}
+
+#[tauri::command]
 pub async fn inspect_csv(
     backend: State<'_, BackendManager>,
     file_path: String,

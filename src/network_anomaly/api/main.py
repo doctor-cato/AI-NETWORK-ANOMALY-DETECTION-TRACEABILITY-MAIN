@@ -7,6 +7,8 @@ event timeline, key rotation lifecycle, and system health checks.
 from __future__ import annotations
 
 import hmac
+import json
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -41,6 +43,8 @@ from network_anomaly.api.schemas import (
     BehavioralVectorDetailResponse,
     BehavioralVectorListItem,
     BehavioralVectorListResponse,
+    BenchmarkSplitMetricsItem,
+    BenchmarkTopFeatureItem,
     CryptoStatusResponse,
     CsvAnalyzeRequest,
     CsvAnalyzeResponse,
@@ -67,6 +71,8 @@ from network_anomaly.api.schemas import (
     LiveResultsResponse,
     LiveStartRequest,
     LiveStatusResponse,
+    ModelBenchmarkEntry,
+    ModelBenchmarkReportResponse,
     ModelStatusItem,
     PaginatedIncidentsResponse,
     PaginatedRotationAuditResponse,
@@ -81,16 +87,164 @@ from network_anomaly.api.schemas import (
     TraceTimelineResponse,
 )
 from network_anomaly.api.service import ApiService
+from network_anomaly.config import PROJECT_ROOT
 from network_anomaly.trace.engine import TraceEngine
 from network_anomaly.trace.graph import (
     EntityKind,
-    EntityNode,
     EntityRelationshipGraph,
-    RelationEdge,
     RelationType,
 )
 from network_anomaly.trace.investigation import InvestigationReportGenerator
 from network_anomaly.trace.timeline import AttackTimelineReconstructor
+
+logger = logging.getLogger(__name__)
+
+
+def _load_json_dict(path: Path) -> Optional[Dict[str, Any]]:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Failed to load benchmark report '%s': %s", path, exc)
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _build_split_metrics(dataset_label: str, raw: Any) -> Optional[BenchmarkSplitMetricsItem]:
+    if not isinstance(raw, dict):
+        return None
+    raw_count = raw.get("sample_count", raw.get("total_rows"))
+    sample_count = int(raw_count) if raw_count is not None else None
+    fpr_val = raw.get("false_positive_rate")
+    if fpr_val is None:
+        fpr_val = raw.get("fpr")
+    return BenchmarkSplitMetricsItem(
+        dataset=dataset_label,
+        f1=float(raw["f1"]) if raw.get("f1") is not None else None,
+        precision=float(raw["precision"]) if raw.get("precision") is not None else None,
+        recall=float(raw["recall"]) if raw.get("recall") is not None else None,
+        fpr=float(fpr_val) if fpr_val is not None else None,
+        roc_auc=float(raw["roc_auc"]) if raw.get("roc_auc") is not None else None,
+        pr_auc=float(raw["pr_auc"]) if raw.get("pr_auc") is not None else None,
+        sample_count=sample_count,
+    )
+
+
+def _load_model_benchmark_report(
+    reports_dir: Optional[Path] = None,
+) -> ModelBenchmarkReportResponse:
+    """Load official 4-model in-domain and cross-source benchmark reports safely."""
+    base_dir = reports_dir or (PROJECT_ROOT / "reports" / "experiments" / "ml")
+    comparison = _load_json_dict(base_dir / "model_comparison_report.json")
+    if comparison is None:
+        return ModelBenchmarkReportResponse(data_status=EMPTY)
+
+    sources_loaded = ["reports/experiments/ml/model_comparison_report.json"]
+
+    ctu_raw = _load_json_dict(base_dir / "ctu_cross_source_eval.json")
+    ctu_models: Dict[str, Any] = {}
+    if ctu_raw is not None:
+        sources_loaded.append("reports/experiments/ml/ctu_cross_source_eval.json")
+        if isinstance(ctu_raw.get("zero_shot_ait_models"), dict):
+            ctu_models = ctu_raw["zero_shot_ait_models"]
+
+    uwf_raw = _load_json_dict(base_dir / "uwf_zeekdata24_cross_source_eval.json")
+    uwf_models: Dict[str, Any] = {}
+    if uwf_raw is not None:
+        sources_loaded.append("reports/experiments/ml/uwf_zeekdata24_cross_source_eval.json")
+        if isinstance(uwf_raw.get("zero_shot_eval_full_zeek_unset_zero"), dict):
+            uwf_models = uwf_raw["zero_shot_eval_full_zeek_unset_zero"]
+
+    raw_prov = comparison.get("dataset_provenance")
+    if isinstance(raw_prov, dict):
+        dataset_id = raw_prov.get("dataset_id", "AIT-NetFlow-v2-Suite")
+        split_proto = raw_prov.get("split_protocol")
+        dataset_provenance = f"{dataset_id} ({split_proto})" if split_proto else str(dataset_id)
+    elif raw_prov is not None:
+        dataset_provenance = str(raw_prov)
+    else:
+        dataset_provenance = None
+
+    raw_models = comparison.get("models")
+    models_dict = raw_models if isinstance(raw_models, dict) else {}
+    entries: List[ModelBenchmarkEntry] = []
+
+    for model_key, model_data in models_dict.items():
+        if not isinstance(model_data, dict):
+            continue
+        in_domain = _build_split_metrics("AIT-NDS-v2 (test)", model_data.get("metrics"))
+        cross_source: List[BenchmarkSplitMetricsItem] = []
+
+        ctu_entry = ctu_models.get(model_key)
+        if isinstance(ctu_entry, dict):
+            for split_key, label in (
+                ("ctu_echo", "CTU-Echo"),
+                ("ctu_windows7ad", "CTU-Win7AD"),
+            ):
+                item = _build_split_metrics(label, ctu_entry.get(split_key))
+                if item is not None:
+                    cross_source.append(item)
+
+        uwf_entry = uwf_models.get(model_key)
+        if isinstance(uwf_entry, dict):
+            item = _build_split_metrics("UWF-ZeekData24", uwf_entry)
+            if item is not None:
+                cross_source.append(item)
+
+        explain = model_data.get("explainability")
+        raw_top = explain.get("top_features", []) if isinstance(explain, dict) else []
+        top_features = [
+            BenchmarkTopFeatureItem(
+                feature=str(feat["feature"]),
+                importance=float(feat["importance"]),
+                method=str(feat.get("method", "")),
+            )
+            for feat in raw_top
+            if isinstance(feat, dict) and "feature" in feat and "importance" in feat
+        ]
+
+        raw_thresh = model_data.get("decision_threshold")
+        entries.append(
+            ModelBenchmarkEntry(
+                model_key=str(model_key),
+                display_name=str(model_data.get("display_name", model_key)),
+                model_type=str(model_data.get("model_type", model_key)),
+                deployment_tier="RESEARCH_ONLY",
+                decision_threshold=float(raw_thresh) if raw_thresh is not None else None,
+                threshold_source=(
+                    str(model_data["threshold_source"])
+                    if model_data.get("threshold_source") is not None
+                    else None
+                ),
+                in_domain=in_domain,
+                cross_source=cross_source,
+                top_features=top_features,
+            )
+        )
+
+    raw_limitations = comparison.get("limitations")
+    limitations = (
+        [str(item) for item in raw_limitations] if isinstance(raw_limitations, list) else []
+    )
+
+    return ModelBenchmarkReportResponse(
+        data_status=CONNECTED if entries else EMPTY,
+        generated_at_utc=(
+            str(comparison["generated_at_utc"])
+            if comparison.get("generated_at_utc") is not None
+            else None
+        ),
+        dataset_provenance=dataset_provenance,
+        evaluation_partition=(
+            str(comparison["evaluation_partition"])
+            if comparison.get("evaluation_partition") is not None
+            else None
+        ),
+        models=entries,
+        limitations=limitations,
+        sources_loaded=sources_loaded,
+    )
 
 
 def create_app(
@@ -190,6 +344,11 @@ def create_app(
                     },
                 )
             return await call_next(request)
+
+    else:
+        logger.warning(
+            "NETWORK_ANOMALY_API_TOKEN is not set; API routes are running without authentication on loopback."
+        )
 
     # Dependency getters
     def get_service() -> ApiService:
@@ -420,6 +579,16 @@ def create_app(
     ) -> List[ModelStatusItem]:
         """Return genuine readiness, artifact digest, and threshold metadata."""
         return collect_models_status(svc)
+
+    @app.get(
+        "/api/v1/models/benchmark-report",
+        response_model=ModelBenchmarkReportResponse,
+        tags=["Models & CSV"],
+        summary="Get official 4-model benchmark and cross-source evaluation report",
+    )
+    def get_model_benchmark_report() -> ModelBenchmarkReportResponse:
+        """Return official AIT-NDS-v2 test, CTU-SME-11, and UWF-ZeekData24 benchmark metrics."""
+        return _load_model_benchmark_report()
 
     @app.post(
         "/api/v1/csv/inspect",
@@ -844,7 +1013,7 @@ def create_app(
         rt: LiveRuntime = Depends(get_live_runtime),
     ) -> TraceTimelineResponse:
         """Reconstruct multi-stage attack timeline from real stored/live security events."""
-        all_events, campaigns = _collect_real_trace_events(svc, rt, limit=limit)
+        all_events, campaigns = _collect_real_trace_events(svc, rt, limit=max(200, limit + offset))
         effective_campaign = campaign_name or (campaigns[0] if campaigns else "ALL")
 
         if campaign_name and campaign_name != "ALL":
@@ -879,7 +1048,13 @@ def create_app(
                 stages=[],
                 available_campaigns=[],
                 data_status=EMPTY,
-                provenance={"source": "none", "events_count": 0, "filter": filter_mode},
+                provenance={
+                    "source": "none",
+                    "events_count": 0,
+                    "filter": filter_mode,
+                    "offset": offset,
+                    "limit": limit,
+                },
             )
 
         reconstructor = AttackTimelineReconstructor()
@@ -901,6 +1076,7 @@ def create_app(
             )
             for s in timeline.stages
         ]
+        paged_stages = stage_items[offset : offset + limit]
 
         return TraceTimelineResponse(
             timeline_id=timeline.timeline_id,
@@ -910,13 +1086,15 @@ def create_app(
             end_time=timeline.end_time,
             entities_involved=timeline.entities_involved,
             total_stages=len(stage_items),
-            stages=stage_items,
+            stages=paged_stages,
             available_campaigns=campaigns,
             data_status=CONNECTED if stage_items else EMPTY,
             provenance={
                 "source": "live_and_sqlite",
                 "events_count": len(events_data),
                 "filter": filter_mode,
+                "offset": offset,
+                "limit": limit,
             },
         )
 
@@ -937,25 +1115,21 @@ def create_app(
         live_raw = rt.entity_graph()
         if live_raw:
             for node_dict in live_raw.get("nodes", []):
-                graph.nodes[node_dict["node_id"]] = EntityNode(
+                graph.add_node(
                     node_id=node_dict["node_id"],
                     kind=EntityKind(node_dict["kind"]),
                     label=node_dict["label"],
                     properties=dict(node_dict.get("properties", {})),
                 )
             for edge_dict in live_raw.get("edges", []):
-                edge = RelationEdge(
-                    edge_id=edge_dict["edge_id"],
+                graph.add_edge(
                     source_id=edge_dict["source_id"],
                     target_id=edge_dict["target_id"],
                     relation_type=RelationType(edge_dict["relation_type"]),
                     confidence=float(edge_dict.get("confidence", 1.0)),
                     is_observed=bool(edge_dict.get("is_observed", True)),
                     evidence_id=edge_dict.get("evidence_id"),
-                )
-                graph.edges.append(edge)
-                graph._edge_signatures.add(
-                    f"{edge.source_id}->{edge.target_id}:{edge.relation_type.value}"
+                    attributes=dict(edge_dict.get("attributes", {})),
                 )
 
         with svc.db.transaction() as conn:
@@ -999,6 +1173,7 @@ def create_app(
                 edge_count=0,
                 nodes=[],
                 edges=[],
+                truncated=False,
                 data_status=EMPTY,
                 provenance={"source": "live_and_sqlite", "entity_found": False},
             )
@@ -1030,6 +1205,7 @@ def create_app(
             edge_count=len(edge_items),
             nodes=node_items,
             edges=edge_items,
+            truncated=res.truncated,
             data_status=CONNECTED,
             provenance={"source": "live_and_sqlite", "entity_found": True},
         )
@@ -1110,6 +1286,7 @@ def create_app(
             severity=rep.severity,
             root_cause_summary=rep.root_cause_summary,
             artifact_hash=rep.artifact_hash,
+            artifact_version=rep.artifact_version,
             timeline=tl_resp,
             evidence_provenance=rep.evidence_provenance,
             recommended_actions=rep.recommended_actions,

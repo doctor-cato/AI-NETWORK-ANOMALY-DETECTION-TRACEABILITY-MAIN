@@ -300,3 +300,58 @@ class TestKeystoreBackupRestore:
         assert restored_key == raw_key
         restored_cipher = AESGCMCipher(key=restored_key, key_id=key_id)
         assert restored_cipher.decrypt_json(env) == {"entity": "host:10.0.0.1", "score": 0.42}
+
+
+class TestIdentifierAndPathTraversalGuards:
+    @pytest.mark.parametrize(
+        "bad_value",
+        ["../evil", "foo/bar", "a\\b", "..", ".", "", "bad\x00id", "bad\nid"],
+    )
+    def test_rejects_path_traversal_on_domain_and_key_id(self, tmp_path, bad_value):
+        km = KeyManager(keystore_dir=tmp_path / "keys")
+
+        with pytest.raises(ValueError):
+            km.generate_key(domain=bad_value)
+        with pytest.raises(ValueError):
+            km.get_active_key(domain=bad_value)
+        with pytest.raises(ValueError):
+            km.derive_key(domain=bad_value)
+        with pytest.raises(ValueError):
+            km.get_key(bad_value)
+        with pytest.raises(ValueError):
+            km._save_dek_file(bad_value, b"\x01" * 32, domain="general", version=1)
+        with pytest.raises(ValueError):
+            km._load_dek_file(bad_value)
+
+    def test_valid_domain_and_key_id_formats_remain_supported(self, tmp_path):
+        km = KeyManager(keystore_dir=tmp_path / "keys")
+        meta = km.generate_key(domain="behavioral_vectors")
+        assert meta.domain == "behavioral_vectors"
+        assert km.get_key(meta.key_id) is not None
+
+        km._save_dek_file("key-general-v1", b"\x02" * 32, domain="general", version=1)
+        assert (tmp_path / "keys" / "key-general-v1.key").exists()
+
+    def test_tampered_metadata_traversal_key_id_fails_closed_on_load(self, tmp_path):
+        keystore = tmp_path / "keys"
+        km = KeyManager(keystore_dir=keystore)
+        km.generate_key(domain="general")
+
+        meta_file = keystore / "keys_metadata.json"
+        payload = json.loads(meta_file.read_text(encoding="utf-8"))
+        payload["keys"].append(
+            {
+                "key_id": "../outside",
+                "version": 1,
+                "algorithm": "AES-256-GCM",
+                "status": "ACTIVE",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "retired_at": None,
+                "records_encrypted_count": 0,
+                "domain": "general",
+            }
+        )
+        meta_file.write_text(json.dumps(payload), encoding="utf-8")
+
+        reloaded = KeyManager(keystore_dir=keystore)
+        assert any("../outside" in err for err in reloaded.load_errors)

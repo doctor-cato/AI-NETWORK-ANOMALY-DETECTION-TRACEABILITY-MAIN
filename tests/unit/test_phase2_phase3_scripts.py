@@ -125,3 +125,40 @@ def test_trusted_ood_sha_anchor_resolution_accepts_matching_fixture(tmp_path: Pa
     resolved, src = resolve_expected_ood_gate_sha256(digest)
     assert resolved == digest
     assert src == "explicit_expected_sha256"
+
+
+def test_benchmark_full_system_ci_safe_and_policy_metadata(tmp_path: Path, monkeypatch) -> None:
+    """Verify benchmark_full_system.py is CI-safe without OOD trust anchor and forwards CLI policy."""
+    path = PROJECT_ROOT / "scripts" / "benchmark_full_system.py"
+    spec = importlib.util.spec_from_file_location("benchmark_full_system", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["benchmark_full_system"] = mod
+    spec.loader.exec_module(mod)
+
+    monkeypatch.delenv("NETFLOW_RUNTIME_MODE", raising=False)
+    monkeypatch.delenv("NETFLOW_OOD_GATE_SHA256", raising=False)
+    monkeypatch.delenv("NETFLOW_EMBEDDED_OOD_GATE_SHA256", raising=False)
+
+    out_json = tmp_path / "bench.json"
+    out_md = tmp_path / "bench.md"
+    monkeypatch.setattr(mod, "OUTPUT_JSON", out_json)
+    monkeypatch.setattr(mod, "OUTPUT_MD", out_md)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["benchmark_full_system.py", "--events", "5", "--micro-iters", "5", "--repeats", "1"],
+    )
+
+    mod.main()
+    assert out_json.is_file()
+    assert out_md.is_file()
+    payload = json.loads(out_json.read_text(encoding="utf-8"))
+    readiness = payload["inference_readiness"]
+    assert readiness["runtime_mode"] == "deployment"
+    assert readiness["inference_mode"] == "UNAVAILABLE"
+    assert "ood_gate_status" in readiness
+    assert "ood_gate_trust_anchor" in readiness
+    md_text = out_md.read_text(encoding="utf-8")
+    assert "Runtime Mode" in md_text
+    assert "OOD Gate" in md_text

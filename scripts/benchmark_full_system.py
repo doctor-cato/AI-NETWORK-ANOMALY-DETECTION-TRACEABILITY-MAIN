@@ -15,7 +15,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPTS_DIR.parent
@@ -37,7 +37,9 @@ from network_anomaly.canonical.feature_contract import (  # noqa: E402
     get_flow_feature_contract_v2,
 )
 from network_anomaly.crypto.aead import AESGCMCipher  # noqa: E402
-from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS  # noqa: E402
+from network_anomaly.data.v2_schema import (  # noqa: E402
+    compute_flow_features_from_base,
+)
 from network_anomaly.streaming.live_orchestrator import LiveSystemOrchestrator  # noqa: E402
 from network_anomaly.streaming.pipeline import StreamingEventPipeline  # noqa: E402
 from network_anomaly.telemetry.collector import NetFlowIPFIXDecoder  # noqa: E402
@@ -76,13 +78,28 @@ def _variance_stats(samples: List[float]) -> Dict[str, Any]:
     }
 
 
-def _run_single_benchmark_pass(batch_events: int, micro_iters: int) -> Dict[str, Any]:
+def _run_single_benchmark_pass(
+    batch_events: int,
+    micro_iters: int,
+    runtime_mode: Optional[str] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
+) -> Dict[str, Any]:
     env = collect_environment_metadata()
     contract = get_flow_feature_contract_v2()
-    orchestrator = LiveSystemOrchestrator()
+    orchestrator = LiveSystemOrchestrator(
+        runtime_mode=runtime_mode,
+        expected_ood_gate_sha256=expected_ood_gate_sha256,
+    )
     mode_mgr = ModeOrchestrator(orchestrator=orchestrator)
 
-    base_feats = {k: float((idx % 10) + 1) for idx, k in enumerate(ML_FEATURE_COLUMNS)}
+    base_feats = compute_flow_features_from_base(
+        duration_ms=50.0,
+        bytes_in=1000.0,
+        bytes_out=2500.0,
+        pkts_in=10.0,
+        pkts_out=12.0,
+        protocol_num=6,
+    )
     events = [
         CanonicalSecurityEvent(
             event_timestamp=datetime.now(timezone.utc),
@@ -191,6 +208,9 @@ def _run_single_benchmark_pass(batch_events: int, micro_iters: int) -> Dict[str,
             "inference_mode": readiness["inference_mode"],
             "ready_count": readiness["ready_count"],
             "validated_count": readiness["validated_count"],
+            "runtime_mode": readiness["runtime_mode"],
+            "ood_gate_status": readiness["ood_gate_status"],
+            "ood_gate_trust_anchor": readiness["ood_gate_trust_anchor"],
         },
         "end_to_end_measured": {
             "events_processed": len(events),
@@ -227,11 +247,24 @@ def _run_single_benchmark_pass(batch_events: int, micro_iters: int) -> Dict[str,
 
 
 def run_benchmark(
-    batch_events: int = 200, micro_iters: int = 100, repeats: int = 3
+    batch_events: int = 200,
+    micro_iters: int = 100,
+    repeats: int = 3,
+    runtime_mode: Optional[str] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
+    output_json: Optional[Path] = None,
+    output_md: Optional[Path] = None,
 ) -> Dict[str, Any]:
+    eff_output_json = Path(output_json) if output_json is not None else OUTPUT_JSON
+    eff_output_md = Path(output_md) if output_md is not None else OUTPUT_MD
     repeats = max(1, int(repeats))
     runs = [
-        _run_single_benchmark_pass(batch_events=batch_events, micro_iters=micro_iters)
+        _run_single_benchmark_pass(
+            batch_events=batch_events,
+            micro_iters=micro_iters,
+            runtime_mode=runtime_mode,
+            expected_ood_gate_sha256=expected_ood_gate_sha256,
+        )
         for _ in range(repeats)
     ]
     results = dict(runs[-1])
@@ -254,8 +287,8 @@ def run_benchmark(
     }
     results["repeatability_summary"] = repeatability
 
-    OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_JSON.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
+    eff_output_json.parent.mkdir(parents=True, exist_ok=True)
+    eff_output_json.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8", newline="\n")
 
     env = results["hardware_environment"]
     readiness = results["inference_readiness"]
@@ -269,7 +302,12 @@ def run_benchmark(
         "",
         f"- **Executed At (UTC):** `{results['benchmark_executed_at_utc']}`",
         f"- **Host OS / CPU / RAM:** `{env['os']}` / `{env['cpu_count']} vCPU` / `{env['total_ram_gb']} GB`",
-        f"- **Python:** `{env['python_version']}` | **AI Readiness:** `{readiness['ready_count']}/4 ({readiness['inference_mode']})`",
+        (
+            f"- **Python:** `{env['python_version']}` | "
+            f"**AI Readiness:** `{readiness['ready_count']}/4 ({readiness['inference_mode']})` | "
+            f"**Runtime Mode:** `{readiness['runtime_mode']}` | "
+            f"**OOD Gate:** `{readiness['ood_gate_status']}` (`{readiness['ood_gate_trust_anchor']}`)"
+        ),
         f"- **Repeatability Runs:** `{repeats}`",
         "",
         "## 1. End-to-End Orchestrator Measurement",
@@ -291,9 +329,9 @@ def run_benchmark(
             f"{rstats['mean']} ± {rstats['std']} | {rstats['cv_pct']}% |"
         )
     md_lines.extend(["", "## 3. Limitations", *[f"- {lim}" for lim in results["limitations"]]])
-    OUTPUT_MD.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_MD.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
-    print(f"Dynamic system benchmark written: {OUTPUT_JSON} and {OUTPUT_MD}")
+    eff_output_md.parent.mkdir(parents=True, exist_ok=True)
+    eff_output_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8", newline="\n")
+    print(f"Dynamic system benchmark written: {eff_output_json} and {eff_output_md}")
     return results
 
 
@@ -302,8 +340,25 @@ def main() -> None:
     parser.add_argument("--events", type=int, default=200)
     parser.add_argument("--micro-iters", type=int, default=100)
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument(
+        "--runtime-mode",
+        choices=["deployment", "research"],
+        default=None,
+        help="Runtime policy mode (defaults to fail-closed deployment).",
+    )
+    parser.add_argument(
+        "--ood-gate-sha256",
+        default=None,
+        help="Trusted 64-hex SHA-256 trust anchor for persisted OOD gate verification.",
+    )
     args = parser.parse_args()
-    run_benchmark(batch_events=args.events, micro_iters=args.micro_iters, repeats=args.repeats)
+    run_benchmark(
+        batch_events=args.events,
+        micro_iters=args.micro_iters,
+        repeats=args.repeats,
+        runtime_mode=args.runtime_mode,
+        expected_ood_gate_sha256=args.ood_gate_sha256,
+    )
 
 
 if __name__ == "__main__":

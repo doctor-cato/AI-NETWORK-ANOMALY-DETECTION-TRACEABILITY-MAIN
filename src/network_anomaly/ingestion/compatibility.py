@@ -63,6 +63,7 @@ class BenchmarkEvidence:
     in_domain_evaluated: bool = False
     cross_source_validated: bool = False
     deployment_tier: str = "RESEARCH_ONLY"
+    scope_note: str = ""
 
     def __post_init__(self) -> None:
         if not self.model_version and self.model_identifier:
@@ -213,12 +214,23 @@ def load_v2_benchmark_registry(
             if (artifact_verified and passed and cross_source_validated and not is_research)
             else "RESEARCH_ONLY"
         )
+        if status == "UNVALIDATED":
+            scope_note = "unvalidated_not_certified"
+        elif deployment_tier == "PRODUCTION_ELIGIBLE":
+            scope_note = "production_eligible_in_domain_and_cross_source_verified"
+        elif not is_research and passed and not cross_source_validated:
+            scope_note = "in_domain_csv_dry_run_only_not_production_certified"
+        else:
+            scope_note = "research_only_not_production_certified"
+
         reason_detail = (
             f"Unvalidated v2 manifest ({fname}): missing provenance, clean threshold, or test metrics."
             if status == "UNVALIDATED"
             else (
                 f"Verified v2 manifest ({fname}) under {FEATURE_CONTRACT_ID} "
-                f"(cross_source_validated={cross_source_validated})."
+                f"(scope={scope_note}; deployment_tier={deployment_tier}; "
+                f"cross_source_validated={cross_source_validated}; "
+                "containment blocked by response_policy.py when deployment_tier=RESEARCH_ONLY)."
             )
         )
 
@@ -253,6 +265,7 @@ def load_v2_benchmark_registry(
                 in_domain_evaluated=in_domain_eval,
                 cross_source_validated=cross_source_validated,
                 deployment_tier=deployment_tier,
+                scope_note=scope_note,
                 reason=reason_detail,
             )
             if model_key == "random_forest":
@@ -283,6 +296,8 @@ class CompatibilityEvaluationReport:
     benchmark_evidence: Optional[BenchmarkEvidence] = None
     trace_route_eligible: bool = True
     risk_route_eligible: bool = True
+    deployment_tier: str = "RESEARCH_ONLY"
+    scope_note: str = ""
 
     @property
     def is_eligible_for_inference(self) -> bool:
@@ -522,6 +537,20 @@ class FeatureCompatibilityEvaluator:
         }
 
         is_research = eligibility == InferenceEligibility.RESEARCH_ONLY
+        if evidence is not None:
+            dep_tier = evidence.deployment_tier
+            scope_note = evidence.scope_note or (
+                "in_domain_csv_dry_run_only_not_production_certified"
+                if val_status == ValidationStatus.MODEL_VALIDATED and dep_tier == "RESEARCH_ONLY"
+                else (
+                    "research_only_not_production_certified" if dep_tier == "RESEARCH_ONLY" else ""
+                )
+            )
+        else:
+            dep_tier = "RESEARCH_ONLY"
+            scope_note = (
+                "research_only_unbenchmarked" if allow_research_only else "unbenchmarked_source"
+            )
 
         return CompatibilityEvaluationReport(
             source_id=eff_source,
@@ -535,6 +564,8 @@ class FeatureCompatibilityEvaluator:
             benchmark_evidence=evidence,
             trace_route_eligible=True,
             risk_route_eligible=not is_research,
+            deployment_tier=dep_tier,
+            scope_note=scope_note,
         )
 
     def evaluate_dataframe(
@@ -668,6 +699,20 @@ class FeatureCompatibilityEvaluator:
                 )
 
         is_research = eligibility == InferenceEligibility.RESEARCH_ONLY
+        if evidence is not None:
+            dep_tier = evidence.deployment_tier
+            scope_note = evidence.scope_note or (
+                "in_domain_csv_dry_run_only_not_production_certified"
+                if val_status == ValidationStatus.MODEL_VALIDATED and dep_tier == "RESEARCH_ONLY"
+                else (
+                    "research_only_not_production_certified" if dep_tier == "RESEARCH_ONLY" else ""
+                )
+            )
+        else:
+            dep_tier = "RESEARCH_ONLY"
+            scope_note = (
+                "research_only_unbenchmarked" if allow_research_only else "unbenchmarked_source"
+            )
 
         return CompatibilityEvaluationReport(
             source_id=source_id,
@@ -681,4 +726,6 @@ class FeatureCompatibilityEvaluator:
             benchmark_evidence=evidence,
             trace_route_eligible=True,
             risk_route_eligible=not is_research,
+            deployment_tier=dep_tier,
+            scope_note=scope_note,
         )

@@ -149,7 +149,11 @@ def test_investigation_report_generation():
 
     assert report.incident_id == "INC-2026-001"
     assert report.artifact_hash != ""
+    assert report.artifact_version == "2.0.0"
+    assert report.to_dict()["artifact_version"] == "2.0.0"
     md = report.to_markdown()
     assert "# Incident Investigation Report" in md
+    assert "Artifact Version:" in md
+    assert "2.0.0" in md
     assert "SQL injection attempt" in md
     assert "ev-01" in md

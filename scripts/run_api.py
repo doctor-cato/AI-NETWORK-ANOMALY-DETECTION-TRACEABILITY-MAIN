@@ -116,6 +116,11 @@ def main() -> None:
         f"require_ood_gate={effective_require_ood}, "
         f"ood_trust_anchor={trust_summary}, sha_configured={bool(resolved_sha)}"
     )
+    if not os.environ.get("NETWORK_ANOMALY_API_TOKEN", "").strip():
+        print(
+            "[SECURITY WARNING] NETWORK_ANOMALY_API_TOKEN is unset; "
+            "API endpoints are unauthenticated (loopback dev mode only)."
+        )
 
     if args.reload:
         if _FROZEN:

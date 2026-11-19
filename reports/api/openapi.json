@@ -640,6 +640,28 @@
         }
       }
     },
+    "/api/v1/models/benchmark-report": {
+      "get": {
+        "tags": [
+          "Models & CSV"
+        ],
+        "summary": "Get official 4-model benchmark and cross-source evaluation report",
+        "description": "Return official AIT-NDS-v2 test, CTU-SME-11, and UWF-ZeekData24 benchmark metrics.",
+        "operationId": "get_model_benchmark_report_api_v1_models_benchmark_report_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelBenchmarkReportResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/csv/inspect": {
       "post": {
         "tags": [
@@ -2690,6 +2712,119 @@
         ],
         "title": "BehavioralVectorListResponse"
       },
+      "BenchmarkSplitMetricsItem": {
+        "properties": {
+          "dataset": {
+            "type": "string",
+            "title": "Dataset"
+          },
+          "f1": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "F1"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "recall": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall"
+          },
+          "fpr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fpr"
+          },
+          "roc_auc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roc Auc"
+          },
+          "pr_auc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Auc"
+          },
+          "sample_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset"
+        ],
+        "title": "BenchmarkSplitMetricsItem"
+      },
+      "BenchmarkTopFeatureItem": {
+        "properties": {
+          "feature": {
+            "type": "string",
+            "title": "Feature"
+          },
+          "importance": {
+            "type": "number",
+            "title": "Importance"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "feature",
+          "importance"
+        ],
+        "title": "BenchmarkTopFeatureItem"
+      },
       "CompatibilityGateSummarySchema": {
         "properties": {
           "source_id": {
@@ -4616,6 +4751,11 @@
             "type": "string",
             "title": "Artifact Hash"
           },
+          "artifact_version": {
+            "type": "string",
+            "title": "Artifact Version",
+            "default": "2.0.0"
+          },
           "timeline": {
             "$ref": "#/components/schemas/TraceTimelineResponse"
           },
@@ -4979,6 +5119,145 @@
           "data_status"
         ],
         "title": "LiveStatusResponse"
+      },
+      "ModelBenchmarkEntry": {
+        "properties": {
+          "model_key": {
+            "type": "string",
+            "title": "Model Key"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "model_type": {
+            "type": "string",
+            "title": "Model Type"
+          },
+          "deployment_tier": {
+            "type": "string",
+            "title": "Deployment Tier",
+            "default": "RESEARCH_ONLY"
+          },
+          "decision_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Threshold"
+          },
+          "threshold_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold Source"
+          },
+          "in_domain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkSplitMetricsItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cross_source": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkSplitMetricsItem"
+            },
+            "type": "array",
+            "title": "Cross Source"
+          },
+          "top_features": {
+            "items": {
+              "$ref": "#/components/schemas/BenchmarkTopFeatureItem"
+            },
+            "type": "array",
+            "title": "Top Features"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_key",
+          "display_name",
+          "model_type"
+        ],
+        "title": "ModelBenchmarkEntry"
+      },
+      "ModelBenchmarkReportResponse": {
+        "properties": {
+          "data_status": {
+            "type": "string",
+            "title": "Data Status",
+            "default": "EMPTY"
+          },
+          "generated_at_utc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At Utc"
+          },
+          "dataset_provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Provenance"
+          },
+          "evaluation_partition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Partition"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelBenchmarkEntry"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          },
+          "sources_loaded": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources Loaded"
+          }
+        },
+        "type": "object",
+        "title": "ModelBenchmarkReportResponse"
       },
       "ModelStatusItem": {
         "properties": {
@@ -6299,6 +6578,11 @@
             },
             "type": "array",
             "title": "Edges"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated",
+            "default": false
           },
           "data_status": {
             "type": "string",

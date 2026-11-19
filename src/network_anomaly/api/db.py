@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS rotation_audit (
     new_key_id TEXT NOT NULL,
     dry_run INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'SUCCESS',
+    risk_score REAL,
     reason TEXT,
     created_at TEXT NOT NULL
 );
@@ -292,6 +293,11 @@ class DatabaseManager:
             conn.executescript(SCHEMA_SQL)
             if include_v2:
                 conn.executescript(V2_SCHEMA_SQL)
+            audit_cols = {
+                row["name"] for row in conn.execute("PRAGMA table_info(rotation_audit);").fetchall()
+            }
+            if audit_cols and "risk_score" not in audit_cols:
+                conn.execute("ALTER TABLE rotation_audit ADD COLUMN risk_score REAL;")
 
     def is_healthy(self) -> bool:
         """Check if SQLite database is accessible and responsive."""
@@ -349,6 +355,8 @@ class DatabaseManager:
         entity_id: Optional[str] = None,
         event_kind: Optional[str] = None,
         limit: int = 100,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Query persisted canonical security events ordered newest first."""
         clauses: List[str] = []
@@ -359,6 +367,12 @@ class DatabaseManager:
         if event_kind is not None:
             clauses.append("event_kind = ?")
             params.append(event_kind)
+        if start_time is not None:
+            clauses.append("event_timestamp >= ?")
+            params.append(start_time)
+        if end_time is not None:
+            clauses.append("event_timestamp <= ?")
+            params.append(end_time)
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"""
             SELECT event_id, event_timestamp, event_kind, source_id, entity_id,

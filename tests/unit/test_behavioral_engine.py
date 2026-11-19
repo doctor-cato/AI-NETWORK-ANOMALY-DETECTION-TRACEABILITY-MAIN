@@ -12,9 +12,12 @@ from network_anomaly.behavioral.similarity import (
 )
 from network_anomaly.behavioral.vector import BehavioralVectorBuilder
 from network_anomaly.canonical.event import (
+    AuthData,
     CanonicalSecurityEvent,
+    DNSData,
     EventKind,
     FlowMetrics,
+    HTTPData,
     RawProvenance,
 )
 
@@ -152,3 +155,81 @@ def test_ip_independent_session_correlation():
     # Strategy B (Behavioral Vector) achieves 100% recall
     assert bench_results["strategy_b_behavioral_vector"]["correlation_recall"] >= 0.85
     assert bench_results["hypothesis_confirmed"] is True
+
+
+def test_flow_only_session_records_missing_app_auth_dimensions():
+    """Flow-only sessions keep numeric 0.0 for app/auth dims and record explicit missingness."""
+    now = datetime(2026, 11, 17, 14, 0, 0, tzinfo=timezone.utc)
+    flow_events = [
+        CanonicalSecurityEvent(
+            event_timestamp=now + timedelta(seconds=i * 5),
+            event_kind=EventKind.FLOW,
+            source_id="test",
+            entity_id="host:10.0.0.42",
+            source_ip="10.0.0.42",
+            dest_ip="192.168.1.10",
+            dest_port=443,
+            protocol="TCP",
+            flow_metrics=FlowMetrics(
+                duration_ms=100.0,
+                bytes_in=500,
+                bytes_out=1500,
+                pkts_in=5,
+                pkts_out=8,
+                tcp_flags=2,
+            ),
+            raw_provenance=RawProvenance(source_file="flow.csv", adapter_name="test"),
+        )
+        for i in range(3)
+    ]
+
+    sessionizer = EventSessionizer()
+    sess = sessionizer.sessionize(flow_events)[0]
+    builder = BehavioralVectorBuilder()
+
+    vec_summary_only = builder.build_vector(sess)
+    vec_with_events = builder.build_vector(sess, events=flow_events)
+
+    expected_missing = ("dns_intensity", "http_intensity", "auth_failure_ratio")
+    for vec in (vec_summary_only, vec_with_events):
+        assert vec.missing_feature_names == expected_missing
+        assert vec.missing_feature_count == 3
+        for feat_name in expected_missing:
+            idx = vec.feature_names.index(feat_name)
+            assert vec.features[idx] == 0.0
+        assert pytest.approx(np.linalg.norm(vec.to_numpy()), 1e-3) == 1.0
+
+    # When DNS, WEB, and AUTH (even SUCCESS) are present, missingness clears
+    mixed_events = list(flow_events) + [
+        CanonicalSecurityEvent(
+            event_timestamp=now + timedelta(seconds=16),
+            event_kind=EventKind.DNS,
+            source_id="test",
+            entity_id="host:10.0.0.42",
+            source_ip="10.0.0.42",
+            dns_data=DNSData(query_name="example.com", query_type="A", rcode=0),
+            raw_provenance=RawProvenance(source_file="dns.log", adapter_name="test"),
+        ),
+        CanonicalSecurityEvent(
+            event_timestamp=now + timedelta(seconds=17),
+            event_kind=EventKind.WEB,
+            source_id="test",
+            entity_id="host:10.0.0.42",
+            source_ip="10.0.0.42",
+            http_data=HTTPData(method="GET", url="/", status_code=200),
+            raw_provenance=RawProvenance(source_file="access.log", adapter_name="test"),
+        ),
+        CanonicalSecurityEvent(
+            event_timestamp=now + timedelta(seconds=18),
+            event_kind=EventKind.AUTH,
+            source_id="test",
+            entity_id="host:10.0.0.42",
+            source_ip="10.0.0.42",
+            auth_data=AuthData(username="alice", auth_result="SUCCESS", service="sshd"),
+            raw_provenance=RawProvenance(source_file="auth.log", adapter_name="test"),
+        ),
+    ]
+    mixed_sess = sessionizer.sessionize(mixed_events)[0]
+    vec_mixed = builder.build_vector(mixed_sess, events=mixed_events)
+    assert vec_mixed.missing_feature_names == ()
+    assert vec_mixed.missing_feature_count == 0

@@ -1,6 +1,6 @@
 {
   "benchmark_title": "NetFlow Sentinel v2.0 Dynamic System Performance Benchmark",
-  "benchmark_executed_at_utc": "2026-11-18T16:38:30.131998+00:00",
+  "benchmark_executed_at_utc": "2026-11-19T10:41:49.915464+00:00",
   "hardware_environment": {
     "os": "Windows-11-10.0.26200-SP0",
     "system": "Windows",
@@ -19,27 +19,30 @@
       "cryptography": "50.0.2"
     },
     "random_seed": 42,
-    "captured_at_utc": "2026-11-18T16:38:29.596755+00:00"
+    "captured_at_utc": "2026-11-19T10:41:25.552856+00:00"
   },
   "inference_readiness": {
-    "inference_mode": "UNAVAILABLE",
+    "inference_mode": "REAL_MODELS",
     "ready_count": 4,
-    "validated_count": 4
+    "validated_count": 4,
+    "runtime_mode": "deployment",
+    "ood_gate_status": "FITTED",
+    "ood_gate_trust_anchor": "explicit_expected_sha256"
   },
   "end_to_end_measured": {
     "events_processed": 200,
-    "elapsed_seconds": 0.0341,
-    "throughput_events_per_sec": 5861.68,
+    "elapsed_seconds": 9.9036,
+    "throughput_events_per_sec": 20.19,
     "latency_us": {
-      "median_us": 133.95,
-      "p95_us": 275.8,
-      "p99_us": 577.7
+      "median_us": 46745.5,
+      "p95_us": 61919.6,
+      "p99_us": 67205.7
     }
   },
   "replay_mode_measured": {
     "events_processed": 200,
-    "elapsed_seconds": 0.031,
-    "throughput_events_per_sec": 6495.4
+    "elapsed_seconds": 11.006,
+    "throughput_events_per_sec": 18.17
   },
   "ring_buffer_measured": {
     "capacity": 2000,
@@ -50,34 +53,34 @@
   },
   "component_microbenchmarks_us": {
     "collector_decoding": {
-      "median_us": 0.4,
-      "p95_us": 0.4,
-      "p99_us": 0.6
+      "median_us": 1.0,
+      "p95_us": 1.1,
+      "p99_us": 1.2
     },
     "feature_contract_validation": {
-      "median_us": 1.6,
-      "p95_us": 2.9,
-      "p99_us": 3.7
+      "median_us": 3.7,
+      "p95_us": 3.8,
+      "p99_us": 4.4
     },
     "multi_model_ai_inference": {
-      "median_us": 2.45,
-      "p95_us": 3.5,
-      "p99_us": 16.0
+      "median_us": 61458.1,
+      "p95_us": 90122.5,
+      "p99_us": 143819.5
     },
     "behavioral_vector_build": {
-      "median_us": 17.45,
-      "p95_us": 33.7,
-      "p99_us": 100.5
+      "median_us": 26.45,
+      "p95_us": 47.3,
+      "p99_us": 105.9
     },
     "aes_256_gcm_encrypt": {
-      "median_us": 1.9,
-      "p95_us": 2.2,
-      "p99_us": 3.5
+      "median_us": 3.1,
+      "p95_us": 3.5,
+      "p99_us": 4.5
     },
     "risk_scoring_dedup": {
-      "median_us": 1.6,
-      "p95_us": 1.8,
-      "p99_us": 3.2
+      "median_us": 2.9,
+      "p95_us": 3.1,
+      "p99_us": 5.2
     }
   },
   "limitations": [
@@ -89,102 +92,102 @@
     "end_to_end_throughput_events_per_sec": {
       "n_runs": 3,
       "samples": [
-        11497.16,
-        5572.83,
-        5861.68
+        16.7,
+        19.55,
+        20.19
       ],
-      "mean": 7643.89,
-      "std": 3340.154,
-      "cv_pct": 43.7
+      "mean": 18.813,
+      "std": 1.858,
+      "cv_pct": 9.88
     },
     "end_to_end_median_latency_us": {
       "n_runs": 3,
       "samples": [
-        69.4,
-        153.8,
-        133.95
+        61294.7,
+        47657.4,
+        46745.5
       ],
-      "mean": 119.05,
-      "std": 44.129,
-      "cv_pct": 37.07
+      "mean": 51899.2,
+      "std": 8149.506,
+      "cv_pct": 15.7
     },
     "replay_mode_throughput_events_per_sec": {
       "n_runs": 3,
       "samples": [
-        6385.9,
-        6643.68,
-        6495.4
+        19.29,
+        19.82,
+        18.17
       ],
-      "mean": 6508.327,
-      "std": 129.375,
-      "cv_pct": 1.99
+      "mean": 19.093,
+      "std": 0.842,
+      "cv_pct": 4.41
     },
     "component_medians_us": {
       "collector_decoding": {
         "n_runs": 3,
         "samples": [
+          0.9,
           0.6,
-          0.4,
-          0.4
+          1.0
         ],
-        "mean": 0.467,
-        "std": 0.115,
-        "cv_pct": 24.74
+        "mean": 0.833,
+        "std": 0.208,
+        "cv_pct": 24.98
       },
       "feature_contract_validation": {
         "n_runs": 3,
         "samples": [
-          1.6,
-          1.6,
-          1.6
+          3.7,
+          2.5,
+          3.7
         ],
-        "mean": 1.6,
-        "std": 0.0,
-        "cv_pct": 0.0
+        "mean": 3.3,
+        "std": 0.693,
+        "cv_pct": 20.99
       },
       "multi_model_ai_inference": {
         "n_runs": 3,
         "samples": [
-          2.0,
-          2.0,
-          2.45
+          46338.35,
+          46558.05,
+          61458.1
         ],
-        "mean": 2.15,
-        "std": 0.26,
-        "cv_pct": 12.08
+        "mean": 51451.5,
+        "std": 8666.666,
+        "cv_pct": 16.84
       },
       "behavioral_vector_build": {
         "n_runs": 3,
         "samples": [
-          16.8,
-          17.7,
-          17.45
+          37.4,
+          36.3,
+          26.45
         ],
-        "mean": 17.317,
-        "std": 0.465,
-        "cv_pct": 2.68
+        "mean": 33.383,
+        "std": 6.03,
+        "cv_pct": 18.06
       },
       "aes_256_gcm_encrypt": {
         "n_runs": 3,
         "samples": [
-          1.9,
-          2.05,
-          1.9
+          4.6,
+          4.1,
+          3.1
         ],
-        "mean": 1.95,
-        "std": 0.087,
-        "cv_pct": 4.44
+        "mean": 3.933,
+        "std": 0.764,
+        "cv_pct": 19.42
       },
       "risk_scoring_dedup": {
         "n_runs": 3,
         "samples": [
-          1.6,
-          2.4,
-          1.6
+          4.2,
+          3.9,
+          2.9
         ],
-        "mean": 1.867,
-        "std": 0.462,
-        "cv_pct": 24.74
+        "mean": 3.667,
+        "std": 0.681,
+        "cv_pct": 18.56
       }
     }
   }

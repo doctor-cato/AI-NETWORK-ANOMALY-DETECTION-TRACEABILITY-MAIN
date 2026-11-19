@@ -43,6 +43,7 @@ pub fn run() {
             commands::pick_save_csv_file,
             commands::fetch_health,
             commands::fetch_models_status,
+            commands::get_model_benchmark_report,
             commands::inspect_csv,
             commands::analyze_csv,
             commands::evaluate_csv,

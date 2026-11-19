@@ -19,6 +19,7 @@ import type {
   LiveAlertsResponse,
   LiveResultsResponse,
   LiveStatusResponse,
+  ModelBenchmarkReportResponse,
   ModelStatusItem,
   PaginatedIncidentsResponse,
   PaginatedSecuritySimulationsResponse,
@@ -199,6 +200,13 @@ export async function fetchModelsStatus(): Promise<ModelStatusItem[]> {
     return invoke<ModelStatusItem[]>("fetch_models_status");
   }
   return httpJson<ModelStatusItem[]>("/api/v1/models");
+}
+
+export async function getModelBenchmarkReport(): Promise<ModelBenchmarkReportResponse> {
+  if (isTauriRuntime()) {
+    return invoke<ModelBenchmarkReportResponse>("get_model_benchmark_report");
+  }
+  return httpJson<ModelBenchmarkReportResponse>("/api/v1/models/benchmark-report");
 }
 
 export async function inspectCsv(

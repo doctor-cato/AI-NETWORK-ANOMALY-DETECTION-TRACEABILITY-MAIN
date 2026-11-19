@@ -41,6 +41,8 @@ class PipelineCoverageReport:
     unaligned_flows_count: int
     alignment_rate_pct: float
     unaligned_reasons: Dict[str, int] = field(default_factory=dict)
+    ait_linkage_status: str = "NOT_VERIFIED"
+    warnings: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -185,6 +187,11 @@ class MultiSourcePipeline:
         total_flows = len(flow_events)
         align_rate = round((aligned_count / total_flows) * 100.0, 2) if total_flows > 0 else 0.0
 
+        warnings: List[str] = [
+            "AIT-NDS-v2 <-> AIT-LDS-v2.1 direct UID linkage NOT VERIFIED; "
+            "alignment uses IP overlap and sliding temporal window only."
+        ]
+
         report = PipelineCoverageReport(
             total_events_ingested=len(all_events),
             flow_events_count=len(flow_events),
@@ -198,6 +205,8 @@ class MultiSourcePipeline:
             unaligned_flows_count=total_flows - aligned_count,
             alignment_rate_pct=align_rate,
             unaligned_reasons=unaligned_reasons,
+            ait_linkage_status="NOT_VERIFIED",
+            warnings=warnings,
         )
 
         return aligned_bundles, route_only_events, report

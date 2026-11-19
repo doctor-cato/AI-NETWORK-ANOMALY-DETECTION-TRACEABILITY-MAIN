@@ -29,7 +29,7 @@
 ### RQ6 — Cryptographic Overhead (`AES-256-GCM`) & System Throughput
 - **Trạng thái:** `BENCHMARKED` qua `scripts/benchmark_crypto_overhead.py` (`reports/benchmarks/crypto_benchmark_report.json`) và `scripts/benchmark_full_system.py`:
   - `AES-256-GCM`: 256 B encrypt median `9.2 us` / P95 `13.3 us` (`75,851.2 ops/s`); 1024 B median `12.2 us` / P95 `17.3 us` (`59,259.3 ops/s`); 4096 B median `19.7 us` / P95 `29.6 us` (`38,617.1 ops/s`).
-  - Full E2E pipeline 4 mô hình thật trên CPU: `16.38 events/s` (median `61.75 ms/event`, 0 dropped events; replay `19.43 events/s`).
+  - Full E2E pipeline `4/4 REAL_MODELS` (`runtime_mode = "deployment"`, `ood_gate_status = "FITTED"`, `explicit_expected_sha256`, `--repeats 3`) trên CPU: E2E mean **`18.813 ± 1.858 flow/s`** (`CV = 9.88%`; latest `20.19 flow/s`), median latency **`46,745.5 us`** (`46.75 ms`, repeat mean `51,899.2 us` / `51.90 ms`, `CV = 15.7%`), `dropped = 0`; Replay mean **`19.093 flow/s`** (`CV = 4.41%`).
 
 ---
 
@@ -42,5 +42,5 @@
 | **RQ3** | `#85`, `#104`, `#145` | Synthetic simulation; `AIT-NDS-v2`/`AIT-LDS-v2.1` | `scripts/run_rq3_session_correlation_experiment.py` | `SIMULATION` · Empirical AIT `BLOCKED` |
 | **RQ4** | `#98`, `#145` | `AIT-NDS-v2` holdout (`44` rows) | `scripts/run_rq4_unknown_attack_experiment.py` | `EXPERIMENTALLY VALIDATED` (`IF 0.9091`, `RF 0.9091`, `XGB 0.7500`, `AE 0.2045`) |
 | **RQ5** | `#121`, `#125`, `#145` | 60-min discrete simulation | `scripts/run_rq5_rotation_experiment.py` | `SIMULATION VERIFIED` (`-87.5%` exposure, `-85.0%` blast radius) |
-| **RQ6** | `#126`, `#145`, `#147` | In-process CPU benchmark | `scripts/benchmark_crypto_overhead.py`, `scripts/benchmark_full_system.py` | `BENCHMARKED & CONFIRMED` (`16.38 events/s` E2E, 256B P95 `13.3 us`) |
+| **RQ6** | `#126`, `#145`, `#147` | In-process CPU benchmark | `scripts/benchmark_crypto_overhead.py`, `scripts/benchmark_full_system.py` | `BENCHMARKED & CONFIRMED` (`18.813 flow/s` E2E mean, `CV=9.88%`, `4/4 REAL_MODELS`, 256B P95 `13.3 us`) |
 | **Cross-Source** | `#97`, `#145` | `CTU-SME-11` (`Echo` + `Win7AD`) & `UGR'16` | `scripts/run_ctu_cross_source_eval.py` | `CTU VALIDATED` (`IF Echo F1=0.8853`, `Win7AD RF/XGB AUC=0.8392/0.6978`, Exps A–E) · `UGR'16 BLOCKED` |

@@ -29,6 +29,7 @@ from network_anomaly.streaming.live_orchestrator import (
 from network_anomaly.streaming.pipeline import StreamingEventPipeline
 from network_anomaly.streaming.realtime_inference import RealtimeInferenceEngine
 from network_anomaly.telemetry.collector import UDPFlowCollector
+from network_anomaly.telemetry.log_tailer import LiveLogTailer
 
 SERVICE_MODE_LIVE = "LIVE"
 SERVICE_MODE_STOPPED = "STOPPED"
@@ -82,6 +83,7 @@ class LiveTelemetryService:
         queue_capacity: int = 10_000,
         batch_size: int = 32,
         history_capacity: int = 500,
+        log_paths: Optional[List[Path]] = None,
     ) -> None:
         self.collector = UDPFlowCollector(host=host, port=port, queue_capacity=queue_capacity)
         self.pipeline = pipeline or StreamingEventPipeline(
@@ -96,6 +98,9 @@ class LiveTelemetryService:
             require_ood_gate=require_ood_gate,
             expected_ood_gate_sha256=expected_ood_gate_sha256,
         )
+        self.log_paths: List[Path] = [Path(p) for p in log_paths] if log_paths else []
+        self.log_tailers: List[LiveLogTailer] = [LiveLogTailer(Path(p)) for p in self.log_paths]
+        self._last_log_poll_mono: float = 0.0
         self.history_capacity = max(1, int(history_capacity))
 
         self._results: Deque[LiveProcessingResult] = collections.deque(maxlen=self.history_capacity)
@@ -132,6 +137,7 @@ class LiveTelemetryService:
         self._worker = None
         if flush:
             self._drain_collector()
+            self._poll_log_tailers(force=True)
             self._process_batch(self.pipeline.flush_all())
         return self.status()
 
@@ -147,12 +153,32 @@ class LiveTelemetryService:
     def _process_loop(self) -> None:
         while not self._stop.is_set():
             self._drain_collector()
+            self._poll_log_tailers()
             batch = self.pipeline.fetch_micro_batch(timeout_sec=0.05)
             if batch:
                 self._process_batch(batch)
-        # Final drain so accepted datagrams are not silently lost on shutdown.
+        # Final drain so accepted datagrams and tailed log lines are not silently lost on shutdown.
         self._drain_collector()
+        self._poll_log_tailers(force=True)
         self._process_batch(self.pipeline.flush_all())
+
+    def _poll_log_tailers(self, *, force: bool = False) -> None:
+        if not self.log_tailers:
+            return
+        now = time.monotonic()
+        if not force and self._last_log_poll_mono > 0.0 and (now - self._last_log_poll_mono) < 0.05:
+            return
+        self._last_log_poll_mono = now
+        for tailer in self.log_tailers:
+            try:
+                events = tailer.tail_available_events()
+            except Exception:
+                continue
+            if not events:
+                continue
+            with self._lock:
+                self._metrics.events_received += len(events)
+            self.pipeline.enqueue_batch(events)
 
     def _drain_collector(self) -> None:
         pending = self.collector.drain()
@@ -237,4 +263,14 @@ class LiveTelemetryService:
             "metrics": metrics,
             "alerts_buffered": alert_count,
             "inference": readiness,
+            "log_tailers": [
+                {
+                    "file_path": str(t.target_log_path),
+                    "exists": t.target_log_path.exists(),
+                    "last_offset": t.last_offset,
+                    "lines_read": t.lines_read,
+                    "error_lines": t.error_lines,
+                }
+                for t in self.log_tailers
+            ],
         }

@@ -26,6 +26,7 @@ class InvestigationReport:
     evidence_provenance: List[Dict[str, Any]]
     recommended_actions: List[str]
     artifact_hash: str = ""
+    artifact_version: str = "2.0.0"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -36,6 +37,7 @@ class InvestigationReport:
             "severity": self.severity,
             "root_cause_summary": self.root_cause_summary,
             "artifact_hash": self.artifact_hash,
+            "artifact_version": self.artifact_version,
             "timeline": self.timeline.to_dict(),
             "evidence_provenance": self.evidence_provenance,
             "recommended_actions": self.recommended_actions,
@@ -49,6 +51,7 @@ class InvestigationReport:
             f"- **Incident ID:** `{self.incident_id}`",
             f"- **Generated At:** {self.generated_at}",
             f"- **Severity:** **{self.severity}**",
+            f"- **Artifact Version:** `{self.artifact_version}`",
             f"- **Integrity SHA-256:** `{self.artifact_hash}`",
             "",
             "## 1. Root Cause Summary",

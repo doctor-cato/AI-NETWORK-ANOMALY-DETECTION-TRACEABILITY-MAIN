@@ -769,3 +769,78 @@
     - Đóng thêm: sở hữu `LICENSE`/`pyproject.toml` (`doctor-cato`), rà soát nguồn `UGR'16` (`UWF-ZeekData24` `95,871` flows read-only `XGB F1=0.9472`), Behavioral 16-D CSV + `EntityBaselineProfiler` detail/UI, đánh giá chỉ-đọc 4 `AggregationPolicy` + `RiskScorer`, `KEYSTORE_RUNBOOK.md` + DB migration rollback, `10,000`-event `tracemalloc` test, phân trang `2,000` alerts + 4-phase timeline Vitest, benchmark `--repeats 3` CV%, Real-Dataset UDP Loopback Replay ở `deployment` mode + trusted OOD SHA (`replay_real_netflow_udp.py`), System-Level Crypto A/B Overhead (`benchmark_crypto_overhead.py`, `121.7` vs `181.2 flow/s`, CPU `+53.56%`), thí nghiệm Multi-Class 6 lớp (`AIT-Test` `RF_multiclass Macro-F1=0.7347`), Cross-Source Calibration Diagnostic, và RQ3 Feature-Standardized Cosine (`UWF-ZeekData24` `F1=0.7192`).
     - Đồng bộ lại PR `#156` description (cập nhật từ mốc cũ `20c4414`/`Run #214`) và giữ PR ở `OPEN / isDraft: true` chờ re-review.
 
+---
+
+## 11. Phát hiện & Khắc phục Kiểm toán Chuyên sâu Cục bộ (Hậu `8e04960`, `2026-11-19`)
+
+> [!NOTE]
+> Commit đã push gần nhất là `8e049603a8841da11a082fcb077b2e3d5dbb8e92` (CI **Run `#217` / ID `44377910551`**, `7/7` `SUCCESS`, bổ sung `reports/ml/ood_reference_gate_manifest.json` được kiểm chéo bởi `_verify_repo_ood_gate_manifest()`). Các finding dưới đây được phát hiện và vá trên **working tree cục bộ** (chưa commit, đang chờ kiểm chứng toàn repo và push CI mới).
+
+| Finding ID | Severity | Location | Trạng thái |
+|---|---|---|---|
+| `R-TRACE-GRAPH-CRASH` | `P1` | `src/network_anomaly/api/{main,schemas}.py`, `src/network_anomaly/trace/investigation.py` | **`PASS` (Fixed & Targeted Tested)** |
+| `R-RISK-NAN-FAILOPEN` | `P1` | `src/network_anomaly/risk/scoring.py` | **`PASS` (Fixed & Targeted Tested)** |
+| `R-BENCH-UNAVAILABLE-DRIFT` | `P1` | `scripts/benchmark_full_system.py`, `reports/benchmarks/system_performance_benchmark.json`, `docs/benchmarks/SYSTEM_PERFORMANCE.md` | **`PASS` (Fixed & Regenerated)** |
+| `R-UI-144-BENCHMARK` | `P1` | `src/network_anomaly/api/{main,schemas}.py`, `desktop/src-tauri/src/{commands,lib}.rs`, `desktop/src/lib/{api,types}.ts`, `ModelComparisonPanel.svelte`, `LiveMonitoringPanel.svelte` | **`PASS` (Fixed & Targeted Tested)** |
+| `R-LIVE-107-130-WIRING` | `P1` | `src/network_anomaly/api/db.py`, `src/network_anomaly/streaming/{live_orchestrator,live_service}.py`, `src/network_anomaly/ingestion/adapters/v2_adapter.py`, `src/network_anomaly/behavioral/vector.py`, `src/network_anomaly/pipeline/multi_source.py` | **`PASS` (Fixed & Targeted Tested)** |
+| `R-CRYPTO-KEYID-RISKSCORE` | `P1` | `src/network_anomaly/crypto/{key_manager,rotation}.py`, `src/network_anomaly/api/db.py` | **`PASS` (Fixed & Targeted Tested)** |
+| `R-API-DEV-TOKEN-WARN` | `P2` | `src/network_anomaly/api/main.py`, `scripts/run_api.py` | **`PASS` (Fixed & Targeted Tested)** |
+| `R-COMPAT-TIER-DISCLOSURE` | `P2` | `src/network_anomaly/ingestion/compatibility.py` | **`PASS` (Fixed & Targeted Tested)** |
+
+### Chi tiết 8 Findings Mới
+
+20. **`R-TRACE-GRAPH-CRASH` — HTTP 500 tại `GET /api/v1/trace/graph`, Phân trang `/trace/timeline` & `artifact_version` cho Investigation Report (`#111`, `#113`, `#115`)**
+    - **Severity:** `P1`
+    - **Location:** `src/network_anomaly/api/{main,schemas}.py`, `src/network_anomaly/trace/investigation.py`, `reports/api/{openapi.json,API_CONTRACT.md}`
+    - **Evidence & Root Cause:** `GET /api/v1/trace/graph` thao tác trực tiếp thuộc tính nội bộ thay vì gọi `graph.add_node(...)` / `graph.add_edge(...)` theo đúng `EntityRelationshipGraph` (gây lệch `_adj`, `_rev_adj`, `edges` -> HTTP 500) và thiếu cờ `truncated` trên `TraceGraphResponse`. `GET /api/v1/trace/timeline` chưa cắt trang đúng theo `offset`/`limit`. `InvestigationReport` và `InvestigationReportResponse` thiếu trường `artifact_version`.
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Targeted Tested)** — Dùng `graph.add_node(...)` / `graph.add_edge(...)`, thêm `truncated: bool = False` vào `TraceGraphResponse`; sửa phân trang `/api/v1/trace/timeline` (`limit=max(200, limit + offset)`, `stage_items[offset : offset + limit]`, giữ `total_stages`); thêm `artifact_version: str = "2.0.0"` vào `InvestigationReport` và `InvestigationReportResponse` (không đổi công thức `artifact_hash`); tái sinh OpenAPI (`export_openapi_spec.py --check` PASS).
+    - **Verification Evidence:** Regression tests trong `tests/unit/test_trace_engine.py` và `tests/integration/test_trace_crypto_api.py` (`34 passed` trong cụm kiểm tra API/Trace).
+
+21. **`R-RISK-NAN-FAILOPEN` — `RiskScorer` Không Chặn `NaN`/`Inf` & Giá trị Âm `auth_failure_count`**
+    - **Severity:** `P1`
+    - **Location:** `src/network_anomaly/risk/scoring.py`, `tests/unit/test_risk_engine.py`
+    - **Evidence & Root Cause:** Đầu vào `NaN`/`Inf` ở `ai_probability` hoặc `behavioral_anomaly_score` có thể làm sai lệch phép tính/so sánh ngưỡng kích hoạt rotation; `auth_failure_count` âm không được chuẩn hóa về `0`.
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Targeted Tested)** — Kiểm tra `math.isfinite()` cho `ai_probability` và `behavioral_anomaly_score`, đặt thành phần non-finite về `0.0` kèm lý do fail-closed, kẹp `raw_score <= 65.0`, khóa `trigger_adaptive_rotation = False`, và chuẩn hóa `auth_failure_count = max(0, int(auth_failure_count))`.
+    - **Verification Evidence:** `tests/unit/test_risk_engine.py` nằm trong cụm `52 passed` (`ruff`/`black` PASS).
+
+22. **`R-BENCH-UNAVAILABLE-DRIFT` — `system_performance_benchmark.json` Chạy Thiếu Context `deployment` + Explicit OOD SHA (`0/4` vs `4/4 REAL_MODELS`)**
+    - **Severity:** `P1`
+    - **Location:** `scripts/benchmark_full_system.py`, `reports/benchmarks/system_performance_benchmark.json`, `docs/benchmarks/SYSTEM_PERFORMANCE.md`
+    - **Evidence & Root Cause:** `benchmark_full_system.py` thiếu CLI `--runtime-mode` / `--ood-gate-sha256` để tái lập benchmark `deployment` + explicit OOD SHA, dễ khiến báo cáo bị ghi đè thành `UNAVAILABLE` khi chạy không tham số.
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Regenerated)** — Thêm `--runtime-mode` và `--ood-gate-sha256` vào `scripts/benchmark_full_system.py` (mặc định không tham số trên CI vẫn thoát `0`), tái sinh thật với `--runtime-mode deployment --ood-gate-sha256 8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825 --repeats 3`: đạt `4/4 REAL_MODELS`, `ood_gate_status="FITTED"`, `ood_gate_trust_anchor="explicit_expected_sha256"`, E2E mean `18.813 flow/s` (`CV=9.88%`; latest `20.19 flow/s`), median latency `46,745.5 us` (repeat mean `51,899.2 us`, `CV=15.7%`), Replay mean `19.093 flow/s` (`CV=4.41%`), `dropped_events=0`.
+    - **Verification Evidence:** `reports/benchmarks/system_performance_benchmark.json`, `docs/benchmarks/SYSTEM_PERFORMANCE.md` & `tests/unit/test_audit_remediation_bench_live.py` (cụm `117 passed`).
+
+23. **`R-UI-144-BENCHMARK` — Thiếu Báo cáo Benchmark Chính thức (`AIT-Test` + Cross-Source CTU/UWF) & `Dropped events` Counter trên Desktop UI (`#140`, `#144`)**
+    - **Severity:** `P1`
+    - **Location:** `src/network_anomaly/api/{main,schemas}.py`, `desktop/src-tauri/src/{commands,lib}.rs`, `desktop/src/lib/{api,types}.ts`, `desktop/src/lib/components/{ModelComparisonPanel,LiveMonitoringPanel}.svelte`, `desktop/src/lib/components/V2Panels.test.ts`
+    - **Evidence & Root Cause:** `ModelComparisonPanel.svelte` chưa nạp số liệu benchmark chính thức từ `model_comparison_report.json` + `ctu_cross_source_eval.json` + `uwf_zeekdata24_cross_source_eval.json`; `LiveMonitoringPanel.svelte` chưa hiển thị tổng `dropped` (`collector.events_dropped + pipeline.total_dropped`).
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Targeted Tested)** — Thêm `GET /api/v1/models/benchmark-report` (trả `EMPTY` an toàn khi thiếu file, gắn `deployment_tier="RESEARCH_ONLY"`), Tauri command `get_model_benchmark_report` + `getModelBenchmarkReport()`, khu vực **"Báo cáo Benchmark Chính thức (AIT-NDS-v2 Test & Cross-Source CTU/UWF)"** trong `ModelComparisonPanel.svelte` (ghi rõ `tree_feature_importances`/`validation_permutation_importance`, không gọi là SHAP), và counter `Dropped events` trong `LiveMonitoringPanel.svelte`.
+    - **Verification Evidence:** `npm --prefix desktop run check` (`0 errors, 0 warnings`), `npm --prefix desktop run test` (`5 files, 39/39 tests`), `npm --prefix desktop run build` PASS, `cargo fmt/clippy/test --lib` (`11/11 tests`) PASS.
+
+24. **`R-LIVE-107-130-WIRING` — Nối `LiveLogTailer` (`#130`), `V2_SCHEMA_SQL` (`#107`), Chuẩn hóa Adapter (`#89/#90`), Missingness (`#101/#102`) & `AIT` Linkage Warning (`#93`)**
+    - **Severity:** `P1`
+    - **Location:** `src/network_anomaly/api/db.py`, `src/network_anomaly/streaming/{live_orchestrator,live_service}.py`, `src/network_anomaly/ingestion/adapters/v2_adapter.py`, `src/network_anomaly/behavioral/vector.py`, `src/network_anomaly/pipeline/multi_source.py`
+    - **Evidence & Root Cause:** `LiveTelemetryService` chưa tích hợp `LiveLogTailer`; `LiveSystemOrchestrator` chưa ghi `insert_unified_security_event(...)`; `query_unified_security_events()` thiếu bộ lọc `start_time`/`end_time`; `ApplicationDNSAdapter`/`SystemAuditAdapter` thiếu `adapt_line()` hoàn chỉnh và `v2_adapter.py` còn giá trị giả `"0.0.0.0"`, `"unknown_user"`, `"local_host"`; `behavioral/vector.py` chưa đánh dấu thiếu `dns_intensity`/`http_intensity`/`auth_failure_ratio` khi thiếu sự kiện ứng dụng; `PipelineCoverageReport` thiếu `ait_linkage_status="NOT_VERIFIED"`.
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Targeted Tested)** — Nối `log_paths` + `LiveLogTailer` vào `LiveTelemetryService` (worker loop + shutdown flush + `log_tailers` status); `LiveSystemOrchestrator` khởi tạo `DatabaseManager` có `V2_SCHEMA_SQL` và gọi `insert_unified_security_event(...)`; bổ sung `start_time`/`end_time` parameterized vào `query_unified_security_events()`; bổ sung `adapt_line()` & bỏ giá trị giả trong `v2_adapter.py`; thêm missingness flags cho `dns_intensity`/`http_intensity`/`auth_failure_ratio` trong `behavioral/vector.py`; thêm `ait_linkage_status="NOT_VERIFIED"` + warning trong `pipeline/multi_source.py`.
+    - **Verification Evidence:** `tests/integration/test_live_service.py`, `tests/unit/test_v2_adapters.py`, `tests/unit/test_behavioral_engine.py`, `tests/unit/test_audit_remediation_bench_live.py` (`117 passed` cụm bench/live/adapters + `8 passed` cụm persistence/migration).
+
+25. **`R-CRYPTO-KEYID-RISKSCORE` — Path Traversal ở `KeyManager` & Thiếu Cột `rotation_audit.risk_score` (`#119`, `#121`, `#122`)**
+    - **Severity:** `P1`
+    - **Location:** `src/network_anomaly/crypto/{key_manager,rotation}.py`, `src/network_anomaly/api/db.py`, `tests/unit/test_key_manager_hardening.py`
+    - **Evidence & Root Cause:** `key_id` không được chuẩn hóa trước khi tạo đường dẫn DEK file trong `KeyManager`; bảng `rotation_audit` thiếu cột `risk_score` để lưu/khôi phục điểm rủi ro kích hoạt rotation qua restart.
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Targeted Tested)** — Thêm `_validate_safe_identifier()` (`^[A-Za-z0-9._-]+$`) và `_dek_file_path()` kiểm tra `.resolve().parent == self.keystore_dir.resolve()` trên toàn bộ thao tác DEK trong `KeyManager`; thêm cột `risk_score REAL` vào DDL `rotation_audit`, migration idempotent `PRAGMA table_info(rotation_audit)` + `ALTER TABLE`, và persist/reload trong `KeyRotationPolicy`.
+    - **Verification Evidence:** `tests/unit/test_key_manager_hardening.py`, `tests/unit/test_crypto_integrity.py`, `tests/unit/test_crypto_aead.py` (`52 passed` cụm risk/crypto + `8 passed` persistence/migration).
+
+26. **`R-API-DEV-TOKEN-WARN` — Không Cảnh báo Khi Chạy API Không Có `NETWORK_ANOMALY_API_TOKEN`**
+    - **Severity:** `P2`
+    - **Location:** `src/network_anomaly/api/main.py`, `scripts/run_api.py`
+    - **Evidence & Root Cause:** Khi khởi động chế độ dev thiếu `NETWORK_ANOMALY_API_TOKEN`, ứng dụng chạy không xác thực trên loopback mà không ghi log cảnh báo rõ ràng.
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Targeted Tested)** — Thêm `logger.warning("NETWORK_ANOMALY_API_TOKEN is not set; API routes are running without authentication on loopback.")` trong `create_app` và cảnh báo `[SECURITY WARNING]` tương ứng trong `scripts/run_api.py`, kèm regression test trong `tests/integration/test_trace_crypto_api.py`.
+
+27. **`R-COMPAT-TIER-DISCLOSURE` — Tường minh `deployment_tier = "RESEARCH_ONLY"` & `scope_note` trong `compatibility.py`**
+    - **Severity:** `P2`
+    - **Location:** `src/network_anomaly/ingestion/compatibility.py`, `tests/unit/test_compatibility_evaluator.py`
+    - **Evidence & Root Cause:** Báo cáo tương thích cho đường dẫn in-domain CSV dry-run của `random_forest` (`MODEL_VALIDATED`) cần công bố tường minh `deployment_tier="RESEARCH_ONLY"` và `scope_note` tách biệt chứng nhận triển khai thực tế.
+    - **Fix Implemented / Status:** **`PASS` (Fixed & Targeted Tested)** — Thêm `scope_note` vào `BenchmarkEvidence` và `deployment_tier="RESEARCH_ONLY"` + `scope_note="in_domain_csv_dry_run_only_not_production_certified"` vào `CompatibilityEvaluationReport`, nêu rõ containment bị chặn bởi `response_policy.py` (không đổi status `MODEL_VALIDATED` của CSV dry-run `random_forest` hay khóa `RESEARCH_ONLY` trên 4 models).
+    - **Verification Evidence:** `tests/unit/test_compatibility_evaluator.py` & `tests/unit/test_response_policy.py` trong cụm `117 passed`.
+

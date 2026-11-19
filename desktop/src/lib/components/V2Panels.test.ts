@@ -8,11 +8,14 @@ import {
   fetchLiveAlerts,
   fetchLiveStatus,
   fetchTraceTimeline,
+  getModelBenchmarkReport,
 } from "../api";
+import type { ModelBenchmarkReportResponse, ModelStatusItem } from "../types";
 import AttackTimelinePanel from "./AttackTimelinePanel.svelte";
 import BehavioralAnalysisPanel from "./BehavioralAnalysisPanel.svelte";
 import CryptographyDashboardPanel from "./CryptographyDashboardPanel.svelte";
 import LiveMonitoringPanel from "./LiveMonitoringPanel.svelte";
+import ModelComparisonPanel from "./ModelComparisonPanel.svelte";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -318,5 +321,238 @@ describe("V2 Backend API Client State Contracts (CONNECTED / DISCONNECTED / EMPT
     expect(out.body).toContain("OBSERVED TELEMETRY");
     expect(out.body).toContain("INFERRED RELATIONSHIP");
     expect(out.body).toContain("ev-exfil-4");
+  });
+
+  it("LiveMonitoringPanel renders Dropped events counter and applies warning class when > 0", () => {
+    const outZero = render(LiveMonitoringPanel, {
+      props: { initialDemoMode: false },
+    });
+    expect(outZero.body).toMatch(/Dropped events:\s*<code[^>]*>0<\/code>/);
+    expect(outZero.body).not.toContain("dropped-warning");
+
+    const outDropped = render(LiveMonitoringPanel, {
+      props: {
+        initialDemoMode: false,
+        initialLiveStatus: {
+          mode: "LIVE",
+          running: true,
+          data_status: "CONNECTED",
+          bound_port: 2055,
+          started_at_utc: "2026-11-19T10:00:00Z",
+          collector: {
+            flows_decoded: 120,
+            events_dropped: 3,
+          },
+          pipeline: {
+            total_dropped: 2,
+          },
+          metrics: {
+            events_processed: 115,
+          },
+          inference: {
+            ready_count: 4,
+            inference_mode: "RESEARCH_ONLY",
+          },
+        },
+      },
+    });
+    expect(outDropped.body).toMatch(/Dropped events:\s*<code[^>]*>5<\/code>/);
+    expect(outDropped.body).toContain("dropped-warning");
+  });
+
+  it("getModelBenchmarkReport decodes CONNECTED and EMPTY responses from backend", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data_status: "CONNECTED",
+            generated_at_utc: "2026-11-19T10:00:00Z",
+            dataset_provenance: "AIT-NDS-v2",
+            evaluation_partition: "test",
+            models: [
+              {
+                model_key: "random_forest",
+                display_name: "Random Forest",
+                model_type: "RandomForest",
+                deployment_tier: "RESEARCH_ONLY",
+                decision_threshold: 0.5,
+                threshold_source: "manifest.threshold",
+                in_domain: {
+                  dataset: "AIT-NDS-v2-test",
+                  f1: 0.9912,
+                  precision: 0.995,
+                  recall: 0.9875,
+                  fpr: 0.0012,
+                  roc_auc: 0.9991,
+                  pr_auc: 0.9985,
+                  sample_count: 988805,
+                },
+                cross_source: [],
+                top_features: [
+                  {
+                    feature: "bytes_per_sec_out",
+                    importance: 0.2412,
+                    method: "tree_feature_importances",
+                  },
+                ],
+              },
+            ],
+            limitations: ["Domain shift degrades cross-source recall."],
+            sources_loaded: ["model_comparison_report.json"],
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data_status: "EMPTY",
+            models: [],
+            limitations: [],
+            sources_loaded: [],
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const connected = await getModelBenchmarkReport();
+    expect(connected.data_status).toBe("CONNECTED");
+    expect(connected.models).toHaveLength(1);
+    expect(connected.models[0].in_domain?.roc_auc).toBe(0.9991);
+
+    const empty = await getModelBenchmarkReport();
+    expect(empty.data_status).toBe("EMPTY");
+    expect(empty.models).toEqual([]);
+  });
+
+  it("ModelComparisonPanel renders Official Benchmark table with ROC-AUC, PR-AUC, CTU/UWF, Top Features, and EMPTY fallback", () => {
+    const mockModels: ModelStatusItem[] = [
+      {
+        model_key: "random_forest",
+        display_name: "Random Forest",
+        model_type: "RandomForest",
+        ready: true,
+        status: "READY",
+        artifact_path: null,
+        manifest_path: null,
+        artifact_sha256: null,
+        run_id: "run-rf",
+        decision_threshold: 0.5,
+        score_semantics: "attack_probability",
+        reason: null,
+      },
+    ];
+
+    const mockReport: ModelBenchmarkReportResponse = {
+      data_status: "CONNECTED",
+      generated_at_utc: "2026-11-19T10:00:00Z",
+      dataset_provenance: "AIT-NDS-v2 (test) + CTU-SME-11 + UWF-ZeekData24",
+      evaluation_partition: "test",
+      sources_loaded: [
+        "model_comparison_report.json",
+        "ctu_cross_source_eval.json",
+        "uwf_zeekdata24_cross_source_eval.json",
+      ],
+      limitations: [
+        "All 4 models remain RESEARCH_ONLY under cross-source domain shift.",
+      ],
+      models: [
+        {
+          model_key: "random_forest",
+          display_name: "Random Forest",
+          model_type: "RandomForest",
+          deployment_tier: "RESEARCH_ONLY",
+          decision_threshold: 0.5,
+          threshold_source: "manifest.threshold",
+          in_domain: {
+            dataset: "AIT-NDS-v2-test",
+            f1: 0.9912,
+            precision: 0.995,
+            recall: 0.9875,
+            fpr: 0.0012,
+            roc_auc: 0.9991,
+            pr_auc: 0.9985,
+            sample_count: 988805,
+          },
+          cross_source: [
+            { dataset: "CTU-Echo", f1: 0.421, fpr: 0.032, roc_auc: 0.7123 },
+            { dataset: "CTU-Win7AD", f1: 0.318, fpr: 0.041, roc_auc: 0.6542 },
+            { dataset: "UWF-ZeekData24", f1: 0.289, fpr: 0.055, roc_auc: 0.6104 },
+          ],
+          top_features: [
+            {
+              feature: "bytes_per_sec_out",
+              importance: 0.2412,
+              method: "tree_feature_importances",
+            },
+            {
+              feature: "duration_ms",
+              importance: 0.1834,
+              method: "validation_permutation_importance",
+            },
+          ],
+        },
+      ],
+    };
+
+    const out = render(ModelComparisonPanel, {
+      props: {
+        models: mockModels,
+        selectedModel: "random_forest",
+        analysesByModel: {},
+        evaluationsByModel: {},
+        benchmarkReport: mockReport,
+        canRunComparison: false,
+        hasLabelsPath: false,
+        busy: false,
+        onSelectModel: () => {},
+        onRunAllComparison: () => {},
+        onEvaluateAllAnalyzed: () => {},
+      },
+    });
+
+    expect(out.body).toContain(
+      "Báo cáo Benchmark Chính thức (AIT-NDS-v2 Test &amp; Cross-Source CTU/UWF)",
+    );
+    expect(out.body).toContain("RESEARCH_ONLY");
+    expect(out.body).toContain("0.9991");
+    expect(out.body).toContain("0.9985");
+    expect(out.body).toContain("99.12%");
+    expect(out.body).toContain("0.12%");
+    expect(out.body).toContain("CTU-Echo:");
+    expect(out.body).toContain("CTU-Win7AD:");
+    expect(out.body).toContain("UWF-ZeekData24:");
+    expect(out.body).toContain("bytes_per_sec_out");
+    expect(out.body).toContain("tree_feature_importances");
+    expect(out.body).toContain("validation_permutation_importance");
+    expect(out.body).not.toContain("SHAP");
+    expect(out.body).toContain(
+      "All 4 models remain RESEARCH_ONLY under cross-source domain shift.",
+    );
+
+    const outEmpty = render(ModelComparisonPanel, {
+      props: {
+        models: mockModels,
+        selectedModel: "random_forest",
+        analysesByModel: {},
+        evaluationsByModel: {},
+        benchmarkReport: {
+          data_status: "EMPTY",
+          models: [],
+          limitations: [],
+          sources_loaded: [],
+        },
+        canRunComparison: false,
+        hasLabelsPath: false,
+        busy: false,
+        onSelectModel: () => {},
+        onRunAllComparison: () => {},
+        onEvaluateAllAnalyzed: () => {},
+      },
+    });
+    expect(outEmpty.body).toContain("So sánh 4 Mô hình Trên Cùng Batch CSV");
+    expect(outEmpty.body).toContain("Chưa có dữ liệu Báo cáo Benchmark Chính thức");
   });
 });

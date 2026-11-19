@@ -10,9 +10,11 @@ import json
 import math
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+from network_anomaly.canonical.event import CanonicalSecurityEvent, EventKind
 
 from .sessionizer import SessionSummary
 
@@ -72,7 +74,11 @@ class BehavioralVectorBuilder:
         "log_std_iat",
     ]
 
-    def build_vector(self, session: SessionSummary) -> BehavioralVector:
+    def build_vector(
+        self,
+        session: SessionSummary,
+        events: Optional[Sequence[CanonicalSecurityEvent]] = None,
+    ) -> BehavioralVector:
         dur = max(session.duration_seconds, 0.001)
         cnt = max(session.event_count, 1)
 
@@ -98,15 +104,49 @@ class BehavioralVectorBuilder:
         # Verify no NaN or Inf and record missing/non-finite dimensions explicitly
         cleaned: List[float] = []
         missing_names: List[str] = []
+
+        def _record_missing(name: str) -> None:
+            if name not in missing_names:
+                missing_names.append(name)
+
         if session.event_count <= 0:
-            missing_names.append("event_count")
+            _record_missing("event_count")
         for idx, x in enumerate(raw):
             if x is None or math.isnan(x) or math.isinf(x):
                 cleaned.append(0.0)
                 if idx < len(self.FEATURE_NAMES):
-                    missing_names.append(self.FEATURE_NAMES[idx])
+                    _record_missing(self.FEATURE_NAMES[idx])
             else:
                 cleaned.append(float(x))
+
+        # Explicitly track missingness for app/auth dimensions when underlying event kinds are absent,
+        # while keeping numeric 0.0 for backward compatibility.
+        session_events = events if events is not None else getattr(session, "events", None)
+        present_kinds_attr = getattr(session, "present_event_kinds", None)
+        if session_events is not None:
+            present_kinds = {ev.event_kind for ev in session_events}
+            if EventKind.DNS not in present_kinds and session.dns_query_count <= 0:
+                _record_missing("dns_intensity")
+            if EventKind.WEB not in present_kinds and session.http_request_count <= 0:
+                _record_missing("http_intensity")
+            if EventKind.AUTH not in present_kinds and session.auth_failure_count <= 0:
+                _record_missing("auth_failure_ratio")
+        elif present_kinds_attr is not None:
+            present_kinds = set(present_kinds_attr)
+            if EventKind.DNS not in present_kinds and session.dns_query_count <= 0:
+                _record_missing("dns_intensity")
+            if EventKind.WEB not in present_kinds and session.http_request_count <= 0:
+                _record_missing("http_intensity")
+            if EventKind.AUTH not in present_kinds and session.auth_failure_count <= 0:
+                _record_missing("auth_failure_ratio")
+        elif (
+            session.dns_query_count == 0
+            and session.http_request_count == 0
+            and session.auth_failure_count == 0
+        ):
+            _record_missing("dns_intensity")
+            _record_missing("http_intensity")
+            _record_missing("auth_failure_ratio")
 
         # L2-normalization for unit hypersphere projection
         arr = np.array(cleaned, dtype=np.float32)

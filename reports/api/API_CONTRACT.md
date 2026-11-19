@@ -2,7 +2,7 @@
 
 **API Title**: AI Network Anomaly Detection & Traceability API
 **Version**: 0.1.0
-**Total Endpoints**: 32
+**Total Endpoints**: 33
 
 ## Endpoints Specification
 
@@ -32,6 +32,7 @@
 | `GET` | `/api/v1/live/status` | Get live collector, pipeline, and 4-model readiness status | Live Telemetry |
 | `POST` | `/api/v1/live/stop` | Stop live UDP collector and flush buffered events | Live Telemetry |
 | `GET` | `/api/v1/models` | List readiness and provenance status for all 4 M6 models | Models & CSV |
+| `GET` | `/api/v1/models/benchmark-report` | Get official 4-model benchmark and cross-source evaluation report | Models & CSV |
 | `POST` | `/api/v1/rotation` | Trigger key metadata rotation audit lifecycle (dry-run safe) | Key Lifecycle |
 | `GET` | `/api/v1/rotation/audit` | Query key rotation audit log | Key Lifecycle |
 | `POST` | `/api/v1/security/simulate-response` | Simulate deterministic adaptive security response & key rotation decision (dry-run) | Security Dry-Run |
