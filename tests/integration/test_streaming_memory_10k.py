@@ -83,8 +83,7 @@ def test_streaming_10k_events_bounded_memory_and_latency(tmp_path: Path) -> None
             is_ml_complete=True,
         )
         pipeline.enqueue(ev)
-    for ev in pipeline.flush_all():
-        orchestrator.process_event(ev)
+    orchestrator.process_batch(pipeline.flush_all())
 
     gc.collect()
     tracemalloc.start()
@@ -116,9 +115,9 @@ def test_streaming_10k_events_bounded_memory_and_latency(tmp_path: Path) -> None
             )
             pipeline.enqueue(ev)
         drained = pipeline.flush_all()
-        for ev in drained:
-            orchestrator.process_event(ev)
-            processed += 1
+        batch_results = orchestrator.process_batch(drained)
+        assert len(batch_results) == len(drained)
+        processed += len(batch_results)
         if (start // chunk_size) in (1, 9, 19):
             gc.collect()
             cur, _ = tracemalloc.get_traced_memory()

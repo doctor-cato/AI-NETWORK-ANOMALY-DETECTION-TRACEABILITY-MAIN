@@ -677,7 +677,21 @@ def _install_mocked_windows_desktop_env(
             state["backend_alive"] = False
         return "wm_close"
 
+    real_time = vca.time
+    clock = [0.0]
+
+    class _FakeTimeModule:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real_time, name)
+
+        def monotonic(self) -> float:
+            return clock[0]
+
+        def sleep(self, seconds: float) -> None:
+            clock[0] += max(0.0, float(seconds))
+
     monkeypatch.setattr(vca, "os", SimpleNamespace(name="nt", environ={}))
+    monkeypatch.setattr(vca, "time", _FakeTimeModule())
     monkeypatch.setattr(vca.subprocess, "run", _fake_run)
     monkeypatch.setattr(vca.subprocess, "Popen", _fake_popen)
     monkeypatch.setattr(vca, "_http_json", _fake_http_json)

@@ -13,11 +13,13 @@ Tests:
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import joblib
 import numpy as np
@@ -44,11 +46,30 @@ from network_anomaly.preprocessing import (
 PREDICT_SCRIPT = PROJECT_ROOT / "scripts" / "predict.py"
 
 
-@pytest.fixture
+@functools.lru_cache(maxsize=1)
+def _load_predict_cli():
+    spec = importlib.util.spec_from_file_location("predict_cli_mod", PREDICT_SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_predict_cli_in_process(
+    argv: List[str], capsys: pytest.CaptureFixture[str]
+) -> Tuple[int, str, str]:
+    mod = _load_predict_cli()
+    code = mod.main(argv)
+    captured = capsys.readouterr()
+    return code, captured.out, captured.err
+
+
+@pytest.fixture(scope="module")
 def synthetic_integration_setup(
-    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Tuple[Path, Path, Path, Path, Path]:
     """Create synthetic input CSV, fitted preprocessor, and fitted model artifacts."""
+    tmp_path = tmp_path_factory.mktemp("inference_e2e_setup")
     rng = np.random.default_rng(seed=123)
     n_rows = 50
 
@@ -205,15 +226,14 @@ def test_cli_execution_success(
 def test_cli_error_non_existent_input(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     """CLI exits with code 1 when input CSV does not exist."""
     _, prep_art, prep_man, model_art, model_man = synthetic_integration_setup
     non_existent_input = tmp_path / "does_not_exist.csv"
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(non_existent_input),
         "--output",
@@ -228,14 +248,15 @@ def test_cli_error_non_existent_input(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "Error: Input file does not exist" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "Error: Input file does not exist" in stderr
 
 
 def test_cli_error_empty_input_csv(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     """CLI exits with code 1 when input CSV is 0 bytes."""
     _, prep_art, prep_man, model_art, model_man = synthetic_integration_setup
@@ -243,9 +264,7 @@ def test_cli_error_empty_input_csv(
     empty_csv.write_text("", encoding="utf-8")
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(empty_csv),
         "--output",
@@ -260,23 +279,22 @@ def test_cli_error_empty_input_csv(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "Error: Input CSV file is empty" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "Error: Input CSV file is empty" in stderr
 
 
 def test_cli_error_missing_model_artifact(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     """CLI exits with code 1 when model artifact is missing."""
     input_csv, prep_art, prep_man, _, model_man = synthetic_integration_setup
     missing_model = tmp_path / "missing_model.joblib"
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(input_csv),
         "--output",
@@ -291,14 +309,15 @@ def test_cli_error_missing_model_artifact(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "Error: Model artifact not found" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "Error: Model artifact not found" in stderr
 
 
 def test_cli_error_schema_validation_failure(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     """CLI exits with code 1 when input CSV violates the 18-feature contract."""
     _, prep_art, prep_man, model_art, model_man = synthetic_integration_setup
@@ -307,9 +326,7 @@ def test_cli_error_schema_validation_failure(
     pd.DataFrame({"duration_ms": [100.0]}).to_csv(invalid_csv, index=False)
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(invalid_csv),
         "--output",
@@ -324,10 +341,10 @@ def test_cli_error_schema_validation_failure(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "missing" in proc.stderr
-    assert "v2 ML feature" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "missing" in stderr
+    assert "v2 ML feature" in stderr
 
 
 def test_prediction_reproducibility(
