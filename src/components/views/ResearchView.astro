@@ -13,179 +13,271 @@ const isVi = lang === "vi";
 <Layout
   title={isVi ? "Nghiên cứu" : "Research"}
   description={isVi
-    ? "Câu hỏi nghiên cứu, phương pháp và ranh giới phát hiện bất thường lưu lượng mạng."
-    : "Research question, methods and boundaries for network anomaly detection and traceability."}
+    ? "Sáu câu hỏi nghiên cứu (RQ1–RQ6), phương pháp Hard Cutover v2.0 và ranh giới phát hiện bất thường lưu lượng mạng."
+    : "Six research questions (RQ1–RQ6), v2.0 Hard Cutover methodology and boundaries for network anomaly detection and traceability."}
   section="Research"
   lang={lang}
   routePath="research/"
 >
   <PageIntro
-    eyebrow={isVi ? "01 / Nghiên cứu" : "01 / Research"}
+    eyebrow={isVi ? "01 / Nghiên cứu v2.0" : "01 / Research v2.0"}
     current={isVi ? "Nghiên cứu" : "Research"}
     title={isVi
-      ? "Nghiên cứu với ranh giới minh bạch."
-      : "Research with a clear boundary."}
+      ? "Sáu câu hỏi nghiên cứu. Ranh giới minh bạch."
+      : "Six research questions. Explicit boundaries."}
     description={isVi
-      ? "Đề tài khảo sát bài toán phát hiện bất thường trên NetFlow, tính hợp lệ khi chuyển sang miền dữ liệu khác và bằng chứng giải thích cho quyết định an ninh. Toàn bộ 4 mô hình đã có Held-out Test trên main cùng prototype Desktop Tauri 2 + FastAPI."
-      : "The project investigates network-flow detection, cross-dataset validity and traceable decision evidence. All four models now have Held-out Test evaluations on main alongside a scoped Tauri 2 + FastAPI desktop prototype."}
+      ? "NetFlow Sentinel v2.0 khảo sát bài toán phát hiện bất thường đa nguồn (AIT-NDS-v2, CTU-SME-11, UWF-ZeekData24), tương quan phiên bằng vector hành vi 16-D và xoay khóa mật mã AES-256-GCM thích ứng sau bước Hard Cutover khỏi v1."
+      : "NetFlow Sentinel v2.0 investigates multi-source network-flow anomaly detection (AIT-NDS-v2, CTU-SME-11, UWF-ZeekData24), 16-D behavioral session correlation and adaptive AES-256-GCM key rotation following the Hard Cutover from v1."}
     lang={lang}
   />
   <div class="container section research-grid">
     {
       isVi ? (
         <article class="prose">
-          <h2 id="problem">Bài toán đặt ra</h2>
+          <h2 id="problem">Bài toán đặt ra &amp; bước Hard Cutover khỏi v1</h2>
           <p>
-            Các bộ dữ liệu xâm nhập có nhãn cho phép so sánh mô hình, nhưng điểm
-            số cao trên một benchmark có thể bắt nguồn từ flow lặp lại hoặc đặc
-            trưng riêng của phòng lab. Một hệ thống hữu ích còn cần đường dẫn
-            truy vết từ quan sát tới bằng chứng, đồng thời không suy diễn địa
-            chỉ IP thành bằng chứng danh tính con người.
+            Kiểm toán trên hệ thống v1 (<code>NF-UNSW-NB15-v3</code>, UQ{" "}
+            <code>454104</code>) chứng minh các mô hình cây học đường tắt đặc
+            trưng phòng lab (<code>MIN_TTL</code> / <code>MAX_TTL</code>) và sụp
+            đổ hoàn toàn khi chuyển sang <code>NF-CSE-CIC-IDS2018-v3</code> (
+            <code>Recall = 0.0</code>, <code>FPR = 0.3802</code>). Vì vậy,
+            NetFlow Sentinel v2.0 thực hiện <strong>Hard Cutover</strong>: đưa
+            toàn bộ di sản v1 vào <code>historical/nf_unsw_nb15_v3/</code> (từ
+            chối fail-closed, 0 fallback v1) và thiết kế hợp đồng{" "}
+            <code>canonical-flow-v2-18</code> loại bỏ hoàn toàn TTL.
           </p>
-          <h2 id="objectives">Mục tiêu nghiên cứu</h2>
+          <h2 id="objectives">Sáu câu hỏi nghiên cứu (RQ1–RQ6)</h2>
           <ol>
             <li>
-              Thiết lập baseline tái lập được trên byte chính thức của bộ
-              NF-UNSW-NB15-v3.
+              <strong>
+                RQ1 (Phát hiện đa mô hình &amp; dịch chuyển miền):
+              </strong>{" "}
+              So sánh 4 họ mô hình E0 (<code>Random Forest</code>,{" "}
+              <code>XGBoost</code>, <code>Autoencoder</code>,{" "}
+              <code>Isolation Forest</code>) trên <code>ait_test</code> (
+              <code>N = 988,805</code>), đo độ sụt giảm zero-shot trên{" "}
+              <code>CTU-SME-11</code> và hiệu quả của huấn luyện đa miền{" "}
+              <code>E1</code> (<code>CTU_Test F1 = 0.9564</code>),{" "}
+              <code>Autoencoder_E3b</code> (FPR <code>72.14% → 13.79%</code>)
+              cùng bộ phân loại tầng 2 <code>RF_multiclass</code> 6 lớp (
+              <code>Test Macro-F1 = 0.7347</code>).
             </li>
             <li>
-              Đối chiếu phân loại supervised (Random Forest, XGBoost) với phát
-              hiện bất thường unsupervised (Isolation Forest, Autoencoder) dưới
-              quy tắc split và chọn ngưỡng tách bạch.
+              <strong>RQ2 (Mất cân bằng lớp 6.7121:1):</strong> Kiểm tra khả
+              năng thu hồi các lớp tấn công thiểu số trên{" "}
+              <code>AIT-NDS-v2</code>; ghi nhận giả thuyết không đạt toàn phần (
+              <code>h2_full_confirmed = false</code> khi{" "}
+              <code>Credential_Attack</code> recall đạt <code>0.1410</code>).
             </li>
             <li>
-              Kiểm toán hiện tượng shortcut, trùng lặp vector đặc trưng, false
-              positive, false negative và suy giảm cross-dataset (
-              <code>NF-CSE-CIC-IDS2018-v3</code>).
+              <strong>RQ3 (Tương quan hành vi 16-D):</strong> Đánh giá{" "}
+              <code>BehavioralVector</code> (
+              <code>canonical-behavioral-v2-16</code>) khi IP thay đổi; đạt{" "}
+              <code>F1 = 0.5556</code> trên mô phỏng L2 cosine và{" "}
+              <code>F1 = 0.7192 &gt; IP 0.6919</code> trên{" "}
+              <code>UWF-ZeekData24</code>, đồng thời chứng minh liên kết thực
+              nghiệm trên log AIT bị chặn (<code>#85</code>:{" "}
+              <code>DIRECT_UID_LINK = FALSE</code>, <code>72.87–87.91%</code>{" "}
+              nhập nhằng trên <code>1,882,973</code> sự kiện).
             </li>
             <li>
-              Cung cấp pipeline suy luận fail-closed có từ chối OOD, chấm điểm
-              ưu tiên tất định, timeline NetFlow, mô phỏng dry-run và ứng dụng
-              desktop cục bộ (<code>v0.6.0</code>).
+              <strong>RQ4 (Phát hiện tấn công chưa biết / Zero-day):</strong>{" "}
+              Trên tập holdout <code>44</code> flow tấn công hiếm,{" "}
+              <code>Isolation Forest</code> đạt <code>Recall = 0.9091</code>{" "}
+              nhưng <code>Autoencoder</code> chỉ đạt{" "}
+              <code>Recall = 0.2045</code> (
+              <code>unsupervised_ge_0_75_both = false</code>).
+            </li>
+            <li>
+              <strong>RQ5 (Xoay khóa thích ứng):</strong> Mô phỏng kích hoạt
+              xoay khóa ở ngưỡng <code>Risk &gt;= 85.0</code> giúp giảm{" "}
+              <code>87.5%</code> cửa sổ lộ khóa (<code>1,200.0s → 150.01s</code>
+              ) và giảm <code>85.0%</code> bán kính ảnh hưởng (
+              <code>40 → 6</code>).
+            </li>
+            <li>
+              <strong>RQ6 (Chi phí mật mã &amp; thông lượng):</strong>{" "}
+              <code>AES-256-GCM</code> đạt <code>72,177.2 ops/s</code> ở{" "}
+              <code>256B</code> (P95 <code>13.3 µs</code>; <code>1KB</code> P95{" "}
+              <code>11.4 µs</code>; <code>4KB</code> P95 <code>38.4 µs</code>)
+              và <code>process_batch(32)</code> đạt <code>386.37 flow/s</code> (
+              <code>&gt;23x</code> so với <code>16.75 flow/s</code>).
             </li>
           </ol>
           <h2 id="method">Phương pháp thực hiện</h2>
           <p>
-            CSV v3 được xác minh qua manifest và kiểm định chất lượng. Quy trình
-            chia tập theo thời gian và nhóm luồng kèm khoảng đệm (purge gap) 5
-            phút tách riêng Train, Validation và Test trước khi tiền xử lý. Hợp
-            đồng baseline giữ đúng 47 đặc trưng flow theo thứ tự và loại 6
-            trường metadata cùng 2 cột nhãn khỏi ma trận <code>X</code>. Thống
-            kê học từ dữ liệu chỉ fit trên Train. Validation chọn ngưỡng (
-            <code>max-F1-on-known-attacks</code> cho Isolation Forest;{" "}
-            <code>fpr_constrained</code> tại <code>FPR &lt;= 0,05</code> cho
-            Autoencoder với <code>Backdoor</code> và <code>Worms</code> tách làm
-            họ tấn công chưa biết); Held-out Test (345.953 dòng) đánh giá trên
-            cả 4 mô hình đã đóng băng.
+            Dữ liệu chính <code>AIT-NDS-v2</code> (<code>3,464,400</code> dòng
+            có nhãn + <code>942</code> dòng <code>shaw</code> unmapped bị loại
+            trừ) được phân chia theo kịch bản độc lập{" "}
+            <code>v2-scenario-group-purged-v1</code> (<code>0</code> chồng lấn
+            kịch bản, <code>0</code> chồng lấn 5-tuple+ts): Train{" "}
+            <code>2,097,891</code> (
+            <code>fox, harrison, santos, wardbeck, wilson</code>), Validation{" "}
+            <code>377,704</code> (<code>russellmitchell</code>), Held-out Test{" "}
+            <code>988,805</code> (<code>shaw, wheeler</code>). Bộ tiền xử lý{" "}
+            <code>TrainOnlyPreprocessor(asinh_robust)</code> áp dụng sàn tỷ lệ{" "}
+            <code>MIN_BOUNDED_SCALE_FLOOR = 0.25</code> và chống nội suy đặc
+            trưng thiếu (<code>FEATURE_INCOMPATIBLE</code>).
           </p>
-          <h2 id="contributions">Đóng góp hiện có</h2>
+          <h2 id="contributions">Đóng góp hệ thống v2.0.0</h2>
           <p>
-            Repository hiện có hợp đồng dữ liệu đã xác minh, pipeline chia tập
-            và tiền xử lý, kết quả Held-out Test cho cả 4 mô hình, kiểm toán
-            cross-dataset trên <code>NF-CSE-CIC-IDS2018-v3</code>, cổng từ chối
-            OOD và xác minh provenance, dịch vụ FastAPI + SQLite cục bộ và ứng
-            dụng Windows Desktop (<code>Rust / Tauri 2 + Svelte 5</code>,{" "}
-            <code>v0.6.0</code>). Tự động hóa firewall trên hệ điều hành và lưu
-            trữ khóa AES-256-GCM trong OS keyring đang ở trạng thái hoãn (chỉ có
-            mô phỏng dry-run với <code>executed=false</code>).
+            Hệ thống cung cấp ứng dụng Desktop <code>Tauri 2 + Svelte 5</code> (
+            <code>2.0.0</code>), dịch vụ <code>FastAPI 0.1.0</code> (
+            <code>33</code> OpenAPI paths / <code>35</code> operations) với
+            SQLite single-writer, 3 chế độ vận hành (Offline CSV{" "}
+            <code>200</code> flows kiểm chứng lặp lại 2x, Dataset Replay{" "}
+            <code>399.44 flow/s</code>, Live Lab Monitoring qua collector
+            pure-Rust <code>telemetry/netflow-rs/</code>), keystore{" "}
+            <code>AES-256-GCM + Windows DPAPI</code> và bộ kiểm thử tự động (
+            <code>676</code> pytest, <code>41</code> Vitest, <code>11</code>{" "}
+            desktop Rust + <code>6</code> <code>netflow-rs</code> Rust tests).
           </p>
-          <h2 id="limitations">Giới hạn &amp; hướng tiếp theo</h2>
+          <h2 id="limitations">
+            Giới hạn &amp; các hạng mục DEFERRED / BLOCKED
+          </h2>
           <p>
-            Gói v3 công bố năm 2025 nhưng lưu lượng gốc được tạo từ đầu năm
-            2015. Điểm Validation/Test gần tuyệt đối của mô hình cây supervised
-            sụp đổ hoàn toàn trên <code>NF-CSE-CIC-IDS2018-v3</code> (Random
-            Forest tụt xuống <code>0,0000</code> Recall và <code>0,3802</code>{" "}
-            FPR với <code>99,99%</code> dòng trôi <code>MIN_TTL</code>). Trong
-            khi đó Autoencoder chỉ đạt <code>0,1361</code> F1 dưới ràng buộc{" "}
-            <code>Val FPR &lt;= 0,05</code>. Đóng gói Python nhúng độc lập và
-            bài toán bền vững cross-dataset là hướng phát triển tiếp theo.
+            Toàn bộ hệ thống được phân loại là{" "}
+            <strong>
+              Functional Prototype / Academic &amp; Controlled Lab Pilot
+            </strong>{" "}
+            (<code>RESEARCH_ONLY</code>). Bốn hạng mục được giữ ở trạng thái{" "}
+            <code>DEFERRED / BLOCKED</code> gồm: kiểm thử thiết bị router/switch
+            vật lý (<code>#137</code>, <code>real_device_tested = false</code>),
+            đóng gói bộ cài Windows NSIS + kiểm thử E2E trên máy ảo Windows
+            10/11 sạch (<code>#148</code>), bộ dữ liệu <code>UGR&apos;16</code>{" "}
+            (<code>HTTP 403</code>) và phát hành nhị phân công khai (
+            <code>#154</code>,{" "}
+            <code>DISTRIBUTION_AUTHORIZATION.json: approved = false</code>).
           </p>
           <div class="callout">
-            <strong>Quy tắc diễn giải</strong>
+            <strong>Quy tắc diễn giải khoa học</strong>
             <br />
-            Thử nghiệm tách họ tấn công chưa biết (<code>Backdoor</code>,{" "}
-            <code>Worms</code>) kiểm tra một giao thức xác định trong cùng
-            testbed 2015; không phải bằng chứng phát hiện zero-day ngoài thực
-            tế.
+            Các giả thuyết không đạt toàn phần ở RQ2 (
+            <code>h2_full_confirmed = false</code>), RQ3 trên log AIT (
+            <code>BLOCKED #85</code>) và RQ4 (
+            <code>unsupervised_ge_0_75_both = false</code>) là kết quả thực
+            nghiệm chính thức, không bị ẩn hay sửa ngưỡng hậu nghiệm.
           </div>
         </article>
       ) : (
         <article class="prose">
-          <h2 id="problem">The problem</h2>
+          <h2 id="problem">The problem &amp; Hard Cutover from v1</h2>
           <p>
-            Labelled intrusion benchmarks make model comparison possible, but a
-            high score on one dataset can reflect repeated flows or
-            laboratory-specific patterns. A useful detection system also needs a
-            traceable path from an observation to the evidence, without treating
-            an IP address as proof of a person's identity.
+            Auditing legacy v1 (<code>NF-UNSW-NB15-v3</code>, UQ{" "}
+            <code>454104</code>) proved that tree models relied on lab-specific
+            TTL shortcuts (<code>MIN_TTL</code> / <code>MAX_TTL</code>) and
+            collapsed completely on <code>NF-CSE-CIC-IDS2018-v3</code> (
+            <code>Recall = 0.0</code>, <code>FPR = 0.3802</code>). NetFlow
+            Sentinel v2.0 therefore executes a <strong>Hard Cutover</strong>:
+            retiring all v1 assets to <code>historical/nf_unsw_nb15_v3/</code>{" "}
+            (fail-closed rejection, zero v1 fallback) and enforcing the TTL-free{" "}
+            <code>canonical-flow-v2-18</code> contract.
           </p>
-          <h2 id="objectives">Research objectives</h2>
+          <h2 id="objectives">Six research questions (RQ1–RQ6)</h2>
           <ol>
             <li>
-              Establish a reproducible baseline on verified NF-UNSW-NB15-v3
-              bytes.
+              <strong>RQ1 (Multi-model detection &amp; domain shift):</strong>{" "}
+              Benchmark 4 E0 model families (<code>Random Forest</code>,{" "}
+              <code>XGBoost</code>, <code>Autoencoder</code>,{" "}
+              <code>Isolation Forest</code>) on <code>ait_test</code> (
+              <code>N = 988,805</code>), measure zero-shot degradation on{" "}
+              <code>CTU-SME-11</code>, and evaluate multi-domain <code>E1</code>{" "}
+              (<code>CTU_Test F1 = 0.9564</code>), <code>Autoencoder_E3b</code>{" "}
+              (FPR <code>72.14% → 13.79%</code>) and Stage-2 6-class{" "}
+              <code>RF_multiclass</code> (<code>Test Macro-F1 = 0.7347</code>).
             </li>
             <li>
-              Compare supervised classification (Random Forest, XGBoost) with
-              unsupervised anomaly scores (Isolation Forest, Autoencoder) under
-              explicit split, benign-only training and threshold rules.
+              <strong>RQ2 (Class imbalance 6.7121:1):</strong> Evaluate minority
+              attack recall on <code>AIT-NDS-v2</code>; preserve the negative
+              verdict (<code>h2_full_confirmed = false</code> with{" "}
+              <code>Credential_Attack</code> recall at <code>0.1410</code>).
             </li>
             <li>
-              Audit shortcuts, equivalent feature vectors, false positives,
-              false negatives and cross-dataset degradation (
-              <code>NF-CSE-CIC-IDS2018-v3</code>).
+              <strong>RQ3 (16-D behavioral correlation):</strong> Test{" "}
+              <code>BehavioralVector</code> (
+              <code>canonical-behavioral-v2-16</code>) across IP shifts,
+              achieving <code>F1 = 0.5556</code> in L2 cosine simulation and{" "}
+              <code>F1 = 0.7192 &gt; IP 0.6919</code> on{" "}
+              <code>UWF-ZeekData24</code>, while proving AIT log linkage is
+              empirically blocked (<code>#85</code>:{" "}
+              <code>DIRECT_UID_LINK = FALSE</code>, <code>72.87–87.91%</code>{" "}
+              ambiguity across <code>1,882,973</code> events).
             </li>
             <li>
-              Deliver a fail-closed inference pipeline with OOD abstention,
-              deterministic priority scoring, NetFlow evidence timelines,
-              dry-run response simulation and a local desktop prototype (
-              <code>v0.6.0</code>).
+              <strong>RQ4 (Unknown / zero-day attack holdout):</strong> On the{" "}
+              <code>44</code>-flow zero-day holdout,{" "}
+              <code>Isolation Forest</code> reaches <code>Recall = 0.9091</code>{" "}
+              while <code>Autoencoder</code> reaches{" "}
+              <code>Recall = 0.2045</code> (
+              <code>unsupervised_ge_0_75_both = false</code>).
+            </li>
+            <li>
+              <strong>RQ5 (Adaptive key rotation):</strong> Controlled
+              simulation triggering rotation at <code>Risk &gt;= 85.0</code>{" "}
+              reduces exposure window by <code>87.5%</code> (
+              <code>1,200.0s → 150.01s</code>) and blast radius by{" "}
+              <code>85.0%</code> (<code>40 → 6</code>).
+            </li>
+            <li>
+              <strong>RQ6 (Cryptographic &amp; batch performance):</strong>{" "}
+              <code>AES-256-GCM</code> achieves <code>72,177.2 ops/s</code> at{" "}
+              <code>256B</code> (P95 <code>13.3 µs</code>; <code>1KB</code> P95{" "}
+              <code>11.4 µs</code>; <code>4KB</code> P95 <code>38.4 µs</code>)
+              and vectorized <code>process_batch(32)</code> reaches{" "}
+              <code>386.37 flow/s</code> (<code>&gt;23x</code> vs{" "}
+              <code>16.75 flow/s</code>).
             </li>
           </ol>
           <h2 id="method">Method</h2>
           <p>
-            The published v3 CSV is verified by manifest and quality checks. A
-            chronological, group-aware split with 5-minute purge gaps assigns
-            Train, Validation and Test before learned preprocessing. The
-            baseline model contract keeps 47 ordered flow features and separates
-            six trace metadata fields and the two targets. Train-only statistics
-            are frozen for later partitions. Validation selects thresholds (
-            <code>max-F1-on-known-attacks</code> for Isolation Forest;{" "}
-            <code>fpr_constrained</code> at <code>FPR &lt;= 0.05</code> for
-            Autoencoder with <code>Backdoor</code> and <code>Worms</code> held
-            out as unknown categories); Held-out Test (345,953 flows) evaluates
-            all four frozen models.
+            The primary <code>AIT-NDS-v2</code> corpus (<code>3,464,400</code>{" "}
+            labeled rows + <code>942</code> excluded unmapped <code>shaw</code>{" "}
+            rows) is partitioned under the scenario-disjoint{" "}
+            <code>v2-scenario-group-purged-v1</code> protocol (<code>0</code>{" "}
+            scenario overlap, <code>0</code> 5-tuple+ts overlap): Train{" "}
+            <code>2,097,891</code> (
+            <code>fox, harrison, santos, wardbeck, wilson</code>), Validation{" "}
+            <code>377,704</code> (<code>russellmitchell</code>), Held-out Test{" "}
+            <code>988,805</code> (<code>shaw, wheeler</code>).{" "}
+            <code>TrainOnlyPreprocessor(asinh_robust)</code> enforces{" "}
+            <code>MIN_BOUNDED_SCALE_FLOOR = 0.25</code> and strict
+            anti-imputation (<code>FEATURE_INCOMPATIBLE</code>).
           </p>
-          <h2 id="contributions">Current contributions</h2>
+          <h2 id="contributions">v2.0.0 system contributions</h2>
           <p>
-            The repository now contains the verified data contract, split and
-            preprocessing pipelines, Held-out Test evidence for all four models,
-            an external cross-dataset audit on{" "}
-            <code>NF-CSE-CIC-IDS2018-v3</code>, an OOD abstention and provenance
-            gate, a localhost FastAPI + SQLite service, and a Windows desktop
-            application (<code>Rust / Tauri 2 + Svelte 5</code>,{" "}
-            <code>v0.6.0</code>). Live firewall automation and production
-            AES-256-GCM OS keyring storage remain deferred (
-            <code>executed=false</code> dry-run simulation only).
+            The repository delivers a <code>Tauri 2 + Svelte 5</code> Desktop
+            app (<code>2.0.0</code>), <code>FastAPI 0.1.0</code> backend (
+            <code>33</code> OpenAPI paths / <code>35</code> operations) with
+            single-writer SQLite, three operation modes (2x-verified Offline CSV{" "}
+            <code>200</code> flows, Dataset Replay at <code>399.44 flow/s</code>
+            , Live Lab Monitoring via pure-Rust{" "}
+            <code>telemetry/netflow-rs/</code>),{" "}
+            <code>AES-256-GCM + Windows DPAPI</code> keystore, and{" "}
+            <code>676</code> pytest + <code>41</code> Vitest + <code>11</code>{" "}
+            desktop Rust + <code>6</code> <code>netflow-rs</code> Rust tests.
           </p>
-          <h2 id="limitations">Limits and next work</h2>
+          <h2 id="limitations">Limits &amp; DEFERRED / BLOCKED items</h2>
           <p>
-            The v3 package was published in 2025, while its observed flows are
-            from early 2015. Near-perfect in-domain Validation and Test scores
-            for supervised trees fail catastrophically on{" "}
-            <code>NF-CSE-CIC-IDS2018-v3</code> (RF drops to <code>0.0000</code>{" "}
-            Recall and <code>0.3802</code> FPR with <code>99.99%</code>{" "}
-            <code>MIN_TTL</code> drift). Meanwhile, Autoencoder reaches only{" "}
-            <code>0.1361</code> F1 under the strict{" "}
-            <code>Val FPR &lt;= 0.05</code> constraint. Standalone embedded
-            Python packaging and cross-dataset robustness remain future work.
+            The system is classified as a{" "}
+            <strong>
+              Functional Prototype / Academic &amp; Controlled Lab Pilot
+            </strong>{" "}
+            (<code>RESEARCH_ONLY</code>). Four items remain explicitly{" "}
+            <code>DEFERRED / BLOCKED</code>: physical router/switch hardware lab
+            (<code>#137</code>, <code>real_device_tested = false</code>),
+            Windows NSIS installer + clean Windows 10/11 VM E2E verification (
+            <code>#148</code>), <code>UGR&apos;16</code> ingestion (
+            <code>HTTP 403</code>), and public binary release (<code>#154</code>
+            , <code>DISTRIBUTION_AUTHORIZATION.json: approved = false</code>).
           </p>
           <div class="callout">
-            <strong>Interpretation rule</strong>
+            <strong>Scientific interpretation rule</strong>
             <br />
-            Unknown-attack holdouts (<code>Backdoor</code>, <code>Worms</code>)
-            test a defined experimental protocol inside the 2015 testbed; they
-            do not prove zero-day detection in production networks.
+            Unconfirmed or blocked outcomes in RQ2 (
+            <code>h2_full_confirmed = false</code>), RQ3 AIT empirical linkage (
+            <code>BLOCKED #85</code>) and RQ4 (
+            <code>unsupervised_ge_0_75_both = false</code>) are preserved as
+            first-class empirical findings without post-hoc threshold tuning.
           </div>
         </article>
       )
@@ -194,21 +286,25 @@ const isVi = lang === "vi";
       class="source-rail"
       aria-label={isVi ? "Nguồn nghiên cứu" : "Research sources"}
     >
-      <span class="eyebrow">{isVi ? "Dấu vết nguồn" : "Source trail"}</span><a
-        href={source("docs/PROBLEM_STATEMENT.md")}
-        >{isVi ? "Phát biểu bài toán ↗" : "Problem statement ↗"}</a
-      ><a href={source("docs/METHODOLOGY.md")}
-        >{isVi ? "Phương pháp luận ↗" : "Methodology ↗"}</a
-      ><a href={source("docs/MULTI_SOURCE_INGESTION.md")}
-        >{isVi ? "Tiếp nhận đa nguồn & OOD ↗" : "Multi-source & OOD gate ↗"}</a
+      <span class="eyebrow"
+        >{isVi ? "Dấu vết nguồn v2.0" : "v2.0 source trail"}</span
+      ><a href={source("docs/RESEARCH_QUESTIONS.md")}
+        >{
+          isVi ? "Câu hỏi nghiên cứu RQ1–RQ6 ↗" : "Research questions RQ1–RQ6 ↗"
+        }</a
+      ><a href={source("docs/thesis/RESEARCH_REPORT_V2.md")}
+        >{isVi ? "Báo cáo nghiên cứu v2.0 ↗" : "v2.0 research report ↗"}</a
+      ><a href={source("docs/adr/ADR-dataset-hard-cutover-v2.md")}
+        >{isVi ? "ADR Hard Cutover v2 ↗" : "ADR Hard Cutover v2 ↗"}</a
       ><a
         href={source(
-          "reports/evaluation/cross_dataset_generalization_report.md",
-        )}>{isVi ? "Báo cáo cross-dataset ↗" : "Cross-dataset report ↗"}</a
-      ><a href={source("docs/ROADMAP_FULL_SYSTEM.md")}
-        >{isVi ? "Lộ trình hệ thống ↗" : "Full-system roadmap ↗"}</a
-      ><a href={source("docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md")}
-        >{isVi ? "Giao thức chia tập ↗" : "Split protocol ↗"}</a
+          "reports/experiments/ml/domain_analysis/DOMAIN_SHIFT_ANALYSIS.md",
+        )}
+        >{isVi ? "Phân tích dịch chuyển miền ↗" : "Domain shift analysis ↗"}</a
+      ><a href={source("docs/BEHAVIORAL_ENGINE.md")}
+        >{isVi ? "Kiến trúc hành vi 16-D ↗" : "16-D behavioral engine ↗"}</a
+      ><a href={source("docs/audits/V2_RELEASE_READINESS.md")}
+        >{isVi ? "Kiểm toán sẵn sàng v2.0 ↗" : "v2.0 release readiness ↗"}</a
       ><a href={href("docs/limitations/", lang)}
         >{isVi ? "Đọc giới hạn →" : "Read limitations →"}</a
       >

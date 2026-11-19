@@ -14,45 +14,48 @@ const isVi = lang === "vi";
 <Layout
   title={isVi ? "Bộ dữ liệu" : "Dataset"}
   description={isVi
-    ? "Nguồn gốc NF-UNSW-NB15-v3, lược đồ 55 cột, phân bố lớp, chất lượng và tiền xử lý."
-    : "NF-UNSW-NB15-v3 provenance, schema, distribution, quality and preprocessing."}
+    ? "Nguồn gốc AIT-NDS-v2, hợp đồng canonical-flow-v2-18, phân bố 5 họ tấn công và kiểm định đa nguồn CTU-SME-11 / UWF-ZeekData24."
+    : "AIT-NDS-v2 provenance, canonical-flow-v2-18 contract, 5-category distribution and CTU-SME-11 / UWF-ZeekData24 multi-source boundaries."}
   section="Dataset"
   lang={lang}
   routePath="dataset/"
 >
   <PageIntro
-    eyebrow={isVi ? "02 / Nguồn dữ liệu" : "02 / Data provenance"}
+    eyebrow={isVi ? "02 / Nguồn dữ liệu v2.0" : "02 / Data provenance v2.0"}
     current={isVi ? "Bộ dữ liệu" : "Dataset"}
     title={isVi
-      ? "NF-UNSW-NB15-v3, kiểm tra từ byte gốc."
-      : "NF-UNSW-NB15-v3, examined at the source."}
+      ? "AIT-NDS-v2, kiểm tra từ byte gốc."
+      : "AIT-NDS-v2, examined at the source."}
     description={isVi
-      ? "Bộ dữ liệu là nguồn bằng chứng benchmark, không phải luồng mạng vận hành trực tiếp. Repository ghi nhận nhà xuất bản, checksum, schema gốc, các vấn đề chất lượng và điều kiện sử dụng."
-      : "The dataset is an evidence source, not an operational traffic feed. The repository records the publisher, checksums, raw schema, observed quality issues and the conditions for model use."}
+      ? "Sau bước Hard Cutover khỏi v1 (NF-UNSW-NB15-v3 chuyển vào historical/nf_unsw_nb15_v3/), NetFlow Sentinel v2.0 sử dụng AIT-NDS-v2 làm nguồn huấn luyện/đánh giá chính cùng CTU-SME-11 và UWF-ZeekData24 cho đánh giá ngoại vi."
+      : "Following the Hard Cutover from v1 (NF-UNSW-NB15-v3 retired to historical/nf_unsw_nb15_v3/), NetFlow Sentinel v2.0 uses AIT-NDS-v2 as its primary benchmark alongside CTU-SME-11 and UWF-ZeekData24 for external evaluation."}
     lang={lang}
   />
   <section class="section">
     <div class="container">
       <div class="facts">
         <div>
-          <small>{isVi ? "Nhà xuất bản" : "Publisher"}</small><strong
-            >University of Queensland</strong
+          <small>{isVi ? "Bộ dữ liệu chính" : "Primary suite"}</small><strong
+            >AIT-NDS-v2 (8 scenarios)</strong
           >
         </div><div>
           <small>{isVi ? "Định danh ổn định" : "Stable record"}</small><strong
-            ><a href="https://doi.org/10.48610/6E0EDA1"
-              >DOI 10.48610/6E0EDA1 ↗</a
+            ><a href="https://doi.org/10.5281/zenodo.13168643"
+              >DOI 10.5281/zenodo.13168643 ↗</a
             ></strong
           >
         </div><div>
-          <small>{isVi ? "CSV đã xác minh" : "Verified CSV"}</small><strong
+          <small>{isVi ? "Tổng dòng có nhãn" : "Verified labeled"}</small
+          ><strong
             >{
-              isVi ? "2,365,424 dòng · 55 cột" : "2,365,424 rows · 55 columns"
+              isVi
+                ? "3,464,400 dòng · +942 loại trừ"
+                : "3,464,400 rows · +942 excluded"
             }</strong
           >
         </div><div>
           <small>{isVi ? "Giấy phép" : "License"}</small><strong
-            >{isVi ? "Hạn chế thương mại" : "Commercial use restricted"}</strong
+            >CC BY 4.0 (AIT-NDS-v2 & CTU-SME-11)</strong
           >
         </div>
       </div>
@@ -64,44 +67,54 @@ const isVi = lang === "vi";
         <span class="eyebrow">{isVi ? "Phân bố lớp" : "Population"}</span><h2>
           {
             isVi
-              ? "Tập dữ liệu flow mất cân bằng mạnh."
-              : "A heavily imbalanced flow record."
+              ? "Tập dữ liệu tách biệt kịch bản (6.7121:1 trên Train)."
+              : "Scenario-disjoint flow record (6.7121:1 Train ratio)."
           }
         </h2><p class="lede">
           {
             isVi
-              ? "Tệp CSV đã xác minh gồm 2,237,731 flow Benign và 127,693 flow Attack. Đây là số đếm trong gói dữ liệu này, không phải tỷ lệ lưu lượng mạng thực tế."
-              : "The verified CSV contains 2,237,731 benign flows and 127,693 attack flows. These are counts in this package, not estimates of real-world traffic prevalence."
+              ? "Tập dữ liệu AIT-NDS-v2 đã xác minh gồm 3,464,400 dòng có nhãn: 2,845,522 flow Benign (82.1%) và 618,878 flow Attack (17.9%), ngoài ra có 942 dòng unmapped ở kịch bản shaw bị loại trừ rõ ràng khỏi split."
+              : "The verified AIT-NDS-v2 corpus contains 3,464,400 labeled rows: 2,845,522 benign flows (82.1%) and 618,878 attack flows (17.9%), plus 942 unmapped rows in scenario shaw explicitly excluded from the split."
           }
         </p><div
           class="distribution"
           role="img"
           aria-label={isVi
-            ? "Phân bố dữ liệu: 94.6 phần trăm Benign và 5.4 phần trăm Attack"
-            : "Dataset distribution: 94.6 percent benign and 5.4 percent attack"}
+            ? "Phân bố dữ liệu: 82.1 phần trăm Benign và 17.9 phần trăm Attack"
+            : "Dataset distribution: 82.1 percent benign and 17.9 percent attack"}
         >
-          <span style="width:94.6%"></span><span style="width:5.4%"></span>
+          <span style="width:82.1%"></span><span style="width:17.9%"></span>
         </div><div class="legend">
-          <span>● Benign · 2,237,731</span><span>● Attack · 127,693</span>
+          <span>● Benign · 2,845,522 (82.1%)</span><span
+            >● Attack · 618,878 (17.9%)</span
+          >
         </div><p class="note">
           {
             isVi
-              ? "Trang giới thiệu của nhà xuất bản ghi tổng Attack lệch 54 dòng so với CSV thực tế. Cổng thông tin này bám sát byte tệp đã kiểm tra. "
-              : "The publisher landing-page attack total differs by 54 rows from the verified CSV. This portal follows the checked file bytes. "
-          }<a href={source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md")}
-            >{isVi ? "Đọc ghi nhận sai khác ↗" : "Read discrepancy record ↗"}</a
+              ? "Giao thức v2-scenario-group-purged-v1 bảo đảm 0 chồng lấn kịch bản và 0 chồng lấn 5-tuple+timestamp giữa Train (fox, harrison, santos, wardbeck, wilson), Validation (russellmitchell) và Test (shaw, wheeler). "
+              : "Protocol v2-scenario-group-purged-v1 enforces 0 scenario overlap and 0 5-tuple+timestamp overlap across Train (fox, harrison, santos, wardbeck, wilson), Validation (russellmitchell) and Test (shaw, wheeler). "
+          }<a href={source("data/V2_SPLIT_MANIFEST.json")}
+            >{
+              isVi
+                ? "Xem V2_SPLIT_MANIFEST.json ↗"
+                : "Inspect V2_SPLIT_MANIFEST.json ↗"
+            }</a
           >
         </p>
       </div><div class="surface category-panel">
-        <h3>{isVi ? "Chín họ tấn công (Attack)" : "Attack categories"}</h3><div
-          class="table-wrap"
-        >
+        <h3>
+          {
+            isVi
+              ? "Năm họ tấn công chuẩn hóa (AIT-NDS-v2)"
+              : "Five canonical attack categories (AIT-NDS-v2)"
+          }
+        </h3><div class="table-wrap">
           <table class="data-table">
             <caption class="sr-only"
               >{
                 isVi
-                  ? "Số lượng dòng theo từng họ tấn công trong CSV đã xác minh"
-                  : "Attack category counts in verified CSV"
+                  ? "Số lượng dòng theo từng họ tấn công trong AIT-NDS-v2"
+                  : "Attack category counts in AIT-NDS-v2"
               }</caption
             ><thead
               ><tr
@@ -128,66 +141,71 @@ const isVi = lang === "vi";
   </section>
   <section class="section">
     <div class="container">
-      <span class="eyebrow">{isVi ? "Hợp đồng dữ liệu" : "Data contract"}</span
+      <span class="eyebrow"
+        >{
+          isVi
+            ? "Hợp đồng dữ liệu · canonical-flow-v2-18"
+            : "Data contract · canonical-flow-v2-18"
+        }</span
       ><h2>
         {
           isVi
-            ? "55 cột gốc, tách thành ba vai trò."
-            : "55 raw columns, three distinct roles."
+            ? "32 cột chuẩn hóa, không nội suy đặc trưng thiếu."
+            : "32 canonical columns, strict anti-imputation."
         }
       </h2><div class="schema-grid">
         <div class="surface">
-          <span class="schema-num">47</span><h3>
-            {isVi ? "Đặc trưng mô hình" : "Model features"}
+          <span class="schema-num">18</span><h3>
+            {isVi ? "Đặc trưng ML (6 + 12)" : "ML features (6 + 12)"}
           </h3><p>
             {
               isVi
-                ? "Các thuộc tính NetFlow theo thứ tự cố định như protocol, số byte/gói, thời lượng, TTL và thống kê flow. Trường phân loại mã hóa số được tách riêng với trường định lượng."
-                : "Ordered NetFlow attributes such as protocol, byte and packet counts, timing, TTL and flow statistics. Numeric-coded categories remain distinct from quantitative fields."
+                ? "6 đặc trưng quan sát cơ sở (duration_ms, bytes/pkts hai chiều, protocol) và 12 đặc trưng dẫn xuất tất định (tổng, tỷ lệ, tốc độ, byte/pkt, has_response, is_unidirectional). Loại bỏ hoàn toàn TTL/TCP window phòng lab."
+                : "6 base observed fields (duration_ms, bidirectional bytes/pkts, protocol) plus 12 deterministic derived ratios, rates and flags. Lab-specific TTL and TCP window shortcuts are excluded."
             }
           </p>
         </div><div class="surface">
-          <span class="schema-num">06</span><h3>
-            {isVi ? "Metadata truy vết" : "Trace metadata"}
+          <span class="schema-num">10</span><h3>
+            {
+              isVi
+                ? "Truy vết (5) & Provenance (5)"
+                : "Trace (5) & Provenance (5)"
+            }
           </h3><p>
             {
               isVi
-                ? "Timestamp đầu/cuối, địa chỉ IPv4 nguồn/đích và cả hai cổng L4 được giữ cho phân nhóm và ngữ cảnh truy vết, nhưng bị loại khỏi ma trận baseline "
-                : "Start/end timestamps, source/destination IPv4 addresses and both L4 ports are retained for grouping and trace context, but excluded from baseline "
+                ? "5 cột metadata truy vết (timestamp, src/dst IP, src/dst port) và 5 cột provenance (source_dataset, scenario_id, source_flow_id...) giữ riêng cho OOD gate và BehavioralVector, loại khỏi ma trận "
+                : "5 trace metadata columns (timestamps, src/dst IP, src/dst port) and 5 provenance columns (source_dataset, scenario_id, source_flow_id...) are retained for OOD gating and BehavioralVector, excluded from "
             }<code>X</code>.
           </p>
         </div><div class="surface">
-          <span class="schema-num">02</span><h3>
-            {isVi ? "Nhãn mục tiêu" : "Targets"}
+          <span class="schema-num">04</span><h3>
+            {isVi ? "Nhãn phân cấp" : "Hierarchical labels"}
           </h3><p>
-            <code>Label</code>{" "}
             {
               isVi
-                ? "là nhãn nhị phân (0 Benign, 1 Attack); "
-                : "is binary (0 benign, 1 attack); "
-            }<code>Attack</code>{" "}
-            {
-              isVi
-                ? "chứa Benign hoặc 1 trong 9 họ tấn công. Cả hai bị loại khỏi đầu vào mô hình."
-                : "contains Benign or one of nine attack categories. Both are excluded from input features."
+                ? "4 cột nhãn (nhị phân, họ tấn công chuẩn hóa 5 lớp, nhãn gốc và cờ đánh giá) được tách biệt hoàn toàn khỏi đầu vào suy luận."
+                : "4 label columns (binary label, 5-class canonical taxonomy, raw source label and evaluation metadata) are strictly separated from model inputs."
             }
           </p>
         </div>
       </div><p class="source-line">
         {
           isVi
-            ? "Baseline giữ nguyên thứ tự chuẩn 47 trường thống kê NetFlow v3; không sử dụng biến thể chọn lọc đặc trưng hay 49 trường gộp cổng."
-            : "The baseline retains the publisher's NetFlow v3 flow statistics in a fixed order. No additional selected-feature set or 49-feature port variant is presented as an evaluated model."
+            ? "Chính sách chống nội suy: nguồn thiếu bất kỳ đặc trưng nào trong 6 trường cơ sở sẽ bị đánh dấu FEATURE_INCOMPATIBLE và chặn suy luận ML."
+            : "Anti-imputation policy: any source missing required base observations is flagged FEATURE_INCOMPATIBLE and blocked from ML inference."
         }
       </p><p class="source-line">
         {isVi ? "Nguồn: " : "Source: "}<a
-          href={source("docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md")}
-          >{isVi ? "schema đã xác minh ↗" : "verified schema ↗"}</a
-        > · <a href={source("src/network_anomaly/data/nf_unsw_nb15_v3.py")}
+          href={source("src/network_anomaly/data/v2_schema.py")}
+          >{isVi ? "lược đồ v2_schema.py ↗" : "v2_schema.py contract ↗"}</a
+        > · <a href={source("src/network_anomaly/data/taxonomy.py")}
+          >{isVi ? "phân loại taxonomy.py ↗" : "taxonomy.py mapping ↗"}</a
+        > · <a href={source("docs/FEATURE_COMPATIBILITY_MATRIX.md")}
           >{
             isVi
-              ? "hợp đồng đặc trưng trong mã nguồn ↗"
-              : "executable feature contract ↗"
+              ? "ma trận tương thích đặc trưng ↗"
+              : "feature compatibility matrix ↗"
           }</a
         >
       </p>
@@ -197,78 +215,95 @@ const isVi = lang === "vi";
     <div class="container two-column">
       <div>
         <span class="eyebrow"
-          >{isVi ? "Tải & kiểm định" : "Acquisition and quality"}</span
+          >{
+            isVi
+              ? "Hard Cutover & Kiểm định liên kết"
+              : "Hard Cutover & linkage audit"
+          }</span
         ><h2>
           {
             isVi
-              ? "Kiểm tra trước khi biến đổi."
-              : "Checked before transformation."
+              ? "Cách ly v1 và chứng minh giới hạn liên kết log."
+              : "Retiring v1 and proving log-linkage limits."
           }
         </h2><p>
           {
             isVi
-              ? "Script tải lấy URL tạm từ UQRDM, xác minh checksum archive/payload và giữ CSV lớn ngoài Git. Bộ kiểm định streaming kiểm tra số cột, schema, nhãn, token thiếu/vô hạn và dấu vân tay trùng lặp."
-              : "The fetch script obtains a short-lived URL from UQRDM, verifies archive and payload checksums, and keeps the large CSV outside Git. The streaming validator checks row width, schema, labels, missing and non-finite tokens, and duplicate fingerprints."
+              ? "Gói v1 (NF-UNSW-NB15-v3, UQ 454104) đã được chuyển hẳn sang historical/nf_unsw_nb15_v3/ với chế độ từ chối fail-closed (0 fallback v1). Kiểm toán #85 trên 1,882,973 sự kiện log hệ thống của AIT-LDS-v2.1 (fox, russellmitchell) chứng minh DIRECT_UID_LINK = FALSE và tỷ lệ nhập nhằng đa luồng lên tới 72.87–87.91%."
+              : "Legacy v1 (NF-UNSW-NB15-v3, UQ 454104) is retired to historical/nf_unsw_nb15_v3/ with fail-closed rejection and zero v1 fallback. Audit #85 across 1,882,973 system log events in AIT-LDS-v2.1 (fox, russellmitchell) proved DIRECT_UID_LINK = FALSE with 72.87–87.91% multi-flow ambiguity."
           }
         </p><div class="callout">
           {
             isVi
-              ? "Báo cáo chất lượng ghi nhận giá trị trống, +Inf, dòng trùng hệt và vector đặc trưng lặp. Kiểm tra toàn vẹn nguồn đạt chuẩn không đồng nghĩa dữ liệu thô đã sẵn sàng cho ML."
-              : "The raw quality record reports blank and positive-infinity rate values, exact duplicates and equivalent flow vectors. A successful source-integrity check is not a statement that raw data is directly ML-ready."
+              ? "AIT-LDS-v2.1 (DOI 10.5281/zenodo.19483937, CC BY-NC-SA 4.0) được cách ly trong thư mục .gitignored: 0% rò rỉ vào trọng số ML hay demo_flows.csv."
+              : "AIT-LDS-v2.1 (DOI 10.5281/zenodo.19483937, CC BY-NC-SA 4.0) is isolated in .gitignored storage with 0% leakage into ML weights or demo_flows.csv."
           }
         </div><p class="source-line">
-          <a href={source("scripts/fetch_nf_unsw_nb15_v3.py")}
-            >{isVi ? "Mã tải dữ liệu ↗" : "Acquisition code ↗"}</a
-          > · <a
-            href={source(
-              "reports/data_quality/nf_unsw_nb15_v3_validation.json",
-            )}>{isVi ? "Báo cáo chất lượng ↗" : "Quality report ↗"}</a
+          <a href={source("docs/adr/ADR-dataset-hard-cutover-v2.md")}
+            >{isVi ? "ADR Hard Cutover v2 ↗" : "ADR Hard Cutover v2 ↗"}</a
+          > · <a href={source("docs/dataset/AIT_LINKAGE_FEASIBILITY.md")}
+            >{
+              isVi
+                ? "Báo cáo khả thi liên kết #85 ↗"
+                : "Linkage feasibility audit #85 ↗"
+            }</a
           >
         </p>
       </div><div>
         <span class="eyebrow"
           >{isVi ? "Chia tập & tiền xử lý" : "Split and preprocessing"}</span
-        ><h2>{isVi ? "Chỉ fit trên tập Train." : "Fit only on Train."}</h2><ol
-          class="steps"
-        >
+        ><h2>
+          {
+            isVi
+              ? "TrainOnlyPreprocessor(asinh_robust)."
+              : "TrainOnlyPreprocessor(asinh_robust)."
+          }
+        </h2><ol class="steps">
           <li>
-            <strong>{isVi ? "Phân vùng" : "Partition"}</strong><span
+            <strong>{isVi ? "Tách kịch bản" : "Scenario split"}</strong><span
               >{
                 isVi
-                  ? "Chia Train / Validation / Test theo thời gian và nhóm luồng kèm purge gap."
-                  : "Chronological, group-aware Train / Validation / Test with purge gaps."
+                  ? "Train: 2,097,891 (fox, harrison, santos, wardbeck, wilson); Val: 377,704 (russellmitchell); Test: 988,805 (shaw, wheeler)."
+                  : "Train: 2,097,891 (fox, harrison, santos, wardbeck, wilson); Val: 377,704 (russellmitchell); Test: 988,805 (shaw, wheeler)."
               }</span
             >
           </li><li>
-            <strong>{isVi ? "Kiểm toán" : "Audit"}</strong><span
+            <strong>{isVi ? "Chống rò rỉ" : "Zero overlap"}</strong><span
               >{
                 isVi
-                  ? "Ghi nhận trùng lặp tuyệt đối và tương đương đặc trưng; nhãn và metadata nằm ngoài "
-                  : "Record exact and feature-equivalent vectors; targets and trace metadata stay outside "
-              }<code>X</code>.</span
+                  ? "0 kịch bản trùng và 0 cặp 5-tuple+timestamp trùng giữa các phân vùng; 942 dòng shaw unmapped bị loại trừ."
+                  : "0 overlapping scenarios and 0 overlapping 5-tuple+timestamp records across partitions; 942 unmapped shaw rows excluded."
+              }</span
             >
           </li><li>
             <strong>{isVi ? "Biến đổi" : "Transform"}</strong><span
               >{
                 isVi
-                  ? "Đưa giá trị thiếu/không hữu hạn về sentinel, điền median/mode học từ Train. Validation và Test chỉ áp dụng phép biến đổi đã đóng băng."
-                  : "Map missing/non-finite values to missing sentinels, then use train-derived medians or modes. Validation and Test receive frozen transforms."
+                  ? "Biến đổi asinh kết hợp chuẩn hóa robust chỉ fit trên Train với sàn tỷ lệ MIN_BOUNDED_SCALE_FLOOR = 0.25 chống nổ gradient."
+                  : "Train-only asinh + robust scaling with MIN_BOUNDED_SCALE_FLOOR = 0.25 to prevent near-zero IQR explosion."
               }</span
             >
           </li><li>
-            <strong>{isVi ? "Đánh giá" : "Evaluate"}</strong><span
+            <strong>{isVi ? "Cổng OOD" : "OOD gate"}</strong><span
               >{
                 isVi
-                  ? "Dùng Validation để phát triển/chọn ngưỡng và giữ Test cho bước báo cáo cuối."
-                  : "Use Validation for development and preserve Test for a separately reported final check."
+                  ? "Xác minh SHA-256 của cổng OOD (NETFLOW_OOD_GATE_SHA256) ở chế độ deployment trước khi cho phép suy luận."
+                  : "Enforce trusted NETFLOW_OOD_GATE_SHA256 verification in deployment mode before model inference."
               }</span
             >
           </li>
         </ol><p class="source-line">
-          <a href={source("reports/splits/nf_unsw_nb15_v3_split_manifest.json")}
-            >{isVi ? "Split manifest ↗" : "Split manifest ↗"}</a
-          > · <a href={source("docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md")}
-            >{isVi ? "Chính sách tiền xử lý ↗" : "Preprocessing policy ↗"}</a
+          <a href={source("src/network_anomaly/preprocessing/pipeline.py")}
+            >{isVi ? "Mã pipeline tiền xử lý ↗" : "Preprocessing pipeline ↗"}</a
+          > · <a
+            href={source(
+              "reports/datasets/ait_timestamp_alignment_report.json",
+            )}
+            >{
+              isVi
+                ? "Báo cáo căn chỉnh timestamp ↗"
+                : "Timestamp alignment report ↗"
+            }</a
           >
         </p>
       </div>
@@ -278,51 +313,59 @@ const isVi = lang === "vi";
     <div class="container two-column">
       <div>
         <span class="eyebrow"
-          >{isVi ? "Tái lập dữ liệu" : "Reproducibility"}</span
+          >{
+            isVi
+              ? "Đa nguồn ngoại vi & Tái lập"
+              : "External corpora & reproducibility"
+          }</span
         ><h2>
-          {isVi ? "Dùng đúng hồ sơ chính thức." : "Use the official record."}
+          {
+            isVi
+              ? "CTU-SME-11, UWF-ZeekData24 & UGR'16."
+              : "CTU-SME-11, UWF-ZeekData24 & UGR'16."
+          }
         </h2><p>
           {
             isVi
-              ? "Thực hiện đúng hướng dẫn tải và xác minh trong repository. Giá trị SHA-256 trong manifest do dự án tính từ byte chính thức, không phải checksum gốc do nhà xuất bản công bố."
-              : "Follow repository instructions to fetch and validate the package. The SHA-256 pins in the manifest were computed by the project from official bytes; they are not publisher-authored SHA-256 values."
+              ? "Đánh giá dịch chuyển miền sử dụng CTU-SME-11 (DOI 10.5281/zenodo.7958258, CC BY 4.0, 251,219 flow Zeek SME thật: CTU-Echo 76,073 và CTU-Win7AD 175,146 + 9,394 unmapped) cùng UWF-ZeekData24 (evaluation_only = true, 95,871 flow có nhãn / 93,000 strict complete). UGR'16 giữ trạng thái BLOCKED do máy chủ nhà xuất bản trả về HTTP 403 (Portal en Mantenimiento)."
+              : "Domain-shift evaluation uses CTU-SME-11 (DOI 10.5281/zenodo.7958258, CC BY 4.0, 251,219 real SME Zeek flows: CTU-Echo 76,073 and CTU-Win7AD 175,146 + 9,394 unmapped) and UWF-ZeekData24 (evaluation_only = true, 95,871 labeled flows / 93,000 strict complete). UGR'16 remains BLOCKED due to upstream HTTP 403 (Portal en Mantenimiento)."
           }
-        </p><a class="button" href={source("docs/DATASET.md")}
-          >{isVi ? "Hướng dẫn bộ dữ liệu ↗" : "Dataset guide ↗"}</a
+        </p><a
+          class="button"
+          href={source("reports/datasets/v2_multi_source_profile.json")}
+          >{
+            isVi
+              ? "Hồ sơ đa nguồn v2_multi_source_profile.json ↗"
+              : "Multi-source profile JSON ↗"
+          }</a
         >
       </div><div class="surface license-note">
         <h3>
           {
             isVi
-              ? "Bản quyền, trích dẫn & kiểm định ngoại vi"
-              : "Attribution, licensing & external checks"
+              ? "Bản quyền, giấy phép & kiểm soát phân phối"
+              : "Attribution, licensing & distribution control"
           }
         </h3><p>
           {
             isVi
-              ? "Bộ dữ liệu tuân theo điều khoản “Permitted Re-Use with Commercial Use Restriction” của UQ (trích dẫn đầy đủ, phi thương mại); giấy phép Apache-2.0 của mã nguồn không cấp lại quyền cho dữ liệu. Ngoài ra, một mẫu 100.000 dòng của "
-              : "The dataset is under UQ's “Permitted Re-Use with Commercial Use Restriction” terms, requiring full citation and non-commercial use. The repository's Apache-2.0 source license does not relicense the data. A separate 100,000-row sample of "
-          }<code>NF-CSE-CIC-IDS2018-v3</code>{" "}
-          {isVi ? "được ghi nhận trong " : "is also recorded in the "}<a
-            href={source("data/EXTERNAL_DATASETS_PROVENANCE.json")}
-            >{
-              isVi
-                ? "hồ sơ provenance ngoại vi ↗"
-                : "external provenance manifest ↗"
-            }</a
-          >{" "}
-          {
+              ? "Mã nguồn phát hành theo giấy phép Apache-2.0 (kèm NOTICE và THIRD_PARTY_NOTICES.md). AIT-NDS-v2 và CTU-SME-11 có giấy phép CC BY 4.0; UWF-ZeekData24 bị khóa evaluation_only = true; AIT-LDS-v2.1 (CC BY-NC-SA 4.0) cách ly ngoài bản phân phối. Phân phối nhị phân công khai hiện bị khóa ở "
+              : "Source code is licensed under Apache-2.0 (with NOTICE and THIRD_PARTY_NOTICES.md). AIT-NDS-v2 and CTU-SME-11 are CC BY 4.0; UWF-ZeekData24 is locked as evaluation_only = true; AIT-LDS-v2.1 (CC BY-NC-SA 4.0) is isolated outside distribution. Public binary release remains locked at "
+          }<code>approved = false</code>{" "}
+          {isVi ? "trong " : "in "}<a
+            href={source("reports/governance/DISTRIBUTION_AUTHORIZATION.json")}
+            ><code>DISTRIBUTION_AUTHORIZATION.json</code> ↗</a
+          >.
+        </p><a href={source("data/EXTERNAL_DATASETS_PROVENANCE.json")}
+          >{
             isVi
-              ? "để kiểm tra tổng quát hóa cross-dataset, và "
-              : "for cross-dataset generalization testing, and "
-          }<code>prepare_demo_dataset.py</code>{" "}
-          {
-            isVi
-              ? "tạo lát cắt demo 200 dòng chỉ từ Validation không chồng lấn Train/Test."
-              : "generates a 200-row Validation-only demo slice without leaking Train or Test rows."
-          }
-        </p><a href="https://doi.org/10.48610/6E0EDA1"
-          >{isVi ? "Hồ sơ nhà xuất bản ↗" : "Publisher record ↗"}</a
+              ? "Hồ sơ provenance ngoại vi ↗"
+              : "External datasets provenance ↗"
+          }</a
+        > · <a href={source("reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md")}
+          >{
+            isVi ? "Đánh giá thay thế UGR'16 ↗" : "UGR'16 alternatives review ↗"
+          }</a
         >
       </div>
     </div>
@@ -362,6 +405,17 @@ const isVi = lang === "vi";
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 5rem;
+  }
+  .two-column > *,
+  .schema-grid > *,
+  .facts > *,
+  .steps li > * {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .category-panel .data-table th,
+  .category-panel .data-table td {
+    overflow-wrap: anywhere;
   }
   .two-column h2 {
     margin: 0.7rem 0 1rem;

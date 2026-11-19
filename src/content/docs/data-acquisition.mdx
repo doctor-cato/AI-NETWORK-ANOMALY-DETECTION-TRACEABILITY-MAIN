@@ -1,21 +1,30 @@
 ---
-title: Tải và xác minh dữ liệu
-description: Nguồn UQ chính thức, kiểm tra checksum, tạo lát cắt demo và provenance ngoại vi.
-order: 4
+title: Nguồn dữ liệu & Bản quyền
+description: Quyết định chuyển đổi cứng từ v1 sang v2.0, provenance đa nguồn AIT-NDS-v2, CTU-SME-11, UWF-ZeekData24 và ranh giới giấy phép.
+order: 5
 ---
 
-## Nguồn gốc dữ liệu
+## Chuyển đổi cứng (Hard Cutover) từ v1 sang v2.0
 
-NF-UNSW-NB15-v3 được Đại học Queensland (UQ) công bố tại [DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1). Repository ghi nhận gói UQRDM và mã băm SHA-256 do dự án tính (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`) trong [báo cáo provenance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md).
+Trong giai đoạn v1 (`v0.6.0` / tag độc lập `v1.0.0`), dự án sử dụng bộ dữ liệu `NF-UNSW-NB15-v3` (Đại học Queensland, bản ghi `454104`, điều khoản phi thương mại). Các kiểm toán chuyên sâu đã chỉ ra rằng `NF-UNSW-NB15-v3` chứa đường tắt phân loại theo `MIN_TTL` và tỷ lệ trùng lặp vector đặc trưng cao, dẫn đến sụp đổ khi suy luận liên bộ dữ liệu.
 
-## Lệnh tải dữ liệu & tạo mẫu demo Validation
+Theo quyết định kiến trúc [ADR-dataset-hard-cutover-v2.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/adr/ADR-dataset-hard-cutover-v2.md), NetFlow Sentinel v2.0 thực hiện **hard cutover**:
 
-```powershell
-python scripts/fetch_nf_unsw_nb15_v3.py
-python scripts/dataset_manifest.py verify
-python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
-```
+- Toàn bộ manifest, báo cáo và tài liệu đặc thù của `UNSW-NB15` / `NF-UNSW-NB15-v3` được chuyển vào thư mục lưu trữ lịch sử `historical/`.
+- Pipeline runtime v2.0 **không fallback về lược đồ 47 đặc trưng của v1**.
 
-Script tải tự động lấy URL tải tạm thời từ nguồn chính thức, xác minh toàn vẹn archive/CSV và giữ file raw nằm ngoài Git. `prepare_demo_dataset.py` tạo bộ demo 200 dòng lấy hoàn toàn từ Validation (`demo_flows.csv` không chứa nhãn, `demo_labels.csv` và `demo_manifest.json` đảm bảo 0 chồng lấn với Train/Test). Provenance của mẫu kiểm tra ngoại vi `NF-CSE-CIC-IDS2018-v3` (100.000 dòng) được ghi riêng tại [tệp provenance ngoại vi](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/data/EXTERNAL_DATASETS_PROVENANCE.json).
+## Provenance dữ liệu đa nguồn v2.0 & Ranh giới pháp lý
 
-Tuyệt đối không commit file CSV đã tải lên Git. Điều khoản sử dụng phi thương mại và trích dẫn của dữ liệu UQ độc lập với giấy phép mã nguồn Apache-2.0.
+Hồ sơ provenance và điều khoản giấy phép của từng bộ dữ liệu trong v2.0 được quản lý tại [AIT_DATASETS_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/AIT_DATASETS_MANIFEST.json), [EXTERNAL_DATASETS_PROVENANCE.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/EXTERNAL_DATASETS_PROVENANCE.json) và [v2_multi_source_profile.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/datasets/v2_multi_source_profile.json):
+
+| Bộ dữ liệu           | DOI / Nguồn                | Giấy phép           | Quy mô đã xác minh                                       | Vai trò & Ranh giới trong v2.0                                                                                                                                                                                                                                                                             |
+| :------------------- | :------------------------- | :------------------ | :------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`AIT-NDS-v2`**     | `10.5281/zenodo.13168643`  | **CC BY 4.0**       | `3,464,400` dòng gán nhãn (`+942` dòng unmapped bị loại) | Bộ dữ liệu chính (8 kịch bản enterprise testbed) dùng cho chia tập `Train / Val / Test` không chồng lấn kịch bản.                                                                                                                                                                                          |
+| **`CTU-SME-11`**     | `10.5281/zenodo.7958258`   | **CC BY 4.0**       | `251,219` dòng                                           | Đánh giá độc lập liên miền (cross-source zero-shot) và thực nghiệm thích nghi đa miền `E1`.                                                                                                                                                                                                                |
+| **`UWF-ZeekData24`** | University of West Florida | **CC BY 4.0**       | `95,871` dòng                                            | Khóa cứng ở chế độ **`evaluation_only = true`** — chỉ dùng để kiểm định ngoại vi, tuyệt đối không đưa vào huấn luyện.                                                                                                                                                                                      |
+| **`AIT-LDS-v2.1`**   | `10.5281/zenodo.19483937`  | **CC BY-NC-SA 4.0** | Log hệ thống đa kịch bản                                 | **Cách ly nghiêm ngặt** trong đường dẫn `.gitignored` do điều khoản `NC-SA`; chỉ dùng để kiểm toán khả năng liên kết log (`#85`), không nạp vào mô hình hay đóng gói.                                                                                                                                      |
+| **`UGR'16`**         | Universidad de Granada     | Upstream            | Không tải được                                           | Ghi nhận trạng thái **`BLOCKED`** do máy chủ upstream trả về lỗi `HTTP 403 Forbidden` (xem [V2_UGR16_ALTERNATIVES_REVIEW.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md)). |
+
+## Nghĩa vụ ghi nhận bản quyền
+
+Mã nguồn của repository được cấp phép theo [Apache-2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/LICENSE). Các nghĩa vụ ghi công tác giả dữ liệu `CC BY 4.0` và thư viện bên thứ ba được ghi rõ trong [NOTICE](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/NOTICE) và [THIRD_PARTY_NOTICES.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/THIRD_PARTY_NOTICES.md). Không một tệp dữ liệu thô hay tệp mô hình `.joblib` nào được phép commit vào Git.

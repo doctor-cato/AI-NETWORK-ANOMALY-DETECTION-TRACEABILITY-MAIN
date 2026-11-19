@@ -1,13 +1,31 @@
 ---
 title: Kiến trúc hệ thống
-description: Kiến trúc hợp nhất Tauri 2 + Svelte 5 + FastAPI + SQLite và các ranh giới M6.
-order: 9
+description: Kiến trúc Hybrid Desktop-Sidecar 7 module, 5 hợp đồng dữ liệu cốt lõi, cổng OOD fail-closed và bộ thu thập Rust NetFlow v9/IPFIX.
+order: 4
 ---
 
-## Tầng dữ liệu, cổng OOD và mô hình ML
+## Kiến trúc Hybrid Desktop-Sidecar 7 Module
 
-Pipeline hiện hành kiểm tra tệp CSV NetFlow theo hợp đồng 47 đặc trưng, xác minh nguồn dữ liệu (`source:nf-v3-canonical` so với `source:nf-v3-unverified`), lọc dòng ngoài phân phối (`ABSTAINED_OOD`) trước khi đưa vào mô hình, biến đổi bằng `TrainOnlyPreprocessor` và chạy suy luận kiểm chứng SHA-256 trên Random Forest, XGBoost, Isolation Forest và Autoencoder. Xem [kiến trúc chuyển đổi v3](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/NF_UNSW_NB15_V3_MIGRATION_ARCHITECTURE.md) và [thiết kế tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md).
+[Kiến trúc hệ thống NetFlow Sentinel v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/ARCHITECTURE.md) tách bạch rõ ràng giữa tầng thu thập hiệu năng cao bằng Rust, tầng phân tích ML/hành vi/mật mã bằng Python FastAPI và tầng hiển thị Tauri 2 + Svelte 5:
 
-## Ứng dụng Desktop MVP & các phần hoãn
+1. **Multi-Source Telemetry & Collector**: Tiếp nhận tệp CSV ngoại tuyến, luồng phát lại hoặc gói tin UDP NetFlow v9 (RFC 3954) / IPFIX (RFC 7011) qua thư viện Rust thuần [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs) (xem [Tài liệu bộ thu thập NetFlow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/NETFLOW_COLLECTOR.md)).
+2. **Schema & Train-Only Preprocessing**: Ánh xạ về lược đồ 18 đặc trưng [src/network_anomaly/data/v2_schema.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/data/v2_schema.py) và chuẩn hóa bằng `TrainOnlyPreprocessor` ([src/network_anomaly/preprocessing/pipeline.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/preprocessing/pipeline.py)).
+3. **Fail-Closed OOD Gate & ML Inference**: Kiểm tra bất biến mạng và khoảng cách phân phối trước khi chạy 4 mô hình `E0` và bộ phân loại 6 lớp Stage-2, quản lý bởi [src/network_anomaly/models/registry.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/models/registry.py).
+4. **Stateful Behavioral Engine**: Tổng hợp trạng thái trên 3 cửa sổ thời gian trượt (`10s`, `60s`, `300s`) tại [src/network_anomaly/behavioral/vector.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/behavioral/vector.py) (xem [Thiết kế Behavioral Engine](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/BEHAVIORAL_ENGINE.md)).
+5. **Deterministic Risk & Session Correlation**: Chấm điểm ưu tiên rủi ro tất định và gom cụm phiên tấn công đa bước.
+6. **Cryptographic Traceability & Dry-Run Policy**: Mã hóa bản ghi kiểm toán bằng `AES-256-GCM` ([src/network_anomaly/crypto/aead.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/aead.py)), xoay vòng khóa thích ứng ([src/network_anomaly/crypto/rotation.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/crypto/rotation.py)) và khóa chính sách phản ứng ở chế độ Dry-Run ([src/network_anomaly/api/response_policy.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/api/response_policy.py)).
+7. **Desktop Operations Console & Loopback API**: Giao diện Tauri 2 + Svelte 5 giao tiếp với FastAPI (`33` đường dẫn / `35` thao tác trong [Hợp đồng API](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/api/API_CONTRACT.md)).
 
-[Kiến trúc hệ thống hợp nhất](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/ARCHITECTURE.md) thay thế kế hoạch Streamlit ban đầu bằng ứng dụng desktop Windows **Rust / Tauri 2 + Svelte 5 (`v0.6.0`)** kết nối **Python FastAPI (`127.0.0.1`) + SQLite** (`18` endpoint trong [hợp đồng API](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/api/API_CONTRACT.md)). Thống kê NetFlow (`#28`), chấm điểm ưu tiên tất định (`#32`), timeline tất định (`#24`) và phản ứng mô phỏng Dry-Run (`#27`, `executed=false`) đã triển khai trong phạm vi NetFlow; tự động hóa firewall hệ điều hành và xoay khóa AES-256-GCM trong OS keyring vẫn ở trạng thái hoãn (`DEFERRED`).
+## 5 hợp đồng dữ liệu cốt lõi (Data Contracts)
+
+Mọi giao tiếp nội bộ giữa các module tuân thủ nghiêm ngặt 5 hợp đồng dữ liệu có kiểm tra kiểu:
+
+- **`CanonicalSecurityEvent`**: Bản ghi sự kiện chuẩn hóa chứa định danh luồng, dấu thời gian, metadata truy vết L4 và nguồn gốc dữ liệu (`provenance`).
+- **`MLFeatureVector` (`canonical-flow-v2-18`)**: Vector 18 đặc trưng số thực (6 đặc trưng cơ sở + 12 đặc trưng dẫn xuất), tuyệt đối không chứa IP, cổng L4, dấu thời gian hay nhãn để ngăn rò rỉ dữ liệu.
+- **`BehavioralVector` (16-D)**: Vector hành vi 16 chiều phản ánh tốc độ kết nối, độ phân tán cổng/đích, tỷ lệ bất đối xứng byte/gói và xung lượng tấn công trên các cửa sổ `10s / 60s / 300s`.
+- **`RiskScoreResult`**: Kết quả chấm điểm rủi ro tất định trong đoạn `[0, 100]`, kết hợp xác suất ML, điểm bất thường hành vi và trạng thái `ABSTAINED_OOD`.
+- **`KeyLifecycleMetadata`**: Hồ sơ vòng đời khóa mật mã (`key_id`, `generation`, `nonce_count`, ngưỡng xoay khóa theo thể tích và theo mức độ đe dọa, trạng thái bọc khóa `DPAPI`).
+
+## Cổng OOD fail-closed trong chế độ `"deployment"`
+
+Ở chế độ vận hành mặc định `runtime_mode="deployment"`, `LiveStreamOrchestrator` ([src/network_anomaly/streaming/live_orchestrator.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/streaming/live_orchestrator.py)) yêu cầu biến môi trường `NETFLOW_OOD_GATE_SHA256` khớp chính xác với tệp cổng OOD đã huấn luyện. Nếu thiếu tệp hoặc sai mã băm, hệ thống từ chối khởi chạy suy luận thay vì âm thầm bỏ qua bước kiểm tra ngoài phân phối.

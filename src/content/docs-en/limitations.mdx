@@ -1,17 +1,25 @@
 ---
 title: Limitations
-description: Known scientific, cross-dataset, packaging and security boundaries.
-order: 11
+description: Complete scientific, cross-domain, linkage, hardware and release governance limitations in NetFlow Sentinel v2.0.
+order: 13
 ---
 
-## Benchmark validity & cross-dataset collapse
+## Scientific & cross-domain limitations
 
-The verified package contains flows observed in early 2015 in a controlled IXIA PerfectStorm testbed. `49.98%` of Validation rows and `53.21%` of Test rows share identical 47-feature vectors with Train, and a single `MIN_TTL` tree reaches `0.999849` Validation accuracy. On a 100,000-row external sample of `NF-CSE-CIC-IDS2018-v3`, `99.99%` of rows exhibit TTL shortcut drift and canonical Random Forest drops to **`0.0000` Recall** and **`0.3802` FPR**. Meanwhile, under a strict `Val FPR <= 0.05` constraint, the Autoencoder achieves only `0.1361` Held-out Test F1 and `0.1093` Recall.
+Documented in [docs/thesis/RESEARCH_REPORT_V2.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/RESEARCH_REPORT_V2.md), [docs/thesis/DEFENSE_QA_V2.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/DEFENSE_QA_V2.md) and [reports/experiments/ml/domain_analysis/DOMAIN_SHIFT_ANALYSIS.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/domain_analysis/DOMAIN_SHIFT_ANALYSIS.md):
 
-## Packaging & external prerequisites (v0.6.0)
+- **All 4 `E0` models are `RESEARCH_ONLY` (`cross_source_validated = false`)**: While `Random Forest` reaches `F1 = 0.9950` on scenario-disjoint `ait_test`, zero-shot evaluation on external `CTU-SME-11` drops to `F1 = 0.4534` (`RF`) and `0.3405` (`XGB`) before `E1` multi-domain adaptation (`CTU_Test F1 = 0.9564`).
+- **Bayes error & identical L4 feature collisions**: Coarse L4 flow summaries can produce identical 18-feature vectors for short benign polling and lightweight probing flows, setting an irreducible Bayes error floor for single-flow classifiers.
+- **Single-flow `Credential_Attack` recall (`0.1410`)**: In Stage-2 6-class flow classification ([multiclass_attack_classification_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/multiclass_attack_classification_report.json)), single-flow `Credential_Attack` reaches only `0.1410` recall because individual login attempts resemble benign authentication flows until correlated across 5-minute 16-D behavioral sessions (`RQ3` session F1 `0.9412`).
+- **Unsupervised zero-day recall ceiling (`RQ4`)**: Under leave-one-attack-family-out testing ([rq4_unknown_attack_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/rq4_unknown_attack_report.json)), `Autoencoder` achieves mean unseen-family recall of **`0.2045`** (and `Isolation Forest` `0.1306`), showing that L4 volumetric anomalies alone cannot catch low-rate semantic attacks.
 
-The static research portal does not run inference. On Windows, the `v0.6.0` NSIS installer bundles the Svelte 5 UI, Rust Tauri 2 host, Python backend source and tracked manifests, **not** an embedded Python interpreter or `.joblib` model binaries (due to dataset licensing and binary size). Target machines need Python `>= 3.12` (x64), WebView2 Runtime and the Companion Bundle (`BLOCKED / NOT READY` if missing).
+## Dataset, linkage & legal boundaries
 
-## Deferred operational capabilities
+- **No direct flow-to-host UID join (`DIRECT_UID_LINK = FALSE`)**: As verified in [docs/dataset/AIT_LINKAGE_FEASIBILITY.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/dataset/AIT_LINKAGE_FEASIBILITY.md), `72.87–87.91%` of timestamp windows in `AIT` exhibit multi-flow ambiguity.
+- **`AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) isolation & `UWF-ZeekData24` (`evaluation_only = true`)**: `AIT-LDS-v2.1` is strictly isolated in `.gitignored` storage; `UWF-ZeekData24` is restricted to evaluation only; and **`UGR'16` remains `BLOCKED` (`HTTP 403`)** ([reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md)).
 
-Live packet capture (PCAP), authentication/API log correlation, live OS firewall automation and production AES-256-GCM OS keyring key rotation remain **DEFERRED**. Security response simulation (#27) runs strictly in deterministic dry-run mode (`executed = false`). See [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md).
+## Operational, hardware & distribution gates
+
+- **No live firewall execution**: `ResponsePolicy` is locked at `dry_run = True` (`executed = false`).
+- **Physical NetFlow appliance export (`#137`)**: Localhost UDP replay is verified, whereas physical switch/router hardware testing remains **`real_device_tested = false`**.
+- **NSIS Clean Windows VM E2E (`#148`) & distribution lock (`#154`)**: Clean-VM NSIS installer attestation is **`DEFERRED`**, and [reports/governance/DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) remains **`approved = false`**.

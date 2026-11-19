@@ -1,15 +1,31 @@
 ---
 title: Khả năng tái lập
-description: Chuỗi provenance dữ liệu, split, cấu hình và bằng chứng để lặp lại kết quả.
-order: 8
+description: Chuỗi kiểm chứng SHA-256, verify_companion_artifacts.py, verify_clean_state_demo.py lặp lại 100% và lưu trữ v1.0.0 độc lập.
+order: 11
 ---
 
-## Chuỗi provenance
+## Chuỗi provenance & Kiểm chứng SHA-256
 
-Mỗi thí nghiệm ghi nhận mã băm SHA-256 của CSV nguồn (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`), split manifest (`bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88`), hợp đồng 47 đặc trưng, preprocessor train-only (`12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`), tham số mô hình, phiên bản thư viện và lệnh thực thi.
+Mọi kết quả thực nghiệm trong NetFlow Sentinel v2.0 đều được neo bằng mã băm SHA-256 từ nguồn dữ liệu, tệp chia tập cho đến báo cáo đầu ra:
 
-## Hồ sơ hiện tại
+- **Chia tập kịch bản v2.0**: [data/V2_SPLIT_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/V2_SPLIT_MANIFEST.json) (`Train 2,097,891`, `Val 377,704`, `Test 988,805`, `0` chồng lấn kịch bản / 5-tuple+ts).
+- **Provenance dữ liệu đa nguồn**: [data/AIT_DATASETS_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/AIT_DATASETS_MANIFEST.json) và [data/EXTERNAL_DATASETS_PROVENANCE.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/EXTERNAL_DATASETS_PROVENANCE.json).
+- **Ủy quyền phân phối**: [reports/governance/DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) (`approved = false`, chỉ cho phép `research-only` trên kênh `local_offline`).
 
-[Split manifest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/splits/nf_unsw_nb15_v3_split_manifest.json) lưu số dòng Train (`1.655.797`), Validation (`345.371`), Test (`345.953`) và khoảng purge gap. Bằng chứng Held-out Test đã có cho [Random Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/error_analysis_report.md), [XGBoost](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/xgboost/evaluation_report.md), [Isolation Forest](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/experiments/isolation_forest/evaluation_report.md) và [Autoencoder](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/evaluation/autoencoder/evaluation_report.md).
+## Ba công cụ kiểm chứng tái lập tự động
 
-Đọc kỹ [tài liệu tái lập](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) và [quy trình phát hành](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md) trước khi chạy các bước tốn nhiều RAM hoặc kiểm tra attestation bộ cài.
+Bạn có thể chạy trực tiếp 3 script kiểm chứng độc lập từ thư mục gốc của repository:
+
+```powershell
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
+python scripts/verify_clean_state_demo.py
+python scripts/verify_ait_timestamp_alignment.py
+```
+
+1. [scripts/verify_companion_artifacts.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_companion_artifacts.py): Kiểm tra quyền phân phối, đối chiếu mã băm SHA-256 của 4 mô hình `E0`, preprocessor và cổng OOD.
+2. [scripts/verify_clean_state_demo.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_clean_state_demo.py): Chạy 2 lượt demo hoàn chỉnh trong hai thư mục sạch cô lập và xác nhận `repeatable_100pct = true` tại [reports/demo/clean_state_demo_verification.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/demo/clean_state_demo_verification.json).
+3. [scripts/verify_ait_timestamp_alignment.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_ait_timestamp_alignment.py): Tái lập kiểm toán căn chỉnh dấu thời gian giữa `AIT-NDS-v2` và `AIT-LDS-v2.1` ([reports/datasets/ait_timestamp_alignment_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/datasets/ait_timestamp_alignment_report.json)).
+
+## Khả năng tái lập độc lập của mốc lịch sử `v1.0.0`
+
+Mặc dù nhánh v2.0 đã chuyển hoàn toàn sang `canonical-flow-v2-18`, tag lịch sử `v1.0.0` (di sản `NF-UNSW-NB15-v3`) vẫn được bảo toàn nguyên vẹn để đối chiếu học thuật: kiểm chứng độc lập trên cây mã nguồn `v1.0.0` đạt **`143 passed, 2 skipped`**, được ghi nhận trong [Báo cáo kiểm toán tổng kết v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md).

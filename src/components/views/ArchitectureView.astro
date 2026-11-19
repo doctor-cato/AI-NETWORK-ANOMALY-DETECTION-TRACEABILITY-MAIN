@@ -12,102 +12,102 @@ const isVi = lang === "vi";
 const layers = isVi
   ? [
       [
-        "Tải & kiểm định dữ liệu",
+        "Đa nguồn v2 & Hard Cutover",
         "Đã kiểm thử & xác minh",
-        "Script tải nguồn chính thức, manifest, kiểm định chất lượng streaming, EDA và tách demo chỉ từ Validation đã có trên main.",
-        source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md"),
+        "AIT-NDS-v2 (3,464,400 dòng + 942 loại trừ), CTU-SME-11 (251,219 dòng) và UWF-ZeekData24 (95,871 dòng, evaluation_only=true); v1 chuyển hẳn vào historical/ (0 fallback).",
+        source("docs/adr/ADR-dataset-hard-cutover-v2.md"),
       ],
       [
-        "Chia tập, tiền xử lý & cổng OOD",
+        "canonical-flow-v2-18 & cổng OOD",
         "Đã triển khai & kiểm thử",
-        "Split theo thời gian, TrainOnlyPreprocessor, đánh giá tương thích 4 tầng, xác minh provenance và từ chối ABSTAINED_OOD.",
+        "18 đặc trưng ML (6 cơ sở + 12 dẫn xuất), chống nội suy FEATURE_INCOMPATIBLE, TrainOnlyPreprocessor(asinh_robust, floor 0.25) và cổng NETFLOW_OOD_GATE_SHA256.",
         source("docs/MULTI_SOURCE_INGESTION.md"),
       ],
       [
-        "Bốn mô hình ML đã kiểm chứng",
-        "Đã đánh giá Held-out Test",
-        "Random Forest, XGBoost, Isolation Forest và Autoencoder đều đã đánh giá Train/Val/Test; file .joblib giữ ngoài Git.",
-        source("reports/evaluation/error_analysis_report.md"),
+        "4 mô hình E0, E1 đa miền & 6-class RF",
+        "RESEARCH_ONLY · Đã kiểm chứng",
+        "RF (F1=0.9950), XGBoost (0.9013), Autoencoder (0.5877) và IF (0.5842) trên ait_test (N=988,805), kèm E1 đa miền (CTU_Test F1=0.9564), Autoencoder_E3b và RF_multiclass (Macro-F1=0.7347).",
+        source("reports/experiments/ml/model_comparison_report.json"),
       ],
       [
-        "Thống kê hành vi, rủi ro & timeline",
-        "Đã triển khai (phạm vi M6)",
-        "Thống kê metadata NetFlow (#28), chấm điểm ưu tiên tất định 0–100 (#32) và timeline tất định (#24); không dùng log Auth/API.",
-        source("docs/ARCHITECTURE.md"),
+        "3 chế độ vận hành & netflow-rs",
+        "Đã kiểm chứng lặp lại 2x",
+        "(1) Offline CSV (data/demo/demo_flows.csv, 200 flows, 4/4 REAL_MODELS, OOD=FITTED), (2) Dataset Replay (ait_test.csv.gz, batch 32, 399.44 flow/s), (3) Live Lab Monitoring (127.0.0.1 UDP NetFlow v9/IPFIX + pure-Rust telemetry/netflow-rs/ + LiveLogTailer).",
+        source("scripts/verify_clean_state_demo.py"),
       ],
       [
-        "Phản ứng thích ứng Dry-Run (#27)",
-        "Đã triển khai (Dry-Run)",
-        "Policy engine tất định và mô phỏng xoay khóa (executed=false) gắn với phân tích xác minh trên server; firewall thật & AES keyring hoãn.",
+        "Vector hành vi 16-D (RQ3)",
+        "Đã triển khai & kiểm chứng",
+        "Hợp đồng canonical-behavioral-v2-16 trên cửa sổ trượt; simulation L2 cosine F1=0.5556 và UWF standardized cosine F1=0.7192 (> IP 0.6919); liên kết log AIT bị chặn (#85).",
+        source("docs/BEHAVIORAL_ENGINE.md"),
+      ],
+      [
+        "AES-256-GCM, DPAPI & Xoay khóa (RQ5/RQ6)",
+        "Đã kiểm chứng benchmark",
+        "AES-256-GCM đạt 72,177.2 ops/s (256B, P95 13.3 µs) với Windows DPAPI keystore; xoay khóa thích ứng (Risk >= 85.0) giảm 87.5% cửa sổ lộ khóa, ResponsePolicy khóa ở dry_run = True (executed = false).",
+        source("src/network_anomaly/crypto/rotation.py"),
+      ],
+      [
+        "FastAPI 0.1.0, SQLite & Desktop 2.0.0",
+        "Đã triển khai (676 + 41 + 17 tests)",
+        "Tauri 2 + Svelte 5 Desktop 2.0.0, FastAPI 0.1.0 (33 OpenAPI paths / 35 operations), SQLite single-writer, X-Sentinel-Session-Token và process_batch(32) đạt 386.37 flow/s.",
         source("reports/api/API_CONTRACT.md"),
       ],
       [
-        "FastAPI (127.0.0.1) & SQLite",
-        "Đã triển khai & kiểm thử",
-        "18 endpoint REST cục bộ, token phiên 256-bit X-Sentinel-Session-Token, SQLite đơn chủ ghi và xuất metadata SHA-256.",
-        source("reports/api/openapi.json"),
-      ],
-      [
-        "Desktop UI (Tauri 2 + Svelte 5)",
-        "Đã triển khai (v0.6.0)",
-        "Bộ cài Windows x64 NSIS, quản lý tiến trình Python và nạp Companion Bundle; cần Python >= 3.12 + WebView2 bên ngoài.",
-        source("docs/WINDOWS_INSTALLATION.md"),
-      ],
-      [
-        "Chặn OS thật & Python nhúng",
-        "Đang hoãn (Deferred)",
-        "Tự động hóa firewall hệ điều hành, xoay khóa AES-256-GCM trong OS keyring, bắt gói PCAP trực tiếp và Python nhúng standalone đang hoãn.",
-        source("docs/releases/v0.6.0.md"),
+        "Hạng mục DEFERRED / BLOCKED",
+        "Đang hoãn / Chặn",
+        "Lab router/switch vật lý (#137, real_device_tested = false), bộ cài Windows NSIS + kiểm thử VM sạch Windows 10/11 (#148), UGR'16 (HTTP 403) và phát hành nhị phân công khai (#154, approved = false).",
+        source("docs/audits/V2_RELEASE_READINESS.md"),
       ],
     ]
   : [
       [
-        "Data acquisition & validation",
+        "Multi-source v2 & Hard Cutover",
         "Tested & verified",
-        "Official-source fetcher, manifest, streaming quality checks, EDA and Validation-only demo prep are on main.",
-        source("docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md"),
+        "AIT-NDS-v2 (3,464,400 rows + 942 excluded), CTU-SME-11 (251,219 rows) and UWF-ZeekData24 (95,871 rows, evaluation_only=true); v1 retired to historical/ (zero fallback).",
+        source("docs/adr/ADR-dataset-hard-cutover-v2.md"),
       ],
       [
-        "Split, preprocessing & OOD gate",
+        "canonical-flow-v2-18 & OOD gate",
         "Implemented & tested",
-        "Chronological split, TrainOnlyPreprocessor, 4-tier compatibility evaluator, provenance trust anchor and ABSTAINED_OOD gate.",
+        "18 ML features (6 base + 12 derived), anti-imputation FEATURE_INCOMPATIBLE, TrainOnlyPreprocessor(asinh_robust, floor 0.25) and NETFLOW_OOD_GATE_SHA256 verification.",
         source("docs/MULTI_SOURCE_INGESTION.md"),
       ],
       [
-        "Four verified ML models",
-        "Held-out Test verified",
-        "Random Forest, XGBoost, Isolation Forest and Autoencoder all evaluated on Train/Val/Test; .joblib binaries stay outside Git.",
-        source("reports/evaluation/error_analysis_report.md"),
+        "4 E0 models, multi-domain E1 & 6-class RF",
+        "RESEARCH_ONLY · Validated",
+        "RF (F1=0.9950), XGBoost (0.9013), Autoencoder (0.5877) and IF (0.5842) on ait_test (N=988,805), plus multi-domain E1 (CTU_Test F1=0.9564), Autoencoder_E3b and RF_multiclass (Macro-F1=0.7347).",
+        source("reports/experiments/ml/model_comparison_report.json"),
       ],
       [
-        "Behavioral, risk & timeline",
-        "Implemented (scoped M6)",
-        "NetFlow metadata stats (#28), deterministic 0–100 priority (#32) and deterministic timeline (#24); no Auth/API logs.",
-        source("docs/ARCHITECTURE.md"),
+        "3 operation modes & netflow-rs",
+        "2x clean-state verified",
+        "(1) Offline CSV (data/demo/demo_flows.csv, 200 flows, 4/4 REAL_MODELS, OOD=FITTED), (2) Dataset Replay (ait_test.csv.gz, batch 32, 399.44 flow/s), (3) Live Lab Monitoring (127.0.0.1 UDP NetFlow v9/IPFIX + pure-Rust telemetry/netflow-rs/ + LiveLogTailer).",
+        source("scripts/verify_clean_state_demo.py"),
       ],
       [
-        "Adaptive response dry-run (#27)",
-        "Implemented (Dry-Run)",
-        "Deterministic policy engine and rotation simulation (executed=false) gated on server-verified analysis; live OS firewall & AES keyring deferred.",
+        "16-D BehavioralVector engine (RQ3)",
+        "Implemented & validated",
+        "canonical-behavioral-v2-16 sliding-window contract; simulation L2 cosine F1=0.5556 and UWF standardized cosine F1=0.7192 (> IP 0.6919); AIT empirical linkage BLOCKED (#85).",
+        source("docs/BEHAVIORAL_ENGINE.md"),
+      ],
+      [
+        "AES-256-GCM, DPAPI & Key Rotation (RQ5/RQ6)",
+        "Benchmark validated",
+        "AES-256-GCM reaches 72,177.2 ops/s (256B, P95 13.3 µs) with Windows DPAPI keystore; adaptive key rotation (Risk >= 85.0) cuts exposure window by 87.5%, ResponsePolicy locked at dry_run = True (executed = false).",
+        source("src/network_anomaly/crypto/rotation.py"),
+      ],
+      [
+        "FastAPI 0.1.0, SQLite & Desktop 2.0.0",
+        "Implemented (676 + 41 + 17 tests)",
+        "Tauri 2 + Svelte 5 Desktop 2.0.0, FastAPI 0.1.0 (33 OpenAPI paths / 35 operations), single-writer SQLite, X-Sentinel-Session-Token and process_batch(32) at 386.37 flow/s.",
         source("reports/api/API_CONTRACT.md"),
       ],
       [
-        "FastAPI (127.0.0.1) & SQLite",
-        "Implemented & tested",
-        "18 localhost REST endpoints, 256-bit X-Sentinel-Session-Token auth, single-writer SQLite persistence and SHA-256 export metadata.",
-        source("reports/api/openapi.json"),
-      ],
-      [
-        "Desktop UI (Tauri 2 + Svelte 5)",
-        "Implemented (v0.6.0)",
-        "Windows x64 NSIS installer, Python process lifecycle and Companion Bundle onboarding; requires external Python >= 3.12 + WebView2.",
-        source("docs/WINDOWS_INSTALLATION.md"),
-      ],
-      [
-        "Live OS blocking & embedded Python",
-        "Deferred",
-        "Live firewall automation, production AES-256-GCM OS keyring rotation, live PCAP capture and embedded Python runtime remain deferred.",
-        source("docs/releases/v0.6.0.md"),
+        "DEFERRED / BLOCKED items",
+        "Deferred / Blocked",
+        "Physical router/switch lab (#137, real_device_tested = false), Windows NSIS Installer + Clean Windows 10/11 VM E2E (#148), UGR'16 (HTTP 403) and Public Binary Release (#154, approved = false).",
+        source("docs/audits/V2_RELEASE_READINESS.md"),
       ],
     ];
 ---
@@ -115,21 +115,21 @@ const layers = isVi
 <Layout
   title={isVi ? "Kiến trúc hệ thống" : "System Architecture"}
   description={isVi
-    ? "Kiến trúc M6 hợp nhất (Tauri 2 + Svelte 5 + FastAPI + SQLite) và ranh giới từng tầng."
-    : "Consolidated M6 architecture (Tauri 2 + Svelte 5 + FastAPI + SQLite) and layer boundaries."}
+    ? "Kiến trúc NetFlow Sentinel v2.0.0 (Tauri 2 + Svelte 5 + FastAPI + SQLite + netflow-rs), 3 chế độ vận hành và ranh giới từng tầng."
+    : "NetFlow Sentinel v2.0.0 architecture (Tauri 2 + Svelte 5 + FastAPI + SQLite + netflow-rs), 3 operation modes and layer boundaries."}
   section="Architecture"
   lang={lang}
   routePath="architecture/"
 >
   <PageIntro
-    eyebrow={isVi ? "05 / Kiến trúc" : "05 / Architecture"}
+    eyebrow={isVi ? "05 / Kiến trúc v2.0" : "05 / Architecture v2.0"}
     current={isVi ? "Kiến trúc" : "Architecture"}
     title={isVi
-      ? "Hệ thống desktop cục bộ với ranh giới rõ ràng."
-      : "A local desktop system with explicit boundaries."}
+      ? "Ba chế độ vận hành. Mặc định fail-closed."
+      : "Three operation modes. Fail-closed by default."}
     description={isVi
-      ? "Kiến trúc v0.6.0 kết nối dữ liệu NetFlow đã xác minh qua cổng OOD, bốn mô hình đã kiểm chứng, FastAPI + SQLite cục bộ và giao diện Tauri 2 + Svelte 5. Khối nét liền đã có trên main; khối nét đứt đang hoãn."
-      : "The consolidated v0.6.0 architecture connects verified NetFlow data through OOD gating, four validated models, localhost FastAPI + SQLite and a Tauri 2 + Svelte 5 desktop UI. Solid nodes are implemented on main; dashed nodes are deferred."}
+      ? "NetFlow Sentinel v2.0.0 kết nối 3 chế độ thu nhận (Offline CSV, Dataset Replay 399.44 flow/s, Live Lab UDP NetFlow qua netflow-rs) với hợp đồng canonical-flow-v2-18, 4 mô hình E0, vector hành vi 16-D, mật mã AES-256-GCM + DPAPI và giao diện Tauri 2 + Svelte 5."
+      : "NetFlow Sentinel v2.0.0 connects three ingestion modes (Offline CSV, Dataset Replay at 399.44 flow/s, Live Lab UDP NetFlow via netflow-rs) to the canonical-flow-v2-18 contract, four E0 models, 16-D behavioral vectors, AES-256-GCM + DPAPI keystore and a Tauri 2 + Svelte 5 desktop UI."}
     lang={lang}
   />
   <section class="section">
@@ -138,18 +138,23 @@ const layers = isVi
         <div>
           <span class="eyebrow"
             >{
-              isVi ? "MVP Hợp nhất (v0.6.0)" : "Consolidated MVP (v0.6.0)"
+              isVi
+                ? "NetFlow Sentinel v2.0.0 · Functional Prototype"
+                : "NetFlow Sentinel v2.0.0 · Functional Prototype"
             }</span
           ><h2>
             {
               isVi
-                ? "Từ bản ghi flow tới bằng chứng trên desktop."
-                : "From flow record to desktop evidence trail."
+                ? "Từ 3 chế độ vận hành tới bằng chứng mật mã trên desktop."
+                : "From three operation modes to cryptographically sealed desktop evidence."
             }
           </h2>
         </div><div class="diagram-legend">
-          <span><i></i> {isVi ? "Trên main" : "Implemented on main"}</span><span
-            ><i></i> {isVi ? "Hoãn / ngoài gói" : "Deferred / external"}</span
+          <span
+            ><i></i> {isVi ? "Đã triển khai v2.0" : "Implemented in v2.0"}</span
+          ><span
+            ><i></i>
+            {isVi ? "Hoãn / Chặn (Deferred)" : "Deferred / Blocked"}</span
           >
         </div>
       </div><div class="diagram-wrap surface">
@@ -161,14 +166,14 @@ const layers = isVi
           ><title id="diagram-title">
             {
               isVi
-                ? "Kiến trúc desktop phát hiện bất thường mạng hợp nhất"
-                : "Consolidated network anomaly detection desktop architecture"
+                ? "Kiến trúc NetFlow Sentinel v2.0.0"
+                : "NetFlow Sentinel v2.0.0 system architecture"
             }
           </title><desc id="diagram-desc"
             >{
               isVi
-                ? "Tải dữ liệu và cổng OOD nối vào tiền xử lý train-only, bốn mô hình, thống kê hành vi, rủi ro và timeline, mô phỏng dry-run, FastAPI + SQLite trên 127.0.0.1 và ứng dụng Tauri 2 + Svelte 5. Python 3.12+ ngoài gói và hành động firewall/AES keyring thật nằm ở nhánh hoãn."
-                : "Verified NetFlow acquisition and OOD gating feed train-only preprocessing, four validated models, NetFlow behavioral summary, deterministic risk/timeline, dry-run simulation, SQLite-backed FastAPI on 127.0.0.1 and the Tauri 2 + Svelte 5 desktop app. External Python 3.12+ and live firewall/AES-256-GCM keyring remain deferred."
+                ? "Ba chế độ vận hành (Offline CSV, Dataset Replay, Live UDP netflow-rs) đi qua cổng OOD và TrainOnlyPreprocessor(asinh_robust) tới 4 mô hình E0 và 6-class RF, vector hành vi 16-D, xoay khóa thích ứng AES-256-GCM + DPAPI (dry_run=True), FastAPI 0.1.0 + SQLite (33 paths / 35 ops) và Tauri 2 + Svelte 5 Desktop 2.0.0. Lab phần cứng vật lý (#137) và NSIS installer +發 hành nhị phân (#148/#154) nằm ở nhánh hoãn."
+                : "Three operation modes (Offline CSV, Dataset Replay, Live UDP netflow-rs) feed the OOD gate and TrainOnlyPreprocessor(asinh_robust), four E0 models + 6-class RF, 16-D BehavioralVector engine, adaptive AES-256-GCM + DPAPI key rotation (dry_run=True), FastAPI 0.1.0 + SQLite (33 paths / 35 ops) and Tauri 2 + Svelte 5 Desktop 2.0.0. Physical router lab (#137) and NSIS installer / public binary release (#148/#154) remain deferred."
             }</desc
           ><defs
             ><marker
@@ -241,47 +246,50 @@ const layers = isVi
             font-size="16"
             font-weight="700"
             ><text x="43" y="91"
-              >{isVi ? "Tải + cổng OOD" : "Acquire + OOD gate"}</text
-            ><text x="323" y="91">{isVi ? "Tiền xử lý" : "Preprocess"}</text
-            ><text x="583" y="91">RF / XGBoost</text><text x="843" y="91"
-              >IF / Autoencoder</text
+              >{isVi ? "3 chế độ + OOD" : "3 Modes + OOD"}</text
+            ><text x="323" y="91">{isVi ? "asinh_robust" : "asinh_robust"}</text
+            ><text x="583" y="91">RF / XGBoost (E0)</text><text x="843" y="91"
+              >IF / AE (E0 + E3b)</text
             ><text x="843" y="264"
-              >{isVi ? "Thống kê (#28)" : "Behavioral (#28)"}</text
+              >{isVi ? "Hành vi 16-D (RQ3)" : "16-D Vector (RQ3)"}</text
             ><text x="583" y="264"
-              >{isVi ? "Rủi ro + Timeline" : "Risk + Timeline"}</text
+              >{isVi ? "Rủi ro & 6-class" : "Risk & 6-class"}</text
             ><text x="323" y="264"
-              >{isVi ? "Mô phỏng (#27)" : "Dry-Run (#27)"}</text
+              >{isVi ? "AES-GCM + DPAPI" : "AES-GCM + DPAPI"}</text
             ><text x="43" y="264">FastAPI + SQLite</text><text x="43" y="425"
               >Tauri 2 + Svelte 5</text
             ><text x="323" y="425"
-              >{isVi ? "Python 3.12+ ngoài" : "External Python 3.12+"}</text
+              >{
+                isVi ? "NSIS & Clean VM (#148)" : "NSIS & Clean VM (#148)"
+              }</text
             ><text x="583" y="425"
-              >{isVi ? "Chặn OS thật (Hoãn)" : "Live OS Actions"}</text
+              >{isVi ? "Lab vật lý & Binary" : "Physical Lab & Release"}</text
             ></g
           >
           <g font-family="ui-sans-serif,system-ui" fill="#9fb3c4" font-size="12"
-            ><text x="43" y="119">provenance & ABSTAINED_OOD</text><text
+            ><text x="43" y="119">CSV · Replay · netflow-rs</text><text
               x="323"
-              y="119">train-only SHA-256</text
-            ><text x="583" y="119">Test F1 0.9999 / 1.0000</text><text
+              y="119">18 features · floor 0.25</text
+            ><text x="583" y="119">F1 0.9950 / 0.9013</text><text
               x="843"
-              y="119">Test F1 0.5064 / 0.1361</text
-            ><text x="843" y="290">NetFlow metadata stats</text><text
+              y="119">F1 0.5842 / 0.5877</text
+            ><text x="843" y="290">UWF cosine F1 0.7192</text><text
               x="583"
-              y="290">#32 & #24 deterministic</text
-            ><text x="323" y="290">executed = false</text><text x="43" y="290"
-              >127.0.0.1 + token auth</text
-            ><text x="43" y="452">Windows NSIS v0.6.0</text><text
+              y="290">Macro-F1 0.7347 · batch 32</text
+            ><text x="323" y="290">72.1k ops/s · dry_run=True</text><text
+              x="43"
+              y="290">33 paths / 35 ops · token</text
+            ><text x="43" y="452">Desktop v2.0.0 · 2x clean</text><text
               x="323"
-              y="452">Companion Bundle .joblib</text
-            ><text x="583" y="452">firewall & AES keyring deferred</text></g
+              y="452">deferred installer E2E</text
+            ><text x="583" y="452">#137 & #154 approved=false</text></g
           ></svg
         >
       </div><p class="diagram-note">
         {
           isVi
-            ? "NF-UNSW-NB15-v3 chỉ chứa trường NetFlow, không có log API, xác thực hay phiên ứng dụng. Thống kê hành vi (#28) chỉ dùng metadata NetFlow kèm thông báo không quy kết danh tính."
-            : "NF-UNSW-NB15-v3 contains NetFlow fields, not API, authentication or application-session events. Behavioral summaries (#28) use NetFlow metadata only and include an explicit non-attribution notice."
+            ? "Ba chế độ vận hành v2.0.0: (1) Offline CSV trên data/demo/demo_flows.csv (200 flows, 4/4 REAL_MODELS, OOD=FITTED, kiểm chứng lặp lại 2x qua scripts/verify_clean_state_demo.py), (2) Dataset Replay phát ait_test.csv.gz theo micro-batch 32 ở tốc độ 399.44 flow/s, và (3) Live Lab Monitoring qua 127.0.0.1 UDP NetFlow v9/IPFIX với collector pure-Rust telemetry/netflow-rs/ và LiveLogTailer."
+            : "Three v2.0.0 operation modes: (1) Offline CSV on data/demo/demo_flows.csv (200 flows, 4/4 REAL_MODELS, OOD=FITTED, 2x repeatability verified via scripts/verify_clean_state_demo.py), (2) Dataset Replay streaming ait_test.csv.gz at micro-batch 32 and 399.44 flow/s, and (3) Live Lab Monitoring over 127.0.0.1 UDP NetFlow v9/IPFIX with the pure-Rust telemetry/netflow-rs/ collector and LiveLogTailer."
         }
       </p>
     </div>
@@ -289,7 +297,9 @@ const layers = isVi
   <section class="section rule tinted">
     <div class="container">
       <span class="eyebrow"
-        >{isVi ? "Kiểm kê các tầng" : "Implementation inventory"}</span
+        >{
+          isVi ? "Kiểm kê các tầng v2.0" : "v2.0 implementation inventory"
+        }</span
       ><h2>
         {
           isVi
@@ -301,8 +311,8 @@ const layers = isVi
           <caption class="sr-only"
             >{
               isVi
-                ? "Các tầng kiến trúc, trạng thái hiện tại và bằng chứng nguồn"
-                : "Architecture layers, implementation status and evidence"
+                ? "Các tầng kiến trúc v2.0, trạng thái hiện tại và bằng chứng nguồn"
+                : "v2.0 architecture layers, implementation status and evidence"
             }</caption
           ><thead
             ><tr

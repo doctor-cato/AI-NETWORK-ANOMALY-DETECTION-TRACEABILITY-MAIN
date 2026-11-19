@@ -1,37 +1,42 @@
 ---
 title: Cài đặt môi trường
-description: Thiết lập Python nghiên cứu, chạy API/demo cục bộ và xem trước cổng thông tin.
+description: Thiết lập môi trường sạch NetFlow Sentinel v2.0, kiểm chứng 2 lượt clean-state và cấu hình cổng OOD.
 order: 2
 ---
 
-## Môi trường Python nghiên cứu
+## Yêu cầu hệ thống & thiết lập Python 3.12
 
-Gói nguồn Python khai báo yêu cầu tối thiểu `>=3.11` trong `pyproject.toml` (CI chạy trên Python 3.11 và 3.12). Riêng runtime của ứng dụng Desktop Windows `v0.6.0` (`requirements-runtime.txt`) yêu cầu **Python `>=3.12` (x64)** để tương thích các tệp `.joblib` đã huấn luyện (`numpy 2.5.x`, `pandas 3.0–3.1`, `scikit-learn 1.9.x`, `xgboost 3.4.x`, `joblib 1.6.x`).
+NetFlow Sentinel v2.0 yêu cầu **Python `>= 3.11`** cho môi trường nghiên cứu (khuyến nghị **Python `3.12` x64** trên Windows 10/11 để đồng bộ với artifact thực nghiệm), **Node.js 20+** cho giao diện Svelte 5 và **Rust stable toolchain** cho nhân Tauri 2 cùng thư viện thu thập `telemetry/netflow-rs`.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -e .
 python scripts/check_environment.py
 ```
 
-Các tài liệu chuẩn về cài đặt gồm [README](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md), [hướng dẫn tái lập](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/REPRODUCIBILITY.md) và [hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md).
+Xem hướng dẫn chi tiết tại [Hướng dẫn người dùng v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/USER_GUIDE_V2.md) và [Hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/WINDOWS_INSTALLATION.md).
 
-## Tạo dữ liệu demo & khởi chạy FastAPI cục bộ
+## Chế độ fail-closed `"deployment"` và `NETFLOW_OOD_GATE_SHA256`
 
-Khi đã có sẵn artifact dữ liệu và mô hình, bạn có thể trích xuất 200 dòng demo chỉ từ tập Validation và chạy API trên loopback `127.0.0.1`:
+Ở cấu hình mặc định `runtime_mode="deployment"`, pipeline suy luận hoạt động theo cơ chế **fail-closed**: hệ thống bắt buộc kiểm chứng mã băm SHA-256 của cổng từ chối OOD thông qua biến môi trường `NETFLOW_OOD_GATE_SHA256` trước khi cho phép nạp mô hình. Khi phát triển cục bộ hoặc kiểm thử với artifact nghiên cứu `RESEARCH_ONLY`, bạn có thể cung cấp mã băm SHA-256 đã xác minh và kiểm tra toàn vẹn gói companion:
 
 ```powershell
 $env:PYTHONPATH = "src"
-python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
-python scripts/run_api.py --host 127.0.0.1 --port 8000
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
 ```
 
-## Xem trước cổng thông tin tĩnh
+## Kiểm chứng demo 2 lượt trên trạng thái sạch (2x Clean-State Verification)
+
+Để chứng minh khả năng cài đặt và vận hành lặp lại 100% mà không phụ thuộc trạng thái lưu sẵn, script [scripts/verify_clean_state_demo.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_clean_state_demo.py) khởi tạo thư mục tạm cô lập hoàn toàn, chạy trọn vòng đời nạp dữ liệu, suy luận, phân tích hành vi, mã hóa bằng chứng và đối chiếu kết quả qua 2 lượt chạy độc lập:
 
 ```powershell
-npm ci
-npm run dev
+python scripts/verify_clean_state_demo.py
 ```
 
-Website trên nhánh `site-source` chỉ là tài liệu tĩnh; không cần Python, dataset hay backend service để xem trước.
+Kết quả đã kiểm chứng tại [clean_state_demo_verification.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/demo/clean_state_demo_verification.json) xác nhận `repeatable_100pct = true` giữa hai lượt chạy độc lập.
+
+## Di trú từ v1 lên v2.0
+
+Nếu nâng cấp từ môi trường v1 (`NF-UNSW-NB15-v3`), sử dụng công cụ [scripts/migrate_v1_to_v2.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/migrate_v1_to_v2.py) và tham khảo [Tài liệu di trú v1 sang v2](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MIGRATION_V1_TO_V2.md) để lưu trữ cấu hình cũ sang `historical/` mà không làm hỏng lược đồ SQLite v2.

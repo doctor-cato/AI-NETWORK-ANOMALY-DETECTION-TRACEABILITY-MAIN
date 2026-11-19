@@ -1,23 +1,23 @@
 ---
 title: Inference & ingestion gate
-description: 47-feature CSV inference, source provenance verification and OOD abstention.
-order: 14
+description: Three operational modes (Offline CSV, Dataset Replay 399.44 flow/s, Live Lab UDP/Rust netflow-rs), OODRejectionGate and OOD_AWARE_ENSEMBLE.
+order: 9
 ---
 
-## Fail-closed inference pipeline
+## Three operational modes & `LiveStreamOrchestrator`
 
-`scripts/predict.py` and `InferencePipeline` enforce the canonical 47-feature contract (`nf-unsw-nb15-v3-baseline-47`), strip `Label`, `Attack` and six trace metadata columns before transformation, verify SHA-256 digests on both `TrainOnlyPreprocessor` and the target model `.joblib`, and write `.csv` + `.metadata.json` provenance records. Missing or mismatched binaries halt fail-closed as `BLOCKED / NOT READY`.
+NetFlow Sentinel v2.0 unifies batch and streaming execution through `InferencePipeline` and [src/network_anomaly/streaming/live_orchestrator.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/streaming/live_orchestrator.py):
 
-```powershell
-$env:PYTHONPATH = "src"
-python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest --output data/demo/demo_predictions.csv --metadata-output data/demo/demo_predictions_meta.json
-```
+1. **Mode 1 — Offline CSV Analysis**: Validates CSV files against `canonical-flow-v2-18`, rejects missing base columns as `FEATURE_INCOMPATIBLE`, verifies SHA-256 digests on `TrainOnlyPreprocessor`, `OODRejectionGate` and model `.joblib` files, and outputs traceable predictions.
+2. **Mode 2 — Dataset Replay**: Streams canonical datasets through `LiveStreamOrchestrator` at **`399.44 flow/s`** median replay throughput (`process_batch(32)` achieves **`386.37 flow/s`**, `2.59 ms` mean batch latency in [reports/benchmarks/system_performance_benchmark.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/benchmarks/system_performance_benchmark.json)).
+3. **Mode 3 — Live Lab Monitoring (UDP NetFlow v9 / IPFIX)**: Decodes live UDP telemetry using the pure-Rust [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs) collector ([docs/NETFLOW_COLLECTOR.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/NETFLOW_COLLECTOR.md)) or Python UDP listener, enforcing bounded template caches (`MAX_TEMPLATES_PER_SOURCE = 256`, `MAX_FIELDS_PER_TEMPLATE = 128`).
 
-## Provenance & OOD abstention
+## Fail-closed `"deployment"` OOD gate & `OOD_AWARE_ENSEMBLE`
 
-Before ML scoring, `src/network_anomaly/ingestion/` and `desktop_csv.py` classify input CSVs across four compatibility tiers (`PARSEABLE`, `SCHEMA_COMPATIBLE`, `SEMANTICALLY_COMPATIBLE`, `MODEL_VALIDATED`):
+In default `runtime_mode="deployment"`, the pipeline refuses to initialize without a valid **`NETFLOW_OOD_GATE_SHA256`** matching the serialized `OODRejectionGate`:
 
-- Only verified canonical or allowlisted Validation demo CSVs receive `source:nf-v3-canonical` (`MODEL_VALIDATED`). Unverified external CSVs fail closed to `source:nf-v3-unverified` (`VALIDATION_NOT_VERIFIED`).
-- Flows violating network invariants or showing `MIN_TTL == 0` are marked `ABSTAINED_OOD` (`predicted_label = null`, `risk_level = "ABSTAINED_OOD"`) prior to calling the ML model and are excluded from confusion matrices.
+- **`OODValidator` & `OODRejectionGate`**: Combines physical network-invariant checks with statistical feature-bound and Mahalanobis/quantile distance checks fitted on `AIT-NDS-v2` Train.
+- **`ABSTAINED_OOD` semantics**: Flows exceeding the OOD threshold are immediately tagged **`ABSTAINED_OOD`** (`predicted_label = null`, `risk_level = "ABSTAINED_OOD"`) rather than forcing an unreliable closed-set prediction.
+- **`OOD_AWARE_ENSEMBLE`**: Combines supervised probability estimates (`Random Forest`, `XGBoost`) with unsupervised anomaly scores (`Isolation Forest`, `Autoencoder`) and 16-D behavioral session features while preserving explicit OOD abstention.
 
-See the [inference pipeline guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/INFERENCE_PIPELINE.md), [multi-source ingestion](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) and [feature compatibility matrix](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md).
+See [docs/MULTI_SOURCE_INGESTION.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MULTI_SOURCE_INGESTION.md) and [docs/FEATURE_COMPATIBILITY_MATRIX.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/FEATURE_COMPATIBILITY_MATRIX.md).

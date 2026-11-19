@@ -1,20 +1,31 @@
 ---
-title: Kiểm định dữ liệu
-description: Lược đồ 55 cột, nhãn, phát hiện chất lượng, tầng tương thích và trạng thái kiểm toán OOD.
-order: 5
+title: Kiểm định dữ liệu & Lược đồ v2
+description: Hợp đồng 18 đặc trưng canonical-flow-v2-18, quy tắc chống nội suy giả tạo, sửa lỗi Phase 0 và kiểm toán liên kết AIT (#85).
+order: 6
 ---
 
-## Hợp đồng dữ liệu (Schema)
+## Hợp đồng `canonical-flow-v2-18` & Quy tắc chống nội suy
 
-Tệp CSV đã xác minh gồm 55 cột: 47 đặc trưng ML baseline, 6 trường metadata truy vết (`FLOW_START_MILLISECONDS`, `FLOW_END_MILLISECONDS`, `IPV4_SRC_ADDR`, `IPV4_DST_ADDR`, `L4_SRC_PORT`, `L4_DST_PORT`), `Label` và `Attack`. [Tài liệu schema](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md) liệt kê đúng thứ tự trường và phân bố lớp thực tế.
+Để đảm bảo tính tương thích ngữ nghĩa thực sự giữa các nguồn NetFlow và Zeek mà không bịa đặt các trường L7 không tồn tại, [src/network_anomaly/data/v2_schema.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/data/v2_schema.py) định nghĩa hợp đồng **`canonical-flow-v2-18`** gồm đúng **18 đặc trưng L4 flow**:
 
-## Chạy kiểm định chất lượng và EDA
+- **6 đặc trưng cơ sở (Base features)**: `duration_ms`, `in_bytes`, `out_bytes`, `in_pkts`, `out_pkts`, `protocol_num`.
+- **12 đặc trưng dẫn xuất (Derived features)**: Tổng số byte/gói, tốc độ byte/gói mỗi giây, kích thước gói trung bình theo chiều đi/về, tỷ lệ bất đối xứng byte/gói và các cờ chỉ báo giao thức (`is_tcp`, `is_udp`, `is_icmp`).
 
-```powershell
-python scripts/validate_data.py
-python scripts/eda_nf_unsw_nb15_v3.py
-```
+Theo [Thiết kế tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MULTI_SOURCE_INGESTION.md) và [Ma trận tương thích đặc trưng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/FEATURE_COMPATIBILITY_MATRIX.md), hệ thống áp dụng chính sách **chống nội suy giả tạo (anti-imputation)**: bất kỳ nguồn dữ liệu nào thiếu đặc trưng cơ sở bắt buộc sẽ bị từ chối với mã `FEATURE_INCOMPATIBLE` thay vì điền số `0` gây sai lệch phân phối.
 
-[Báo cáo chất lượng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/data_quality/nf_unsw_nb15_v3_validation.json) ghi nhận 122.493 dòng có giá trị thiếu hoặc `+Inf`, 14.815 dòng trùng hệt và 1.134.553 dòng lặp vector 47 đặc trưng. Tính toàn vẹn nguồn, chất lượng dữ liệu thô và trạng thái sẵn sàng ML là ba trạng thái độc lập. Nếu thiếu CSV gốc, `validate_data.py` có thể thoát với mã 0 và ghi `SKIPPED` — không phải kết quả PASS trên dữ liệu thật.
+## Sửa lỗi dữ liệu Phase 0 (`DATA-A01..A03`) & Thống kê kiểm định
 
-Ở pha suy luận, [kiến trúc tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) và [ma trận tương thích đặc trưng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md) áp dụng kiểm tra 4 tầng và từ chối `ABSTAINED_OOD` cho dòng `MIN_TTL == 0` hoặc vi phạm bất biến mạng.
+Quá trình kiểm toán Phase 0 đã phát hiện và khắc phục triệt để 3 lỗi xử lý dữ liệu trước khi đóng băng split:
+
+- **`DATA-A01`**: Chuẩn hóa đơn vị thời lượng luồng sang mili-giây (`duration_ms >= 0`) và xử lý an toàn các luồng tức thời (`duration_ms == 0`) khi tính tốc độ.
+- **`DATA-A02`**: Tách biệt rõ `3,464,400` dòng `AIT-NDS-v2` có nhãn hợp lệ khỏi `942` dòng không ánh xạ được nhãn (`unmapped`), loại bỏ hoàn toàn 942 dòng này khỏi tập huấn luyện và đánh giá.
+- **`DATA-A03`**: Ánh xạ nhất quán hệ phân loại tấn công 6 lớp chuẩn tại [src/network_anomaly/data/taxonomy.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/data/taxonomy.py) trên cả `AIT-NDS-v2` (`3,464,400` dòng), `CTU-SME-11` (`251,219` dòng) và `UWF-ZeekData24` (`95,871` dòng).
+
+Hồ sơ chi tiết được lưu tại [v2_multi_source_profile.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/datasets/v2_multi_source_profile.json).
+
+## Kiểm toán khả năng liên kết AIT (`#85`)
+
+Để kiểm tra xem có thể ghép nối trực tiếp từng dòng NetFlow trong `AIT-NDS-v2` với từng bản ghi log hệ thống trong `AIT-LDS-v2.1` hay không, dự án đã thực hiện kiểm toán căn chỉnh dấu thời gian bằng [scripts/verify_ait_timestamp_alignment.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_ait_timestamp_alignment.py):
+
+- Kết quả tại [AIT_LINKAGE_FEASIBILITY.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/dataset/AIT_LINKAGE_FEASIBILITY.md) và [ait_timestamp_alignment_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/datasets/ait_timestamp_alignment_report.json) chứng minh **`DIRECT_UID_LINK = FALSE`**: không có khóa định danh `uid` dùng chung giữa hai bộ dữ liệu, và có tới **`72.87% – 87.91%`** sự kiện rơi vào vùng nhập nhằng đa luồng (multi-flow ambiguity) khi ghép theo cửa sổ thời gian/IP.
+- Do đó, dự án bác bỏ phương án ghép nhãn giả tạo ở mức dòng đơn lẻ và chuyển sang kiến trúc tương quan phiên hành vi trên cửa sổ trượt (`RQ3`).

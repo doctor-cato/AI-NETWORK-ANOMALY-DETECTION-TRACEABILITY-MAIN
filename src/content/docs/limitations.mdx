@@ -1,17 +1,22 @@
 ---
-title: Giới hạn nghiên cứu
-description: Các giới hạn khoa học, suy giảm cross-dataset, đóng gói Windows và bảo mật.
-order: 11
+title: Giới hạn nghiên cứu & Pháp lý
+description: Phân hạng RESEARCH_ONLY, giới hạn Bayes error L4, Credential_Attack đơn luồng, AE zero-day recall, AIT DIRECT_UID_LINK=FALSE và các mục DEFERRED/BLOCKED.
+order: 13
 ---
 
-## Tính hợp lệ benchmark & sụp đổ cross-dataset
+## Giới hạn khoa học & Phân hạng `RESEARCH_ONLY`
 
-Bộ dữ liệu đã xác minh được thu thập đầu năm 2015 trong môi trường testbed IXIA PerfectStorm. `49,98%` dòng Validation và `53,21%` dòng Test trùng nguyên vector 47 đặc trưng với Train, và cây chỉ dùng một đặc trưng `MIN_TTL` đạt Accuracy Validation `0,999849`. Trên mẫu ngoại vi 100.000 dòng `NF-CSE-CIC-IDS2018-v3`, `99,99%` dòng có trôi dạt TTL và Random Forest sụp đổ xuống **`0,0000` Recall** và **`0,3802` FPR**. Trong khi đó, dưới ràng buộc `Val FPR <= 0,05`, Autoencoder chỉ đạt Held-out Test `F1 = 0,1361` và `Recall = 0,1093`.
+1. **Phân hạng `RESEARCH_ONLY` (`cross_source_validated = false`)**: Toàn bộ 4 mô hình baseline `E0` (`Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder`) được huấn luyện trên `AIT-NDS-v2` đều suy giảm hiệu năng khi đánh giá zero-shot trên `CTU-SME-11` và `UWF-ZeekData24` do hiện tượng dịch chuyển phân phối lưu lượng nền (xem [DOMAIN_SHIFT_ANALYSIS.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/domain_analysis/DOMAIN_SHIFT_ANALYSIS.md)). Dù thực nghiệm đa miền `E1` đạt `F1 = 0.9564` trên `CTU_Test`, các mô hình `E0` vẫn giữ phân hạng `RESEARCH_ONLY`.
+2. **Trùng lặp vector L4 & Sai số Bayes (Bayes Error Duplicates)**: Ở mức độ trừu tượng 18 đặc trưng thống kê tầng giao vận (`canonical-flow-v2-18`), các kết nối thăm dò ngắn hoặc truy vấn hợp lệ có thể sinh ra vector đặc trưng trùng hệt nhau, tạo nên cận dưới sai số Bayes không thể triệt tiêu nếu chỉ nhìn từng luồng đơn lẻ.
+3. **Độ nhạy đơn luồng thấp trên `Credential_Attack` (`Recall = 0.1410`)**: Trong bài toán phân loại đa lớp Stage-2 ([multiclass_attack_classification_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/multiclass_attack_classification_report.json)), một luồng đăng nhập thất bại đơn lẻ có hình thái L4 gần như giống hệt một luồng đăng nhập hợp lệ (`Recall` đơn luồng chỉ đạt `0.1410`), bắt buộc phải dựa vào tầng tương quan phiên hành vi đa cửa sổ (`RQ3`) để phát hiện.
+4. **Độ nhạy phát hiện tấn công chưa biết của Autoencoder (`Recall = 0.2045`)**: Trong thực nghiệm giữ lại họ tấn công chưa biết (`RQ4`, [rq4_unknown_attack_report.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/experiments/ml/rq4_unknown_attack_report.json)), dưới ràng buộc kiểm soát tỷ lệ báo động giả nghiêm ngặt, Autoencoder chỉ đạt độ nhạy trung bình `0.2045` trên các họ tấn công zero-day ẩn.
+5. **Không có liên kết UID trực tiếp giữa NetFlow và Log hệ thống (`DIRECT_UID_LINK = FALSE`)**: Kiểm toán `#85` ([AIT_LINKAGE_FEASIBILITY.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/dataset/AIT_LINKAGE_FEASIBILITY.md)) xác nhận `72.87% – 87.91%` sự kiện bị nhập nhằng đa luồng khi đối chiếu thời gian giữa `AIT-NDS-v2` và `AIT-LDS-v2.1`.
 
-## Đóng gói & điều kiện chạy Windows (v0.6.0)
+## Hạng mục bị chặn (`BLOCKED`), Hoãn (`DEFERRED`) & Ranh giới pháp lý
 
-Cổng thông tin này chỉ là trang tĩnh. Trên Windows, bộ cài NSIS `v0.6.0` đóng gói giao diện Svelte 5, nhân Rust Tauri 2, mã nguồn Python backend và các manifest đã track, **chưa nhúng sẵn** trình thông dịch Python hay tệp nhị phân `.joblib` (do điều khoản dữ liệu và dung lượng). Máy đích cần Python `>= 3.12` (x64), WebView2 Runtime và nạp Companion Bundle (`BLOCKED / NOT READY` nếu thiếu).
+- **Bộ dữ liệu `UGR'16` — `BLOCKED`**: Máy chủ phân phối chính thức của `UGR'16` trả về lỗi `HTTP 403 Forbidden`, do đó dự án sử dụng `CTU-SME-11` và `UWF-ZeekData24` làm nguồn kiểm định ngoại vi thay thế ([V2_UGR16_ALTERNATIVES_REVIEW.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md)).
+- **Thử nghiệm thiết bị mạng vật lý (`#137`) — `real_device_tested = false`**: Bộ thu thập Rust NetFlow v9/IPFIX đã được kiểm chứng bằng bộ phát gói tin tuân thủ RFC trên loopback, chưa kiểm thử trực tiếp với phần cứng router/switch vật lý.
+- **Đóng gói NSIS & Kiểm thử máy ảo Windows 10/11 sạch (`#148`) — `DEFERRED`**: Hoãn đóng gói bộ cài phân phối cho tới khi hoàn tất phê duyệt phát hành.
+- **Khóa phân phối nhị phân (`#154`) — `approved = false`**: Tệp [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) giữ `approved = false`; bộ dữ liệu `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) bị cách ly hoàn toàn trong `.gitignored` và `UWF-ZeekData24` khóa cứng ở `evaluation_only = true`.
 
-## Tính năng hoãn (`DEFERRED`)
-
-Bắt gói tin trực tiếp (PCAP), tương quan log xác thực/API ngoài NetFlow, tự động hóa tường lửa hệ điều hành và xoay vòng khóa AES-256-GCM trong OS keyring đều ở trạng thái **DEFERRED**. Mô phỏng phản ứng an ninh (#27) chỉ chạy ở chế độ Dry-Run tất định (`executed = false`). Xem [ghi chú phát hành v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md).
+Xem tổng hợp đầy đủ tại [Đánh giá sẵn sàng phát hành v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/V2_RELEASE_READINESS.md) và [Tài liệu hỏi đáp bảo vệ khóa luận v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/DEFENSE_QA_V2.md).

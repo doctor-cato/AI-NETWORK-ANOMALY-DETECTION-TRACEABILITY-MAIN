@@ -1,24 +1,35 @@
 ---
 title: Windows desktop & release
-description: Tauri 2 + Svelte 5 desktop installer, Python 3.12+ runtime and Companion Bundle setup.
-order: 13
+description: Tauri 2 (2.0.0) + Svelte 5 + FastAPI (0.1.0) desktop workstation, 7 UI panels, Windows DPAPI and release governance.
+order: 3
 ---
 
-## Packaging architecture (v0.6.0)
+## Desktop workstation architecture (v2.0.0)
 
-The Windows x64 NSIS installer (`NetFlow-Sentinel-v0.6.0-windows-x64-setup.exe`) bundles the **Svelte 5** frontend, **Rust / Tauri 2** host, **Python backend source** (`src/network_anomaly/`, `scripts/run_api.py`, `requirements-runtime.txt`) and tracked **SHA-256 manifests** (`reports/`). Users do not need `git clone` or `NETWORK_ANOMALY_REPO_ROOT`. User state (`.venv`, model `.joblib` files, `data/demo/`, `network_anomaly.db`) lives under `%LOCALAPPDATA%\NetFlowSentinelM6` for standard-user compatibility.
+The NetFlow Sentinel v2.0 desktop application combines a **Rust / Tauri 2 (`2.0.0`)** native shell and **Svelte 5** frontend with a local-only **Python FastAPI (`0.1.0`) + SQLite** sidecar service. Version parity is enforced across `desktop/package.json` (`2.0.0`), `desktop/src-tauri/tauri.conf.json` (`2.0.0`), `desktop/src-tauri/Cargo.toml` (`2.0.0`) and the FastAPI OpenAPI schema (`0.1.0`).
 
-Because `NF-UNSW-NB15-v3` carries non-commercial reuse terms and `.joblib` binaries stay outside Git, target Windows machines require:
+- **Loopback & token authentication**: The sidecar binds exclusively to `127.0.0.1` and validates every protected request against `X-Sentinel-Session-Token` using constant-time `hmac.compare_digest`.
+- **Windows DPAPI key protection**: When running on Windows (`os.name == "nt"`), master key material for `AES-256-GCM` telemetry storage is sealed via **Windows `DPAPI`** (`CryptProtectData` / `CryptUnprotectData`).
+- **Three operational modes**: Supports **Mode 1 (Offline CSV Analysis)**, **Mode 2 (Dataset Replay)** and **Mode 3 (Live Lab Monitoring via UDP NetFlow v9/IPFIX)**.
 
-- **Windows 10/11 (x64)** with **Microsoft Edge WebView2 Runtime**.
-- **Python `>= 3.12` (x64)** for `requirements-runtime.txt` compatibility.
-- **Companion Bundle ZIP** (4 models + preprocessor + 200-row Validation demo CSVs), verified fail-closed via `COMPANION_SHA256SUMS.txt` and tracked manifests.
+## Seven operator UI panels
 
-## Verification & release attestation
+1. **Overview & System Readiness**: Displays active runtime mode (`deployment`), SHA-256 verification status for the 4 `E0` models + OOD gate, and dataset split provenance.
+2. **Offline CSV & Multi-Source Ingestion**: Runs batch `canonical-flow-v2-18` ingestion with anti-imputation (`FEATURE_INCOMPATIBLE`) and `ABSTAINED_OOD` reporting.
+3. **Live Stream & Dataset Replay**: Controls `LiveStreamOrchestrator` for dataset replay (`399.44 flow/s`) and live UDP NetFlow v9/IPFIX collection.
+4. **Incident Queue & Composite Risk**: Ranks flows and sessions using the deterministic 0–100 composite risk score (`ml_score`, `ood_penalty`, `behavioral_anomaly`, `context_weight`).
+5. **16-D Behavioral & Session Timeline**: Visualizes 5-minute `src_ip` behavioral vectors (`BehavioralVector`) and multi-flow timelines with explicit `DIRECT_UID_LINK = FALSE` notices.
+6. **Dry-Run Response Policy**: Evaluates containment recommendations (`NO_ACTION`, `MONITOR`, `INVESTIGATE`, `ISOLATE_RECOMMENDED`) strictly with `dry_run = True` (`executed = false`).
+7. **Crypto & Adaptive Key Rotation**: Monitors `AES-256-GCM` AEAD encryption, `NonceRegistry` state, Windows `DPAPI` keystore metadata and risk-triggered key rotation.
+
+## Honest release & installer boundaries
 
 ```powershell
-python scripts/check_desktop_version.py --check --expect-version 0.6.0
-python scripts/verify_companion_artifacts.py --verify-attestation .\release_e2e_verification.json --expect-installer-sha256 <SHA256> --require-nsis-e2e --require-demo-files
+python scripts/check_desktop_version.py --check
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
 ```
 
-See the [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/WINDOWS_INSTALLATION.md), [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md), [v0.6.0 release notes](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md) and [E2E verification record](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/reports/releases/v0.6.0_e2e_verification.json).
+While desktop TypeScript/Svelte (`41` Vitest tests), Rust (`11` desktop + `6` `netflow-rs` tests) and production bundle builds (`npm --prefix desktop run build`) pass in CI, two release gates remain intentionally constrained:
+
+- **NSIS Windows Installer & Clean Windows 10/11 VM E2E (`#148`)**: **`DEFERRED`** — full installer attestation on an isolated physical/VM Windows machine without developer tooling is deferred.
+- **Public distribution lock (`#154`)**: [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) is locked at **`approved: false`** (`target_channel = local_offline`). See [Windows installation guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/WINDOWS_INSTALLATION.md) and [v2 release readiness audit](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/V2_RELEASE_READINESS.md).

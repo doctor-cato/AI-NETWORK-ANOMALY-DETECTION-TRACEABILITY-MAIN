@@ -93,6 +93,10 @@ h3 {
 }
 p {
   max-width: 72ch;
+  overflow-wrap: anywhere;
+}
+code {
+  overflow-wrap: anywhere;
 }
 small,
 .muted {

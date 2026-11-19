@@ -1,23 +1,26 @@
 ---
 title: Suy luận & Cổng tiếp nhận
-description: Suy luận CSV 47 đặc trưng, xác minh provenance nguồn và từ chối OOD.
-order: 14
+description: Ba chế độ vận hành, bộ thu thập Rust NetFlow v9/IPFIX, OODValidator, OODRejectionGate và suy luận theo lô process_batch(32).
+order: 9
 ---
 
-## Pipeline suy luận fail-closed
+## Ba chế độ tiếp nhận & suy luận luồng
 
-`scripts/predict.py` và `InferencePipeline` thực thi hợp đồng 47 đặc trưng (`nf-unsw-nb15-v3-baseline-47`), loại bỏ `Label`, `Attack` và 6 cột metadata truy vết trước khi biến đổi, xác minh SHA-256 trên cả `TrainOnlyPreprocessor` lẫn `.joblib` mô hình, và xuất `.csv` kèm `.metadata.json`. Nếu thiếu hoặc sai checksum artifact, hệ thống dừng fail-closed ở trạng thái `BLOCKED / NOT READY`.
+NetFlow Sentinel v2.0 cung cấp 3 con đường tiếp nhận dữ liệu thống nhất về hợp đồng `canonical-flow-v2-18`:
 
-```powershell
-$env:PYTHONPATH = "src"
-python scripts/predict.py --input data/demo/demo_flows.csv --model random_forest --output data/demo/demo_predictions.csv --metadata-output data/demo/demo_predictions_meta.json
-```
+1. **Phân tích CSV Ngoại tuyến (Offline CSV)**: Kiểm tra lược đồ, xác minh nguồn gốc (`provenance`) và chạy suy luận hàng loạt trên tệp CSV hoặc dữ liệu Zeek đã quy đổi.
+2. **Phát lại Tập dữ liệu (Dataset Replay)**: Đọc dữ liệu chuẩn theo dòng thời gian và bơm vào bộ điều phối với thông lượng đo đạc đạt **`399.44 flow/s`** (theo [system_performance_benchmark.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/benchmarks/system_performance_benchmark.json)).
+3. **Giám sát Lab Trực tiếp (Live Lab UDP)**: Bộ thu thập Rust thuần tại [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs) giải mã gói tin UDP NetFlow v9 (RFC 3954) và IPFIX (RFC 7011), quản lý bộ nhớ đệm template theo từng `(source_id, exporter_addr)` và chuyển tiếp sang `LiveStreamOrchestrator` ([src/network_anomaly/streaming/live_orchestrator.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/src/network_anomaly/streaming/live_orchestrator.py)).
 
-## Kiểm chứng provenance & từ chối OOD
+Xem chi tiết tại [Tài liệu bộ thu thập NetFlow](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/NETFLOW_COLLECTOR.md) và [Thiết kế tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MULTI_SOURCE_INGESTION.md).
 
-Trước khi suy luận ML, `src/network_anomaly/ingestion/` và `desktop_csv.py` phân loại CSV theo 4 tầng tương thích (`PARSEABLE`, `SCHEMA_COMPATIBLE`, `SEMANTICALLY_COMPATIBLE`, `MODEL_VALIDATED`):
+## Cổng OOD hai tầng (`OODValidator` & `OODRejectionGate`)
 
-- Chỉ CSV chuẩn hoặc bộ demo Validation trong allowlist mới nhận `source:nf-v3-canonical` (`MODEL_VALIDATED`). CSV bên ngoài chưa xác minh bị phân loại fail-closed là `source:nf-v3-unverified` (`VALIDATION_NOT_VERIFIED`).
-- Các dòng vi phạm bất biến mạng hoặc có `MIN_TTL == 0` bị gắn nhãn `ABSTAINED_OOD` (`predicted_label = null`, `risk_level = "ABSTAINED_OOD"`) trước khi gọi mô hình ML và được loại trừ khỏi confusion matrix.
+Để ngăn mô hình đưa ra dự đoán sai lệch trên dữ liệu hỏng hoặc dữ liệu lệch miền nghiêm trọng, mọi luồng đều đi qua hai tầng lọc trước và trong khi suy luận:
 
-Xem [tài liệu inference pipeline](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/INFERENCE_PIPELINE.md), [tiếp nhận đa nguồn](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/MULTI_SOURCE_INGESTION.md) và [ma trận tương thích đặc trưng](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/FEATURE_COMPATIBILITY_MATRIX.md).
+- **Tầng 1 — `OODValidator` (Bất biến mạng & Ngữ nghĩa)**: Từ chối các bản ghi vi phạm bất biến vật lý/giao thức (ví dụ: thời lượng âm, số byte nhỏ hơn số gói nhân kích thước tối thiểu hợp lệ, mã giao thức ngoài dải hoặc thiếu cột bắt buộc `FEATURE_INCOMPATIBLE`).
+- **Tầng 2 — `OODRejectionGate` & `OOD_AWARE_ENSEMBLE`**: Đánh giá khoảng cách thống kê trong không gian `asinh_robust` cùng độ bất đồng thuận giữa các mô hình. Các luồng vượt ngưỡng từ chối bị gắn nhãn **`ABSTAINED_OOD`** (`predicted_label = null`), chuyển sang hàng đợi kiểm tra thủ công và tuyệt đối không kích hoạt khuyến nghị cô lập tự động.
+
+## Tối ưu hóa xử lý theo lô `process_batch(32)`
+
+Trong `LiveStreamOrchestrator`, phương thức `process_batch(32)` gom 32 bản ghi luồng vào một thao tác biến đổi vector hóa (`TrainOnlyPreprocessor`), kiểm tra cổng OOD, suy luận ML, cập nhật `BehavioralVector` 16 chiều và ghi nhật ký mật mã `AES-256-GCM`. Benchmark thực tế tại [system_performance_benchmark.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/benchmarks/system_performance_benchmark.json) đạt thông lượng toàn trình **`386.37 flow/s`**.

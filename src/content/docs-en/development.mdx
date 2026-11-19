@@ -1,22 +1,37 @@
 ---
 title: Development environment
-description: Repository layout, local checks and the separation of website and research code.
-order: 3
+description: Local development workflow across Python 3.12, Svelte 5/Tauri 2 desktop, Rust telemetry/netflow-rs and OpenAPI contract sync.
+order: 14
 ---
 
-## Repository boundaries
+## Repository structure (v2.0)
 
-On `main`, `src/network_anomaly/` holds research, ingestion, inference and FastAPI code; `desktop/` holds the Rust Tauri 2 + Svelte 5 desktop application (`v0.6.0`); `scripts/` holds CLI entry points; `data/` holds manifests and ignored dataset/demo CSV locations; `reports/` holds versioned quality, evaluation, OpenAPI and E2E evidence; and `artifacts/` stores local `.joblib` binaries excluded from Git. This portal lives on the dedicated `site-source` branch and builds to static HTML.
+- **`src/network_anomaly/`**: Core v2 Python package (`data/v2_schema.py`, `data/taxonomy.py`, `preprocessing/pipeline.py`, `models/registry.py`, `behavioral/vector.py`, `crypto/aead.py`, `crypto/key_manager.py`, `crypto/rotation.py`, `streaming/live_orchestrator.py`, `api/response_policy.py`).
+- **`desktop/`**: Svelte 5 + TypeScript frontend (`desktop/src/`) and Rust Tauri 2 host (`desktop/src-tauri/`, version `2.0.0`).
+- **`telemetry/netflow-rs/`**: Pure-Rust NetFlow v9 (RFC 3954) & IPFIX (RFC 7011) packet decoder and UDP collector ([telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs)).
+- **`data/` & `reports/`**: Tracked SHA-256 dataset/split manifests (`data/V2_SPLIT_MANIFEST.json`, `data/AIT_DATASETS_MANIFEST.json`, `data/EXTERNAL_DATASETS_PROVENANCE.json`), OpenAPI contract (`reports/api/openapi.json`), experiment reports (`reports/experiments/`) and governance audits (`reports/audits/`).
+- **`historical/`**: Archived v1 (`NF-UNSW-NB15-v3`) records isolated from v2 runtime execution.
 
-## Basic checks
+## Developer verification workflow
+
+Run the full local verification gate from the repository root in PowerShell:
 
 ```powershell
 python scripts/check_environment.py
-python -m pytest tests/unit/test_basic.py tests/integration/test_pipeline.py -q
+python scripts/export_openapi_spec.py --check
 python scripts/check_desktop_version.py --check
-python -m ruff check .
-python -m black --check .
+python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
+python -m ruff check src scripts tests
+python -m black --check src scripts tests
+python -m pytest tests -q -rs --tb=short
+npm --prefix desktop run check
+npm --prefix desktop run test
+npm --prefix desktop run build
+cargo test --manifest-path telemetry/netflow-rs/Cargo.toml --lib
 git diff --check
 ```
 
-These checks do not stand in for real-data evaluation. CI runs tests with synthetic fixtures; dataset-dependent and companion-artifact steps report `SKIPPED` when raw bytes or `.joblib` files are absent. See [testing guidance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TESTING.md) and [release process](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/RELEASE_PROCESS.md).
+## Contract synchronization & migration tools
+
+- When modifying FastAPI routes or Pydantic models, regenerate and verify [reports/api/openapi.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/api/openapi.json) and [reports/api/API_CONTRACT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/api/API_CONTRACT.md) via `python scripts/export_openapi_spec.py --check`.
+- When migrating an older v1 directory layout, use [scripts/migrate_v1_to_v2.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/migrate_v1_to_v2.py) ([docs/MIGRATION_V1_TO_V2.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MIGRATION_V1_TO_V2.md)).

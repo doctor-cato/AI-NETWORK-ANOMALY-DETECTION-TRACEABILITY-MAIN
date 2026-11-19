@@ -1,7 +1,7 @@
 ---
 import Layout from "../../layouts/Layout.astro";
 import PageIntro from "../../components/PageIntro.astro";
-import { issue, source, type Lang } from "../../lib/links";
+import { source, type Lang } from "../../lib/links";
 
 interface Props {
   lang?: Lang;
@@ -12,134 +12,138 @@ const isVi = lang === "vi";
 const milestones = isVi
   ? [
       [
-        "C0–C2",
-        "Quản trị, chất lượng dữ liệu, chia tập & tiền xử lý",
+        "M0–M1",
+        "Hard Cutover v1 → v2 & Hợp đồng canonical-flow-v2-18",
         "Đã kiểm chứng thực nghiệm",
         "validated",
-        "Đã xác minh bộ dữ liệu 2.365.424 dòng, EDA, chia tập theo thời gian kèm purge gap và preprocessor train-only; đối chiếu tương đương chỉ mục giữa run RF cũ và bộ mới vẫn chưa xác minh.",
-        source("reports/splits/nf_unsw_nb15_v3_split_manifest.json"),
+        "Chuyển toàn bộ v1 (NF-UNSW-NB15-v3) vào historical/nf_unsw_nb15_v3/ (0 fallback); xác minh AIT-NDS-v2 (3,464,400 dòng + 942 loại trừ), split tách biệt kịch bản v2-scenario-group-purged-v1 và TrainOnlyPreprocessor(asinh_robust, floor 0.25).",
+        source("data/V2_SPLIT_MANIFEST.json"),
       ],
       [
-        "C3",
-        "Mô hình supervised (RF & XGBoost)",
+        "M2 (RQ1/RQ2)",
+        "4 mô hình E0, đa miền E1/E3b & phân loại 6 lớp",
         "Đã kiểm chứng thực nghiệm",
         "validated",
-        "Random Forest (rf-heldout-ea330b9, F1 0,999853) và XGBoost (xgb-baseline-1794755807, F1 0,999984) đã đánh giá trên cả Validation lẫn Held-out Test.",
-        source("reports/evaluation/error_analysis_report.md"),
+        "Đánh giá RF (F1=0.9950), XGBoost (0.9013), Autoencoder (0.5877), IF (0.5842) trên ait_test (N=988,805, RESEARCH_ONLY); E1 đa miền đạt CTU_Test F1=0.9564, Autoencoder_E3b giảm FPR xuống 13.79%, RF_multiclass đạt Macro-F1=0.7347; RQ2 ghi nhận h2_full_confirmed = false.",
+        source("reports/experiments/ml/model_comparison_report.json"),
       ],
       [
-        "C4",
-        "Mô hình unsupervised (IF & Autoencoder)",
+        "M3 (RQ3/RQ4)",
+        "Vector hành vi 16-D & Zero-day Holdout",
         "Đã kiểm chứng thực nghiệm",
         "validated",
-        "Isolation Forest (if-c4-20261115T055359Z, Test F1 0,5064, Unknown 0,8657) và Autoencoder (ae_fpr_constrained_20261115T163000Z, Val FPR 0,0500, Test F1 0,1361) đã xác minh.",
-        source("reports/evaluation/autoencoder/evaluation_report.md"),
+        "RQ3: 16-D BehavioralVector (canonical-behavioral-v2-16) đạt F1=0.5556 trên mô phỏng và F1=0.7192 (> IP 0.6919) trên UWF-ZeekData24; liên kết log AIT bị chặn (#85). RQ4: IF Recall=0.9091, AE Recall=0.2045 trên 44 flow zero-day (unsupervised_ge_0_75_both = false).",
+        source(
+          "reports/experiments/behavioral/rq3_session_correlation_experiment.json",
+        ),
       ],
       [
-        "C5–C6",
-        "Thống kê hành vi, rủi ro & timeline (Phạm vi M6)",
+        "M4 (RQ5/RQ6)",
+        "AES-256-GCM + DPAPI & Xoay khóa thích ứng",
+        "Đã kiểm chứng thực nghiệm",
+        "validated",
+        "RQ5: Xoay khóa ở Risk >= 85.0 giảm 87.5% cửa sổ lộ khóa (1,200.0s → 150.01s) và 85.0% blast radius (40 → 6) với ResponsePolicy dry_run = True (executed = false). RQ6: AES-256-GCM đạt 72,177.2 ops/s (256B, P95 13.3 µs); process_batch(32) đạt 386.37 flow/s.",
+        source("reports/experiments/crypto/rq5_rotation_experiment.json"),
+      ],
+      [
+        "M5",
+        "3 chế độ vận hành & Collector pure-Rust netflow-rs",
         "Đã triển khai / kiểm thử",
         "tested",
-        "Thu gọn từ tương quan auth/API sang thống kê metadata NetFlow (#28), chấm điểm ưu tiên tất định (#32) và timeline tất định (#24) kèm từ chối OOD.",
-        source("docs/ARCHITECTURE.md"),
+        "(1) Offline CSV (data/demo/demo_flows.csv, 200 flows, 4/4 REAL_MODELS, OOD=FITTED, 2x repeatability qua scripts/verify_clean_state_demo.py), (2) Dataset Replay (ait_test.csv.gz, batch 32, 399.44 flow/s), (3) Live Lab Monitoring (127.0.0.1 UDP NetFlow v9/IPFIX + telemetry/netflow-rs/ + LiveLogTailer).",
+        source("reports/demo/clean_state_demo_verification.json"),
       ],
       [
-        "C7",
-        "Bảo mật cục bộ & vòng đời khóa",
-        "Thu gọn / hoãn",
+        "M6.1–M6.5",
+        "Tích hợp Desktop v2.0.0, FastAPI 0.1.0 & Kiểm toán tài liệu",
+        "Đã triển khai / kiểm thử",
+        "tested",
+        "Tauri 2 + Svelte 5 Desktop 2.0.0, FastAPI 0.1.0 (33 OpenAPI paths / 35 operations), SQLite single-writer, 676 pytest + 41 Vitest + 11 desktop Rust + 6 netflow-rs Rust tests, cùng bộ luận văn/slide/QA bảo vệ v2.0.",
+        source("docs/audits/PR156_HEAD_AUDIT_2026-11-19.md"),
+      ],
+      [
+        "DEFERRED",
+        "Lab phần cứng vật lý (#137) & Bộ cài Windows NSIS + Clean VM (#148)",
+        "Đang hoãn (Deferred)",
         "progress",
-        "Đã triển khai bind 127.0.0.1, token phiên 256-bit, cổng SHA-256 và audit SQLite; xoay khóa AES-256-GCM trong OS keyring đang hoãn (#26).",
-        source("reports/api/API_CONTRACT.md"),
+        "Kiểm thử exporter router/switch vật lý (#137, real_device_tested = false) và đóng gói bộ cài Windows NSIS kèm kiểm thử E2E trên máy ảo Windows 10/11 sạch (#148) được giữ ở trạng thái DEFERRED.",
+        source("docs/WINDOWS_INSTALLATION.md"),
       ],
       [
-        "C8",
-        "Mô phỏng phản ứng thích ứng Dry-Run",
-        "Đã triển khai / kiểm thử",
-        "tested",
-        "Policy engine tất định và mô phỏng xoay khóa (#27, executed=false) khóa theo phân tích xác minh trên server, tích hợp Tab 4 + SQLite + JSON export; chặn firewall thật đang hoãn.",
-        source("docs/releases/v0.6.0.md"),
-      ],
-      [
-        "C9",
-        "FastAPI, SQLite, cổng tiếp nhận & Desktop UI",
-        "Đã triển khai / kiểm thử",
-        "tested",
-        "18 endpoint FastAPI, SQLite persistence, cổng OOD đa nguồn (#46) và Desktop App Tauri 2 + Svelte 5 (Windows NSIS v0.6.0) đã xác minh E2E 4 mô hình.",
-        source("reports/releases/v0.6.0_e2e_verification.json"),
-      ],
-      [
-        "C10–C11",
-        "Nghiên cứu cross-dataset & bàn giao cuối kỳ",
-        "Đang thực hiện",
+        "BLOCKED",
+        "Bộ dữ liệu UGR'16 (HTTP 403) & Phát hành nhị phân công khai (#154)",
+        "Bị chặn / Khóa quản trị",
         "progress",
-        "Đã ghi nhận kiểm định cross-dataset RF trên NF-CSE-CIC-IDS2018-v3 (Recall 0,0, FPR 0,3802); báo cáo học thuật, slide (#18–#20) và phát hành GitHub Release đang hoàn thiện.",
-        issue(25),
+        "Máy chủ UGR'16 trả về HTTP 403 (Portal en Mantenimiento); DISTRIBUTION_AUTHORIZATION.json giữ approved = false nên chưa phát hành binary công khai (#154).",
+        source("reports/governance/DISTRIBUTION_AUTHORIZATION.json"),
       ],
     ]
   : [
       [
-        "C0–C2",
-        "Governance, data quality, split & preprocessing",
+        "M0–M1",
+        "Hard Cutover v1 → v2 & canonical-flow-v2-18 contract",
         "Experimentally validated",
         "validated",
-        "Verified 2,365,424-row package, EDA, chronological split with purge gaps and train-only preprocessor; historical vs newer split index parity remains unverified.",
-        source("reports/splits/nf_unsw_nb15_v3_split_manifest.json"),
+        "Retired legacy v1 (NF-UNSW-NB15-v3) to historical/nf_unsw_nb15_v3/ (zero fallback); verified AIT-NDS-v2 (3,464,400 rows + 942 excluded), scenario-disjoint split v2-scenario-group-purged-v1 and TrainOnlyPreprocessor(asinh_robust, floor 0.25).",
+        source("data/V2_SPLIT_MANIFEST.json"),
       ],
       [
-        "C3",
-        "Supervised models (RF & XGBoost)",
+        "M2 (RQ1/RQ2)",
+        "4 E0 models, multi-domain E1/E3b & 6-class attribution",
         "Experimentally validated",
         "validated",
-        "Random Forest (rf-heldout-ea330b9, F1 0.999853) and XGBoost (xgb-baseline-1794755807, F1 0.999984) validated on both Validation and Held-out Test.",
-        source("reports/evaluation/error_analysis_report.md"),
+        "Evaluated RF (F1=0.9950), XGBoost (0.9013), Autoencoder (0.5877), IF (0.5842) on ait_test (N=988,805, RESEARCH_ONLY); multi-domain E1 reaches CTU_Test F1=0.9564, Autoencoder_E3b cuts FPR to 13.79%, RF_multiclass reaches Macro-F1=0.7347; RQ2 records h2_full_confirmed = false.",
+        source("reports/experiments/ml/model_comparison_report.json"),
       ],
       [
-        "C4",
-        "Unsupervised models (IF & Autoencoder)",
+        "M3 (RQ3/RQ4)",
+        "16-D BehavioralVector & Zero-day Holdout",
         "Experimentally validated",
         "validated",
-        "Isolation Forest (if-c4-20261115T055359Z, Test F1 0.5064, Unknown 0.8657) and Autoencoder (ae_fpr_constrained_20261115T163000Z, Val FPR 0.0500, Test F1 0.1361) verified.",
-        source("reports/evaluation/autoencoder/evaluation_report.md"),
+        "RQ3: 16-D BehavioralVector (canonical-behavioral-v2-16) reaches F1=0.5556 in simulation and F1=0.7192 (> IP 0.6919) on UWF-ZeekData24; AIT empirical log linkage is BLOCKED (#85). RQ4: IF Recall=0.9091, AE Recall=0.2045 on 44 zero-day flows (unsupervised_ge_0_75_both = false).",
+        source(
+          "reports/experiments/behavioral/rq3_session_correlation_experiment.json",
+        ),
       ],
       [
-        "C5–C6",
-        "Behavioral summary, risk & timeline (Scoped M6)",
+        "M4 (RQ5/RQ6)",
+        "AES-256-GCM + DPAPI & Adaptive Key Rotation",
+        "Experimentally validated",
+        "validated",
+        "RQ5: Adaptive key rotation at Risk >= 85.0 cuts exposure window by 87.5% (1,200.0s → 150.01s) and blast radius by 85.0% (40 → 6) with ResponsePolicy dry_run = True (executed = false). RQ6: AES-256-GCM reaches 72,177.2 ops/s (256B, P95 13.3 µs); process_batch(32) reaches 386.37 flow/s.",
+        source("reports/experiments/crypto/rq5_rotation_experiment.json"),
+      ],
+      [
+        "M5",
+        "3 operation modes & pure-Rust netflow-rs collector",
         "Implemented / tested",
         "tested",
-        "Reduced from full auth/API correlation to NetFlow metadata summaries (#28), deterministic priority scoring (#32) and deterministic timelines (#24) with OOD abstention.",
-        source("docs/ARCHITECTURE.md"),
+        "(1) Offline CSV (data/demo/demo_flows.csv, 200 flows, 4/4 REAL_MODELS, OOD=FITTED, 2x repeatability via scripts/verify_clean_state_demo.py), (2) Dataset Replay (ait_test.csv.gz, batch 32, 399.44 flow/s), (3) Live Lab Monitoring (127.0.0.1 UDP NetFlow v9/IPFIX + telemetry/netflow-rs/ + LiveLogTailer).",
+        source("reports/demo/clean_state_demo_verification.json"),
       ],
       [
-        "C7",
-        "Security posture & key lifecycle",
-        "Scoped / deferred",
+        "M6.1–M6.5",
+        "Desktop v2.0.0 integration, FastAPI 0.1.0 & thesis audit",
+        "Implemented / tested",
+        "tested",
+        "Tauri 2 + Svelte 5 Desktop 2.0.0, FastAPI 0.1.0 (33 OpenAPI paths / 35 operations), single-writer SQLite, 676 pytest + 41 Vitest + 11 desktop Rust + 6 netflow-rs Rust tests, plus v2.0 thesis report, slides and defense Q&A.",
+        source("docs/audits/PR156_HEAD_AUDIT_2026-11-19.md"),
+      ],
+      [
+        "DEFERRED",
+        "Physical router/switch lab (#137) & Windows NSIS + Clean VM (#148)",
+        "Deferred",
         "progress",
-        "Loopback 127.0.0.1 binding, 256-bit session token, SHA-256 artifact gate and SQLite audit metadata implemented; production AES-256-GCM OS keyring rotation deferred (#26).",
-        source("reports/api/API_CONTRACT.md"),
+        "Physical router/switch NetFlow exporter validation (#137, real_device_tested = false) and Windows NSIS installer packaging + clean Windows 10/11 VM E2E verification (#148) remain explicitly DEFERRED.",
+        source("docs/WINDOWS_INSTALLATION.md"),
       ],
       [
-        "C8",
-        "Adaptive security response dry-run",
-        "Implemented / tested",
-        "tested",
-        "Deterministic policy engine & key-rotation dry-run (#27, executed=false) gated on server-verified analysis with Tab 4 + SQLite + JSON export; live firewall actions deferred.",
-        source("docs/releases/v0.6.0.md"),
-      ],
-      [
-        "C9",
-        "FastAPI, SQLite, ingestion gate & Desktop UI",
-        "Implemented / tested",
-        "tested",
-        "18 FastAPI endpoints, SQLite persistence, multi-source OOD gate (#46) and Tauri 2 + Svelte 5 desktop app (v0.6.0 Windows NSIS) verified with 4-model E2E attestation.",
-        source("reports/releases/v0.6.0_e2e_verification.json"),
-      ],
-      [
-        "C10–C11",
-        "Cross-dataset research & final delivery",
-        "In progress",
+        "BLOCKED",
+        "UGR'16 corpus (HTTP 403) & Public Binary Release (#154)",
+        "Blocked / Governance-locked",
         "progress",
-        "Cross-dataset RF evaluation on NF-CSE-CIC-IDS2018-v3 documented (Recall 0.0, FPR 0.3802); final academic report, slides (#18–#20) and GitHub Release publication remaining.",
-        issue(25),
+        "Upstream UGR'16 remains HTTP 403 (Portal en Mantenimiento); DISTRIBUTION_AUTHORIZATION.json keeps approved = false, blocking public binary release (#154).",
+        source("reports/governance/DISTRIBUTION_AUTHORIZATION.json"),
       ],
     ];
 ---
@@ -147,21 +151,21 @@ const milestones = isVi
 <Layout
   title={isVi ? "Lộ trình dự án" : "Roadmap"}
   description={isVi
-    ? "Trạng thái các checkpoint M0–M7 dựa trên bằng chứng và bản phát hành v0.6.0."
-    : "Evidence-driven checkpoint status for M0–M7 and consolidated v0.6.0 delivery."}
+    ? "Trạng thái các cột mốc M0–M6.7 của NetFlow Sentinel v2.0.0 và danh mục DEFERRED / BLOCKED."
+    : "Evidence-driven milestone status for NetFlow Sentinel v2.0.0 (M0–M6.7) and DEFERRED / BLOCKED items."}
   section="Roadmap"
   lang={lang}
   routePath="roadmap/"
 >
   <PageIntro
-    eyebrow={isVi ? "07 / Lộ trình" : "07 / Roadmap"}
+    eyebrow={isVi ? "07 / Lộ trình v2.0" : "07 / Roadmap v2.0"}
     current={isVi ? "Lộ trình" : "Roadmap"}
     title={isVi
-      ? "Các cột mốc thực tế, không tô hồng."
-      : "Milestones, without the gloss."}
+      ? "Các cột mốc v2.0 thực tế, không tô hồng."
+      : "v2.0 milestones, without the gloss."}
     description={isVi
-      ? "Tên checkpoint là mục tiêu nghiên cứu, không tự đồng nghĩa đã hoàn thành. Trạng thái dưới đây phân tách rõ phần đã kiểm chứng thực nghiệm, phần triển khai thu gọn và phần đang hoãn trên main."
-      : "A checkpoint name is a research target, not proof of completion. Statuses below distinguish experimentally validated models from scoped or deferred system layers on main."}
+      ? "Phân loại mức độ sẵn sàng hiện tại: Functional Prototype / Academic & Controlled Lab Pilot (RESEARCH_ONLY, approved = false). Bảng dưới đây tách bạch rõ các kết quả RQ1–RQ6 đã kiểm chứng với 4 hạng mục DEFERRED / BLOCKED."
+      : "Current readiness classification: Functional Prototype / Academic & Controlled Lab Pilot (RESEARCH_ONLY, approved = false). The timeline below separates experimentally validated RQ1–RQ6 milestones from the four DEFERRED / BLOCKED items."}
     lang={lang}
   />
   <section class="section">
@@ -170,8 +174,8 @@ const milestones = isVi
         <strong>{isVi ? "Quy ước trạng thái:" : "Status key:"}</strong>{" "}
         {
           isVi
-            ? "Planned = mới thiết kế; In progress / Scoped = triển khai một phần hoặc đang hoàn thiện; Implemented = đã có mã trên main; Tested = có kiểm thử tự động; Experimentally validated = đã có lượt chạy dữ liệu thật kèm provenance."
-            : "Planned = design only; In progress = partial implementation or open PR; Implemented = code on main; Tested = automated behavior checks; Experimentally validated = a recorded real-data run. A checkpoint can contain work at several levels."
+            ? "Experimentally validated = đã có lượt chạy dữ liệu thật kèm manifest SHA-256; Implemented / tested = đã có mã nguồn và vượt qua bộ test tự động (676 pytest, 41 Vitest, 17 Rust); Deferred / Blocked = hạng mục hoãn hoặc bị chặn đã được ghi nhận minh bạch trong kiểm toán phát hành."
+            : "Experimentally validated = recorded real-data run with SHA-256 manifest; Implemented / tested = code and automated tests passing (676 pytest, 41 Vitest, 17 Rust); Deferred / Blocked = explicitly tracked non-blocking or governance-locked items."
         }
       </div><ol class="timeline">
         {
@@ -200,19 +204,14 @@ const milestones = isVi
           ))
         }
       </ol><p class="source-line">
-        {isVi ? "Phạm vi chuẩn: " : "Canonical scope: "}<a
-          href={source("docs/ROADMAP_FULL_SYSTEM.md")}
-          >{isVi ? "lộ trình toàn hệ thống ↗" : "full-system roadmap ↗"}</a
-        > · <a href={source("docs/IMPLEMENTATION_CHECKPOINTS.md")}
-          >{
-            isVi ? "sổ checkpoint triển khai ↗" : "implementation checkpoints ↗"
-          }</a
-        >.{" "}
-        {
-          isVi
-            ? "Việc đóng Issue không thay thế kết quả thực nghiệm."
-            : "Issue closure alone does not establish an experiment result."
-        }
+        {isVi ? "Hồ sơ kiểm toán chuẩn: " : "Canonical audit record: "}<a
+          href={source("docs/audits/V2_RELEASE_READINESS.md")}
+          >{isVi ? "V2_RELEASE_READINESS.md ↗" : "V2_RELEASE_READINESS.md ↗"}</a
+        > · <a href={source("reports/audits/V2_FINAL_AUDIT.md")}
+          >{isVi ? "V2_FINAL_AUDIT.md ↗" : "V2_FINAL_AUDIT.md ↗"}</a
+        > · <a href={source("docs/thesis/DEFENSE_QA_V2.md")}
+          >{isVi ? "DEFENSE_QA_V2.md ↗" : "DEFENSE_QA_V2.md ↗"}</a
+        >.
       </p>
     </div>
   </section>

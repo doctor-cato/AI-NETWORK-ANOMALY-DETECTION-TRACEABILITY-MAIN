@@ -2,7 +2,7 @@ export type Lang = "vi" | "en";
 
 export const repository =
   "https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN";
-export const evidenceCommit = "d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48";
+export const evidenceCommit = "36f63081bf30de98b1dc1058a780ae79ae2cf5b3";
 export const source = (path: string) =>
   `${repository}/blob/${evidenceCommit}/${path}`;
 export const issue = (number: number) => `${repository}/issues/${number}`;

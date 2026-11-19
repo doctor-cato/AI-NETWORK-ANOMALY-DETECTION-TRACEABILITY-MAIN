@@ -55,14 +55,14 @@ try {
 
   assert.equal(await page.locator("html").getAttribute("lang"), "vi");
   await page.goto(url("dataset/"), { waitUntil: "networkidle" });
-  assert.match(await page.locator("h1").innerText(), /NF-UNSW-NB15-v3/);
+  assert.match(await page.locator("h1").innerText(), /AIT-NDS-v2/);
   await page.reload({ waitUntil: "networkidle" });
-  assert.ok(await page.getByText("2,365,424 dòng").count());
+  assert.ok(await page.getByText("3,464,400 dòng").count());
 
   await page.locator('.lang-switch a[lang="en"]').click();
   await page.waitForLoadState("networkidle");
   assert.equal(await page.locator("html").getAttribute("lang"), "en");
-  assert.ok(await page.getByText("2,365,424 rows").count());
+  assert.ok(await page.getByText("3,464,400 rows").count());
 
   await page.goto(url("docs/"), { waitUntil: "networkidle" });
   await page.locator("#docs-search").fill("split");
@@ -73,6 +73,13 @@ try {
   await page.goto(url("docs/installation/"), { waitUntil: "networkidle" });
   assert.ok(await page.locator(".toc").isVisible());
   await page.locator(".copy-code").first().click();
+  await page.waitForFunction(
+    () =>
+      /Đã chép|Không khả dụng|Copied|Unavailable/.test(
+        document.querySelector(".copy-code")?.textContent ?? "",
+      ),
+    { timeout: 2000 },
+  );
   assert.match(
     await page.locator(".copy-code").first().innerText(),
     /Đã chép|Không khả dụng|Copied|Unavailable/,

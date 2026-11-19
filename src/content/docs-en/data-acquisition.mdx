@@ -1,21 +1,21 @@
 ---
 title: Dataset acquisition
-description: Official UQ source, checksum verification, demo slicing and external provenance.
-order: 4
+description: Hard cutover from v1 NF-UNSW-NB15-v3 to v2 multi-source provenance (AIT-NDS-v2, CTU-SME-11, UWF-ZeekData24) and legal boundaries.
+order: 5
 ---
 
-## Source
+## Hard cutover from v1 to v2
 
-NF-UNSW-NB15-v3 is published by the University of Queensland at [DOI 10.48610/6E0EDA1](https://doi.org/10.48610/6E0EDA1). The repository records the UQRDM package and project-computed SHA-256 (`4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5`) in the [provenance report](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md).
+Per [ADR-dataset-hard-cutover-v2](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/adr/ADR-dataset-hard-cutover-v2.md) and the [v1-to-v2 migration guide](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MIGRATION_V1_TO_V2.md), NetFlow Sentinel v2.0 performs a hard cutover away from the v1 `NF-UNSW-NB15-v3` dataset (`UQ eSpace 454104`, DOI `10.48610/6E0EDA1`). All v1 artifacts are archived under `historical/` with **no runtime fallback to v1** (`49.98%` Val / `53.21%` Test duplicate feature vectors, `MIN_TTL` shortcut `99.98%`, and `UQ 454104` non-commercial restriction).
 
-## Acquisition & Validation demo commands
+## Active v2 multi-source datasets & legal boundaries
 
-```powershell
-python scripts/fetch_nf_unsw_nb15_v3.py
-python scripts/dataset_manifest.py verify
-python scripts/prepare_demo_dataset.py --output-dir data/demo --sample-rows 200 --seed 42
-```
+Provenance and checksums are tracked in [data/AIT_DATASETS_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/AIT_DATASETS_MANIFEST.json), [data/EXTERNAL_DATASETS_PROVENANCE.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/EXTERNAL_DATASETS_PROVENANCE.json) and [reports/datasets/v2_multi_source_profile.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/datasets/v2_multi_source_profile.json):
 
-The fetcher resolves a short-lived official download URL, verifies archive and payload integrity, and keeps raw data outside Git. `prepare_demo_dataset.py` builds a 200-row Validation-only demo slice (`demo_flows.csv` without labels, `demo_labels.csv`, and `demo_manifest.json` with 0 Train/Test overlap). External dataset provenance for `NF-CSE-CIC-IDS2018-v3` (100,000-row sample) is recorded separately in [external datasets provenance](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/data/EXTERNAL_DATASETS_PROVENANCE.json).
+- **`AIT-NDS-v2` (Primary Train / Validation / Test)**: Published on Zenodo (`DOI 10.5281/zenodo.13168643`) under **`CC BY 4.0`**. Contains **`3,464,400`** labeled canonical flows across 8 multi-host cyber-range scenarios (`fox`, `harrison`, `russellmitchell`, `santos`, `shaw`, `wardbeck`, `wheeler`, `wilson`) plus **`942`** unmapped flows excluded from supervised labels.
+- **`CTU-SME-11` (External Cross-Network Domain Shift & `E1` Domain Adaptation)**: Published on Zenodo (`DOI 10.5281/zenodo.7958258`) under **`CC BY 4.0`**. Contains **`251,219`** canonical flows (`33` experiments) used for zero-shot cross-source evaluation and `E1` multi-domain adaptation.
+- **`UWF-ZeekData24` (External Evaluation-Only)**: Locked at **`evaluation_only = true`** (`95,871` rows; `MITRE ATT&CK` telemetry) due to incomplete license metadata; never used for model training or redistribution.
+- **`AIT-LDS-v2.1` (Isolated Research Metadata)**: Published on Zenodo (`DOI 10.5281/zenodo.19483937`) under **`CC BY-NC-SA 4.0`**. Strictly isolated in `.gitignored` storage (`data/raw/ait_lds_v2_1/`) for offline timestamp alignment and linkage auditing only; never merged into `CC BY 4.0` or `Apache-2.0` artifacts.
+- **`UGR'16` (Blocked)**: Remains **`BLOCKED`** due to upstream **`HTTP 403`** server errors and is documented in [reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_UGR16_ALTERNATIVES_REVIEW.md).
 
-Do not commit downloaded CSVs. The dataset's non-commercial reuse and attribution terms are separate from the repository's Apache-2.0 source license.
+Raw dataset files are never committed to Git. Attribution obligations are recorded in [NOTICE](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/NOTICE) and [THIRD_PARTY_NOTICES.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/THIRD_PARTY_NOTICES.md).

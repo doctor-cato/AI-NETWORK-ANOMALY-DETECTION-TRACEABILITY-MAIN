@@ -1,23 +1,50 @@
 ---
 title: Tổng quan dự án
-description: Phạm vi nghiên cứu, năng lực v0.6.0 hiện tại và điểm bắt đầu.
+description: Phạm vi nghiên cứu NetFlow Sentinel v2.0, 3 chế độ vận hành, kiến trúc 7 module và ranh giới pháp lý.
 order: 1
 ---
 
-## Mục tiêu
+## Mục tiêu & phạm vi NetFlow Sentinel v2.0
 
-Repository này nghiên cứu bài toán phát hiện bất thường trên lưu lượng mạng (NetFlow) gắn với kiến trúc truy vết có bằng chứng. Cổng thông tin công khai này là website tài liệu tĩnh; nó không chạy mô hình phát hiện hay giám sát lưu lượng trực tiếp.
+**NetFlow Sentinel v2.0** là hệ thống nghiên cứu phát hiện bất thường lưu lượng mạng (NIDS) kết hợp phân tích hành vi có trạng thái, truy vết sự cố tất định và mô phỏng phản ứng an ninh mật mã học. Cổng thông tin công khai này là website tài liệu tĩnh; nó không chạy mô hình phát hiện hay thu thập lưu lượng trực tiếp.
 
-Nhánh `main` hiện tại bao gồm hợp đồng dữ liệu NF-UNSW-NB15-v3, báo cáo chất lượng và EDA, mã chia tập theo thời gian và tiền xử lý chỉ trên Train, **bằng chứng Validation và Held-out Test trên dữ liệu thật cho cả bốn mô hình** (Random Forest, XGBoost, Isolation Forest và Autoencoder), kiểm toán tổng quát hóa cross-dataset trên `NF-CSE-CIC-IDS2018-v3`, cổng kiểm chứng provenance và từ chối OOD, dịch vụ FastAPI + SQLite chạy cục bộ và **ứng dụng Desktop Rust / Tauri 2 + Svelte 5 (`v0.6.0`)**. Các thao tác chặn firewall thật trên hệ điều hành và lưu khóa AES-256-GCM trong OS keyring vẫn ở trạng thái hoãn (`DEFERRED`).
+Phiên bản v2.0 thực hiện chuyển đổi toàn diện (hard cutover) từ bộ dữ liệu đơn nguồn v1 (`NF-UNSW-NB15-v3`, đã lưu trữ tại `historical/`) sang hợp đồng đa nguồn **18 đặc trưng chuẩn `canonical-flow-v2-18`** trên:
+
+- **`AIT-NDS-v2`** (`CC BY 4.0`, `3,464,400` dòng gán nhãn trên 8 kịch bản enterprise testbed, chia tập theo kịch bản không chồng lấn tại [V2_SPLIT_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/V2_SPLIT_MANIFEST.json)).
+- **`CTU-SME-11`** (`CC BY 4.0`, `251,219` dòng kiểm định độc lập liên miền và thực nghiệm multi-domain `E1`).
+- **`UWF-ZeekData24`** (`CC BY 4.0`, `95,871` dòng chỉ dùng đánh giá ngoại vi `evaluation_only = true`).
+
+## Ba chế độ vận hành & kiến trúc 7 module
+
+Hệ thống hỗ trợ 3 chế độ vận hành rõ ràng:
+
+1. **Phân tích CSV Ngoại tuyến (Offline CSV Analysis)**: Kiểm định lược đồ `canonical-flow-v2-18`, cổng từ chối OOD hai tầng và suy luận theo lô có kiểm chứng SHA-256.
+2. **Phát lại Tập dữ liệu (Dataset Replay)**: Phát lại có kiểm soát tốc độ từ dữ liệu chuẩn để kiểm thử luồng xử lý và giao diện điều hành (`399.44 flow/s` ở cấu hình benchmark).
+3. **Giám sát Lab Trực tiếp (Live Lab Monitoring)**: Bộ thu thập UDP NetFlow v9 / IPFIX viết bằng Rust thuần ([telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs)) ghép nối với `LiveStreamOrchestrator` xử lý theo lô `process_batch(32)` (`386.37 flow/s`).
+
+Kiến trúc Hybrid Desktop-Sidecar được chia thành **7 module** độc lập:
+
+- **Module 1**: Thu thập & tiếp nhận đa nguồn (NetFlow v9/IPFIX Rust collector, Zeek/CSV adapters).
+- **Module 2**: Tiền xử lý chỉ trên tập huấn luyện (`TrainOnlyPreprocessor(asinh_robust)`) và trích xuất `canonical-flow-v2-18`.
+- **Module 3**: Cổng OOD hai tầng (`OODValidator` + `OODRejectionGate`) và suy luận ML (`Random Forest`, `XGBoost`, `Isolation Forest`, `Autoencoder` + phân loại đa lớp Stage-2).
+- **Module 4**: Phân tích hành vi có trạng thái (`BehavioralVector` 16 chiều trên 3 cửa sổ trượt `10s / 60s / 300s`).
+- **Module 5**: Tương quan sự cố, chấm điểm ưu tiên rủi ro tất định (`RiskScoreResult`) và dựng chuỗi thời gian.
+- **Module 6**: Bảo vệ bằng chứng `AES-256-GCM`, `NonceRegistry`, Windows `DPAPI` keystore, xoay vòng khóa thích ứng và chính sách phản ứng khóa cứng `dry_run = True` (`executed = false`).
+- **Module 7**: Ứng dụng Desktop **Tauri 2 (`2.0.0`) + Svelte 5** kết nối **FastAPI (`0.1.0`) + SQLite** qua loopback `127.0.0.1` với 7 bảng điều khiển chuyên biệt.
+
+## Quy ước mức độ bằng chứng & ranh giới pháp lý
+
+- **Implemented**: Mã nguồn đã triển khai trong repository.
+- **Tested**: Hành vi đã được xác minh bằng kiểm thử tự động (`676` pytest, `41` Vitest, `17` Rust tests).
+- **Experimentally Validated**: Có báo cáo thực nghiệm kèm mã băm SHA-256, provenance dữ liệu và metric đầy đủ.
+- **Deferred / Blocked**: Hạng mục chủ đích hoãn hoặc bị chặn bởi điều kiện khách quan — ví dụ: đóng gói bộ cài NSIS và kiểm thử máy ảo Windows 10/11 sạch (`#148` — **DEFERRED**), thu thập từ thiết bị mạng vật lý (`#137` — `real_device_tested = false`), bộ dữ liệu `UGR'16` (**BLOCKED** do máy chủ upstream trả về `HTTP 403`).
+
+Toàn bộ 4 mô hình baseline `E0` hiện giữ phân hạng **`RESEARCH_ONLY`** (`cross_source_validated = false`) do hiện tượng dịch chuyển miền khi đánh giá zero-shot liên nguồn. Tệp [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) khóa ở trạng thái `approved = false`. Bộ log `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) được cách ly hoàn toàn trong thư mục `.gitignored`, không đóng gói và không nạp vào pipeline huấn luyện.
 
 ## Điểm bắt đầu
 
-- [README và tóm tắt dự án hiện tại](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/README.md)
-- [Ghi chú phát hành v0.6.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/releases/v0.6.0.md)
-- [Tài liệu phạm vi đề tài (Project charter)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/PROJECT_CHARTER.md)
-- [Sổ checkpoint triển khai](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/IMPLEMENTATION_CHECKPOINTS.md)
-- [Ma trận truy vết (Traceability matrix)](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/d1d16e1cafa79a8f515efa4b0a0e60a50a3b5e48/docs/TRACEABILITY_MATRIX.md)
-
-## Quy ước mức độ bằng chứng
-
-**Implemented** nghĩa là mã nguồn đã có trên `main`; **Tested** nghĩa là hành vi đã có kiểm thử tự động; **Experimentally validated** yêu cầu lượt chạy trên dữ liệu thật có provenance và metric đầy đủ; **Deferred** nghĩa là tính năng vận hành (như tự động hóa firewall hay xoay khóa OS keyring) chủ đích không thực thi ở runtime. Một fixture tổng hợp hay Issue đã đóng không tự chứng minh mức xác thực thực nghiệm.
+- [README tổng quan dự án](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/README.md)
+- [Kiến trúc hệ thống v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/ARCHITECTURE.md)
+- [Hướng dẫn sử dụng NetFlow Sentinel v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/USER_GUIDE_V2.md)
+- [Báo cáo nghiên cứu tổng hợp v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/RESEARCH_REPORT_V2.md)
+- [Báo cáo kiểm toán tổng kết v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md)
