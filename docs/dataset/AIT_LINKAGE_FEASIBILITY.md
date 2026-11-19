@@ -1,8 +1,8 @@
 # AIT Cross-Source Linkage Feasibility Report
 
-- **Issue:** `#85` — **`OPEN (2/3 AC)`** *(provenance, schema/UID audit, and heuristic constraints completed; empirical row-level cross-version/cross-source UID linkage is not possible without direct flow identifiers and full `AIT-LDS-v2.0` PCAPs)*
+- **Issue:** `#85` — **`3/3 AC VERIFIED LOCALLY (Tier-2 Empirical Alignment Executed; Tier-1 Direct UID = FALSE)`** *(provenance, schema/UID audit, RQ3 honest boundary, and empirical `(ip, ±3s)` timestamp/timezone alignment on verified UTC-synchronized scenarios `fox` & `russellmitchell` completed; row-level 1-to-1 UID linkage remains impossible without direct flow identifiers and full `AIT-LDS-v2.0` PCAPs)*
 - **Datasets Audited:** `AIT-NDS-v2` (`10.5281/zenodo.13168643`), `AIT-LDS-v2.0` (`10.5281/zenodo.5789064`), `AIT-LDS-v2.1` (`10.5281/zenodo.19483937`), and `AIT-ADS` (`10.5281/zenodo.8263181`)
-- **Primary Evidence Sources:** `data/AIT_DATASETS_MANIFEST.json`, `data/EXTERNAL_DATASETS_PROVENANCE.json`, `reports/datasets/v2_multi_source_profile.json`, Zenodo REST API records (`13168643`, `5789064`, `19483937`, `8263181`), and local raw archive inspection (`fox`, `russellmitchell`, `shaw`, and all 8 `*_netflows.zip` scenarios)
+- **Primary Evidence Sources:** `data/AIT_DATASETS_MANIFEST.json`, `data/EXTERNAL_DATASETS_PROVENANCE.json`, `reports/datasets/v2_multi_source_profile.json`, `reports/datasets/ait_timestamp_alignment_report.json` (`scripts/verify_ait_timestamp_alignment.py`), Zenodo REST API records (`13168643`, `5789064`, `19483937`, `8263181`), and local raw archive inspection (`fox`, `russellmitchell`, `shaw`, and all 8 `*_netflows.zip` scenarios)
 
 ---
 
@@ -70,6 +70,37 @@
   2. **Multi-probe capture duplication across NAT:** `README.md` and `2_label_logs.ipynb` merge Tstat outputs across all host probes (`glob("./*_logs/log*/*.out/...")`). Consequently, the same connection appears twice with NAT-translated source IPs — e.g., `fox` `reverse_shell` (`2022-01-18T13:13:52.825Z..833Z`, `51612 -> 51898`) appears in `fox/tcp_complete.csv` both as `10.35.35.206 (intranet_server) -> 192.168.130.77 (attacker_0)` and `192.168.128.4 (inet-firewall) -> 192.168.130.77 (attacker_0)`.
   3. **Filtered management subnet:** `10.9.0.x` management traffic (e.g., `10.9.0.18` in `fox`) was dropped during `2_label_logs.ipynb` preprocessing.
 
+### 4.3 Quantitative Timestamp, Timezone & `(ip, ±3s)` Alignment Trial (`reports/datasets/ait_timestamp_alignment_report.json`)
+
+Executed via `.venv\Scripts\python.exe scripts/verify_ait_timestamp_alignment.py`, comparing raw `AIT-NDS-v2` Tstat CSVs (`data/raw/ait_nds_v2/{fox,russellmitchell}_netflows.zip`, verified `100%` row-count and timestamp-bound parity against `data/processed/v2/ait_train.csv.gz` and `data/processed/v2/ait_val.csv.gz`) against `AIT-LDS-v2.1` (`data/raw/ait_lds_v2_1/{fox,russellmitchell}_no-pcaps.zip` across 9 log streams: `auth`, `dns`, `http_access`, `audit`, `suricata_fast`, `suricata_eve_sample`, `openvpn`, `dnsteal`, `attacks`):
+
+| Metric / Dimension | `fox` Scenario | `russellmitchell` Scenario | Cross-Scenario / Verdict |
+|---|---|---|---|
+| **`AIT-NDS-v2` Total Flows & Parity** | `351,908` flows (`tcp_complete`: `184,521`; `tcp_nocomplete`: `48,296`; `udp_complete`: `119,091`; matches `ait_train.csv.gz`) | `377,704` flows (`tcp_complete`: `123,332`; `tcp_nocomplete`: `154,877`; `udp_complete`: `99,495`; matches `ait_val.csv.gz`) | `100%` raw-to-processed v2 parity (`VERIFIED`) |
+| **`AIT-NDS-v2` UTC Window & Duration** | `2022-01-15T00:00:00.869370+00:00` .. `2022-01-19T23:59:59.055075+00:00` (`431,998.185704` s / `4.999979` days) | `2022-01-21T00:00:02.274306+00:00` .. `2022-01-24T23:59:57.389599+00:00` (`345,595.115293` s / `3.999943` days) | Inter-scenario gap: `86,403.219231` s (`1.000037` days, `scenarios_temporally_disjoint: true`) |
+| **`AIT-LDS-v2.1` Parsed Log Events** | `1,188,593` events (`1,103,196` in NetFlow window; `85,397` in pre/post simulation tails) | `694,380` events (`637,875` in NetFlow window; `56,505` in pre/post simulation tails) | `1,882,973` total parsed log events audited |
+| **`AIT-LDS-v2.1` UTC Window & Duration** | `2022-01-14T07:54:46+00:00` .. `2022-01-20T07:15:10+00:00` (`516,024.0` s / `5.972500` days; lead `57,914.87` s, tail `26,110.94` s) | `2022-01-20T11:12:22+00:00` .. `2022-01-25T07:02:47+00:00` (`417,025.0` s / `4.826678` days; lead `46,060.27` s, tail `25,369.61` s) | Same 2022 testbed run (`v2.0` = `v2.1` capture epoch; `date_gap_seconds: 0.0`) |
+| **Clock & Timezone Offset** | `UTC (+00:00)` (`30/30` hosts in `servers.yaml` + `attacker.yaml`) | `UTC (+00:00)` (`22/22` hosts in `servers.yaml` + `attacker.yaml`) | Uniform `UTC (+00:00)` across both sources |
+| **`time_window_overlap_seconds`** | **`431,998.185705` s** (`4.999979` days, `100.0%` of `AIT-NDS-v2` window) | **`345,595.115293` s** (`3.999943` days, `100.0%` of `AIT-NDS-v2` window) | `windows_overlap: true` (`nds_window_coverage_ratio: 1.0`) |
+| **Configured Host IP Intersection** | **`32 / 32` (`100.0%`)** configured host/attacker IPv4s appear in `AIT-NDS-v2` | **`24 / 24` (`100.0%`)** configured host/attacker IPv4s appear in `AIT-NDS-v2` | `100.0%` testbed host IPv4 coverage |
+| **Observed Event IPv4 Intersection** | **`3,162 / 6,707` (`47.14%`)** observed log IPv4s intersect `11,370` `AIT-NDS-v2` IPv4s | **`2,108 / 4,940` (`42.67%`)** observed log IPv4s intersect `34,882` `AIT-NDS-v2` IPv4s | Non-intersecting log IPs are uncontacted DNS A-record replies, pre-window provisioning, or filtered `10.9.0.x` management IPs |
+| **`(ip, ±3s)` Matched Events ($\ge 1$ Flow)** | **`798,475 / 1,188,593` (`67.18%` all; `72.38%` in-window)** | **`354,011 / 694,380` (`50.98%` all; `55.50%` in-window)** | High coarse temporal+IP co-occurrence (`tier2_heuristic_ip_pm3s_feasible: true`) |
+| **`(ip, ±3s)` Unique `1-to-1` vs Ambiguous (`>1` Flow)** | `96,514` unique `1-to-1` (`12.09%`) vs **`701,961` ambiguous (`87.91%` ambiguity rate; mean `29.09` candidate flows/event, max `5,004`)** | `96,054` unique `1-to-1` (`27.13%`) vs **`257,957` ambiguous (`72.87%` ambiguity rate; mean `16.52` candidate flows/event, max `10,528`)** | **`tier2_row_level_disambiguation_possible: false`** (bursty HTTP/DNS/scan traffic + multi-probe NAT duplication yield 73–88% multi-flow ambiguity) |
+
+**Per-Log-Family `(ip, ±3s)` Alignment Breakdown:**
+
+| Log Family | `fox` Parsed Events | `fox` Matched ($\ge 1$ Flow) | `fox` Ambiguity (`>1` Flow) | `fox` Mean Candidates | `russellmitchell` Parsed Events | `russellmitchell` Matched ($\ge 1$ Flow) | `russellmitchell` Ambiguity (`>1` Flow) | `russellmitchell` Mean Candidates |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `http_access` (`apache2`) | `522,221` | `515,311` (`98.68%`) | `503,930` (`97.79%`) | `36.09` | `75,837` | `71,042` (`93.68%`) | `63,146` (`88.89%`) | `11.32` |
+| `suricata_fast` (`fast.log`) | `13,510` | `11,071` (`81.95%`, `99.88%` in-win) | `9,831` (`88.80%`) | `35.30` | `10,457` | `9,167` (`87.66%`, `99.79%` in-win) | `8,103` (`88.39%`) | `41.66` |
+| `dnsteal` (`dnsteal.log`) | `18,176` | `14,742` (`81.11%`, `99.97%` in-win) | `209` (`1.42%`) | `1.02` | `20,054` | `15,810` (`78.84%`, `89.28%` in-win) | `123` (`0.78%`) | `1.04` |
+| `audit` (`audit.log`) | `24,082` | `12,566` (`52.18%`) | `11,875` (`94.50%`) | `11.36` | `18,740` | `9,376` (`50.03%`) | `8,733` (`93.14%`) | `7.30` |
+| `dns` (`dnsmasq.log`) | `576,457` | `240,996` (`41.81%`, `46.94%` in-win) | `172,570` (`71.61%`) | `16.66` | `540,882` | `244,460` (`45.20%`, `48.55%` in-win) | `174,009` (`71.18%`) | `18.33` |
+| `auth` (`auth.log*`) | `10,808` | `1,781` (`16.48%`, `21.40%` in-win) | `1,606` (`90.17%`) | `29.53` | `6,818` | `1,315` (`19.29%`, `24.69%` in-win) | `1,167` (`88.75%`) | `58.81` |
+| `openvpn` (`openvpn.log`) | `7,299` | `1,085` (`14.87%`) | `1,064` (`98.06%`) | `2.01` | `5,537` | `1,841` (`33.25%`) | `1,736` (`94.30%`) | `1.96` |
+| `attacks` (`attacks.log`) | `40` | `7` (`17.50%`) | `5` (`71.43%`) | `580.57` | `55` | `25` (`45.45%`) | `6` (`24.00%`) | `284.96` |
+| `suricata_eve_sample` (`8 x 2,000`) | `16,000` | `916` (`5.73%`, `45.80%` in-win) | `871` (`95.09%`) | `8.02` | `16,000` | `975` (`6.09%`, `48.75%` in-win) | `934` (`95.79%`) | `8.60` |
+
 ---
 
 ## 5. Root Cause of `data exfiltration` / `dnsteal` Window Discrepancy vs `foothold` / `wpscan`
@@ -106,4 +137,4 @@
 1. **No Synthetic Foreign Keys:** Never fabricate a synthetic `flow_id`, `uid`, or `conn_id` to join `AIT-NDS-v2` rows to `AIT-LDS-v2.1` logs or `AIT-ADS` alerts.
 2. **Strict Heuristic Framing:** Trace Engine and Behavioral Vector may perform Tier-2 correlation **only** via `(scenario, normalized_ip_entity, utc_epoch_window)` and must explicitly label such correlations as heuristic co-occurrence — **never** as ground-truth flow-to-log identity.
 3. **Explicit Caveat Emission:** Any cross-source evaluation using `AIT-NDS-v2` + `AIT-LDS-v2.1` + `AIT-ADS` must surface (a) `AIT-LDS-v2.0` vs `v2.1` `no-pcaps` provenance boundary, (b) `CC BY-NC-SA 4.0` vs `CC BY 4.0` licensing split, (c) multi-probe NAT duplication and VPN IP aliasing, and (d) the `2_label_logs.ipynb` `data exfiltration` catch-all vs `AIT-ADS` post-`service_stop` `dnsteal` window mismatch.
-4. **Issue `#85` Gate:** Issue `#85` stays **`OPEN (2/3 AC)`** until full `AIT-LDS-v2.0` PCAP verification or a dedicated campaign dataset with verified native flow/session UIDs is acquired.
+4. **Issue `#85` Gate & Scientific Boundary:** Empirical `(ip, ±3s)` log-to-flow alignment on verified UTC-synchronized scenarios (`fox`, `russellmitchell`) has been executed (`scripts/verify_ait_timestamp_alignment.py` $\to$ `reports/datasets/ait_timestamp_alignment_report.json`), quantitatively proving both coarse temporal/IP overlap (`100%` NetFlow window overlap, `67.18%` / `50.98%` event match rate) and severe multi-flow ambiguity (`87.91%` / `72.87%` matched events map to $>1$ candidate flow). Consequently, **Tier 1 (`DIRECT_UID_LINK`) remains `FALSE`** and **Tier 3 (`AIT-LDS-v2.0` PCAP regeneration) remains `UNVERIFIED`** unless full `AIT-LDS-v2.0` PCAPs or a campaign dataset with native flow/session UIDs is acquired.

@@ -127,5 +127,5 @@
   1. `DISTRIBUTION_AUTHORIZATION.json` giữ `approved = false` (`HOLD_FOR_MAINTAINER_SIGNOFF`).
   2. `4/4` mô hình `E0` giữ `deployment_tier = RESEARCH_ONLY` (`cross_source_validated = false`) và `git_dirty = true` tại commit huấn luyện `79ebb678`.
   3. Chưa build và kiểm định bộ cài NSIS trên Clean Windows 10/11 VM (`#148` / `#73`, `0/4 AC`).
-  4. Chưa thay thế placeholder ở `LICENSE:1` và `pyproject.toml:12-13`, chưa cấp `NETFLOW_OOD_GATE_SHA256` độc lập cho bản đóng gói.
-  5. PR `#156` cần commit sạch đợt remediation cục bộ, chạy CI xanh mới và được reviewer gỡ trạng thái `CHANGES_REQUESTED`.
+  4. Chưa cấp neo tin cậy `NETFLOW_OOD_GATE_SHA256` độc lập lúc đóng gói (build-time Tauri / installer) để bản cài đặt mặc định kích hoạt suy luận AI mà không cần cấu hình biến môi trường thủ công.
+  5. Các mục hoàn thiện cuối trước khi đóng PR `#156` (sau khi đạt CI Run `44554324704` `7/7 SUCCESS` và Review `#5978614655` `APPROVED` tại `bcfe7ee`) vẫn cần Maintainer signoff cho kênh phát hành công khai.

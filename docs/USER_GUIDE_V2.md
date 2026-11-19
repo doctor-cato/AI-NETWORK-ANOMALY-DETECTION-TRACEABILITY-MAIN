@@ -53,11 +53,22 @@ Thực hiện **2 lần liên tiếp** trên trạng thái sạch (xóa DB tạm
 
 ```powershell
 $env:NETFLOW_OOD_GATE_SHA256 = "8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825"
+.venv\Scripts\python.exe scripts/verify_clean_state_demo.py
 ```
 
 1. **Offline (`data/demo/demo_flows.csv`):** Nạp `demo_flows.csv` qua tab Offline CSV & 4-Model Compare; xác nhận `AI Ready 4/4`, `CompatibilityGate = ELIGIBLE`, kết quả nhất quán giữa lần 1 và lần 2.
-2. **Replay (`scripts/replay_real_netflow_udp.py`):** Chạy replay trên `demo_flows.csv` ở chế độ Replay; xác nhận `throughput_events_per_sec` và timeline `observed_evidence` lặp lại ổn định.
-3. **Loopback-Live (`127.0.0.1`):** Khởi động `/api/v1/live/start` và gửi gói UDP loopback; xác nhận `STATE: CONNECTED`, `4/4 READY`, AES-256-GCM ciphertext và alert deduplication giống nhau ở cả 2 lần chạy.
+2. **Replay (`scripts/replay_real_netflow_udp.py` / `ModeOrchestrator.run_replay_scenario`):** Chạy replay trên `ait_test.csv.gz` (hoặc `demo_flows.csv` fallback) ở chế độ Replay (`batch_size=32`); xác nhận `throughput_events_per_sec` và timeline `observed_evidence` lặp lại ổn định.
+3. **Loopback-Live (`127.0.0.1`):** Khởi động `/api/v1/live/start` (`LiveTelemetryService` trên `127.0.0.1:0`) và gửi gói UDP NetFlow v9 loopback; xác nhận `STATE: CONNECTED` (`mode == "LIVE"`), `4/4 REAL_MODELS`, `ood_gate_status == "FITTED"`, AES-256-GCM ciphertext và alert deduplication giống nhau ở cả 2 lần chạy.
+
+#### Bằng chứng Tái lập 2x Đã Kiểm chứng (`reports/demo/clean_state_demo_verification.json`)
+
+Kịch bản tự động `scripts/verify_clean_state_demo.py` khởi tạo **2 phiên chạy sạch độc lập** (mỗi phiên trong `tempfile.TemporaryDirectory()` riêng với SQLite DB rỗng, keystore rỗng, `runtime_mode="deployment"`, `expected_ood_gate_sha256="8a52bfe5ad156560a3949afd5d4860c175ce5d158c38eb47aae07342102e9825"`) và đạt **`repeatable_100pct = true` (`PASS`)**:
+
+| Kịch bản Clean-State | Nguồn dữ liệu | Run 1 | Run 2 | Khớp Định tất (`Run 1 == Run 2`) |
+|---|---|---|---|---|
+| **1. Offline (`process_batch`)** | `data/demo/demo_flows.csv` (`200` flows) | `4/4 REAL_MODELS`, `FITTED`, `200` processed, `100` ensemble anomalies (`RF=100, XGB=100, IF=99, AE=99`), `9` alerts, `200` encrypted vectors, `0` errors | `4/4 REAL_MODELS`, `FITTED`, `200` processed, `100` ensemble anomalies (`RF=100, XGB=100, IF=99, AE=99`), `9` alerts, `200` encrypted vectors, `0` errors | **`100% MATCH` (`offline_match = true`)** |
+| **2. Replay (`batch_size=32`)** | `data/processed/v2/ait_test.csv.gz` (`65` flows) | `mode=REPLAY`, `4/4 REAL_MODELS`, `65` processed, `49` anomalies, `26` alerts, `65` encrypted vectors, `0` dropped, `0` errors | `mode=REPLAY`, `4/4 REAL_MODELS`, `65` processed, `49` anomalies, `26` alerts, `65` encrypted vectors, `0` dropped, `0` errors | **`100% MATCH` (`replay_match = true`)** |
+| **3. Live UDP (`127.0.0.1:0`)** | Binary NetFlow v9 UDP (`24` flows / `3` datagrams) | `mode=LIVE -> STOPPED`, `4/4 REAL_MODELS`, `FITTED`, `24/24` decoded & processed, `8` anomalies, `8` alerts, `24` persisted events & encrypted vectors, `0` errors | `mode=LIVE -> STOPPED`, `4/4 REAL_MODELS`, `FITTED`, `24/24` decoded & processed, `8` anomalies, `8` alerts, `24` persisted events & encrypted vectors, `0` errors | **`100% MATCH` (`live_udp_match = true`)** |
 
 ---
 

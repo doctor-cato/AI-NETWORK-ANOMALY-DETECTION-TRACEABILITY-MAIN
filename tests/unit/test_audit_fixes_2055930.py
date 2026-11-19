@@ -467,3 +467,34 @@ def test_entity_graph_evict_entity_prunes_orphan_ip_and_user_nodes() -> None:
     # Shared node with remaining degree > 0 is preserved
     assert "ip:10.0.0.3" in graph.nodes
     assert "ip:10.0.0.4" in graph.nodes
+
+
+def test_orchestrator_evicts_oldest_entity_from_baseline_profiler_windows() -> None:
+    orch = LiveSystemOrchestrator(
+        inference_engine=RealtimeInferenceEngine(
+            registry=SimpleNamespace(
+                preprocessor_sha256=None,
+                ready_count=0,
+                statuses=lambda: [],
+                available_models=lambda: [],
+            ),
+            runtime_mode="research",
+            require_ood_gate=False,
+        ),
+        max_active_entities=2,
+    )
+
+    ev1 = _make_event("ev-lru-1", src_ip="10.0.0.1")
+    ev2 = _make_event("ev-lru-2", src_ip="10.0.0.2")
+    ev3 = _make_event("ev-lru-3", src_ip="10.0.0.3")
+
+    orch.process_event(ev1)
+    orch.process_event(ev2)
+    assert "host:10.0.0.1" in orch.baseline_profiler._windows
+    assert "host:10.0.0.2" in orch.baseline_profiler._windows
+
+    # Processing a 3rd entity exceeds max_active_entities=2 and evicts host:10.0.0.1
+    orch.process_event(ev3)
+    assert "host:10.0.0.1" not in orch.baseline_profiler._windows
+    assert "host:10.0.0.2" in orch.baseline_profiler._windows
+    assert "host:10.0.0.3" in orch.baseline_profiler._windows

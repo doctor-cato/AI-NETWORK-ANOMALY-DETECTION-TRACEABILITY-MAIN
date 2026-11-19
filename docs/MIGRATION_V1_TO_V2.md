@@ -46,6 +46,7 @@ Do đó, **NetFlow Sentinel v2** thực hiện **hard cutover**: chuyển toàn 
 | **Model Binaries & Preprocessor v1** | **`RETIRED / REJECTED`** | Lưu trữ tại `historical/nf_unsw_nb15_v3/`. `ModelRegistry` & `TrainOnlyPreprocessor` **từ chối fail-closed** bất kỳ artifact/manifest v1 nào (không fallback). | `tests/unit/test_v2_migration_guards.py` PASS |
 | **CSV Input 55 cột (`NF-UNSW-NB15-v3`)** | **`REJECTED (Fail-Closed)`** | Không còn hỗ trợ suy luận AI trên schema 47 đặc trưng cũ. Người dùng chuyển sang schema `canonical-flow-v2-18` (200 dòng demo mới tại `data/demo/demo_flows.csv`). | `tests/integration/test_four_model_integrity_e2e.py` PASS |
 | **SQLite DB (`sentinel.db`)** | **`UPGRADE (Idempotent)`** | Nâng cấp bảng v2 qua `scripts/migrate_v1_to_v2.py` (có sao lưu tự động), giữ nguyên dữ liệu sự cố/khóa không phụ thuộc dataset cũ. | `tests/integration/test_migration_v1_to_v2.py` PASS |
+| **Standalone Release Tag `v1.0.0`** | **`INTACT (Isolated by Tag)`** | Bản phát hành `v1.0.0` giữ nguyên khả năng chạy độc lập trên tag `v1.0.0` (commit `e5a1f896effc1981792d0e9c44232ae29cf4ffd4`) khi không nâng cấp lên v2.0.0. | Worktree `v1.0.0`: `143 passed, 2 skipped` (`PASS`) |
 | **Product Core (Tauri 2, Svelte 5, FastAPI, Crypto, Risk, Trace, Behavioral)** | **`PRESERVED`** | Giữ nguyên kiến trúc ứng dụng, loopback auth `X-Sentinel-Session-Token`, AES-256-GCM DPAPI/POSIX keystore, Adaptive Key Rotation, Risk/Trace/Behavioral Engine và CI gates. | `pytest`, `vitest`, `cargo test --lib` PASS |
 
 ---
@@ -59,3 +60,28 @@ Do đó, **NetFlow Sentinel v2** thực hiện **hard cutover**: chuyển toàn 
 # 2. Thực hiện nâng cấp (tự động sao lưu backup trước khi ghi)
 .venv\Scripts\python.exe scripts/migrate_v1_to_v2.py --db-path data/sentinel.db
 ```
+
+---
+
+## 6. Kiểm chứng Độc lập Tag `v1.0.0` (Issue `#80` AC3 — Standalone v1 Verification)
+
+Để chứng minh bản phát hành `v1.0.0` vẫn hoạt động nguyên vẹn khi không nâng cấp (trong khi nhánh `v2.0.0` áp dụng **Hard Cutover fail-closed** từ chối mọi artifact/schema v1), kiểm chứng cô lập trên git worktree tạm chỉ đọc tại tag `v1.0.0` đã được thực thi và dọn sạch ngay sau khi hoàn tất:
+
+- **Tag đối tượng (`v1.0.0`):** `b352aa8f94affe44958b47f87049d0d21997376e`
+- **Commit SHA (`v1.0.0^{commit}`):** `e5a1f896effc1981792d0e9c44232ae29cf4ffd4` (`Merge pull request #72 from doctor-cato/feat/issue-71-standalone-windows-installer`)
+- **Quy trình & Lệnh kiểm chứng:**
+  ```powershell
+  git worktree add --detach .pytest-tmp/v1_0_0_verify v1.0.0
+  $env:PYTHONPATH = "$PWD\.pytest-tmp\v1_0_0_verify\src"
+  Push-Location .pytest-tmp/v1_0_0_verify
+  ..\..\.venv\Scripts\python.exe -c "import network_anomaly; print('imported:', network_anomaly.__file__)"
+  ..\..\.venv\Scripts\python.exe -m pytest tests/unit/test_basic.py tests/unit/test_inference_pipeline.py tests/unit/test_preprocessing_pipeline.py tests/unit/test_nf_unsw_nb15_v3_validation.py -q --tb=short
+  Pop-Location
+  Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+  git worktree remove --force .pytest-tmp/v1_0_0_verify
+  ```
+- **Kết quả Thực nghiệm (`PASS`):**
+  - Import package `network_anomaly` trực tiếp từ `.pytest-tmp/v1_0_0_verify/src/network_anomaly/__init__.py` thành công.
+  - Bộ kiểm thử đơn vị cốt lõi của `v1.0.0` (`test_basic.py`, `test_inference_pipeline.py`, `test_preprocessing_pipeline.py`, `test_nf_unsw_nb15_v3_validation.py`) đạt **`143 passed, 2 skipped` trong `12.51s`** (Exit code `0`).
+  - Worktree tạm `.pytest-tmp/v1_0_0_verify` đã được gỡ bỏ hoàn toàn (`git worktree remove --force`), giữ nguyên trạng thái sạch cho repository `v2.0.0`.
+  - Đồng thời trên `v2.0.0`, `tests/unit/test_v2_migration_guards.py` và `tests/integration/test_migration_v1_to_v2.py` xác nhận `ModelRegistry` và `TrainOnlyPreprocessor` chặn `fail-closed` mọi artifact `v1` (`NF-UNSW-NB15-v3`) mà không fallback.

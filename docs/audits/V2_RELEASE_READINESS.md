@@ -2,7 +2,7 @@
 
 > **Phạm vi Kiểm toán:** Issue `#154` (v2.0 Release Readiness) & Issue `#20` (M7 System-Wide QA Gate)
 >
-> **Nhánh & Mốc Tham chiếu:** `feat/v2-integration` · PR `#156` (pushed HEAD `93416ed` / CI Run `44544489397` `7/7 SUCCESS` + bản vá review-remediation & bộ hồ sơ bảo vệ `#153`)
+> **Nhánh & Mốc Tham chiếu:** `feat/v2-integration` · PR `#156` (pushed HEAD `bcfe7ee` / CI Run `44554324704` `7/7 SUCCESS`, Review `#5978614655` `APPROVED`, `675` pytest + bộ hồ sơ bảo vệ `#153`)
 >
 > **Phiên bản Sản phẩm:** Desktop Tauri/Svelte `2.0.0` · FastAPI Contract `0.1.0`
 
@@ -25,11 +25,11 @@ Thay vì gộp chung một nhãn nhị phân gây hiểu lầm, mức độ sẵ
 
 | Trục Kiểm tra | Kết quả | Bằng chứng & Giới hạn Thực tế |
 |---|---|---|
-| **Git & PR `#156` Governance** | `OPEN / BLOCKED` | PR `#156` (`isDraft: false`) tại `93416ed` có CI Run `44544489397` đạt `7/7 SUCCESS`, nhưng còn `1` review `CHANGES_REQUESTED` (`ViolaPeracia` từ `5483794`) và `mergeStateStatus = BLOCKED`; bản vá review-remediation cần commit & CI run mới trước khi review lại. |
+| **Git & PR `#156` Governance** | `APPROVED` | PR `#156` (`isDraft: false`) tại `bcfe7ee` có CI Run `44554324704` đạt `7/7 SUCCESS` và Review `#5978614655` đạt `APPROVED` (`ViolaPeracia`); tiếp tục hoàn tất 3 mục polish non-blocking (`LOW-1..LOW-3`) & `#150` AC1. |
 | **Artifact & Companion Integrity** | `PASS` / `PARTIAL_UNANCHORED` | `verify_companion_artifacts.py` xác nhận `20` tệp companion, `4/4` model `.joblib`, preprocessor `0866dec7...`, split `ed542ee8...`, AE `score_normalization.json` (`d7bcb78f...`) và cross-check `reports/ml/ood_reference_gate_manifest.json`; báo `PARTIAL_UNANCHORED` khi thiếu external `NETFLOW_OOD_GATE_SHA256`. |
-| **Distribution & License Gate** | `PASS (local_offline)` / `BLOCKED (public)` | `100%` model `E0` và `demo_*.csv` dùng `AIT-NDS-v2` (`CC BY 4.0`); `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) cách ly `.gitignored` (`0%` rò rỉ). Còn placeholder tại `LICENSE:1` và `pyproject.toml:12-13` cần xử lý trước phát hành công khai. |
+| **Distribution & License Gate** | `PASS (local_offline)` / `BLOCKED (public)` | `100%` model `E0` và `demo_*.csv` dùng `AIT-NDS-v2` (`CC BY 4.0`); `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) cách ly `.gitignored` (`0%` rò rỉ); `LICENSE` và `pyproject.toml` đã điền đầy đủ metadata tác giả (`doctor-cato`). |
 | **Runtime Security & Fail-Closed OOD** | `PASS` | Toàn bộ entry points (`backend.rs`, `run_api.py`, `create_app`, `LiveRuntime`, `RealtimeInferenceEngine`) mặc định `"deployment"`, yêu cầu `X-Sentinel-Session-Token`, khóa `UNAVAILABLE` nếu thiếu `NETFLOW_OOD_GATE_SHA256`, và khóa `ResponsePolicy` ở `dry_run = True` (`executed = false`). |
-| **Test Suite & Contract Parity** | `PASS` | HEAD `93416ed` (CI Run `44544489397`) + bản vá review-remediation: `670+` pytest, `41/41` Vitest (`desktop-frontend`), `11/11` Rust (`cargo test --lib`), `export_openapi_spec.py --check`, `check_desktop_version.py --check`; `raw dataset integrity` trên CI giữ `SKIPPED` do không chứa raw archive trong runner. |
+| **Test Suite & Contract Parity** | `PASS` | HEAD `bcfe7ee` (CI Run `44554324704`, Review `#5978614655` `APPROVED`): `675` pytest, `41/41` Vitest (`desktop-frontend`), `11/11` Rust (`cargo test --lib`), `export_openapi_spec.py --check`, `check_desktop_version.py --check`; `raw dataset integrity` trên CI giữ `SKIPPED` do không chứa raw archive trong runner. |
 | **Physical Lab & External Datasets** | `BLOCKED` | `UGR'16` trả `HTTP 403`; liên kết UID `AIT-NDS-v2 ↔ AIT-LDS-v2.1` (`#85`) `DIRECT_UID_LINK = False`; nghiệm thu router/switch vật lý (`#137`) `real_device_tested = false`. |
 
 ---
@@ -53,8 +53,8 @@ Thay vì gộp chung một nhãn nhị phân gây hiểu lầm, mức độ sẵ
 ## 4. Điều kiện Tiên quyết để Mở khóa Phát hành Công khai (`BLOCKED -> READY`)
 
 Để chuyển tầng **Public Binary Release (`#154`)** từ `BLOCKED` sang đủ điều kiện phát hành, cần hoàn tất tuần tự 5 điều kiện sau:
-1. **Commit sạch & Re-review PR `#156`:** Hợp nhất các bản vá cục bộ, chạy đầy đủ CI trên GitHub Actions (`7/7 SUCCESS`, công bố `-rs`) và hoàn tất review gỡ `CHANGES_REQUESTED`.
+1. **Duy trì CI xanh & Review `APPROVED` trên PR `#156`:** HEAD `bcfe7ee` đã đạt CI Run `44554324704` (`7/7 SUCCESS`, `675` pytest) và Review `#5978614655` (`APPROVED`); giữ CI xanh trên các commit polish cuối trước khi merge.
 2. **Loại bỏ `git_dirty: true` (`F-03`):** Gắn hoặc tái huấn luyện/tái xác minh 4 mô hình `E0` và `demo_*.csv` trên một commit sạch của `main`.
-3. **Trusted Build-Time OOD Anchor & Legal Metadata:** Thay thế placeholder `LICENSE:1` và `pyproject.toml:12-13`; truyền `NETFLOW_OOD_GATE_SHA256` độc lập lúc build Tauri (`build.rs` `option_env!`).
+3. **Trusted Build-Time OOD Anchor:** Truyền `NETFLOW_OOD_GATE_SHA256` độc lập lúc build Tauri (`build.rs` `option_env!`).
 4. **Nghiệm thu Clean Windows 10/11 VM (`#148`):** Build PyInstaller v2 sidecar + NSIS installer và chạy `vm_target_e2e.ps1` + `--sign-vm-witness` dưới tài khoản Standard User.
 5. **Maintainer Signoff (`#154`):** Maintainer/Legal Owner ký duyệt `DISTRIBUTION_AUTHORIZATION.json` (`approved: true`, điền `maintainer_approver`, `approved_at_utc`, `evidence_sha256`) và cấu hình `secrets.DISTRIBUTION_EVIDENCE_SHA256`.

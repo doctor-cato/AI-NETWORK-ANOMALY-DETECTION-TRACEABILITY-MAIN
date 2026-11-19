@@ -184,6 +184,7 @@ class LiveSystemOrchestrator:
         if len(self._entity_access_times) > self.max_active_entities:
             oldest_entity, _ = self._entity_access_times.popitem(last=False)
             self.entity_graph.evict_entity(oldest_entity)
+            self.baseline_profiler._windows.pop(oldest_entity, None)
             if oldest_entity in self._entity_events:
                 del self._entity_events[oldest_entity]
 
