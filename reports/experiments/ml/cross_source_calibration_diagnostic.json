@@ -1,0 +1,484 @@
+{
+  "diagnostic_id": "DIAG-CALIBRATION-XSRC-01",
+  "executed_at_utc": "2026-11-18T18:02:49.246785+00:00",
+  "elapsed_seconds": 10.69,
+  "read_only_e0": true,
+  "models": {
+    "random_forest": {
+      "ait_val_youden_threshold": 0.382282,
+      "ait_val_benign_p95_threshold": 0.068042,
+      "datasets": {
+        "ait_val": {
+          "row_count": 377704,
+          "roc_auc": 0.9999,
+          "prob_distribution_benign": {
+            "p10": 0.0,
+            "median": 0.00133,
+            "p90": 0.06804,
+            "p95": 0.06804,
+            "mean": 0.01859
+          },
+          "prob_distribution_attack": {
+            "p10": 0.9998,
+            "median": 0.9998,
+            "p90": 0.99999,
+            "p95": 1.0,
+            "mean": 0.99542
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.9998,
+            "recall": 0.9996,
+            "f1": 0.9997,
+            "fpr": 0.0002
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.382282,
+            "precision": 0.9997,
+            "recall": 0.9998,
+            "f1": 0.9997,
+            "fpr": 0.0002
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.068042,
+            "precision": 0.8891,
+            "recall": 1.0,
+            "f1": 0.9413,
+            "fpr": 0.1032
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.068042,
+            "precision": 0.8891,
+            "recall": 1.0,
+            "f1": 0.9413,
+            "fpr": 0.1032
+          }
+        },
+        "ait_test": {
+          "row_count": 988805,
+          "roc_auc": 0.9994,
+          "prob_distribution_benign": {
+            "p10": 0.0,
+            "median": 0.00146,
+            "p90": 0.05381,
+            "p95": 0.0717,
+            "mean": 0.01593
+          },
+          "prob_distribution_attack": {
+            "p10": 0.58397,
+            "median": 0.99966,
+            "p90": 0.99995,
+            "p95": 0.99999,
+            "mean": 0.88824
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.9989,
+            "recall": 0.9911,
+            "f1": 0.995,
+            "fpr": 0.0002
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.382282,
+            "precision": 0.9984,
+            "recall": 0.9917,
+            "f1": 0.9951,
+            "fpr": 0.0003
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.068042,
+            "precision": 0.7951,
+            "recall": 0.9982,
+            "f1": 0.8851,
+            "fpr": 0.0556
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.071699,
+            "precision": 0.8119,
+            "recall": 0.9981,
+            "f1": 0.8955,
+            "fpr": 0.05
+          }
+        },
+        "ctu_echo": {
+          "row_count": 76073,
+          "roc_auc": 0.6137,
+          "prob_distribution_benign": {
+            "p10": 0.0032,
+            "median": 0.02925,
+            "p90": 0.47992,
+            "p95": 0.65328,
+            "mean": 0.14533
+          },
+          "prob_distribution_attack": {
+            "p10": 0.00531,
+            "median": 0.09526,
+            "p90": 0.09526,
+            "p95": 0.41188,
+            "mean": 0.11539
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.2318,
+            "recall": 0.0264,
+            "f1": 0.0474,
+            "fpr": 0.0811
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.382282,
+            "precision": 0.242,
+            "recall": 0.0732,
+            "f1": 0.1124,
+            "fpr": 0.2123
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.068042,
+            "precision": 0.6293,
+            "recall": 0.8055,
+            "f1": 0.7066,
+            "fpr": 0.4395
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.653284,
+            "precision": 0.1372,
+            "recall": 0.0097,
+            "f1": 0.0181,
+            "fpr": 0.0564
+          }
+        },
+        "ctu_windows7ad": {
+          "row_count": 175146,
+          "roc_auc": 0.8392,
+          "prob_distribution_benign": {
+            "p10": 5e-05,
+            "median": 0.01937,
+            "p90": 0.71985,
+            "p95": 0.71985,
+            "mean": 0.13852
+          },
+          "prob_distribution_attack": {
+            "p10": 0.03863,
+            "median": 0.88716,
+            "p90": 0.99999,
+            "p95": 0.99999,
+            "mean": 0.57747
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.0381,
+            "recall": 0.5412,
+            "f1": 0.0712,
+            "fpr": 0.1608
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.382282,
+            "precision": 0.0391,
+            "recall": 0.5604,
+            "f1": 0.0731,
+            "fpr": 0.1622
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.068042,
+            "precision": 0.0309,
+            "recall": 0.6766,
+            "f1": 0.0592,
+            "fpr": 0.2496
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.719854,
+            "precision": 0.0396,
+            "recall": 0.5177,
+            "f1": 0.0735,
+            "fpr": 0.1479
+          }
+        },
+        "uwf_zeekdata24": {
+          "row_count": 95871,
+          "roc_auc": 0.9535,
+          "prob_distribution_benign": {
+            "p10": 0.0,
+            "median": 0.00012,
+            "p90": 0.01738,
+            "p95": 0.05079,
+            "mean": 0.03699
+          },
+          "prob_distribution_attack": {
+            "p10": 0.28919,
+            "median": 0.38837,
+            "p90": 0.44654,
+            "p95": 0.50059,
+            "mean": 0.38009
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.5213,
+            "recall": 0.0507,
+            "f1": 0.0924,
+            "fpr": 0.0466
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.382282,
+            "precision": 0.9158,
+            "recall": 0.5154,
+            "f1": 0.6596,
+            "fpr": 0.0475
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.068042,
+            "precision": 0.9535,
+            "recall": 0.9998,
+            "f1": 0.9761,
+            "fpr": 0.0488
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.050786,
+            "precision": 0.9524,
+            "recall": 0.9999,
+            "f1": 0.9756,
+            "fpr": 0.05
+          }
+        }
+      }
+    },
+    "xgboost": {
+      "ait_val_youden_threshold": 0.200761,
+      "ait_val_benign_p95_threshold": 0.009668,
+      "datasets": {
+        "ait_val": {
+          "row_count": 377704,
+          "roc_auc": 0.9999,
+          "prob_distribution_benign": {
+            "p10": 1e-05,
+            "median": 0.00029,
+            "p90": 0.00487,
+            "p95": 0.00967,
+            "mean": 0.00229
+          },
+          "prob_distribution_attack": {
+            "p10": 0.99859,
+            "median": 0.99859,
+            "p90": 0.99934,
+            "p95": 0.99944,
+            "mean": 0.99795
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.9998,
+            "recall": 0.9993,
+            "f1": 0.9996,
+            "fpr": 0.0002
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.200761,
+            "precision": 0.9997,
+            "recall": 0.9998,
+            "f1": 0.9997,
+            "fpr": 0.0003
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.009668,
+            "precision": 0.943,
+            "recall": 1.0,
+            "f1": 0.9707,
+            "fpr": 0.05
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.009668,
+            "precision": 0.943,
+            "recall": 1.0,
+            "f1": 0.9707,
+            "fpr": 0.05
+          }
+        },
+        "ait_test": {
+          "row_count": 988805,
+          "roc_auc": 0.9885,
+          "prob_distribution_benign": {
+            "p10": 1e-05,
+            "median": 0.00019,
+            "p90": 0.00777,
+            "p95": 0.01157,
+            "mean": 0.00273
+          },
+          "prob_distribution_attack": {
+            "p10": 0.20422,
+            "median": 0.99859,
+            "p90": 0.99936,
+            "p95": 0.99994,
+            "mean": 0.83739
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.9989,
+            "recall": 0.8211,
+            "f1": 0.9013,
+            "fpr": 0.0002
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.200761,
+            "precision": 0.998,
+            "recall": 0.9483,
+            "f1": 0.9725,
+            "fpr": 0.0004
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.009668,
+            "precision": 0.7492,
+            "recall": 0.9502,
+            "f1": 0.8378,
+            "fpr": 0.0688
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.011568,
+            "precision": 0.8043,
+            "recall": 0.95,
+            "f1": 0.8711,
+            "fpr": 0.05
+          }
+        },
+        "ctu_echo": {
+          "row_count": 76073,
+          "roc_auc": 0.7015,
+          "prob_distribution_benign": {
+            "p10": 3e-05,
+            "median": 0.00067,
+            "p90": 0.28687,
+            "p95": 0.99531,
+            "mean": 0.10447
+          },
+          "prob_distribution_attack": {
+            "p10": 0.00675,
+            "median": 0.03273,
+            "p90": 0.03696,
+            "p95": 0.90786,
+            "mean": 0.10169
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.524,
+            "recall": 0.0832,
+            "f1": 0.1436,
+            "fpr": 0.07
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.200761,
+            "precision": 0.3503,
+            "recall": 0.0851,
+            "f1": 0.1369,
+            "fpr": 0.1462
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.009668,
+            "precision": 0.7153,
+            "recall": 0.8906,
+            "f1": 0.7934,
+            "fpr": 0.3283
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.995308,
+            "precision": 0.1369,
+            "recall": 0.009,
+            "f1": 0.0169,
+            "fpr": 0.0527
+          }
+        },
+        "ctu_windows7ad": {
+          "row_count": 175146,
+          "roc_auc": 0.6961,
+          "prob_distribution_benign": {
+            "p10": 1e-05,
+            "median": 0.00022,
+            "p90": 0.95332,
+            "p95": 0.95332,
+            "mean": 0.15632
+          },
+          "prob_distribution_attack": {
+            "p10": 1e-05,
+            "median": 0.99008,
+            "p90": 0.99934,
+            "p95": 0.99934,
+            "mean": 0.55806
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.0395,
+            "recall": 0.5623,
+            "f1": 0.0738,
+            "fpr": 0.1611
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.200761,
+            "precision": 0.0389,
+            "recall": 0.5638,
+            "f1": 0.0728,
+            "fpr": 0.1639
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.009668,
+            "precision": 0.0388,
+            "recall": 0.6663,
+            "f1": 0.0733,
+            "fpr": 0.1945
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.953316,
+            "precision": 0.0381,
+            "recall": 0.5265,
+            "f1": 0.071,
+            "fpr": 0.1566
+          }
+        },
+        "uwf_zeekdata24": {
+          "row_count": 95871,
+          "roc_auc": 0.9717,
+          "prob_distribution_benign": {
+            "p10": 0.0,
+            "median": 0.0,
+            "p90": 0.00564,
+            "p95": 0.02286,
+            "mean": 0.04565
+          },
+          "prob_distribution_attack": {
+            "p10": 0.7664,
+            "median": 0.94239,
+            "p90": 0.98113,
+            "p95": 0.98113,
+            "mean": 0.872
+          },
+          "zero_shot_default_0_50": {
+            "threshold": 0.5,
+            "precision": 0.9529,
+            "recall": 0.9416,
+            "f1": 0.9472,
+            "fpr": 0.0466
+          },
+          "zero_shot_ait_val_youden": {
+            "threshold": 0.200761,
+            "precision": 0.9535,
+            "recall": 0.9609,
+            "f1": 0.9572,
+            "fpr": 0.047
+          },
+          "zero_shot_ait_val_benign_p95": {
+            "threshold": 0.009668,
+            "precision": 0.9243,
+            "recall": 0.9966,
+            "f1": 0.9591,
+            "fpr": 0.0817
+          },
+          "diagnostic_target_benign_p95_non_zeroshot": {
+            "threshold": 0.022859,
+            "precision": 0.9267,
+            "recall": 0.992,
+            "f1": 0.9582,
+            "fpr": 0.0786
+          }
+        }
+      }
+    }
+  },
+  "limitations": [
+    "target_benign_p95 uses unlabeled/benign quantile on the destination distribution purely as a diagnostic upper bound for threshold sensitivity; it MUST NOT be reported as zero-shot.",
+    "E0 threshold manifests remain untouched."
+  ]
+}

@@ -1,180 +1,63 @@
-# NF-UNSW-NB15-v3: nguồn, acquisition và quality gate
+# NetFlow Sentinel v2 — Nguồn dữ liệu, Acquisition, Schema & Quality Gate
 
-## Dataset mặc định
+> Tài liệu này mô tả hệ thống dữ liệu hiện hành của **NetFlow Sentinel v2**. Nguồn `NF-UNSW-NB15-v3` đã ngừng sử dụng trong toàn bộ active pipeline và được lưu trữ chỉ đọc tại [`docs/historical/nf_unsw_nb15_v3/`](historical/nf_unsw_nb15_v3/).
 
-`NF-UNSW-NB15-v3` là dataset network-flow mặc định duy nhất. Gói UQRDM đã xác minh chứa một CSV
-2.365.424 dòng, 53 feature và hai target `Label`/`Attack`. UNSW-NB15 (2015) không còn được gọi bởi
-pipeline mặc định; artifact cũ nằm trong các thư mục `historical/`.
+## 1. Chiến lược Multi-Source Dataset v2
 
-Nguồn chuẩn:
+| Mã nguồn | Tên chính thức & Phiên bản | DOI / URL | Vai trò | Trạng thái |
+|---|---|---|---|---|
+| `ait_nds_v2` | **AIT NetFlow Data Set v2** *(không gọi v2.1)* | [`10.5281/zenodo.13168643`](https://doi.org/10.5281/zenodo.13168643) | Primary synthetic NetFlow ML dataset (tạo từ PCAP của `AIT-LDS-v2.0`, 8 kịch bản, `3,465,342` flows gốc) | `VERIFIED` (CC BY 4.0) |
+| `ait_lds_v2_1` | **AIT Log Data Set v2.1** | [`10.5281/zenodo.19483937`](https://doi.org/10.5281/zenodo.19483937) | Application, system, auth, DNS, VPN, audit logs & ground-truth attack steps cho Behavioral Vector, Session Correlation, Trace Engine | `VERIFIED` (CC BY-NC-SA 4.0); tách phiên bản với `AIT-NDS-v2`, **không** tự giả định join trực tiếp |
+| `ait_ads` | **AIT Alert Data Set** | [`10.5281/zenodo.8263181`](https://doi.org/10.5281/zenodo.8263181) | Alert aggregation & multi-step alert correlation sinh từ `AIT-LDS-v2.0`; không coi là benchmark ML độc lập | `VERIFIED` (CC BY 4.0) |
+| `ctu_sme_11` | **CTU-SME-11** | [`10.5281/zenodo.7958258`](https://doi.org/10.5281/zenodo.7958258) | Real captured SME testbed traffic trên thiết bị thật (`Echo1stGen-1`: `76,073` flows; `Windows7AD-1`: `175,146` labeled + `9,394` unmapped) | `VERIFIED` (CC BY 4.0) |
+| `ugr16` | **UGR'16** | `https://nesg.ugr.es/nesg-ugr16/` | Real ISP traffic external validation & domain shift | **`BLOCKED`** (`HTTP 403` / Portal en Mantenimiento; không tạo dữ liệu thay thế) |
 
-- University of Queensland NIDS datasets: <https://staff.itee.uq.edu.au/marius/NIDS_datasets/>
-- DOI: <https://doi.org/10.48610/6E0EDA1>
-- UQRDM UUID: `abd2f5d8-e268-4ff0-84fb-f2f7b3ca3e8f`
-- Paper liên quan: arXiv `2503.04404`
-- License record: `Permitted Re-Use with Commercial Use Restriction`; phải trích dẫn đầy đủ và
-  chỉ dùng cho mục đích phi thương mại.
+Chi tiết provenance, license và SHA-256 được ghi nhận trong [`data/EXTERNAL_DATASETS_PROVENANCE.json`](../data/EXTERNAL_DATASETS_PROVENANCE.json), [`docs/dataset/V2_SOURCE_AUDIT.md`](dataset/V2_SOURCE_AUDIT.md) và [`docs/dataset/AIT_LINKAGE_FEASIBILITY.md`](dataset/AIT_LINKAGE_FEASIBILITY.md).
 
-Chi tiết bằng chứng nằm tại `docs/dataset/NF_UNSW_NB15_V3_PROVENANCE.md`. SHA-256 trong manifest
-do dự án tính từ byte tải qua API chính thức, không được mô tả là checksum chính thức của tác giả.
+---
 
-## Layout thống nhất
+## 2. Layout lưu trữ & Script vận hành
 
-| Vai trò | Đường dẫn |
+| Thành phần | Đường dẫn |
 |---|---|
-| Manifest version-control | `data/NF_UNSW_NB15_V3_MANIFEST.json` |
-| Package local, ignored | `data/raw/NF-UNSW-NB15-v3/` |
-| Dataset CSV | `data/raw/NF-UNSW-NB15-v3/data/NF-UNSW-NB15-v3.csv` |
-| Feature dictionary | `data/raw/NF-UNSW-NB15-v3/data/NetFlow_v3_Features.csv` |
-| Quality report | `reports/data_quality/nf_unsw_nb15_v3_validation.json` |
-| EDA summary (machine-readable) | `reports/eda/nf_unsw_nb15_v3_eda_summary.json` |
-| EDA report (generated) | `docs/dataset/NF_UNSW_NB15_V3_EDA.md` |
-| EDA reproducibility evidence | `reports/eda/evidence/` |
-| EDA figures (local, ignored) | `reports/figures/nf_unsw_nb15_v3/` |
-| Downloader | `scripts/fetch_nf_unsw_nb15_v3.py` |
-| Manifest verifier | `scripts/dataset_manifest.py` |
-| Validator | `scripts/validate_data.py` |
-| Exploratory analysis | `scripts/eda_nf_unsw_nb15_v3.py` |
+| Provenance manifest | `data/EXTERNAL_DATASETS_PROVENANCE.json` |
+| Dữ liệu raw (ignored bởi Git) | `data/raw/ait_nds_v2/`, `data/raw/ait_lds_v2_1/`, `data/raw/ait_ads/`, `data/raw/ctu_sme_11/` |
+| Dữ liệu chuẩn hóa v2 (ignored bởi Git) | `data/processed/v2/` (`train_indices.csv.gz`, `validation_indices.csv.gz`, `test_indices.csv.gz`, `ctu_*.csv.gz`) |
+| Demo Validation (200 flows) | `data/demo/demo_flows.csv`, `data/demo/demo_labels.csv`, `data/demo/demo_manifest.json` |
+| Báo cáo profile & chất lượng | `docs/dataset/AIT_PROFILE.md`, `docs/dataset/CTU_SME_11_PROFILE.md`, `docs/dataset/QUALITY_GATES.md` |
+| Báo cáo split & audit | `reports/splits/v2_split_manifest.json`, `docs/dataset/MULTI_SOURCE_SPLIT_PROTOCOL.md`, `docs/dataset/V2_LEAKAGE_AUDIT.md` |
+| Script acquisition & profiling | `scripts/fetch_multi_source_dataset.py`, `scripts/profile_multi_source.py` |
+| Script build & split v2 | `scripts/build_v2_dataset_and_split.py`, `scripts/prepare_demo_dataset.py` |
 
-## Acquisition tái lập
+Kiểm tra ranh giới Git (raw/processed không được commit):
 
-```text
-python scripts/fetch_nf_unsw_nb15_v3.py
-python scripts/dataset_manifest.py verify
+```powershell
+git check-ignore data/raw/ait_nds_v2 data/processed/v2
+.venv\Scripts\python.exe scripts/fetch_multi_source_dataset.py --verify-only
 ```
 
-Fetcher:
+---
 
-- lấy signed HTTPS URL từ UQRDM API và xác minh UUID/access state;
-- tải streaming vào staging, dừng nếu vượt `110825147` byte;
-- từ chối HTML, ZIP magic sai, checksum sai, archive traversal, symlink, member lạ/thiếu và
-  extracted size vượt giới hạn;
-- xác minh SHA-256 của archive và từng member trước publish;
-- dùng lock theo destination để tuần tự hóa concurrent fetch;
-- ghi transaction marker trước swap, giữ backup và phục hồi sau lỗi/crash;
-- chỉ trả `CACHE_HIT` khi toàn bộ bảy member vẫn đúng size/checksum.
+## 3. Hợp đồng Canonical Flow v2 (`canonical-flow-v2-18`) & Label Taxonomy v2
 
-Raw package không được commit. Kiểm tra boundary:
+Định nghĩa chính thức nằm tại `src/network_anomaly/data/v2_schema.py` và `src/network_anomaly/data/taxonomy.py`:
 
-```text
-git check-ignore data/raw/NF-UNSW-NB15-v3
-```
+- **18 ML Features (`ML_FEATURE_COLUMNS`):**
+  1. **6 Base Observed Flow Fields:** `duration_ms`, `bytes_in`, `bytes_out`, `pkts_in`, `pkts_out`, `protocol_num` (categorical IANA integer code, giữ nguyên không One-Hot Encoding).
+  2. **12 Derived Flow-Dynamics Features:** `total_bytes`, `total_pkts`, `bytes_in_ratio`, `pkts_in_ratio`, `bytes_per_pkt_in`, `bytes_per_pkt_out`, `bytes_per_sec_in`, `bytes_per_sec_out`, `pkts_per_sec`, `has_response`, `is_tcp`, `is_udp`.
+- **5 Trace Metadata (tách khỏi `X`, dùng cho grouping/Trace Engine):** `timestamp_ms`, `source_ip`, `dest_ip`, `source_port`, `dest_port`.
+- **4 Target & Label Tracking (tuyệt đối không đi vào `X`):** `label_binary`, `attack_category`, `raw_label`, `label_status`.
+- **5 Provenance Columns:** `source_dataset`, `scenario_or_device`, `flow_id`, `raw_protocol_str`, `probe_source`.
+- **Nguyên tắc nhãn (`taxonomy-v2`):**
+  - Không bao giờ tự động ép `background`, `unknown`, `nan` hoặc chuỗi rỗng thành `Benign`.
+  - Các dòng unmapped được gắn `label_status = "unmapped"` / `attack_category = "Unmapped"` và loại khỏi supervised binary/multiclass metrics (`942` dòng trong `AIT-NDS-v2`, `9,394` dòng trong `CTU-SME-11 Windows7AD`).
 
-## Schema và target
+---
 
-Manifest ghi đúng thứ tự 55 cột. Phân loại vai trò:
+## 4. Tóm tắt Chất lượng & Chia tập (`v2-scenario-group-purged-v1`)
 
-- 53 NetFlow v3 fields;
-- binary target `Label`: `0` benign, `1` attack;
-- multiclass target `Attack`: `Benign`, `Analysis`, `Backdoor`, `DoS`, `Exploits`, `Fuzzers`,
-  `Generic`, `Reconnaissance`, `Shellcode`, `Worms`;
-- sáu metadata fields gồm absolute timestamps, IP và hai L4 port được giữ cho grouping/Trace
-  Engine và mặc định loại khỏi `X`;
-- 47 NetFlow fields còn lại là baseline ML input theo đúng thứ tự CSV;
-- `Label` và `Attack` tuyệt đối không đi vào `X`.
-
-Website UQ và CSV không đồng nhất ở tổng attack và ánh xạ ba category count. Manifest theo byte CSV
-đã tải và giữ mô tả discrepancy. Xem `docs/dataset/NF_UNSW_NB15_V3_SCHEMA.md`.
-
-## Validation thật
-
-```text
-python scripts/validate_data.py
-```
-
-Validator stream CSV, kiểm tra schema/order, width, row count, numeric/NaN/Inf/missing, giá trị âm,
-IPv4, port, label/category consistency, timestamp ordering và duration. Exact, 47-feature và
-behavioral-v1 fingerprints được ghi vào SQLite tạm để RAM không tăng theo số dòng.
-
-Kết quả đã ghi trong repository là `SOURCE_INTEGRITY: PASS`,
-`RAW_QUALITY: FINDINGS_RECORDED`, `ML_READY: BLOCKED`:
-
-- 63.425 missing tại `SRC_TO_DST_SECOND_BYTES`;
-- 59.068 positive infinity tại `SRC_TO_DST_SECOND_BYTES`;
-- 122.493 positive infinity tại `DST_TO_SRC_SECOND_BYTES`;
-- 14.815 dòng exact-duplicate;
-- 1.134.553 repeated rows theo 47-feature/behavioral-v1 equivalence, thuộc 189.788
-  fingerprints;
-- 0 binary-label/Benign-vs-Attack conflict fingerprints, nhưng 1.270 fingerprints có nhiều
-  malicious `Attack` categories; không có deduplication tự động.
-
-Schema, row count, SHA-256, label/category distribution, IP/port và temporal ordering đạt các check
-đã triển khai. Source integrity PASS không đổi ML readiness thành PASS; findings vẫn chặn
-raw-to-model.
-
-Khi raw package không có, lệnh mặc định trả `SOURCE_INTEGRITY: SKIPPED`/exit `0` để CI không tải
-dataset. Dataset nguyên vẹn nhưng ML-blocked trả exit `1`; corruption/integrity error trả exit `2`.
-Exit `0` cho SKIPPED không phải bằng chứng real-data PASS.
-
-## Exploratory data analysis (Issue #6)
-
-```text
-python scripts/eda_nf_unsw_nb15_v3.py
-```
-
-EDA dùng lại contract và byte verification của `scripts/validate_data.py` (không copy logic),
-stream population trong bộ nhớ giới hạn và ghi:
-
-- `reports/eda/nf_unsw_nb15_v3_eda_summary.json` — summary máy đọc được (đã commit);
-- `docs/dataset/NF_UNSW_NB15_V3_EDA.md` — báo cáo Markdown sinh tự động từ summary;
-- `reports/figures/nf_unsw_nb15_v3/*.png` — biểu đồ có nhãn (bị `.gitignore` loại, sinh lại local).
-
-Kết luận chính từ lượt chạy trên dữ liệu thật (2.365.424 dòng, SHA-256 khớp manifest):
-
-- Target: 2.237.731 benign / 127.693 attack (tỉ lệ 17,52:1); `Worms` hiếm nhất với 158 dòng;
-- 122.493 dòng có duration bằng 0 và đồng thời có giá trị rate không hữu hạn;
-- 14.815 dòng exact-duplicate và 1.134.553 dòng lặp theo 47-feature equivalence (189.788 nhóm),
-  trong đó 1.270 nhóm trộn nhiều category tấn công và không nhóm nào mâu thuẫn nhãn nhị phân;
-- traffic tập trung trên 3 ngày UTC trong cửa sổ 27 ngày;
-- feature byte/packet/duration lệch phải mạnh, không có feature hằng số.
-
-EDA là mô tả: không chọn feature, không fit transformer, không xóa dòng và không tạo split.
-Mọi khuyến nghị phụ thuộc train vẫn ở trạng thái `PENDING ISSUE #7`; `ML_READY` giữ `BLOCKED`.
-
-## Bằng chứng tái lập EDA (hai lần chạy)
-
-```text
-python scripts/verify_eda_reproducibility.py
-```
-
-Lệnh chạy EDA hai lần độc lập trên cùng raw CSV đã xác thực và ghi mỗi lần chạy thành một
-bundle có thể truy xuất tại `reports/eda/evidence/run-1` và `run-2`:
-
-- `run_metadata.json`: git HEAD/branch, Python/OS, dependency versions, dataset identity (size +
-  SHA-256), manifest/schema verification, key aggregates, command, exit code, start/end timestamp,
-  SHA-256 của summary và report;
-- `stdout.log` / `stderr.log`: stdout và stderr thực tế của lần chạy đó;
-- `eda_summary.json` / `eda_report.md`: đúng artifact mà lần chạy đó sinh ra.
-
-Báo cáo so sánh `reports/eda/evidence/reproducibility_comparison.md` và `.json` hiển thị
-PASS/FAIL theo từng chỉ số và liệt kê mọi khác biệt. Chỉ metadata được phép khác giữa hai
-lần chạy (timestamp và môi trường) bị loại khỏi so sánh. Exit `0` khi hai lần chạy giống nhau
-hoặc khi thiếu raw package (in `SKIPPED`, không phải PASS), exit `1` khi lệch.
-
-## Split và preprocessing gate
-
-Dataset chỉ có một CSV; không dùng split cũ của UNSW-NB15. Giao thức phân chia theo thời gian có vùng đệm bảo vệ nhóm (chronological with 5-minute canonical group purge gap) và kiểm toán rò rỉ chéo phân vùng đã được thực thi và xác minh tại `reports/splits/nf_unsw_nb15_v3_split_manifest.json` và `docs/dataset/NF_UNSW_NB15_V3_LEAKAGE_AUDIT.md`.
-Contract temporal/group-aware, duplicate consolidation, metadata/target exclusion và train-only fitting nằm tại `docs/NF_UNSW_NB15_V3_SPLIT_PROTOCOL.md`.
-The handling contract for missing/non-finite values, short-duration flows and numeric-coded fields is `docs/NF_UNSW_NB15_V3_PREPROCESSING_POLICY.md`; no fitted transformer exists yet.
-
-Chưa được train cho đến khi hoàn thành Issue #8:
-
-1. chọn và test chính sách missing/non-finite chỉ dựa trên train;
-2. fit transformers (imputer, scaler, encoder) chỉ trên tập train;
-3. audit feature list và fitted preprocessing artifact.
-
-Chi tiết aggregate numeric và duplicate/label-conflict nằm tại
-`docs/dataset/NF_UNSW_NB15_V3_QUALITY_ANALYSIS.md` và
-`docs/dataset/NF_UNSW_NB15_V3_DUPLICATE_AUDIT.md`.
-
-## Historical evidence
-
-Các file sau chỉ phục vụ audit migration:
-
-- `data/historical/UNSW_NB15_MANIFEST_2015.json`;
-- `scripts/historical/fetch_unsw_nb15_2015.py`;
-- `scripts/historical/dataset_manifest_unsw_nb15_2015.py`;
-- `scripts/historical/validate_unsw_nb15_2015.py`;
-- `reports/data_quality/historical/unsw_nb15_2015_validation.json`.
-
-Không xóa hoặc diễn giải chúng như trạng thái hiện tại của pipeline.
+- **AIT-NDS-v2 (`3,464,400` dòng có nhãn hợp lệ + `942` unmapped = `3,465,342` dòng gốc):**
+  - **Train (`2,097,891`):** `fox`, `harrison`, `santos`, `wardbeck`, `wilson` — `1,825,866` Benign / `272,025` Attack (`Reconnaissance`: 182,103; `Data_Exfiltration`: 87,268; `Credential_Attack`: 2,438; `Post_Exploitation_Discovery`: 180; `Exploitation_And_C2`: 36).
+  - **Validation (`377,704`):** `russellmitchell` — `206,676` Benign / `171,028` Attack (`Reconnaissance`: 155,181; `Data_Exfiltration`: 15,778; `Post_Exploitation_Discovery`: 56; `Credential_Attack`: 11; `Exploitation_And_C2`: 2).
+  - **Test (`988,805`):** `shaw`, `wheeler` — `812,980` Benign / `175,825` Attack (`Reconnaissance`: 95,628; `Data_Exfiltration`: 80,075; `Credential_Attack`: 78; `Post_Exploitation_Discovery`: 39; `Exploitation_And_C2`: 5).
+  - **Kiểm toán rò rỉ:** `scenario_overlap_count = 0`, `scenario_5tuple_ts_overlap_count = 0`, `status = "PASS"`.

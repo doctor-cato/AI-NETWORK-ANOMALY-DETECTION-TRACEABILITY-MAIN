@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Integration tests for NF-UNSW-NB15-v3 ML pipeline components (Issue #17).
+"""Integration tests for NetFlow Sentinel v2 ML pipeline components.
 
 Covers:
 1. Preprocessing Integration:
@@ -16,7 +16,7 @@ Covers:
 3. End-to-End Pipeline Integration:
    - CSV Input -> Schema Validation -> Load Preprocessor -> Transform -> Load Model ->
      Predict -> Export CSV -> Metadata Generation.
-   - Row identity preservation, 47 canonical features contract, zero target/trace leakage.
+   - Row identity preservation, 18 canonical v2 features contract, zero target/trace leakage.
    - Output CSV structure, probability columns, companion metadata JSON.
    - Input file immutability, repeated inference determinism.
    - Cross-artifact compatibility (preprocessor SHA-256 enforcement).
@@ -24,8 +24,8 @@ Covers:
 4. Failure Paths:
    - Missing input file, empty CSV, missing features, invalid feature values.
 5. Real-Data Smoke Checks:
-   - Real preprocessor artifact verification (explicit skip if absent; never silent pass).
-   - Real model artifact verification (explicit skip when binary excluded by .gitignore).
+   - Real v2 preprocessor artifact verification (explicit skip if absent; never silent pass).
+   - Real v2 RF model artifact verification (explicit skip when binary excluded).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ import pytest
 from sklearn.exceptions import NotFittedError
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     CATEGORICAL_CODED_COLUMNS,
     ML_FEATURE_COLUMNS,
     TRACE_METADATA_COLUMNS,
@@ -65,7 +65,8 @@ from network_anomaly.preprocessing import (
     TrainOnlyPreprocessor,
     verify_preprocessing_artifact,
 )
-from network_anomaly.preprocessing.pipeline import EXPECTED_DATASET_SHA256
+
+TEST_V2_DATASET_SHA256 = "a" * 64
 
 # =========================================================================
 # Synthetic Fixtures for Integration Testing
@@ -80,12 +81,14 @@ def synthetic_pipeline_setup(
     rng = np.random.default_rng(seed=42)
     n_rows = 40
 
-    # 1. Generate synthetic network flow features adhering to the 47-feature schema
+    # 1. Generate synthetic network flow features adhering to the 18-feature v2 schema
     data: Dict[str, np.ndarray] = {}
     for col in ML_FEATURE_COLUMNS:
         if col in CATEGORICAL_CODED_COLUMNS:
             data[col] = rng.integers(0, 5, size=n_rows)
-        elif "DURATION" in col or "BYTES" in col or "PKTS" in col or "THROUGHPUT" in col:
+        elif col in {"has_response", "is_tcp", "is_udp"}:
+            data[col] = rng.integers(0, 2, size=n_rows).astype(float)
+        elif "duration" in col or "bytes" in col or "pkts" in col:
             data[col] = np.abs(rng.normal(loc=100.0, scale=20.0, size=n_rows)) + 1.0
         else:
             data[col] = np.abs(rng.normal(loc=50.0, scale=10.0, size=n_rows))
@@ -94,22 +97,26 @@ def synthetic_pipeline_setup(
 
     # Add trace metadata and target columns to verify pipeline isolation
     for col in TRACE_METADATA_COLUMNS:
-        if "ADDR" in col:
+        if "ip" in col:
             df_full[col] = "192.168.1.1"
+        elif "timestamp" in col:
+            df_full[col] = 1700000000000
         else:
             df_full[col] = 80
-    df_full["Label"] = np.array([0 if i % 2 == 0 else 1 for i in range(n_rows)])
-    df_full["Attack"] = np.array(["Benign" if i % 2 == 0 else "Exploits" for i in range(n_rows)])
+    df_full["label_binary"] = np.array([0 if i % 2 == 0 else 1 for i in range(n_rows)])
+    df_full["attack_category"] = np.array(
+        ["Benign" if i % 2 == 0 else "Reconnaissance" for i in range(n_rows)]
+    )
     df_full["row_id"] = [f"test_flow_{i:03d}" for i in range(n_rows)]
 
     input_csv_path = tmp_path / "incoming_flows.csv"
     df_full.to_csv(input_csv_path, index=False)
 
-    # 2. Fit TrainOnlyPreprocessor on train-only features (47 features, no targets/trace)
+    # 2. Fit TrainOnlyPreprocessor on train-only features (18 features, no targets/trace)
     split_manifest_dummy_sha = "b" * 64
     prep = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
-        dataset_sha256=EXPECTED_DATASET_SHA256,
+        dataset_sha256=TEST_V2_DATASET_SHA256,
         split_manifest_sha256=split_manifest_dummy_sha,
     )
     df_train_only = df_full[list(ML_FEATURE_COLUMNS)].copy()
@@ -121,7 +128,7 @@ def synthetic_pipeline_setup(
 
     # 3. Fit RandomForestModel on preprocessed features
     X_trans = prep.transform(df_train_only, partition_name="train")
-    y_train = df_full["Label"].to_numpy()
+    y_train = df_full["label_binary"].to_numpy()
 
     rf = RandomForestModel(
         config=RandomForestBaselineConfig(
@@ -143,7 +150,7 @@ def synthetic_pipeline_setup(
         "model_artifact_path": str(model_art_path.name),
         "model_artifact_sha256": model_sha,
         "preprocessor_artifact_sha256": prep_sha,
-        "dataset_sha256": EXPECTED_DATASET_SHA256,
+        "dataset_sha256": TEST_V2_DATASET_SHA256,
         "split_manifest_sha256": split_manifest_dummy_sha,
         "provenance_complete": True,
         "provenance_status": "VERIFIED",
@@ -181,19 +188,19 @@ def test_preprocessing_pipeline_integration(tmp_path: Path):
     split_sha = "c" * 64
     preprocessor = TrainOnlyPreprocessor(
         config=config,
-        dataset_sha256=EXPECTED_DATASET_SHA256,
+        dataset_sha256=TEST_V2_DATASET_SHA256,
         split_manifest_sha256=split_sha,
     )
     assert preprocessor.is_fitted_ is False
-    assert FEATURE_CONTRACT_VERSION == "nf-unsw-nb15-v3-baseline-47"
-    assert PREPROCESSING_POLICY_VERSION == "nf-unsw-nb15-v3-preprocessing-v1"
+    assert FEATURE_CONTRACT_VERSION == "canonical-flow-v2-18"
+    assert PREPROCESSING_POLICY_VERSION == "v2-flow-preprocessing-v1"
 
     # Fit and transform
     preprocessor.fit(df)
     assert preprocessor.is_fitted_ is True
     assert preprocessor.train_row_count_ == n_rows
     transformed_orig = preprocessor.transform(df, partition_name="val")
-    assert transformed_orig.shape == (n_rows, 47)
+    assert transformed_orig.shape == (n_rows, 18)
 
     # Save artifact and companion manifest
     art_path = tmp_path / "artifacts" / "prep.joblib"
@@ -238,7 +245,7 @@ def test_preprocessing_failure_paths_fail_closed(tmp_path: Path):
     man_data = {
         "artifact_path": str(art_path),
         "artifact_sha256": _sha256_file(art_path),
-        "dataset_sha256": EXPECTED_DATASET_SHA256,
+        "dataset_sha256": TEST_V2_DATASET_SHA256,
         "split_manifest_sha256": "d" * 64,
         "feature_contract_version": FEATURE_CONTRACT_VERSION,
         "train_row_count": 100,
@@ -269,7 +276,7 @@ def test_random_forest_model_artifact_integration(tmp_path: Path):
     """Verify RandomForestModel fitting, saving, verified reload, and prediction invariance."""
     rng = np.random.default_rng(seed=88)
     n_samples = 30
-    X = rng.normal(loc=0.0, scale=1.0, size=(n_samples, 47))
+    X = rng.normal(loc=0.0, scale=1.0, size=(n_samples, 18))
     y = np.array([0 if i % 2 == 0 else 1 for i in range(n_samples)])
 
     protocol = create_rf_baseline_protocol(
@@ -312,7 +319,7 @@ def test_random_forest_model_artifact_integration(tmp_path: Path):
     manifest = {
         "model_artifact_path": str(art_path.name),
         "model_artifact_sha256": saved_sha,
-        "dataset_sha256": EXPECTED_DATASET_SHA256,
+        "dataset_sha256": TEST_V2_DATASET_SHA256,
         "split_manifest_sha256": dummy_split_sha,
         "feature_contract_version": FEATURE_CONTRACT_VERSION,
         "model_type": "RandomForest",
@@ -325,7 +332,7 @@ def test_random_forest_model_artifact_integration(tmp_path: Path):
     verified_model = RandomForestModel.load_verified(
         art_path,
         manifest_path=man_path,
-        expected_dataset_sha256=EXPECTED_DATASET_SHA256,
+        expected_dataset_sha256=TEST_V2_DATASET_SHA256,
         expected_split_manifest_sha256=dummy_split_sha,
     )
     assert verified_model.is_fitted is True
@@ -346,7 +353,7 @@ def test_random_forest_verification_failure_paths(tmp_path: Path):
     manifest = {
         "model_artifact_path": str(art_path.name),
         "model_artifact_sha256": "0" * 64,  # incorrect hash
-        "dataset_sha256": EXPECTED_DATASET_SHA256,
+        "dataset_sha256": TEST_V2_DATASET_SHA256,
         "split_manifest_sha256": "1" * 64,
         "provenance_complete": True,
         "provenance_status": "VERIFIED",
@@ -368,7 +375,7 @@ def test_isolation_forest_load():
     assert m is not None
 
     rng = np.random.default_rng(seed=42)
-    X = rng.normal(size=(20, 47))
+    X = rng.normal(size=(20, 18))
     m.fit(X)
 
     preds = m.predict(X)
@@ -562,7 +569,7 @@ def test_pipeline_failure_paths(
 
     # 3. Missing required features
     invalid_schema_csv = tmp_path / "invalid_schema.csv"
-    pd.DataFrame({"FLOW_DURATION_MILLISECONDS": [50.0]}).to_csv(invalid_schema_csv, index=False)
+    pd.DataFrame({"duration_ms": [50.0]}).to_csv(invalid_schema_csv, index=False)
     with pytest.raises(ValueError, match="missing"):
         run_inference(
             input_path=invalid_schema_csv,
@@ -599,15 +606,15 @@ def test_pipeline_failure_paths(
 
 
 def test_real_preprocessor_artifact_verification():
-    """Verify real Issue #8 preprocessor artifact if present; report SKIPPED if absent."""
-    artifact_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    """Verify real v2 preprocessor artifact if present; report SKIPPED if absent."""
+    artifact_path = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
     manifest_path = (
-        PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
+        PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
     )
 
     if not artifact_path.is_file() or not manifest_path.is_file():
         pytest.skip(
-            f"Real preprocessor artifact from Issue #8 not found "
+            f"Real v2 preprocessor artifact not found "
             f"(artifact={artifact_path.exists()}, manifest={manifest_path.exists()}). "
             "Skipping real-data preprocessor verification."
         )
@@ -619,11 +626,12 @@ def test_real_preprocessor_artifact_verification():
         assert any("SHA-256 mismatch" in error for error in res["errors"])
     else:
         assert res["status"] == "PASS"
-        assert res["metadata"]["train_row_count"] == 1655797
+        assert res["metadata"]["train_row_count"] == manifest["train_row_count"]
+        assert res["metadata"]["feature_contract_version"] == FEATURE_CONTRACT_VERSION
 
 
 def test_real_model_artifact_verification():
-    """Verify real RF baseline model against manifest if binary present.
+    """Verify real v2 RF baseline model against manifest if binary present.
 
     Reports SKIPPED if binary model is absent from working tree.
     """
@@ -633,11 +641,9 @@ def test_real_model_artifact_verification():
 
     # Verify manifest JSON structure without binary
     manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest_data["run_id"] == "rf-baseline-1794068628"
+    assert manifest_data["dataset_name"] == "AIT-NDS-v2"
     assert manifest_data["feature_contract_version"] == FEATURE_CONTRACT_VERSION
-    assert manifest_data["model_artifact_sha256"] == (
-        "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea"
-    )
+    assert len(manifest_data["model_artifact_sha256"]) == 64
 
     model_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
     if not model_path.is_file():

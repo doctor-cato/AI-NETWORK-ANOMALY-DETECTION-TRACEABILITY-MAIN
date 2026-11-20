@@ -38,9 +38,9 @@ class DatasetIdentity:
 
     name: str
     doi: Optional[str] = None
-    format: str = "NetFlow-v3"
-    column_count: int = 55
-    feature_count: int = 47
+    format: str = "Canonical-Flow-v2"
+    column_count: int = 23
+    feature_count: int = 18
     publisher: Optional[str] = None
     description: Optional[str] = None
 
@@ -220,8 +220,7 @@ class InferenceEligibilityGate:
         self.registry = registry or SourceRegistry()
         self.evaluator = evaluator or FeatureCompatibilityEvaluator()
         self.ood_validator = ood_validator or OODValidator(
-            check_shortcut_drift=True,
-            reject_zero_ttl=reject_zero_ttl,
+            check_protocol_drift=True,
         )
         self.strict_ood_abstain = strict_ood_abstain
         self.max_allowed_shortcut_drift_ratio = max_allowed_shortcut_drift_ratio
@@ -279,8 +278,8 @@ class InferenceEligibilityGate:
             if events:
                 eff_source = events[0].metadata.source_id
             elif df is not None:
-                # Default to canonical baseline source for ML inference unless specified
-                eff_source = "source:nf-v3-canonical"
+                # Default to canonical v2 flow source for ML inference unless specified
+                eff_source = "source:canonical-flow-v2"
 
         # 0. Always perform OOD & Physical Network Invariant Audit early
         metadata_violations: List[str] = []
@@ -325,10 +324,7 @@ class InferenceEligibilityGate:
                 abstained_indices.append(idx)
                 if idx not in rejected_indices:
                     rejected_indices.append(idx)
-                row_rejection_reasons[idx] = (
-                    "OOD drift: MIN_TTL=0 (unobserved initial TTL / capture drop). "
-                    "Anti-imputation policy: Synthetic filling prohibited -> ABSTAINED."
-                )
+                row_rejection_reasons[idx] = "OOD invariant violation -> ABSTAINED."
 
         # 1. Source registry check
         try:
@@ -353,7 +349,7 @@ class InferenceEligibilityGate:
                 eligibility_status=InferenceEligibility.FEATURE_INCOMPATIBLE,
                 validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
                 abstention_reasons=[
-                    f"Source '{eff_source}' lacks 47 ML features required for inference.",
+                    f"Source '{eff_source}' lacks canonical v2 ML features required for inference.",
                     "Strict anti-imputation policy: Zero/median synthetic filling is prohibited.",
                 ],
                 route_to_trace_engine=source_def.trace_supported,
@@ -534,10 +530,10 @@ class InferenceEligibilityGate:
                 ood_report=ood_report,
                 compatibility_report=comp_report,
                 abstention_reasons=[
-                    f"Strict OOD shortcut abstention: {ood_report.shortcut_drift_ratio*100:.1f}% "
-                    "rows exhibit critical MIN_TTL shift (>= "
-                    f"{self.max_allowed_shortcut_drift_ratio*100:.0f}%). "
-                    "Fail-closed prediction abstention engaged to prevent false alert flood."
+                    f"Strict OOD abstention: {ood_report.shortcut_drift_ratio * 100:.1f}% "
+                    "rows exhibit critical distribution shift (>= "
+                    f"{self.max_allowed_shortcut_drift_ratio * 100:.0f}%). "
+                    "Fail-closed prediction abstention engaged."
                 ],
                 warning_flags=warning_flags,
                 route_to_trace_engine=True,

@@ -1,0 +1,688 @@
+{
+  "experiment_id": "EXP-E1-MULTIDOMAIN-AND-E3B-01",
+  "executed_at_utc": "2026-11-19T14:24:25.988900+00:00",
+  "elapsed_seconds": 50.63,
+  "e0_artifacts_untouched": true,
+  "split_counts": {
+    "AIT_Train": 200001,
+    "CTU_Train": 175852,
+    "UWF_Train": 67107,
+    "E1_Train_Total": 442960,
+    "E1_Val_Total": 112057,
+    "AIT_Test": 99999,
+    "CTU_Test": 37686,
+    "CTU_Win7AD_Test": 26274,
+    "UWF_Test": 14388
+  },
+  "calibrated_thresholds_on_e1_val": {
+    "E1_RandomForest_Binary": 0.666757,
+    "E1_XGBoost_Binary": 0.676147,
+    "Autoencoder_E3b_VarianceNormalized": 1.354965
+  },
+  "results_by_test_split": {
+    "AIT_Test": {
+      "E0_RandomForest_ZeroShot": {
+        "n_rows": 99999,
+        "n_attack": 17871,
+        "n_benign": 82128,
+        "threshold": 0.5,
+        "precision": 0.9991,
+        "recall": 0.988,
+        "f1": 0.9935,
+        "fpr": 0.000195,
+        "roc_auc": 0.9984,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 78,
+            "recall": 0.141
+          },
+          "Exploitation_And_C2": {
+            "count": 5,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 8089,
+            "recall": 0.9863
+          },
+          "Post_Exploitation_Discovery": {
+            "count": 39,
+            "recall": 0.8974
+          },
+          "Reconnaissance": {
+            "count": 9660,
+            "recall": 0.9967
+          }
+        }
+      },
+      "E1_RandomForest_Binary": {
+        "n_rows": 99999,
+        "n_attack": 17871,
+        "n_benign": 82128,
+        "threshold": 0.666757,
+        "precision": 0.9864,
+        "recall": 0.862,
+        "f1": 0.92,
+        "fpr": 0.002581,
+        "roc_auc": 0.9974,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 78,
+            "recall": 0.141
+          },
+          "Exploitation_And_C2": {
+            "count": 5,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 8089,
+            "recall": 0.7095
+          },
+          "Post_Exploitation_Discovery": {
+            "count": 39,
+            "recall": 0.8974
+          },
+          "Reconnaissance": {
+            "count": 9660,
+            "recall": 0.9952
+          }
+        }
+      },
+      "E0_XGBoost_ZeroShot": {
+        "n_rows": 99999,
+        "n_attack": 17871,
+        "n_benign": 82128,
+        "threshold": 0.5,
+        "precision": 0.9991,
+        "recall": 0.8201,
+        "f1": 0.9008,
+        "fpr": 0.000158,
+        "roc_auc": 0.9875,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 78,
+            "recall": 0.141
+          },
+          "Exploitation_And_C2": {
+            "count": 5,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 8089,
+            "recall": 0.6155
+          },
+          "Post_Exploitation_Discovery": {
+            "count": 39,
+            "recall": 0.8974
+          },
+          "Reconnaissance": {
+            "count": 9660,
+            "recall": 0.9965
+          }
+        }
+      },
+      "E1_XGBoost_Binary": {
+        "n_rows": 99999,
+        "n_attack": 17871,
+        "n_benign": 82128,
+        "threshold": 0.676147,
+        "precision": 0.9984,
+        "recall": 0.8016,
+        "f1": 0.8892,
+        "fpr": 0.00028,
+        "roc_auc": 0.9643,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 78,
+            "recall": 0.141
+          },
+          "Exploitation_And_C2": {
+            "count": 5,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 8089,
+            "recall": 0.576
+          },
+          "Post_Exploitation_Discovery": {
+            "count": 39,
+            "recall": 0.8974
+          },
+          "Reconnaissance": {
+            "count": 9660,
+            "recall": 0.9953
+          }
+        }
+      },
+      "E0_Autoencoder_ZeroShot": {
+        "n_rows": 99999,
+        "n_attack": 17871,
+        "n_benign": 82128,
+        "threshold": 0.000467,
+        "precision": 0.7927,
+        "recall": 0.4687,
+        "f1": 0.5891,
+        "fpr": 0.026666,
+        "roc_auc": 0.557,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 78,
+            "recall": 0.0641
+          },
+          "Exploitation_And_C2": {
+            "count": 5,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 8089,
+            "recall": 0.0007
+          },
+          "Post_Exploitation_Discovery": {
+            "count": 39,
+            "recall": 0.1026
+          },
+          "Reconnaissance": {
+            "count": 9660,
+            "recall": 0.865
+          }
+        }
+      },
+      "Autoencoder_E3b_VarianceNormalized": {
+        "n_rows": 99999,
+        "n_attack": 17871,
+        "n_benign": 82128,
+        "threshold": 1.354965,
+        "precision": 0.7939,
+        "recall": 0.4691,
+        "f1": 0.5898,
+        "fpr": 0.026507,
+        "roc_auc": 0.5447,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 78,
+            "recall": 0.1154
+          },
+          "Exploitation_And_C2": {
+            "count": 5,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 8089,
+            "recall": 0.0006
+          },
+          "Post_Exploitation_Discovery": {
+            "count": 39,
+            "recall": 0.6923
+          },
+          "Reconnaissance": {
+            "count": 9660,
+            "recall": 0.8631
+          }
+        }
+      },
+      "E1_RandomForest_6Class_MacroF1_Present": 0.6558
+    },
+    "CTU_Test": {
+      "E0_RandomForest_ZeroShot": {
+        "n_rows": 37686,
+        "n_attack": 7670,
+        "n_benign": 30016,
+        "threshold": 0.5,
+        "precision": 0.0808,
+        "recall": 0.0493,
+        "f1": 0.0612,
+        "fpr": 0.143224,
+        "roc_auc": 0.7901,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.2516
+          },
+          "Reconnaissance": {
+            "count": 7363,
+            "recall": 0.0409
+          }
+        }
+      },
+      "E1_RandomForest_Binary": {
+        "n_rows": 37686,
+        "n_attack": 7670,
+        "n_benign": 30016,
+        "threshold": 0.666757,
+        "precision": 0.9807,
+        "recall": 0.9332,
+        "f1": 0.9564,
+        "fpr": 0.004697,
+        "roc_auc": 0.9977,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.2843
+          },
+          "Reconnaissance": {
+            "count": 7363,
+            "recall": 0.9603
+          }
+        }
+      },
+      "E0_XGBoost_ZeroShot": {
+        "n_rows": 37686,
+        "n_attack": 7670,
+        "n_benign": 30016,
+        "threshold": 0.5,
+        "precision": 0.242,
+        "recall": 0.178,
+        "f1": 0.2051,
+        "fpr": 0.142457,
+        "roc_auc": 0.8111,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.3105
+          },
+          "Reconnaissance": {
+            "count": 7363,
+            "recall": 0.1725
+          }
+        }
+      },
+      "E1_XGBoost_Binary": {
+        "n_rows": 37686,
+        "n_attack": 7670,
+        "n_benign": 30016,
+        "threshold": 0.676147,
+        "precision": 0.9965,
+        "recall": 0.9172,
+        "f1": 0.9552,
+        "fpr": 0.000833,
+        "roc_auc": 0.9973,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.1569
+          },
+          "Reconnaissance": {
+            "count": 7363,
+            "recall": 0.9489
+          }
+        }
+      },
+      "E0_Autoencoder_ZeroShot": {
+        "n_rows": 37686,
+        "n_attack": 7670,
+        "n_benign": 30016,
+        "threshold": 0.000467,
+        "precision": 0.2655,
+        "recall": 0.9957,
+        "f1": 0.4192,
+        "fpr": 0.704058,
+        "roc_auc": 0.6292,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.951
+          },
+          "Reconnaissance": {
+            "count": 7363,
+            "recall": 0.9976
+          }
+        }
+      },
+      "Autoencoder_E3b_VarianceNormalized": {
+        "n_rows": 37686,
+        "n_attack": 7670,
+        "n_benign": 30016,
+        "threshold": 1.354965,
+        "precision": 0.6525,
+        "recall": 0.9389,
+        "f1": 0.7699,
+        "fpr": 0.127765,
+        "roc_auc": 0.8878,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.9444
+          },
+          "Reconnaissance": {
+            "count": 7363,
+            "recall": 0.9386
+          }
+        }
+      },
+      "E1_RandomForest_6Class_MacroF1_Present": 0.739
+    },
+    "CTU_Win7AD_Test": {
+      "E0_RandomForest_ZeroShot": {
+        "n_rows": 26274,
+        "n_attack": 307,
+        "n_benign": 25967,
+        "threshold": 0.5,
+        "precision": 0.02,
+        "recall": 0.2508,
+        "f1": 0.0371,
+        "fpr": 0.14503,
+        "roc_auc": 0.8639,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.2516
+          }
+        }
+      },
+      "E1_RandomForest_Binary": {
+        "n_rows": 26274,
+        "n_attack": 307,
+        "n_benign": 25967,
+        "threshold": 0.666757,
+        "precision": 0.4123,
+        "recall": 0.2834,
+        "f1": 0.3359,
+        "fpr": 0.004775,
+        "roc_auc": 0.9883,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.2843
+          }
+        }
+      },
+      "E0_XGBoost_ZeroShot": {
+        "n_rows": 26274,
+        "n_attack": 307,
+        "n_benign": 25967,
+        "threshold": 0.5,
+        "precision": 0.025,
+        "recall": 0.3094,
+        "f1": 0.0462,
+        "fpr": 0.142951,
+        "roc_auc": 0.8592,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.3105
+          }
+        }
+      },
+      "E1_XGBoost_Binary": {
+        "n_rows": 26274,
+        "n_attack": 307,
+        "n_benign": 25967,
+        "threshold": 0.676147,
+        "precision": 0.7059,
+        "recall": 0.1564,
+        "f1": 0.256,
+        "fpr": 0.00077,
+        "roc_auc": 0.9849,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.1569
+          }
+        }
+      },
+      "E0_Autoencoder_ZeroShot": {
+        "n_rows": 26274,
+        "n_attack": 307,
+        "n_benign": 25967,
+        "threshold": 0.000467,
+        "precision": 0.0153,
+        "recall": 0.9511,
+        "f1": 0.0302,
+        "fpr": 0.721377,
+        "roc_auc": 0.5872,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.951
+          }
+        }
+      },
+      "Autoencoder_E3b_VarianceNormalized": {
+        "n_rows": 26274,
+        "n_attack": 307,
+        "n_benign": 25967,
+        "threshold": 1.354965,
+        "precision": 0.0749,
+        "recall": 0.9446,
+        "f1": 0.1388,
+        "fpr": 0.137944,
+        "roc_auc": 0.9706,
+        "per_attack_recall": {
+          "Exploitation_And_C2": {
+            "count": 306,
+            "recall": 0.9444
+          }
+        }
+      },
+      "E1_RandomForest_6Class_MacroF1_Present": 0.6713
+    },
+    "UWF_Test": {
+      "E0_RandomForest_ZeroShot": {
+        "n_rows": 14388,
+        "n_attack": 7201,
+        "n_benign": 7187,
+        "threshold": 0.5,
+        "precision": 0.5464,
+        "recall": 0.0515,
+        "f1": 0.0942,
+        "fpr": 0.042855,
+        "roc_auc": 0.9577,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 6525,
+            "recall": 0.0054
+          },
+          "Exploitation_And_C2": {
+            "count": 235,
+            "recall": 0.7574
+          },
+          "Data_Exfiltration": {
+            "count": 4,
+            "recall": 0.25
+          },
+          "Reconnaissance": {
+            "count": 437,
+            "recall": 0.3593
+          }
+        }
+      },
+      "E1_RandomForest_Binary": {
+        "n_rows": 14388,
+        "n_attack": 7201,
+        "n_benign": 7187,
+        "threshold": 0.666757,
+        "precision": 0.9983,
+        "recall": 1.0,
+        "f1": 0.9992,
+        "fpr": 0.00167,
+        "roc_auc": 1.0,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 6525,
+            "recall": 1.0
+          },
+          "Exploitation_And_C2": {
+            "count": 235,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 4,
+            "recall": 1.0
+          },
+          "Reconnaissance": {
+            "count": 437,
+            "recall": 1.0
+          }
+        }
+      },
+      "E0_XGBoost_ZeroShot": {
+        "n_rows": 14388,
+        "n_attack": 7201,
+        "n_benign": 7187,
+        "threshold": 0.5,
+        "precision": 0.9565,
+        "recall": 0.9406,
+        "f1": 0.9485,
+        "fpr": 0.042855,
+        "roc_auc": 0.9745,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 6525,
+            "recall": 0.9864
+          },
+          "Exploitation_And_C2": {
+            "count": 235,
+            "recall": 0.7617
+          },
+          "Data_Exfiltration": {
+            "count": 4,
+            "recall": 0.25
+          },
+          "Reconnaissance": {
+            "count": 437,
+            "recall": 0.3593
+          }
+        }
+      },
+      "E1_XGBoost_Binary": {
+        "n_rows": 14388,
+        "n_attack": 7201,
+        "n_benign": 7187,
+        "threshold": 0.676147,
+        "precision": 0.9983,
+        "recall": 1.0,
+        "f1": 0.9992,
+        "fpr": 0.00167,
+        "roc_auc": 1.0,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 6525,
+            "recall": 1.0
+          },
+          "Exploitation_And_C2": {
+            "count": 235,
+            "recall": 1.0
+          },
+          "Data_Exfiltration": {
+            "count": 4,
+            "recall": 1.0
+          },
+          "Reconnaissance": {
+            "count": 437,
+            "recall": 1.0
+          }
+        }
+      },
+      "E0_Autoencoder_ZeroShot": {
+        "n_rows": 14388,
+        "n_attack": 7201,
+        "n_benign": 7187,
+        "threshold": 0.000467,
+        "precision": 0.373,
+        "recall": 0.2722,
+        "f1": 0.3147,
+        "fpr": 0.458328,
+        "roc_auc": 0.3869,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 6525,
+            "recall": 0.1969
+          },
+          "Exploitation_And_C2": {
+            "count": 235,
+            "recall": 0.9957
+          },
+          "Data_Exfiltration": {
+            "count": 4,
+            "recall": 1.0
+          },
+          "Reconnaissance": {
+            "count": 437,
+            "recall": 1.0
+          }
+        }
+      },
+      "Autoencoder_E3b_VarianceNormalized": {
+        "n_rows": 14388,
+        "n_attack": 7201,
+        "n_benign": 7187,
+        "threshold": 1.354965,
+        "precision": 0.9828,
+        "recall": 0.0953,
+        "f1": 0.1737,
+        "fpr": 0.00167,
+        "roc_auc": 0.3102,
+        "per_attack_recall": {
+          "Credential_Attack": {
+            "count": 6525,
+            "recall": 0.0112
+          },
+          "Exploitation_And_C2": {
+            "count": 235,
+            "recall": 0.7532
+          },
+          "Data_Exfiltration": {
+            "count": 4,
+            "recall": 0.0
+          },
+          "Reconnaissance": {
+            "count": 437,
+            "recall": 0.9977
+          }
+        }
+      },
+      "E1_RandomForest_6Class_MacroF1_Present": 0.7474
+    }
+  },
+  "environment": {
+    "python_version": "3.12.10",
+    "os": "Windows-11-10.0.26200-SP0",
+    "scikit_learn": "1.9.1",
+    "pandas": "3.1.1",
+    "numpy": "2.5.5",
+    "git_commit": "f1f41f48f4da87c385d74abd487cb00763872acd",
+    "git_dirty": true,
+    "git": {
+      "git_commit": "f1f41f48f4da87c385d74abd487cb00763872acd",
+      "git_dirty": true,
+      "git_clean": false,
+      "git_dirty_paths": [
+        "M desktop/src/lib/components/BehavioralAnalysisPanel.svelte",
+        "M desktop/src/lib/components/LiveMonitoringPanel.svelte",
+        "M desktop/src/lib/components/V2Panels.test.ts",
+        "M desktop/vite.config.ts",
+        "M docs/PRESENTATION_OUTLINE.md",
+        "M docs/TEAM_TASKS.md",
+        "M docs/TESTING.md",
+        "M docs/TRACEABILITY_MATRIX.md",
+        "M docs/USER_GUIDE_V2.md",
+        "M docs/architecture/BEHAVIORAL_ENGINE.md",
+        "M docs/experiments/MULTICLASS_ATTACK_CLASSIFICATION.md",
+        "M docs/experiments/TRACEABILITY_EVALUATION.md",
+        "M reports/experiments/imbalance/rq2_imbalance_report.json",
+        "M reports/experiments/imbalance/rq2_imbalance_report.md",
+        "M reports/experiments/ml/multiclass_stage2_manifest.json",
+        "M reports/experiments/trace/traceability_evaluation.json",
+        "M scripts/evaluate_behavioral_and_risk_policies.py",
+        "M scripts/evaluate_traceability.py",
+        "M scripts/run_e1_multidomain_experiment.py",
+        "M scripts/run_multiclass_attack_classifier.py",
+        "M scripts/run_rq2_rare_attack_experiment.py",
+        "M src/network_anomaly/api/main.py",
+        "M src/network_anomaly/models/stage2_multiclass.py",
+        "M src/network_anomaly/streaming/alert_manager.py",
+        "M src/network_anomaly/streaming/live_orchestrator.py",
+        "M src/network_anomaly/streaming/pipeline.py",
+        "M src/network_anomaly/trace/graph.py",
+        "M tests/unit/test_stage2_and_experiments.py",
+        "?? docs/audits/V2_RELEASE_READINESS.md",
+        "?? docs/thesis/",
+        "?? tests/unit/test_audit_fixes_2055930.py"
+      ],
+      "git_dirty_disclosure": "Trained from commit f1f41f4 with uncommitted worktree changes (32 modified/untracked path(s)).",
+      "worktree_provenance": "DIRTY_DISCLOSED",
+      "provenance_complete": true,
+      "provenance_status": "VERIFIED"
+    },
+    "timestamp_utc": "2026-11-19T14:24:25.988900+00:00"
+  }
+}

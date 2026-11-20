@@ -1,8 +1,8 @@
-"""Contract tests for M6 FastAPI, Streamlit, Risk, and Trace integration interfaces (Issue #46)."""
+"""Contract tests for M6 FastAPI, Risk, and Trace integration interfaces."""
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import (
-    NetFlowV3Adapter,
+    CanonicalFlowV2Adapter,
     SuricataEveAdapter,
     ZeekConnAdapter,
 )
@@ -19,11 +19,10 @@ from network_anomaly.ingestion.gate import InferenceEligibilityGate
 
 def test_api_ingest_response_contract_approved():
     gate = InferenceEligibilityGate()
-    v3_adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
+    v2_adapter = CanonicalFlowV2Adapter(source_id="source:ait-nds-v2")
     raw = {col: 1.0 for col in ML_FEATURE_COLUMNS}
-    raw["MIN_TTL"] = 31.0
-    raw["MAX_TTL"] = 64.0
-    event = v3_adapter.adapt_record(raw)
+    raw["protocol_num"] = 6.0
+    event = v2_adapter.adapt_record(raw)
 
     decision = gate.evaluate([event])
     response = create_api_response(
@@ -60,14 +59,13 @@ def test_api_ingest_response_contract_abstained():
 
 def test_dashboard_view_model_contract():
     gate = InferenceEligibilityGate()
-    adapter = NetFlowV3Adapter(source_id="source:nf-v3-canonical")
+    adapter = CanonicalFlowV2Adapter(source_id="source:ait-nds-v2")
     raw = {col: 1.0 for col in ML_FEATURE_COLUMNS}
-    raw["MIN_TTL"] = 31.0
-    raw["MAX_TTL"] = 64.0
+    raw["protocol_num"] = 6.0
     event = adapter.adapt_record(raw)
 
     decision = gate.evaluate([event])
-    vm = create_dashboard_view_model(decision, "NF-UNSW-NB15-v3 Canonical")
+    vm = create_dashboard_view_model(decision, "AIT-NDS-v2 Canonical")
 
     assert vm.tier_badge == "MODEL_VALIDATED"
     assert vm.badge_color == "green"

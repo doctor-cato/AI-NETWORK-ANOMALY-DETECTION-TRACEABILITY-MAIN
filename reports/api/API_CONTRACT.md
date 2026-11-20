@@ -2,13 +2,18 @@
 
 **API Title**: AI Network Anomaly Detection & Traceability API
 **Version**: 0.1.0
-**Total Endpoints**: 18
+**Total Endpoints**: 33
 
 ## Endpoints Specification
 
 | Method | Path | Summary | Tags |
 |---|---|---|---|
 | `POST` | `/api/v1/analyze` | Run anomaly detection on network flows | Analysis |
+| `GET` | `/api/v1/behavioral/correlate` | Run IPSpoofingSessionCorrelator over stored behavioral vectors | Behavioral Intelligence |
+| `GET` | `/api/v1/behavioral/similarity` | Compute real Cosine/Euclidean/Manhattan similarity between two stored vectors | Behavioral Intelligence |
+| `GET` | `/api/v1/behavioral/vectors` | List persisted 16-D behavioral vector metadata (ciphertext stays at rest) | Behavioral Intelligence |
+| `GET` | `/api/v1/behavioral/vectors/{vector_id}` | Decrypt and inspect a stored 16-D behavioral vector by ID | Behavioral Intelligence |
+| `GET` | `/api/v1/crypto/status` | Get active cryptographic key metadata, protection mode, and rotation history | Cryptography & Keys |
 | `POST` | `/api/v1/csv/analyze` | Run verified batch inference on local NetFlow CSV with OOD, timeline, and risk scoring | Models & CSV |
 | `POST` | `/api/v1/csv/evaluate` | Evaluate CSV predictions against a separate Ground Truth CSV | Models & CSV |
 | `POST` | `/api/v1/csv/export` | Export predictions CSV and companion SHA-256 provenance JSON | Models & CSV |
@@ -20,13 +25,23 @@
 | `PATCH` | `/api/v1/incidents/{incident_id}` | Update incident status or details | Incidents |
 | `POST` | `/api/v1/ingest` | Ingest network flow telemetry events | Ingestion |
 | `GET` | `/api/v1/keys` | List cryptographic key metadata | Key Lifecycle |
+| `GET` | `/api/v1/live/alerts` | Get recent live alerts raised by Risk Engine & Alert Manager | Live Telemetry |
+| `GET` | `/api/v1/live/graph` | Get live entity relationship graph from active telemetry | Live Telemetry |
+| `GET` | `/api/v1/live/results` | Get recent live processed telemetry results | Live Telemetry |
+| `POST` | `/api/v1/live/start` | Start real UDP NetFlow/IPFIX collector and streaming worker | Live Telemetry |
+| `GET` | `/api/v1/live/status` | Get live collector, pipeline, and 4-model readiness status | Live Telemetry |
+| `POST` | `/api/v1/live/stop` | Stop live UDP collector and flush buffered events | Live Telemetry |
 | `GET` | `/api/v1/models` | List readiness and provenance status for all 4 M6 models | Models & CSV |
+| `GET` | `/api/v1/models/benchmark-report` | Get official 4-model benchmark and cross-source evaluation report | Models & CSV |
 | `POST` | `/api/v1/rotation` | Trigger key metadata rotation audit lifecycle (dry-run safe) | Key Lifecycle |
 | `GET` | `/api/v1/rotation/audit` | Query key rotation audit log | Key Lifecycle |
 | `POST` | `/api/v1/security/simulate-response` | Simulate deterministic adaptive security response & key rotation decision (dry-run) | Security Dry-Run |
 | `GET` | `/api/v1/security/simulations` | List persisted Issue #27 dry-run security response simulations | Security Dry-Run |
 | `POST` | `/api/v1/security/simulations/export` | Export Issue #27 dry-run simulation evidence JSON and metadata | Security Dry-Run |
 | `GET` | `/api/v1/timeline` | Chronological timeline of events, alerts, and key rotations | Timeline |
+| `GET` | `/api/v1/trace/graph` | Query entity relationship graph from real live or stored telemetry | Trace & Investigation |
+| `POST` | `/api/v1/trace/investigation/generate` | Generate verifiable investigation report with provenance hash | Trace & Investigation |
+| `GET` | `/api/v1/trace/timeline` | Get reconstructed multi-stage attack timeline from real events/incidents | Trace & Investigation |
 | `GET` | `/health` | System and artifact health check | System |
 
 ## Key Deliverables & Design Rules

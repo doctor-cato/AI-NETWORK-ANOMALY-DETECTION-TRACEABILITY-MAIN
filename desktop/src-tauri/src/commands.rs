@@ -256,6 +256,13 @@ pub async fn fetch_models_status(backend: State<'_, BackendManager>) -> Result<V
 }
 
 #[tauri::command]
+pub async fn get_model_benchmark_report(
+    backend: State<'_, BackendManager>,
+) -> Result<Value, String> {
+    get_json(backend.inner(), "/api/v1/models/benchmark-report").await
+}
+
+#[tauri::command]
 pub async fn inspect_csv(
     backend: State<'_, BackendManager>,
     file_path: String,
@@ -401,6 +408,204 @@ pub async fn export_security_simulation(
         payload,
     )
     .await
+}
+
+fn encode_query_component(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for byte in raw.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", byte)),
+        }
+    }
+    out
+}
+
+#[tauri::command]
+pub async fn fetch_crypto_status(
+    backend: State<'_, BackendManager>,
+    domain: Option<String>,
+) -> Result<Value, String> {
+    let dom = domain.unwrap_or_else(|| "general".to_string());
+    let path = format!(
+        "/api/v1/crypto/status?domain={}",
+        encode_query_component(&dom)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_trace_timeline(
+    backend: State<'_, BackendManager>,
+    campaign_name: Option<String>,
+) -> Result<Value, String> {
+    let path = match campaign_name {
+        Some(camp) if !camp.trim().is_empty() => format!(
+            "/api/v1/trace/timeline?campaign_name={}",
+            encode_query_component(&camp)
+        ),
+        _ => "/api/v1/trace/timeline".to_string(),
+    };
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_trace_graph(
+    backend: State<'_, BackendManager>,
+    entity_id: Option<String>,
+    depth: Option<u32>,
+) -> Result<Value, String> {
+    let d = depth.unwrap_or(2).clamp(1, 5);
+    let path = match entity_id {
+        Some(ent) if !ent.trim().is_empty() => format!(
+            "/api/v1/trace/graph?entity_id={}&depth={d}",
+            encode_query_component(&ent)
+        ),
+        _ => format!("/api/v1/trace/graph?depth={d}"),
+    };
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn start_live_telemetry(
+    backend: State<'_, BackendManager>,
+    host: Option<String>,
+    port: Option<u16>,
+    demo_heuristics: Option<bool>,
+) -> Result<Value, String> {
+    post_json(
+        backend.inner(),
+        "/api/v1/live/start",
+        json!({
+            "host": host.unwrap_or_else(|| "127.0.0.1".to_string()),
+            "port": port.unwrap_or(0),
+            "demo_heuristics": demo_heuristics.unwrap_or(false),
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn stop_live_telemetry(backend: State<'_, BackendManager>) -> Result<Value, String> {
+    post_json(backend.inner(), "/api/v1/live/stop", json!({})).await
+}
+
+#[tauri::command]
+pub async fn fetch_live_status(backend: State<'_, BackendManager>) -> Result<Value, String> {
+    get_json(backend.inner(), "/api/v1/live/status").await
+}
+
+#[tauri::command]
+pub async fn fetch_live_results(
+    backend: State<'_, BackendManager>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let path = format!("/api/v1/live/results?limit={}", limit.unwrap_or(50));
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_live_alerts(
+    backend: State<'_, BackendManager>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let path = format!("/api/v1/live/alerts?limit={}", limit.unwrap_or(50));
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_live_graph(backend: State<'_, BackendManager>) -> Result<Value, String> {
+    get_json(backend.inner(), "/api/v1/live/graph").await
+}
+
+#[tauri::command]
+pub async fn fetch_behavioral_vectors(
+    backend: State<'_, BackendManager>,
+    entity_id: Option<String>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let mut path = format!("/api/v1/behavioral/vectors?limit={}", limit.unwrap_or(50));
+    if let Some(ent) = entity_id {
+        if !ent.trim().is_empty() {
+            path.push_str(&format!("&entity_id={}", encode_query_component(&ent)));
+        }
+    }
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_behavioral_vector_detail(
+    backend: State<'_, BackendManager>,
+    vector_id: String,
+) -> Result<Value, String> {
+    let path = format!(
+        "/api/v1/behavioral/vectors/{}",
+        encode_query_component(&vector_id)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_behavioral_similarity(
+    backend: State<'_, BackendManager>,
+    vector_a_id: String,
+    vector_b_id: String,
+) -> Result<Value, String> {
+    let path = format!(
+        "/api/v1/behavioral/similarity?vector_a_id={}&vector_b_id={}",
+        encode_query_component(&vector_a_id),
+        encode_query_component(&vector_b_id)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn fetch_behavioral_correlation(
+    backend: State<'_, BackendManager>,
+    match_threshold: Option<f64>,
+    limit: Option<u32>,
+) -> Result<Value, String> {
+    let thresh = match_threshold.unwrap_or(0.85).clamp(0.0, 1.0);
+    let path = format!(
+        "/api/v1/behavioral/correlate?match_threshold={thresh}&limit={}",
+        limit.unwrap_or(20)
+    );
+    get_json(backend.inner(), &path).await
+}
+
+#[tauri::command]
+pub async fn generate_investigation_report(
+    backend: State<'_, BackendManager>,
+    payload: Value,
+) -> Result<Value, String> {
+    post_json(
+        backend.inner(),
+        "/api/v1/trace/investigation/generate",
+        payload,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn fetch_incidents(
+    backend: State<'_, BackendManager>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+    severity: Option<String>,
+) -> Result<Value, String> {
+    let mut path = format!(
+        "/api/v1/incidents?limit={}&offset={}",
+        limit.unwrap_or(50),
+        offset.unwrap_or(0)
+    );
+    if let Some(sev) = severity {
+        if !sev.is_empty() && sev != "ALL" {
+            path.push_str(&format!("&severity={}", encode_query_component(&sev)));
+        }
+    }
+    get_json(backend.inner(), &path).await
 }
 
 #[cfg(test)]

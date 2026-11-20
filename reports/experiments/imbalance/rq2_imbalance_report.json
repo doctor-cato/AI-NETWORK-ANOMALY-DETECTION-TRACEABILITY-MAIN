@@ -1,0 +1,500 @@
+{
+  "experiment_id": "EXP-RQ2-IMBALANCE-001",
+  "status": "COMPLETED",
+  "timestamp_utc": "2026-11-19T14:23:25.889097+00:00",
+  "hypothesis": "H2: Cost-sensitive weighting and anomaly reconstruction enable reliable detection (F1 / detection rate >= 0.70) of rare attack categories (prevalence < 0.5%) without synthetic oversampling of validation/test distributions.",
+  "dataset_provenance": {
+    "dataset_id": "AIT-NetFlow-v2-Suite",
+    "dataset_version": "v2",
+    "doi": "10.5281/zenodo.13168643",
+    "source_url": "https://zenodo.org/records/13168643",
+    "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+    "split_protocol": "v2-scenario-group-purged-v1",
+    "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
+    "preprocessor_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7"
+  },
+  "split_counts": {
+    "train_total": 2097891,
+    "train_oversampled_total": 2140237,
+    "train_oversampled_added_rows": 42346,
+    "train_benign": 1825866,
+    "train_attack": 272025,
+    "scale_pos_weight_used": 6.7121,
+    "scale_pos_weight_oversampled_used": 5.808,
+    "test_total": 988805,
+    "train_class_distribution": {
+      "Benign": 1825866,
+      "Reconnaissance": 182103,
+      "Data_Exfiltration": 87268,
+      "Credential_Attack": 2438,
+      "Post_Exploitation_Discovery": 180,
+      "Exploitation_And_C2": 36
+    },
+    "test_class_distribution": {
+      "Benign": 812980,
+      "Reconnaissance": 95628,
+      "Data_Exfiltration": 80075,
+      "Credential_Attack": 78,
+      "Post_Exploitation_Discovery": 39,
+      "Exploitation_And_C2": 5
+    }
+  },
+  "model_artifact_hashes": {
+    "RandomForest_Unweighted": "trained_in_experiment",
+    "RandomForest_CostSensitive": "trained_in_experiment",
+    "XGBoost_ScalePosWeight": "trained_in_experiment",
+    "RandomForest_TrainOnlyOversampled": "trained_in_experiment",
+    "XGBoost_TrainOnlyOversampled": "trained_in_experiment",
+    "IsolationForest": "11b1690088bca1984df9280b3c5662fbb13a76ca31e55258b9de43d6a10a6885",
+    "Autoencoder_Reconstruction": "e6afecefdc939a09e3c7fedd3e994a10c404f74e9b52c9ab95dfd984aae0cd4f"
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 124 Stepping 0, AuthenticAMD",
+    "cpu_count": 12,
+    "total_ram_gb": 15.27,
+    "python_version": "3.12.10",
+    "python_implementation": "CPython",
+    "packages": {
+      "numpy": "2.5.5",
+      "pandas": "3.1.1",
+      "scikit_learn": "1.9.1",
+      "xgboost": "3.4.1",
+      "joblib": "1.6.0",
+      "cryptography": "50.0.2"
+    },
+    "random_seed": 42,
+    "captured_at_utc": "2026-11-19T14:16:43.212696+00:00"
+  },
+  "overall_test_metrics": {
+    "RandomForest_Unweighted": {
+      "sample_count": 988805,
+      "positive_count": 175825,
+      "negative_count": 812980,
+      "accuracy": 0.9406758663234915,
+      "precision": 0.9985362823273111,
+      "recall": 0.6673510592919095,
+      "f1": 0.800023181765496,
+      "macro_f1": 0.8825975803524073,
+      "false_positive_rate": 0.00021156732022927993,
+      "roc_auc": 0.9994084017702861,
+      "pr_auc": 0.9976956446284693,
+      "confusion_matrix": [
+        [
+          812808,
+          172
+        ],
+        [
+          58488,
+          117337
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 812808,
+        "fp": 172,
+        "fn": 58488,
+        "tp": 117337
+      }
+    },
+    "RandomForest_CostSensitive": {
+      "sample_count": 988805,
+      "positive_count": 175825,
+      "negative_count": 812980,
+      "accuracy": 0.9981401793073458,
+      "precision": 0.9988645617093508,
+      "recall": 0.9906668562491113,
+      "f1": 0.9947488199836096,
+      "macro_f1": 0.9968093993582985,
+      "false_positive_rate": 0.00024354842677556644,
+      "roc_auc": 0.9981098287214443,
+      "pr_auc": 0.994869121794123,
+      "confusion_matrix": [
+        [
+          812782,
+          198
+        ],
+        [
+          1641,
+          174184
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 812782,
+        "fp": 198,
+        "fn": 1641,
+        "tp": 174184
+      }
+    },
+    "XGBoost_ScalePosWeight": {
+      "sample_count": 988805,
+      "positive_count": 175825,
+      "negative_count": 812980,
+      "accuracy": 0.9905360510919746,
+      "precision": 0.9979479877716823,
+      "recall": 0.948727427840182,
+      "f1": 0.9727154511368076,
+      "macro_f1": 0.983495307605217,
+      "false_positive_rate": 0.0004219045978990873,
+      "roc_auc": 0.9897941007116872,
+      "pr_auc": 0.9748219725632216,
+      "confusion_matrix": [
+        [
+          812637,
+          343
+        ],
+        [
+          9015,
+          166810
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 812637,
+        "fp": 343,
+        "fn": 9015,
+        "tp": 166810
+      }
+    },
+    "RandomForest_TrainOnlyOversampled": {
+      "sample_count": 988805,
+      "positive_count": 175825,
+      "negative_count": 812980,
+      "accuracy": 0.9980107301237352,
+      "precision": 0.9980405862199356,
+      "recall": 0.9907578558225508,
+      "f1": 0.9943858867986997,
+      "macro_f1": 0.9965885468832794,
+      "false_positive_rate": 0.00042067455533961474,
+      "roc_auc": 0.9989782195158962,
+      "pr_auc": 0.9962289916340511,
+      "confusion_matrix": [
+        [
+          812638,
+          342
+        ],
+        [
+          1625,
+          174200
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 812638,
+        "fp": 342,
+        "fn": 1625,
+        "tp": 174200
+      }
+    },
+    "XGBoost_TrainOnlyOversampled": {
+      "sample_count": 988805,
+      "positive_count": 175825,
+      "negative_count": 812980,
+      "accuracy": 0.967662987141044,
+      "precision": 0.9953103049334766,
+      "recall": 0.8220162092990189,
+      "f1": 0.9004008883711223,
+      "macro_f1": 0.9405494961138492,
+      "false_positive_rate": 0.0008376589830008118,
+      "roc_auc": 0.9764792885021082,
+      "pr_auc": 0.9337987799754499,
+      "confusion_matrix": [
+        [
+          812299,
+          681
+        ],
+        [
+          31294,
+          144531
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 812299,
+        "fp": 681,
+        "fn": 31294,
+        "tp": 144531
+      }
+    },
+    "IsolationForest": {
+      "sample_count": 988805,
+      "positive_count": 175825,
+      "negative_count": 812980,
+      "accuracy": 0.8815711894660727,
+      "precision": 0.7775246701198533,
+      "recall": 0.46784586947248685,
+      "f1": 0.5841822875424773,
+      "macro_f1": 0.7575676297625982,
+      "false_positive_rate": 0.028951511722305593,
+      "roc_auc": 0.8330126364390124,
+      "pr_auc": 0.658716154856379,
+      "confusion_matrix": [
+        [
+          789443,
+          23537
+        ],
+        [
+          93566,
+          82259
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 789443,
+        "fp": 23537,
+        "fn": 93566,
+        "tp": 82259
+      }
+    },
+    "Autoencoder_Reconstruction": {
+      "sample_count": 988805,
+      "positive_count": 175825,
+      "negative_count": 812980,
+      "accuracy": 0.8829041115285623,
+      "precision": 0.7859701265051059,
+      "recall": 0.46926205033413904,
+      "f1": 0.5876617248514072,
+      "macro_f1": 0.7597124083156652,
+      "false_positive_rate": 0.027636596226229427,
+      "roc_auc": 0.5543829794752332,
+      "pr_auc": 0.5664230031886072,
+      "confusion_matrix": [
+        [
+          790512,
+          22468
+        ],
+        [
+          93317,
+          82508
+        ]
+      ],
+      "confusion_matrix_labeled": {
+        "tn": 790512,
+        "fp": 22468,
+        "fn": 93317,
+        "tp": 82508
+      }
+    }
+  },
+  "rare_attack_categories": {
+    "Credential_Attack": {
+      "sample_count_train": 2438,
+      "sample_count_test": 78,
+      "train_prevalence_pct": 0.1162,
+      "test_prevalence_pct": 0.0079,
+      "models": {
+        "RandomForest_Unweighted": {
+          "category_test_count": 78,
+          "category_detected": 11,
+          "category_detection_rate": 0.14102564102564102,
+          "one_vs_benign_precision": 0.060109289617486336,
+          "one_vs_benign_recall": 0.14102564102564102,
+          "one_vs_benign_f1": 0.0842911877394636,
+          "benign_false_positive_rate": 0.00021156732022927993
+        },
+        "RandomForest_CostSensitive": {
+          "category_test_count": 78,
+          "category_detected": 11,
+          "category_detection_rate": 0.14102564102564102,
+          "one_vs_benign_precision": 0.05263157894736842,
+          "one_vs_benign_recall": 0.14102564102564102,
+          "one_vs_benign_f1": 0.07665505226480836,
+          "benign_false_positive_rate": 0.00024354842677556644
+        },
+        "XGBoost_ScalePosWeight": {
+          "category_test_count": 78,
+          "category_detected": 11,
+          "category_detection_rate": 0.14102564102564102,
+          "one_vs_benign_precision": 0.031073446327683617,
+          "one_vs_benign_recall": 0.14102564102564102,
+          "one_vs_benign_f1": 0.05092592592592592,
+          "benign_false_positive_rate": 0.0004219045978990873
+        },
+        "RandomForest_TrainOnlyOversampled": {
+          "category_test_count": 78,
+          "category_detected": 11,
+          "category_detection_rate": 0.14102564102564102,
+          "one_vs_benign_precision": 0.031161473087818695,
+          "one_vs_benign_recall": 0.14102564102564102,
+          "one_vs_benign_f1": 0.05104408352668213,
+          "benign_false_positive_rate": 0.00042067455533961474
+        },
+        "XGBoost_TrainOnlyOversampled": {
+          "category_test_count": 78,
+          "category_detected": 11,
+          "category_detection_rate": 0.14102564102564102,
+          "one_vs_benign_precision": 0.015895953757225433,
+          "one_vs_benign_recall": 0.14102564102564102,
+          "one_vs_benign_f1": 0.02857142857142857,
+          "benign_false_positive_rate": 0.0008376589830008118
+        },
+        "IsolationForest": {
+          "category_test_count": 78,
+          "category_detected": 11,
+          "category_detection_rate": 0.14102564102564102,
+          "one_vs_benign_precision": 0.00046713096653643624,
+          "one_vs_benign_recall": 0.14102564102564102,
+          "one_vs_benign_f1": 0.0009311775162956066,
+          "benign_false_positive_rate": 0.028951511722305593
+        },
+        "Autoencoder_Reconstruction": {
+          "category_test_count": 78,
+          "category_detected": 5,
+          "category_detection_rate": 0.0641025641025641,
+          "one_vs_benign_precision": 0.00022248920927335025,
+          "one_vs_benign_recall": 0.0641025641025641,
+          "one_vs_benign_f1": 0.00044343931532969715,
+          "benign_false_positive_rate": 0.027636596226229427
+        }
+      }
+    },
+    "Exploitation_And_C2": {
+      "sample_count_train": 36,
+      "sample_count_test": 5,
+      "train_prevalence_pct": 0.0017,
+      "test_prevalence_pct": 0.0005,
+      "models": {
+        "RandomForest_Unweighted": {
+          "category_test_count": 5,
+          "category_detected": 5,
+          "category_detection_rate": 1.0,
+          "one_vs_benign_precision": 0.02824858757062147,
+          "one_vs_benign_recall": 1.0,
+          "one_vs_benign_f1": 0.054945054945054944,
+          "benign_false_positive_rate": 0.00021156732022927993
+        },
+        "RandomForest_CostSensitive": {
+          "category_test_count": 5,
+          "category_detected": 5,
+          "category_detection_rate": 1.0,
+          "one_vs_benign_precision": 0.024630541871921183,
+          "one_vs_benign_recall": 1.0,
+          "one_vs_benign_f1": 0.04807692307692308,
+          "benign_false_positive_rate": 0.00024354842677556644
+        },
+        "XGBoost_ScalePosWeight": {
+          "category_test_count": 5,
+          "category_detected": 5,
+          "category_detection_rate": 1.0,
+          "one_vs_benign_precision": 0.014367816091954023,
+          "one_vs_benign_recall": 1.0,
+          "one_vs_benign_f1": 0.028328611898016998,
+          "benign_false_positive_rate": 0.0004219045978990873
+        },
+        "RandomForest_TrainOnlyOversampled": {
+          "category_test_count": 5,
+          "category_detected": 5,
+          "category_detection_rate": 1.0,
+          "one_vs_benign_precision": 0.01440922190201729,
+          "one_vs_benign_recall": 1.0,
+          "one_vs_benign_f1": 0.028409090909090908,
+          "benign_false_positive_rate": 0.00042067455533961474
+        },
+        "XGBoost_TrainOnlyOversampled": {
+          "category_test_count": 5,
+          "category_detected": 5,
+          "category_detection_rate": 1.0,
+          "one_vs_benign_precision": 0.007288629737609329,
+          "one_vs_benign_recall": 1.0,
+          "one_vs_benign_f1": 0.01447178002894356,
+          "benign_false_positive_rate": 0.0008376589830008118
+        },
+        "IsolationForest": {
+          "category_test_count": 5,
+          "category_detected": 5,
+          "category_detection_rate": 1.0,
+          "one_vs_benign_precision": 0.0002123863732902897,
+          "one_vs_benign_recall": 1.0,
+          "one_vs_benign_f1": 0.00042468254979402894,
+          "benign_false_positive_rate": 0.028951511722305593
+        },
+        "Autoencoder_Reconstruction": {
+          "category_test_count": 5,
+          "category_detected": 5,
+          "category_detection_rate": 1.0,
+          "one_vs_benign_precision": 0.00022248920927335025,
+          "one_vs_benign_recall": 1.0,
+          "one_vs_benign_f1": 0.00044487943767239076,
+          "benign_false_positive_rate": 0.027636596226229427
+        }
+      }
+    },
+    "Post_Exploitation_Discovery": {
+      "sample_count_train": 180,
+      "sample_count_test": 39,
+      "train_prevalence_pct": 0.0086,
+      "test_prevalence_pct": 0.0039,
+      "models": {
+        "RandomForest_Unweighted": {
+          "category_test_count": 39,
+          "category_detected": 35,
+          "category_detection_rate": 0.8974358974358975,
+          "one_vs_benign_precision": 0.16908212560386474,
+          "one_vs_benign_recall": 0.8974358974358975,
+          "one_vs_benign_f1": 0.2845528455284553,
+          "benign_false_positive_rate": 0.00021156732022927993
+        },
+        "RandomForest_CostSensitive": {
+          "category_test_count": 39,
+          "category_detected": 35,
+          "category_detection_rate": 0.8974358974358975,
+          "one_vs_benign_precision": 0.15021459227467812,
+          "one_vs_benign_recall": 0.8974358974358975,
+          "one_vs_benign_f1": 0.25735294117647056,
+          "benign_false_positive_rate": 0.00024354842677556644
+        },
+        "XGBoost_ScalePosWeight": {
+          "category_test_count": 39,
+          "category_detected": 35,
+          "category_detection_rate": 0.8974358974358975,
+          "one_vs_benign_precision": 0.09259259259259259,
+          "one_vs_benign_recall": 0.8974358974358975,
+          "one_vs_benign_f1": 0.16786570743405277,
+          "benign_false_positive_rate": 0.0004219045978990873
+        },
+        "RandomForest_TrainOnlyOversampled": {
+          "category_test_count": 39,
+          "category_detected": 35,
+          "category_detection_rate": 0.8974358974358975,
+          "one_vs_benign_precision": 0.09283819628647215,
+          "one_vs_benign_recall": 0.8974358974358975,
+          "one_vs_benign_f1": 0.16826923076923078,
+          "benign_false_positive_rate": 0.00042067455533961474
+        },
+        "XGBoost_TrainOnlyOversampled": {
+          "category_test_count": 39,
+          "category_detected": 35,
+          "category_detection_rate": 0.8974358974358975,
+          "one_vs_benign_precision": 0.04888268156424581,
+          "one_vs_benign_recall": 0.8974358974358975,
+          "one_vs_benign_f1": 0.09271523178807947,
+          "benign_false_positive_rate": 0.0008376589830008118
+        },
+        "IsolationForest": {
+          "category_test_count": 39,
+          "category_detected": 35,
+          "category_detection_rate": 0.8974358974358975,
+          "one_vs_benign_precision": 0.0014848124893941965,
+          "one_vs_benign_recall": 0.8974358974358975,
+          "one_vs_benign_f1": 0.0029647198339756895,
+          "benign_false_positive_rate": 0.028951511722305593
+        },
+        "Autoencoder_Reconstruction": {
+          "category_test_count": 39,
+          "category_detected": 4,
+          "category_detection_rate": 0.10256410256410256,
+          "one_vs_benign_precision": 0.000177999288002848,
+          "one_vs_benign_recall": 0.10256410256410256,
+          "one_vs_benign_f1": 0.00035538181333570254,
+          "benign_false_positive_rate": 0.027636596226229427
+        }
+      }
+    }
+  },
+  "hypothesis_evaluation": {
+    "cost_sensitive_detection_rate_ge_0_70_all_rare": false,
+    "autoencoder_one_vs_benign_f1_ge_0_70_all_rare": false,
+    "h2_full_confirmed": false
+  },
+  "limitations": [
+    "One-vs-benign rare-class precision/F1 treats all Benign false positives as denominator against a single rare attack class, making F1 sensitive to benign FPR when category support is tiny (e.g., Exploitation_And_C2 with N=5 test flows).",
+    "Train-Only Oversampling (target_per_rare_class=15,000 with 0.015*std Gaussian jitter on continuous features only, preserving binary flags exact) was applied strictly to ait_train (0 rows added or modified in ait_val or ait_test), fulfilling Section 6 Experiment 3 of the thesis proposal."
+  ]
+}

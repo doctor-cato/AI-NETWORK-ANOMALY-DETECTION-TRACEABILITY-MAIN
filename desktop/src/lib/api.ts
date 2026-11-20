@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   BackendLogSnapshot,
   BackendStatus,
+  BehavioralCorrelationResponse,
+  BehavioralSimilarityResponse,
+  BehavioralVectorDetailResponse,
+  BehavioralVectorListResponse,
+  CryptoStatusResponse,
   CsvAnalyzeResponse,
   CsvEvaluateResponse,
   CsvExportResponse,
@@ -9,11 +14,21 @@ import type {
   CsvInspectResponse,
   DemoPaths,
   HealthResponse,
+  IncidentItem,
+  InvestigationReportResponse,
+  LiveAlertsResponse,
+  LiveResultsResponse,
+  LiveStatusResponse,
+  ModelBenchmarkReportResponse,
   ModelStatusItem,
+  PaginatedIncidentsResponse,
   PaginatedSecuritySimulationsResponse,
   RuntimeDiagnostics,
   SecurityResponseSimulationResponse,
   SecuritySimulationExportResponse,
+  TimelineStageItem,
+  TraceGraphResponse,
+  TraceTimelineResponse,
 } from "./types";
 
 export function isTauriRuntime(): boolean {
@@ -187,6 +202,13 @@ export async function fetchModelsStatus(): Promise<ModelStatusItem[]> {
   return httpJson<ModelStatusItem[]>("/api/v1/models");
 }
 
+export async function getModelBenchmarkReport(): Promise<ModelBenchmarkReportResponse> {
+  if (isTauriRuntime()) {
+    return invoke<ModelBenchmarkReportResponse>("get_model_benchmark_report");
+  }
+  return httpJson<ModelBenchmarkReportResponse>("/api/v1/models/benchmark-report");
+}
+
 export async function inspectCsv(
   filePath: string,
   previewLimit = 20,
@@ -338,4 +360,195 @@ export async function reportFrontendReady(summary: {
   } catch {
     // Non-fatal diagnostics hook; ignore errors during normal interactive runs
   }
+}
+
+export async function fetchCryptoStatus(domain = "general"): Promise<CryptoStatusResponse> {
+  if (isTauriRuntime()) {
+    return invoke<CryptoStatusResponse>("fetch_crypto_status", { domain });
+  }
+  return httpJson<CryptoStatusResponse>(`/api/v1/crypto/status?domain=${encodeURIComponent(domain)}`);
+}
+
+export async function fetchTraceTimeline(campaignName?: string): Promise<TraceTimelineResponse> {
+  if (isTauriRuntime()) {
+    return invoke<TraceTimelineResponse>("fetch_trace_timeline", {
+      campaignName: campaignName ?? null,
+    });
+  }
+  const q = campaignName ? `?campaign_name=${encodeURIComponent(campaignName)}` : "";
+  return httpJson<TraceTimelineResponse>(`/api/v1/trace/timeline${q}`);
+}
+
+export async function fetchTraceGraph(
+  entityId?: string,
+  depth = 2,
+): Promise<TraceGraphResponse> {
+  if (isTauriRuntime()) {
+    return invoke<TraceGraphResponse>("fetch_trace_graph", {
+      entityId: entityId ?? null,
+      depth,
+    });
+  }
+  const params = new URLSearchParams({ depth: String(depth) });
+  if (entityId) params.set("entity_id", entityId);
+  return httpJson<TraceGraphResponse>(`/api/v1/trace/graph?${params.toString()}`);
+}
+
+export async function startLiveTelemetry(params?: {
+  host?: string;
+  port?: number;
+  demo_heuristics?: boolean;
+}): Promise<LiveStatusResponse> {
+  if (isTauriRuntime()) {
+    return invoke<LiveStatusResponse>("start_live_telemetry", {
+      host: params?.host ?? "127.0.0.1",
+      port: params?.port ?? 0,
+      demoHeuristics: params?.demo_heuristics ?? false,
+    });
+  }
+  return httpJson<LiveStatusResponse>("/api/v1/live/start", {
+    method: "POST",
+    body: JSON.stringify({
+      host: params?.host ?? "127.0.0.1",
+      port: params?.port ?? 0,
+      demo_heuristics: params?.demo_heuristics ?? false,
+    }),
+  });
+}
+
+export async function stopLiveTelemetry(): Promise<LiveStatusResponse> {
+  if (isTauriRuntime()) {
+    return invoke<LiveStatusResponse>("stop_live_telemetry");
+  }
+  return httpJson<LiveStatusResponse>("/api/v1/live/stop", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function fetchLiveStatus(): Promise<LiveStatusResponse> {
+  if (isTauriRuntime()) {
+    return invoke<LiveStatusResponse>("fetch_live_status");
+  }
+  return httpJson<LiveStatusResponse>("/api/v1/live/status");
+}
+
+export async function fetchLiveResults(limit = 50): Promise<LiveResultsResponse> {
+  if (isTauriRuntime()) {
+    return invoke<LiveResultsResponse>("fetch_live_results", { limit });
+  }
+  return httpJson<LiveResultsResponse>(`/api/v1/live/results?limit=${limit}`);
+}
+
+export async function fetchLiveAlerts(limit = 50): Promise<LiveAlertsResponse> {
+  if (isTauriRuntime()) {
+    return invoke<LiveAlertsResponse>("fetch_live_alerts", { limit });
+  }
+  return httpJson<LiveAlertsResponse>(`/api/v1/live/alerts?limit=${limit}`);
+}
+
+export async function fetchLiveGraph(): Promise<TraceGraphResponse> {
+  if (isTauriRuntime()) {
+    return invoke<TraceGraphResponse>("fetch_live_graph");
+  }
+  return httpJson<TraceGraphResponse>("/api/v1/live/graph");
+}
+
+export async function fetchBehavioralVectors(params?: {
+  entityId?: string;
+  limit?: number;
+}): Promise<BehavioralVectorListResponse> {
+  if (isTauriRuntime()) {
+    return invoke<BehavioralVectorListResponse>("fetch_behavioral_vectors", {
+      entityId: params?.entityId ?? null,
+      limit: params?.limit ?? 50,
+    });
+  }
+  const q = new URLSearchParams({ limit: String(params?.limit ?? 50) });
+  if (params?.entityId) q.set("entity_id", params.entityId);
+  return httpJson<BehavioralVectorListResponse>(`/api/v1/behavioral/vectors?${q.toString()}`);
+}
+
+export async function fetchBehavioralVectorDetail(
+  vectorId: string,
+): Promise<BehavioralVectorDetailResponse> {
+  if (isTauriRuntime()) {
+    return invoke<BehavioralVectorDetailResponse>("fetch_behavioral_vector_detail", {
+      vectorId,
+    });
+  }
+  return httpJson<BehavioralVectorDetailResponse>(
+    `/api/v1/behavioral/vectors/${encodeURIComponent(vectorId)}`,
+  );
+}
+
+export async function fetchBehavioralSimilarity(
+  vectorAId: string,
+  vectorBId: string,
+): Promise<BehavioralSimilarityResponse> {
+  if (isTauriRuntime()) {
+    return invoke<BehavioralSimilarityResponse>("fetch_behavioral_similarity", {
+      vectorAId,
+      vectorBId,
+    });
+  }
+  const q = new URLSearchParams({
+    vector_a_id: vectorAId,
+    vector_b_id: vectorBId,
+  });
+  return httpJson<BehavioralSimilarityResponse>(`/api/v1/behavioral/similarity?${q.toString()}`);
+}
+
+export async function fetchBehavioralCorrelation(params?: {
+  matchThreshold?: number;
+  limit?: number;
+}): Promise<BehavioralCorrelationResponse> {
+  if (isTauriRuntime()) {
+    return invoke<BehavioralCorrelationResponse>("fetch_behavioral_correlation", {
+      matchThreshold: params?.matchThreshold ?? 0.85,
+      limit: params?.limit ?? 20,
+    });
+  }
+  const q = new URLSearchParams({
+    match_threshold: String(params?.matchThreshold ?? 0.85),
+    limit: String(params?.limit ?? 20),
+  });
+  return httpJson<BehavioralCorrelationResponse>(`/api/v1/behavioral/correlate?${q.toString()}`);
+}
+
+export async function generateInvestigationReport(payload: {
+  incident_id: string;
+  title: string;
+  severity?: string;
+  root_cause_summary?: string;
+  events?: Array<Record<string, unknown>>;
+  evidence_records?: Array<Record<string, unknown>>;
+}): Promise<InvestigationReportResponse> {
+  if (isTauriRuntime()) {
+    return invoke<InvestigationReportResponse>("generate_investigation_report", { payload });
+  }
+  return httpJson<InvestigationReportResponse>("/api/v1/trace/investigation/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchIncidents(params?: {
+  limit?: number;
+  offset?: number;
+  severity?: string;
+}): Promise<PaginatedIncidentsResponse> {
+  if (isTauriRuntime()) {
+    return invoke<PaginatedIncidentsResponse>("fetch_incidents", {
+      limit: params?.limit ?? 50,
+      offset: params?.offset ?? 0,
+      severity: params?.severity ?? null,
+    });
+  }
+  const query = new URLSearchParams();
+  if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.offset) query.set("offset", String(params.offset));
+  if (params?.severity && params.severity !== "ALL") query.set("severity", params.severity);
+  const qStr = query.toString();
+  return httpJson<PaginatedIncidentsResponse>(`/api/v1/incidents${qStr ? `?${qStr}` : ""}`);
 }

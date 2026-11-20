@@ -35,12 +35,12 @@ def _copy_version_tree(dst_root: Path) -> None:
         shutil.copy2(PROJECT_ROOT / rel, target)
 
 
-def test_repo_desktop_version_is_1_0_0_and_api_version_is_0_1_0():
+def test_repo_desktop_version_is_2_0_0_and_api_version_is_0_1_0():
     desktop_versions = collect_desktop_versions(PROJECT_ROOT)
     unique_versions = set(desktop_versions.values())
     assert len(unique_versions) == 1
     desktop_ver = next(iter(unique_versions))
-    assert desktop_ver == "1.0.0" or desktop_ver.startswith("1.0.0-")
+    assert desktop_ver == "2.0.0" or desktop_ver.startswith("2.0.0-")
 
     backend_versions = collect_backend_api_versions(PROJECT_ROOT)
     assert set(backend_versions.values()) == {"0.1.0"}
@@ -54,28 +54,28 @@ def test_repo_desktop_version_is_1_0_0_and_api_version_is_0_1_0():
 
 
 def test_semver_validation_and_set_version_supports_beta_and_stable(tmp_path: Path):
-    validate_semver("1.0.0")
-    validate_semver("1.0.0-beta.1")
+    validate_semver("2.0.0")
+    validate_semver("2.0.0-beta.1")
     with pytest.raises(ValueError, match="Invalid SemVer"):
-        validate_semver("v1.0.0")
+        validate_semver("v2.0.0")
 
     _copy_version_tree(tmp_path)
 
-    # Set to 1.0.0-beta.1
-    updated_beta = set_desktop_version("1.0.0-beta.1", root=tmp_path)
-    assert set(updated_beta.values()) == {"1.0.0-beta.1"}
+    # Set to 2.0.0-beta.1
+    updated_beta = set_desktop_version("2.0.0-beta.1", root=tmp_path)
+    assert set(updated_beta.values()) == {"2.0.0-beta.1"}
     ok_beta, msg_beta = verify_desktop_version(
         root=tmp_path,
-        expected_version="1.0.0-beta.1",
-        expected_tag="refs/tags/v1.0.0-beta.1",
+        expected_version="2.0.0-beta.1",
+        expected_tag="refs/tags/v2.0.0-beta.1",
     )
     assert ok_beta is True, msg_beta
 
-    # Set back to 1.0.0 and verify strict 1-to-1 mismatch rejection for beta tag on 1.0.0 binary (F-04)
-    set_desktop_version("1.0.0", root=tmp_path)
+    # Set back to 2.0.0 and verify strict 1-to-1 mismatch rejection for beta tag on 2.0.0 binary (F-04)
+    set_desktop_version("2.0.0", root=tmp_path)
     ok_mismatch, msg_mismatch = verify_desktop_version(
         root=tmp_path,
-        expected_tag="v1.0.0-beta.1",
+        expected_tag="v2.0.0-beta.1",
     )
     assert ok_mismatch is False
     assert "does not match Git tag" in msg_mismatch
@@ -83,7 +83,7 @@ def test_semver_validation_and_set_version_supports_beta_and_stable(tmp_path: Pa
     # Detect drift when one file has a different version
     tauri_conf = tmp_path / "desktop" / "src-tauri" / "tauri.conf.json"
     tauri_conf.write_text(
-        tauri_conf.read_text(encoding="utf-8").replace('"1.0.0"', '"0.1.0"'),
+        tauri_conf.read_text(encoding="utf-8").replace('"2.0.0"', '"0.1.0"'),
         encoding="utf-8",
     )
     ok_drift, msg_drift = verify_desktop_version(root=tmp_path)
@@ -158,22 +158,23 @@ def test_release_workflow_enforces_main_ancestry_for_beta_and_strict_semver():
     ci_yml = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert 'NETWORK_ANOMALY_REQUIRE_PYTHON_TEST: "1"' in ci_yml
 
-    # Check v1.0.0 standalone documentation consistency (no end-user Python/Companion Bundle requirement)
+    # Check v2.0.0 standalone documentation consistency (no end-user Python/Companion Bundle requirement)
     win_doc = (PROJECT_ROOT / "docs" / "WINDOWS_INSTALLATION.md").read_text(encoding="utf-8")
-    rel_notes = (PROJECT_ROOT / "docs" / "releases" / "v1.0.0.md").read_text(encoding="utf-8")
+    rel_notes = (PROJECT_ROOT / "docs" / "releases" / "v2.0.0.md").read_text(encoding="utf-8")
     desktop_readme = (PROJECT_ROOT / "desktop" / "README.md").read_text(encoding="utf-8")
     assert ">= 3.10" not in win_doc
     assert ">= 3.10" not in rel_notes
     assert ">=3.10" not in desktop_readme
-    assert "v1.0.0" in win_doc
-    assert "v1.0.0" in rel_notes
-    assert "v1.0.0" in desktop_readme
+    assert "v2.0.0" in win_doc
+    assert "v2.0.0" in rel_notes
+    assert "v2.0.0" in desktop_readme
     assert "Companion Bundle" in rel_notes
     assert "Random Forest" in rel_notes
     assert "XGBoost" in rel_notes
     assert "Isolation Forest" in rel_notes
     assert "Autoencoder" in rel_notes
-    assert "454104" in rel_notes
+    assert "AIT-NDS-v2" in rel_notes
+    assert "CTU-SME-11" in rel_notes
     assert "DISTRIBUTION_AUTHORIZATION.json" in rel_notes
     assert "non-commercial-academic-approved" not in release_yml
     assert "non-commercial-academic-approved" not in desktop_readme

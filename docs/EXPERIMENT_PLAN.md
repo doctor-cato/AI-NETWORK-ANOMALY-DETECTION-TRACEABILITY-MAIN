@@ -1,46 +1,35 @@
-# Kế hoạch thực nghiệm
+# Kế hoạch Thực nghiệm — NetFlow Sentinel v2
 
-## Giả thuyết
+## 1. Giả thuyết Khoa học (H1–H6)
 
-- H1: Random Forest là supervised baseline trên NF-UNSW-NB15-v3 sau khi quality findings được xử
-  lý bằng transform fit trên train và split temporal/group-aware được audit.
-- H2: Isolation Forest có thể phát hiện bất thường không cần nhãn, nhưng đánh giá cần chọn threshold và cho profile metric khác đánh giá giám sát.
+- **H1 (RQ1):** Trên phân vùng scenario-disjoint `AIT-Test`, mô hình giám sát (`Random Forest`, `XGBoost`) đạt F1 cao hơn mô hình không giám sát (`Isolation Forest`, `Autoencoder`), nhưng nhạy với chênh lệch phân phối khi chuyển miền sang traffic thực tế `CTU-SME-11`.
+- **H2 (RQ2):** Tác động mất cân bằng lớp làm suy giảm mạnh Recall trên các lớp hiếm (`Credential_Attack`, `Post_Exploitation_Discovery`, `Exploitation_And_C2`) nếu chỉ dựa vào overall accuracy; không dùng SMOTE lên Validation/Test.
+- **H3 (RQ3):** Behavioral Vector chuẩn hóa 16-D cho phép liên kết các phiên cùng thực thể khi IP xoay vòng (`SIMULATION`), tách biệt với bài toán empirical AIT linkage hiện còn `BLOCKED`.
+- **H4 (RQ4):** Khi holdout hoàn toàn hai họ tấn công hiếm (`Exploitation_And_C2`, `Post_Exploitation_Discovery`) khỏi Train/Val, các mô hình được đo trung thực tỷ lệ phát hiện holdout mà không đánh đồng với zero-day thực tế.
+- **H5 (RQ5):** Adaptive Key Rotation theo Risk Score ($\ge 85$) giảm $\ge 70\%$ cửa sổ phơi nhiễm khóa so với lịch cố định 30 phút.
+- **H6 (RQ6):** Mã hóa AES-256-GCM đạt P95 $\le 500\,\mu s$/event và thông lượng $\ge 5.000$ ops/s trên CPU máy trạm.
 
-## Biến số
+---
 
-- Độc lập: loại mô hình (RF, XGBoost, Isolation Forest hoặc Autoencoder), preprocessing,
-  duplicate policy, temporal/group split và seed.
-- Phụ thuộc: Precision, Recall, F1, Macro-F1, confusion matrix, FPR, per-attack-category recall.
+## 2. Protocol & Test Lock
 
-## Baseline
+- **Feature Contract:** `canonical-flow-v2-18` (18 ML features), loại 5 trace metadata và 4 target columns khỏi `X`.
+- **Split:** `v2-scenario-group-purged-v1` (Train `2,097,891` / Validation `377,704` / Test `988,805`).
+- **Preprocessing:** `TrainOnlyPreprocessor(scaler_type="asinh_robust")` fit chỉ trên `ait_train`, SHA-256 `0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7`.
+- **Random Seed:** `42`.
+- **Test Lock:** Tuyệt đối không dùng `ait_test` hay `CTU-SME-11` để fit imputer/scaler, chọn hyperparameter hay calibrate threshold.
 
-- Dùng Random Forest với cấu hình baseline chuẩn hóa theo protocol `rf-baseline-nf-unsw-nb15-v3-v1`
-  (chi tiết tại [RF_BASELINE_PROTOCOL.md](RF_BASELINE_PROTOCOL.md)).
-- Hyperparameters khóa (`CANONICAL_BASELINE_PARAMS`, `configuration_id="rf-baseline-canonical-v1"`, `is_canonical_baseline=True`):
-  `n_estimators=200`, `max_depth=16`, `min_samples_split=2`, `min_samples_leaf=1`, `criterion='gini'`,
-  `max_features='sqrt'`, `class_weight=None`, `random_state=42`, `n_jobs=-1`, `bootstrap=True`.
-  Mọi cấu hình tùy biến (kể cả thay đổi `n_jobs`) phải đặt `is_canonical_baseline=False` và dùng `configuration_id` riêng.
-- Input matrix: Đúng 47 đặc trưng ML (`ML_FEATURE_COLUMNS`), loại trừ 6 metadata và 2 targets.
-- Target: `Label` (nhị phân, Positive = `Attack` / 1, Negative = `Benign` / 0).
+---
 
-## Protocol & Test Lock
+## 3. Danh mục Thực nghiệm v2
 
-- Split trước rồi mới preprocessing; lưu pipeline.
-- Ranh giới fit preprocessing: `train_only` (không fit trên validation hay test).
-- TEST LOCK: Tập `test` bị khóa tuyệt đối, không được dùng để chọn feature, tuning siêu tham số,
-  chọn threshold hay chọn mô hình. Test chỉ được đánh giá một lần duy nhất ở bước cuối cùng.
-- Tuning policy: Chỉ chạy trên `train` và `validation` với search space và budget được version hóa.
-- Cố định random seed (42) cho split, initialization và tuning để đảm bảo tái lập.
-- Huấn luyện Random Forest baseline (Issue #10) đã đạt trạng thái `IMPLEMENTED / TESTED / EXPERIMENTALLY VALIDATED` trên dữ liệu thật `NF-UNSW-NB15-v3`:
-  - Fit duy nhất trên `1.655.797` dòng `train` (`83,73s`, run manifest `rf-baseline-1794068628`), áp dụng frozen preprocessor `12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19`.
-  - Model artifact: `artifacts/models/random_forest/random_forest_baseline.joblib` (`917.227` bytes, SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`).
-  - Kết quả đánh giá trên tập `validation` (`345.371` dòng): `Precision = 0.999836`, `Recall = 0.999902`, `F1 = 0.999869`, `Macro-F1 = 0.999928`, `FPR = 0.000016`, Confusion Matrix `[[314866, 5], [3, 30497]]` (chi tiết tại `reports/models/random_forest_manifest.json` và `reports/models/rf_baseline_training_report.md`).
-  - Kiểm toán khóa tập Test: `test_partition_accessed = false`, `test_rows_loaded = 0`, `test_indices_loaded = false`.
-- Đánh giá một lần cuối cùng trên phân vùng `test` (`345.953` dòng) cho Random Forest baseline (`rf-heldout-ea330b9`, #12 CLOSED) và Isolation Forest (`if-c4-20261115T055359Z`, clean commit `bf0f3ec`, #11) đã đạt trạng thái **EXPERIMENTALLY VALIDATED**; chi tiết xem [docs/EVALUATION.md](EVALUATION.md) và `reports/experiments/isolation_forest/evaluation_report.md`. XGBoost Held-out Test và Autoencoder real-data run vẫn `NOT VERIFIED`.
-
-## Ghi nhận metric
-
-- Mỗi lượt chạy lưu seed, phiên bản dataset, danh sách feature, cấu hình model, metric theo lớp và macro, confusion matrix dạng CSV/PNG, thời gian và thông tin môi trường.
-- Kết quả đặt tại `reports/models/`, `reports/evaluation/`, `reports/experiments/` và `artifacts/` (không commit artifact nhị phân lớn; lưu manifest và báo cáo kiểm chứng).
-
-Cập nhật: 2026-11-15 (hoàn tất thực nghiệm Isolation Forest Issue #11 và clean reproduction M3 Issue #14 trên NF-UNSW-NB15-v3)
+| Mã | Tên thực nghiệm | Script thực thi | Báo cáo đầu ra |
+|---|---|---|---|
+| **Exp1 (RQ1)** | 4-Model Benchmark trên `AIT-Test` | `scripts/generate_model_comparison_report.py` | `reports/experiments/ml/model_comparison_report.json`, `docs/experiments/FOUR_MODEL_COMPARISON.md` |
+| **Exp2 (RQ2)** | Class Imbalance & Rare Attacks | `scripts/run_rq2_rare_attack_experiment.py` | `reports/experiments/imbalance/rq2_imbalance_report.json`, `.md` |
+| **Exp3 (RQ3)** | IP-Independent Session Correlation | `scripts/run_rq3_session_correlation_experiment.py` | `reports/experiments/behavioral/rq3_session_correlation_experiment.json`, `docs/experiments/EXP5_SESSION_CORRELATION.md` |
+| **Exp4 (RQ4)** | Unknown Attack Holdout | `scripts/run_rq4_unknown_attack_experiment.py` | `reports/experiments/ml/rq4_unknown_attack_report.json`, `docs/experiments/EXP4_UNKNOWN_ATTACK.md` |
+| **Exp5 (RQ5)** | Adaptive Key Rotation Simulation | `scripts/run_rq5_rotation_experiment.py` | `reports/experiments/crypto/rq5_rotation_experiment.json`, `.md` |
+| **Exp6 (RQ6)** | AES-256-GCM Overhead Benchmark | `scripts/benchmark_crypto_overhead.py` | `reports/benchmarks/crypto_benchmark_report.json`, `.md` |
+| **Cross-Source** | Real Capture `CTU-SME-11` & Feature Shift | `scripts/run_ctu_cross_source_eval.py` | `reports/experiments/ml/ctu_cross_source_eval.json`, `docs/experiments/CTU_CROSS_SOURCE_EVAL.md` |
+| **System Perf** | Full E2E CPU Pipeline Benchmark | `scripts/benchmark_full_system.py` | `reports/benchmarks/system_performance_benchmark.json`, `docs/benchmarks/SYSTEM_PERFORMANCE.md` |

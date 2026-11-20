@@ -1,4 +1,4 @@
-"""NF-UNSW-NB15-v3 preprocessing package."""
+"""NetFlow Sentinel v2 train-only preprocessing package."""
 
 from network_anomaly.preprocessing.pipeline import (
     FEATURE_CONTRACT_VERSION,
@@ -7,7 +7,6 @@ from network_anomaly.preprocessing.pipeline import (
     PreprocessingConfig,
     TrainOnlyPreprocessor,
     audit_column_tokens,
-    load_and_preprocess_split,
     verify_preprocessing_artifact,
     verify_zero_duration_retention,
 )
@@ -19,7 +18,6 @@ __all__ = [
     "PreprocessingConfig",
     "TrainOnlyPreprocessor",
     "audit_column_tokens",
-    "load_and_preprocess_split",
     "verify_preprocessing_artifact",
     "verify_zero_duration_retention",
 ]

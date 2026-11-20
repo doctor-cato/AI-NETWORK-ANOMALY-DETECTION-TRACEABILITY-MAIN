@@ -560,6 +560,10 @@ class ModelStatusItem(BaseModel):
     decision_threshold: Optional[float] = None
     score_semantics: Optional[str] = None
     reason: Optional[str] = None
+    artifact_verified: bool = False
+    in_domain_evaluated: bool = False
+    cross_source_validated: bool = False
+    deployment_tier: str = "RESEARCH_ONLY"
 
 
 class CsvInspectRequest(BaseModel):
@@ -597,7 +601,7 @@ class CompatibilityGateSummarySchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    source_id: str = Field(default="source:nf-v3-unverified")
+    source_id: str = Field(default="source:flow-v2-unverified")
     provenance_verified: bool = Field(default=False)
     model_key: str
     model_identifier: Optional[str] = None
@@ -638,6 +642,24 @@ class BehavioralSummarySchema(BaseModel):
     protocol_counts: List[BehavioralTopItem] = Field(default_factory=list)
     excluded_from_ml_features: List[str] = Field(default_factory=list)
     non_attribution_notice: str
+
+
+class BehavioralVectorItemSchema(BaseModel):
+    """16-D session behavioral vector extracted during CSV analysis (#106)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vector_id: str
+    entity_key: str
+    window_start: str
+    window_end: str
+    dimensions: int = Field(..., ge=1)
+    version: str
+    features: List[float]
+    feature_names: List[str]
+    sha256_hash: str
+    missing_feature_count: int = Field(default=0, ge=0)
+    missing_feature_names: List[str] = Field(default_factory=list)
 
 
 class CsvInspectResponse(BaseModel):
@@ -778,6 +800,7 @@ class CsvAnalyzeResponse(BaseModel):
     compatibility_gate: CompatibilityGateSummarySchema
     ood_report: OodSummarySchema
     behavioral_summary: BehavioralSummarySchema
+    behavioral_vectors: List[BehavioralVectorItemSchema] = Field(default_factory=list)
     security_notice: str
     results: List[CsvFlowPredictionItem]
     timeline: List[CsvTimelineItem] = Field(default_factory=list)
@@ -1110,3 +1133,255 @@ class SecuritySimulationExportResponse(BaseModel):
     json_sha256: str
     metadata_sha256: str
     exported_at_utc: str
+
+
+# ============================================================================
+# NetFlow Sentinel v2.0 Trace & Crypto API Schemas (Issue #115)
+# ============================================================================
+
+
+class TimelineStageItem(BaseModel):
+    stage_id: str
+    phase: str
+    timestamp: str
+    source_entity: str
+    target_entity: str
+    title: str
+    description: str
+    confidence: float
+    is_observed: bool
+    evidence_ids: List[str] = Field(default_factory=list)
+    indicators: Dict[str, Any] = Field(default_factory=dict)
+
+
+class TraceTimelineResponse(BaseModel):
+    timeline_id: str
+    campaign_name: str
+    overall_confidence: float
+    start_time: str
+    end_time: str
+    entities_involved: List[str]
+    total_stages: int
+    stages: List[TimelineStageItem]
+    available_campaigns: List[str] = Field(default_factory=list)
+    data_status: str = "OK"
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EntityGraphNodeItem(BaseModel):
+    node_id: str
+    kind: str
+    label: str
+    properties: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EntityGraphEdgeItem(BaseModel):
+    edge_id: str
+    source_id: str
+    target_id: str
+    relation_type: str
+    confidence: float
+    is_observed: bool
+    evidence_id: Optional[str] = None
+
+
+class TraceGraphResponse(BaseModel):
+    node_count: int
+    edge_count: int
+    nodes: List[EntityGraphNodeItem]
+    edges: List[EntityGraphEdgeItem]
+    truncated: bool = False
+    data_status: str = "OK"
+    provenance: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GenerateInvestigationReportRequest(BaseModel):
+    incident_id: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    severity: str = "HIGH"
+    root_cause_summary: str = Field(..., min_length=1)
+    events: List[Dict[str, Any]] = Field(default_factory=list)
+    evidence_records: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class InvestigationReportResponse(BaseModel):
+    report_id: str
+    incident_id: str
+    title: str
+    generated_at: str
+    severity: str
+    root_cause_summary: str
+    artifact_hash: str
+    artifact_version: str = "2.0.0"
+    timeline: TraceTimelineResponse
+    evidence_provenance: List[Dict[str, Any]]
+    recommended_actions: List[str]
+    markdown_content: str
+
+
+class CryptoStatusResponse(BaseModel):
+    active_key_id: str
+    algorithm: str
+    rotation_interval_minutes: float
+    adaptive_risk_threshold: float
+    cooldown_seconds: int
+    max_rotations_per_hour: int = 10
+    rotations_this_hour: int = 0
+    total_rotations: int
+    total_records_encrypted: int
+    master_key_fingerprint: Optional[str] = None
+    recent_rotations: List[Dict[str, Any]]
+    storage_protection_status: Dict[str, Any] = Field(default_factory=dict)
+    data_status: str = "CONNECTED"
+
+
+class LiveStartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = Field(default="127.0.0.1", min_length=1, max_length=128)
+    port: int = Field(default=0, ge=0, le=65535)
+    demo_heuristics: bool = False
+    queue_capacity: int = Field(default=10_000, ge=1, le=500_000)
+    batch_size: int = Field(default=32, ge=1, le=2048)
+
+
+class LiveStatusResponse(BaseModel):
+    mode: str
+    running: bool
+    data_status: str
+    bound_port: Optional[int] = None
+    started_at_utc: Optional[str] = None
+    collector: Dict[str, Any] = Field(default_factory=dict)
+    pipeline: Dict[str, Any] = Field(default_factory=dict)
+    metrics: Dict[str, Any] = Field(default_factory=dict)
+    inference: Dict[str, Any] = Field(default_factory=dict)
+    alerts_buffered: int = 0
+    demo_mode: bool = False
+    persistence_enabled: bool = False
+    last_error: Optional[str] = None
+
+
+class LiveResultsResponse(BaseModel):
+    data_status: str
+    total: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class LiveAlertsResponse(BaseModel):
+    data_status: str
+    total: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class BehavioralVectorListItem(BaseModel):
+    vector_id: str
+    entity_id: str
+    window_start: str
+    window_end: str
+    dimensions: int
+    is_encrypted: bool
+    key_id: Optional[str] = None
+    created_at: str
+
+
+class BehavioralVectorListResponse(BaseModel):
+    data_status: str
+    total: int
+    items: List[BehavioralVectorListItem] = Field(default_factory=list)
+    reason: Optional[str] = None
+
+
+class EntityBaselineProfileSchema(BaseModel):
+    """Entity baseline profile deviation metrics from EntityBaselineProfiler (#141)."""
+
+    entity_key: str
+    has_baseline: bool
+    deviation_score: float
+    cosine_similarity: float
+    sample_count: int = Field(..., ge=0)
+    window_size: int = Field(default=50, ge=1)
+
+
+class BehavioralVectorDetailResponse(BaseModel):
+    vector_id: str
+    entity_id: str
+    window_start: str
+    window_end: str
+    dimensions: int
+    features: List[float]
+    feature_names: Optional[List[str]] = None
+    feature_name_status: str
+    sha256_hash: Optional[str] = None
+    is_encrypted_at_rest: bool
+    key_id: Optional[str] = None
+    created_at: str
+    data_status: str = "CONNECTED"
+    baseline_profile: Optional[EntityBaselineProfileSchema] = None
+
+
+class BehavioralSimilarityResponse(BaseModel):
+    vector_a: str
+    vector_b: str
+    dimensions: Optional[int] = None
+    cosine_similarity: Optional[float] = None
+    euclidean_distance: Optional[float] = None
+    manhattan_distance: Optional[float] = None
+    interpretation: Optional[str] = None
+    interpretation_semantics: Optional[str] = None
+    comparable: bool = True
+    reason: Optional[str] = None
+    data_status: str = "CONNECTED"
+
+
+class BehavioralCorrelationClusterItem(BaseModel):
+    cluster_id: str
+    member_vector_ids: List[str] = Field(default_factory=list)
+    average_similarity: float
+    ip_addresses_observed: List[str] = Field(default_factory=list)
+
+
+class BehavioralCorrelationResponse(BaseModel):
+    data_status: str
+    match_threshold: float
+    total_vectors_evaluated: int
+    clusters: List[BehavioralCorrelationClusterItem] = Field(default_factory=list)
+    reason: Optional[str] = None
+
+
+class BenchmarkSplitMetricsItem(BaseModel):
+    dataset: str
+    f1: Optional[float] = None
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    fpr: Optional[float] = None
+    roc_auc: Optional[float] = None
+    pr_auc: Optional[float] = None
+    sample_count: Optional[int] = None
+
+
+class BenchmarkTopFeatureItem(BaseModel):
+    feature: str
+    importance: float
+    method: str = ""
+
+
+class ModelBenchmarkEntry(BaseModel):
+    model_key: str
+    display_name: str
+    model_type: str
+    deployment_tier: str = "RESEARCH_ONLY"
+    decision_threshold: Optional[float] = None
+    threshold_source: Optional[str] = None
+    in_domain: Optional[BenchmarkSplitMetricsItem] = None
+    cross_source: List[BenchmarkSplitMetricsItem] = Field(default_factory=list)
+    top_features: List[BenchmarkTopFeatureItem] = Field(default_factory=list)
+
+
+class ModelBenchmarkReportResponse(BaseModel):
+    data_status: str = "EMPTY"
+    generated_at_utc: Optional[str] = None
+    dataset_provenance: Optional[str] = None
+    evaluation_partition: Optional[str] = None
+    models: List[ModelBenchmarkEntry] = Field(default_factory=list)
+    limitations: List[str] = Field(default_factory=list)
+    sources_loaded: List[str] = Field(default_factory=list)

@@ -1,36 +1,29 @@
 # Quy tắc thí nghiệm ML — rules/ml-experiment-rules.md
 
-Bộ dữ liệu (UNSW-NB15):
-- Kiểm tra nguồn, phiên bản, cấu trúc, nhãn, checksum khi có thể (`scripts/validate_data.py`).
-- EDA trước khi chọn đặc trưng (`docs/EXPERIMENT_PLAN.md`).
+## Bộ dữ liệu & Provenance (`canonical-flow-v2-18`)
 
-Kiểm tra chất lượng:
-- Missing values, duplicates, phân bố nhãn, mất cân bằng lớp.
-- Cột có thể gây rò rỉ dữ liệu (leakage): nhãn trực tiếp, cột dẫn xuất từ nhãn, cột định danh (IP/port/time) — quyết định dựa trên mục tiêu và bằng chứng, không tự loại toàn bộ.
+- **Active v2:** `AIT-NDS-v2` (`10.5281/zenodo.13168643`, `CC BY 4.0`), `CTU-SME-11` (`10.5281/zenodo.7958258`, `CC BY 4.0`), và nguồn kiểm chứng bổ sung `UWF-ZeekData24` (`CC BY 4.0`, `evaluation_only = true`).
+- **Ranh giới dữ liệu:** `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) cách ly 100% khỏi ML weights và `data/demo/`; `UGR'16` giữ trạng thái `BLOCKED` (`HTTP 403`). `NF-UNSW-NB15-v3` đã chuyển sang `historical/` và bị cấm ở active pipeline (`scripts/fetch_multi_source_dataset.py --verify-only`, `scripts/verify_companion_artifacts.py`).
+- **Tài liệu thiết kế:** Đối chiếu [docs/DATASET.md](../../docs/DATASET.md), [docs/EXPERIMENT_PLAN.md](../../docs/EXPERIMENT_PLAN.md), [docs/dataset/V2_SOURCE_AUDIT.md](../../docs/dataset/V2_SOURCE_AUDIT.md) và [docs/REPRODUCIBILITY.md](../../docs/REPRODUCIBILITY.md).
 
-Chia dữ liệu:
-- Train/val/test trước mọi fitting trước xử lý (preprocessing).
-- Nếu dùng split có sẵn từ dataset, ghi rõ. Nếu tự chia, ghi chiến lược + seed (`RANDOM_SEED = 42`).
-- Không dùng nhãn test để chọn đặc trưng / threshold / hyperparameter.
+## Kiểm tra chất lượng & Leakage
 
-Tiền xử lý (`src/network_anomaly/preprocessing/` — hiện placeholder):
-- Fit encoder/imputer/scaler/selector trên tập train; áp dụng phép biến đổi đã fit cho val/test.
-- Lưu artifact cùng mô hình.
+- Kiểm tra missing values, finite numeric bounds, duplicates, class imbalance và non-canonical protocol/port values trước khi vào model (`OODValidator`, `OODRejectionGate`).
+- Cột định danh & trace (`timestamp_ms`, `source_ip`, `dest_ip`, `source_port`, `dest_port`), target dẫn xuất và TTL shortcut bị loại nghiêm ngặt khỏi 18 ML features trong `canonical-flow-v2-18`.
 
-Mô hình và đánh giá:
-- RF (giám sát): train với nhãn; đánh giá bằng Precision/Recall/F1/Macro-F1/confusion matrix/FPR.
-- IF (không giám sát, nếu triển khai): score trên val/test, chọn threshold trên validation, rồi đánh giá; phải ghi rõ protocol khác RF (`docs/EVALUATION.md`).
-- Báo cáo theo lớp nếu mất cân bằng ảnh hưởng.
-- Không gọi kết quả synthetic là benchmark trên UNSW-NB15.
+## Chia dữ liệu & Tiền xử lý (`src/network_anomaly/preprocessing/pipeline.py`)
 
-Ghi chép:
-- Config, seed, cách chia, phiên bản thư viện, lệnh chạy (`docs/REPRODUCIBILITY.md`).
-- Nếu chưa chạy thực nghiệm thật: ghi rõ nguyên nhân và trạng thái chưa hoàn thành.
+- Tách **Scenario/Host-grouped split** (`data/V2_SPLIT_MANIFEST.json`, zero scenario & `(scenario, 5-tuple, ts)` overlap) trước mọi bước fitting; seed cố định `RANDOM_SEED = 42`.
+- `TrainOnlyPreprocessor` (`asinh_robust`, `MIN_BOUNDED_SCALE_FLOOR = 0.25`) fit duy nhất trên `ait_train`, lưu kèm manifest SHA-256 (`reports/preprocessing/v2_flow_preprocessing_manifest.json`) và dùng ở mode bất biến cho `ait_val`, `ait_test`, `CTU-SME-11`, `UWF-ZeekData24` và live inference.
+- **Nghiêm cấm:** Dùng `ait_test` hoặc target cross-source để chọn đặc trưng, tune hyperparameter hoặc hiệu chỉnh threshold zero-shot. Nếu tham chiếu hậu nghiệm (như `WP3`), phải khai báo rõ `ait_test_used_for_posthoc_candidate_selection = true`, `holdout_independent_selection = false`.
 
-Truy vết bằng tài liệu/metadata sẵn có, không tạo framework mới nếu chưa cần:
-- `Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment Results`.
-- `PLANNED`: mới có kế hoạch; `IMPLEMENTED`: đã có code; `TESTED`: có test đã chạy (có thể synthetic);
-  `EXPERIMENTALLY VALIDATED`: đã chạy trên UNSW-NB15 thật với provenance, split và metric có bằng chứng.
-- Unit/integration test synthetic không nâng trạng thái lên `EXPERIMENTALLY VALIDATED`.
-- Mỗi kết quả thực nghiệm phải truy được về commit, trạng thái working tree, dataset checksum/variant, split, feature,
-  preprocessing/model config, dependency, lệnh và artifact/metric. Thiếu mắt xích thì ghi `NOT VERIFIED`.
+## Mô hình, Đánh giá & Bảo lưu `E0`
+
+- **Supervised (`Random Forest`, `XGBoost`):** Báo cáo Precision, Recall, F1, FPR, ROC-AUC, PR-AUC; với phân loại đa lớp báo cáo đủ Macro-F1, Weighted-F1, Balanced Accuracy, Per-class metrics và Confusion Matrix có rõ support lớp hiếm.
+- **Unsupervised (`Isolation Forest`, `Autoencoder`):** Fit theo đúng protocol đã định, gắn kèm `score_normalization.json` và calibrate threshold thuần trên `ait_val` (`validation` partition), không dùng nhãn test chọn ngưỡng.
+- **Bảo toàn `E0`:** 4 baseline `.joblib` hiện hành giữ tier `RESEARCH_ONLY`; mọi thí nghiệm phụ (multi-class, diagnostic, ablation) phải tách riêng khỏi `E0` trừ khi có nhiệm vụ tái huấn luyện được phê duyệt.
+
+## Ghi chép & Truy vết
+
+- Chuỗi bắt buộc: `Issue → Requirements → Implementation → Tests → Verification Evidence → Experiment Results`.
+- `PLANNED`: mới có kế hoạch; `IMPLEMENTED`: đã có code; `TESTED`: đã chạy test (có thể synthetic); `EXPERIMENTALLY VALIDATED`: đã chạy trên dữ liệu benchmark v2 thật (`AIT-NDS-v2`, `CTU-SME-11`, `UWF-ZeekData24`) có split, checksum, environment metadata, commit/working-tree provenance và metric đầy đủ. Thiếu mắt xích thì ghi `NOT VERIFIED`.

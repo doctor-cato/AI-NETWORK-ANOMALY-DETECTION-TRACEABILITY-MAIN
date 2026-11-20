@@ -1,8 +1,7 @@
-"""XGBoost baseline protocol and configuration for NF-UNSW-NB15-v3 (Issue #31 / C3).
+"""XGBoost baseline protocol and configuration for NetFlow Sentinel v2.
 
-This module formalizes the protocol contracts for Issue #31 according to the shared
-supervised protocol established by Random Forest (Issue #9, #10).
-It does NOT execute model training, evaluation, or benchmark generation.
+Formalizes the supervised XGBoost protocol contracts on `canonical-flow-v2-18`
+according to the shared supervised protocol established by Random Forest.
 """
 
 from __future__ import annotations
@@ -13,47 +12,45 @@ from dataclasses import asdict, dataclass, field, fields
 from typing import Any, Dict, List, Tuple
 
 from network_anomaly.config import RANDOM_SEED
-from network_anomaly.data.nf_unsw_nb15_v3 import (
-    DATASET_NAME,
+from network_anomaly.data.taxonomy import CANONICAL_ATTACK_CATEGORIES
+from network_anomaly.data.v2_schema import (
+    DATASET_SUITE_NAME as DATASET_NAME,
+)
+from network_anomaly.data.v2_schema import (
+    FEATURE_CONTRACT_ID as FEATURE_CONTRACT_VERSION,
+)
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
+    PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
     validate_feature_selection,
 )
 
-PROTOCOL_IDENTIFIER: str = "xgb-baseline-nf-unsw-nb15-v3-v1"
-FEATURE_CONTRACT_VERSION: str = "nf-unsw-nb15-v3-baseline-47"
-SPLIT_PROTOCOL_ID: str = "nf-unsw-nb15-v3-chronological-group-purged-v1"
-PREPROCESSING_CONTRACT_ID: str = "nf-unsw-nb15-v3-preproc-v1"
+PROTOCOL_IDENTIFIER: str = "xgb-baseline-v2-canonical-v1"
+SPLIT_PROTOCOL_ID: str = "v2-scenario-group-purged-v1"
+PREPROCESSING_CONTRACT_ID: str = "v2-flow-preprocessing-v1"
 
-TARGET_COLUMN: str = "Label"
-STRATIFICATION_COLUMN: str = "Attack"
+TARGET_COLUMN: str = "label_binary"
+STRATIFICATION_COLUMN: str = "attack_category"
 POSITIVE_CLASS_NAME: str = "Attack"
 POSITIVE_CLASS_LABEL: int = 1
 NEGATIVE_CLASS_NAME: str = "Benign"
 NEGATIVE_CLASS_LABEL: int = 0
 
-EXPECTED_ATTACK_CATEGORIES: Tuple[str, ...] = (
-    "Analysis",
-    "Backdoor",
-    "DoS",
-    "Exploits",
-    "Fuzzers",
-    "Generic",
-    "Reconnaissance",
-    "Shellcode",
-    "Worms",
+EXPECTED_ATTACK_CATEGORIES: Tuple[str, ...] = tuple(
+    cat for cat in CANONICAL_ATTACK_CATEGORIES if cat not in {"Benign", "Unmapped"}
 )
 
 ALL_ATTACK_CATEGORIES: Tuple[str, ...] = ("Benign",) + EXPECTED_ATTACK_CATEGORIES
 
-DATASET_CSV_SHA256: str = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
-DATASET_ARCHIVE_SHA256: str = "6d51554df43e324ba8d68fc31a02a83d860ba0a3a93d63320a4a6fc314c9cdfd"
+DATASET_CSV_SHA256: str = ""
+DATASET_ARCHIVE_SHA256: str = ""
 
 CANONICAL_BASELINE_PARAMS: Dict[str, Any] = {
     "model_type": "XGBoost",
     "task": "binary_classification",
-    "target": "Label",
+    "target": "label_binary",
     "positive_class": "Attack",
     "n_estimators": 200,
     "max_depth": 6,
@@ -70,23 +67,27 @@ CANONICAL_BASELINE_PARAMS: Dict[str, Any] = {
 
 @dataclass(frozen=True)
 class XGBoostBaselineConfig:
-    """Locked baseline configuration for XGBClassifier on NF-UNSW-NB15-v3."""
+    """Locked baseline configuration for XGBClassifier on NetFlow Sentinel v2."""
 
     model_type: str = "XGBoost"
     task: str = "binary_classification"
-    target: str = "Label"
+    target: str = "label_binary"
     positive_class: str = "Attack"
     n_estimators: int = 200
     max_depth: int = 6
     learning_rate: float = 0.1
     subsample: float = 0.8
     colsample_bytree: float = 0.8
+    scale_pos_weight: float = 1.0
+    min_child_weight: float = 1.0
+    reg_lambda: float = 1.0
+    reg_alpha: float = 0.0
     objective: str = "binary:logistic"
     eval_metric: str = "logloss"
     tree_method: str = "hist"
     random_state: int = RANDOM_SEED
     n_jobs: int = -1
-    configuration_id: str = "xgb-baseline-canonical-v1"
+    configuration_id: str = "xgb-v2-baseline-canonical-v1"
     is_canonical_baseline: bool = True
 
     def __post_init__(self) -> None:
@@ -101,6 +102,10 @@ class XGBoostBaselineConfig:
             and abs(self.learning_rate - CANONICAL_BASELINE_PARAMS["learning_rate"]) < 1e-9
             and abs(self.subsample - CANONICAL_BASELINE_PARAMS["subsample"]) < 1e-9
             and abs(self.colsample_bytree - CANONICAL_BASELINE_PARAMS["colsample_bytree"]) < 1e-9
+            and abs(self.scale_pos_weight - 1.0) < 1e-9
+            and abs(self.min_child_weight - 1.0) < 1e-9
+            and abs(self.reg_lambda - 1.0) < 1e-9
+            and abs(self.reg_alpha - 0.0) < 1e-9
             and self.objective == CANONICAL_BASELINE_PARAMS["objective"]
             and self.eval_metric == CANONICAL_BASELINE_PARAMS["eval_metric"]
             and self.tree_method == CANONICAL_BASELINE_PARAMS["tree_method"]
@@ -114,7 +119,7 @@ class XGBoostBaselineConfig:
                 self,
                 "configuration_id",
                 (
-                    "xgb-baseline-canonical-v1"
+                    "xgb-v2-baseline-canonical-v1"
                     if self.is_canonical_baseline
                     else "xgb-experimental-custom"
                 ),
@@ -126,8 +131,8 @@ class XGBoostBaselineConfig:
             raise ValueError(f"model_type must be 'XGBoost', got {self.model_type}")
         if self.task != "binary_classification":
             raise ValueError(f"task must be 'binary_classification', got {self.task}")
-        if self.target != "Label":
-            raise ValueError(f"target must be 'Label', got {self.target}")
+        if self.target != TARGET_COLUMN:
+            raise ValueError(f"target must be '{TARGET_COLUMN}', got {self.target}")
         if self.positive_class != "Attack":
             raise ValueError(f"positive_class must be 'Attack', got {self.positive_class}")
         if self.n_estimators <= 0:
@@ -140,6 +145,14 @@ class XGBoostBaselineConfig:
             raise ValueError(f"subsample must be in (0, 1], got {self.subsample}")
         if not (0.0 < self.colsample_bytree <= 1.0):
             raise ValueError(f"colsample_bytree must be in (0, 1], got {self.colsample_bytree}")
+        if self.scale_pos_weight <= 0.0:
+            raise ValueError(f"scale_pos_weight must be positive, got {self.scale_pos_weight}")
+        if self.min_child_weight < 0.0:
+            raise ValueError(f"min_child_weight must be >= 0, got {self.min_child_weight}")
+        if self.reg_lambda < 0.0:
+            raise ValueError(f"reg_lambda must be >= 0, got {self.reg_lambda}")
+        if self.reg_alpha < 0.0:
+            raise ValueError(f"reg_alpha must be >= 0, got {self.reg_alpha}")
         if self.n_jobs == 0 or self.n_jobs < -1:
             raise ValueError(f"n_jobs must be -1 or a positive integer, got {self.n_jobs}")
 
@@ -156,16 +169,27 @@ class XGBoostBaselineConfig:
                         "override, set is_canonical_baseline=False and provide a distinct "
                         "configuration_id."
                     )
-            if self.configuration_id != "xgb-baseline-canonical-v1":
+            for k, default_v in (
+                ("scale_pos_weight", 1.0),
+                ("min_child_weight", 1.0),
+                ("reg_lambda", 1.0),
+                ("reg_alpha", 0.0),
+            ):
+                if abs(float(getattr(self, k)) - default_v) >= 1e-9:
+                    raise ValueError(
+                        f"Canonical baseline configuration mismatch for '{k}': "
+                        f"expected {default_v}, got {getattr(self, k)}"
+                    )
+            if self.configuration_id != "xgb-v2-baseline-canonical-v1":
                 raise ValueError(
                     "Canonical baseline must have configuration_id "
-                    f"'xgb-baseline-canonical-v1', got '{self.configuration_id}'"
+                    f"'xgb-v2-baseline-canonical-v1', got '{self.configuration_id}'"
                 )
         else:
-            if self.configuration_id == "xgb-baseline-canonical-v1":
+            if self.configuration_id == "xgb-v2-baseline-canonical-v1":
                 raise ValueError(
                     "Non-canonical configuration cannot use canonical ID "
-                    "'xgb-baseline-canonical-v1'"
+                    "'xgb-v2-baseline-canonical-v1'"
                 )
             if not self.configuration_id or not self.configuration_id.strip():
                 raise ValueError(
@@ -417,12 +441,12 @@ class EvaluationMetricProtocol:
 
 @dataclass(frozen=True)
 class SplitReference:
-    """Reference binding to the official split protocol."""
+    """Reference binding to the official v2 split protocol."""
 
     protocol_id: str = SPLIT_PROTOCOL_ID
-    manifest_path: str = "reports/splits/nf_unsw_nb15_v3_split_manifest.json"
-    manifest_sha256: str = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
-    status: str = "PASS"
+    manifest_path: str = "reports/splits/v2_split_manifest.json"
+    manifest_sha256: str = ""
+    status: str = "PLANNED"
 
     def validate(self) -> None:
         if self.protocol_id != SPLIT_PROTOCOL_ID:
@@ -449,11 +473,11 @@ class PreprocessingReference:
     """Reference binding to the official train-only preprocessing artifact."""
 
     contract_id: str = PREPROCESSING_CONTRACT_ID
-    artifact_path: str = "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib"
-    artifact_sha256: str = "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
-    manifest_path: str = "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json"
-    manifest_sha256: str = "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441"
-    status: str = "PASS"
+    artifact_path: str = "artifacts/preprocessing/v2_flow_preprocessor.joblib"
+    artifact_sha256: str = ""
+    manifest_path: str = "reports/preprocessing/v2_flow_preprocessing_manifest.json"
+    manifest_sha256: str = ""
+    status: str = "PLANNED"
 
     def validate(self) -> None:
         if self.contract_id != PREPROCESSING_CONTRACT_ID:
@@ -479,7 +503,7 @@ class PreprocessingReference:
 
 @dataclass
 class XGBoostBaselineProtocol:
-    """Full protocol specification for XGBoost baseline on NF-UNSW-NB15-v3."""
+    """Full protocol specification for XGBoost baseline on NetFlow Sentinel v2."""
 
     protocol_version: str = PROTOCOL_IDENTIFIER
     feature_contract_version: str = FEATURE_CONTRACT_VERSION
@@ -490,7 +514,7 @@ class XGBoostBaselineProtocol:
     model_config: XGBoostBaselineConfig = field(default_factory=XGBoostBaselineConfig)
     selected_features: Tuple[str, ...] = field(default_factory=lambda: tuple(ML_FEATURE_COLUMNS))
     excluded_metadata_features: Tuple[str, ...] = field(
-        default_factory=lambda: tuple(TRACE_METADATA_COLUMNS)
+        default_factory=lambda: tuple(TRACE_METADATA_COLUMNS) + tuple(PROVENANCE_COLUMNS)
     )
     excluded_target_columns: Tuple[str, ...] = field(default_factory=lambda: tuple(TARGET_COLUMNS))
     tuning_policy: TuningConfig = field(default_factory=TuningConfig)
@@ -503,9 +527,11 @@ class XGBoostBaselineProtocol:
             raise ValueError(f"Protocol version mismatch: {self.protocol_version}")
         if self.feature_contract_version != FEATURE_CONTRACT_VERSION:
             raise ValueError(f"Feature contract mismatch: {self.feature_contract_version}")
-        if len(self.selected_features) != 47:
-            raise ValueError(f"Expected 47 ML features, got {len(self.selected_features)}")
-        validate_feature_selection(list(self.selected_features))
+        if len(self.selected_features) != len(ML_FEATURE_COLUMNS):
+            raise ValueError(
+                f"Expected {len(ML_FEATURE_COLUMNS)} ML features, got {len(self.selected_features)}"
+            )
+        validate_feature_selection(list(self.selected_features), require_complete=True)
 
         self.split_reference.validate()
         self.preprocessing_reference.validate()
@@ -630,7 +656,7 @@ def create_xgb_baseline_protocol(
     max_depth: int = 6,
     learning_rate: float = 0.1,
     is_canonical: bool = True,
-    configuration_id: str = "xgb-baseline-canonical-v1",
+    configuration_id: str = "xgb-v2-baseline-canonical-v1",
 ) -> XGBoostBaselineProtocol:
     """Factory function for creating an XGBoostBaselineProtocol instance."""
     cfg = XGBoostBaselineConfig(

@@ -1,252 +1,489 @@
 {
-  "run_id": "rf-baseline-1794068628",
+  "schema_version": 2,
   "model_type": "RandomForest",
   "task": "binary_classification",
-  "target": "Label",
-  "positive_class": "Attack",
-  "class_mapping": {
-    "0": "Benign",
-    "1": "Attack"
-  },
-  "configuration_id": "rf-baseline-canonical-v1",
-  "is_canonical_baseline": true,
-  "protocol_version": "rf-baseline-nf-unsw-nb15-v3-v1",
-  "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
+  "provenance_complete": true,
+  "provenance_status": "VERIFIED",
+  "training_run_id": "v2-rf-20261117T231214Z",
+  "run_id": "v2-rf-20261117T231214Z",
+  "dataset_name": "AIT-NDS-v2",
+  "dataset_provenance": "AIT-NDS-v2 (10.5281/zenodo.13168643); Train={fox,harrison,santos,wardbeck,wilson}",
+  "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+  "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
+  "preprocessor_artifact_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7",
+  "preprocessing_contract_id": "v2-flow-preprocessing-v1",
+  "protocol_version": "rf-experimental-rf-v2-tuned-leaf5-cwbalanced_subsample",
+  "configuration_id": "rf-v2-tuned-leaf5-cwbalanced_subsample",
+  "is_canonical_baseline": false,
+  "feature_contract_version": "canonical-flow-v2-18",
   "selected_features": [
-    "PROTOCOL",
-    "L7_PROTO",
-    "IN_BYTES",
-    "IN_PKTS",
-    "OUT_BYTES",
-    "OUT_PKTS",
-    "TCP_FLAGS",
-    "CLIENT_TCP_FLAGS",
-    "SERVER_TCP_FLAGS",
-    "FLOW_DURATION_MILLISECONDS",
-    "DURATION_IN",
-    "DURATION_OUT",
-    "MIN_TTL",
-    "MAX_TTL",
-    "LONGEST_FLOW_PKT",
-    "SHORTEST_FLOW_PKT",
-    "MIN_IP_PKT_LEN",
-    "MAX_IP_PKT_LEN",
-    "SRC_TO_DST_SECOND_BYTES",
-    "DST_TO_SRC_SECOND_BYTES",
-    "RETRANSMITTED_IN_BYTES",
-    "RETRANSMITTED_IN_PKTS",
-    "RETRANSMITTED_OUT_BYTES",
-    "RETRANSMITTED_OUT_PKTS",
-    "SRC_TO_DST_AVG_THROUGHPUT",
-    "DST_TO_SRC_AVG_THROUGHPUT",
-    "NUM_PKTS_UP_TO_128_BYTES",
-    "NUM_PKTS_128_TO_256_BYTES",
-    "NUM_PKTS_256_TO_512_BYTES",
-    "NUM_PKTS_512_TO_1024_BYTES",
-    "NUM_PKTS_1024_TO_1514_BYTES",
-    "TCP_WIN_MAX_IN",
-    "TCP_WIN_MAX_OUT",
-    "ICMP_TYPE",
-    "ICMP_IPV4_TYPE",
-    "DNS_QUERY_ID",
-    "DNS_QUERY_TYPE",
-    "DNS_TTL_ANSWER",
-    "FTP_COMMAND_RET_CODE",
-    "SRC_TO_DST_IAT_MIN",
-    "SRC_TO_DST_IAT_MAX",
-    "SRC_TO_DST_IAT_AVG",
-    "SRC_TO_DST_IAT_STDDEV",
-    "DST_TO_SRC_IAT_MIN",
-    "DST_TO_SRC_IAT_MAX",
-    "DST_TO_SRC_IAT_AVG",
-    "DST_TO_SRC_IAT_STDDEV"
+    "duration_ms",
+    "bytes_in",
+    "bytes_out",
+    "pkts_in",
+    "pkts_out",
+    "protocol_num",
+    "total_bytes",
+    "total_pkts",
+    "bytes_in_ratio",
+    "pkts_in_ratio",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_per_sec_in",
+    "bytes_per_sec_out",
+    "pkts_per_sec",
+    "has_response",
+    "is_tcp",
+    "is_udp"
   ],
-  "excluded_metadata": [
-    "FLOW_START_MILLISECONDS",
-    "FLOW_END_MILLISECONDS",
-    "IPV4_SRC_ADDR",
-    "IPV4_DST_ADDR",
-    "L4_SRC_PORT",
-    "L4_DST_PORT"
-  ],
-  "excluded_targets": [
-    "Label",
-    "Attack"
+  "feature_names": [
+    "duration_ms",
+    "bytes_in",
+    "bytes_out",
+    "pkts_in",
+    "pkts_out",
+    "protocol_num",
+    "total_bytes",
+    "total_pkts",
+    "bytes_in_ratio",
+    "pkts_in_ratio",
+    "bytes_per_pkt_in",
+    "bytes_per_pkt_out",
+    "bytes_per_sec_in",
+    "bytes_per_sec_out",
+    "pkts_per_sec",
+    "has_response",
+    "is_tcp",
+    "is_udp"
   ],
   "hyperparameters": {
     "model_type": "RandomForest",
     "task": "binary_classification",
-    "target": "Label",
+    "target": "label_binary",
     "positive_class": "Attack",
     "n_estimators": 200,
     "max_depth": 16,
     "min_samples_split": 2,
-    "min_samples_leaf": 1,
+    "min_samples_leaf": 5,
     "criterion": "gini",
     "max_features": "sqrt",
-    "class_weight": null,
+    "class_weight": "balanced_subsample",
     "random_state": 42,
     "n_jobs": -1,
     "bootstrap": true,
-    "configuration_id": "rf-baseline-canonical-v1",
-    "is_canonical_baseline": true
+    "configuration_id": "rf-v2-tuned-leaf5-cwbalanced_subsample",
+    "is_canonical_baseline": false
   },
-  "random_state": 42,
   "model_artifact_path": "artifacts/models/random_forest/random_forest_baseline.joblib",
-  "model_artifact_sha256": "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
-  "model_artifact_size_bytes": 917227,
-  "dataset_name": "NF-UNSW-NB15-v3",
-  "dataset_sha256": "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-  "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-  "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-  "preprocessor_manifest_sha256": "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441",
-  "provenance_complete": true,
-  "provenance_status": "VERIFIED",
-  "split_provenance": {
-    "split_protocol_id": "nf-unsw-nb15-v3-chronological-group-purged-v1",
-    "split_manifest_path": "reports/splits/nf_unsw_nb15_v3_split_manifest.json",
-    "split_manifest_sha256": "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
-    "train_rows_count": 1655797,
-    "val_rows_count": 345371,
-    "test_rows_count": 345953,
-    "indices_dir": "data/processed/splits",
-    "train_indices_sha256": "a09ba1757484c65596a88fe22d5bd989a3cca60a01088364020e2f952b36c725",
-    "val_indices_sha256": "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf",
-    "verification_status": "PASS"
+  "model_artifact_sha256": "b2e42f85f2625f5bf04902a032a4db734f4c4e744d45f4fef3ddffd05a694f2f",
+  "model_size_bytes": 12445660,
+  "threshold": 0.5,
+  "calibrated_threshold": 0.5,
+  "threshold_source": "validation_verified_binary_probability_0.5",
+  "threshold_provenance": {
+    "selected_on": "validation",
+    "test_touched": false,
+    "method": "binary_probability_0.5_verified_on_validation"
   },
-  "preprocessing_provenance": {
-    "preprocessor_artifact_path": "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
-    "preprocessor_artifact_sha256": "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-    "preprocessor_manifest_path": "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
-    "preprocessor_manifest_sha256": "af07dc3b6c7cbc9e75426eeb5b96d52dbd191e8a09161699df2fad1bb5555441",
-    "feature_contract_version": "nf-unsw-nb15-v3-baseline-47",
-    "features_count": 47,
-    "fit_partition": "train_only",
-    "verification_status": "PASS"
-  },
-  "test_lock_audit": {
-    "test_partition_accessed": false,
-    "test_rows_loaded": 0,
-    "test_indices_loaded": false,
-    "training_partitions": [
-      "train",
-      "validation"
-    ],
-    "train_rows_loaded": 1655797,
-    "val_rows_loaded": 345371,
-    "contract_a_guarantee": "PASSED: No Test data is used in fitting, hyperparameter tuning, threshold selection, validation, or model selection.",
-    "contract_b_guarantee": "PASSED: Zero Test partition rows are materialized or converted into DataFrames."
-  },
-  "training_duration_seconds": 83.73,
-  "peak_memory_mb": 3863.41,
-  "trained_at_utc": "2026-11-07T16:22:20.836660+00:00",
-  "environment": {
-    "python_version": "3.14.10",
-    "platform": "Windows-11-10.0.26200-SP0",
-    "cpu_count": 12,
-    "git_commit": "6f50633544ccbf93fa4dd193355c1d8222360e37",
-    "git_dirty": false,
-    "provenance_complete": true,
-    "packages": {
-      "pandas": "3.1.1",
-      "numpy": "2.5.4",
-      "scikit-learn": "1.9.1",
-      "joblib": "1.6.0"
-    }
-  },
-  "validation_summary": {
-    "rows_evaluated": 345371,
-    "precision": 0.9998360763228641,
-    "recall": 0.9999016393442623,
-    "f1": 0.9998688567587948,
-    "macro_f1": 0.9999280765516589,
-    "false_positive_rate": 1.5879518914094977e-05,
-    "confusion_matrix": [
-      [
-        314866,
-        5
-      ],
-      [
-        3,
-        30497
-      ]
-    ],
-    "confusion_matrix_labeled": {
-      "tn": 314866,
-      "fp": 5,
-      "fn": 3,
-      "tp": 30497
-    },
-    "per_category_breakdown": {
-      "Analysis": {
-        "total": 285,
-        "detected": 285,
-        "missed": 0,
-        "detection_rate": 1.0
+  "training_duration_seconds": 203.339,
+  "train_row_count": 2097891,
+  "shortcut_audit": {
+    "evaluated_on": "ait_val (russellmitchell)",
+    "single_feature_abs_auc_top5": [
+      {
+        "feature": "bytes_in",
+        "auc_symmetric": 0.965448
       },
-      "Backdoor": {
-        "total": 144,
-        "detected": 144,
-        "missed": 0,
-        "detection_rate": 1.0
+      {
+        "feature": "total_bytes",
+        "auc_symmetric": 0.961691
       },
-      "Benign": {
-        "total": 314871,
-        "false_positive": 5,
-        "true_negative": 314866,
-        "false_positive_rate": 1.5879518914094977e-05
+      {
+        "feature": "total_pkts",
+        "auc_symmetric": 0.946147
       },
-      "DoS": {
-        "total": 1445,
-        "detected": 1444,
-        "missed": 1,
-        "detection_rate": 0.9993079584775086
+      {
+        "feature": "bytes_out",
+        "auc_symmetric": 0.944251
       },
-      "Exploits": {
-        "total": 10294,
-        "detected": 10293,
-        "missed": 1,
-        "detection_rate": 0.9999028560326404
-      },
-      "Fuzzers": {
-        "total": 8495,
-        "detected": 8495,
-        "missed": 0,
-        "detection_rate": 1.0
-      },
-      "Generic": {
-        "total": 5137,
-        "detected": 5136,
-        "missed": 1,
-        "detection_rate": 0.9998053338524431
-      },
-      "Reconnaissance": {
-        "total": 4107,
-        "detected": 4107,
-        "missed": 0,
-        "detection_rate": 1.0
-      },
-      "Shellcode": {
-        "total": 556,
-        "detected": 556,
-        "missed": 0,
-        "detection_rate": 1.0
-      },
-      "Worms": {
-        "total": 37,
-        "detected": 37,
-        "missed": 0,
-        "detection_rate": 1.0
+      {
+        "feature": "pkts_out",
+        "auc_symmetric": 0.939559
       }
+    ],
+    "max_single_feature": "bytes_in",
+    "max_single_feature_auc": 0.965448,
+    "single_feature_shortcut_flags_gte_0_98": [],
+    "feature_importance_ranking": [
+      {
+        "feature": "bytes_in_ratio",
+        "importance": 0.134504
+      },
+      {
+        "feature": "duration_ms",
+        "importance": 0.118191
+      },
+      {
+        "feature": "bytes_per_pkt_in",
+        "importance": 0.108183
+      },
+      {
+        "feature": "pkts_per_sec",
+        "importance": 0.101364
+      },
+      {
+        "feature": "total_bytes",
+        "importance": 0.100648
+      },
+      {
+        "feature": "bytes_per_sec_in",
+        "importance": 0.092072
+      },
+      {
+        "feature": "bytes_in",
+        "importance": 0.090292
+      },
+      {
+        "feature": "bytes_per_sec_out",
+        "importance": 0.058011
+      },
+      {
+        "feature": "bytes_per_pkt_out",
+        "importance": 0.050837
+      },
+      {
+        "feature": "bytes_out",
+        "importance": 0.03589
+      },
+      {
+        "feature": "pkts_in",
+        "importance": 0.034326
+      },
+      {
+        "feature": "total_pkts",
+        "importance": 0.027587
+      },
+      {
+        "feature": "pkts_out",
+        "importance": 0.01593
+      },
+      {
+        "feature": "is_udp",
+        "importance": 0.011603
+      },
+      {
+        "feature": "is_tcp",
+        "importance": 0.009313
+      },
+      {
+        "feature": "protocol_num",
+        "importance": 0.006149
+      },
+      {
+        "feature": "pkts_in_ratio",
+        "importance": 0.004802
+      },
+      {
+        "feature": "has_response",
+        "importance": 0.000299
+      }
+    ],
+    "top2_importance_share": 0.252695
+  },
+  "evaluation": {
+    "ait_val": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.5,
+      "total_rows": 377704,
+      "accuracy": 0.9996902336220956,
+      "precision": 0.999760224102741,
+      "recall": 0.9995556283181701,
+      "f1": 0.9996579157420158,
+      "macro_f1": 0.9996874439869234,
+      "weighted_f1": 0.9996902308858563,
+      "false_positive_rate": 0.00019837813776152046,
+      "true_negative_rate": 0.9998016218622385,
+      "roc_auc": 0.9999406143870884,
+      "pr_auc": 0.9998752301969077,
+      "confusion_matrix": {
+        "tn": 206635,
+        "fp": 41,
+        "fn": 76,
+        "tp": 170952
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 206676,
+          "false_positive": 41,
+          "true_negative": 206635,
+          "false_positive_rate": 0.00019837813776152046
+        },
+        "Credential_Attack": {
+          "total": 11,
+          "detected": 9,
+          "missed": 2,
+          "detection_rate": 0.8181818181818182,
+          "false_negative_rate": 0.18181818181818182
+        },
+        "Data_Exfiltration": {
+          "total": 15778,
+          "detected": 15777,
+          "missed": 1,
+          "detection_rate": 0.9999366206109773,
+          "false_negative_rate": 6.337938902268983e-05
+        },
+        "Exploitation_And_C2": {
+          "total": 2,
+          "detected": 2,
+          "missed": 0,
+          "detection_rate": 1.0,
+          "false_negative_rate": 0.0
+        },
+        "Post_Exploitation_Discovery": {
+          "total": 56,
+          "detected": 56,
+          "missed": 0,
+          "detection_rate": 1.0,
+          "false_negative_rate": 0.0
+        },
+        "Reconnaissance": {
+          "total": 155181,
+          "detected": 155108,
+          "missed": 73,
+          "detection_rate": 0.9995295815853745,
+          "false_negative_rate": 0.00047041841462550185
+        }
+      },
+      "inference_latency_seconds": 0.5992,
+      "inference_latency_us_per_row": 1.5865,
+      "csv_sha256": "1ddd66ce7bf62042c310bc2f8c22c8297ce3e4f25c7a76827eebe53e89a9f022"
+    },
+    "ait_test": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.5,
+      "total_rows": 988805,
+      "accuracy": 0.9982170397601144,
+      "precision": 0.9988536185530373,
+      "recall": 0.9911104791696289,
+      "f1": 0.9949669842158002,
+      "macro_f1": 0.9969418049320905,
+      "weighted_f1": 0.9982143176049512,
+      "false_positive_rate": 0.00024600851189451157,
+      "true_negative_rate": 0.9997539914881055,
+      "roc_auc": 0.9993721034574612,
+      "pr_auc": 0.9977205931972929,
+      "confusion_matrix": {
+        "tn": 812780,
+        "fp": 200,
+        "fn": 1563,
+        "tp": 174262
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 812980,
+          "false_positive": 200,
+          "true_negative": 812780,
+          "false_positive_rate": 0.00024600851189451157
+        },
+        "Credential_Attack": {
+          "total": 78,
+          "detected": 11,
+          "missed": 67,
+          "detection_rate": 0.14102564102564102,
+          "false_negative_rate": 0.8589743589743589
+        },
+        "Data_Exfiltration": {
+          "total": 80075,
+          "detected": 78951,
+          "missed": 1124,
+          "detection_rate": 0.9859631595379332,
+          "false_negative_rate": 0.014036840462066812
+        },
+        "Exploitation_And_C2": {
+          "total": 5,
+          "detected": 5,
+          "missed": 0,
+          "detection_rate": 1.0,
+          "false_negative_rate": 0.0
+        },
+        "Post_Exploitation_Discovery": {
+          "total": 39,
+          "detected": 35,
+          "missed": 4,
+          "detection_rate": 0.8974358974358975,
+          "false_negative_rate": 0.10256410256410256
+        },
+        "Reconnaissance": {
+          "total": 95628,
+          "detected": 95260,
+          "missed": 368,
+          "detection_rate": 0.9961517547161919,
+          "false_negative_rate": 0.0038482452838080896
+        }
+      },
+      "inference_latency_seconds": 1.8561,
+      "inference_latency_us_per_row": 1.8771,
+      "csv_sha256": "a09c7d0e6045c425f925281b703ae539bc38f32a1a995510fcbb1bf0a0cb9039"
+    },
+    "ctu_echo": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.5,
+      "total_rows": 76073,
+      "accuracy": 0.48980584438631314,
+      "precision": 0.2317658349328215,
+      "recall": 0.026410761154855644,
+      "f1": 0.04741802473983899,
+      "macro_f1": 0.3495110626024108,
+      "weighted_f1": 0.3611106283300221,
+      "false_positive_rate": 0.08106944831253006,
+      "true_negative_rate": 0.91893055168747,
+      "roc_auc": 0.6137386823608053,
+      "pr_auc": 0.617969743787429,
+      "confusion_matrix": {
+        "tn": 36295,
+        "fp": 3202,
+        "fn": 35610,
+        "tp": 966
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 39497,
+          "false_positive": 3202,
+          "true_negative": 36295,
+          "false_positive_rate": 0.08106944831253006
+        },
+        "Reconnaissance": {
+          "total": 36576,
+          "detected": 966,
+          "missed": 35610,
+          "detection_rate": 0.026410761154855644,
+          "false_negative_rate": 0.9735892388451444
+        }
+      },
+      "inference_latency_seconds": 0.1499,
+      "inference_latency_us_per_row": 1.9709,
+      "csv_sha256": "6f86be6be0fc020403763bff3c37bb7cb60598e5e9feba9bc69e7dcd4dea1f80"
+    },
+    "ctu_windows7ad": {
+      "feature_contract_version": "canonical-flow-v2-18",
+      "feature_count": 18,
+      "threshold": 0.5,
+      "total_rows": 175146,
+      "accuracy": 0.8357770088954358,
+      "precision": 0.03812519442812208,
+      "recall": 0.5412168792934249,
+      "f1": 0.07123252284542607,
+      "macro_f1": 0.49057879152546163,
+      "weighted_f1": 0.9001660283626928,
+      "false_positive_rate": 0.1607551355223329,
+      "true_negative_rate": 0.8392448644776671,
+      "roc_auc": 0.8392457176665288,
+      "pr_auc": 0.49477327948721056,
+      "confusion_matrix": {
+        "tn": 145280,
+        "fp": 27828,
+        "fn": 935,
+        "tp": 1103
+      },
+      "per_attack_category": {
+        "Benign": {
+          "total": 173108,
+          "false_positive": 27828,
+          "true_negative": 145280,
+          "false_positive_rate": 0.1607551355223329
+        },
+        "Exploitation_And_C2": {
+          "total": 2036,
+          "detected": 1103,
+          "missed": 933,
+          "detection_rate": 0.5417485265225933,
+          "false_negative_rate": 0.4582514734774067
+        },
+        "Malware_And_DoS": {
+          "total": 2,
+          "detected": 0,
+          "missed": 2,
+          "detection_rate": 0.0,
+          "false_negative_rate": 1.0
+        }
+      },
+      "inference_latency_seconds": 0.2682,
+      "inference_latency_us_per_row": 1.5311,
+      "csv_sha256": "59d1ba35e72db508912ea3f9d8834ce88c7fb8b59eea03a2bd211cf68cc5b621"
     }
   },
-  "reload_verification": {
-    "status": "PASSED",
-    "samples_verified": 345371,
-    "predictions_identical": true,
-    "probabilities_allclose": true,
-    "atol": 1e-07,
-    "rtol": 0.0,
-    "max_abs_probability_diff": 2.220446049250313e-16
+  "environment": {
+    "python_version": "3.12.10",
+    "os": "Windows-11-10.0.26200-SP0",
+    "scikit_learn": "1.9.1",
+    "pandas": "3.1.1",
+    "numpy": "2.5.5",
+    "git_commit": "79ebb678b87de19cc6b664b587726983fecaf98f",
+    "git_dirty": true,
+    "git": {
+      "git_commit": "79ebb678b87de19cc6b664b587726983fecaf98f",
+      "git_dirty": true,
+      "git_clean": false,
+      "git_dirty_paths": [
+        "M .agents/reports/V2_CURRENT_AUDIT.md",
+        "M .github/workflows/ci.yml",
+        "M .github/workflows/lint-audit.yml",
+        "M .gitignore",
+        "M README.md",
+        "M THIRD_PARTY_NOTICES.md",
+        "M data/V2_SPLIT_MANIFEST.json",
+        "M data/historical/nf_unsw_nb15_v3/demo/demo_manifest.json",
+        "M data/historical/nf_unsw_nb15_v3/demo/demo_predictions_meta.json",
+        "M data/historical/nf_unsw_nb15_v3/demo/if_demo_predictions.metadata.json",
+        "M desktop/README.md",
+        "M desktop/package-lock.json",
+        "M desktop/package.json",
+        "M desktop/src-tauri/Cargo.lock",
+        "M desktop/src-tauri/Cargo.toml",
+        "M desktop/src-tauri/tauri.conf.json",
+        "M docs/ARCHITECTURE_V2.md",
+        "M docs/CANONICAL_SECURITY_EVENT_V2.md",
+        "M docs/DATASET.md",
+        "M docs/DEPLOYMENT_GUIDE_V2.md",
+        "M docs/DEVELOPMENT_PLAN.md",
+        "M docs/ETHICS_AND_PRIVACY.md",
+        "M docs/FEATURE_COMPATIBILITY_MATRIX.md",
+        "M docs/MIGRATION_V1_TO_V2.md",
+        "M docs/MULTI_SOURCE_INGESTION.md",
+        "M docs/MULTI_SOURCE_PIPELINE.md",
+        "M docs/PRESENTATION_OUTLINE.md",
+        "M docs/RELEASE_PROCESS.md",
+        "M docs/REPORT_OUTLINE.md",
+        "M docs/ROADMAP_FULL_SYSTEM.md",
+        "M docs/TRACEABILITY_MATRIX.md",
+        "M docs/USER_GUIDE_V2.md",
+        "M docs/WINDOWS_INSTALLATION.md",
+        "M docs/adr/ADR-dataset-hard-cutover-v2.md",
+        "M docs/benchmarks/SYSTEM_PERFORMANCE.md",
+        "M docs/dataset/AIT_LINKAGE_FEASIBILITY.md",
+        "M docs/dataset/AIT_PROFILE.md",
+        "M docs/dataset/CTU_SME_11_PROFILE.md",
+        "M docs/dataset/QUALITY_GATES.md",
+        "M docs/dataset/V2_LEAKAGE_AUDIT.md",
+        "M docs/dataset/V2_SOURCE_AUDIT.md",
+        "M docs/decisions/MODEL_FEATURE_SPACE_COMPATIBILITY.md",
+        "M docs/experiments/CTU_CROSS_SOURCE_EVAL.md",
+        "M docs/experiments/EXP4_UNKNOWN_ATTACK.md",
+        "M docs/experiments/EXP5_SESSION_CORRELATION.md",
+        "M docs/experiments/FOUR_MODEL_COMPARISON.md",
+        "M docs/experiments/TRACEABILITY_EVALUATION.md",
+        "M docs/historical/nf_unsw_nb15_v3/EXP4_UNKNOWN_ATTACK.md",
+        "M docs/historical/nf_unsw_nb15_v3/FOUR_MODEL_COMPARISON.md",
+        "M docs/historical/nf_unsw_nb15_v3/MODEL_AUDIT_TTL_ABLATION.md"
+      ],
+      "git_dirty_disclosure": "Trained from commit 79ebb67 with uncommitted worktree changes (192 modified/untracked path(s)).",
+      "worktree_provenance": "DIRTY_DISCLOSED",
+      "provenance_complete": true,
+      "provenance_status": "VERIFIED"
+    },
+    "timestamp_utc": "2026-11-17T23:15:57.810523+00:00"
   }
 }

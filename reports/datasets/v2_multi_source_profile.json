@@ -1,0 +1,610 @@
+{
+  "schema_version": "v2-multi-source-profile-v1",
+  "generated_at_utc": "2026-11-17T22:34:06.071904+00:00",
+  "feature_contract_version": "canonical-flow-v2-18",
+  "ait_nds_v2": {
+    "status": "PRESENT",
+    "dataset": "AIT NetFlow Data Set v2",
+    "doi": "10.5281/zenodo.13168643",
+    "license": "CC BY 4.0",
+    "total_rows": 3465342,
+    "header_variants_per_type": {
+      "tcp_complete.csv": 1,
+      "tcp_nocomplete.csv": 1,
+      "udp_complete.csv": 1
+    },
+    "header_column_counts": {
+      "tcp_complete.csv": 138,
+      "tcp_nocomplete.csv": 52,
+      "udp_complete.csv": 28
+    },
+    "invalid_numeric_cells": 0,
+    "negative_base_values": 0,
+    "exact_duplicate_scenario_5tuple_ts": 413,
+    "taxonomy_distribution": {
+      "Benign": 2845522,
+      "Reconnaissance": 432912,
+      "Credential_Attack": 2527,
+      "Exploitation_And_C2": 43,
+      "Post_Exploitation_Discovery": 275,
+      "Data_Exfiltration": 183121,
+      "Unmapped": 942
+    },
+    "raw_label_counts": {
+      "proxy": 646701,
+      "browsing/update": 533992,
+      "benign_share": 76058,
+      "HTTPS": 366458,
+      "dirb_scan": 38671,
+      "mail": 26268,
+      "HTTP(S) intra": 32765,
+      "monitoring": 4100,
+      "HTTP": 13895,
+      "service_scan": 65763,
+      "wpscan": 919,
+      "host_discover_dmz": 2627,
+      "online_cracking": 2527,
+      "host_discover_local": 315482,
+      "SSH": 142,
+      "DNS": 122,
+      "update/command on unassigned port": 16,
+      "upload_rce_shell": 27,
+      "check_user_id": 16,
+      "check_netstat_t": 8,
+      "read_resolv": 8,
+      "check_network_config": 8,
+      "check_ps_a": 8,
+      "check_release": 12,
+      "read_group": 10,
+      "read_passwd": 8,
+      "check_date": 8,
+      "list_web_dir": 21,
+      "check_wp_config": 17,
+      "dump_wp_users": 17,
+      "read_profile": 8,
+      "HTTP(S) DMZ": 174363,
+      "dns_brute_force_start": 9450,
+      "broken flow - benign": 3880,
+      "benign DNS": 755447,
+      "data exfiltration": 183121,
+      "NTP": 79236,
+      "NetBIOS": 35982,
+      "mDNS": 31134,
+      "mDNSv6": 23747,
+      "QUIC": 26058,
+      "bootp": 9549,
+      "systemd-resolver (local)": 2890,
+      "benign DNS - attacker requesting updates": 471,
+      "OpenVPN": 2160,
+      "STUN VoIP": 53,
+      "list_www": 8,
+      "check_who": 8,
+      "clear": 8,
+      "check_last": 11,
+      "check_id": 8,
+      "vpn_connect": 16,
+      "GoogleDNS": 35,
+      "check_whoami": 8,
+      "check_uname_r": 6,
+      "check_meminfo": 6,
+      "check_uname_a": 6,
+      "check_df": 9,
+      "check_netstat_nat": 8,
+      "list_home": 6,
+      "check_netstat_l": 6,
+      "check_cpuinfo": 4,
+      "check_uptime": 11,
+      "check_pwd": 7,
+      "list_l": 6,
+      "": 942
+    },
+    "unmapped_label_counts": {
+      "": 942
+    },
+    "scenarios": {
+      "fox": {
+        "total_rows": 351908,
+        "file_breakdown": {
+          "tcp_complete.csv": 184521,
+          "tcp_nocomplete.csv": 48296,
+          "udp_complete.csv": 119091
+        },
+        "categories": {
+          "Benign": 280735,
+          "Reconnaissance": 56416,
+          "Credential_Attack": 61,
+          "Exploitation_And_C2": 2,
+          "Post_Exploitation_Discovery": 26,
+          "Data_Exfiltration": 14668
+        },
+        "unmapped_rows": 0,
+        "role_cli_top": {
+          "vpn": 107742,
+          "inet-firewall": 68813,
+          "webserver": 65480,
+          "cloud_share": 23691,
+          "internal_share": 19142
+        },
+        "time_range_epoch_ms": [
+          1642204800869.37,
+          1642636799055.0747
+        ],
+        "time_range_utc": [
+          "2022-01-15T00:00:00.869370+00:00",
+          "2022-01-19T23:59:59.055075+00:00"
+        ]
+      },
+      "harrison": {
+        "total_rows": 437659,
+        "file_breakdown": {
+          "tcp_complete.csv": 204134,
+          "tcp_nocomplete.csv": 67462,
+          "udp_complete.csv": 166063
+        },
+        "categories": {
+          "Benign": 337307,
+          "Reconnaissance": 76125,
+          "Credential_Attack": 738,
+          "Exploitation_And_C2": 12,
+          "Post_Exploitation_Discovery": 20,
+          "Data_Exfiltration": 23457
+        },
+        "unmapped_rows": 0,
+        "role_cli_top": {
+          "vpn": 182595,
+          "inet-firewall": 80976,
+          "webserver": 67131,
+          "internal_share": 29091,
+          "inet-dns": 23477
+        },
+        "time_range_epoch_ms": [
+          1643932803030.726,
+          1644364703407.42
+        ],
+        "time_range_utc": [
+          "2022-02-04T00:00:03.030726+00:00",
+          "2022-02-08T23:58:23.407420+00:00"
+        ]
+      },
+      "russellmitchell": {
+        "total_rows": 377704,
+        "file_breakdown": {
+          "tcp_complete.csv": 123332,
+          "tcp_nocomplete.csv": 154877,
+          "udp_complete.csv": 99495
+        },
+        "categories": {
+          "Benign": 206676,
+          "Reconnaissance": 155181,
+          "Credential_Attack": 11,
+          "Exploitation_And_C2": 2,
+          "Post_Exploitation_Discovery": 56,
+          "Data_Exfiltration": 15778
+        },
+        "unmapped_rows": 0,
+        "role_cli_top": {
+          "vpn": 183954,
+          "inet-firewall": 62841,
+          "webserver": 49231,
+          "internal_share": 21607,
+          "inet-dns": 15786
+        },
+        "time_range_epoch_ms": [
+          1642723202274.306,
+          1643068797389.599
+        ],
+        "time_range_utc": [
+          "2022-01-21T00:00:02.274306+00:00",
+          "2022-01-24T23:59:57.389599+00:00"
+        ]
+      },
+      "santos": {
+        "total_rows": 288547,
+        "file_breakdown": {
+          "tcp_complete.csv": 178744,
+          "tcp_nocomplete.csv": 5778,
+          "udp_complete.csv": 104025
+        },
+        "categories": {
+          "Benign": 269762,
+          "Reconnaissance": 5651,
+          "Credential_Attack": 228,
+          "Exploitation_And_C2": 2,
+          "Post_Exploitation_Discovery": 56,
+          "Data_Exfiltration": 12848
+        },
+        "unmapped_rows": 0,
+        "role_cli_top": {
+          "webserver": 85093,
+          "inet-firewall": 66789,
+          "vpn": 35289,
+          "mail": 17036,
+          "internal_share": 16588
+        },
+        "time_range_epoch_ms": [
+          1642118402425.734,
+          1642463993819.441
+        ],
+        "time_range_utc": [
+          "2022-01-14T00:00:02.425734+00:00",
+          "2022-01-17T23:59:53.819441+00:00"
+        ]
+      },
+      "shaw": {
+        "total_rows": 453541,
+        "file_breakdown": {
+          "tcp_complete.csv": 281478,
+          "tcp_nocomplete.csv": 2530,
+          "udp_complete.csv": 169533
+        },
+        "categories": {
+          "Benign": 389344,
+          "Unmapped": 942,
+          "Reconnaissance": 2263,
+          "Credential_Attack": 78,
+          "Exploitation_And_C2": 2,
+          "Post_Exploitation_Discovery": 14,
+          "Data_Exfiltration": 60898
+        },
+        "unmapped_rows": 942,
+        "role_cli_top": {
+          "external": 350964,
+          "vpn": 98502,
+          "collinsbecker_mail": 1980,
+          "intranet_server": 1212,
+          "attacker_0": 750
+        },
+        "time_range_epoch_ms": [
+          1643068802508.266,
+          1643587110842.123
+        ],
+        "time_range_utc": [
+          "2022-01-25T00:00:02.508266+00:00",
+          "2022-01-30T23:58:30.842123+00:00"
+        ]
+      },
+      "wardbeck": {
+        "total_rows": 390224,
+        "file_breakdown": {
+          "tcp_complete.csv": 246907,
+          "tcp_nocomplete.csv": 4438,
+          "udp_complete.csv": 138879
+        },
+        "categories": {
+          "Benign": 370049,
+          "Reconnaissance": 4349,
+          "Credential_Attack": 676,
+          "Exploitation_And_C2": 4,
+          "Post_Exploitation_Discovery": 70,
+          "Data_Exfiltration": 15076
+        },
+        "unmapped_rows": 0,
+        "role_cli_top": {
+          "vpn": 100621,
+          "webserver": 96016,
+          "inet-firewall": 80944,
+          "mail": 21157,
+          "internal_share": 20892
+        },
+        "time_range_epoch_ms": [
+          1642550401756.11,
+          1642982354968.378
+        ],
+        "time_range_utc": [
+          "2022-01-19T00:00:01.756110+00:00",
+          "2022-01-23T23:59:14.968378+00:00"
+        ]
+      },
+      "wheeler": {
+        "total_rows": 536206,
+        "file_breakdown": {
+          "tcp_complete.csv": 284035,
+          "tcp_nocomplete.csv": 80386,
+          "udp_complete.csv": 171785
+        },
+        "categories": {
+          "Benign": 423636,
+          "Reconnaissance": 93365,
+          "Exploitation_And_C2": 3,
+          "Post_Exploitation_Discovery": 25,
+          "Data_Exfiltration": 19177
+        },
+        "unmapped_rows": 0,
+        "role_cli_top": {
+          "vpn": 158914,
+          "webserver": 108883,
+          "inet-firewall": 96593,
+          "external": 49290,
+          "mail": 24797
+        },
+        "time_range_epoch_ms": [
+          1643155202659.843,
+          1643586930582.722
+        ],
+        "time_range_utc": [
+          "2022-01-26T00:00:02.659843+00:00",
+          "2022-01-30T23:55:30.582722+00:00"
+        ]
+      },
+      "wilson": {
+        "total_rows": 629553,
+        "file_breakdown": {
+          "tcp_complete.csv": 417672,
+          "tcp_nocomplete.csv": 30869,
+          "udp_complete.csv": 181012
+        },
+        "categories": {
+          "Benign": 568013,
+          "Reconnaissance": 39562,
+          "Credential_Attack": 735,
+          "Exploitation_And_C2": 16,
+          "Post_Exploitation_Discovery": 8,
+          "Data_Exfiltration": 21219
+        },
+        "unmapped_rows": 0,
+        "role_cli_top": {
+          "webserver": 182243,
+          "vpn": 163514,
+          "inet-firewall": 108439,
+          "mail": 32271,
+          "internal_share": 27443
+        },
+        "time_range_epoch_ms": [
+          1643846402696.198,
+          1644364792400.297
+        ],
+        "time_range_utc": [
+          "2022-02-03T00:00:02.696198+00:00",
+          "2022-02-08T23:59:52.400297+00:00"
+        ]
+      }
+    }
+  },
+  "ctu_sme_11": {
+    "status": "PRESENT",
+    "dataset": "CTU-SME-11",
+    "doi": "10.5281/zenodo.7958258",
+    "version_doi": "10.5281/zenodo.7958259",
+    "license": "CC BY 4.0",
+    "total_rows": 260613,
+    "protocols": {
+      "udp": 184364,
+      "icmp": 11091,
+      "tcp": 65158
+    },
+    "duration_dash_count": 59836,
+    "orig_ip_bytes_dash_count": 0,
+    "invalid_numeric_cells": 0,
+    "taxonomy_distribution": {
+      "Benign": 212605,
+      "Unmapped": 9394,
+      "Exploitation_And_C2": 2036,
+      "Malware_And_DoS": 2,
+      "Reconnaissance": 36576
+    },
+    "raw_label_detail_counts": {
+      "Benign | From_benign-To_benign": 46570,
+      "Benign | From_benign-To_benign-Multicast": 18175,
+      "Benign | From_benign-To_benign-Device_edimax_camera": 183,
+      "Benign | From_benign-To_benign-DNS": 101147,
+      "Benign | From_benign-To_benign-ICMP": 3425,
+      "Benign | From_benign-To_benign-Microsoft": 367,
+      "Benign | From_benign-To_benign-Akamai": 435,
+      "Benign | From_benign-To_benign-Google": 1712,
+      "Benign | From_benign-To_benign-Cloudflare": 691,
+      "Benign | From_benign-To_benign-Yahoo": 55,
+      "Benign | From_benign-To_benign-Facebook": 82,
+      "Benign | From_benign-To_benign-Amazon": 14282,
+      "Benign | From_benign-To_benign-Cloudfront": 3168,
+      "Benign | From_benign-To_benign-1e100": 1325,
+      "Benign | From_benign-To_benign-Digicert": 28,
+      "Benign | From_benign-To_benign-Apple": 4,
+      "Benign | From_benign-To_benign-Hotmail": 16,
+      "Benign | From_benign-To_benign-Application_twitter": 82,
+      "Benign | From_benign-To_benign-Seznam.cz": 94,
+      "Benign | From_benign-To_benign-Azure": 10,
+      "Benign | From_benign-To_benign-AWSGlobalAccelerator": 8,
+      "Benign | From_benign-To_benign-Fastly": 83,
+      "Benign | From_benign-To_benign-Device_chromecast_tv_assistant": 14670,
+      "Benign | From_benign-To_benign-Github": 12,
+      "Benign | From_benign-To_benign-Facebook_CDN": 6,
+      "Benign | From_benign-To_benign-Outbrain": 4,
+      "Benign | From_benign-To_benign-Pinterest": 2,
+      "Benign | From_benign-To_benign-Vine.co": 1,
+      "Benign | From_benign-To_benign-Application_telegram": 8,
+      "Benign | From_benign-To_benign-DHCP": 2321,
+      "Benign | From_benign-To_benign-NTP": 813,
+      "Unknown | (empty)": 9394,
+      "Malicious | From_malicious-To_benign-Human_attacks": 1815,
+      "Malicious | From_malicious-To_malicious-Malware_C2-Trickbot": 221,
+      "Benign | From_benign-To_benign-Worldstream.net": 392,
+      "Benign | From_benign-To_benign-Application_instagram": 32,
+      "Benign | From_benign-To_benign-Cdn77": 17,
+      "Benign | From_benign-To_benign-Live-video": 3,
+      "Benign | From_benign-To_benign-Linkedin": 1,
+      "Malicious | From_malicious-To_benign-Malware_Encryption-Lockbit_2.0-SMB2": 2,
+      "Benign | From_benign-To_benign-Application_discord": 17,
+      "Malicious | From_malicious-To_benign-Discovery": 36576,
+      "Benign | From_benign-To_benign-Uptimerobot": 1005,
+      "Benign | From_benign": 1211,
+      "Benign | From_benign-To_benign-SSDP": 147,
+      "Benign | From_benign-To_benign-Application_spotify": 1
+    },
+    "devices": {
+      "Experiment-VM-Microsoft-Windows7AD-1": {
+        "total_rows": 184540,
+        "days": {
+          "2023-02-20": 13899,
+          "2023-02-21": 66326,
+          "2023-02-22": 35672,
+          "2023-02-23": 19455,
+          "2023-02-24": 28904,
+          "2023-02-25": 17919,
+          "2023-02-26": 2365
+        },
+        "categories": {
+          "Benign": 173108,
+          "Unmapped": 9394,
+          "Exploitation_And_C2": 2036,
+          "Malware_And_DoS": 2
+        },
+        "raw_labels": {
+          "Benign": 173108,
+          "Unknown": 9394,
+          "Malicious": 2038
+        },
+        "time_range_utc": [
+          "2023-02-20T00:03:13.395678+00:00",
+          "2023-02-27T00:01:36.230421+00:00"
+        ]
+      },
+      "Honeypot-Assistant-Amazon-Echo1stGen-1": {
+        "total_rows": 76073,
+        "days": {
+          "2023-02-20": 10120,
+          "2023-02-21": 11233,
+          "2023-02-22": 9180,
+          "2023-02-23": 12309,
+          "2023-02-24": 10906,
+          "2023-02-25": 11326,
+          "2023-02-26": 10999
+        },
+        "categories": {
+          "Reconnaissance": 36576,
+          "Benign": 39497
+        },
+        "raw_labels": {
+          "Malicious": 36576,
+          "Benign": 39497
+        },
+        "time_range_utc": [
+          "2023-02-20T00:00:33.319051+00:00",
+          "2023-02-27T00:00:17.400978+00:00"
+        ]
+      }
+    }
+  },
+  "ait_linkage": {
+    "ait_ads_present": true,
+    "ait_lds_sample_present": true,
+    "direct_uid_join_possible": false,
+    "entity_time_window_correlation_possible": true,
+    "fox_linkage_evidence": {
+      "fox_wazuh_agent_ips": [
+        "10.35.32.1",
+        "10.35.33.111",
+        "10.35.35.206",
+        "172.17.129.140",
+        "172.17.130.196",
+        "172.17.130.37",
+        "172.17.131.81",
+        "192.168.128.170",
+        "192.168.128.195",
+        "192.168.129.212",
+        "192.168.131.228"
+      ],
+      "wazuh_ips_present_in_ait_nds_v2_fox": [
+        "10.35.32.1",
+        "10.35.33.111",
+        "10.35.35.206",
+        "172.17.129.140",
+        "172.17.130.196",
+        "172.17.130.37",
+        "172.17.131.81",
+        "192.168.128.170",
+        "192.168.128.195",
+        "192.168.129.212",
+        "192.168.131.228"
+      ],
+      "ip_overlap_ratio": "11/11",
+      "fox_ads_label_windows": [
+        {
+          "scenario": "fox",
+          "attack": "network_scans",
+          "start": "1642507140.0",
+          "end": "1642508220.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "service_scans",
+          "start": "1642508220.0",
+          "end": "1642508267.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "wpscan",
+          "start": "1642508267.0",
+          "end": "1642508310.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "dirb",
+          "start": "1642508310.0",
+          "end": "1642509480.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "webshell",
+          "start": "1642509480.0",
+          "end": "1642509510.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "cracking",
+          "start": "1642509510.0",
+          "end": "1642511630.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "reverse_shell",
+          "start": "1642511630.0",
+          "end": "1642511670.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "privilege_escalation",
+          "start": "1642511670.0",
+          "end": "1642511693.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "service_stop",
+          "start": "1642410286.0",
+          "end": "1642410288.0"
+        },
+        {
+          "scenario": "fox",
+          "attack": "dnsteal",
+          "start": "1642410288.0",
+          "end": "1642413600.0"
+        }
+      ],
+      "version_caveat": "AIT-NDS-v2 and AIT-ADS derive from AIT-LDS-v2.0, while downloaded log archive is AIT-LDS-v2.1 (10.5281/zenodo.19483937). Observed window discrepancy in fox: AIT-NDS-v2 labels `data exfiltration` across 2022-01-15T00:00:03Z..2022-01-17T09:04:47Z, whereas AIT-ADS labels.csv records `dnsteal` at 2022-01-17T09:04:48..10:00:00 (epoch).",
+      "linkage_conclusion": "DIRECT FLOW-UID JOIN: NOT VERIFIED (no shared synthetic flow key across Tstat CSVs, host logs, and Wazuh/AMiner alerts). TEMPORAL+IP ENTITY CORRELATION: SUPPORTED for Trace Engine & Behavioral Vector using normalized UTC epoch + host IPv4."
+    },
+    "alert_file_counts": {
+      "fox_aminer.json": 10581,
+      "fox_wazuh.json": 462523,
+      "harrison_aminer.json": 10194,
+      "harrison_wazuh.json": 583754,
+      "russellmitchell_aminer.json": 4056,
+      "russellmitchell_wazuh.json": 41488,
+      "santos_aminer.json": 4266,
+      "santos_wazuh.json": 126513,
+      "shaw_aminer.json": 2243,
+      "shaw_wazuh.json": 68539,
+      "wardbeck_aminer.json": 3053,
+      "wardbeck_wazuh.json": 88204,
+      "wheeler_aminer.json": 12222,
+      "wheeler_wazuh.json": 603939,
+      "wilson_aminer.json": 8943,
+      "wilson_wazuh.json": 625303
+    },
+    "fox_lds_files_count": 16094,
+    "russellmitchell_lds_files_count": 14898
+  },
+  "ugr16": {
+    "status": "BLOCKED",
+    "reason": "HTTP 403 / Maintenance on nesg.ugr.es"
+  }
+}

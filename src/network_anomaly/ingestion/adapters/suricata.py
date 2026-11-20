@@ -27,7 +27,7 @@ class SuricataEveAdapter(BaseSourceAdapter):
     """Adapter for Suricata EVE JSON logs (flow and alert events).
 
     Transfers signature alerts and flow metadata to Risk Engine (#32) and Trace Engine (#24).
-    Abstains from 47-feature ML inference.
+    Abstains from v2 canonical ML inference when bidirectional flow contract is incomplete.
     """
 
     def __init__(
@@ -92,5 +92,7 @@ class SuricataEveAdapter(BaseSourceAdapter):
             trace_metadata=trace_meta,
             eligibility=InferenceEligibility.FEATURE_INCOMPATIBLE,
             validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
-            ood_warnings=["Suricata EVE logs lack 40/47 micro-telemetry features for ML baseline."],
+            ood_warnings=[
+                "Suricata EVE logs routed to Risk/Trace engines (non-canonical v2 ML source)."
+            ],
         )

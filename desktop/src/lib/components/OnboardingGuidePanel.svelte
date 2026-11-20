@@ -108,7 +108,7 @@
       <div class="glossary-item">
         <strong style="color: var(--semantic-warning);">OOD (ABSTAINED_OOD — Từ chối dự đoán)</strong>
         <p>
-          Dữ liệu thiếu thông số quan trọng (ví dụ <code>MIN_TTL = 0</code>) hoặc bất hợp lý vật lý. Hệ thống chủ động từ chối gán nhãn và không tính điểm rủi ro để tránh báo nhầm.
+          Dữ liệu vi phạm bất biến vật lý (âm thời lượng/byte/gói tin hoặc giá trị không hữu hạn). Hệ thống chủ động từ chối gán nhãn và không tính điểm rủi ro để tránh báo nhầm.
         </p>
       </div>
       <div class="glossary-item">
@@ -122,12 +122,12 @@
     <div class="banner banner-info" style="margin-top: 10px; font-size: 12px;">
       <Icons name="lock" size={15} />
       <div>
-        <strong>Nguồn dữ liệu &amp; Giới hạn Khoa học:</strong>
-        Dữ liệu demo và trọng số mô hình được xây dựng từ bộ dữ liệu nghiên cứu
-        <strong>NF-UNSW-NB15-v3</strong> (The University of Queensland, DOI:
-        <span class="mono">10.48610/6E0EDA1</span>, Luay et al. <span class="mono">arXiv:2503.04404</span>)
-        theo điều khoản <em>Permitted Re-Use with Commercial Use Restriction</em> (chỉ dùng cho mục đích học thuật, nghiên cứu và phi thương mại).
-        Mô hình có độ chính xác cao trong phân phối testbed nhưng có thể suy giảm trên lưu lượng mạng khác; mọi khuyến nghị phản ứng (#27) chỉ chạy ở chế độ mô phỏng <strong>Dry-Run (executed=false)</strong> và không tự can thiệp tường lửa thật.
+        <strong>Nguồn dữ liệu &amp; Giới hạn Khoa học (v2):</strong>
+        Dữ liệu demo và trọng số mô hình được huấn luyện từ bộ dữ liệu
+        <strong>AIT NetFlow Data Set v2</strong> (DOI: <span class="mono">10.5281/zenodo.13168643</span>,
+        giấy phép <span class="mono">CC BY 4.0</span>, sinh từ PCAP AIT-LDS-v2.0) và kiểm chứng mở rộng trên dữ liệu thu thập thực tế
+        <strong>CTU-SME-11</strong> (DOI: <span class="mono">10.5281/zenodo.7958258</span>, <span class="mono">CC BY 4.0</span>).
+        Hiệu năng ngoài phân phối (domain shift) giữa dữ liệu mô phỏng và mạng thực tế có thể suy giảm; mọi khuyến nghị phản ứng (#27) chỉ chạy ở chế độ mô phỏng <strong>Dry-Run (executed=false)</strong> và không tự can thiệp tường lửa thật.
       </div>
     </div>
   {/if}

@@ -1,0 +1,144 @@
+{
+  "benchmark_id": "BM-CRYPTO-OVERHEAD-RQ6",
+  "timestamp": "2026-11-18T18:04:37.017637+00:00",
+  "warmup_iterations": 200,
+  "measured_iterations_per_size": 2000,
+  "hypothesis": "H6: AES-256-GCM adds <= 500 us P95 latency per vector event and >= 5,000 ops/sec",
+  "hypothesis_confirmed": true,
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 124 Stepping 0, AuthenticAMD",
+    "cpu_count": 12,
+    "total_ram_gb": 15.27,
+    "python_version": "3.12.10",
+    "python_implementation": "CPython",
+    "packages": {
+      "numpy": "2.5.5",
+      "pandas": "3.1.1",
+      "scikit_learn": "1.9.1",
+      "xgboost": "3.4.1",
+      "joblib": "1.6.0",
+      "cryptography": "50.0.2"
+    },
+    "random_seed": 42,
+    "captured_at_utc": "2026-11-18T18:04:11.580025+00:00"
+  },
+  "payload_benchmarks": {
+    "256": {
+      "actual_payload_bytes": 256,
+      "plaintext_json_roundtrip": {
+        "median_us": 6.1,
+        "mean_us": 6.33,
+        "p95_us": 6.5,
+        "p99_us": 9.8,
+        "throughput_ops_sec": 151035.7
+      },
+      "encryption": {
+        "median_us": 8.8,
+        "mean_us": 10.725,
+        "p95_us": 13.3,
+        "p99_us": 66.8,
+        "throughput_ops_sec": 72177.2,
+        "peak_traced_memory_mb": 1.458
+      },
+      "decryption": {
+        "median_us": 2.9,
+        "mean_us": 3.187,
+        "p95_us": 4.7,
+        "p99_us": 6.4,
+        "throughput_ops_sec": 245263.4
+      }
+    },
+    "1024": {
+      "actual_payload_bytes": 1024,
+      "plaintext_json_roundtrip": {
+        "median_us": 8.0,
+        "mean_us": 8.131,
+        "p95_us": 8.2,
+        "p99_us": 12.3,
+        "throughput_ops_sec": 118574.7
+      },
+      "encryption": {
+        "median_us": 10.0,
+        "mean_us": 10.58,
+        "p95_us": 11.4,
+        "p99_us": 26.2,
+        "throughput_ops_sec": 74807.5,
+        "peak_traced_memory_mb": 3.412
+      },
+      "decryption": {
+        "median_us": 3.7,
+        "mean_us": 4.886,
+        "p95_us": 5.5,
+        "p99_us": 33.7,
+        "throughput_ops_sec": 196898.8
+      }
+    },
+    "4096": {
+      "actual_payload_bytes": 4096,
+      "plaintext_json_roundtrip": {
+        "median_us": 14.8,
+        "mean_us": 15.047,
+        "p95_us": 15.7,
+        "p99_us": 22.3,
+        "throughput_ops_sec": 65034.7
+      },
+      "encryption": {
+        "median_us": 19.0,
+        "mean_us": 24.077,
+        "p95_us": 38.4,
+        "p99_us": 117.3,
+        "throughput_ops_sec": 36351.0,
+        "peak_traced_memory_mb": 11.234
+      },
+      "decryption": {
+        "median_us": 8.6,
+        "mean_us": 10.281,
+        "p95_us": 16.1,
+        "p99_us": 17.6,
+        "throughput_ops_sec": 95339.8
+      }
+    }
+  },
+  "system_ab_overhead": {
+    "events_per_trial": 500,
+    "trials": 3,
+    "encryption_off": {
+      "throughput_events_per_sec": 181.17,
+      "latency_us": {
+        "median_us": 5314.7,
+        "mean_us": 5512.637,
+        "p95_us": 7490.6,
+        "p99_us": 9029.4
+      },
+      "cpu_seconds": 5.0469,
+      "wall_seconds": 8.2794,
+      "peak_traced_memory_mb": 0.05,
+      "rss_delta_mb": null
+    },
+    "encryption_on": {
+      "throughput_events_per_sec": 121.65,
+      "latency_us": {
+        "median_us": 7997.3,
+        "mean_us": 8213.708,
+        "p95_us": 10672.1,
+        "p99_us": 11793.4
+      },
+      "cpu_seconds": 7.75,
+      "wall_seconds": 12.3304,
+      "peak_traced_memory_mb": 0.134,
+      "rss_delta_mb": null
+    },
+    "overhead_delta": {
+      "throughput_pct": -32.85,
+      "cpu_pct": 53.56,
+      "median_latency_us": 2682.6
+    }
+  },
+  "limitations": [
+    "Microbenchmark runs in-process on the current host CPU and excludes SQLite disk I/O.",
+    "System A/B overhead compares LiveSystemOrchestrator(encrypt_at_rest=True vs False) on in-process synthetic CanonicalSecurityEvent batches."
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "status": "BLOCKED",
+  "synthetic": false,
+  "profiled_at_utc": "2026-11-17T15:52:04.192862+00:00",
+  "reason": "Official AIT-Suite-v2.1 raw files absent in data\\raw\\ait. Use --synthetic-fixture-smoke for schema-only fixture checks."
+}

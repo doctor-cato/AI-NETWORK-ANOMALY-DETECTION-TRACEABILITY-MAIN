@@ -1,0 +1,353 @@
+{
+  "experiment_id": "EXP-RQ1-4MODEL-COMPARISON",
+  "status": "COMPLETED",
+  "generated_at_utc": "2026-11-18T02:07:40.325399+00:00",
+  "dataset_provenance": {
+    "dataset_id": "AIT-NetFlow-v2-Suite",
+    "dataset_version": "v2",
+    "doi": "10.5281/zenodo.13168643",
+    "source_url": "https://zenodo.org/records/13168643",
+    "dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+    "split_protocol": "v2-scenario-group-purged-v1",
+    "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
+    "preprocessor_sha256": "0866dec7252d36d3f2bb2becddf266787cc49ddf19306a8e003ba1e951cf51a7"
+  },
+  "evaluation_partition": "test",
+  "sample_count": 988805,
+  "max_rows_cap": null,
+  "attack_class_support": {
+    "Benign": 812980,
+    "Reconnaissance": 95628,
+    "Data_Exfiltration": 80075,
+    "Credential_Attack": 78,
+    "Post_Exploitation_Discovery": 39,
+    "Exploitation_And_C2": 5
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 124 Stepping 0, AuthenticAMD",
+    "cpu_count": 12,
+    "total_ram_gb": 15.27,
+    "python_version": "3.12.10",
+    "python_implementation": "CPython",
+    "packages": {
+      "numpy": "2.5.5",
+      "pandas": "3.1.1",
+      "scikit_learn": "1.9.1",
+      "xgboost": "3.4.1",
+      "joblib": "1.6.0",
+      "cryptography": "50.0.2"
+    },
+    "random_seed": 42,
+    "captured_at_utc": "2026-11-18T02:07:18.393117+00:00"
+  },
+  "models": {
+    "random_forest": {
+      "display_name": "Random Forest",
+      "model_type": "RandomForest",
+      "evaluation_protocol": "supervised_binary_classification (trained on Train Ben+Attack; threshold on probability)",
+      "artifact_path": "artifacts/models/random_forest/random_forest_baseline.joblib",
+      "artifact_sha256": "b2e42f85f2625f5bf04902a032a4db734f4c4e744d45f4fef3ddffd05a694f2f",
+      "model_disk_size_mb": 11.8691,
+      "decision_threshold": 0.5,
+      "threshold_source": "manifest.threshold",
+      "score_semantics": "calibrated_binary_probability",
+      "metrics": {
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.9982170397601144,
+        "precision": 0.9988536185530373,
+        "recall": 0.9911104791696289,
+        "f1": 0.9949669842158002,
+        "macro_f1": 0.9969418049320905,
+        "false_positive_rate": 0.00024600851189451157,
+        "roc_auc": 0.9993721032405903,
+        "pr_auc": 0.9977205926481825,
+        "confusion_matrix": [
+          [
+            812780,
+            200
+          ],
+          [
+            1563,
+            174262
+          ]
+        ],
+        "confusion_matrix_labeled": {
+          "tn": 812780,
+          "fp": 200,
+          "fn": 1563,
+          "tp": 174262
+        }
+      },
+      "operational_characteristics": {
+        "batch_elapsed_seconds": 2.0336,
+        "avg_inference_latency_us": 2.057,
+        "throughput_flows_sec": 486239.1
+      },
+      "explainability": {
+        "top_features": [
+          {
+            "feature": "bytes_in_ratio",
+            "importance": 0.134504,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "duration_ms",
+            "importance": 0.118191,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "bytes_per_pkt_in",
+            "importance": 0.108183,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "pkts_per_sec",
+            "importance": 0.101364,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "total_bytes",
+            "importance": 0.100648,
+            "method": "tree_feature_importances"
+          }
+        ]
+      }
+    },
+    "xgboost": {
+      "display_name": "XGBoost",
+      "model_type": "XGBoost",
+      "evaluation_protocol": "supervised_binary_classification (trained on Train Ben+Attack; threshold on probability)",
+      "artifact_path": "artifacts/models/xgboost/xgboost_baseline.joblib",
+      "artifact_sha256": "33d201f8f3d842c0b71547532c74f3d107bd402d8a65e20241ff5f407723aa48",
+      "model_disk_size_mb": 0.2376,
+      "decision_threshold": 0.5,
+      "threshold_source": "manifest.threshold",
+      "score_semantics": "calibrated_binary_probability",
+      "metrics": {
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.9680199837177199,
+        "precision": 0.9988860058813354,
+        "recall": 0.8210664012512441,
+        "f1": 0.90128921492118,
+        "macro_f1": 0.9411041611817925,
+        "false_positive_rate": 0.0001980368520750818,
+        "roc_auc": 0.988451121090661,
+        "pr_auc": 0.9728355973227448,
+        "confusion_matrix": [
+          [
+            812819,
+            161
+          ],
+          [
+            31461,
+            144364
+          ]
+        ],
+        "confusion_matrix_labeled": {
+          "tn": 812819,
+          "fp": 161,
+          "fn": 31461,
+          "tp": 144364
+        }
+      },
+      "operational_characteristics": {
+        "batch_elapsed_seconds": 0.6389,
+        "avg_inference_latency_us": 0.646,
+        "throughput_flows_sec": 1547693.06
+      },
+      "explainability": {
+        "top_features": [
+          {
+            "feature": "bytes_in",
+            "importance": 0.35791,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "bytes_per_sec_in",
+            "importance": 0.212111,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "bytes_per_pkt_out",
+            "importance": 0.09575,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "bytes_in_ratio",
+            "importance": 0.085497,
+            "method": "tree_feature_importances"
+          },
+          {
+            "feature": "bytes_per_sec_out",
+            "importance": 0.069285,
+            "method": "tree_feature_importances"
+          }
+        ]
+      }
+    },
+    "isolation_forest": {
+      "display_name": "Isolation Forest",
+      "model_type": "IsolationForest",
+      "evaluation_protocol": "unsupervised_anomaly_detection (trained on Train Benign-only; threshold_source=manifest.threshold)",
+      "artifact_path": "artifacts/models/isolation_forest/isolation_forest.joblib",
+      "artifact_sha256": "11b1690088bca1984df9280b3c5662fbb13a76ca31e55258b9de43d6a10a6885",
+      "model_disk_size_mb": 0.8831,
+      "decision_threshold": 0.03126839775265744,
+      "threshold_source": "manifest.threshold",
+      "score_semantics": "empirical_percentile_vs_validation_benign",
+      "metrics": {
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.8815711894660727,
+        "precision": 0.7775246701198533,
+        "recall": 0.46784586947248685,
+        "f1": 0.5841822875424773,
+        "macro_f1": 0.7575676297625982,
+        "false_positive_rate": 0.028951511722305593,
+        "roc_auc": 0.8330126364390124,
+        "pr_auc": 0.658716154856379,
+        "confusion_matrix": [
+          [
+            789443,
+            23537
+          ],
+          [
+            93566,
+            82259
+          ]
+        ],
+        "confusion_matrix_labeled": {
+          "tn": 789443,
+          "fp": 23537,
+          "fn": 93566,
+          "tp": 82259
+        }
+      },
+      "operational_characteristics": {
+        "batch_elapsed_seconds": 8.5711,
+        "avg_inference_latency_us": 8.668,
+        "throughput_flows_sec": 115364.38
+      },
+      "explainability": {
+        "top_features": [
+          {
+            "feature": "bytes_per_pkt_in",
+            "importance": 0.138113,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "duration_ms",
+            "importance": 0.094307,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "has_response",
+            "importance": 0.08814,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "bytes_per_pkt_out",
+            "importance": 0.085584,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "pkts_in",
+            "importance": 0.073166,
+            "method": "validation_permutation_importance"
+          }
+        ]
+      }
+    },
+    "autoencoder": {
+      "display_name": "Autoencoder",
+      "model_type": "Autoencoder",
+      "evaluation_protocol": "unsupervised_anomaly_detection (trained on Train Benign-only; threshold_source=manifest.threshold)",
+      "artifact_path": "artifacts/models/autoencoder/autoencoder_model.joblib",
+      "artifact_sha256": "e6afecefdc939a09e3c7fedd3e994a10c404f74e9b52c9ab95dfd984aae0cd4f",
+      "model_disk_size_mb": 0.0244,
+      "decision_threshold": 0.0004672738606371692,
+      "threshold_source": "manifest.threshold",
+      "score_semantics": "empirical_percentile_vs_validation_benign",
+      "metrics": {
+        "sample_count": 988805,
+        "positive_count": 175825,
+        "negative_count": 812980,
+        "accuracy": 0.8829041115285623,
+        "precision": 0.7859701265051059,
+        "recall": 0.46926205033413904,
+        "f1": 0.5876617248514072,
+        "macro_f1": 0.7597124083156652,
+        "false_positive_rate": 0.027636596226229427,
+        "roc_auc": 0.5543829794752332,
+        "pr_auc": 0.5664230031886072,
+        "confusion_matrix": [
+          [
+            790512,
+            22468
+          ],
+          [
+            93317,
+            82508
+          ]
+        ],
+        "confusion_matrix_labeled": {
+          "tn": 790512,
+          "fp": 22468,
+          "fn": 93317,
+          "tp": 82508
+        }
+      },
+      "operational_characteristics": {
+        "batch_elapsed_seconds": 0.4786,
+        "avg_inference_latency_us": 0.484,
+        "throughput_flows_sec": 2066235.38
+      },
+      "explainability": {
+        "top_features": [
+          {
+            "feature": "pkts_in",
+            "importance": 0.082123,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "total_pkts",
+            "importance": 0.079703,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "duration_ms",
+            "importance": 0.079124,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "bytes_per_sec_out",
+            "importance": 0.076038,
+            "method": "validation_permutation_importance"
+          },
+          {
+            "feature": "pkts_out",
+            "importance": 0.074305,
+            "method": "validation_permutation_importance"
+          }
+        ]
+      }
+    }
+  },
+  "synthesis": {
+    "best_supervised_by_f1": "random_forest",
+    "best_unsupervised_by_f1": "autoencoder"
+  },
+  "limitations": [
+    "Supervised and unsupervised models follow different training and threshold calibration protocols and must be compared with protocol awareness.",
+    "In-domain evaluation uses AIT-NDS-v2 scenario-disjoint held-out testbeds (shaw, wheeler); cross-source domain-shift evaluation is separately measured on CTU-SME-11.",
+    "Batch throughput reflects offline vectorized inference on this host and does not directly measure live network line-rate capacity."
+  ]
+}

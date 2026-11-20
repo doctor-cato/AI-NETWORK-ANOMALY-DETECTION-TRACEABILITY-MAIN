@@ -1,4 +1,4 @@
-"""Integration tests for NF-UNSW-NB15-v3 CSV Inference Pipeline (Issue #15).
+"""Integration tests for NetFlow Sentinel v2 CSV Inference Pipeline (canonical-flow-v2-18).
 
 Tests:
 1. Complete end-to-end lifecycle:
@@ -13,11 +13,13 @@ Tests:
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import joblib
 import numpy as np
@@ -26,7 +28,7 @@ import pytest
 from sklearn.ensemble import RandomForestClassifier
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     CATEGORICAL_CODED_COLUMNS,
     ML_FEATURE_COLUMNS,
 )
@@ -44,11 +46,30 @@ from network_anomaly.preprocessing import (
 PREDICT_SCRIPT = PROJECT_ROOT / "scripts" / "predict.py"
 
 
-@pytest.fixture
+@functools.lru_cache(maxsize=1)
+def _load_predict_cli():
+    spec = importlib.util.spec_from_file_location("predict_cli_mod", PREDICT_SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_predict_cli_in_process(
+    argv: List[str], capsys: pytest.CaptureFixture[str]
+) -> Tuple[int, str, str]:
+    mod = _load_predict_cli()
+    code = mod.main(argv)
+    captured = capsys.readouterr()
+    return code, captured.out, captured.err
+
+
+@pytest.fixture(scope="module")
 def synthetic_integration_setup(
-    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> Tuple[Path, Path, Path, Path, Path]:
     """Create synthetic input CSV, fitted preprocessor, and fitted model artifacts."""
+    tmp_path = tmp_path_factory.mktemp("inference_e2e_setup")
     rng = np.random.default_rng(seed=123)
     n_rows = 50
 
@@ -63,24 +84,23 @@ def synthetic_integration_setup(
     df_full = pd.DataFrame(data, columns=list(ML_FEATURE_COLUMNS))
 
     # Add trace-only metadata and targets to verify pipeline ignores them
-    df_full["IPV4_SRC_ADDR"] = "192.168.1.100"
-    df_full["IPV4_DST_ADDR"] = "10.0.0.5"
-    df_full["L4_SRC_PORT"] = 49152
-    df_full["L4_DST_PORT"] = 443
-    df_full["FLOW_START_MILLISECONDS"] = 1600000000000
-    df_full["FLOW_END_MILLISECONDS"] = 1600000001000
-    df_full["Label"] = 0
-    df_full["Attack"] = "Benign"
+    df_full["source_ip"] = "192.168.1.100"
+    df_full["dest_ip"] = "10.0.0.5"
+    df_full["source_port"] = 49152
+    df_full["dest_port"] = 443
+    df_full["timestamp_ms"] = 1600000000000
+    df_full["label_binary"] = 0
+    df_full["attack_category"] = "Benign"
     df_full["row_id"] = [f"flow_{i:03d}" for i in range(n_rows)]
 
     input_csv_path = tmp_path / "incoming_flows.csv"
     df_full.to_csv(input_csv_path, index=False)
 
-    # 2. Fit train-only preprocessor on pure 47 features
+    # 2. Fit train-only preprocessor on pure 18 features
     prep = TrainOnlyPreprocessor(
         config=PreprocessingConfig(scaler_type="none"),
-        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-        split_manifest_sha256="bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88",
+        dataset_sha256="cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+        split_manifest_sha256="ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
     )
     df_train_only = df_full[list(ML_FEATURE_COLUMNS)].copy()
     prep.fit(df_train_only)
@@ -206,15 +226,14 @@ def test_cli_execution_success(
 def test_cli_error_non_existent_input(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     """CLI exits with code 1 when input CSV does not exist."""
     _, prep_art, prep_man, model_art, model_man = synthetic_integration_setup
     non_existent_input = tmp_path / "does_not_exist.csv"
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(non_existent_input),
         "--output",
@@ -229,14 +248,15 @@ def test_cli_error_non_existent_input(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "Error: Input file does not exist" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "Error: Input file does not exist" in stderr
 
 
 def test_cli_error_empty_input_csv(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     """CLI exits with code 1 when input CSV is 0 bytes."""
     _, prep_art, prep_man, model_art, model_man = synthetic_integration_setup
@@ -244,9 +264,7 @@ def test_cli_error_empty_input_csv(
     empty_csv.write_text("", encoding="utf-8")
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(empty_csv),
         "--output",
@@ -261,23 +279,22 @@ def test_cli_error_empty_input_csv(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "Error: Input CSV file is empty" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "Error: Input CSV file is empty" in stderr
 
 
 def test_cli_error_missing_model_artifact(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
     """CLI exits with code 1 when model artifact is missing."""
     input_csv, prep_art, prep_man, _, model_man = synthetic_integration_setup
     missing_model = tmp_path / "missing_model.joblib"
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(input_csv),
         "--output",
@@ -292,25 +309,24 @@ def test_cli_error_missing_model_artifact(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "Error: Model artifact not found" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "Error: Model artifact not found" in stderr
 
 
 def test_cli_error_schema_validation_failure(
     synthetic_integration_setup: Tuple[Path, Path, Path, Path, Path],
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ):
-    """CLI exits with code 1 when input CSV violates the 47-feature contract."""
+    """CLI exits with code 1 when input CSV violates the 18-feature contract."""
     _, prep_art, prep_man, model_art, model_man = synthetic_integration_setup
 
     invalid_csv = tmp_path / "invalid_schema.csv"
-    pd.DataFrame({"FLOW_DURATION_MILLISECONDS": [100.0]}).to_csv(invalid_csv, index=False)
+    pd.DataFrame({"duration_ms": [100.0]}).to_csv(invalid_csv, index=False)
     output_csv = tmp_path / "out.csv"
 
-    cmd = [
-        sys.executable,
-        str(PREDICT_SCRIPT),
+    argv = [
         "--input",
         str(invalid_csv),
         "--output",
@@ -325,10 +341,10 @@ def test_cli_error_schema_validation_failure(
         str(prep_man),
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    assert proc.returncode == 1
-    assert "missing" in proc.stderr
-    assert "baseline ML feature" in proc.stderr
+    returncode, _stdout, stderr = _run_predict_cli_in_process(argv, capsys)
+    assert returncode == 1
+    assert "missing" in stderr
+    assert "v2 ML feature" in stderr
 
 
 def test_prediction_reproducibility(
@@ -369,14 +385,12 @@ def test_prediction_reproducibility(
 
 
 def test_real_preprocessor_artifact_smoke():
-    """Smoke test: verify that Issue #8 preprocessor artifact loads and verifies in repo."""
-    prep_art = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-    prep_man = (
-        PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
-    )
+    """Smoke test: verify that v2 preprocessor artifact loads and verifies in repo."""
+    prep_art = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
+    prep_man = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 
     if not prep_art.is_file() or not prep_man.is_file():
-        pytest.skip("Real preprocessor artifact from Issue #8 not found in repository.")
+        pytest.skip("Real v2 preprocessor artifact not found in repository.")
 
     manifest = json.loads(prep_man.read_text(encoding="utf-8"))
     if manifest.get("artifact_sha256") != _sha256_file(prep_art):
@@ -386,14 +400,13 @@ def test_real_preprocessor_artifact_smoke():
 
     prep = TrainOnlyPreprocessor.load_verified(prep_art, manifest_path=prep_man)
     assert prep.is_fitted_ is True
-    assert prep.train_row_count_ == 1655797
+    assert prep.train_row_count_ == 2097891
 
     # Model status check
     rf_art = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
     if not rf_art.is_file():
-        # Document explicit blocker
         print(
-            "\n[SMOKE REPORT] Real preprocessor: PASS (1,655,797 rows trained).\n"
+            "\n[SMOKE REPORT] Real v2 preprocessor: PASS (2,097,891 rows trained).\n"
             "[SMOKE REPORT] Real model: SKIPPED (RF baseline binary not present "
             "in working tree; excluded via .gitignore)."
         )

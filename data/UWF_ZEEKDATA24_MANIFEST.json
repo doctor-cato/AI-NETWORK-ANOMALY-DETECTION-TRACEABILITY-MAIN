@@ -1,0 +1,73 @@
+{
+  "schema_version": 2,
+  "dataset": "UWF-ZeekData24",
+  "synthetic": false,
+  "evaluation_only": true,
+  "role": "Supplemental Cyber Range Zeek L4-payload cross-source evaluation (does NOT replace UGR'16 ISP benchmark)",
+  "official_source": {
+    "publisher": "University of West Florida (Cyber Analytics Research Group)",
+    "portal_url": "https://datasets.uwf.edu/",
+    "csv_base_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/",
+    "license_title": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "generated_at_utc": "2026-11-18T16:41:02.197300+00:00",
+  "files": [
+    {
+      "subset": "Benign",
+      "local_relpath": "data/raw/uwf_zeekdata24/Benign.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Benign/part-00000-b039213f-1208-4f1b-b71d-5e8e3a4a2939-c000.csv",
+      "size_bytes": 10163424,
+      "sha256": "272677c8c7bbe7ab57b040f63ed8bbf92d0b5716adb05444258274eed000ab3f"
+    },
+    {
+      "subset": "Credential_Access",
+      "local_relpath": "data/raw/uwf_zeekdata24/Credential_Access.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Credential_Access/part-00000-912fdc44-5727-4d42-8fd6-a0e206ba29f8-c000.csv",
+      "size_bytes": 10794836,
+      "sha256": "6448eeebbb5dfaf88bb45f81a2fa8fd3b2a3e635090da2e50b0177bd71430424"
+    },
+    {
+      "subset": "Defense_Evasion",
+      "local_relpath": "data/raw/uwf_zeekdata24/Defense_Evasion.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Defense_Evasion/part-00000-de4985c7-284a-4b6e-b507-e69a2d172582-c000.csv",
+      "size_bytes": 74867,
+      "sha256": "801594d09ce3b9a18f86199a4dbff04511e375910f3d0d932a6dcde1153cb101"
+    },
+    {
+      "subset": "Exfiltration",
+      "local_relpath": "data/raw/uwf_zeekdata24/Exfiltration.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Exfiltration/part-00000-6a530c25-0f6b-46a1-ba16-c6b658ef75e8-c000.csv",
+      "size_bytes": 6223,
+      "sha256": "b485153727b8a630582838eebf75c924cb0b49476b69de1b728b85d4371827f0"
+    },
+    {
+      "subset": "Initial_Access",
+      "local_relpath": "data/raw/uwf_zeekdata24/Initial_Access.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Initial_Access/part-00000-9a37b839-429e-444b-82a5-a6d5e69dad7e-c000.csv",
+      "size_bytes": 135532,
+      "sha256": "faf6b9e07a7dab23ce364898772af062f51ddef4feb9329778750f8ed699d0e6"
+    },
+    {
+      "subset": "Persistence",
+      "local_relpath": "data/raw/uwf_zeekdata24/Persistence.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Persistence/part-00000-fb5a764a-e65e-4e10-b6fb-1a189589d5e0-c000.csv",
+      "size_bytes": 78127,
+      "sha256": "52b19554a53a7da044fbf25f8546702e00043cca43673ebe41ee091cfb2009c8"
+    },
+    {
+      "subset": "Privilege_Escalation",
+      "local_relpath": "data/raw/uwf_zeekdata24/Privilege_Escalation.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Privilege_Escalation/part-00000-d8fcf83a-aed1-4cb1-babf-581208088293-c000.csv",
+      "size_bytes": 81061,
+      "sha256": "5933fa87bf55f54821705754be357ea1fa0e347b440c3af0590be6e03bd04877"
+    },
+    {
+      "subset": "Reconnaissance",
+      "local_relpath": "data/raw/uwf_zeekdata24/Reconnaissance.csv",
+      "source_url": "https://datasets.uwf.edu/data/UWF-ZeekData24/csv/Reconnaissance/part-00000-49ed1cc6-3205-4c76-8e28-4da9abf78363-c000.csv",
+      "size_bytes": 626614,
+      "sha256": "13bf1c7fe9364a91a18d858683fee999baf6567ca65e2077829df089107ff7b0"
+    }
+  ]
+}

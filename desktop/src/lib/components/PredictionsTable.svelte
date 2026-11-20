@@ -220,9 +220,7 @@
               <td>
                 {#if item.is_ood_flagged}
                   <span class="badge badge-warning" title={item.ood_reason ?? "OOD abstained"}>
-                    {item.min_ttl === 0 && !(item.ood_reason ?? "").includes("Hard protocol")
-                      ? "MIN_TTL=0"
-                      : "OOD_HARD"}
+                    {item.ood_kind ?? "OOD_HARD"}
                   </span>
                 {:else}
                   <span class="badge badge-info">OK</span>
@@ -271,7 +269,6 @@
         <div>Score Type: {selectedItem.score_type} ({selectedItem.score_direction})</div>
         <div>Norm. Score: {formatScoreSemantically(selectedItem).normalizedScoreText}</div>
         <div>Duration: {selectedItem.flow_duration_ms ?? "N/A"} ms</div>
-        <div>MIN_TTL: {selectedItem.min_ttl ?? "N/A"}</div>
         <div>Protocol: {selectedItem.protocol ?? "N/A"}</div>
         <div>OOD Reason: {selectedItem.ood_reason ?? "Không có vi phạm"}</div>
       </div>

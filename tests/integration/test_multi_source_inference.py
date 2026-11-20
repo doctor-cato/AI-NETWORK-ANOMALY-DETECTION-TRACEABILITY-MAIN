@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.inference.predict import (
     load_verified_model,
     load_verified_preprocessor,
@@ -23,22 +23,27 @@ from network_anomaly.ingestion import (
     create_api_response,
     route_to_trace_engine,
 )
+from network_anomaly.ingestion.compatibility import BenchmarkEvidence, FeatureCompatibilityEvaluator
 
 
 @pytest.fixture
 def synthetic_files_dir(tmp_path: Path):
-    """Generate sample files for multiple formats (NetFlow v3, Zeek, NetFlow v5, malformed)."""
-    # 1. NetFlow v3 CSV
-    v3_csv = tmp_path / "incoming_v3.csv"
-    data = {col: [10.0] * 5 for col in ALL_COLUMNS}
-    data["IPV4_SRC_ADDR"] = ["192.168.1.10"] * 5
-    data["L4_SRC_PORT"] = [12345] * 5
-    data["IPV4_DST_ADDR"] = ["10.0.0.1"] * 5
-    data["L4_DST_PORT"] = [80] * 5
-    data["PROTOCOL"] = [6] * 5
-    data["MIN_TTL"] = [31] * 5
-    data["MAX_TTL"] = [64] * 5
-    pd.DataFrame(data).to_csv(v3_csv, index=False)
+    """Generate sample files for multiple formats (Canonical v2, Zeek, NetFlow v5, malformed)."""
+    # 1. Canonical Flow v2 CSV
+    v2_csv = tmp_path / "incoming_v2.csv"
+    data = {col: [0.5] * 5 for col in ML_FEATURE_COLUMNS}
+    data["duration_ms"] = [100.0] * 5
+    data["bytes_in"] = [500.0] * 5
+    data["bytes_out"] = [1000.0] * 5
+    data["pkts_in"] = [5.0] * 5
+    data["pkts_out"] = [6.0] * 5
+    data["protocol_num"] = [6] * 5
+    data["source_ip"] = ["192.168.1.10"] * 5
+    data["source_port"] = [12345] * 5
+    data["dest_ip"] = ["10.0.0.1"] * 5
+    data["dest_port"] = [80] * 5
+    data["timestamp_ms"] = [1700000000000 + i for i in range(5)]
+    pd.DataFrame(data).to_csv(v2_csv, index=False)
 
     # 2. Zeek conn.log TSV
     zeek_tsv = tmp_path / "conn.log"
@@ -71,7 +76,7 @@ def synthetic_files_dir(tmp_path: Path):
         f.write("")
 
     return {
-        "v3_csv": v3_csv,
+        "v2_csv": v2_csv,
         "zeek_tsv": zeek_tsv,
         "v5_csv": v5_csv,
         "malformed_csv": malformed_csv,
@@ -84,7 +89,7 @@ def test_deployment_readiness():
     assert isinstance(report.environment_info, dict)
     assert "python_version" in report.environment_info
     model_file = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
-    prep_file = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+    prep_file = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
     if model_file.exists() and prep_file.exists():
         assert report.is_ready is True
         assert report.model_status == "READY"
@@ -95,31 +100,27 @@ def test_deployment_readiness():
         assert len(report.blockers) > 0
 
 
-def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict, tmp_path: Path):
-    """End-to-end flow: Ingest NetFlow v3 Canonical -> Gate Approved -> ML Prediction -> Unified Response."""
-    v3_csv = synthetic_files_dir["v3_csv"]
+def test_multi_source_canonical_v2_end_to_end_inference(synthetic_files_dir: dict, tmp_path: Path):
+    """End-to-end flow: Ingest Canonical Flow v2 -> Gate Approved -> ML Prediction -> Unified Response."""
+    v2_csv = synthetic_files_dir["v2_csv"]
     parser = StreamingChunkParser(chunk_size=10)
     gate = InferenceEligibilityGate()
 
     # Load canonical artifacts
     m_path = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
     m_man = PROJECT_ROOT / "reports" / "models" / "random_forest_manifest.json"
-    p_path = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-    p_man = (
-        PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
-    )
+    p_path = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
+    p_man = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 
     if not m_path.is_file() or not p_path.is_file():
-        pytest.skip("Canonical model/preprocessor binary artifacts excluded via .gitignore policy.")
+        pytest.skip("Canonical model/preprocessor binary artifacts absent.")
 
     prep, _ = load_verified_preprocessor(p_path, manifest_path=p_man)
     model, _ = load_verified_model(m_path, manifest_path=m_man)
 
     all_preds = []
     # 1. Test canonical internal source -> Approved for ML
-    for chunk_events in parser.parse_file_chunks(
-        v3_csv, explicit_source_id="source:nf-v3-canonical"
-    ):
+    for chunk_events in parser.parse_file_chunks(v2_csv, explicit_source_id="source:ait-nds-v2"):
         decision = gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is True
         assert decision.eligibility_status == InferenceEligibility.PREDICTION_AVAILABLE
@@ -139,11 +140,20 @@ def test_multi_source_netflow_v3_end_to_end_inference(synthetic_files_dir: dict,
 
     assert len(all_preds) == 5
 
-    # 2. Test external unverified/failed benchmark source -> Blocked fail-closed by Gate
-    for chunk_events in parser.parse_file_chunks(
-        v3_csv, explicit_source_id="source:nf-v3-external"
-    ):
-        decision = gate.evaluate(chunk_events)
+    # 2. Test external failed benchmark source -> Blocked fail-closed by Gate
+    failed_ev = BenchmarkEvidence(
+        source_id="source:ctu-sme-11",
+        model_identifier="rf-v2",
+        is_passed=False,
+        recall=0.0,
+        verification_status="FAILED",
+        reason="Empirical zero recall on failed cross-source transfer.",
+    )
+    failed_gate = InferenceEligibilityGate(
+        evaluator=FeatureCompatibilityEvaluator(benchmark_registry={"source:ctu-sme-11": failed_ev})
+    )
+    for chunk_events in parser.parse_file_chunks(v2_csv, explicit_source_id="source:ctu-sme-11"):
+        decision = failed_gate.evaluate(chunk_events)
         assert decision.can_proceed_to_ml is False
         assert decision.eligibility_status == InferenceEligibility.BENCHMARK_UNSATISFACTORY
         assert decision.validation_status == ValidationStatus.BENCHMARK_FAILED

@@ -11,7 +11,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import NotFittedError
 
 from network_anomaly.config import RANDOM_SEED
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.models.random_forest import (
     RandomForestBaselineConfig,
     RandomForestModel,
@@ -26,13 +26,13 @@ def test_rf_model_default_initialization():
     # Metadata and task specification
     assert model.model_type == "RandomForest"
     assert model.task == "binary_classification"
-    assert model.target == "Label"
+    assert model.target == "label_binary"
     assert model.positive_class == "Attack"
     assert model.random_state == RANDOM_SEED
 
-    # Feature names default to the 47-feature baseline
+    # Feature names default to the 18-feature v2 contract
     assert model.feature_names == ML_FEATURE_COLUMNS
-    assert len(model.feature_names) == 47
+    assert len(model.feature_names) == 18
 
     # Fitted state starts as False
     assert model.is_fitted is False
@@ -68,7 +68,7 @@ def test_rf_model_initialization_with_config():
 def test_rf_model_initialization_with_protocol():
     """Verify RandomForestModel attaches to Issue #9 protocol."""
     protocol = create_rf_baseline_protocol(
-        split_id="nf-unsw-nb15-v3-temporal-group-v1",
+        split_id="v2-scenario-group-purged-v1",
         random_seed=123,
         n_estimators=150,
         max_depth=10,
@@ -109,10 +109,10 @@ def test_rf_model_unfitted_guard():
     assert model.is_fitted is False
 
     with pytest.raises(NotFittedError, match="not fitted yet"):
-        model.predict([[0] * 47])
+        model.predict([[0] * 18])
 
     with pytest.raises(NotFittedError, match="not fitted yet"):
-        model.predict_proba([[0] * 47])
+        model.predict_proba([[0] * 18])
 
 
 def test_rf_model_interface_signatures():

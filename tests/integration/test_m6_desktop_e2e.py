@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
@@ -23,7 +23,7 @@ RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.jobl
 XGB_MODEL = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
 IF_MODEL = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
 AE_MODEL = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
-PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
 
 
 def _find_free_loopback_port() -> int:
@@ -98,35 +98,30 @@ def test_run_api_refuses_non_loopback_host_without_flag():
 
 
 def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: Path):
-    """Verify live loopback API health, 47-feature CSV inspect, and 503 blocked-model guard without .joblib."""
+    """Verify live loopback API health, 18-feature v2 CSV inspect, and model evaluation."""
     n_rows = 4
     synth: dict[str, list[object]] = {
         "row_id": [1, 2, 3, 4],
-        "FLOW_START_MILLISECONDS": [1_700_000_001_000 + i * 1000 for i in range(n_rows)],
-        "FLOW_END_MILLISECONDS": [1_700_000_001_500 + i * 1000 for i in range(n_rows)],
-        "IPV4_SRC_ADDR": ["10.0.0.1", "10.0.0.2", "10.0.0.1", "10.0.0.3"],
-        "IPV4_DST_ADDR": ["192.168.1.10"] * n_rows,
-        "L4_SRC_PORT": [50001, 50002, 50003, 50004],
-        "L4_DST_PORT": [443, 80, 443, 22],
-        "Label": [0, 1, 0, 1],
+        "timestamp_ms": [1_700_000_001_000 + i * 1000 for i in range(n_rows)],
+        "source_ip": ["10.0.0.1", "10.0.0.2", "10.0.0.1", "10.0.0.3"],
+        "dest_ip": ["192.168.1.10"] * n_rows,
+        "source_port": [50001, 50002, 50003, 50004],
+        "dest_port": [443, 80, 443, 22],
+        "label_binary": [0, 1, 0, 1],
     }
     for col in ML_FEATURE_COLUMNS:
-        if col == "MIN_TTL":
-            synth[col] = [64.0, 0.0, 64.0, 128.0]
-        elif col == "MAX_TTL":
-            synth[col] = [64.0, 0.0, 64.0, 128.0]
-        elif col == "LONGEST_FLOW_PKT":
-            synth[col] = [512.0] * n_rows
-        elif col == "SHORTEST_FLOW_PKT":
-            synth[col] = [64.0] * n_rows
-        elif col == "MAX_IP_PKT_LEN":
-            synth[col] = [512.0] * n_rows
-        elif col == "MIN_IP_PKT_LEN":
-            synth[col] = [64.0] * n_rows
+        if col == "duration_ms":
+            synth[col] = [100.0, -10.0, 100.0, 200.0]
+        elif col == "protocol_num":
+            synth[col] = [6.0, 6.0, 6.0, 17.0]
+        elif col in ("bytes_in_ratio", "pkts_in_ratio"):
+            synth[col] = [0.4] * n_rows
+        elif col in ("has_response", "is_tcp", "is_udp"):
+            synth[col] = [1.0, 1.0, 1.0, 0.0]
         else:
-            synth[col] = [1.0 + i for i in range(n_rows)]
+            synth[col] = [100.0 + i for i in range(n_rows)]
 
-    synth_csv = tmp_path / "synthetic_47_features.csv"
+    synth_csv = tmp_path / "synthetic_18_features.csv"
     pd.DataFrame(synth).to_csv(synth_csv, index=False)
 
     proc, base_url = _spawn_localhost_api(tmp_path / "ci_synthetic.db", tmp_path / "ci_api.log")
@@ -152,10 +147,10 @@ def test_m6_desktop_localhost_synthetic_inspect_and_blocked_model_ci(tmp_path: P
         assert ins_resp.status_code == 200
         ins = ins_resp.json()
         assert ins["row_count"] == n_rows
-        assert ins["ml_feature_count"] == 47
+        assert ins["ml_feature_count"] == 18
         assert ins["ml_features_valid"] is True
-        assert ins["target_columns_excluded"] == ["Label"]
-        assert ins["ood_report"]["zero_ttl_count"] == 1
+        assert ins["target_columns_excluded"] == ["label_binary"]
+        assert ins["ood_report"]["hard_violation_count"] == 1
         assert len(ins["models_status"]) == 4
 
         if AE_MODEL.is_file():
@@ -224,7 +219,7 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
             )
             assert blocked_resp.status_code == 503
 
-        # Step 5: Inspect demo_flows.csv (47 features valid, OOD MIN_TTL=0 surfaced)
+        # Step 5: Inspect demo_flows.csv (18 v2 features valid, zero OOD violations)
         ins_resp = httpx.post(
             f"{base_url}/api/v1/csv/inspect",
             json={"file_path": str(DEMO_FLOWS), "preview_limit": 20},
@@ -234,10 +229,10 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         ins = ins_resp.json()
         assert ins["row_count"] == 200
         assert ins["ml_features_valid"] is True
-        assert ins["ood_report"]["zero_ttl_count"] == 2
+        assert ins["ood_report"]["zero_ttl_count"] == 0
         assert ins["ood_report"]["hard_violation_count"] == 0
-        assert ins["ood_report"]["affected_rows_count"] == 2
-        assert ins["ood_report"]["prediction_coverage"] == 0.99
+        assert ins["ood_report"]["affected_rows_count"] == 0
+        assert ins["ood_report"]["prediction_coverage"] == 1.0
 
         # Step 6-7: Run Random Forest inference
         rf_resp = httpx.post(
@@ -248,10 +243,10 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         assert rf_resp.status_code == 200
         rf = rf_resp.json()
         assert rf["total_rows"] == 200
-        assert rf["abstained_risk_count"] == 2
-        assert rf["ood_flagged_count"] == 2
+        assert rf["abstained_risk_count"] == 0
+        assert rf["ood_flagged_count"] == 0
         assert rf["benign_count"] + rf["attack_count"] + rf["ood_flagged_count"] == 200
-        assert rf["compatibility_gate"]["source_id"] == "source:nf-v3-canonical"
+        assert rf["compatibility_gate"]["source_id"] == "source:ait-nds-v2"
         assert rf["compatibility_gate"]["provenance_verified"] is True
         assert rf["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED"
         assert len(rf["timeline"]) == 200
@@ -291,8 +286,8 @@ def test_m6_desktop_localhost_e2e_14_step_flow(tmp_path: Path):
         )
         assert ev_resp.status_code == 200
         ev = ev_resp.json()
-        assert ev["matched_rows"] == 198
-        assert ev["abstained_rows"] == 2
+        assert ev["matched_rows"] == 200
+        assert ev["abstained_rows"] == 0
         assert ev["accuracy"] >= 0.99
 
         # Step 12-13: Export predictions CSV & metadata JSON

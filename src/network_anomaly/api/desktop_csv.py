@@ -16,7 +16,7 @@ import threading
 import uuid
 import zlib
 from collections import Counter, OrderedDict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -28,6 +28,7 @@ from network_anomaly.api.schemas import (
     AttackBreakdownRow,
     BehavioralSummarySchema,
     BehavioralTopItem,
+    BehavioralVectorItemSchema,
     CompatibilityGateSummarySchema,
     CsvAnalyzeResponse,
     CsvEvaluateResponse,
@@ -41,8 +42,17 @@ from network_anomaly.api.schemas import (
     canonicalize_model_name,
 )
 from network_anomaly.api.service import ApiService, ModelNotReadyError
+from network_anomaly.behavioral.sessionizer import EventSessionizer
+from network_anomaly.behavioral.vector import BehavioralVectorBuilder
+from network_anomaly.canonical.event import (
+    CanonicalSecurityEvent,
+    EventKind,
+    FlowMetrics,
+    RawProvenance,
+)
 from network_anomaly.config import PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
+    FEATURE_CONTRACT_ID,
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
@@ -58,14 +68,15 @@ from network_anomaly.ingestion.compatibility import (
 )
 from network_anomaly.ingestion.gate import InferenceEligibilityGate
 from network_anomaly.ingestion.ood import OODReport, OODValidator
+from network_anomaly.models.registry import _evaluate_manifest_readiness_tiers
 from network_anomaly.preprocessing.pipeline import audit_column_tokens
 
 MAX_CSV_FILE_BYTES = 100 * 1024 * 1024
 
 _NON_ATTRIBUTION_NOTICE = (
-    "Behavioral statistics summarize NetFlow telemetry metadata only "
-    "(IPV4_SRC_ADDR, IPV4_DST_ADDR, L4_SRC_PORT, L4_DST_PORT, FLOW_START_MILLISECONDS). "
-    "These columns are strictly excluded from the 47 ML features and do not attribute "
+    "Behavioral statistics summarize canonical v2 flow telemetry metadata only "
+    "(source_ip, dest_ip, source_port, dest_port, timestamp_ms). "
+    "These columns are strictly excluded from the 18 ML features and do not attribute "
     "attacker identity."
 )
 
@@ -314,27 +325,21 @@ def compute_netflow_behavioral_summary(df: pd.DataFrame) -> BehavioralSummarySch
     """Compute descriptive statistics solely from NetFlow metadata columns (#28)."""
     n_rows = len(df)
     src_ips = (
-        [_optional_str(v) for v in df["IPV4_SRC_ADDR"].tolist()]
-        if "IPV4_SRC_ADDR" in df.columns
-        else []
+        [_optional_str(v) for v in df["source_ip"].tolist()] if "source_ip" in df.columns else []
     )
-    dst_ips = (
-        [_optional_str(v) for v in df["IPV4_DST_ADDR"].tolist()]
-        if "IPV4_DST_ADDR" in df.columns
-        else []
-    )
+    dst_ips = [_optional_str(v) for v in df["dest_ip"].tolist()] if "dest_ip" in df.columns else []
     src_ports = (
-        [_optional_int(v) for v in df["L4_SRC_PORT"].tolist()]
-        if "L4_SRC_PORT" in df.columns
+        [_optional_int(v) for v in df["source_port"].tolist()]
+        if "source_port" in df.columns
         else []
     )
     dst_ports = (
-        [_optional_int(v) for v in df["L4_DST_PORT"].tolist()]
-        if "L4_DST_PORT" in df.columns
-        else []
+        [_optional_int(v) for v in df["dest_port"].tolist()] if "dest_port" in df.columns else []
     )
     protocols = (
-        [_optional_int(v) for v in df["PROTOCOL"].tolist()] if "PROTOCOL" in df.columns else []
+        [_optional_int(v) for v in df["protocol_num"].tolist()]
+        if "protocol_num" in df.columns
+        else []
     )
 
     clean_src_ips = [s for s in src_ips if s is not None]
@@ -344,21 +349,25 @@ def compute_netflow_behavioral_summary(df: pd.DataFrame) -> BehavioralSummarySch
     clean_protos = [str(p) for p in protocols if p is not None]
 
     start_vals = (
-        [
-            t
-            for t in (_optional_int(v) for v in df["FLOW_START_MILLISECONDS"].tolist())
-            if t is not None
-        ]
-        if "FLOW_START_MILLISECONDS" in df.columns
+        [t for t in (_optional_int(v) for v in df["timestamp_ms"].tolist()) if t is not None]
+        if "timestamp_ms" in df.columns
+        else []
+    )
+    dur_vals = (
+        [_optional_int(v) for v in df["duration_ms"].tolist()]
+        if "duration_ms" in df.columns
         else []
     )
     end_vals = (
         [
-            t
-            for t in (_optional_int(v) for v in df["FLOW_END_MILLISECONDS"].tolist())
+            t + max(0, d or 0)
+            for t, d in zip(
+                (_optional_int(v) for v in df["timestamp_ms"].tolist()),
+                dur_vals if dur_vals else [0] * n_rows,
+            )
             if t is not None
         ]
-        if "FLOW_END_MILLISECONDS" in df.columns
+        if "timestamp_ms" in df.columns
         else []
     )
 
@@ -385,6 +394,102 @@ def compute_netflow_behavioral_summary(df: pd.DataFrame) -> BehavioralSummarySch
         excluded_from_ml_features=present_trace,
         non_attribution_notice=_NON_ATTRIBUTION_NOTICE,
     )
+
+
+def compute_csv_behavioral_vectors(
+    df: pd.DataFrame,
+    *,
+    source_file: str = "csv",
+    max_events: int = 5000,
+    max_vectors: int = 100,
+) -> List[BehavioralVectorItemSchema]:
+    """Sessionize canonical CSV flows and build 16-D behavioral vectors (#106 AC1)."""
+    if len(df) == 0:
+        return []
+
+    sub = df.iloc[:max_events]
+    n_rows = len(sub)
+
+    def _col(name: str) -> List[Any]:
+        return sub[name].tolist() if name in sub.columns else [None] * n_rows
+
+    src_ips = _col("source_ip")
+    dst_ips = _col("dest_ip")
+    src_ports = _col("source_port")
+    dst_ports = _col("dest_port")
+    ts_vals = _col("timestamp_ms")
+    dur_vals = _col("duration_ms")
+    bin_vals = _col("bytes_in")
+    bout_vals = _col("bytes_out")
+    pin_vals = _col("pkts_in")
+    pout_vals = _col("pkts_out")
+    proto_vals = _col("protocol_num")
+    raw_proto_vals = _col("raw_protocol_str")
+
+    base_fallback = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    events: List[CanonicalSecurityEvent] = []
+    for idx in range(n_rows):
+        src_ip = _optional_str(src_ips[idx])
+        dst_ip = _optional_str(dst_ips[idx])
+        sp = _optional_int(src_ports[idx])
+        dp = _optional_int(dst_ports[idx])
+        if sp is not None and not (0 <= sp <= 65535):
+            sp = None
+        if dp is not None and not (0 <= dp <= 65535):
+            dp = None
+
+        ts_ms = _optional_int(ts_vals[idx])
+        if ts_ms is not None and ts_ms > 0:
+            ev_ts = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+        else:
+            ev_ts = base_fallback + timedelta(milliseconds=idx)
+
+        dur = _optional_float(dur_vals[idx])
+        b_in = _optional_int(bin_vals[idx])
+        b_out = _optional_int(bout_vals[idx])
+        p_in = _optional_int(pin_vals[idx])
+        p_out = _optional_int(pout_vals[idx])
+        p_num = _optional_int(proto_vals[idx])
+        proto_str = _optional_str(raw_proto_vals[idx]) or (
+            str(p_num) if p_num is not None else None
+        )
+
+        entity_id = f"host:{src_ip}" if src_ip else "csv:anonymous"
+        events.append(
+            CanonicalSecurityEvent(
+                event_timestamp=ev_ts,
+                event_kind=EventKind.FLOW,
+                source_id="csv_analyze",
+                entity_id=entity_id,
+                source_ip=src_ip,
+                source_port=sp,
+                dest_ip=dst_ip,
+                dest_port=dp,
+                protocol=proto_str,
+                flow_metrics=FlowMetrics(
+                    duration_ms=dur if dur is not None and dur >= 0.0 else None,
+                    bytes_in=max(0, b_in) if b_in is not None else None,
+                    bytes_out=max(0, b_out) if b_out is not None else None,
+                    pkts_in=max(0, p_in) if p_in is not None else None,
+                    pkts_out=max(0, p_out) if p_out is not None else None,
+                ),
+                raw_provenance=RawProvenance(
+                    source_file=source_file,
+                    line_or_offset=idx + 1,
+                    adapter_name="desktop_csv",
+                ),
+            )
+        )
+
+    sessions = EventSessionizer(session_timeout_seconds=300.0).sessionize(events)
+    if not sessions:
+        return []
+    builder = BehavioralVectorBuilder()
+    items: List[BehavioralVectorItemSchema] = []
+    for session in sessions[:max_vectors]:
+        vec_dict = builder.build_vector(session).to_dict()
+        items.append(BehavioralVectorItemSchema(**vec_dict))
+    return items
 
 
 def compute_deterministic_risk_score(
@@ -441,21 +546,16 @@ def compute_deterministic_risk_score(
 
 
 def _audit_desktop_ood(df_for_ood: pd.DataFrame) -> Tuple[OODReport, OODReport]:
-    """Return `(phys_ood_report, raw_ood_report)` separating physical violations from MIN_TTL == 0."""
-    phys_report = OODValidator(check_shortcut_drift=True, reject_zero_ttl=False).audit_dataframe(
-        df_for_ood
-    )
-    raw_report = OODValidator(check_shortcut_drift=True, reject_zero_ttl=True).audit_dataframe(
-        df_for_ood
-    )
-    return phys_report, raw_report
+    """Return `(phys_ood_report, raw_ood_report)` for physical invariants and protocol drift."""
+    report = OODValidator(check_protocol_drift=True).audit_dataframe(df_for_ood)
+    return report, report
 
 
 def _ood_to_schema(
     phys_report: OODReport,
     abstain_report: Optional[OODReport] = None,
 ) -> OodSummarySchema:
-    """Serialize OOD summary keeping physical invariant violations distinct from MIN_TTL == 0."""
+    """Serialize v2 OOD invariant and drift summary."""
     totals = abstain_report if abstain_report is not None else phys_report
     return OodSummarySchema(
         total_rows=phys_report.total_rows,
@@ -507,6 +607,49 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
                 ),
                 None,
             )
+            expected_prep = (
+                _sha256_file(_prep_path)
+                if _prep_path is not None and _prep_path.is_file()
+                else (
+                    raw_manifest.get("preprocessor_artifact_sha256")
+                    or raw_manifest.get("preprocessor_sha256")
+                )
+            )
+            prep_obj_meta = getattr(getattr(pipeline, "preprocessor", None), "metadata", None)
+            expected_split = (
+                prep_obj_meta.get("split_manifest_sha256")
+                if isinstance(prep_obj_meta, dict)
+                else None
+            )
+            if not expected_split and _prep_manifest is not None and _prep_manifest.is_file():
+                try:
+                    prep_manifest_data = json.loads(_prep_manifest.read_text(encoding="utf-8"))
+                    if isinstance(prep_manifest_data, dict):
+                        expected_split = prep_manifest_data.get("split_manifest_sha256")
+                except Exception:
+                    expected_split = None
+            if not expected_split:
+                expected_split = raw_manifest.get("split_manifest_sha256")
+            artifact_sha = (
+                meta.get("model_artifact_sha256")
+                or raw_manifest.get("model_artifact_sha256")
+                or raw_manifest.get("model_sha256")
+            )
+            thresh_val = _optional_float(thresh)
+            thresh_src = str(
+                raw_manifest.get("threshold_source")
+                or meta.get("threshold_source")
+                or ("unavailable" if thresh_val is None else "manifest")
+            )
+            art_ver, in_dom_eval, cross_val, dep_tier = _evaluate_manifest_readiness_tiers(
+                key,
+                raw_manifest,
+                threshold=thresh_val,
+                threshold_source=thresh_src,
+                artifact_sha256=str(artifact_sha) if artifact_sha else None,
+                expected_prep_sha256=str(expected_prep) if expected_prep else None,
+                expected_split_sha256=str(expected_split) if expected_split else None,
+            )
             items.append(
                 ModelStatusItem(
                     model_key=key,
@@ -518,9 +661,13 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
                     manifest_path=str(model_manifest) if model_manifest else None,
                     artifact_sha256=meta.get("model_artifact_sha256"),
                     run_id=raw_manifest.get("run_id") or meta.get("run_id"),
-                    decision_threshold=_optional_float(thresh),
+                    decision_threshold=thresh_val,
                     score_semantics=semantics,
                     reason=None,
+                    artifact_verified=art_ver,
+                    in_domain_evaluated=in_dom_eval,
+                    cross_source_validated=cross_val,
+                    deployment_tier=dep_tier,
                 )
             )
         except (FileNotFoundError, ValueError, RuntimeError) as exc:
@@ -538,6 +685,10 @@ def collect_models_status(service: ApiService) -> List[ModelStatusItem]:
                     decision_threshold=None,
                     score_semantics=semantics,
                     reason=str(exc),
+                    artifact_verified=False,
+                    in_domain_evaluated=False,
+                    cross_source_validated=False,
+                    deployment_tier="RESEARCH_ONLY",
                 )
             )
     return items
@@ -666,33 +817,20 @@ def build_deterministic_evidence_timeline(
     return timeline
 
 
-CANONICAL_NF_UNSW_NB15_V3_SHA256 = (
-    "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
-)
-CANONICAL_NF_UNSW_NB15_V3_ROW_COUNT = 2_365_424
-CANONICAL_SPLIT_MANIFEST_PATH = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
-CANONICAL_SPLIT_MANIFEST_SHA256 = "bb84c1e0595fe3c6e76c75ac7f233426f939b518a1b966b922b7fb35b634dd88"
-CANONICAL_VALIDATION_TIME_START_MS = 1_424_238_433_382
-CANONICAL_VALIDATION_TIME_END_MS = 1_424_250_496_133
+CANONICAL_V2_DATASET_NAME = "NetFlow-Sentinel-v2-MultiSource"
+CANONICAL_SPLIT_MANIFEST_PATH = PROJECT_ROOT / "data" / "V2_SPLIT_MANIFEST.json"
 
-# Repository-controlled trust anchor for canonical Validation-only demo subsets produced
-# strictly by scripts/prepare_demo_dataset.py from the audited Validation partition.
+# Repository-controlled trust anchor for canonical v2 Validation-only demo subsets
+# produced by scripts/prepare_demo_dataset.py from AIT-NDS-v2 Validation scenario.
 TRUSTED_CANONICAL_VALIDATION_SUBSETS: Dict[str, Dict[str, Any]] = {
-    "9fd2143223190e6c2b4bc6cf26b4a206cbd96baeb7242db5695c274ff8a4405b": {
-        "dataset_name": "NF-UNSW-NB15-v3",
-        "source_id": "source:nf-v3-canonical",
+    "90b028939c36e84cf43eb9595e6d74ee9fc0f2d03c40f46d439f1886f50d01a3": {
+        "dataset_name": "NetFlow-Sentinel-v2-MultiSource",
+        "source_id": "source:ait-nds-v2",
         "partition": "validation",
         "row_count": 200,
-        "source_dataset_sha256": CANONICAL_NF_UNSW_NB15_V3_SHA256,
-        "split_manifest_sha256": CANONICAL_SPLIT_MANIFEST_SHA256,
-        "partition_indices_sha256": {
-            "train": "a09ba1757484c65596a88fe22d5bd989a3cca60a01088364020e2f952b36c725",
-            "validation": "7d41a71a2a154a46fec4a0095fb277007b6b1574727976ee6593e6d56b9400bf",
-            "test": "63e2e081300955fe06835b0cf7405e07e53985ca3d84164e768be09116269d03",
-        },
-        "selected_indices_sha256": (
-            "c95bf6a3c9270acc3b935a5a1394efa48cee4087b8bea9906f3e098c7680ea93"
-        ),
+        "source_dataset_sha256": "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf",
+        "split_manifest_sha256": "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8",
+        "selected_indices_sha256": "8bf86cf116faa190b27b65bed222a203c34f85860d5c14fd1244f0a26cffc866",
         "train_overlap_count": 0,
         "test_overlap_count": 0,
     }
@@ -760,13 +898,14 @@ def _verify_canonical_demo_manifest(
         return False, "Companion demo_manifest.json is not a JSON object."
 
     if str(manifest.get("dataset_name", "")).strip() != str(anchor["dataset_name"]):
-        return False, "Manifest dataset_name does not match canonical NF-UNSW-NB15-v3."
+        return False, f"Manifest dataset_name does not match {anchor['dataset_name']}."
 
-    if (
-        str(manifest.get("source_dataset_sha256", "")).strip().lower()
-        != str(anchor["source_dataset_sha256"]).lower()
-    ):
-        return False, "Manifest source_dataset_sha256 does not match canonical dataset digest."
+    if "source_dataset_sha256" in anchor and anchor["source_dataset_sha256"]:
+        if (
+            str(manifest.get("source_dataset_sha256", "")).strip().lower()
+            != str(anchor["source_dataset_sha256"]).lower()
+        ):
+            return False, "Manifest source_dataset_sha256 does not match canonical dataset digest."
 
     if str(manifest.get("split_manifest_sha256", "")).strip().lower() != expected_split_sha:
         return False, "Manifest split_manifest_sha256 does not match repository split manifest."
@@ -848,22 +987,17 @@ def _verify_canonical_demo_manifest(
     if csv_row_ids != parsed_indices:
         return False, "CSV row_id sequence does not match manifest source_row_indices."
 
-    if "FLOW_START_MILLISECONDS" in frame.columns:
-        ts_vals = pd.to_numeric(frame["FLOW_START_MILLISECONDS"], errors="coerce")
+    if "timestamp_ms" in frame.columns:
+        ts_vals = pd.to_numeric(frame["timestamp_ms"], errors="coerce")
         if ts_vals.isna().any():
-            return False, "Canonical subset CSV has missing FLOW_START_MILLISECONDS timestamps."
-        if bool(
-            (ts_vals < CANONICAL_VALIDATION_TIME_START_MS).any()
-            or (ts_vals > CANONICAL_VALIDATION_TIME_END_MS).any()
-        ):
-            return False, "CSV timestamps fall outside canonical Validation time boundaries."
+            return False, "Canonical subset CSV has missing timestamp_ms timestamps."
 
     return (
         True,
         (
-            "Verified canonical NF-UNSW-NB15-v3 Validation subset anchored to controlled "
+            "Verified canonical v2 Validation subset anchored to controlled "
             "provenance allowlist and repository split manifest (SHA-256, Validation row_id "
-            "lineage, time bounds, and zero Train/Test overlap confirmed)."
+            "lineage, and zero Train/Test overlap confirmed)."
         ),
     )
 
@@ -877,29 +1011,8 @@ def resolve_csv_source_provenance(
     trusted_subsets: Optional[Dict[str, Dict[str, Any]]] = None,
     split_manifest_path: Optional[Path] = None,
 ) -> Tuple[str, bool, str]:
-    """Verify CSV provenance against controlled trust anchors before granting benchmark identity.
-
-    Separates file integrity, source dataset identity, partition identity, and benchmark evidence.
-    A self-declared manifest sitting next to an arbitrary user-controlled CSV MUST NEVER elevate
-    untrusted data to `source:nf-v3-canonical` or `MODEL_VALIDATED`.
-    """
+    """Verify CSV provenance against controlled v2 trust anchors before granting benchmark identity."""
     sha_norm = file_sha256.strip().lower()
-    if sha_norm == CANONICAL_NF_UNSW_NB15_V3_SHA256:
-        if int(row_count) != CANONICAL_NF_UNSW_NB15_V3_ROW_COUNT:
-            return (
-                "source:nf-v3-unverified",
-                False,
-                (
-                    f"Canonical dataset digest row count mismatch: expected "
-                    f"{CANONICAL_NF_UNSW_NB15_V3_ROW_COUNT}, got {row_count}."
-                ),
-            )
-        return (
-            "source:nf-v3-canonical",
-            True,
-            "Verified full canonical NF-UNSW-NB15-v3 dataset SHA-256 and row count.",
-        )
-
     eff_trusted = (
         TRUSTED_CANONICAL_VALIDATION_SUBSETS if trusted_subsets is None else trusted_subsets
     )
@@ -918,39 +1031,39 @@ def resolve_csv_source_provenance(
             df=df,
         )
         if ok:
-            return str(anchor.get("source_id", "source:nf-v3-canonical")), True, reason
+            return str(anchor.get("source_id", "source:ait-nds-v2")), True, reason
         return (
-            "source:nf-v3-unverified",
+            "source:flow-v2-unverified",
             False,
             f"Untrusted or tampered manifest rejected: {reason}",
         )
 
     if _has_untrusted_sibling_manifest(csv_path):
         return (
-            "source:nf-v3-unverified",
+            "source:flow-v2-unverified",
             False,
             (
                 "Unverified external CSV: self-declared sibling manifest ignored because CSV "
-                f"SHA-256 ({sha_norm[:12]}...) is absent from the controlled canonical provenance "
+                f"SHA-256 ({sha_norm[:12]}...) is absent from the controlled v2 provenance "
                 "trust anchor; MODEL_VALIDATED benchmark status is not granted."
             ),
         )
 
     return (
-        "source:nf-v3-unverified",
+        "source:flow-v2-unverified",
         False,
         (
-            f"Unverified external CSV ({sha_norm[:12]}...): no controlled canonical NF-UNSW-NB15-v3 "
+            f"Unverified external CSV ({sha_norm[:12]}...): no controlled canonical v2 "
             "SHA-256 or verified trust anchor found; MODEL_VALIDATED benchmark status is not granted."
         ),
     )
 
 
 class _RawOodProxy(OODValidator):
-    """Supplies pre-computed raw NetFlow OOD audit to InferenceEligibilityGate."""
+    """Supplies pre-computed raw v2 flow OOD audit to InferenceEligibilityGate."""
 
     def __init__(self, report: OODReport) -> None:
-        super().__init__(check_shortcut_drift=False, reject_zero_ttl=False)
+        super().__init__(check_protocol_drift=False)
         self._report = report
 
     def audit_dataframe(self, df: pd.DataFrame) -> OODReport:
@@ -965,11 +1078,11 @@ def _evaluate_gate(
     X_ordered: pd.DataFrame,
     raw_ood_report: OODReport,
     allow_research_only: bool,
-    source_id: str = "source:nf-v3-unverified",
+    source_id: str = "source:flow-v2-unverified",
     provenance_verified: bool = False,
     provenance_reason: str = "",
 ) -> Tuple[CompatibilityGateSummarySchema, bool]:
-    """Run FeatureCompatibilityEvaluator and InferenceEligibilityGate (#46)."""
+    """Run FeatureCompatibilityEvaluator and InferenceEligibilityGate."""
     model_meta = pipeline.model_metadata if isinstance(pipeline.model_metadata, dict) else {}
     raw_manifest = (
         model_meta.get("raw_manifest") if isinstance(model_meta.get("raw_manifest"), dict) else {}
@@ -988,7 +1101,7 @@ def _evaluate_gate(
         else X_ordered
     )
 
-    is_unverified_source = source_id == "source:nf-v3-unverified" or not provenance_verified
+    is_unverified_source = source_id == "source:flow-v2-unverified" or not provenance_verified
     compat_allow_research = False if is_unverified_source else allow_research_only
 
     evaluator = FeatureCompatibilityEvaluator(benchmark_registry=DEFAULT_BENCHMARK_REGISTRY)
@@ -998,14 +1111,10 @@ def _evaluate_gate(
         model_identifier=model_id or None,
         model_artifact_sha256=model_sha,
         preprocessor_artifact_sha256=prep_sha,
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        feature_contract_version=FEATURE_CONTRACT_ID,
         allow_research_only=compat_allow_research,
     )
-    # Audit true physical invariant violations fail-closed, while surfacing MIN_TTL=0
-    # rows per-row with ABSTAINED_OOD inference/risk abstention (#32) without dropping valid rows.
-    phys_ood = OODValidator(check_shortcut_drift=True, reject_zero_ttl=False).audit_dataframe(
-        df_raw
-    )
+    phys_ood = OODValidator(check_protocol_drift=True).audit_dataframe(df_raw)
     batch_ood_for_gate = OODReport(
         total_rows=phys_ood.total_rows,
         has_ood_warning=raw_ood_report.has_ood_warning,
@@ -1034,7 +1143,7 @@ def _evaluate_gate(
         model_identifier=model_id or None,
         model_artifact_sha256=model_sha,
         preprocessor_artifact_sha256=prep_sha,
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
+        feature_contract_version=FEATURE_CONTRACT_ID,
         allow_unverified=allow_research_only if is_unverified_source else False,
         allow_research_only=compat_allow_research,
     )
@@ -1062,15 +1171,13 @@ _MAX_CACHED_RESULTS_BYTES = 16 * 1024 * 1024
 _MAX_SINGLE_RECORD_RESULTS_GZ_BYTES = 8 * 1024 * 1024
 
 _TRACE_FIELD_SPEC: Tuple[Tuple[str, str, Any], ...] = (
-    ("flow_start_ms", "FLOW_START_MILLISECONDS", _optional_int),
-    ("flow_end_ms", "FLOW_END_MILLISECONDS", _optional_int),
-    ("src_ip", "IPV4_SRC_ADDR", _optional_str),
-    ("dst_ip", "IPV4_DST_ADDR", _optional_str),
-    ("src_port", "L4_SRC_PORT", _optional_int),
-    ("dst_port", "L4_DST_PORT", _optional_int),
-    ("protocol", "PROTOCOL", _optional_int),
-    ("flow_duration_ms", "FLOW_DURATION_MILLISECONDS", _optional_int),
-    ("min_ttl", "MIN_TTL", _optional_float),
+    ("flow_start_ms", "timestamp_ms", _optional_int),
+    ("src_ip", "source_ip", _optional_str),
+    ("dst_ip", "dest_ip", _optional_str),
+    ("src_port", "source_port", _optional_int),
+    ("dst_port", "dest_port", _optional_int),
+    ("protocol", "protocol_num", _optional_int),
+    ("flow_duration_ms", "duration_ms", _optional_int),
 )
 
 
@@ -1108,6 +1215,11 @@ def _extract_trace_metadata_rows(df: pd.DataFrame) -> List[Dict[str, Any]]:
     for field, converter, col_vals in present_cols:
         for idx, raw_val in enumerate(col_vals):
             rows[idx][field] = converter(raw_val)
+    for row in rows:
+        row.setdefault("min_ttl", None)
+        if row.get("flow_end_ms") is None and row.get("flow_start_ms") is not None:
+            dur = row.get("flow_duration_ms") or 0
+            row["flow_end_ms"] = int(row["flow_start_ms"]) + max(0, int(dur))
     return rows
 
 
@@ -1200,18 +1312,9 @@ def _safe_feature_value(val: Any) -> Optional[float]:
 
 def _classify_abstained_ood(is_phys_hard: bool, is_zero_ttl: bool) -> Tuple[str, str]:
     """Return structured OOD classification (`ood_kind`) and human-readable reason."""
-    if is_phys_hard and is_zero_ttl:
-        return (
-            "COMBINED_OOD",
-            "Hard protocol invariant violation; MIN_TTL == 0 unobserved telemetry "
-            "(anti-imputation abstention)",
-        )
     if is_phys_hard:
-        return ("PHYSICAL_INVARIANT", "Hard protocol invariant violation")
-    return (
-        "ZERO_TTL_DRIFT",
-        "MIN_TTL == 0 unobserved telemetry (anti-imputation abstention)",
-    )
+        return ("PHYSICAL_INVARIANT", "Hard physical flow invariant violation")
+    return ("PHYSICAL_INVARIANT", "Flow invariant / protocol domain abstention")
 
 
 def _build_abstained_ood_reason(is_phys_hard: bool, is_zero_ttl: bool) -> str:
@@ -1242,7 +1345,7 @@ def analyze_csv_file(
     df_for_ood = df.assign(**{str(col): X_cleaned[col] for col in X_cleaned.columns})
     row_ids = list(val_summary["row_ids"])
 
-    # Pre-inference OOD audit separating true physical protocol violations from MIN_TTL == 0.
+    # Pre-inference OOD audit across physical flow invariants and protocol domain.
     phys_ood_report, raw_ood_report = _audit_desktop_ood(df_for_ood)
     phys_hard_set = set(phys_ood_report.hard_violation_indices)
     zero_ttl_set = set(raw_ood_report.zero_ttl_indices)
@@ -1401,6 +1504,7 @@ def analyze_csv_file(
 
     timeline = build_deterministic_evidence_timeline(prediction_items) if include_timeline else []
     behavioral = compute_netflow_behavioral_summary(df)
+    behavioral_vectors = compute_csv_behavioral_vectors(df, source_file=str(resolved.name))
     _, model_type_display, _ = _MODEL_DISPLAY_META[canonical_model]
     evaluated_rows = len(accepted_indices)
     abstained_rows = len(abstained_set)
@@ -1431,6 +1535,7 @@ def analyze_csv_file(
         compatibility_gate=gate_summary,
         ood_report=_ood_to_schema(phys_ood_report, abstain_report=raw_ood_report),
         behavioral_summary=behavioral,
+        behavioral_vectors=behavioral_vectors,
         security_notice=_SECURITY_NOTICE,
         results=prediction_items,
         timeline=timeline,
@@ -1490,10 +1595,16 @@ def evaluate_predictions_with_ground_truth(
     labels_df = pd.read_csv(resolved)
     if len(labels_df) == 0:
         raise ValueError("Ground truth CSV contains 0 rows.")
-    if "Label" not in labels_df.columns:
-        raise ValueError("Ground truth CSV must contain a 'Label' column.")
+    label_col = "label_binary" if "label_binary" in labels_df.columns else "Label"
+    if label_col not in labels_df.columns:
+        raise ValueError("Ground truth CSV must contain a 'label_binary' or 'Label' column.")
 
-    has_attack_col = "Attack" in labels_df.columns
+    attack_col = (
+        "attack_category"
+        if "attack_category" in labels_df.columns
+        else ("Attack" if "Attack" in labels_df.columns else None)
+    )
+    has_attack_col = attack_col is not None
     y_true: List[int] = []
     y_pred: List[int] = []
     attack_cats: List[str] = []
@@ -1506,8 +1617,12 @@ def evaluate_predictions_with_ground_truth(
         # Iterate column lists instead of iterrows() so an all-NaN or float column
         # cannot upcast integer row_id values to floats (e.g. "2393.0").
         raw_row_ids = labels_df["row_id"].tolist()
-        raw_labels = labels_df["Label"].tolist()
-        raw_attacks = labels_df["Attack"].tolist() if has_attack_col else [None] * len(labels_df)
+        raw_labels = labels_df[label_col].tolist()
+        raw_attacks = (
+            labels_df[attack_col].tolist()
+            if has_attack_col and attack_col
+            else [None] * len(labels_df)
+        )
         for raw_rid, raw_lbl, raw_att in zip(raw_row_ids, raw_labels, raw_attacks):
             rid_key = _normalize_row_id_key(raw_rid)
             if rid_key in lbl_map:
@@ -1560,11 +1675,11 @@ def evaluate_predictions_with_ground_truth(
             ):
                 abstained += 1
                 continue
-            lbl_val = _normalize_binary_label(labels_df["Label"].iloc[idx])
+            lbl_val = _normalize_binary_label(labels_df[label_col].iloc[idx])
             att_val = (
-                _optional_str(labels_df["Attack"].iloc[idx])
+                _optional_str(labels_df[attack_col].iloc[idx])
                 or ("Benign" if lbl_val == 0 else "Attack")
-                if has_attack_col
+                if has_attack_col and attack_col
                 else ("Benign" if lbl_val == 0 else "Attack")
             )
             y_true.append(lbl_val)

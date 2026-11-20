@@ -1,4 +1,7 @@
-# Sổ checkpoint triển khai
+# Sổ checkpoint triển khai (Historical v1.0.0 / M0–M3 Archive Log)
+
+> [!NOTE]
+> **Lưu trữ Lịch sử v1 (`NF-UNSW-NB15-v3`):** Tài liệu này ghi lại nhật ký các checkpoint C0–C3 trên giai đoạn v1.0.0 (`NF-UNSW-NB15-v3`). Trạng thái triển khai **NetFlow Sentinel v2** hiện hành được theo dõi tại [`docs/DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md), [`docs/TRACEABILITY_MATRIX.md`](TRACEABILITY_MATRIX.md) và [`SESSION_CHECKPOINT_V2_MIGRATION.md`](../SESSION_CHECKPOINT_V2_MIGRATION.md).
 
 ## Quy ước
 

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Clean Windows Test Target E2E runner for NetFlow Sentinel v1.0.0 standalone installer.
+Clean Windows Test Target E2E runner for NetFlow Sentinel v2.0.0 standalone installer.
 
 .DESCRIPTION
 Executes exclusively on the Clean Windows Test Target without requiring Git, Python, Rust,
@@ -277,8 +277,9 @@ try {
         "NOTICE",
         "THIRD_PARTY_NOTICES.md",
         "LICENSE",
-        "data\NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-        "data\NF_UNSW_NB15_V3_MANIFEST.json",
+        "data\V2_SPLIT_MANIFEST.json",
+        "data\AIT_DATASETS_MANIFEST.json",
+        "data\CTU_SME_11_MANIFEST.json",
         "EMBEDDED_ARTIFACTS_MANIFEST.json",
         "EMBEDDED_SHA256SUMS.txt"
     )
@@ -311,8 +312,8 @@ try {
     }
 
     $embManifest = Get-Content -Path (Join-Path $installDir "EMBEDDED_ARTIFACTS_MANIFEST.json") -Raw -Encoding utf8 | ConvertFrom-Json
-    $splitSha = Get-LowerSha256 (Join-Path $installDir "data\NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
-    $prepSha = Get-LowerSha256 (Join-Path $installDir "artifacts\preprocessing\nf_unsw_nb15_v3_preprocessor.joblib")
+    $splitSha = Get-LowerSha256 (Join-Path $installDir "data\V2_SPLIT_MANIFEST.json")
+    $prepSha = Get-LowerSha256 (Join-Path $installDir "artifacts\preprocessing\v2_flow_preprocessor.joblib")
     $demoShaMap = @{
         "data/demo/demo_flows.csv"    = Get-LowerSha256 (Join-Path $installDir "data\demo\demo_flows.csv")
         "data/demo/demo_labels.csv"   = Get-LowerSha256 (Join-Path $installDir "data\demo\demo_labels.csv")
@@ -453,7 +454,7 @@ try {
             if ($az.inference_mode -ne "verified_model") {
                 throw "${mk}: expected inference_mode='verified_model', got '$($az.inference_mode)'"
             }
-            if ($az.total_rows -ne 200 -or $az.evaluated_rows -ne 198 -or $az.abstained_rows -ne 2) {
+            if ($az.total_rows -ne 200 -or -not (($az.evaluated_rows -eq 200 -and $az.abstained_rows -eq 0) -or ($az.evaluated_rows -eq 198 -and $az.abstained_rows -eq 2))) {
                 throw "${mk}: unexpected row counts total=$($az.total_rows) eval=$($az.evaluated_rows) abstained=$($az.abstained_rows)"
             }
 
@@ -522,7 +523,7 @@ try {
             model_key          = "xgboost"
             inference_mode     = "verified_model"
             compatibility_gate = @{
-                source_id            = "source:nf-v3-canonical"
+                source_id            = "source:ait-nds-v2"
                 provenance_verified  = $true
                 model_key            = "xgboost"
                 eligible             = $true

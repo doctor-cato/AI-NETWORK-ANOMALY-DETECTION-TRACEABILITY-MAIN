@@ -1,583 +1,179 @@
 #!/usr/bin/env python3
-"""Prepare a canonical, Validation-only demo CSV dataset and verify artifact readiness.
+"""Prepare a canonical v2 Validation-only demo CSV dataset and verify artifact readiness.
 
-Reuses canonical NF-UNSW-NB15-v3 split verification and partition_indices helpers
-from scripts/fetch_external_dataset.py and network_anomaly.data.split without
-introducing a parallel split or sampling pipeline.
-
-Outputs (written to data/demo/ by default, gitignored):
-- demo_flows.csv: row_id (= source_row_index), 6 TRACE_METADATA_COLUMNS, 47 ML_FEATURE_COLUMNS
-  (strictly NO Label or Attack columns).
-- demo_labels.csv: row_id, Label, Attack (ground truth kept strictly separate for UI evaluation).
-- demo_manifest.json: provenance, SHA-256 digests, overlap checks, scientific disclaimer,
-  and verified artifact readiness status for Preprocessor + 4 model families.
+Draws strictly from the AIT-NDS-v2 Validation partition (`ait_val.csv.gz`,
+scenario `russellmitchell`) with zero Train/Test overlap:
+  - data/demo/demo_flows.csv: row_id, TRACE_METADATA_COLUMNS, 18 ML_FEATURE_COLUMNS
+    (strictly NO target or provenance leakage columns).
+  - data/demo/demo_labels.csv: row_id, label_binary, attack_category, raw_label
+  - data/demo/demo_manifest.json: provenance, SHA-256 digests, overlap checks, and
+    verified ModelRegistry 4/4 readiness summary.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _LOCAL_SOURCE = PROJECT_ROOT / "src"
-_LOCAL_SCRIPTS = PROJECT_ROOT / "scripts"
 if str(_LOCAL_SOURCE) not in sys.path:
     sys.path.insert(0, str(_LOCAL_SOURCE))
-if str(_LOCAL_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_LOCAL_SCRIPTS))
-
-from fetch_external_dataset import (  # noqa: E402
-    _compute_indices_sha256,
-    _load_split_manifest_sha256,
-    _load_verified_partition_indices,
-    _verify_unsw_row_indices_membership,
-)
 
 from network_anomaly.config import ARTIFACTS  # noqa: E402
-from network_anomaly.data.nf_unsw_nb15_v3 import (  # noqa: E402
+from network_anomaly.data.split import _sha256_file  # noqa: E402
+from network_anomaly.data.v2_schema import (  # noqa: E402
+    DATASET_SUITE_NAME,
+    FEATURE_CONTRACT_ID,
     ML_FEATURE_COLUMNS,
-    TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
-from network_anomaly.inference.predict import (  # noqa: E402
-    _sha256_file,
-    load_verified_model,
-    load_verified_preprocessor,
-)
+from network_anomaly.models.registry import ModelRegistry  # noqa: E402
 
-DEFAULT_SOURCE_CSV = (
-    PROJECT_ROOT / "data" / "raw" / "NF-UNSW-NB15-v3" / "data" / "NF-UNSW-NB15-v3.csv"
-)
-DEFAULT_SPLIT_MANIFEST = PROJECT_ROOT / "data" / "NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"
-DEFAULT_INDICES_DIR = PROJECT_ROOT / "data" / "processed" / "splits"
+DEFAULT_VAL_CSV = PROJECT_ROOT / "data" / "processed" / "v2" / "ait_val.csv.gz"
+DEFAULT_SPLIT_MANIFEST = PROJECT_ROOT / "reports" / "splits" / "v2_split_manifest.json"
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "data" / "demo"
-
-MIN_DEMO_ROWS = 100
-MAX_DEMO_ROWS = 300
 DEFAULT_DEMO_ROWS = 200
 DEFAULT_RANDOM_SEED = 42
 
 
-def _display_path(path: Path) -> str:
-    """Return workspace-relative POSIX path when under PROJECT_ROOT."""
-    try:
-        return path.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
-    except ValueError:
-        return path.as_posix()
-
-
-def inspect_artifact_readiness(
-    artifacts_dir: Optional[Path] = None,
-    reports_dir: Optional[Path] = None,
-    split_manifest_path: Optional[Path] = DEFAULT_SPLIT_MANIFEST,
-) -> Dict[str, Any]:
-    """Check preprocessor and 4 retained model artifacts fail-closed without dummy fallbacks."""
-    art_root = Path(artifacts_dir) if artifacts_dir is not None else ARTIFACTS
-    rep_root = Path(reports_dir) if reports_dir is not None else (PROJECT_ROOT / "reports")
-    split_man = Path(split_manifest_path) if split_manifest_path is not None else None
-
-    prep_path = art_root / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-    prep_manifest = rep_root / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
-    prep_sha: Optional[str] = None
-    prep_info: Dict[str, Any]
-    try:
-        _, prep_meta = load_verified_preprocessor(
-            artifact_path=prep_path,
-            manifest_path=prep_manifest,
-            split_manifest_path=split_man,
-        )
-        prep_sha = prep_meta.get("artifact_sha256")
-        prep_info = {
-            "ready": True,
-            "status": "READY",
-            "artifact_path": _display_path(prep_path),
-            "manifest_path": _display_path(prep_manifest),
-            "artifact_sha256": prep_sha,
-            "reason": None,
-        }
-    except Exception as exc:
-        prep_info = {
-            "ready": False,
-            "status": "BLOCKED / NOT READY",
-            "artifact_path": _display_path(prep_path),
-            "manifest_path": _display_path(prep_manifest),
-            "artifact_sha256": None,
-            "reason": str(exc),
-        }
-
-    xgb_baseline = art_root / "models" / "xgboost" / "xgboost_baseline.joblib"
-    xgb_path = (
-        xgb_baseline
-        if xgb_baseline.is_file()
-        else art_root / "models" / "xgboost" / "xgboost.joblib"
-    )
-    xgb_sidecar = xgb_path.parent / "xgboost_manifest.json"
-    xgb_report = rep_root / "models" / "xgboost_manifest.json"
-    xgb_manifest = xgb_sidecar if xgb_sidecar.is_file() else xgb_report
-
-    ae_path = art_root / "models" / "autoencoder" / "autoencoder_model.joblib"
-    ae_sidecar = art_root / "models" / "autoencoder" / "autoencoder_manifest.json"
-    ae_report = rep_root / "models" / "autoencoder_manifest.json"
-    ae_manifest = ae_sidecar if ae_sidecar.is_file() else ae_report
-
-    candidates: Dict[str, Tuple[Path, Path]] = {
-        "random_forest": (
-            art_root / "models" / "random_forest" / "random_forest_baseline.joblib",
-            rep_root / "models" / "random_forest_manifest.json",
-        ),
-        "xgboost": (xgb_path, xgb_manifest),
-        "isolation_forest": (
-            art_root / "models" / "isolation_forest" / "isolation_forest.joblib",
-            rep_root / "models" / "isolation_forest_manifest.json",
-        ),
-        "autoencoder": (ae_path, ae_manifest),
-    }
-
-    models_status: Dict[str, Dict[str, Any]] = {}
-    ready_models: List[str] = []
-    for model_key, (model_path, manifest_path) in candidates.items():
-        if not prep_info["ready"]:
-            models_status[model_key] = {
-                "ready": False,
-                "status": "BLOCKED / NOT READY",
-                "model_path": _display_path(model_path),
-                "manifest_path": _display_path(manifest_path),
-                "model_artifact_sha256": None,
-                "reason": "Preprocessor artifact is not verified/ready",
-            }
-            continue
-        try:
-            _, model_meta = load_verified_model(
-                model_artifact_path=model_path,
-                manifest_path=manifest_path,
-                expected_preprocessor_sha256=prep_sha,
-            )
-            ready_models.append(model_key)
-            models_status[model_key] = {
-                "ready": True,
-                "status": "READY",
-                "model_path": _display_path(model_path),
-                "manifest_path": _display_path(manifest_path),
-                "model_artifact_sha256": model_meta.get("model_artifact_sha256"),
-                "model_type": model_meta.get("model_type"),
-                "run_id": model_meta.get("run_id"),
-                "reason": None,
-            }
-        except Exception as exc:
-            models_status[model_key] = {
-                "ready": False,
-                "status": "BLOCKED / NOT READY",
-                "model_path": _display_path(model_path),
-                "manifest_path": _display_path(manifest_path),
-                "model_artifact_sha256": None,
-                "reason": str(exc),
-            }
-
-    overall_status = (
-        "READY" if (prep_info["ready"] and len(ready_models) > 0) else "BLOCKED / NOT READY"
-    )
-    return {
-        "checked_at_utc": datetime.now(timezone.utc).isoformat(),
-        "overall_status": overall_status,
-        "ready_models": ready_models,
-        "preprocessor": prep_info,
-        "models": models_status,
-    }
-
-
-def _stream_rows_by_indices(
-    source_csv_path: Path,
-    target_indices: np.ndarray,
-    columns: List[str],
-    chunk_size: int = 100_000,
-) -> pd.DataFrame:
-    """Stream canonical CSV for requested columns and return only matching source rows."""
-    sorted_idx = np.sort(target_indices.astype(np.int64))
-    if sorted_idx.size == 0:
-        return pd.DataFrame(columns=["row_id", *columns])
-
-    max_target_idx = int(sorted_idx[-1])
-    row_mask = np.zeros(max_target_idx + 1, dtype=bool)
-    row_mask[sorted_idx] = True
-
-    chunks: List[pd.DataFrame] = []
-    current_row = 0
-    with pd.read_csv(
-        source_csv_path,
-        usecols=columns,
-        chunksize=chunk_size,
-        low_memory=False,
-    ) as reader:
-        for chunk in reader:
-            if current_row > max_target_idx:
-                break
-            n_rows = len(chunk)
-            valid_len = min(n_rows, max_target_idx + 1 - current_row)
-            local_mask = row_mask[current_row : current_row + valid_len]
-            if np.any(local_mask):
-                sub = chunk.iloc[:valid_len].loc[local_mask].copy()
-                row_positions = current_row + np.nonzero(local_mask)[0]
-                sub.insert(0, "row_id", row_positions.astype(np.int64))
-                chunks.append(sub)
-            current_row += n_rows
-
-    if current_row <= max_target_idx:
-        raise ValueError(
-            f"Canonical source CSV ended prematurely at row {current_row} before max "
-            f"Validation index {max_target_idx}"
-        )
-
-    combined = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-    if len(combined) != int(sorted_idx.size):
-        raise ValueError(
-            f"Validation row count mismatch: expected {sorted_idx.size}, loaded {len(combined)}"
-        )
-    return combined
-
-
-def _stream_validation_candidates(
-    source_csv_path: Path,
-    validation_indices: np.ndarray,
-    chunk_size: int = 100_000,
-) -> pd.DataFrame:
-    """Stream canonical CSV and keep only Validation partition rows with source row identity."""
-    required_cols = list(TRACE_METADATA_COLUMNS) + list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
-    header_cols = pd.read_csv(source_csv_path, nrows=0).columns.tolist()
-    missing_cols = [c for c in required_cols if c not in header_cols]
-    if missing_cols:
-        raise ValueError(f"Canonical source CSV missing required columns: {missing_cols}")
-
-    return _stream_rows_by_indices(
-        source_csv_path=source_csv_path,
-        target_indices=validation_indices,
-        columns=required_cols,
-        chunk_size=chunk_size,
-    )
-
-
-def _sample_validation_row_ids(
-    source_csv_path: Path,
-    validation_indices: np.ndarray,
-    sample_rows: int,
-    random_seed: int,
-    chunk_size: int = 100_000,
-) -> np.ndarray:
-    """Pass 1 (low-RAM): stream only Label column on Validation rows to pick balanced row_ids."""
-    required_cols = list(TRACE_METADATA_COLUMNS) + list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
-    header_cols = pd.read_csv(source_csv_path, nrows=0).columns.tolist()
-    missing_cols = [c for c in required_cols if c not in header_cols]
-    if missing_cols:
-        raise ValueError(f"Canonical source CSV missing required columns: {missing_cols}")
-
-    labels_df = _stream_rows_by_indices(
-        source_csv_path=source_csv_path,
-        target_indices=validation_indices,
-        columns=["Label"],
-        chunk_size=chunk_size,
-    )
-    benign_pool = labels_df.loc[labels_df["Label"] == 0, "row_id"].to_numpy(dtype=np.int64)
-    attack_pool = labels_df.loc[labels_df["Label"] == 1, "row_id"].to_numpy(dtype=np.int64)
-    n_benign = sample_rows // 2
-    n_attack = sample_rows - n_benign
-    if benign_pool.size < n_benign:
-        raise ValueError(
-            f"Validation partition has only {benign_pool.size} Benign rows; need {n_benign}"
-        )
-    if attack_pool.size < n_attack:
-        raise ValueError(
-            f"Validation partition has only {attack_pool.size} Attack rows; need {n_attack}"
-        )
-
-    rng = np.random.default_rng(random_seed)
-    chosen_benign = rng.choice(benign_pool, size=n_benign, replace=False)
-    chosen_attack = rng.choice(attack_pool, size=n_attack, replace=False)
-    return np.sort(np.concatenate([chosen_benign, chosen_attack])).astype(np.int64)
+def _compute_indices_sha256(indices: List[int]) -> str:
+    payload = "\n".join(str(int(idx)) for idx in indices) + "\n"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def prepare_demo_dataset(
-    source_csv_path: Path = DEFAULT_SOURCE_CSV,
+    *,
+    val_csv_path: Path = DEFAULT_VAL_CSV,
     split_manifest_path: Path = DEFAULT_SPLIT_MANIFEST,
-    indices_dir: Path = DEFAULT_INDICES_DIR,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
-    sample_rows: int = DEFAULT_DEMO_ROWS,
+    num_rows: int = DEFAULT_DEMO_ROWS,
     random_seed: int = DEFAULT_RANDOM_SEED,
-    artifacts_dir: Optional[Path] = None,
-    reports_dir: Optional[Path] = None,
-    chunk_size: int = 100_000,
 ) -> Dict[str, Any]:
-    """Extract a class-balanced Validation-only demo dataset and export provenance manifest."""
-    if (
-        isinstance(sample_rows, bool)
-        or not isinstance(sample_rows, int)
-        or sample_rows < MIN_DEMO_ROWS
-        or sample_rows > MAX_DEMO_ROWS
-    ):
+    if not val_csv_path.is_file():
+        raise FileNotFoundError(f"Validation split CSV not found: {val_csv_path}")
+    if not split_manifest_path.is_file():
+        raise FileNotFoundError(f"Split manifest not found: {split_manifest_path}")
+
+    split_man = json.loads(split_manifest_path.read_text(encoding="utf-8"))
+    split_sha = _sha256_file(split_manifest_path)
+
+    df_val = pd.read_csv(val_csv_path, compression="gzip")
+    benign_idx = df_val.index[df_val["label_binary"] == 0].to_numpy()
+    attack_idx = df_val.index[df_val["label_binary"] == 1].to_numpy()
+    if len(benign_idx) == 0 or len(attack_idx) == 0:
         raise ValueError(
-            f"sample_rows must be an integer in [{MIN_DEMO_ROWS}, {MAX_DEMO_ROWS}], got {sample_rows!r}"
-        )
-    if isinstance(random_seed, bool) or not isinstance(random_seed, int):
-        raise ValueError(f"random_seed must be an integer, got {random_seed!r}")
-
-    source_csv = Path(source_csv_path)
-    split_manifest = Path(split_manifest_path)
-    idx_dir = Path(indices_dir)
-    out_dir = Path(output_dir)
-
-    if not source_csv.is_file():
-        raise FileNotFoundError(f"Canonical NF-UNSW-NB15-v3 CSV not found: {source_csv}")
-    if not split_manifest.is_file():
-        raise FileNotFoundError(f"Canonical split manifest not found: {split_manifest}")
-
-    # 1. Fail-closed verification of raw CSV SHA-256 and canonical split indices
-    expected_dataset_sha = _load_split_manifest_sha256(split_manifest)
-    actual_dataset_sha = _sha256_file(source_csv)
-    if actual_dataset_sha.lower() != expected_dataset_sha.lower():
-        raise ValueError(
-            f"Source CSV SHA-256 mismatch: expected {expected_dataset_sha}, got {actual_dataset_sha}"
+            "Validation partition must contain both benign and attack flows for demo sampling"
         )
 
-    split_data = json.loads(split_manifest.read_text(encoding="utf-8"))
-    split_manifest_sha = _sha256_file(split_manifest)
-    train_indices = _load_verified_partition_indices(split_data, split_manifest, idx_dir, "train")
-    val_indices = _load_verified_partition_indices(
-        split_data, split_manifest, idx_dir, "validation"
-    )
-    test_indices = _load_verified_partition_indices(split_data, split_manifest, idx_dir, "test")
-    assert train_indices is not None and val_indices is not None and test_indices is not None
+    n_attack = min(len(attack_idx), num_rows // 2)
+    n_benign = min(len(benign_idx), num_rows - n_attack)
+    rng = np.random.default_rng(random_seed)
+    sel_att = rng.choice(attack_idx, size=n_attack, replace=False)
+    sel_ben = rng.choice(benign_idx, size=n_benign, replace=False)
+    selected = np.sort(np.concatenate([sel_ben, sel_att])).tolist()
 
-    if np.intersect1d(train_indices, val_indices).size > 0:
-        raise ValueError("Canonical Train and Validation split indices overlap")
-    if np.intersect1d(train_indices, test_indices).size > 0:
-        raise ValueError("Canonical Train and Test split indices overlap")
-    if np.intersect1d(val_indices, test_indices).size > 0:
-        raise ValueError("Canonical Validation and Test split indices overlap")
+    subset = df_val.iloc[selected].copy().reset_index(drop=True)
+    subset.insert(0, "row_id", [int(i) for i in selected])
 
-    # 2. Low-RAM Pass 1: stream ONLY Label on Validation rows to choose deterministic row_ids
-    selected_indices = _sample_validation_row_ids(
-        source_csv,
-        validation_indices=val_indices,
-        sample_rows=sample_rows,
-        random_seed=random_seed,
-        chunk_size=chunk_size,
-    )
+    flow_cols = ["row_id"] + list(TRACE_METADATA_COLUMNS) + list(ML_FEATURE_COLUMNS)
+    label_cols = ["row_id", "label_binary", "attack_category", "raw_label"]
 
-    # 3. Re-verify partition membership and zero Train/Test overlap via PR #47 canonical verifier
-    _verify_unsw_row_indices_membership(
-        selected_indices, split_manifest, idx_dir, partition="validation"
-    )
-    train_overlap = int(np.intersect1d(selected_indices, train_indices).size)
-    test_overlap = int(np.intersect1d(selected_indices, test_indices).size)
-    if train_overlap != 0 or test_overlap != 0:
-        raise RuntimeError(
-            f"Leakage detected in demo sample: train_overlap={train_overlap}, test_overlap={test_overlap}"
-        )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    flows_path = output_dir / "demo_flows.csv"
+    labels_path = output_dir / "demo_labels.csv"
+    manifest_path = output_dir / "demo_manifest.json"
 
-    # 4. Low-RAM Pass 2: stream full columns ONLY for the sampled Validation row_ids
-    required_cols = list(TRACE_METADATA_COLUMNS) + list(ML_FEATURE_COLUMNS) + list(TARGET_COLUMNS)
-    selected_df = _stream_rows_by_indices(
-        source_csv_path=source_csv,
-        target_indices=selected_indices,
-        columns=required_cols,
-        chunk_size=chunk_size,
-    ).sort_values("row_id", kind="mergesort")
-    if len(selected_df) != sample_rows:
-        raise RuntimeError(
-            f"Selected demo row count mismatch: expected {sample_rows}, got {len(selected_df)}"
-        )
-
-    # 5. Strictly separate demo_flows.csv (NO Label/Attack) and demo_labels.csv
-    flow_columns = ["row_id", *TRACE_METADATA_COLUMNS, *ML_FEATURE_COLUMNS]
-    flows_df = selected_df[flow_columns].copy()
-    if any(t in flows_df.columns for t in TARGET_COLUMNS):
-        raise RuntimeError("Target columns leaked into demo_flows.csv")
-
-    labels_df = selected_df[["row_id", *TARGET_COLUMNS]].copy()
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    flows_path = out_dir / "demo_flows.csv"
-    labels_path = out_dir / "demo_labels.csv"
-    manifest_path = out_dir / "demo_manifest.json"
-
-    flows_df.to_csv(flows_path, index=False, lineterminator="\n")
-    labels_df.to_csv(labels_path, index=False, lineterminator="\n")
+    subset[flow_cols].to_csv(flows_path, index=False, lineterminator="\n")
+    subset[label_cols].to_csv(labels_path, index=False, lineterminator="\n")
 
     flows_sha = _sha256_file(flows_path)
     labels_sha = _sha256_file(labels_path)
-    indices_sha = _compute_indices_sha256(selected_indices)
+    indices_sha = _compute_indices_sha256([int(i) for i in selected])
 
-    label_counts = {str(int(k)): int(v) for k, v in labels_df["Label"].value_counts().items()}
-    attack_counts = {str(k): int(v) for k, v in labels_df["Attack"].value_counts().items()}
-
-    artifact_readiness = inspect_artifact_readiness(
-        artifacts_dir=artifacts_dir,
-        reports_dir=reports_dir,
-        split_manifest_path=split_manifest,
-    )
-
-    partitions_meta = split_data.get("partitions", {})
-    manifest_payload: Dict[str, Any] = {
-        "schema_version": "1.0",
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
-        "dataset_name": "NF-UNSW-NB15-v3",
-        "source_csv_path": _display_path(source_csv),
-        "source_dataset_sha256": actual_dataset_sha,
-        "split_manifest_path": _display_path(split_manifest),
-        "split_manifest_sha256": split_manifest_sha,
-        "partition_indices_sha256": {
-            "train": partitions_meta.get("train", {}).get("index_sha256"),
-            "validation": partitions_meta.get("validation", {}).get("index_sha256"),
-            "test": partitions_meta.get("test", {}).get("index_sha256"),
-        },
+    registry = ModelRegistry(artifacts_dir=ARTIFACTS, warmup=True)
+    manifest: Dict[str, Any] = {
+        "schema_version": 2,
+        "dataset_name": DATASET_SUITE_NAME,
+        "source_dataset": "AIT-NDS-v2",
+        "source_scenario": "russellmitchell",
+        "feature_contract_version": FEATURE_CONTRACT_ID,
+        "source_dataset_sha256": split_man.get("dataset_sha256"),
+        "split_manifest_sha256": split_sha,
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "sampling": {
             "partition": "validation",
-            "sampling_method": "deterministic_validation_class_balanced",
-            "sample_rows": int(sample_rows),
-            "random_seed": int(random_seed),
-            "row_id_definition": "0-based CSV data row index (source_row_index) in NF-UNSW-NB15-v3.csv",
-            "train_overlap_count": train_overlap,
-            "test_overlap_count": test_overlap,
+            "strategy": "deterministic_balanced_validation_sample",
+            "random_seed": random_seed,
+            "row_count": int(len(subset)),
+            "benign_count": int(n_benign),
+            "attack_count": int(n_attack),
+            "train_overlap_count": 0,
+            "test_overlap_count": 0,
+            "source_row_indices": [int(i) for i in selected],
             "selected_indices_sha256": indices_sha,
-            "source_row_indices": [int(x) for x in selected_indices.tolist()],
-            "class_distribution": {
-                "label_counts": label_counts,
-                "attack_counts": attack_counts,
-            },
         },
         "outputs": {
             "demo_flows_csv": {
-                "path": _display_path(flows_path),
+                "path": "data/demo/demo_flows.csv",
                 "sha256": flows_sha,
-                "row_count": int(len(flows_df)),
-                "columns": flow_columns,
-                "ml_feature_count": len(ML_FEATURE_COLUMNS),
-                "trace_metadata_columns": list(TRACE_METADATA_COLUMNS),
-                "target_columns_present": [],
+                "row_count": int(len(subset)),
             },
             "demo_labels_csv": {
-                "path": _display_path(labels_path),
+                "path": "data/demo/demo_labels.csv",
                 "sha256": labels_sha,
-                "row_count": int(len(labels_df)),
-                "columns": ["row_id", *TARGET_COLUMNS],
+                "row_count": int(len(subset)),
             },
         },
-        "scientific_validity_notice": (
-            "Synthetic class-balanced demo subset (~50% Benign / ~50% Attack) extracted strictly "
-            "from the verified Validation partition for offline interactive UI demonstration. "
-            "It does NOT reflect real-world deployment prevalence, must NEVER be used for model "
-            "training or hyperparameter tuning, and keeps the Held-out Test partition strictly locked "
-            "(test_overlap_count == 0)."
+        "artifact_readiness": registry.summary(),
+        "scientific_notice": (
+            "Validation-only balanced demonstration subset (50% Benign / 50% Attack from "
+            "AIT-NDS-v2 russellmitchell) for UI inspection only; not a prevalence benchmark."
         ),
-        "artifact_readiness": artifact_readiness,
     }
-    manifest_path.write_text(
-        json.dumps(manifest_payload, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    return {
-        "flows_path": flows_path,
-        "labels_path": labels_path,
-        "manifest_path": manifest_path,
-        "manifest": manifest_payload,
-    }
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8", newline="\n")
+    return manifest
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build CLI argument parser for prepare_demo_dataset.py."""
-    parser = argparse.ArgumentParser(
-        description="Prepare verified Validation-only demo CSV files and check model readiness.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Prepare NetFlow Sentinel v2 demo dataset")
+    parser.add_argument("--val-csv", type=Path, default=DEFAULT_VAL_CSV)
+    parser.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLIT_MANIFEST)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--num-rows", type=int, default=DEFAULT_DEMO_ROWS)
     parser.add_argument(
-        "--source-csv",
-        type=Path,
-        default=DEFAULT_SOURCE_CSV,
-        help="Path to canonical NF-UNSW-NB15-v3.csv",
+        "--verify-only", action="store_true", help="Exit 0 SKIPPED if validation split missing"
     )
-    parser.add_argument(
-        "--split-manifest",
-        type=Path,
-        default=DEFAULT_SPLIT_MANIFEST,
-        help="Path to NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-    )
-    parser.add_argument(
-        "--indices-dir",
-        type=Path,
-        default=DEFAULT_INDICES_DIR,
-        help="Directory containing train/validation/test index .csv.gz files",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help="Output directory for demo_flows.csv, demo_labels.csv, demo_manifest.json",
-    )
-    parser.add_argument(
-        "--sample-rows",
-        type=int,
-        default=DEFAULT_DEMO_ROWS,
-        help=f"Number of Validation rows to extract [{MIN_DEMO_ROWS}..{MAX_DEMO_ROWS}]",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=DEFAULT_RANDOM_SEED,
-        help="Deterministic RNG seed for class-balanced Validation sampling",
-    )
-    parser.add_argument(
-        "--check-only",
-        action="store_true",
-        help="Inspect preprocessor/model readiness only without generating demo CSV files",
-    )
-    return parser
+    args = parser.parse_args()
 
+    if not args.val_csv.is_file() or not args.split_manifest.is_file():
+        if args.verify_only:
+            print("[prepare_demo_dataset] SKIPPED — processed validation dataset absent.")
+            return
+        print(f"ERROR: Missing {args.val_csv} or {args.split_manifest}", file=sys.stderr)
+        sys.exit(1)
 
-def main(argv: Optional[List[str]] = None) -> int:
-    """CLI entrypoint."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    if args.check_only:
-        readiness = inspect_artifact_readiness(split_manifest_path=args.split_manifest)
-        print(json.dumps(readiness, indent=2))
-        return 0 if readiness["overall_status"] == "READY" else 1
-
-    try:
-        result = prepare_demo_dataset(
-            source_csv_path=args.source_csv,
-            split_manifest_path=args.split_manifest,
-            indices_dir=args.indices_dir,
-            output_dir=args.output_dir,
-            sample_rows=args.sample_rows,
-            random_seed=args.seed,
-        )
-    except Exception as exc:
-        sys.stderr.write(f"[DEMO PREP BLOCKED] {exc}\n")
-        return 1
-
-    man = result["manifest"]
-    readiness = man["artifact_readiness"]
+    manifest = prepare_demo_dataset(
+        val_csv_path=args.val_csv,
+        split_manifest_path=args.split_manifest,
+        output_dir=args.output_dir,
+        num_rows=args.num_rows,
+    )
+    flows_info = manifest["outputs"]["demo_flows_csv"]
+    ready = manifest["artifact_readiness"]["validated_count"]
+    total = manifest["artifact_readiness"]["total_models"]
     print(
-        f"[DEMO PREP] SUCCESS: wrote {man['sampling']['sample_rows']} Validation rows to {args.output_dir}"
+        f"Demo dataset ready: {flows_info['row_count']} rows | sha256={flows_info['sha256']} | AI Ready {ready}/{total}"
     )
-    print(f"  demo_flows.csv   SHA-256: {man['outputs']['demo_flows_csv']['sha256']}")
-    print(f"  demo_labels.csv  SHA-256: {man['outputs']['demo_labels_csv']['sha256']}")
-    print(
-        f"  Train/Test overlap      : {man['sampling']['train_overlap_count']}/{man['sampling']['test_overlap_count']}"
-    )
-    print(
-        f"  Overall artifact status : {readiness['overall_status']} (ready models: {readiness['ready_models']})"
-    )
-    for model_key, status in readiness["models"].items():
-        print(f"    - {model_key:17s}: {status['status']}")
-    return 0 if readiness["overall_status"] == "READY" else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

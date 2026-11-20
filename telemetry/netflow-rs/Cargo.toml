@@ -1,0 +1,8 @@
+[package]
+name = "netflow-rs"
+version = "2.0.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "NetFlow v9 and IPFIX (RFC 7011) UDP collector with template caching and CanonicalSecurityEvent v2 JSON output"
+
+[dependencies]

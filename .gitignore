@@ -5,6 +5,8 @@ data/raw/*
 data/interim/*
 data/processed/*
 data/demo/*
+data/historical/nf_unsw_nb15_v3/splits/*
+data/historical/nf_unsw_nb15_v3/demo/*.csv
 !data/raw/.gitkeep
 !data/interim/.gitkeep
 !data/processed/.gitkeep
@@ -21,6 +23,7 @@ reports/figures/**
 .env
 .env.local
 secrets/
+data/keys/
 *.key
 *.pem
 credentials*.json
@@ -63,7 +66,6 @@ logs/
 # Local session audit evidence (preserve on disk; not project source)
 /AUDIT_REPORT.md
 /AUDIT_LEDGER.md
-/docs/audits/
 
 # Agent session artifacts
 .agents/checkpoints/
@@ -75,6 +77,7 @@ desktop/dist/
 desktop/.svelte-kit/
 desktop/src-tauri/gen/
 desktop/src-tauri/target/
+telemetry/netflow-rs/target/
 desktop/src-tauri/binaries/*.exe
 desktop/src-tauri/staged_bundle/
 desktop/*.log

@@ -1,7 +1,7 @@
-"""Random Forest baseline protocol and configuration for NF-UNSW-NB15-v3.
+"""Random Forest baseline protocol and configuration for NetFlow Sentinel v2.
 
-This module formalizes the protocol contracts for Issue #9.
-It does NOT execute model training, evaluation, or benchmark generation.
+Formalizes the supervised baseline protocol contracts on `canonical-flow-v2-18`
+for the AIT-NDS-v2 + CTU-SME-11 multi-source flow pipeline.
 """
 
 from __future__ import annotations
@@ -12,47 +12,45 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from network_anomaly.config import RANDOM_SEED
-from network_anomaly.data.nf_unsw_nb15_v3 import (
-    DATASET_NAME,
+from network_anomaly.data.taxonomy import CANONICAL_ATTACK_CATEGORIES
+from network_anomaly.data.v2_schema import (
+    DATASET_SUITE_NAME as DATASET_NAME,
+)
+from network_anomaly.data.v2_schema import (
+    FEATURE_CONTRACT_ID as FEATURE_CONTRACT_VERSION,
+)
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
+    PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
     validate_feature_selection,
 )
 
-PROTOCOL_IDENTIFIER: str = "rf-baseline-nf-unsw-nb15-v3-v1"
-FEATURE_CONTRACT_VERSION: str = "nf-unsw-nb15-v3-baseline-47"
-SPLIT_PROTOCOL_ID: str = "nf-unsw-nb15-v3-chronological-group-purged-v1"
-PREPROCESSING_CONTRACT_ID: str = "nf-unsw-nb15-v3-preproc-v1"
+PROTOCOL_IDENTIFIER: str = "rf-baseline-v2-canonical-v1"
+SPLIT_PROTOCOL_ID: str = "v2-scenario-group-purged-v1"
+PREPROCESSING_CONTRACT_ID: str = "v2-flow-preprocessing-v1"
 
-TARGET_COLUMN: str = "Label"
-STRATIFICATION_COLUMN: str = "Attack"
+TARGET_COLUMN: str = "label_binary"
+STRATIFICATION_COLUMN: str = "attack_category"
 POSITIVE_CLASS_NAME: str = "Attack"
 POSITIVE_CLASS_LABEL: int = 1
 NEGATIVE_CLASS_NAME: str = "Benign"
 NEGATIVE_CLASS_LABEL: int = 0
 
-EXPECTED_ATTACK_CATEGORIES: Tuple[str, ...] = (
-    "Analysis",
-    "Backdoor",
-    "DoS",
-    "Exploits",
-    "Fuzzers",
-    "Generic",
-    "Reconnaissance",
-    "Shellcode",
-    "Worms",
+EXPECTED_ATTACK_CATEGORIES: Tuple[str, ...] = tuple(
+    cat for cat in CANONICAL_ATTACK_CATEGORIES if cat not in {"Benign", "Unmapped"}
 )
 
 ALL_ATTACK_CATEGORIES: Tuple[str, ...] = ("Benign",) + EXPECTED_ATTACK_CATEGORIES
 
-DATASET_CSV_SHA256: str = "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
-DATASET_ARCHIVE_SHA256: str = "6d51554df43e324ba8d68fc31a02a83d860ba0a3a93d63320a4a6fc314c9cdfd"
+DATASET_CSV_SHA256: str = ""
+DATASET_ARCHIVE_SHA256: str = ""
 
 CANONICAL_BASELINE_PARAMS: Dict[str, Any] = {
     "model_type": "RandomForest",
     "task": "binary_classification",
-    "target": "Label",
+    "target": "label_binary",
     "positive_class": "Attack",
     "n_estimators": 200,
     "max_depth": 16,
@@ -73,7 +71,7 @@ class RandomForestBaselineConfig:
 
     model_type: str = "RandomForest"
     task: str = "binary_classification"
-    target: str = "Label"
+    target: str = "label_binary"
     positive_class: str = "Attack"
     n_estimators: int = 200
     max_depth: Optional[int] = 16
@@ -113,7 +111,7 @@ class RandomForestBaselineConfig:
                 self,
                 "configuration_id",
                 (
-                    "rf-baseline-canonical-v1"
+                    "rf-v2-baseline-canonical-v1"
                     if self.is_canonical_baseline
                     else "rf-experimental-custom"
                 ),
@@ -125,8 +123,8 @@ class RandomForestBaselineConfig:
             raise ValueError(f"model_type must be 'RandomForest', got {self.model_type}")
         if self.task != "binary_classification":
             raise ValueError(f"task must be 'binary_classification', got {self.task}")
-        if self.target != "Label":
-            raise ValueError(f"target must be 'Label', got {self.target}")
+        if self.target != TARGET_COLUMN:
+            raise ValueError(f"target must be '{TARGET_COLUMN}', got {self.target}")
         if self.positive_class != "Attack":
             raise ValueError(f"positive_class must be 'Attack', got {self.positive_class}")
         if self.n_estimators <= 0:
@@ -173,16 +171,16 @@ class RandomForestBaselineConfig:
                     "Set is_canonical_baseline=False and provide an experimental "
                     "configuration_id to use custom hyperparameters."
                 )
-            if self.configuration_id != "rf-baseline-canonical-v1":
+            if self.configuration_id != "rf-v2-baseline-canonical-v1":
                 raise ValueError(
                     f"Canonical baseline configuration must have configuration_id "
-                    f"'rf-baseline-canonical-v1', got '{self.configuration_id}'"
+                    f"'rf-v2-baseline-canonical-v1', got '{self.configuration_id}'"
                 )
         else:
-            if self.configuration_id == "rf-baseline-canonical-v1":
+            if self.configuration_id == "rf-v2-baseline-canonical-v1":
                 raise ValueError(
                     "Non-canonical / experimental configuration cannot use canonical "
-                    "configuration_id 'rf-baseline-canonical-v1'"
+                    "configuration_id 'rf-v2-baseline-canonical-v1'"
                 )
             if not self.configuration_id or not self.configuration_id.strip():
                 raise ValueError(
@@ -453,7 +451,7 @@ class EvaluationMetricProtocol:
 
 @dataclass(frozen=True)
 class SplitReference:
-    """Reference to the official NF-UNSW-NB15-v3 split artifact (Issue #7 dependency)."""
+    """Reference to the official v2 split artifact."""
 
     dataset_name: str = DATASET_NAME
     dataset_csv_sha256: str = DATASET_CSV_SHA256
@@ -536,10 +534,10 @@ class RandomForestBaselineProtocol:
     """Complete, versioned protocol specification for Random Forest baseline."""
 
     protocol_version: str = PROTOCOL_IDENTIFIER
-    protocol_name: str = "NF-UNSW-NB15-v3 Random Forest Baseline Protocol"
+    protocol_name: str = "NetFlow Sentinel v2 Random Forest Baseline Protocol"
     feature_contract_version: str = FEATURE_CONTRACT_VERSION
     selected_features: Tuple[str, ...] = ML_FEATURE_COLUMNS
-    excluded_metadata: Tuple[str, ...] = TRACE_METADATA_COLUMNS
+    excluded_metadata: Tuple[str, ...] = TRACE_METADATA_COLUMNS + PROVENANCE_COLUMNS
     excluded_targets: Tuple[str, ...] = TARGET_COLUMNS
     model_config: RandomForestBaselineConfig = field(default_factory=RandomForestBaselineConfig)
     tuning_policy: TuningConfig = field(default_factory=TuningConfig)
@@ -549,12 +547,8 @@ class RandomForestBaselineProtocol:
     preprocessing_reference: PreprocessingReference = field(default_factory=PreprocessingReference)
     metadata: Dict[str, Any] = field(
         default_factory=lambda: {
-            "issue": 9,
-            "status": "IMPLEMENTED / TESTED",
-            "dependencies": "#7 -> #8 -> #9 -> #10 -> #12",
-            "training_status": "PLANNED (Issue #10)",
-            "evaluation_status": "PLANNED (Issue #12)",
-            "benchmark_claim": "NOT_AVAILABLE_YET",
+            "version": "2.0.0",
+            "status": "IMPLEMENTED",
             "synthetic_data_used": False,
         }
     )
@@ -565,11 +559,11 @@ class RandomForestBaselineProtocol:
         validate_feature_selection(self.selected_features, require_complete=True)
         if self.selected_features != ML_FEATURE_COLUMNS:
             raise ValueError(
-                "selected_features does not match the ordered 47 ML feature baseline contract"
+                f"selected_features does not match the ordered {len(ML_FEATURE_COLUMNS)} ML feature v2 contract"
             )
-        if len(self.selected_features) != 47:
+        if len(self.selected_features) != len(ML_FEATURE_COLUMNS):
             raise ValueError(
-                f"selected_features must have exactly 47 features, "
+                f"selected_features must have exactly {len(ML_FEATURE_COLUMNS)} features, "
                 f"got {len(self.selected_features)}"
             )
 
@@ -579,10 +573,10 @@ class RandomForestBaselineProtocol:
             raise ValueError(
                 f"Target leakage violation: features contain targets: {overlap_targets}"
             )
-        if "Label" in self.selected_features:
-            raise ValueError("Target leakage violation: 'Label' found in feature selection")
-        if "Attack" in self.selected_features:
-            raise ValueError("Target leakage violation: 'Attack' found in feature selection")
+        if TARGET_COLUMN in self.selected_features or "Label" in self.selected_features:
+            raise ValueError("Target leakage violation: target label found in feature selection")
+        if STRATIFICATION_COLUMN in self.selected_features or "Attack" in self.selected_features:
+            raise ValueError("Target leakage violation: attack category found in feature selection")
 
         overlap_meta = set(self.selected_features) & set(self.excluded_metadata)
         if overlap_meta:
@@ -649,7 +643,9 @@ class RandomForestBaselineProtocol:
 
         protocol = cls(
             protocol_version=d.get("protocol_version", PROTOCOL_IDENTIFIER),
-            protocol_name=d.get("protocol_name", "NF-UNSW-NB15-v3 Random Forest Baseline Protocol"),
+            protocol_name=d.get(
+                "protocol_name", "NetFlow Sentinel v2 Random Forest Baseline Protocol"
+            ),
             feature_contract_version=d.get("feature_contract_version", FEATURE_CONTRACT_VERSION),
             selected_features=selected_features,
             excluded_metadata=excluded_metadata,
@@ -712,7 +708,7 @@ def create_rf_baseline_protocol(
 
     if configuration_id is None:
         cfg_id = (
-            "rf-baseline-canonical-v1"
+            "rf-v2-baseline-canonical-v1"
             if is_canonical
             else f"rf-experimental-e{n_estimators}-d{max_depth}-s{random_seed}"
         )

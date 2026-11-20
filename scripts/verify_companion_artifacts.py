@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Audit and stage NetFlow Sentinel v0.6.0 companion model artifacts on Windows.
+"""Audit and stage NetFlow Sentinel v2 companion model artifacts on Windows.
 
 Verifies SHA-256 digests and manifest linkage across the preprocessor, 4 verified
 ML models (Random Forest, XGBoost, Isolation Forest, Autoencoder), and Validation
-demo CSV bundle without copying or bundling raw NF-UNSW-NB15-v3 dataset files.
+demo CSV bundle on the canonical v2 schema (`canonical-flow-v2-18`).
 """
 
 from __future__ import annotations
@@ -41,6 +41,11 @@ from network_anomaly.inference.predict import (  # noqa: E402
     load_verified_model,
     load_verified_preprocessor,
 )
+from network_anomaly.ml.ood_gate import (  # noqa: E402
+    cross_check_same_boundary_embedded_manifest,
+    resolve_expected_ood_gate_sha256,
+    verify_ood_gate_artifact,
+)
 
 _TAURI_BUNDLE_MARKER_UNK = b"BUNDLE_TYPE_VAR_UNK"
 _TAURI_BUNDLE_MARKER_NSS = b"BUNDLE_TYPE_VAR_NSS"
@@ -65,9 +70,7 @@ MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
         Path("artifacts/models/isolation_forest/isolation_forest.joblib"),
         [
             Path("reports/models/isolation_forest_manifest.json"),
-            Path("artifacts/models/isolation_forest/model_config.json"),
-            Path("artifacts/models/isolation_forest/threshold.json"),
-            Path("artifacts/models/isolation_forest/training_metadata.json"),
+            Path("artifacts/models/isolation_forest/isolation_forest_manifest.json"),
         ],
     ),
     "autoencoder": (
@@ -77,23 +80,26 @@ MODEL_SPECS: Dict[str, Tuple[Path, List[Path]]] = {
             Path("artifacts/models/autoencoder/autoencoder_manifest.json"),
             Path("artifacts/models/autoencoder/model_config.json"),
             Path("artifacts/models/autoencoder/threshold.json"),
+            Path("artifacts/models/autoencoder/score_normalization.json"),
         ],
     ),
 }
 
-PREPROCESSOR_REL = Path("artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib")
-PREPROCESSOR_MANIFEST_REL = Path(
-    "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json"
-)
-SPLIT_MANIFEST_REL = Path("data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+AE_SCORE_NORMALIZATION_REL = Path("artifacts/models/autoencoder/score_normalization.json")
+OOD_REFERENCE_GATE_REL = Path("artifacts/ml/ood_reference_gate.json")
+OOD_REFERENCE_GATE_MANIFEST_REL = Path("reports/ml/ood_reference_gate_manifest.json")
+PREPROCESSOR_REL = Path("artifacts/preprocessing/v2_flow_preprocessor.joblib")
+PREPROCESSOR_MANIFEST_REL = Path("reports/preprocessing/v2_flow_preprocessing_manifest.json")
+SPLIT_MANIFEST_REL = Path("data/V2_SPLIT_MANIFEST.json")
 DEMO_FILES_REL: Tuple[Path, ...] = (
     Path("data/demo/demo_flows.csv"),
     Path("data/demo/demo_labels.csv"),
     Path("data/demo/demo_manifest.json"),
 )
 EMBEDDED_EXTRA_FILES_REL: Tuple[Path, ...] = (
-    Path("data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json"),
-    Path("data/NF_UNSW_NB15_V3_MANIFEST.json"),
+    Path("data/V2_SPLIT_MANIFEST.json"),
+    Path("data/AIT_DATASETS_MANIFEST.json"),
+    Path("data/CTU_SME_11_MANIFEST.json"),
     Path("NOTICE"),
     Path("THIRD_PARTY_NOTICES.md"),
     Path("LICENSE"),
@@ -136,11 +142,16 @@ CLEAN_MACHINE_ENVIRONMENT_TIERS = frozenset(
         "independent_windows_vm",
     }
 )
-_REQUIRED_NOTICE_MARKERS: Tuple[str, ...] = ("NF-UNSW-NB15-v3", "454104", "10.48610/6E0EDA1")
+_REQUIRED_NOTICE_MARKERS: Tuple[str, ...] = (
+    "AIT NetFlow Data Set v2",
+    "10.5281/zenodo.13168643",
+    "CTU-SME-11",
+)
 SIDECAR_MANIFEST_MAPPINGS: Dict[str, str] = {
     "artifacts/models/xgboost/xgboost_manifest.json": "reports/models/xgboost_manifest.json",
     "artifacts/models/autoencoder/autoencoder_manifest.json": "reports/models/autoencoder_manifest.json",
     "artifacts/models/random_forest/random_forest_manifest.json": "reports/models/random_forest_manifest.json",
+    "artifacts/models/isolation_forest/isolation_forest_manifest.json": "reports/models/isolation_forest_manifest.json",
 }
 
 
@@ -157,10 +168,53 @@ def _select_existing_manifest(
     return manifest_root / candidates[0]
 
 
+def _verify_repo_ood_gate_manifest(
+    manifest_root: Path,
+    ood_meta: Dict[str, Any],
+) -> str:
+    """Cross-check OOD gate metadata against the repo-tracked manifest when present."""
+    manifest_abs = manifest_root / OOD_REFERENCE_GATE_MANIFEST_REL
+    if not manifest_abs.is_file():
+        return "absent"
+    payload = _read_json_dict(manifest_abs, "OOD reference gate manifest")
+    if payload.get("artifact_path") != OOD_REFERENCE_GATE_REL.as_posix():
+        raise ValueError(
+            "OOD reference gate manifest artifact_path mismatch: "
+            f"{payload.get('artifact_path')!r} != {OOD_REFERENCE_GATE_REL.as_posix()!r}"
+        )
+    man_sha = payload.get("sha256")
+    if not _is_hex_sha256(man_sha) or str(man_sha).lower() != str(ood_meta["sha256"]).lower():
+        raise ValueError(
+            "OOD reference gate SHA-256 mismatch with repo manifest: "
+            f"{man_sha!r} != {ood_meta['sha256']!r}"
+        )
+    man_prep_sha = payload.get("preprocessor_artifact_sha256")
+    if (
+        not _is_hex_sha256(man_prep_sha)
+        or str(man_prep_sha).lower() != str(ood_meta["preprocessor_artifact_sha256"]).lower()
+    ):
+        raise ValueError(
+            "OOD reference gate preprocessor_artifact_sha256 mismatch with repo manifest: "
+            f"{man_prep_sha!r} != {ood_meta['preprocessor_artifact_sha256']!r}"
+        )
+    if payload.get("fit_rows") != ood_meta["fit_rows"]:
+        raise ValueError(
+            "OOD reference gate fit_rows mismatch with repo manifest: "
+            f"{payload.get('fit_rows')!r} != {ood_meta['fit_rows']!r}"
+        )
+    if payload.get("feature_count") != ood_meta["feature_count"]:
+        raise ValueError(
+            "OOD reference gate feature_count mismatch with repo manifest: "
+            f"{payload.get('feature_count')!r} != {ood_meta['feature_count']!r}"
+        )
+    return "verified"
+
+
 def verify_companion_artifacts(
     root: Path = PROJECT_ROOT,
     *,
     runtime_dir: Optional[Path] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Verify preprocessor, all 4 model bundles, and demo files fail-closed."""
     resolved_root = Path(root).resolve()
@@ -219,6 +273,12 @@ def verify_companion_artifacts(
                 manifest_path=manifest_abs,
                 expected_preprocessor_sha256=prep_sha,
             )
+            if model_key == "autoencoder":
+                ae_norm_abs = resolved_runtime / AE_SCORE_NORMALIZATION_REL
+                if not ae_norm_abs.is_file():
+                    raise FileNotFoundError(
+                        f"Missing required Autoencoder companion sidecar: {AE_SCORE_NORMALIZATION_REL.as_posix()}"
+                    )
             ready_models.append(model_key)
             models_status[model_key] = {
                 "ready": True,
@@ -297,7 +357,140 @@ def verify_companion_artifacts(
             demo_ready = False
             demo_error = str(exc)
 
-    all_four_ready = prep_status["ready"] and len(ready_models) == len(MODEL_SPECS) and demo_ready
+    ood_gate_abs = resolved_runtime / OOD_REFERENCE_GATE_REL
+    ood_gate_status: Dict[str, Any]
+    try:
+        trusted_ood_sha, ood_trust_source = resolve_expected_ood_gate_sha256(
+            expected_ood_gate_sha256
+        )
+        ood_anchor_err: Optional[str] = None
+    except Exception as exc:
+        trusted_ood_sha = None
+        ood_trust_source = "invalid_expected_sha256"
+        ood_anchor_err = str(exc)
+
+    if not ood_gate_abs.is_file():
+        ood_gate_status = {
+            "ready": False,
+            "status": "NOT_FITTED",
+            "path": OOD_REFERENCE_GATE_REL.as_posix(),
+            "sha256": None,
+            "expected_sha256": trusted_ood_sha,
+            "fit_rows": None,
+            "feature_count": 0,
+            "preprocessor_artifact_sha256": None,
+            "structural_schema_verified": False,
+            "preprocessor_linkage_verified": False,
+            "repo_manifest_verified": False,
+            "repo_manifest_cross_check": "none",
+            "trusted_digest_verified": False,
+            "integrity_verification_status": "FAIL",
+            "trust_anchor_source": ood_trust_source or "none",
+            "same_boundary_cross_check": "none",
+            "reason": ood_anchor_err
+            or f"Missing OOD reference gate artifact: {OOD_REFERENCE_GATE_REL.as_posix()}",
+        }
+    elif ood_anchor_err is not None:
+        ood_gate_status = {
+            "ready": False,
+            "status": "ERROR",
+            "path": OOD_REFERENCE_GATE_REL.as_posix(),
+            "sha256": _sha256_file(ood_gate_abs).lower(),
+            "expected_sha256": None,
+            "fit_rows": None,
+            "feature_count": 0,
+            "preprocessor_artifact_sha256": None,
+            "structural_schema_verified": False,
+            "preprocessor_linkage_verified": False,
+            "repo_manifest_verified": False,
+            "repo_manifest_cross_check": "none",
+            "trusted_digest_verified": False,
+            "integrity_verification_status": "FAIL",
+            "trust_anchor_source": ood_trust_source,
+            "same_boundary_cross_check": "none",
+            "reason": ood_anchor_err,
+        }
+    elif not prep_status["ready"] or prep_sha is None:
+        ood_gate_status = {
+            "ready": False,
+            "status": "ERROR",
+            "path": OOD_REFERENCE_GATE_REL.as_posix(),
+            "sha256": _sha256_file(ood_gate_abs).lower(),
+            "expected_sha256": trusted_ood_sha,
+            "fit_rows": None,
+            "feature_count": 0,
+            "preprocessor_artifact_sha256": None,
+            "structural_schema_verified": False,
+            "preprocessor_linkage_verified": False,
+            "repo_manifest_verified": False,
+            "repo_manifest_cross_check": "none",
+            "trusted_digest_verified": False,
+            "integrity_verification_status": "FAIL",
+            "trust_anchor_source": ood_trust_source or "none",
+            "same_boundary_cross_check": "none",
+            "reason": "Preprocessor artifact is not verified.",
+        }
+    else:
+        try:
+            _, ood_meta = verify_ood_gate_artifact(
+                ood_gate_abs,
+                expected_preprocessor_sha256=prep_sha,
+                expected_sha256=trusted_ood_sha,
+            )
+            repo_manifest_status = _verify_repo_ood_gate_manifest(resolved_root, ood_meta)
+            same_boundary = cross_check_same_boundary_embedded_manifest(
+                ood_gate_abs, str(ood_meta["sha256"])
+            )
+            trusted_verified = trusted_ood_sha is not None
+            ood_gate_status = {
+                "ready": True,
+                "status": "FITTED",
+                "path": OOD_REFERENCE_GATE_REL.as_posix(),
+                "sha256": ood_meta["sha256"],
+                "expected_sha256": trusted_ood_sha,
+                "fit_rows": ood_meta["fit_rows"],
+                "feature_count": ood_meta["feature_count"],
+                "preprocessor_artifact_sha256": ood_meta["preprocessor_artifact_sha256"],
+                "structural_schema_verified": True,
+                "preprocessor_linkage_verified": True,
+                "repo_manifest_verified": repo_manifest_status == "verified",
+                "repo_manifest_cross_check": repo_manifest_status,
+                "trusted_digest_verified": trusted_verified,
+                "integrity_verification_status": (
+                    "PASS" if trusted_verified else "PARTIAL_UNANCHORED"
+                ),
+                "trust_anchor_source": ood_trust_source or "none",
+                "same_boundary_cross_check": same_boundary or "none",
+                "reason": None,
+            }
+            staged_files.append(OOD_REFERENCE_GATE_REL)
+        except Exception as exc:
+            ood_gate_status = {
+                "ready": False,
+                "status": "ERROR",
+                "path": OOD_REFERENCE_GATE_REL.as_posix(),
+                "sha256": None,
+                "expected_sha256": trusted_ood_sha,
+                "fit_rows": None,
+                "feature_count": 0,
+                "preprocessor_artifact_sha256": None,
+                "structural_schema_verified": False,
+                "preprocessor_linkage_verified": False,
+                "repo_manifest_verified": False,
+                "repo_manifest_cross_check": "none",
+                "trusted_digest_verified": False,
+                "integrity_verification_status": "FAIL",
+                "trust_anchor_source": ood_trust_source or "none",
+                "same_boundary_cross_check": "none",
+                "reason": str(exc),
+            }
+
+    all_four_ready = (
+        prep_status["ready"]
+        and len(ready_models) == len(MODEL_SPECS)
+        and demo_ready
+        and ood_gate_status["ready"]
+    )
     unique_staged = sorted({p.as_posix() for p in staged_files})
 
     return {
@@ -305,6 +498,7 @@ def verify_companion_artifacts(
         "ready_models": ready_models,
         "preprocessor": prep_status,
         "models": models_status,
+        "ood_gate": ood_gate_status,
         "demo": demo_status,
         "demo_ready": demo_ready,
         "demo_verification_error": demo_error,
@@ -441,7 +635,7 @@ def verify_distribution_permission(
         if not notice_text.strip() or missing_markers:
             raise RuntimeError(
                 f"BLOCKED — DISTRIBUTION PERMISSION: {rel.as_posix()} is missing required "
-                f"UQ dataset attribution markers {missing_markers}."
+                f"v2 dataset attribution markers {missing_markers}."
             )
     if not (resolved_root / "LICENSE").read_text(encoding="utf-8", errors="replace").strip():
         raise RuntimeError("BLOCKED — DISTRIBUTION PERMISSION: LICENSE file must not be empty.")
@@ -454,13 +648,13 @@ def verify_distribution_permission(
         )
     auth_doc = _read_json_dict(auth_manifest_path, "DISTRIBUTION_AUTHORIZATION.json")
     if (
-        auth_doc.get("schema_version") != 1
-        or auth_doc.get("dataset") != "NF-UNSW-NB15-v3"
-        or str(auth_doc.get("dataset_license_id", "")).strip() != "454104"
-        or str(auth_doc.get("dataset_doi", "")).strip() != "10.48610/6E0EDA1"
+        auth_doc.get("schema_version") not in (1, 2)
+        or auth_doc.get("dataset") != "NetFlow-Sentinel-v2-MultiSource"
+        or str(auth_doc.get("dataset_license_id", "")).strip() not in {"CC-BY-4.0", "CC BY 4.0"}
+        or str(auth_doc.get("dataset_doi", "")).strip() != "10.5281/zenodo.13168643"
     ):
         raise RuntimeError(
-            "BLOCKED — DISTRIBUTION PERMISSION: Invalid DISTRIBUTION_AUTHORIZATION.json header."
+            "BLOCKED — DISTRIBUTION PERMISSION: Invalid v2 DISTRIBUTION_AUTHORIZATION.json header."
         )
 
     if norm_scope == "non-commercial-academic-approved":
@@ -514,11 +708,10 @@ def verify_distribution_permission(
             )
         if pub_auth.get("approved") is not True or pub_auth.get("status") != "APPROVED":
             raise RuntimeError(
-                "BLOCKED — DISTRIBUTION PERMISSION: Public distribution of NF-UNSW-NB15-v3 "
+                "BLOCKED — DISTRIBUTION PERMISSION: Public distribution of v2 "
                 "derived models/demo CSV is NOT authorized "
                 f"(status={pub_auth.get('status')!r}, approved={pub_auth.get('approved')!r}). "
-                "UQ License ID 454104 forbids commercial use and does not auto-authorize public "
-                "binary redistribution without verifiable authorization evidence."
+                "Requires verifiable authorization evidence and maintainer signoff."
             )
         legal_basis = pub_auth.get("legal_basis")
         if not isinstance(legal_basis, str) or legal_basis not in APPROVED_PUBLIC_LEGAL_BASES:
@@ -550,13 +743,12 @@ def verify_distribution_permission(
                 f"BLOCKED — DISTRIBUTION PERMISSION: Invalid approved_at_utc timestamp: {approved_at_utc!r}"
             ) from exc
 
-        if (
-            pub_auth.get("requires_attribution_notices") is not True
-            or pub_auth.get("forbids_commercial_use") is not True
+        if pub_auth.get("requires_attribution_notices") is not True or not isinstance(
+            pub_auth.get("forbids_commercial_use"), bool
         ):
             raise RuntimeError(
-                "BLOCKED — DISTRIBUTION PERMISSION: Authorization must preserve attribution and "
-                "non-commercial constraints."
+                "BLOCKED — DISTRIBUTION PERMISSION: Authorization must preserve attribution "
+                "requirements and explicit commercial-use policy boolean."
             )
 
         covered = pub_auth.get("covered_artifacts")
@@ -618,8 +810,8 @@ def verify_distribution_permission(
         "legal_basis": legal_basis,
         "maintainer_approver": maintainer_approver,
         "evidence_ref": evidence_ref,
-        "dataset_license": "UQ-454104-Permitted-Re-Use-NonCommercial",
-        "citation_doi": "10.48610/6E0EDA1",
+        "dataset_license": str(auth_doc.get("dataset_license_id") or "CC-BY-4.0"),
+        "citation_doi": str(auth_doc.get("dataset_doi") or "10.5281/zenodo.13168643"),
         "notices_verified": ["NOTICE", "THIRD_PARTY_NOTICES.md", "LICENSE"],
         "governance_manifest": DISTRIBUTION_AUTH_MANIFEST_REL.as_posix(),
     }
@@ -707,6 +899,14 @@ def stage_embedded_bundle(
             key: {"sha256": info["sha256"], "run_id": info["run_id"]}
             for key, info in staged["models"].items()
         },
+        "ood_gate": {
+            "status": (staged.get("ood_gate") or {}).get("status"),
+            "sha256": (staged.get("ood_gate") or {}).get("sha256"),
+            "fit_rows": (staged.get("ood_gate") or {}).get("fit_rows"),
+            "preprocessor_artifact_sha256": (staged.get("ood_gate") or {}).get(
+                "preprocessor_artifact_sha256"
+            ),
+        },
         "demo_sha256": {key: info["sha256"] for key, info in staged["demo"].items()},
         "files": embedded_files,
     }
@@ -725,6 +925,7 @@ def stage_embedded_bundle(
         "manifest_file": str(manifest_path),
         "preprocessor": staged["preprocessor"],
         "models": staged["models"],
+        "ood_gate": staged.get("ood_gate"),
         "demo": staged["demo"],
     }
 
@@ -733,6 +934,7 @@ def verify_installed_standalone_layout(
     install_dir: Path,
     *,
     expected_sidecar_sha256: Optional[str] = None,
+    expected_ood_gate_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Verify an installed NSIS directory has sidecar, notices, and all 4 embedded models."""
     resolved_install = Path(install_dir).resolve()
@@ -779,11 +981,41 @@ def verify_installed_standalone_layout(
         resolved_install / "EMBEDDED_ARTIFACTS_MANIFEST.json",
         "installed EMBEDDED_ARTIFACTS_MANIFEST.json",
     )
-    summary = verify_companion_artifacts(root=resolved_install, runtime_dir=resolved_install)
+    for req_companion in (OOD_REFERENCE_GATE_REL.as_posix(), AE_SCORE_NORMALIZATION_REL.as_posix()):
+        if req_companion not in sums_map:
+            raise RuntimeError(
+                f"Installed standalone bundle missing {req_companion!r} in EMBEDDED_SHA256SUMS.txt"
+            )
+    summary = verify_companion_artifacts(
+        root=resolved_install,
+        runtime_dir=resolved_install,
+        expected_ood_gate_sha256=expected_ood_gate_sha256,
+    )
+    ood_gate_info = summary.get("ood_gate") or {}
+    if not ood_gate_info.get("ready") or ood_gate_info.get("status") != "FITTED":
+        raise RuntimeError(
+            "Installed standalone OOD gate verification failed (must be FITTED): "
+            f"{ood_gate_info}"
+        )
+    expected_ood_sha = (manifest_data.get("ood_gate") or {}).get("sha256")
+    if (
+        not expected_ood_sha
+        or not _is_hex_sha256(str(expected_ood_sha))
+        or str(expected_ood_sha).lower() != str(ood_gate_info.get("sha256", "")).lower()
+    ):
+        raise RuntimeError(
+            "Installed standalone OOD gate SHA-256 missing or mismatch with EMBEDDED_ARTIFACTS_MANIFEST.json"
+        )
+    sums_ood_sha = sums_map.get(OOD_REFERENCE_GATE_REL.as_posix())
+    if not sums_ood_sha or sums_ood_sha.lower() != str(expected_ood_sha).lower():
+        raise RuntimeError(
+            "Installed standalone OOD gate SHA-256 mismatch between EMBEDDED_ARTIFACTS_MANIFEST.json and EMBEDDED_SHA256SUMS.txt"
+        )
     if summary["overall_status"] != "READY" or len(summary["ready_models"]) != len(MODEL_SPECS):
         raise RuntimeError(
             "Installed standalone artifacts verification failed: "
-            f"ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']}"
+            f"ready_models={summary['ready_models']}, demo_ready={summary['demo_ready']}, "
+            f"ood_gate={ood_gate_info.get('status')}"
         )
 
     return {
@@ -793,6 +1025,7 @@ def verify_installed_standalone_layout(
         "sidecar_size_bytes": sidecar_exe.stat().st_size,
         "embedded_file_count": len(sums_map),
         "distribution_scope": manifest_data.get("distribution_scope"),
+        "ood_gate": ood_gate_info,
         "summary": summary,
     }
 
@@ -1077,6 +1310,14 @@ def package_companion_bundle(
                 key: {"sha256": info["sha256"], "run_id": info["run_id"]}
                 for key, info in staged["models"].items()
             },
+            "ood_gate": {
+                "status": (staged.get("ood_gate") or {}).get("status"),
+                "sha256": (staged.get("ood_gate") or {}).get("sha256"),
+                "fit_rows": (staged.get("ood_gate") or {}).get("fit_rows"),
+                "preprocessor_artifact_sha256": (staged.get("ood_gate") or {}).get(
+                    "preprocessor_artifact_sha256"
+                ),
+            },
             "demo_sha256": {key: info["sha256"] for key, info in staged["demo"].items()},
             "files": sorted(staged["companion_files"]),
         }
@@ -1329,6 +1570,37 @@ def _verify_companion_bundle_manifest(
             raise RuntimeError(
                 "COMPANION_BUNDLE_MANIFEST files list does not match COMPANION_SHA256SUMS.txt."
             )
+
+    ood_rel = OOD_REFERENCE_GATE_REL.as_posix()
+    ood_block = bundle_manifest.get("ood_gate")
+    if ood_rel in sums_map:
+        if not isinstance(ood_block, dict) or not ood_block.get("sha256"):
+            raise RuntimeError(
+                "COMPANION_BUNDLE_MANIFEST missing ood_gate metadata for packaged OOD gate."
+            )
+        if str(ood_block.get("status") or "") != "FITTED":
+            raise RuntimeError(
+                f"COMPANION_BUNDLE_MANIFEST ood_gate status must be 'FITTED', got {ood_block.get('status')!r}."
+            )
+        if str(ood_block.get("sha256") or "").lower() != str(sums_map[ood_rel]).lower():
+            raise RuntimeError(
+                "COMPANION_BUNDLE_MANIFEST ood_gate sha256 mismatch with COMPANION_SHA256SUMS.txt."
+            )
+        prep_manifest_path = resolved_root / PREPROCESSOR_MANIFEST_REL
+        if prep_manifest_path.is_file():
+            prep_manifest = _read_json_dict(prep_manifest_path, str(PREPROCESSOR_MANIFEST_REL))
+            expected_prep_sha = str(prep_manifest.get("artifact_sha256") or "").lower()
+            ood_prep_sha = str(ood_block.get("preprocessor_artifact_sha256") or "").lower()
+            if expected_prep_sha and ood_prep_sha != expected_prep_sha:
+                raise RuntimeError(
+                    "COMPANION_BUNDLE_MANIFEST ood_gate preprocessor_artifact_sha256 mismatch with HEAD manifest."
+                )
+    elif isinstance(ood_block, dict) and (
+        ood_block.get("sha256") is not None or str(ood_block.get("status") or "") == "FITTED"
+    ):
+        raise RuntimeError(
+            "COMPANION_BUNDLE_MANIFEST ood_gate sha256 mismatch: artifact missing from COMPANION_SHA256SUMS.txt."
+        )
 
 
 def _has_symlink_ancestor(path: Path, stop_at: Path) -> bool:
@@ -2482,7 +2754,7 @@ def _execute_four_model_api_suite(
         ):
             raise RuntimeError(f"{key}: unexpected analyze inference run_id: {inference_run_id!r}")
         if (
-            gate.get("source_id") != "source:nf-v3-canonical"
+            gate.get("source_id") not in ("source:nf-v3-canonical", "source:ait-nds-v2")
             or gate.get("provenance_verified") is not True
             or gate.get("compatibility_status") != expected_compat
         ):
@@ -2491,7 +2763,11 @@ def _execute_four_model_api_suite(
         results = az.get("results") or []
         non_ood = [r for r in results if not r.get("is_ood_flagged")]
         ood_rows = [r for r in results if r.get("is_ood_flagged")]
-        if az.get("total_rows") != 200 or len(non_ood) != 198 or len(ood_rows) != 2:
+        if (
+            az.get("total_rows") != 200
+            or (len(non_ood), len(ood_rows)) not in ((198, 2), (200, 0))
+            or len(non_ood) + len(ood_rows) != 200
+        ):
             raise RuntimeError(
                 f"{key}: unexpected OOD split total={az.get('total_rows')}, "
                 f"non_ood={len(non_ood)}, ood={len(ood_rows)}"
@@ -2517,10 +2793,12 @@ def _execute_four_model_api_suite(
                 f"{key}: evaluate labels_sha256 mismatch ({ev.get('labels_sha256')} != {expected_labels_sha})"
             )
         cm = ev["confusion_matrix"]
-        if cm["tp"] + cm["fp"] + cm["tn"] + cm["fn"] != 198 or ev.get("abstained_rows") != 2:
+        if cm["tp"] + cm["fp"] + cm["tn"] + cm["fn"] != len(non_ood) or ev.get(
+            "abstained_rows"
+        ) != len(ood_rows):
             raise RuntimeError(f"{key}: invalid confusion matrix coverage: {ev}")
         if key in ("random_forest", "xgboost") and (
-            ev["f1"] < 0.99 or cm["tp"] != 100 or cm["tn"] != 98
+            ev["f1"] < 0.99 or cm["tp"] != 100 or cm["tn"] != (len(non_ood) - 100)
         ):
             raise RuntimeError(f"{key}: unexpected supervised demo metrics: {ev}")
         if key == "isolation_forest" and (ev["f1"] < 0.80 or cm["tp"] < 80 or cm["tn"] < 80):
@@ -3819,7 +4097,10 @@ def run_four_model_e2e_verification(
                 except subprocess.TimeoutExpired:
                     proc.kill()
                     proc.wait(timeout=5)
-            tmp_dir.cleanup()
+            try:
+                tmp_dir.cleanup()
+            except OSError:
+                pass
         backend_origin = "api_only_run_api"
 
     is_clean_runner = env_tier in CLEAN_MACHINE_ENVIRONMENT_TIERS and verified_identity is not None
@@ -3918,13 +4199,14 @@ def run_four_model_e2e_verification(
 
 
 def _validate_confusion_matrix_and_metrics(model_key: str, entry: Dict[str, Any]) -> None:
+    evaluated_rows = entry.get("evaluated_rows")
+    abstained_rows = entry.get("abstained_rows")
     if (
         type(entry.get("total_rows")) is not int
         or entry.get("total_rows") != 200
-        or type(entry.get("evaluated_rows")) is not int
-        or entry.get("evaluated_rows") != 198
-        or type(entry.get("abstained_rows")) is not int
-        or entry.get("abstained_rows") != 2
+        or type(evaluated_rows) is not int
+        or type(abstained_rows) is not int
+        or (evaluated_rows, abstained_rows) not in ((198, 2), (200, 0))
     ):
         raise RuntimeError(f"E2E attestation invalid row counts/OOD coverage for {model_key}")
 
@@ -3938,17 +4220,18 @@ def _validate_confusion_matrix_and_metrics(model_key: str, entry: Dict[str, Any]
             )
 
     tn, fp, fn, tp = cm["tn"], cm["fp"], cm["fn"], cm["tp"]
-    if tn + fp + fn + tp != 198 or tn + fp != 98 or tp + fn != 100:
+    expected_benign = evaluated_rows - 100
+    if tn + fp + fn + tp != evaluated_rows or tn + fp != expected_benign or tp + fn != 100:
         raise RuntimeError(
-            f"E2E attestation confusion_matrix counts do not match 98 benign + 100 attack for {model_key}: {cm}"
+            f"E2E attestation confusion_matrix counts do not match {expected_benign} benign + 100 attack for {model_key}: {cm}"
         )
 
     expected_metrics = {
-        "accuracy": (tp + tn) / 198.0,
+        "accuracy": (tp + tn) / float(evaluated_rows),
         "precision": tp / (tp + fp) if (tp + fp) > 0 else 0.0,
         "recall": tp / (tp + fn) if (tp + fn) > 0 else 0.0,
         "fpr": fp / (fp + tn) if (fp + tn) > 0 else 0.0,
-        "prediction_coverage": 198.0 / 200.0,
+        "prediction_coverage": evaluated_rows / 200.0,
     }
     prec = expected_metrics["precision"]
     rec = expected_metrics["recall"]
@@ -3969,7 +4252,7 @@ def _validate_confusion_matrix_and_metrics(model_key: str, entry: Dict[str, Any]
     f1_val = float(entry["f1"])
     fpr_val = float(entry["fpr"])
     if model_key in ("random_forest", "xgboost"):
-        if tp != 100 or tn != 98 or fp != 0 or fn != 0 or f1_val < 0.99:
+        if tp != 100 or tn != expected_benign or fp != 0 or fn != 0 or f1_val < 0.99:
             raise RuntimeError(
                 f"E2E attestation {model_key} failed supervised threshold gate: cm={cm}, f1={f1_val}"
             )
@@ -4676,13 +4959,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--distribution-scope",
         type=str,
         default="private-build-only",
-        help="Distribution permission scope for embedded NF-UNSW-NB15-v3 artifacts.",
+        help="Distribution permission scope for embedded NetFlow Sentinel v2 artifacts.",
     )
     parser.add_argument(
         "--verify-distribution-permission",
         type=str,
         default=None,
-        help="Verify distribution permission gate for embedded NF-UNSW-NB15-v3 artifacts.",
+        help="Verify distribution permission gate for embedded NetFlow Sentinel v2 artifacts.",
     )
     parser.add_argument(
         "--target-channel",
@@ -4812,6 +5095,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Expected 64-char SHA-256 of embedded netflow-sentinel-backend.exe sidecar.",
+    )
+    parser.add_argument(
+        "--expect-ood-gate-sha256",
+        type=str,
+        default=None,
+        help="Optional trusted expected 64-char SHA-256 of artifacts/ml/ood_reference_gate.json.",
     )
     parser.add_argument(
         "--package-bundle",
@@ -5223,9 +5512,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     summary = (
-        verify_companion_artifacts(root=args.root)
+        verify_companion_artifacts(
+            root=args.root,
+            expected_ood_gate_sha256=args.expect_ood_gate_sha256,
+        )
         if args.runtime_dir is None
-        else verify_companion_artifacts(root=args.root, runtime_dir=args.runtime_dir)
+        else verify_companion_artifacts(
+            root=args.root,
+            runtime_dir=args.runtime_dir,
+            expected_ood_gate_sha256=args.expect_ood_gate_sha256,
+        )
     )
     _emit_json(summary, args.output_json)
     return 0 if summary["overall_status"] == "READY" else 1

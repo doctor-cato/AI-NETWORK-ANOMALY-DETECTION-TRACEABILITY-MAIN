@@ -1,21 +1,15 @@
 #!/usr/bin/env python3
-"""Unit tests for XGBoost model — Issue #31 / C3.
+"""Unit tests for XGBoost model — v2 constructor & configuration checks.
 
 Tests in this file are data-free: they verify import, config, and constructor
-behaviour only.  No training or inference is performed, and no synthetic records
+behaviour only. No training or inference is performed, and no synthetic records
 are generated.
 
-Training/evaluation tests are BLOCKED until:
-  - UNSW-NB15 CSV files are present in data/raw/ (verified via MANIFEST sha256).
-  - C1 leakage audit and C2 preprocessing pipeline are complete and verified.
-
-Status progression expected:
-  IMPLEMENTED  →  TESTED (this file)  →  EXPERIMENTALLY VALIDATED (after real data run).
+Real-data v2 training and evaluation on AIT-NDS-v2 / CTU-SME-11 are verified
+separately via ``scripts/train_xgboost.py`` and ``reports/models/xgboost_manifest.json``.
 """
 
 import copy
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Import and dependency tests
@@ -210,34 +204,3 @@ def _booster_not_fitted(model):
         return False  # booster exists — model was fitted
     except Exception:
         return True  # expected: no booster before fit
-
-
-# ---------------------------------------------------------------------------
-# Training/evaluation: BLOCKED
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.skip(
-    reason=(
-        "BLOCKED — training requires UNSW-NB15 CSV in data/raw/ (verified by MANIFEST sha256), "
-        "C1 leakage audit passed, and C2 preprocessing pipeline implemented. "
-        "Do not run until all preconditions are met."
-    )
-)
-def test_xgboost_train_and_evaluate_on_real_data():
-    """Placeholder: train XGBoost and compute metrics on real UNSW-NB15 split.
-
-    Preconditions (all must be met before un-skipping):
-      1. data/raw/UNSW_NB15_training-set.csv and UNSW_NB15_testing-set.csv present.
-      2. SHA-256 verified against data/UNSW_NB15_MANIFEST.json.
-      3. C1 leakage audit complete (group/near-duplicate overlap reviewed).
-      4. C2 preprocessing pipeline implemented and fit boundary confirmed.
-      5. Split performed BEFORE any preprocessing fit.
-      6. Target column confirmed: 'Label' (binary) or 'Attack' (multiclass category).
-
-    When unblocked, this test must record:
-      - run_id, issue, commit/worktree, dataset sha256, split seed, feature schema,
-        target/label mapping, preprocessing config, model config, dependency versions,
-        command, artifact hash, and real metrics (Precision/Recall/F1/Macro-F1/FPR).
-    """
-    raise NotImplementedError("BLOCKED — see skip reason above.")

@@ -1,7 +1,11 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { getModelBenchmarkReport } from "../api";
   import type {
+    BenchmarkSplitMetricsItem,
     CsvAnalyzeResponse,
     CsvEvaluateResponse,
+    ModelBenchmarkReportResponse,
     ModelStatusItem,
   } from "../types";
   import { getModelGovernanceInfo, shortDigest } from "../utils";
@@ -15,6 +19,7 @@
     errorsByModel?: Record<string, string>;
     batchFileSha256?: string | null;
     batchLabelsSha256?: string | null;
+    benchmarkReport?: ModelBenchmarkReportResponse | null;
     canRunComparison: boolean;
     hasLabelsPath: boolean;
     busy: boolean;
@@ -31,6 +36,7 @@
     errorsByModel = {},
     batchFileSha256 = null,
     batchLabelsSha256 = null,
+    benchmarkReport = undefined,
     canRunComparison,
     hasLabelsPath,
     busy,
@@ -44,15 +50,53 @@
     models.filter((m) => m.ready && Boolean(analysesByModel[m.model_key])).length,
   );
 
-  function fmtPct(v: number | undefined): string {
+  let fetchedBenchmark = $state<ModelBenchmarkReportResponse | null>(null);
+  let benchmarkLoading = $state(false);
+  let benchmarkError = $state<string | null>(null);
+
+  let activeBenchmark = $derived(
+    fetchedBenchmark ?? (benchmarkReport !== undefined ? benchmarkReport : null),
+  );
+
+  export async function refreshBenchmarkReport() {
+    benchmarkLoading = true;
+    benchmarkError = null;
+    try {
+      fetchedBenchmark = await getModelBenchmarkReport();
+    } catch (err) {
+      benchmarkError = err instanceof Error ? err.message : String(err);
+    } finally {
+      benchmarkLoading = false;
+    }
+  }
+
+  onMount(() => {
+    if (benchmarkReport === undefined) {
+      void refreshBenchmarkReport();
+    }
+  });
+
+  function fmtPct(v: number | null | undefined): string {
     return typeof v === "number" && Number.isFinite(v)
       ? `${(v * 100).toFixed(2)}%`
       : "—";
   }
 
-  function fmtThreshold(v: number | null): string {
-    if (v === null || !Number.isFinite(v)) return "N/A";
+  function fmtMetric(v: number | null | undefined, digits = 4): string {
+    return typeof v === "number" && Number.isFinite(v) ? v.toFixed(digits) : "—";
+  }
+
+  function fmtThreshold(v: number | null | undefined): string {
+    if (v === null || v === undefined || !Number.isFinite(v)) return "N/A";
     return Math.abs(v) >= 1000 ? v.toFixed(2) : v.toFixed(4);
+  }
+
+  function formatCrossSourceSummary(cs: BenchmarkSplitMetricsItem): string {
+    const parts = [`F1 ${fmtPct(cs.f1)}`, `FPR ${fmtPct(cs.fpr)}`];
+    if (typeof cs.roc_auc === "number" && Number.isFinite(cs.roc_auc)) {
+      parts.push(`ROC ${cs.roc_auc.toFixed(4)}`);
+    }
+    return parts.join(" · ");
   }
 </script>
 
@@ -204,12 +248,223 @@
   </div>
 </section>
 
+<section
+  class="card"
+  aria-labelledby="official-benchmark-heading"
+  data-testid="official-benchmark-section"
+  style="margin-bottom: 14px;"
+>
+  <div class="card-header">
+    <div>
+      <h3 id="official-benchmark-heading" class="card-title">
+        <Icons name="chart" size={17} />
+        Báo cáo Benchmark Chính thức (AIT-NDS-v2 Test &amp; Cross-Source CTU/UWF)
+      </h3>
+      <div class="benchmark-meta-row">
+        {#if activeBenchmark?.evaluation_partition}
+          <span class="badge badge-info mono">Split: {activeBenchmark.evaluation_partition}</span>
+        {/if}
+        {#if activeBenchmark?.dataset_provenance}
+          <span class="badge badge-blocked">{activeBenchmark.dataset_provenance}</span>
+        {/if}
+        {#if activeBenchmark?.sources_loaded?.length}
+          <span class="badge badge-benign mono">
+            Sources: {activeBenchmark.sources_loaded.join(", ")}
+          </span>
+        {/if}
+        {#if activeBenchmark?.data_status}
+          <span
+            class="badge"
+            class:badge-benign={activeBenchmark.data_status === "CONNECTED"}
+            class:badge-warning={activeBenchmark.data_status !== "CONNECTED"}
+          >
+            {activeBenchmark.data_status}
+          </span>
+        {/if}
+      </div>
+    </div>
+    <button
+      type="button"
+      class="btn btn-sm"
+      disabled={benchmarkLoading}
+      onclick={() => void refreshBenchmarkReport()}
+    >
+      <Icons name="refresh" size={14} spin={benchmarkLoading} />
+      {benchmarkLoading ? "Đang tải..." : "Làm mới Benchmark"}
+    </button>
+  </div>
+
+  {#if benchmarkError}
+    <div class="banner banner-warning" role="status" style="margin-bottom: 10px;">
+      <Icons name="alert" size={16} />
+      <div>
+        <strong>Không nạp được Báo cáo Benchmark Chính thức:</strong> {benchmarkError}. Tính năng so sánh CSV batch phía trên vẫn hoạt động bình thường.
+      </div>
+    </div>
+  {/if}
+
+  {#if benchmarkLoading && !activeBenchmark}
+    <div class="banner banner-info" role="status">
+      <Icons name="refresh" size={16} spin={true} />
+      <span>Đang tải báo cáo benchmark chính thức từ backend...</span>
+    </div>
+  {:else if !activeBenchmark || activeBenchmark.data_status === "EMPTY" || activeBenchmark.models.length === 0}
+    <div class="banner banner-info" role="status" data-testid="benchmark-empty-banner">
+      <Icons name="alert" size={16} />
+      <span>
+        Chưa có dữ liệu Báo cáo Benchmark Chính thức (trạng thái: {activeBenchmark?.data_status ?? "EMPTY"}). Vui lòng kiểm tra artifact trong <code>reports/experiments/ml/</code>.
+      </span>
+    </div>
+  {:else}
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Mô hình</th>
+            <th>Deployment Tier</th>
+            <th>AIT-Test ROC-AUC</th>
+            <th>PR-AUC</th>
+            <th>AIT-Test F1</th>
+            <th>AIT-Test FPR</th>
+            <th>Cross-Source Zero-Shot (CTU-Echo, CTU-Win7AD, UWF-ZeekData24)</th>
+            <th>Top Features (tree_feature_importances / validation_permutation_importance)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each activeBenchmark.models as entry (entry.model_key)}
+            <tr>
+              <td>
+                <strong>{entry.display_name}</strong>
+                <div class="benchmark-sub mono">
+                  {entry.model_type} · Ngưỡng: {fmtThreshold(entry.decision_threshold)}
+                  {#if entry.threshold_source}
+                    ({entry.threshold_source})
+                  {/if}
+                </div>
+              </td>
+              <td>
+                <span
+                  class="badge"
+                  class:badge-warning={entry.deployment_tier === "RESEARCH_ONLY"}
+                  class:badge-info={entry.deployment_tier !== "RESEARCH_ONLY"}
+                >
+                  {entry.deployment_tier}
+                </span>
+              </td>
+              <td class="mono">{fmtMetric(entry.in_domain?.roc_auc)}</td>
+              <td class="mono">{fmtMetric(entry.in_domain?.pr_auc)}</td>
+              <td class="mono">{fmtPct(entry.in_domain?.f1)}</td>
+              <td class="mono">{fmtPct(entry.in_domain?.fpr)}</td>
+              <td>
+                {#if entry.cross_source.length === 0}
+                  <span class="mono">—</span>
+                {:else}
+                  <div class="cross-source-list">
+                    {#each entry.cross_source as cs (cs.dataset)}
+                      <div class="cross-source-item mono">
+                        <strong>{cs.dataset}:</strong> {formatCrossSourceSummary(cs)}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </td>
+              <td>
+                {#if entry.top_features.length === 0}
+                  <span class="mono">—</span>
+                {:else}
+                  <div class="feature-list">
+                    {#each entry.top_features.slice(0, 5) as feat (feat.feature)}
+                      <div class="feature-item mono">
+                        <span>{feat.feature}</span>
+                        <span class="feature-val">{feat.importance.toFixed(4)}</span>
+                        {#if feat.method}
+                          <span class="badge badge-blocked">{feat.method}</span>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+
+    {#if activeBenchmark.limitations.length > 0}
+      <div class="limitations-box">
+        <strong>Giới hạn khoa học (Limitations):</strong>
+        <ul>
+          {#each activeBenchmark.limitations as lim, idx (idx)}
+            <li>{lim}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+  {/if}
+</section>
+
 <style>
   .batch-digests {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
     margin-top: 6px;
+  }
+
+  .benchmark-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .benchmark-sub {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+
+  .cross-source-list,
+  .feature-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    white-space: normal;
+  }
+
+  .cross-source-item,
+  .feature-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    line-height: 1.35;
+  }
+
+  .feature-val {
+    color: var(--accent-primary);
+    font-weight: 600;
+  }
+
+  .limitations-box {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .limitations-box ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+  }
+
+  .limitations-box li {
+    margin-bottom: 3px;
   }
 
   .model-error-text {

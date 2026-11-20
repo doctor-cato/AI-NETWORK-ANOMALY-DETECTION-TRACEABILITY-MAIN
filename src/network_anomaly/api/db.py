@@ -9,10 +9,12 @@ external KMS integration is required for active payload encryption).
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator, Optional, Union
+from typing import Any, Dict, Generator, List, Optional, Sequence, Union
 
 from network_anomaly.config import resolve_default_db_path
 
@@ -108,6 +110,7 @@ CREATE TABLE IF NOT EXISTS rotation_audit (
     new_key_id TEXT NOT NULL,
     dry_run INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'SUCCESS',
+    risk_score REAL,
     reason TEXT,
     created_at TEXT NOT NULL
 );
@@ -157,6 +160,60 @@ CREATE INDEX IF NOT EXISTS idx_sec_sim_created_at
     ON security_response_simulations(created_at);
 CREATE INDEX IF NOT EXISTS idx_sec_sim_analysis_id
     ON security_response_simulations(analysis_id);
+"""
+
+# NetFlow Sentinel v2.0 extension tables applied automatically by DatabaseManager
+# and kept separate from SCHEMA_SQL so v1 -> v2 migration tests can verify upgrade from v1.0.0.
+V2_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS unified_security_events (
+    event_id TEXT PRIMARY KEY,
+    schema_version TEXT NOT NULL DEFAULT '2.0.0',
+    event_timestamp TEXT NOT NULL,
+    event_kind TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    source_ip TEXT,
+    dest_ip TEXT,
+    source_port INTEGER,
+    dest_port INTEGER,
+    protocol TEXT,
+    is_ml_complete INTEGER NOT NULL DEFAULT 0,
+    validation_status TEXT NOT NULL DEFAULT 'VALID',
+    raw_provenance TEXT NOT NULL DEFAULT '{}',
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_use_ts ON unified_security_events(event_timestamp);
+CREATE INDEX IF NOT EXISTS idx_use_entity ON unified_security_events(entity_id);
+
+CREATE TABLE IF NOT EXISTS behavioral_vectors (
+    vector_id TEXT PRIMARY KEY,
+    entity_id TEXT NOT NULL,
+    window_start TEXT NOT NULL,
+    window_end TEXT NOT NULL,
+    vector_version TEXT NOT NULL DEFAULT '2.0',
+    dimensions INTEGER NOT NULL DEFAULT 16,
+    vector_json TEXT,
+    is_encrypted INTEGER NOT NULL DEFAULT 0,
+    key_id TEXT,
+    ciphertext BLOB,
+    nonce BLOB,
+    tag BLOB,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_bv_entity_win ON behavioral_vectors(entity_id, window_start);
+
+CREATE TABLE IF NOT EXISTS encrypted_vault (
+    vault_id TEXT PRIMARY KEY,
+    item_type TEXT NOT NULL,
+    key_id TEXT NOT NULL,
+    nonce BLOB NOT NULL,
+    tag BLOB NOT NULL,
+    ciphertext BLOB NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -230,10 +287,17 @@ class DatabaseManager:
             if self.db_path != ":memory:":
                 conn.close()
 
-    def initialize_schema(self) -> None:
+    def initialize_schema(self, include_v2: bool = True) -> None:
         """Execute DDL statements to ensure all required tables and indices exist."""
         with self.transaction() as conn:
             conn.executescript(SCHEMA_SQL)
+            if include_v2:
+                conn.executescript(V2_SCHEMA_SQL)
+            audit_cols = {
+                row["name"] for row in conn.execute("PRAGMA table_info(rotation_audit);").fetchall()
+            }
+            if audit_cols and "risk_score" not in audit_cols:
+                conn.execute("ALTER TABLE rotation_audit ADD COLUMN risk_score REAL;")
 
     def is_healthy(self) -> bool:
         """Check if SQLite database is accessible and responsive."""
@@ -243,6 +307,140 @@ class DatabaseManager:
                 return bool(row and row["alive"] == 1)
         except Exception:
             return False
+
+    def insert_unified_security_event(self, event_record: Dict[str, Any]) -> str:
+        """Persist a canonical unified security event into unified_security_events."""
+        event_id = str(event_record["event_id"])
+        created_at = str(event_record.get("created_at") or datetime.now(timezone.utc).isoformat())
+        payload = event_record.get("payload_json")
+        if payload is None:
+            payload = json.dumps(event_record, sort_keys=True, default=str)
+        elif not isinstance(payload, str):
+            payload = json.dumps(payload, sort_keys=True, default=str)
+
+        with self.transaction() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO unified_security_events (
+                    event_id, schema_version, event_timestamp, event_kind, source_id, entity_id,
+                    source_ip, dest_ip, source_port, dest_port, protocol,
+                    is_ml_complete, validation_status, raw_provenance, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    event_id,
+                    str(event_record.get("schema_version") or "2.0.0"),
+                    str(event_record["event_timestamp"]),
+                    str(event_record["event_kind"]),
+                    str(event_record["source_id"]),
+                    str(event_record["entity_id"]),
+                    event_record.get("source_ip"),
+                    event_record.get("dest_ip"),
+                    event_record.get("source_port"),
+                    event_record.get("dest_port"),
+                    event_record.get("protocol"),
+                    int(bool(event_record.get("is_ml_complete", False))),
+                    str(event_record.get("validation_status") or "VALID"),
+                    json.dumps(
+                        event_record.get("raw_provenance") or {}, sort_keys=True, default=str
+                    ),
+                    payload,
+                    created_at,
+                ),
+            )
+        return event_id
+
+    def insert_unified_security_events_batch(self, event_records: Sequence[Dict[str, Any]]) -> int:
+        """Persist a batch of canonical unified security events in a single transaction."""
+        if not event_records:
+            return 0
+        now_iso = datetime.now(timezone.utc).isoformat()
+        rows = []
+        for event_record in event_records:
+            event_id = str(event_record["event_id"])
+            created_at = str(event_record.get("created_at") or now_iso)
+            payload = event_record.get("payload_json")
+            if payload is None:
+                payload = json.dumps(event_record, sort_keys=True, default=str)
+            elif not isinstance(payload, str):
+                payload = json.dumps(payload, sort_keys=True, default=str)
+            rows.append(
+                (
+                    event_id,
+                    str(event_record.get("schema_version") or "2.0.0"),
+                    str(event_record["event_timestamp"]),
+                    str(event_record["event_kind"]),
+                    str(event_record["source_id"]),
+                    str(event_record["entity_id"]),
+                    event_record.get("source_ip"),
+                    event_record.get("dest_ip"),
+                    event_record.get("source_port"),
+                    event_record.get("dest_port"),
+                    event_record.get("protocol"),
+                    int(bool(event_record.get("is_ml_complete", False))),
+                    str(event_record.get("validation_status") or "VALID"),
+                    json.dumps(
+                        event_record.get("raw_provenance") or {}, sort_keys=True, default=str
+                    ),
+                    payload,
+                    created_at,
+                )
+            )
+        with self.transaction() as conn:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO unified_security_events (
+                    event_id, schema_version, event_timestamp, event_kind, source_id, entity_id,
+                    source_ip, dest_ip, source_port, dest_port, protocol,
+                    is_ml_complete, validation_status, raw_provenance, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                rows,
+            )
+        return len(rows)
+
+    def query_unified_security_events(
+        self,
+        entity_id: Optional[str] = None,
+        event_kind: Optional[str] = None,
+        limit: int = 100,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """Query persisted canonical security events ordered newest first."""
+        clauses: List[str] = []
+        params: List[Any] = []
+        if entity_id is not None:
+            clauses.append("entity_id = ?")
+            params.append(entity_id)
+        if event_kind is not None:
+            clauses.append("event_kind = ?")
+            params.append(event_kind)
+        if start_time is not None:
+            clauses.append("event_timestamp >= ?")
+            params.append(start_time)
+        if end_time is not None:
+            clauses.append("event_timestamp <= ?")
+            params.append(end_time)
+        where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"""
+            SELECT event_id, event_timestamp, event_kind, source_id, entity_id,
+                   source_ip, dest_ip, source_port, dest_port, protocol,
+                   is_ml_complete, validation_status, payload_json, created_at
+            FROM unified_security_events
+            {where_sql}
+            ORDER BY event_timestamp DESC
+            LIMIT ?;
+        """
+        params.append(int(limit))
+        with self.transaction() as conn:
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        results: List[Dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["is_ml_complete"] = bool(item.get("is_ml_complete"))
+            results.append(item)
+        return results
 
     def close(self) -> None:
         """Close persistent resources (if any)."""

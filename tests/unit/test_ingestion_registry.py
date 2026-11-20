@@ -2,7 +2,7 @@
 
 import pytest
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ALL_COLUMNS
+from network_anomaly.data.v2_schema import ALL_CANONICAL_COLUMNS
 from network_anomaly.ingestion.exceptions import SourceUnsupportedError
 from network_anomaly.ingestion.registry import SourceRegistry
 
@@ -12,8 +12,10 @@ def test_registry_contains_default_sources():
     sources = registry.list_sources()
     source_ids = {s.source_id for s in sources}
 
-    assert "source:nf-v3-canonical" in source_ids
-    assert "source:nf-v3-external" in source_ids
+    assert "source:canonical-flow-v2" in source_ids
+    assert "source:ait-nds-v2" in source_ids
+    assert "source:ctu-sme-11" in source_ids
+    assert "source:flow-v2-unverified" in source_ids
     assert "source:zeek-conn" in source_ids
     assert "source:netflow-v5" in source_ids
     assert "source:netflow-v9-ipfix" in source_ids
@@ -24,8 +26,8 @@ def test_registry_contains_default_sources():
 
 def test_registry_get_source_success():
     registry = SourceRegistry()
-    source = registry.get_source("source:nf-v3-canonical")
-    assert source.name == "NF-UNSW-NB15-v3 Canonical Flow"
+    source = registry.get_source("source:canonical-flow-v2")
+    assert source.name == "NetFlow Sentinel Canonical Flow v2"
     assert source.ml_supported is True
     assert source.trace_supported is True
 
@@ -36,12 +38,11 @@ def test_registry_get_unknown_source_raises():
         registry.get_source("source:unknown-corp-proxy")
 
 
-def test_registry_detect_source_netflow_v3():
+def test_registry_detect_source_netflow_v2():
     registry = SourceRegistry()
-    # 47 ML features signature
-    detected = registry.detect_source(list(ALL_COLUMNS))
+    detected = registry.detect_source(list(ALL_CANONICAL_COLUMNS))
     assert detected is not None
-    assert detected.source_id == "source:nf-v3-external"
+    assert detected.source_id in {"source:canonical-flow-v2", "source:ait-nds-v2"}
     assert detected.ml_supported is True
 
 

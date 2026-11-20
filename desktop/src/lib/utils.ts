@@ -227,7 +227,7 @@ export function getModelGovernanceInfo(modelKey: string): ModelGovernanceInfo {
       badgeLabel: "Chính thức (Validated)",
       shortRole: "Baseline đã kiểm chứng",
       explanation:
-        "Mô hình chuẩn đã được kiểm chứng đầy đủ trên tập dữ liệu NF-UNSW-NB15-v3. Hỗ trợ đầy đủ phân loại và khuyến nghị phản ứng (dry-run).",
+        "Mô hình chuẩn đã được kiểm chứng trên tập dữ liệu AIT-NDS-v2 (canonical-flow-v2-18). Hỗ trợ đầy đủ phân loại và khuyến nghị phản ứng (dry-run).",
     };
   }
   if (modelKey === "xgboost") {

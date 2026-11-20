@@ -56,8 +56,8 @@ def _create_controller_git_repo(tmp_path: Path) -> Dict[str, Any]:
     rel_files = [
         "scripts/verify_companion_artifacts.py",
         "desktop/package.json",
-        "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-        "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+        "data/V2_SPLIT_MANIFEST.json",
+        "reports/preprocessing/v2_flow_preprocessing_manifest.json",
         "reports/models/random_forest_manifest.json",
         "reports/models/xgboost_manifest.json",
         "reports/models/isolation_forest_manifest.json",
@@ -133,9 +133,9 @@ def _simulate_clean_target_execution(
     assert not (target_dir / ".git").exists()
     assert not (target_dir / "scripts").exists()
 
-    split_sha = _sha256_path(ctrl_repo / "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+    split_sha = _sha256_path(ctrl_repo / "data/V2_SPLIT_MANIFEST.json")
     prep_sha = json.loads(
-        (ctrl_repo / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+        (ctrl_repo / "reports/preprocessing/v2_flow_preprocessing_manifest.json").read_text(
             encoding="utf-8"
         )
     )["artifact_sha256"]

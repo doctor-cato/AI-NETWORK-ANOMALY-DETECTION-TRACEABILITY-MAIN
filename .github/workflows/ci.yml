@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/v2-integration]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -18,8 +18,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
       - name: Install quality tools
-        run: python -m pip install --prefer-binary ruff black
+        run: uv pip install --python "$(which python)" "ruff==0.17.5" "black==26.10.1"
       - name: Ruff
         run: python -m ruff check src scripts tests
       - name: Black
@@ -38,14 +41,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
-          cache-dependency-path: pyproject.toml
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
       - name: Cache Python virtualenv
         id: cache-venv
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-py${{ steps.setup-py.outputs.python-version }}-${{ hashFiles('pyproject.toml') }}
+          key: venv-v2-${{ runner.os }}-py${{ steps.setup-py.outputs.python-version }}-${{ hashFiles('pyproject.toml') }}
       - name: Install dependencies into virtualenv
         shell: bash
         run: |
@@ -54,8 +58,10 @@ jobs:
           fi
           if [ -d ".venv/Scripts" ]; then
             VENV_BIN="$PWD/.venv/Scripts"
+            VENV_PY=".venv/Scripts/python.exe"
           else
             VENV_BIN="$PWD/.venv/bin"
+            VENV_PY=".venv/bin/python"
           fi
           if command -v cygpath >/dev/null 2>&1; then
             cygpath -w "$VENV_BIN" >> "$GITHUB_PATH"
@@ -63,31 +69,34 @@ jobs:
             echo "$VENV_BIN" >> "$GITHUB_PATH"
           fi
           if [ "${{ steps.cache-venv.outputs.cache-hit }}" = "true" ]; then
-            "$VENV_BIN/python" -m pip install --no-deps --no-build-isolation -e .
+            uv pip install --python "$VENV_PY" --no-deps --no-build-isolation -e .
           else
-            "$VENV_BIN/python" -m pip install --prefer-binary setuptools wheel -e .
+            uv pip install --python "$VENV_PY" setuptools wheel -e ".[dev]"
           fi
       - name: Check environment
         run: python scripts/check_environment.py
       - name: Check OpenAPI & API contract sync
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/export_openapi_spec.py --check
       - name: Verify distribution governance & attribution notices
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
       - name: Check syntax
         run: python -m compileall -q src scripts tests
       - name: Check imports (core modules, not just syntax)
         run: |
-          python -c "import network_anomaly, network_anomaly.config, network_anomaly.data, network_anomaly.data.nf_unsw_nb15_v3, network_anomaly.eda, network_anomaly.eda.evidence, network_anomaly.eda.figures, network_anomaly.eda.profiling, network_anomaly.eda.report, network_anomaly.evaluation.metrics, network_anomaly.features, network_anomaly.inference.pipeline, network_anomaly.ingestion, network_anomaly.models.autoencoder, network_anomaly.models.isolation_forest, network_anomaly.models.random_forest, network_anomaly.models.xgboost_model, network_anomaly.models.xgboost_protocol, network_anomaly.preprocessing, network_anomaly.visualization.plots"
+          python -c "import network_anomaly, network_anomaly.config, network_anomaly.data, network_anomaly.data.v2_schema, network_anomaly.data.taxonomy, network_anomaly.data.quality_gate, network_anomaly.data.split, network_anomaly.canonical.event, network_anomaly.canonical.feature_contract, network_anomaly.crypto.aead, network_anomaly.crypto.key_manager, network_anomaly.crypto.rotation, network_anomaly.crypto.encrypted_storage, network_anomaly.behavioral.vector, network_anomaly.behavioral.sessionizer, network_anomaly.behavioral.similarity, network_anomaly.risk.scoring, network_anomaly.risk.aggregation, network_anomaly.trace.graph, network_anomaly.trace.engine, network_anomaly.trace.timeline, network_anomaly.trace.investigation, network_anomaly.telemetry.collector, network_anomaly.telemetry.pcap_reader, network_anomaly.telemetry.log_tailer, network_anomaly.telemetry.modes, network_anomaly.streaming.pipeline, network_anomaly.streaming.feature_extractor, network_anomaly.streaming.realtime_inference, network_anomaly.streaming.alert_manager, network_anomaly.streaming.live_orchestrator, network_anomaly.ml.ood_gate, network_anomaly.ml.threshold_calibration, network_anomaly.pipeline.multi_source, network_anomaly.ingestion.adapters.v2_adapter, network_anomaly.eda, network_anomaly.evaluation.metrics, network_anomaly.features, network_anomaly.inference.pipeline, network_anomaly.ingestion, network_anomaly.models.autoencoder, network_anomaly.models.isolation_forest, network_anomaly.models.random_forest, network_anomaly.models.xgboost_model, network_anomaly.preprocessing"
       - name: Unit + integration tests
-        run: python -m pytest tests -q --tb=short
-      - name: Validate NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
-        run: python scripts/validate_data.py
-      - name: Exploratory analysis of NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
-        run: python scripts/eda_nf_unsw_nb15_v3.py
-      - name: EDA reproducibility check — SKIPPED if raw package is absent
-        run: python scripts/verify_eda_reproducibility.py
-      - name: Preprocess NF-UNSW-NB15-v3 — SKIPPED if raw package is absent
-        run: python scripts/preprocess_nf_unsw_nb15_v3.py
+        run: python -m pytest tests -q -rs --tb=short
+      - name: Verify AIT multi-source dataset manifest & checksums
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: python scripts/fetch_multi_source_dataset.py --verify-only
+      - name: Validate live telemetry & authorized lab acceptance
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: python scripts/run_live_lab_acceptance.py
+      - name: Verify full system performance benchmark
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        run: python scripts/benchmark_full_system.py
 
   desktop-frontend:
     runs-on: ubuntu-latest
@@ -99,7 +108,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: desktop/package-lock.json
       - name: Install frontend dependencies
-        run: npm --prefix desktop ci
+        run: npm --prefix desktop ci --prefer-offline --no-audit --no-fund
       - name: Svelte & TypeScript typecheck
         run: npm --prefix desktop run check
       - name: Frontend unit tests
@@ -116,22 +125,41 @@ jobs:
       CARGO_TERM_COLOR: "always"
     steps:
       - uses: actions/checkout@v4
+      - id: setup-py
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify desktop version consistency
+        run: python scripts/check_desktop_version.py --check
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+      - name: Cache Python backend virtualenv
+        id: cache-desktop-venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: desktop-venv-v1-${{ runner.os }}-py${{ steps.setup-py.outputs.python-version }}-${{ hashFiles('requirements-runtime.txt', 'pyproject.toml') }}
+      - name: Install Python backend dependencies
+        shell: bash
+        run: |
+          if [ ! -d ".venv" ]; then
+            python -m venv .venv
+          fi
+          VENV_BIN="$PWD/.venv/Scripts"
+          VENV_PY=".venv/Scripts/python.exe"
+          cygpath -w "$VENV_BIN" >> "$GITHUB_PATH"
+          if [ "${{ steps.cache-desktop-venv.outputs.cache-hit }}" = "true" ]; then
+            uv pip install --python "$VENV_PY" --no-deps --no-build-isolation -e .
+          else
+            uv pip install --python "$VENV_PY" setuptools wheel -r requirements-runtime.txt
+            uv pip install --python "$VENV_PY" --no-deps --no-build-isolation -e .
+          fi
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - name: Rust formatting check
         run: cargo fmt --manifest-path desktop/src-tauri/Cargo.toml --check
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: requirements-runtime.txt
-      - name: Install Python backend dependencies
-        run: |
-          pip install --prefer-binary -r requirements-runtime.txt
-          pip install --no-deps -e .
-      - name: Verify desktop version consistency
-        run: python scripts/check_desktop_version.py --check
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -143,7 +171,7 @@ jobs:
           cache-on-failure: true
       - name: Build Svelte frontend assets for Tauri embed
         run: |
-          npm --prefix desktop ci
+          npm --prefix desktop ci --prefer-offline --no-audit --no-fund
           npm --prefix desktop run build
       - name: Rust clippy lint
         run: cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
@@ -153,3 +181,11 @@ jobs:
         run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
       - name: Build Windows desktop executable
         run: cargo build --manifest-path desktop/src-tauri/Cargo.toml --bins
+      - name: NetFlow Rust formatting check
+        run: cargo fmt --manifest-path telemetry/netflow-rs/Cargo.toml --check
+      - name: NetFlow Rust clippy lint
+        run: cargo clippy --manifest-path telemetry/netflow-rs/Cargo.toml --all-targets -- -D warnings
+      - name: NetFlow Rust unit tests
+        run: cargo test --manifest-path telemetry/netflow-rs/Cargo.toml
+      - name: NetFlow Rust self-test
+        run: cargo run --quiet --manifest-path telemetry/netflow-rs/Cargo.toml -- --self-test

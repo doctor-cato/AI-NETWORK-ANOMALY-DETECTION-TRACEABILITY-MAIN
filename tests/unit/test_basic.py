@@ -30,10 +30,10 @@ def test_build_rf():
 
     wrapper = RandomForestModel()
     assert wrapper.is_fitted is False
-    assert len(wrapper.feature_names) == 47
+    assert len(wrapper.feature_names) == 18
 
     # Verify that an unfitted model rejects inference calls fail-closed
-    X_dummy = np.zeros((5, 47))
+    X_dummy = np.zeros((5, 18))
     with pytest.raises(NotFittedError):
         estimator.predict(X_dummy)
     with pytest.raises(NotFittedError, match="not fitted yet"):
@@ -46,6 +46,6 @@ def test_build_isolation_forest():
     """Verify Isolation Forest model initialization and unfitted state."""
     model = build_if()
     assert model is not None
-    X_dummy = np.zeros((5, 47))
+    X_dummy = np.zeros((5, 18))
     with pytest.raises(NotFittedError):
         model.predict(X_dummy)

@@ -1,11 +1,11 @@
-"""Tests for InferenceEligibilityGate, OOD abstention, and anti-imputation (Issue #58)."""
+"""Tests for InferenceEligibilityGate, OOD abstention, and anti-imputation."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.ingestion.adapters import ZeekConnAdapter
 from network_anomaly.ingestion.gate import (
     ContentChecksum,
@@ -17,16 +17,14 @@ from network_anomaly.ingestion.schemas import InferenceEligibility
 
 
 def _create_clean_df(n_rows: int = 5) -> pd.DataFrame:
-    """Helper to create a clean DataFrame with all 47 features and valid values."""
-    data = {col: [10.0] * n_rows for col in ML_FEATURE_COLUMNS}
-    data["MIN_TTL"] = [31] * n_rows
-    data["MAX_TTL"] = [64] * n_rows
-    data["FLOW_DURATION_MILLISECONDS"] = [100.0] * n_rows
-    data["LONGEST_FLOW_PKT"] = [1500] * n_rows
-    data["SHORTEST_FLOW_PKT"] = [64] * n_rows
-    data["L4_SRC_PORT"] = [1024] * n_rows
-    data["L4_DST_PORT"] = [80] * n_rows
-    data["PROTOCOL"] = [6] * n_rows
+    """Helper to create a clean DataFrame with all 18 v2 features and valid values."""
+    data = {col: [0.5] * n_rows for col in ML_FEATURE_COLUMNS}
+    data["duration_ms"] = [100.0] * n_rows
+    data["bytes_in"] = [500.0] * n_rows
+    data["bytes_out"] = [1000.0] * n_rows
+    data["pkts_in"] = [5.0] * n_rows
+    data["pkts_out"] = [6.0] * n_rows
+    data["protocol_num"] = [6.0] * n_rows
     return pd.DataFrame(data)
 
 
@@ -34,8 +32,7 @@ def test_gate_anti_imputation_rejects_missing_features():
     """Missing mandatory baseline features must NOT be imputed; gate must ABSTAIN."""
     gate = InferenceEligibilityGate()
     df = _create_clean_df(3)
-    # Drop mandatory features
-    df = df.drop(columns=["PROTOCOL", "MIN_TTL", "FLOW_DURATION_MILLISECONDS"])
+    df = df.drop(columns=["protocol_num", "bytes_in", "duration_ms"])
 
     decision = gate.evaluate(df=df)
     assert not decision.can_proceed_to_ml
@@ -50,9 +47,8 @@ def test_gate_anti_imputation_rejects_nan_and_infinite_values():
     """Features with NaN or infinite values must NOT be filled synthetically."""
     gate = InferenceEligibilityGate()
     df = _create_clean_df(4)
-    # Inject NaN and Inf into quantitative features
-    df.loc[1, "IN_BYTES"] = np.nan
-    df.loc[2, "FLOW_DURATION_MILLISECONDS"] = np.inf
+    df.loc[1, "bytes_in"] = np.nan
+    df.loc[2, "duration_ms"] = np.inf
 
     decision = gate.evaluate(df=df)
     assert not decision.can_proceed_to_ml
@@ -63,13 +59,12 @@ def test_gate_anti_imputation_rejects_nan_and_infinite_values():
     assert any("anti-imputation" in r.lower() for r in decision.abstention_reasons)
 
 
-def test_gate_detects_ood_inverted_ttl_and_negative_duration():
+def test_gate_detects_ood_negative_bytes_and_negative_duration():
     """Physical protocol invariant violations must fail closed with ABSTAINED decision."""
     gate = InferenceEligibilityGate(strict_ood_abstain=True)
     df = _create_clean_df(3)
-    df.loc[0, "FLOW_DURATION_MILLISECONDS"] = -150.0  # Illegal negative duration
-    df.loc[1, "MIN_TTL"] = 120
-    df.loc[1, "MAX_TTL"] = 40  # Inverted TTL: MIN > MAX
+    df.loc[0, "duration_ms"] = -150.0  # Illegal negative duration
+    df.loc[1, "bytes_in"] = -50.0  # Illegal negative byte counter
 
     decision = gate.evaluate(df=df)
     assert not decision.can_proceed_to_ml
@@ -80,20 +75,18 @@ def test_gate_detects_ood_inverted_ttl_and_negative_duration():
     assert any("hard constraint violation" in r.lower() for r in decision.abstention_reasons)
 
 
-def test_gate_detects_zero_ttl_telemetry_drift_and_abstains():
-    """MIN_TTL=0 indicates probe capture drop or aggregation; must NOT be imputed."""
-    gate = InferenceEligibilityGate(reject_zero_ttl=True)
+def test_gate_detects_ratio_out_of_bounds_and_abstains():
+    """Ratio outside [0, 1] violates flow physical invariant."""
+    gate = InferenceEligibilityGate(strict_ood_abstain=True)
     df = _create_clean_df(5)
-    # Inject MIN_TTL = 0
-    df["MIN_TTL"] = [0, 0, 0, 0, 0]
+    df["bytes_in_ratio"] = [1.5, 1.5, 1.5, 1.5, 1.5]
 
     decision = gate.evaluate(df=df)
     assert not decision.can_proceed_to_ml
     assert not decision.is_eligible
     assert decision.decision == "ABSTAINED"
     assert decision.ood_report is not None
-    assert decision.ood_report.zero_ttl_count == 5
-    assert any("min_ttl=0" in f.lower() for f in decision.warning_flags)
+    assert decision.ood_report.hard_violation_count == 5
 
 
 def test_gate_check_and_filter_clean_data():
@@ -101,14 +94,12 @@ def test_gate_check_and_filter_clean_data():
     gate = InferenceEligibilityGate()
     df = _create_clean_df(5)
 
-    # Test tuple unpacking
     eligible_df, decision = gate.check_and_filter(df)
     assert len(eligible_df) == 5
     assert decision.can_proceed_to_ml
     assert decision.is_eligible
     assert decision.decision == "PROCEED"
 
-    # Test object attribute access
     result = gate.check_and_filter(df)
     assert result.is_eligible
     assert result.decision.decision == "PROCEED"
@@ -120,8 +111,7 @@ def test_gate_check_and_filter_ineligible_data():
     """Ineligible data returns empty DataFrame and decision='ABSTAINED'."""
     gate = InferenceEligibilityGate()
     df = _create_clean_df(4)
-    # Invalidate mandatory columns
-    df = df.drop(columns=["TCP_FLAGS", "PROTOCOL"])
+    df = df.drop(columns=["bytes_in", "protocol_num"])
 
     eligible_df, decision = gate.check_and_filter(df)
     assert len(eligible_df) == 0
@@ -133,10 +123,10 @@ def test_gate_check_and_filter_ineligible_data():
 def test_dataset_identity_decoupled_from_content_checksum():
     """A slice sample's SHA-256 differs from full dataset; must verify via provenance."""
     identity = DatasetIdentity(
-        name="NF-CSE-CIC-IDS2018-v3",
-        doi="10.48610/ece9b83",
-        format="NetFlow-v3",
-        column_count=55,
+        name="AIT-NDS-v2",
+        doi="10.5281/zenodo.13168643",
+        format="Tstat-v2-Canonical-18",
+        column_count=18,
     )
     # Checksum of a 100k sample slice (not full 4.2GB file)
     sample_sha = "aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
@@ -147,7 +137,7 @@ def test_dataset_identity_decoupled_from_content_checksum():
         slice_type="sample_slice",
     )
     manifest = {
-        "dataset_name": "NF-CSE-CIC-IDS2018-v3",
+        "dataset_name": "AIT-NDS-v2",
         "sample_sha256": sample_sha,
         "sample_rows_extracted": 100000,
         "full_dataset_sha256": "11223344556677889900aabbccddeeff11223344556677889900aabbccddeeff",

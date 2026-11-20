@@ -10,11 +10,12 @@ from typing import Any, Dict, Optional, Union
 
 import joblib
 import numpy as np
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.exceptions import NotFittedError
 
 from network_anomaly.config import RANDOM_FOREST_DEFAULTS
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
@@ -57,8 +58,7 @@ class RandomForestModel:
       - predict_proba(X)
 
     Note:
-      fit() is an interface for future training on real NF-UNSW-NB15-v3 data once
-      Issue #7 and #8 are completed. It is NOT executed in this setup phase.
+      Accepts features matching the NetFlow Sentinel v2 18-feature contract (`canonical-flow-v2-18`).
     """
 
     def __init__(
@@ -280,8 +280,17 @@ class RandomForestModel:
             else:
                 raise ValueError(f"Unsupported target label type at index {idx}: {type(val)}")
 
+    def _to_estimator_frame(self, X: Any) -> Any:
+        """Convert 2D array inputs to a DataFrame when estimator expects named columns."""
+        if hasattr(X, "columns"):
+            return X
+        feature_names = getattr(self._estimator, "feature_names_in_", None)
+        if feature_names is not None and len(feature_names) == len(self.feature_names):
+            return pd.DataFrame(np.asarray(X, dtype=np.float64), columns=list(feature_names))
+        return X
+
     def fit(self, X: Any, y: Any, **fit_params: Any) -> "RandomForestModel":
-        """Fit interface on verified NF-UNSW-NB15-v3 feature data."""
+        """Fit interface on verified v2 canonical flow feature data."""
         n_samples = self._validate_feature_input(X)
         self._validate_target_input(y, expected_samples=n_samples)
 
@@ -294,21 +303,21 @@ class RandomForestModel:
         if not self._is_fitted:
             raise NotFittedError(
                 "This RandomForestModel instance is not fitted yet. "
-                "Call 'fit' with verified NF-UNSW-NB15-v3 training data before using 'predict'."
+                "Call 'fit' with verified v2 training data before using 'predict'."
             )
         self._validate_feature_input(X)
-        return self._estimator.predict(X)
+        return self._estimator.predict(self._to_estimator_frame(X))
 
     def predict_proba(self, X: Any) -> Any:
         """Predict class probabilities for anomaly detection."""
         if not self._is_fitted:
             raise NotFittedError(
                 "This RandomForestModel instance is not fitted yet. "
-                "Call 'fit' with verified NF-UNSW-NB15-v3 training data "
+                "Call 'fit' with verified v2 training data "
                 "before using 'predict_proba'."
             )
         self._validate_feature_input(X)
-        return self._estimator.predict_proba(X)
+        return self._estimator.predict_proba(self._to_estimator_frame(X))
 
     def save(
         self,
@@ -339,7 +348,7 @@ class RandomForestModel:
                 list(self._estimator.classes_) if hasattr(self._estimator, "classes_") else None
             ),
             "configuration_id": getattr(
-                self.config, "configuration_id", "rf-baseline-canonical-v1"
+                self.config, "configuration_id", "rf-v2-baseline-canonical-v1"
             ),
             "is_canonical_baseline": getattr(self.config, "is_canonical_baseline", True),
             "estimator": self._estimator,
@@ -671,9 +680,9 @@ class RandomForestModel:
                     "Manifest claims is_canonical_baseline=True, but "
                     "model payload has is_canonical_baseline=False."
                 )
-            if model.config.configuration_id != "rf-baseline-canonical-v1":
+            if model.config.configuration_id != "rf-v2-baseline-canonical-v1":
                 raise ValueError(
-                    f"Canonical baseline configuration_id must be 'rf-baseline-canonical-v1', "
+                    f"Canonical baseline configuration_id must be 'rf-v2-baseline-canonical-v1', "
                     f"got {model.config.configuration_id!r}"
                 )
             model.config.validate()

@@ -30,9 +30,10 @@ import numpy as np
 from sklearn.ensemble import IsolationForest
 from sklearn.exceptions import NotFittedError
 
-from network_anomaly.config import ISOLATION_FOREST_DEFAULTS
+from network_anomaly.config import ISOLATION_FOREST_DEFAULTS, PROJECT_ROOT
+from network_anomaly.data.v2_schema import FEATURE_CONTRACT_ID
 
-FEATURE_CONTRACT_VERSION = "nf-unsw-nb15-v3-baseline-47"
+FEATURE_CONTRACT_VERSION = FEATURE_CONTRACT_ID
 _SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -389,7 +390,7 @@ class IsolationForestModel:
         )
         self.model_type: str = "IsolationForest"
         self.task: str = "unsupervised_anomaly_detection"
-        self.target: str = "Label"
+        self.target: str = "label_binary"
         self.positive_class: str = "Attack"
         self.classes_: np.ndarray = np.array([0, 1], dtype=int)
         self.feature_names: Optional[Tuple[str, ...]] = None
@@ -500,6 +501,11 @@ class IsolationForestModel:
         joblib.dump(payload, p, compress=3)
         artifact_sha256 = _sha256_file(p)
 
+        try:
+            rel_art_path = p.resolve().relative_to(PROJECT_ROOT.resolve()).as_posix()
+        except ValueError:
+            rel_art_path = p.as_posix()
+
         if manifest_path is not None:
             mp = Path(manifest_path)
             mp.parent.mkdir(parents=True, exist_ok=True)
@@ -508,7 +514,7 @@ class IsolationForestModel:
                 "task": self.task,
                 "target": self.target,
                 "positive_class": self.positive_class,
-                "model_artifact_path": str(p.as_posix()),
+                "model_artifact_path": rel_art_path,
                 "model_artifact_sha256": artifact_sha256,
                 "model_artifact_size_bytes": p.stat().st_size,
                 "preprocessor_artifact_sha256": preprocessor_artifact_sha256,
@@ -524,8 +530,9 @@ class IsolationForestModel:
             }
             if extra_manifest_fields:
                 manifest_data.update(extra_manifest_fields)
-            with mp.open("w", encoding="utf-8") as f:
+            with mp.open("w", encoding="utf-8", newline="\n") as f:
                 json.dump(manifest_data, f, indent=2, ensure_ascii=False)
+                f.write("\n")
 
         return artifact_sha256
 
@@ -571,7 +578,7 @@ class IsolationForestModel:
         elif hasattr(payload, "decision_function"):
             if not isinstance(payload, IsolationForest):
                 raise ValueError(
-                    "Artifact payload must be IsolationForest, " f"got {type(payload).__name__}"
+                    f"Artifact payload must be IsolationForest, got {type(payload).__name__}"
                 )
             config = payload.get_params() if hasattr(payload, "get_params") else {}
             model = cls(config=config)

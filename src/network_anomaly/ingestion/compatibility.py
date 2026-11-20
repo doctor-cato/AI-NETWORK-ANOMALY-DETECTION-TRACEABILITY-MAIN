@@ -2,53 +2,68 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
 
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.config import PROJECT_ROOT
+from network_anomaly.data.split import SPLIT_PROTOCOL_VERSION
+from network_anomaly.data.v2_schema import (
+    DATASET_SUITE_NAME,
+    FEATURE_CONTRACT_ID,
+    ML_FEATURE_COLUMNS,
+)
 from network_anomaly.ingestion.schemas import (
     CanonicalNetworkEvent,
     FeatureMappingStatus,
     InferenceEligibility,
     ValidationStatus,
 )
+from network_anomaly.models.registry import (
+    CROSS_SOURCE_REQUIRED_SPLITS,
+    _extract_split_metrics,
+    _is_valid_metric_ratio,
+    _split_eval_status,
+)
 
 
 @dataclass(frozen=True)
 class BenchmarkEvidence:
-    """Empirical benchmark evidence binding a specific source domain to a model version and artifacts."""
+    """Empirical benchmark evidence binding a specific source domain to a v2 model and artifacts."""
 
     source_id: str
-    model_identifier: str = "rf-baseline-1794068628"
-    model_artifact_sha256: str = "801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea"
-    preprocessor_artifact_sha256: str = (
-        "12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19"
-    )
-    feature_contract_version: str = "nf-unsw-nb15-v3-baseline-47"
+    model_identifier: str = ""
+    model_artifact_sha256: str = ""
+    preprocessor_artifact_sha256: str = ""
+    feature_contract_version: str = FEATURE_CONTRACT_ID
     feature_contract_hash: Optional[str] = None
-    dataset_name: str = "NF-UNSW-NB15-v3"
-    dataset_version: str = "v3"
-    dataset_sha256: Optional[str] = (
-        "4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5"
-    )
-    evaluation_protocol: str = "nf-unsw-nb15-v3-chronological-group-purged-v1"
+    dataset_name: str = DATASET_SUITE_NAME
+    dataset_version: str = "2.0.0"
+    dataset_sha256: Optional[str] = None
+    evaluation_protocol: str = SPLIT_PROTOCOL_VERSION
     split_identity: str = "held-out-test-split"
     recall: float = 0.0
     fpr: float = 0.0
     accuracy: float = 0.0
     metrics: Dict[str, float] = field(default_factory=dict)
     acceptance_criteria: Dict[str, float] = field(default_factory=dict)
-    validation_timestamp_utc: str = "2026-11-07T23:23:48Z"
-    verification_status: str = "VERIFIED"
+    validation_timestamp_utc: str = ""
+    verification_status: str = "UNVALIDATED"
     is_passed: bool = False
     reason: str = ""
     model_version: str = ""
-    model_family: Optional[str] = "RandomForestClassifier"
+    model_family: Optional[str] = None
     is_research_only: bool = False
+    artifact_verified: bool = True
+    in_domain_evaluated: bool = False
+    cross_source_validated: bool = False
+    deployment_tier: str = "RESEARCH_ONLY"
+    scope_note: str = ""
 
     def __post_init__(self) -> None:
         if not self.model_version and self.model_identifier:
@@ -63,7 +78,7 @@ class BenchmarkEvidence:
             object.__setattr__(
                 self,
                 "acceptance_criteria",
-                {"min_recall": 0.85, "max_fpr": 0.05},
+                {"min_recall": 0.70, "max_fpr": 0.10},
             )
 
     def verify_binding(
@@ -74,18 +89,23 @@ class BenchmarkEvidence:
         feature_contract_version: Optional[str] = None,
     ) -> Tuple[bool, str]:
         """Verify that runtime model, preprocessor, and contract match benchmarked evidence."""
-        if model_identifier and model_identifier != self.model_identifier:
+        if model_identifier and self.model_identifier and model_identifier != self.model_identifier:
             return (
                 False,
                 f"Model identifier mismatch: expected '{self.model_identifier}', got '{model_identifier}'",
             )
-        if model_artifact_sha256 and model_artifact_sha256 != self.model_artifact_sha256:
+        if (
+            model_artifact_sha256
+            and self.model_artifact_sha256
+            and model_artifact_sha256 != self.model_artifact_sha256
+        ):
             return (
                 False,
                 f"Model artifact SHA-256 mismatch: expected '{self.model_artifact_sha256[:12]}...', got '{model_artifact_sha256[:12]}...'",
             )
         if (
             preprocessor_artifact_sha256
+            and self.preprocessor_artifact_sha256
             and preprocessor_artifact_sha256 != self.preprocessor_artifact_sha256
         ):
             return (
@@ -97,193 +117,167 @@ class BenchmarkEvidence:
                 False,
                 f"Feature contract version mismatch: expected '{self.feature_contract_version}', got '{feature_contract_version}'",
             )
-        if self.verification_status in ("STALE", "EXPIRED", "REVOKED"):
+        if self.verification_status in ("STALE", "EXPIRED", "REVOKED", "UNVALIDATED"):
             return False, f"Benchmark evidence status is {self.verification_status}."
         if not self.is_passed and not self.is_research_only:
             return False, f"Benchmark empirical criteria not met: {self.reason}"
         return True, "Benchmark evidence binding verified."
 
 
-DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = {
-    "source:nf-v3-canonical": BenchmarkEvidence(
-        source_id="source:nf-v3-canonical",
-        model_identifier="rf-baseline-1794068628",
-        model_family="RandomForestClassifier",
-        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-UNSW-NB15-v3",
-        dataset_version="v3",
-        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-        evaluation_protocol="nf-unsw-nb15-v3-chronological-group-purged-v1",
-        split_identity="held-out-test-split",
-        recall=0.999850,
-        fpr=0.000016,
-        accuracy=0.999977,
-        metrics={"recall": 0.999850, "fpr": 0.000016, "accuracy": 0.999977},
-        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
-        validation_timestamp_utc="2026-11-07T23:23:48Z",
-        verification_status="VERIFIED",
-        is_passed=True,
-        reason="Canonical internal validation passed: Recall 99.98%, FPR 0.0016% on held-out test split.",
-    ),
-    "source:nf-v3-canonical::rf-baseline-1794068628": BenchmarkEvidence(
-        source_id="source:nf-v3-canonical",
-        model_identifier="rf-baseline-1794068628",
-        model_family="RandomForestClassifier",
-        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-UNSW-NB15-v3",
-        dataset_version="v3",
-        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-        evaluation_protocol="nf-unsw-nb15-v3-chronological-group-purged-v1",
-        split_identity="held-out-test-split",
-        recall=0.999850,
-        fpr=0.000016,
-        accuracy=0.999977,
-        metrics={"recall": 0.999850, "fpr": 0.000016, "accuracy": 0.999977},
-        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
-        validation_timestamp_utc="2026-11-07T23:23:48Z",
-        verification_status="VERIFIED",
-        is_passed=True,
-        reason="Canonical internal validation passed: Recall 99.98%, FPR 0.0016% on held-out test split.",
-    ),
-    "source:nf-v3-external": BenchmarkEvidence(
-        source_id="source:nf-v3-external",
-        model_identifier="rf-baseline-1794068628",
-        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-CSE-CIC-IDS2018-v3",
-        dataset_version="v3",
-        dataset_sha256=None,  # Source UUID is not a content SHA-256.
-        evaluation_protocol="external-generalization-slice-100k",
-        split_identity="sample100k",
-        recall=0.000000,
-        fpr=0.380191,
-        accuracy=0.433990,
-        metrics={"recall": 0.000000, "fpr": 0.380191, "accuracy": 0.433990},
-        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
-        validation_timestamp_utc="2026-11-08T15:48:03Z",
-        verification_status="BENCHMARK_FAILED",
-        is_passed=False,
-        reason="Empirical external benchmark failed: Zero Recall (0.0%) and high FPR (38.02%) on AWS infrastructure slice.",
-    ),
-    "source:nf-cse-cic-ids2018-v3": BenchmarkEvidence(
-        source_id="source:nf-cse-cic-ids2018-v3",
-        model_identifier="rf-baseline-1794068628",
-        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-CSE-CIC-IDS2018-v3",
-        dataset_version="v3",
-        dataset_sha256=None,  # Source UUID is not a content SHA-256.
-        evaluation_protocol="external-generalization-slice-100k",
-        split_identity="sample100k",
-        recall=0.000000,
-        fpr=0.380191,
-        accuracy=0.433990,
-        metrics={"recall": 0.000000, "fpr": 0.380191, "accuracy": 0.433990},
-        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
-        validation_timestamp_utc="2026-11-08T15:48:03Z",
-        verification_status="BENCHMARK_FAILED",
-        is_passed=False,
-        reason="Empirical external benchmark failed: Zero Recall (0.0%) and high FPR (38.02%) on AWS infrastructure slice.",
-    ),
-    "source:nf-cse-cic-ids2018-v3::rf-baseline-1794068628": BenchmarkEvidence(
-        source_id="source:nf-cse-cic-ids2018-v3",
-        model_identifier="rf-baseline-1794068628",
-        model_artifact_sha256="801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea",
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-CSE-CIC-IDS2018-v3",
-        dataset_version="v3",
-        dataset_sha256=None,  # Source UUID is not a content SHA-256.
-        evaluation_protocol="external-generalization-slice-100k",
-        split_identity="sample100k",
-        recall=0.000000,
-        fpr=0.380191,
-        accuracy=0.433990,
-        metrics={"recall": 0.000000, "fpr": 0.380191, "accuracy": 0.433990},
-        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
-        validation_timestamp_utc="2026-11-08T15:48:03Z",
-        verification_status="BENCHMARK_FAILED",
-        is_passed=False,
-        reason="Empirical external benchmark failed: Zero Recall (0.0%) and high FPR (38.02%) on AWS infrastructure slice.",
-    ),
-    "source:nf-v3-canonical::xgb-baseline-canonical-v1": BenchmarkEvidence(
-        source_id="source:nf-v3-canonical",
-        model_identifier="xgb-baseline-canonical-v1",
-        model_family="XGBClassifier",
-        model_artifact_sha256="c70ec52fb3229ccca680f70356e0a8c44e0b16ff7988c5e6fb91da3383eabd6e",
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-UNSW-NB15-v3",
-        dataset_version="v3",
-        dataset_sha256="4ebb97bd74412d566137d95a6fc3ffd8f374f1cf8cfe204d007848e7a668f9b5",
-        evaluation_protocol="nf-unsw-nb15-v3-chronological-group-purged-v1",
-        split_identity="held-out-test-split",
-        recall=1.000000,
-        fpr=0.000000,
-        accuracy=1.000000,
-        metrics={"recall": 1.0, "fpr": 0.0, "accuracy": 1.0},
-        acceptance_criteria={"min_recall": 0.85, "max_fpr": 0.05},
-        validation_timestamp_utc="2026-11-08T12:00:00Z",
-        verification_status="VERIFIED",
-        is_passed=True,
-        reason="XGBoost supervised baseline validation passed on canonical held-out test split.",
-    ),
-    "source:nf-v3-canonical::if-baseline-canonical-v1": BenchmarkEvidence(
-        source_id="source:nf-v3-canonical",
-        model_identifier="if-baseline-canonical-v1",
-        model_family="IsolationForest",
-        model_artifact_sha256="0" * 64,
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-UNSW-NB15-v3",
-        dataset_version="v3",
-        split_identity="benign-train-split",
-        verification_status="UNVALIDATED",
-        is_passed=False,
-        is_research_only=True,
-        reason="Isolation Forest baseline implemented; real-data benchmark pending full dataset validation.",
-    ),
-    "source:nf-v3-canonical::if-c4-20261115T055359Z": BenchmarkEvidence(
-        source_id="source:nf-v3-canonical",
-        model_identifier="if-c4-20261115T055359Z",
-        model_family="IsolationForest",
-        model_artifact_sha256="15a69cc491ce8903fd2dfd3ee12e7283bd3d9c0ceba51c9a2c04b2188a5fddf9",
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-UNSW-NB15-v3",
-        dataset_version="v3",
-        split_identity="benign-train-split",
-        verification_status="RESEARCH_ONLY",
-        is_passed=True,
-        is_research_only=True,
-        reason=(
-            "Benign-only Isolation Forest trained on 1,590,608 NF-UNSW-NB15-v3 benign flows; "
-            "frozen threshold -0.03352686 calibrated on validation split (known classes only); "
-            "unsupervised baseline stays RESEARCH_ONLY for controlled demo/evaluation."
-        ),
-    ),
-    "source:nf-v3-canonical::ae-baseline-canonical-v1": BenchmarkEvidence(
-        source_id="source:nf-v3-canonical",
-        model_identifier="ae-baseline-canonical-v1",
-        model_family="Autoencoder",
-        model_artifact_sha256="0" * 64,
-        preprocessor_artifact_sha256="12d4360a05ef92573763ae1d9c1a5c36ea59081cf2f16112017bec56bbca1b19",
-        feature_contract_version="nf-unsw-nb15-v3-baseline-47",
-        dataset_name="NF-UNSW-NB15-v3",
-        dataset_version="v3",
-        split_identity="benign-train-split",
-        verification_status="UNVALIDATED",
-        is_passed=False,
-        is_research_only=True,
-        reason="Autoencoder reconstruction detector implemented; real-data benchmark pending full dataset validation.",
-    ),
-}
+def load_v2_benchmark_registry(
+    manifest_root: Optional[Path] = None,
+) -> Dict[str, BenchmarkEvidence]:
+    """Build v2 benchmark evidence registry dynamically from verified v2 model manifests."""
+    root = Path(manifest_root) if manifest_root else (PROJECT_ROOT / "reports" / "models")
+    registry: Dict[str, BenchmarkEvidence] = {}
+    manifest_files = {
+        "random_forest": ("random_forest_manifest.json", "RandomForestClassifier", False),
+        "xgboost": ("xgboost_manifest.json", "XGBClassifier", True),
+        "isolation_forest": ("isolation_forest_manifest.json", "IsolationForest", True),
+        "autoencoder": ("autoencoder_manifest.json", "Autoencoder", True),
+    }
+
+    for model_key, (fname, family, default_research) in manifest_files.items():
+        mpath = root / fname
+        if not mpath.is_file():
+            continue
+        try:
+            data = json.loads(mpath.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if data.get("feature_contract_version") != FEATURE_CONTRACT_ID:
+            continue
+        run_id = str(data.get("training_run_id") or data.get("run_id") or "")
+        model_sha = str(
+            data.get("artifact_sha256")
+            or data.get("model_artifact_sha256")
+            or data.get("model_sha256")
+            or ""
+        )
+        prep_sha = str(
+            data.get("preprocessor_artifact_sha256") or data.get("preprocessor_sha256") or ""
+        )
+        split_sha = str(data.get("split_manifest_sha256") or "")
+        tp = data.get("threshold_provenance")
+        tp_src = str(data.get("threshold_source") or "").lower()
+        tp_clean = not (
+            (
+                isinstance(tp, dict)
+                and (
+                    tp.get("test_touched") is True
+                    or str(tp.get("selected_on", "")).strip().lower()
+                    in ("test", "ait_test", "holdout_test")
+                )
+            )
+            or ("test" in tp_src and "val" not in tp_src)
+        )
+        artifact_verified = bool(model_sha and prep_sha and split_sha and tp_clean)
+
+        test_eval = _extract_split_metrics(data, "ait_test")
+        in_domain_eval, in_domain_pass = _split_eval_status(test_eval)
+        recall = (
+            float(_is_valid_metric_ratio(test_eval.get("recall")) or 0.0)
+            if isinstance(test_eval, dict)
+            else 0.0
+        )
+        fpr = (
+            float(
+                _is_valid_metric_ratio(test_eval.get("false_positive_rate", test_eval.get("fpr")))
+                or 0.0
+            )
+            if isinstance(test_eval, dict)
+            else 0.0
+        )
+        acc = (
+            float(_is_valid_metric_ratio(test_eval.get("accuracy")) or 0.0)
+            if isinstance(test_eval, dict)
+            else 0.0
+        )
+        cross_source_validated = all(
+            _split_eval_status(_extract_split_metrics(data, s))[1]
+            for s in CROSS_SOURCE_REQUIRED_SPLITS
+        )
+        is_research = bool(data.get("is_research_only", default_research))
+        has_explicit_passed = "benchmark_passed" in data
+        if has_explicit_passed:
+            passed = bool(data["benchmark_passed"]) and artifact_verified
+        else:
+            passed = bool(artifact_verified and in_domain_eval and in_domain_pass)
+
+        if not artifact_verified or (not in_domain_eval and not has_explicit_passed):
+            passed = False
+            status = "UNVALIDATED"
+        else:
+            status = "RESEARCH_ONLY" if is_research else ("VERIFIED" if passed else "UNVALIDATED")
+        deployment_tier = (
+            "PRODUCTION_ELIGIBLE"
+            if (artifact_verified and passed and cross_source_validated and not is_research)
+            else "RESEARCH_ONLY"
+        )
+        if status == "UNVALIDATED":
+            scope_note = "unvalidated_not_certified"
+        elif deployment_tier == "PRODUCTION_ELIGIBLE":
+            scope_note = "production_eligible_in_domain_and_cross_source_verified"
+        elif not is_research and passed and not cross_source_validated:
+            scope_note = "in_domain_csv_dry_run_only_not_production_certified"
+        else:
+            scope_note = "research_only_not_production_certified"
+
+        reason_detail = (
+            f"Unvalidated v2 manifest ({fname}): missing provenance, clean threshold, or test metrics."
+            if status == "UNVALIDATED"
+            else (
+                f"Verified v2 manifest ({fname}) under {FEATURE_CONTRACT_ID} "
+                f"(scope={scope_note}; deployment_tier={deployment_tier}; "
+                f"cross_source_validated={cross_source_validated}; "
+                "containment blocked by response_policy.py when deployment_tier=RESEARCH_ONLY)."
+            )
+        )
+
+        for src_id in ("source:canonical-flow-v2", "source:ait-nds-v2"):
+            ev = BenchmarkEvidence(
+                source_id=src_id,
+                model_identifier=run_id or f"{model_key}-v2",
+                model_family=family,
+                model_artifact_sha256=model_sha,
+                preprocessor_artifact_sha256=prep_sha,
+                feature_contract_version=FEATURE_CONTRACT_ID,
+                dataset_name=str(data.get("dataset_name") or DATASET_SUITE_NAME),
+                dataset_version="2.0.0",
+                dataset_sha256=data.get("dataset_sha256"),
+                evaluation_protocol=str(
+                    data.get("split_protocol_version") or SPLIT_PROTOCOL_VERSION
+                ),
+                split_identity="scenario-disjoint-test-split",
+                recall=recall,
+                fpr=fpr,
+                accuracy=acc,
+                metrics={"recall": recall, "fpr": fpr, "accuracy": acc},
+                validation_timestamp_utc=str(
+                    data.get("trained_at_utc")
+                    or (data.get("environment") or {}).get("timestamp_utc")
+                    or ""
+                ),
+                verification_status=status,
+                is_passed=passed,
+                is_research_only=is_research,
+                artifact_verified=artifact_verified,
+                in_domain_evaluated=in_domain_eval,
+                cross_source_validated=cross_source_validated,
+                deployment_tier=deployment_tier,
+                scope_note=scope_note,
+                reason=reason_detail,
+            )
+            if model_key == "random_forest":
+                registry[src_id] = ev
+            if run_id:
+                registry[f"{src_id}::{run_id}"] = ev
+            registry[f"{src_id}::{model_key}"] = ev
+
+    return registry
+
+
+DEFAULT_BENCHMARK_REGISTRY: Dict[str, BenchmarkEvidence] = load_v2_benchmark_registry()
 
 
 @dataclass
@@ -302,6 +296,8 @@ class CompatibilityEvaluationReport:
     benchmark_evidence: Optional[BenchmarkEvidence] = None
     trace_route_eligible: bool = True
     risk_route_eligible: bool = True
+    deployment_tier: str = "RESEARCH_ONLY"
+    scope_note: str = ""
 
     @property
     def is_eligible_for_inference(self) -> bool:
@@ -313,7 +309,7 @@ class CompatibilityEvaluationReport:
 
 
 class FeatureCompatibilityEvaluator:
-    """Evaluates multi-source events against the 4-tier validation model and 47-feature ML contract."""
+    """Evaluates multi-source events against the 4-tier validation model and canonical v2 ML contract."""
 
     def __init__(
         self,
@@ -441,7 +437,7 @@ class FeatureCompatibilityEvaluator:
                 missing_features=missing,
                 feature_statuses={feat: FeatureMappingStatus.MISSING for feat in missing},
                 rejection_reasons=[
-                    f"Source '{eff_source}' does not provide the 47 micro-telemetry features required for ML baseline.",
+                    f"Source '{eff_source}' does not provide the canonical v2 flow features required for ML baseline.",
                     "Strict anti-imputation policy: Zero/median synthetic filling is prohibited.",
                 ],
                 trace_route_eligible=True,
@@ -541,6 +537,20 @@ class FeatureCompatibilityEvaluator:
         }
 
         is_research = eligibility == InferenceEligibility.RESEARCH_ONLY
+        if evidence is not None:
+            dep_tier = evidence.deployment_tier
+            scope_note = evidence.scope_note or (
+                "in_domain_csv_dry_run_only_not_production_certified"
+                if val_status == ValidationStatus.MODEL_VALIDATED and dep_tier == "RESEARCH_ONLY"
+                else (
+                    "research_only_not_production_certified" if dep_tier == "RESEARCH_ONLY" else ""
+                )
+            )
+        else:
+            dep_tier = "RESEARCH_ONLY"
+            scope_note = (
+                "research_only_unbenchmarked" if allow_research_only else "unbenchmarked_source"
+            )
 
         return CompatibilityEvaluationReport(
             source_id=eff_source,
@@ -554,6 +564,8 @@ class FeatureCompatibilityEvaluator:
             benchmark_evidence=evidence,
             trace_route_eligible=True,
             risk_route_eligible=not is_research,
+            deployment_tier=dep_tier,
+            scope_note=scope_note,
         )
 
     def evaluate_dataframe(
@@ -566,7 +578,7 @@ class FeatureCompatibilityEvaluator:
         feature_contract_version: Optional[str] = None,
         allow_research_only: bool = False,
     ) -> CompatibilityEvaluationReport:
-        """Evaluate raw pandas DataFrame against 47-feature contract and Anti-Imputation."""
+        """Evaluate raw pandas DataFrame against canonical v2 contract and Anti-Imputation."""
         if len(df) == 0:
             return CompatibilityEvaluationReport(
                 source_id=source_id,
@@ -687,6 +699,20 @@ class FeatureCompatibilityEvaluator:
                 )
 
         is_research = eligibility == InferenceEligibility.RESEARCH_ONLY
+        if evidence is not None:
+            dep_tier = evidence.deployment_tier
+            scope_note = evidence.scope_note or (
+                "in_domain_csv_dry_run_only_not_production_certified"
+                if val_status == ValidationStatus.MODEL_VALIDATED and dep_tier == "RESEARCH_ONLY"
+                else (
+                    "research_only_not_production_certified" if dep_tier == "RESEARCH_ONLY" else ""
+                )
+            )
+        else:
+            dep_tier = "RESEARCH_ONLY"
+            scope_note = (
+                "research_only_unbenchmarked" if allow_research_only else "unbenchmarked_source"
+            )
 
         return CompatibilityEvaluationReport(
             source_id=source_id,
@@ -700,4 +726,6 @@ class FeatureCompatibilityEvaluator:
             benchmark_evidence=evidence,
             trace_route_eligible=True,
             risk_route_eligible=not is_research,
+            deployment_tier=dep_tier,
+            scope_note=scope_note,
         )

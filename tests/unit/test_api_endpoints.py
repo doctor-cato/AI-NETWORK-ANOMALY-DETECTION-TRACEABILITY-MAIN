@@ -104,8 +104,8 @@ def test_analyze_endpoint_heuristic_fallback_transparency(client: TestClient):
     """Verify fallback returns degraded header and transparent inference_mode when allowed."""
     payload = {
         "events": [
-            {"features": {"IN_BYTES": 400, "OUT_BYTES": 400}},
-            {"features": {"IN_BYTES": 5_000_000, "OUT_BYTES": 0}},
+            {"features": {"bytes_in": 400, "bytes_out": 400}},
+            {"features": {"bytes_in": 5_000_000, "bytes_out": 0}},
         ],
         "model_name": "random_forest",
         "threshold": 0.5,

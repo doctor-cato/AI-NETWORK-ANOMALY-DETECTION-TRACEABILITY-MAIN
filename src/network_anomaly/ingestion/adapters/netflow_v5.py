@@ -21,7 +21,7 @@ class NetFlowV5Adapter(BaseSourceAdapter):
     """Adapter for Cisco NetFlow v5 records.
 
     Transfers 5-tuple and single-direction byte/packet counters to Trace Engine (#24).
-    Abstains from 47-feature ML inference (ml_features is None).
+    Abstains from v2 canonical 18-feature ML inference (ml_features is None).
     """
 
     def __init__(self, source_id: str = "source:netflow-v5", schema_version: str = "5.0.0") -> None:
@@ -80,5 +80,7 @@ class NetFlowV5Adapter(BaseSourceAdapter):
             trace_metadata=trace_meta,
             eligibility=InferenceEligibility.FEATURE_INCOMPATIBLE,
             validation_status=ValidationStatus.SCHEMA_COMPATIBLE,
-            ood_warnings=["NetFlow v5 lacks 41/47 baseline ML features (unidirectional only)."],
+            ood_warnings=[
+                "NetFlow v5 lacks bidirectional flow counters required by canonical-flow-v2-18."
+            ],
         )

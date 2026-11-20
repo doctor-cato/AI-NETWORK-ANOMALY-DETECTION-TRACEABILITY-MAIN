@@ -18,10 +18,8 @@ from fastapi.testclient import TestClient
 
 from network_anomaly.api.db import DatabaseManager
 from network_anomaly.api.desktop_csv import (
-    CANONICAL_NF_UNSW_NB15_V3_SHA256,
     CANONICAL_SPLIT_MANIFEST_PATH,
-    CANONICAL_SPLIT_MANIFEST_SHA256,
-    CANONICAL_VALIDATION_TIME_START_MS,
+    CANONICAL_V2_DATASET_NAME,
     TRUSTED_CANONICAL_VALIDATION_SUBSETS,
     build_deterministic_evidence_timeline,
     compute_deterministic_risk_score,
@@ -33,16 +31,18 @@ from network_anomaly.api.desktop_csv import (
 from network_anomaly.api.main import create_app
 from network_anomaly.api.schemas import CompatibilityGateSummarySchema, CsvFlowPredictionItem
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.inference.predict import InferencePipeline
 
+CANONICAL_V2_DATASET_SHA256 = "cc7553ad813ac0ee696f826a877af7afe9c7e07d3443beb34d8c9c21fbe81acf"
+CANONICAL_SPLIT_MANIFEST_SHA256 = "ed542ee80babca26f6e8ad977168b061e18e99a24be1cbe1ec8767b66d6339e8"
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
 RF_MODEL = ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib"
 XGB_MODEL = ARTIFACTS / "models" / "xgboost" / "xgboost_baseline.joblib"
 IF_MODEL = ARTIFACTS / "models" / "isolation_forest" / "isolation_forest.joblib"
 AE_MODEL = ARTIFACTS / "models" / "autoencoder" / "autoencoder_model.joblib"
-PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
 
 
 def _repeat_slice(values: list[object], n_rows: int) -> list[object]:
@@ -52,7 +52,7 @@ def _repeat_slice(values: list[object], n_rows: int) -> list[object]:
 def _make_synthetic_flow_df(n_rows: int = 4) -> pd.DataFrame:
     data: dict[str, list[object]] = {
         "row_id": [100 + i for i in range(n_rows)],
-        "FLOW_START_MILLISECONDS": _repeat_slice(
+        "timestamp_ms": _repeat_slice(
             [
                 1_700_000_005_000,
                 1_700_000_001_000,
@@ -61,33 +61,20 @@ def _make_synthetic_flow_df(n_rows: int = 4) -> pd.DataFrame:
             ],
             n_rows,
         ),
-        "FLOW_END_MILLISECONDS": _repeat_slice(
-            [
-                1_700_000_005_500,
-                1_700_000_001_500,
-                1_700_000_003_500,
-                1_700_000_001_500,
-            ],
-            n_rows,
-        ),
-        "IPV4_SRC_ADDR": _repeat_slice(["10.0.0.2", "10.0.0.1", "10.0.0.2", "10.0.0.3"], n_rows),
-        "IPV4_DST_ADDR": ["192.168.1.10"] * n_rows,
-        "L4_SRC_PORT": [50000 + i for i in range(n_rows)],
-        "L4_DST_PORT": _repeat_slice([443, 80, 443, 22], n_rows),
+        "source_ip": _repeat_slice(["10.0.0.2", "10.0.0.1", "10.0.0.2", "10.0.0.3"], n_rows),
+        "dest_ip": ["192.168.1.10"] * n_rows,
+        "source_port": [50000 + i for i in range(n_rows)],
+        "dest_port": _repeat_slice([443, 80, 443, 22], n_rows),
     }
     for col in ML_FEATURE_COLUMNS:
-        if col == "MIN_TTL":
-            data[col] = _repeat_slice([62.0, 0.0, 62.0, 254.0], n_rows)
-        elif col == "MAX_TTL":
-            data[col] = _repeat_slice([62.0, 0.0, 62.0, 254.0], n_rows)
-        elif col == "LONGEST_FLOW_PKT":
-            data[col] = [512.0] * n_rows
-        elif col == "SHORTEST_FLOW_PKT":
-            data[col] = [64.0] * n_rows
-        elif col == "MAX_IP_PKT_LEN":
-            data[col] = [512.0] * n_rows
-        elif col == "MIN_IP_PKT_LEN":
-            data[col] = [64.0] * n_rows
+        if col == "duration_ms":
+            data[col] = _repeat_slice([100.0, -10.0, 100.0, 100.0], n_rows)
+        elif col == "protocol_num":
+            data[col] = [6.0] * n_rows
+        elif col in ("bytes_in_ratio", "pkts_in_ratio"):
+            data[col] = [0.4] * n_rows
+        elif col in ("has_response", "is_tcp", "is_udp"):
+            data[col] = [1.0] * n_rows
         else:
             data[col] = [1.0 + i for i in range(n_rows)]
     return pd.DataFrame(data)
@@ -184,7 +171,7 @@ def test_behavioral_summary_and_deterministic_timeline_ordering():
     assert summary.unique_src_ips == 3
     assert summary.top_src_ips[0].key == "10.0.0.2"
     assert summary.top_src_ips[0].count == 2
-    assert "IPV4_SRC_ADDR" in summary.excluded_from_ml_features
+    assert "source_ip" in summary.excluded_from_ml_features
     assert "do not attribute" in summary.non_attribution_notice
 
     items = [
@@ -199,9 +186,9 @@ def test_behavioral_summary_and_deterministic_timeline_ordering():
             risk_score=None if idx == 1 else (80.0 if idx % 2 == 0 else 10.0),
             risk_level="ABSTAINED_OOD" if idx == 1 else ("CRITICAL" if idx % 2 == 0 else "LOW"),
             is_ood_flagged=(idx == 1),
-            flow_start_ms=int(row["FLOW_START_MILLISECONDS"]),
-            src_ip=str(row["IPV4_SRC_ADDR"]),
-            dst_ip=str(row["IPV4_DST_ADDR"]),
+            flow_start_ms=int(row["timestamp_ms"]),
+            src_ip=str(row["source_ip"]),
+            dst_ip=str(row["dest_ip"]),
         )
         for idx, row in df.iterrows()
     ]
@@ -218,14 +205,14 @@ def test_behavioral_summary_and_deterministic_timeline_ordering():
 
 def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path: Path):
     df = _make_synthetic_flow_df(4)
-    # Add Label and Attack to verify strict leakage exclusion from ML contract
-    df["Label"] = [1, 0, 1, 0]
-    df["Attack"] = ["Exploits", "Benign", "Exploits", "Benign"]
+    # Add target labels to verify strict leakage exclusion from ML contract
+    df["label_binary"] = [1, 0, 1, 0]
+    df["attack_category"] = ["Exploitation_And_C2", "Benign", "Exploitation_And_C2", "Benign"]
     flows_csv = tmp_path / "flows.csv"
     df.to_csv(flows_csv, index=False)
 
     labels_csv = tmp_path / "labels.csv"
-    df[["row_id", "Label", "Attack"]].to_csv(labels_csv, index=False)
+    df[["row_id", "label_binary", "attack_category"]].to_csv(labels_csv, index=False)
 
     inspect_resp = client.post(
         "/api/v1/csv/inspect",
@@ -234,10 +221,9 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
     assert inspect_resp.status_code == 200, inspect_resp.text
     ins = inspect_resp.json()
     assert ins["ml_features_valid"] is True
-    assert ins["ml_feature_count"] == 47
-    assert set(ins["target_columns_excluded"]) == {"Label", "Attack"}
-    assert ins["ood_report"]["zero_ttl_count"] == 1
-    assert ins["ood_report"]["hard_violation_count"] == 0
+    assert ins["ml_feature_count"] == 18
+    assert set(ins["target_columns_excluded"]) == {"label_binary", "attack_category"}
+    assert ins["ood_report"]["hard_violation_count"] == 1
     assert ins["ood_report"]["affected_rows_count"] == 1
     assert ins["ood_report"]["abstention_rate"] == 0.25
     assert ins["ood_report"]["prediction_coverage"] == 0.75
@@ -249,10 +235,12 @@ def test_csv_inspect_evaluate_and_export_endpoints(client: TestClient, tmp_path:
             return X.copy()
 
     def _feature_driven_predict(frame: pd.DataFrame) -> pd.DataFrame:
-        # Row 0 (IN_BYTES=1.0) and row 2 (IN_BYTES=3.0) -> Attack; row 3 (IN_BYTES=4.0) -> Benign.
-        # Row 1 (MIN_TTL=0.0) must NEVER reach this predict function.
-        assert (frame["MIN_TTL"] != 0.0).all(), "OOD MIN_TTL==0 row leaked into predict()"
-        preds = [1 if float(v) in {1.0, 3.0} else 0 for v in frame["IN_BYTES"].tolist()]
+        # Row 0 (bytes_in=1.0) and row 2 (bytes_in=3.0) -> Attack; row 3 (bytes_in=4.0) -> Benign.
+        # Row 1 (duration_ms=-10.0) must NEVER reach this predict function.
+        assert (
+            frame["duration_ms"] >= 0.0
+        ).all(), "OOD negative duration row leaked into predict()"
+        preds = [1 if float(v) in {1.0, 3.0} else 0 for v in frame["bytes_in"].tolist()]
         p_att = [0.92 if p == 1 else 0.12 for p in preds]
         return pd.DataFrame(
             {
@@ -420,14 +408,14 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     assert rf_resp.status_code == 200, rf_resp.text
     rf_data = rf_resp.json()
     assert rf_data["total_rows"] == 200
-    assert rf_data["ood_report"]["zero_ttl_count"] == 2
+    assert rf_data["ood_report"]["zero_ttl_count"] == 0
     assert rf_data["ood_report"]["hard_violation_count"] == 0
-    assert rf_data["ood_report"]["affected_rows_count"] == 2
-    assert rf_data["ood_report"]["prediction_coverage"] == 0.99
-    assert rf_data["abstained_rows"] == 2
-    assert rf_data["evaluated_rows"] == 198
-    assert rf_data["prediction_coverage"] == 0.99
-    assert rf_data["compatibility_gate"]["source_id"] == "source:nf-v3-canonical"
+    assert rf_data["ood_report"]["affected_rows_count"] == 0
+    assert rf_data["ood_report"]["prediction_coverage"] == 1.0
+    assert rf_data["abstained_rows"] == 0
+    assert rf_data["evaluated_rows"] == 200
+    assert rf_data["prediction_coverage"] == 1.0
+    assert rf_data["compatibility_gate"]["source_id"] == "source:ait-nds-v2"
     assert rf_data["compatibility_gate"]["provenance_verified"] is True
     assert rf_data["compatibility_gate"]["compatibility_status"] == "MODEL_VALIDATED"
     assert rf_data["compatibility_gate"]["eligibility_status"] == "PREDICTION_AVAILABLE"
@@ -443,22 +431,13 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
         preprocessor_manifest_path=PROJECT_ROOT
         / "reports"
         / "preprocessing"
-        / "nf_unsw_nb15_v3_preprocessing_manifest.json",
+        / "v2_flow_preprocessing_manifest.json",
     )
     rf_cli_df = rf_pipe.predict(demo_df)
     non_ood_rf = [r for r in rf_data["results"] if not r["is_ood_flagged"]]
     ood_rf = [r for r in rf_data["results"] if r["is_ood_flagged"]]
-    assert len(non_ood_rf) == 198
-    assert len(ood_rf) == 2
-    assert all(
-        r["predicted_label"] is None
-        and r["predicted_class"] == "ABSTAINED_OOD"
-        and r["attack_probability"] is None
-        and r["raw_anomaly_score"] is None
-        and r["risk_score"] is None
-        and r["risk_level"] == "ABSTAINED_OOD"
-        for r in ood_rf
-    )
+    assert len(non_ood_rf) == 200
+    assert len(ood_rf) == 0
     non_ood_indices = [r["row_index"] for r in non_ood_rf]
     assert [r["predicted_label"] for r in non_ood_rf] == rf_cli_df.iloc[non_ood_indices][
         "prediction"
@@ -479,17 +458,10 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
     assert if_data["total_rows"] == 200
     non_ood_if = [r for r in if_data["results"] if not r["is_ood_flagged"]]
     ood_if = [r for r in if_data["results"] if r["is_ood_flagged"]]
-    assert len(non_ood_if) == 198
-    assert len(ood_if) == 2
+    assert len(non_ood_if) == 200
+    assert len(ood_if) == 0
     assert all(r["attack_probability"] is None for r in if_data["results"])
     assert all(r["raw_anomaly_score"] is not None for r in non_ood_if)
-    assert all(
-        r["predicted_label"] is None
-        and r["predicted_class"] == "ABSTAINED_OOD"
-        and r["raw_anomaly_score"] is None
-        and r["risk_score"] is None
-        for r in ood_if
-    )
 
     if_pipe = InferencePipeline.from_artifacts(
         model_artifact_path=IF_MODEL,
@@ -498,7 +470,7 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
         preprocessor_manifest_path=PROJECT_ROOT
         / "reports"
         / "preprocessing"
-        / "nf_unsw_nb15_v3_preprocessing_manifest.json",
+        / "v2_flow_preprocessing_manifest.json",
     )
     if_cli_df = if_pipe.predict(demo_df)
     assert [r["predicted_label"] for r in non_ood_if] == if_cli_df.iloc[non_ood_indices][
@@ -510,14 +482,14 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
         atol=1e-9,
     )
 
-    # 3. Ground truth evaluation on demo_labels.csv (198 evaluated, 2 OOD abstained)
+    # 3. Ground truth evaluation on demo_labels.csv (200 evaluated, 0 OOD abstained)
     eval_rf = client.post(
         "/api/v1/csv/evaluate",
         json={"labels_path": str(DEMO_LABELS), "predictions": rf_data["results"]},
     )
     assert eval_rf.status_code == 200
-    assert eval_rf.json()["matched_rows"] == 198
-    assert eval_rf.json()["abstained_rows"] == 2
+    assert eval_rf.json()["matched_rows"] == 200
+    assert eval_rf.json()["abstained_rows"] == 0
     assert eval_rf.json()["unmatched_rows"] == 0
     assert len(eval_rf.json()["attack_breakdown"]) >= 1
 
@@ -549,14 +521,14 @@ def test_live_demo_csv_rf_and_if_cli_parity_and_blocked_models(client: TestClien
 
 def test_desktop_csv_hardening_regressions(client: TestClient, tmp_path: Path):
     # 1. Inspect missing ML feature must return ml_features_valid=False instead of HTTP 400
-    partial_df = _make_synthetic_flow_df(2).drop(columns=["PROTOCOL", "L7_PROTO"])
+    partial_df = _make_synthetic_flow_df(2).drop(columns=["protocol_num", "bytes_in"])
     partial_csv = tmp_path / "partial.csv"
     partial_df.to_csv(partial_csv, index=False)
     ins_partial = client.post("/api/v1/csv/inspect", json={"file_path": str(partial_csv)})
     assert ins_partial.status_code == 200, ins_partial.text
     body = ins_partial.json()
     assert body["ml_features_valid"] is False
-    assert set(body["missing_ml_features"]) == {"PROTOCOL", "L7_PROTO"}
+    assert set(body["missing_ml_features"]) == {"protocol_num", "bytes_in"}
 
     # 2. Non-finite count includes NaN + Inf + missing string tokens
     nf_df = _make_synthetic_flow_df(2)
@@ -588,11 +560,11 @@ def test_desktop_csv_hardening_regressions(client: TestClient, tmp_path: Path):
     ordered = build_deterministic_evidence_timeline(tl_items)
     assert [x.row_id for x in ordered] == [9, 20, 100]
 
-    # 4. Demo CSV non_finite count includes both NaN and Inf (30 NaN + 38 Inf = 68)
+    # 4. Demo CSV non_finite count is 0 (200 clean canonical v2 Validation rows)
     if DEMO_FLOWS.is_file():
         demo_ins = client.post("/api/v1/csv/inspect", json={"file_path": str(DEMO_FLOWS)})
         assert demo_ins.status_code == 200
-        assert demo_ins.json()["non_finite_feature_cells"] == 68
+        assert demo_ins.json()["non_finite_feature_cells"] == 0
 
 
 def _build_demo_manifest_dict(
@@ -603,8 +575,8 @@ def _build_demo_manifest_dict(
     partition: str = "validation",
     train_overlap: int = 0,
     test_overlap: int = 0,
-    dataset_name: str = "NF-UNSW-NB15-v3",
-    source_dataset_sha256: str = CANONICAL_NF_UNSW_NB15_V3_SHA256,
+    dataset_name: str = CANONICAL_V2_DATASET_NAME,
+    source_dataset_sha256: str = CANONICAL_V2_DATASET_SHA256,
     split_manifest_sha256: str = CANONICAL_SPLIT_MANIFEST_SHA256,
 ) -> dict:
     import hashlib
@@ -652,20 +624,16 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
     from network_anomaly.ingestion.compatibility import DEFAULT_BENCHMARK_REGISTRY
 
     df = _make_synthetic_flow_df(4)
-    df["MIN_TTL"] = [64.0, 64.0, 64.0, 64.0]
-    df["MAX_TTL"] = [64.0, 64.0, 64.0, 64.0]
-    df["FLOW_START_MILLISECONDS"] = [
-        CANONICAL_VALIDATION_TIME_START_MS + 1000 + i for i in range(4)
-    ]
+    df["duration_ms"] = [100.0, 120.0, 140.0, 160.0]
+    df["timestamp_ms"] = [1_700_000_001_000 + i for i in range(4)]
 
     # 1. External CSV without manifest -> unverified
     no_man_csv = tmp_path / "external_no_manifest.csv"
     df.to_csv(no_man_csv, index=False)
     s1, v1, _ = resolve_csv_source_provenance(no_man_csv, _sha256_file(no_man_csv), len(df), df=df)
-    assert (s1, v1) == ("source:nf-v3-unverified", False)
+    assert (s1, v1) == ("source:flow-v2-unverified", False)
 
-    # 2. External CSV with attacker-controlled self-declared demo_manifest.json (matching CSV SHA,
-    #    canonical dataset SHA, canonical split manifest SHA, zero overlap, validation partition)
+    # 2. External CSV with attacker-controlled self-declared demo_manifest.json
     #    MUST STILL FAIL CLOSED because the CSV digest is not in the controlled trust anchor!
     spoof_dir = tmp_path / "spoof_demo"
     spoof_dir.mkdir()
@@ -675,22 +643,22 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
     spoof_manifest = _build_demo_manifest_dict(csv_path=spoof_csv, csv_sha256=spoof_sha, df=df)
     (spoof_dir / "demo_manifest.json").write_text(json.dumps(spoof_manifest), encoding="utf-8")
     s2, v2, r2 = resolve_csv_source_provenance(spoof_csv, spoof_sha, len(df), df=df)
-    assert (s2, v2) == ("source:nf-v3-unverified", False)
+    assert (s2, v2) == ("source:flow-v2-unverified", False)
     assert "trust anchor" in r2.lower()
 
     # 3. Companion manifests (*.manifest.json / *_manifest.json) spoofing canonical or external
     #    benchmarks MUST ALSO BE IGNORED / UNVERIFIED.
     for fake_name, ds_name in (
-        (f"{no_man_csv.name}.manifest.json", "NF-UNSW-NB15-v3"),
-        (f"{no_man_csv.stem}.manifest.json", "NF-CSE-CIC-IDS2018-v3"),
-        (f"{no_man_csv.stem}_manifest.json", "NF-ToN-IoT-v3"),
+        (f"{no_man_csv.name}.manifest.json", CANONICAL_V2_DATASET_NAME),
+        (f"{no_man_csv.stem}.manifest.json", "CTU-SME-11"),
+        (f"{no_man_csv.stem}_manifest.json", "AIT-NDS-v2"),
     ):
         comp_path = tmp_path / fake_name
         comp_path.write_text(
             json.dumps(
                 {
                     "dataset_name": ds_name,
-                    "source_dataset_sha256": CANONICAL_NF_UNSW_NB15_V3_SHA256,
+                    "source_dataset_sha256": CANONICAL_V2_DATASET_SHA256,
                     "sample_sha256": _sha256_file(no_man_csv),
                     "sample_rows": len(df),
                     "train_overlap_count": 0,
@@ -702,10 +670,10 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
         sc, vc, _ = resolve_csv_source_provenance(
             no_man_csv, _sha256_file(no_man_csv), len(df), df=df
         )
-        assert (sc, vc) == ("source:nf-v3-unverified", False)
+        assert (sc, vc) == ("source:flow-v2-unverified", False)
         comp_path.unlink()
 
-    # Create a controlled test trust anchor for canonical tamper tests (runs in CI without raw CSV)
+    # Create a controlled test trust anchor for canonical tamper tests
     canon_dir = tmp_path / "canonical_fixture"
     canon_dir.mkdir()
     canon_csv = canon_dir / "demo_flows.csv"
@@ -715,11 +683,11 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
     split_obj = json.loads(CANONICAL_SPLIT_MANIFEST_PATH.read_text(encoding="utf-8"))
     controlled_anchor = {
         canon_sha: {
-            "dataset_name": "NF-UNSW-NB15-v3",
-            "source_id": "source:nf-v3-canonical",
+            "dataset_name": CANONICAL_V2_DATASET_NAME,
+            "source_id": "source:ait-nds-v2",
             "partition": "validation",
             "row_count": len(df),
-            "source_dataset_sha256": CANONICAL_NF_UNSW_NB15_V3_SHA256,
+            "source_dataset_sha256": CANONICAL_V2_DATASET_SHA256,
             "split_manifest_sha256": CANONICAL_SPLIT_MANIFEST_SHA256,
             "partition_indices_sha256": {
                 k: split_obj["partitions"][k]["index_sha256"]
@@ -738,7 +706,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
     sok, vok, _ = resolve_csv_source_provenance(
         canon_csv, canon_sha, len(df), df=df, trusted_subsets=controlled_anchor
     )
-    assert (sok, vok) == ("source:nf-v3-canonical", True)
+    assert (sok, vok) == ("source:ait-nds-v2", True)
 
     # 5. Tamper manifest SHA-256 -> rejected
     bad_sha_man = json.loads(json.dumps(canon_manifest))
@@ -746,7 +714,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
     (canon_dir / "demo_manifest.json").write_text(json.dumps(bad_sha_man), encoding="utf-8")
     assert resolve_csv_source_provenance(
         canon_csv, canon_sha, len(df), df=df, trusted_subsets=controlled_anchor
-    )[:2] == ("source:nf-v3-unverified", False)
+    )[:2] == ("source:flow-v2-unverified", False)
 
     # 6. Change dataset_name in manifest -> rejected
     bad_ds_man = json.loads(json.dumps(canon_manifest))
@@ -754,7 +722,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
     (canon_dir / "demo_manifest.json").write_text(json.dumps(bad_ds_man), encoding="utf-8")
     assert resolve_csv_source_provenance(
         canon_csv, canon_sha, len(df), df=df, trusted_subsets=controlled_anchor
-    )[:2] == ("source:nf-v3-unverified", False)
+    )[:2] == ("source:flow-v2-unverified", False)
 
     # 7. Reject non-zero train/test overlap or Test/Train partition
     for field, val in (
@@ -767,7 +735,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
         (canon_dir / "demo_manifest.json").write_text(json.dumps(bad_part_man), encoding="utf-8")
         assert resolve_csv_source_provenance(
             canon_csv, canon_sha, len(df), df=df, trusted_subsets=controlled_anchor
-        )[:2] == ("source:nf-v3-unverified", False)
+        )[:2] == ("source:flow-v2-unverified", False)
 
     # 8. Manifest pointing to a different filename -> rejected
     other_file_man = json.loads(json.dumps(canon_manifest))
@@ -775,24 +743,24 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
     (canon_dir / "demo_manifest.json").write_text(json.dumps(other_file_man), encoding="utf-8")
     assert resolve_csv_source_provenance(
         canon_csv, canon_sha, len(df), df=df, trusted_subsets=controlled_anchor
-    )[:2] == ("source:nf-v3-unverified", False)
+    )[:2] == ("source:flow-v2-unverified", False)
 
     # Restore valid manifest, then mutate CSV after manifest creation -> rejected
     (canon_dir / "demo_manifest.json").write_text(json.dumps(canon_manifest), encoding="utf-8")
     modified_csv = canon_dir / "demo_flows.csv"
     mod_df = df.copy()
-    mod_df.loc[0, "IN_BYTES"] = mod_df.loc[0, "IN_BYTES"] + 999.0
+    mod_df.loc[0, "bytes_in"] = mod_df.loc[0, "bytes_in"] + 999.0
     mod_df.to_csv(modified_csv, index=False)
     mod_sha = _sha256_file(modified_csv)
     assert resolve_csv_source_provenance(
         modified_csv, mod_sha, len(mod_df), df=mod_df, trusted_subsets=controlled_anchor
-    )[:2] == ("source:nf-v3-unverified", False)
+    )[:2] == ("source:flow-v2-unverified", False)
 
     # 9. Empty / missing trust anchor -> fail closed to UNVERIFIED
     df.to_csv(canon_csv, index=False)
     assert resolve_csv_source_provenance(canon_csv, canon_sha, len(df), df=df, trusted_subsets={})[
         :2
-    ] == ("source:nf-v3-unverified", False)
+    ] == ("source:flow-v2-unverified", False)
     assert resolve_csv_source_provenance(
         canon_csv,
         canon_sha,
@@ -800,7 +768,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
         df=df,
         trusted_subsets=controlled_anchor,
         split_manifest_path=tmp_path / "nonexistent_split_manifest.json",
-    )[:2] == ("source:nf-v3-unverified", False)
+    )[:2] == ("source:flow-v2-unverified", False)
 
     # 10. Real canonical demo dataset check (when present in checkout) + copy & mutate check
     if DEMO_FLOWS.is_file():
@@ -808,7 +776,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
         real_sha = _sha256_file(DEMO_FLOWS)
         assert real_sha in TRUSTED_CANONICAL_VALIDATION_SUBSETS
         rs, rv, _ = resolve_csv_source_provenance(DEMO_FLOWS, real_sha, len(real_df), df=real_df)
-        assert (rs, rv) == ("source:nf-v3-canonical", True)
+        assert (rs, rv) == ("source:ait-nds-v2", True)
 
         # Mutate 1 cell of a copy of canonical demo_flows.csv AND even re-sign a fake manifest -> rejected!
         mut_copy_dir = tmp_path / "mutated_real_demo"
@@ -819,7 +787,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
             mut_copy_dir / "demo_manifest.json",
         )
         mut_real_df = pd.read_csv(mut_copy_dir / "demo_flows.csv")
-        mut_real_df.loc[0, "IN_BYTES"] = float(mut_real_df.loc[0, "IN_BYTES"]) + 1.0
+        mut_real_df.loc[0, "bytes_in"] = float(mut_real_df.loc[0, "bytes_in"]) + 1.0
         mut_real_df.to_csv(mut_copy_dir / "demo_flows.csv", index=False)
         mut_real_sha = _sha256_file(mut_copy_dir / "demo_flows.csv")
         mut_man = json.loads((mut_copy_dir / "demo_manifest.json").read_text(encoding="utf-8"))
@@ -827,11 +795,11 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
         (mut_copy_dir / "demo_manifest.json").write_text(json.dumps(mut_man), encoding="utf-8")
         assert resolve_csv_source_provenance(
             mut_copy_dir / "demo_flows.csv", mut_real_sha, len(mut_real_df), df=mut_real_df
-        )[:2] == ("source:nf-v3-unverified", False)
+        )[:2] == ("source:flow-v2-unverified", False)
 
-    # 11. End-to-end API gate test: spoofed external CSV with 47 features + forged manifest
+    # 11. End-to-end API gate test: spoofed external CSV with 18 features + forged manifest
     #     receives VALIDATION_NOT_VERIFIED (NOT MODEL_VALIDATED) and blocks when allow_research_only=False.
-    canonical_rec = DEFAULT_BENCHMARK_REGISTRY["source:nf-v3-canonical"]
+    canonical_rec = DEFAULT_BENCHMARK_REGISTRY["source:ait-nds-v2"]
 
     class _IdentityPrep:
         def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
@@ -869,7 +837,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
         )
         assert spoof_resp.status_code == 200, spoof_resp.text
         gate_spoof = spoof_resp.json()["compatibility_gate"]
-        assert gate_spoof["source_id"] == "source:nf-v3-unverified"
+        assert gate_spoof["source_id"] == "source:flow-v2-unverified"
         assert gate_spoof["provenance_verified"] is False
         assert gate_spoof["compatibility_status"] == "SEMANTICALLY_COMPATIBLE"
         assert gate_spoof["eligibility_status"] == "VALIDATION_NOT_VERIFIED"
@@ -898,7 +866,7 @@ def test_f01_provenance_anti_spoofing_matrix(client: TestClient, tmp_path: Path)
             )
         assert ver_resp.status_code == 200, ver_resp.text
         gate_ver = ver_resp.json()["compatibility_gate"]
-        assert gate_ver["source_id"] == "source:nf-v3-canonical"
+        assert gate_ver["source_id"] == "source:ait-nds-v2"
         assert gate_ver["provenance_verified"] is True
         assert gate_ver["compatibility_status"] == "MODEL_VALIDATED"
         assert gate_ver["eligibility_status"] == "PREDICTION_AVAILABLE"
@@ -926,18 +894,13 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
     predict_calls: list[list[float]] = []
 
     def _spy_predict(frame: pd.DataFrame) -> pd.DataFrame:
-        # Must NEVER receive MIN_TTL=0 or hard-invariant violation rows
-        assert (frame["MIN_TTL"] != 0.0).all(), "MIN_TTL==0 row leaked to model.predict()"
-        assert (
-            frame["MIN_TTL"] <= frame["MAX_TTL"]
-        ).all(), "MIN_TTL>MAX_TTL leaked to model.predict()"
-        assert (frame["FLOW_DURATION_MILLISECONDS"] >= 0).all(), "Negative duration leaked!"
-        assert (
-            frame["SHORTEST_FLOW_PKT"] <= frame["LONGEST_FLOW_PKT"]
-        ).all(), "Inverted pkt len leaked!"
-        predict_calls.append(frame["IN_BYTES"].tolist())
-        # Deterministic prediction by IN_BYTES parity/threshold
-        preds = [1 if float(x) >= 100.0 else 0 for x in frame["IN_BYTES"].tolist()]
+        # Must NEVER receive hard-invariant violation rows
+        assert (frame["duration_ms"] >= 0).all(), "Negative duration leaked!"
+        assert (frame["bytes_in"] >= 0).all(), "Negative bytes_in leaked!"
+        assert (frame["bytes_in_ratio"] <= 1.0 + 1e-6).all(), "Ratio > 1.0 leaked!"
+        predict_calls.append(frame["bytes_in"].tolist())
+        # Deterministic prediction by bytes_in parity/threshold
+        preds = [1 if float(x) >= 100.0 else 0 for x in frame["bytes_in"].tolist()]
         probs = [0.91 if p == 1 else 0.09 for p in preds]
         return pd.DataFrame(
             {
@@ -976,9 +939,8 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
 
     # 1. 0 OOD rows -> model receives all 4 rows
     df_clean = _make_synthetic_flow_df(4)
-    df_clean["MIN_TTL"] = [64.0, 64.0, 64.0, 64.0]
-    df_clean["MAX_TTL"] = [64.0, 64.0, 64.0, 64.0]
-    df_clean["IN_BYTES"] = [10.0, 200.0, 20.0, 300.0]
+    df_clean["duration_ms"] = [100.0, 100.0, 100.0, 100.0]
+    df_clean["bytes_in"] = [10.0, 200.0, 20.0, 300.0]
     p_clean = tmp_path / "clean_0_ood.csv"
     df_clean.to_csv(p_clean, index=False)
 
@@ -1000,12 +962,11 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
     assert d_clean["prediction_coverage"] == 1.0
     assert [x["predicted_label"] for x in d_clean["results"]] == [0, 1, 0, 1]
 
-    # 2. Single OOD row (MIN_TTL=0) placed at start, middle, and end
+    # 2. Single OOD row (negative duration_ms) placed at start, middle, and end
     for ood_pos in (0, 2, 3):
         predict_calls.clear()
         df_one = df_clean.copy()
-        df_one.loc[ood_pos, "MIN_TTL"] = 0.0
-        df_one.loc[ood_pos, "MAX_TTL"] = 0.0
+        df_one.loc[ood_pos, "duration_ms"] = -10.0
         p_one = tmp_path / f"one_ood_pos_{ood_pos}.csv"
         df_one.to_csv(p_one, index=False)
         with (
@@ -1027,47 +988,41 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
         assert d_one["ood_flagged_count"] == 1
         assert d_one["results"][ood_pos]["predicted_label"] is None
         assert d_one["results"][ood_pos]["predicted_class"] == "ABSTAINED_OOD"
-        assert "MIN_TTL == 0" in d_one["results"][ood_pos]["ood_reason"]
+        assert "Hard physical flow invariant violation" in d_one["results"][ood_pos]["ood_reason"]
         assert [x["row_index"] for x in d_one["results"]] == [0, 1, 2, 3]
         assert [x["row_id"] for x in d_one["results"]] == [100, 101, 102, 103]
 
-    # 3. Multiple interleaved OOD rows (MIN_TTL=0 + Hard invariant violations) + batch boundary
-    #    + valid row containing NaN/Inf in SRC_TO_DST_SECOND_BYTES + create_incidents=True
+    # 3. Multiple interleaved OOD rows (negative duration_ms, bytes_in < 0, ratio > 1) + batch boundary
+    #    + valid row containing NaN/Inf in bytes_per_sec_in + create_incidents=True
     predict_calls.clear()
     n_mixed = 8
     df_mixed = _make_synthetic_flow_df(n_mixed)
     df_mixed["row_id"] = [500 + i for i in range(n_mixed)]
-    df_mixed["FLOW_START_MILLISECONDS"] = [1_700_000_000_000 + i * 1000 for i in range(n_mixed)]
-    df_mixed["FLOW_END_MILLISECONDS"] = [1_700_000_000_500 + i * 1000 for i in range(n_mixed)]
-    df_mixed["MIN_TTL"] = [64.0] * n_mixed
-    df_mixed["MAX_TTL"] = [64.0] * n_mixed
-    df_mixed["IN_BYTES"] = [10.0, 200.0, 300.0, 20.0, 400.0, 500.0, 30.0, 600.0]
-    df_mixed["Label"] = [0, 1, 1, 0, 1, 1, 0, 1]
-    df_mixed["Attack"] = [
+    df_mixed["timestamp_ms"] = [1_700_000_000_000 + i * 1000 for i in range(n_mixed)]
+    df_mixed["duration_ms"] = [100.0] * n_mixed
+    df_mixed["bytes_in"] = [10.0, 200.0, 300.0, 20.0, 400.0, 500.0, 30.0, 600.0]
+    df_mixed["label_binary"] = [0, 1, 1, 0, 1, 1, 0, 1]
+    df_mixed["attack_category"] = [
         "Benign",
-        "Exploits",
-        "DoS",
+        "Reconnaissance",
+        "Exploitation_And_C2",
         "Benign",
-        "Exploits",
-        "Fuzzers",
+        "Reconnaissance",
+        "Data_Exfiltration",
         "Benign",
-        "Generic",
+        "Credential_Attack",
     ]
-    # OOD indices: 0 (start, MIN_TTL=0), 2 (batch_size=2 boundary after idx 1 accepted? Wait: accepted indices are [1, 3, 5, 7], so idx 2 & 4 & 6 cover mixed boundaries),
-    # Make OOD at indices 0 (MIN_TTL=0), 2 (MIN_TTL > MAX_TTL hard violation),
-    # 5 (negative FLOW_DURATION_MILLISECONDS hard violation), 7 (MIN_TTL=0 at end).
-    # Accepted indices = [1, 3, 4, 6] -> 4 accepted rows across batch_size=2 => [1, 3] and [4, 6].
-    # Put NaN/Inf ratio feature on valid row 4 (follows preprocessing policy).
-    df_mixed.loc[0, ["MIN_TTL", "MAX_TTL"]] = [0.0, 0.0]
-    df_mixed.loc[2, ["MIN_TTL", "MAX_TTL"]] = [128.0, 64.0]
-    df_mixed.loc[5, "FLOW_DURATION_MILLISECONDS"] = -25.0
-    df_mixed.loc[7, ["MIN_TTL", "MAX_TTL"]] = [0.0, 0.0]
-    df_mixed.loc[4, "SRC_TO_DST_SECOND_BYTES"] = np.inf
+    # Make OOD at indices 0 (bytes_in < 0), 2 (bytes_in_ratio > 1), 5 (duration_ms < 0), 7 (protocol_num=999).
+    df_mixed.loc[0, "bytes_in"] = -5.0
+    df_mixed.loc[2, "bytes_in_ratio"] = 1.5
+    df_mixed.loc[5, "duration_ms"] = -25.0
+    df_mixed.loc[7, "protocol_num"] = 999.0
+    df_mixed.loc[4, "bytes_per_sec_in"] = np.inf
 
     p_mixed = tmp_path / "mixed_ood.csv"
     df_mixed.to_csv(p_mixed, index=False)
     p_mixed_labels = tmp_path / "mixed_labels.csv"
-    df_mixed[["row_id", "Label", "Attack"]].to_csv(p_mixed_labels, index=False)
+    df_mixed[["row_id", "label_binary", "attack_category"]].to_csv(p_mixed_labels, index=False)
 
     with (
         patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
@@ -1108,10 +1063,10 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
         assert item["raw_anomaly_score"] is None
         assert item["risk_score"] is None
         assert item["risk_level"] == "ABSTAINED_OOD"
-    assert "MIN_TTL == 0" in d_mixed["results"][0]["ood_reason"]
-    assert "Hard protocol invariant violation" in d_mixed["results"][2]["ood_reason"]
-    assert "Hard protocol invariant violation" in d_mixed["results"][5]["ood_reason"]
-    assert "MIN_TTL == 0" in d_mixed["results"][7]["ood_reason"]
+    assert "Hard physical flow invariant violation" in d_mixed["results"][0]["ood_reason"]
+    assert "Hard physical flow invariant violation" in d_mixed["results"][2]["ood_reason"]
+    assert "Hard physical flow invariant violation" in d_mixed["results"][5]["ood_reason"]
+    assert "Hard physical flow invariant violation" in d_mixed["results"][7]["ood_reason"]
 
     # Verify SQLite incidents created ONLY for valid Attack rows (idx 1 & 4), NEVER for OOD rows!
     conn = svc.db.get_connection()
@@ -1140,9 +1095,9 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
     # 4. 100% OOD CSV -> 0 calls to analyze_flows / model.predict and HTTP 503
     predict_calls.clear()
     df_all_ood = _make_synthetic_flow_df(3)
-    df_all_ood.loc[0, ["MIN_TTL", "MAX_TTL"]] = [0.0, 0.0]
-    df_all_ood.loc[1, "FLOW_DURATION_MILLISECONDS"] = -1.0
-    df_all_ood.loc[2, ["MIN_TTL", "MAX_TTL"]] = [200.0, 64.0]
+    df_all_ood.loc[0, "bytes_in"] = -1.0
+    df_all_ood.loc[1, "duration_ms"] = -1.0
+    df_all_ood.loc[2, "protocol_num"] = 999.0
     p_all_ood = tmp_path / "all_ood_mixed.csv"
     df_all_ood.to_csv(p_all_ood, index=False)
 
@@ -1159,7 +1114,7 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
     assert len(predict_calls) == 0
 
     # 5. Missing ML feature column in analyze fails cleanly BEFORE inference
-    df_missing = df_clean.drop(columns=["PROTOCOL"])
+    df_missing = df_clean.drop(columns=["protocol_num"])
     p_missing = tmp_path / "missing_col.csv"
     df_missing.to_csv(p_missing, index=False)
     with patch.object(svc, "analyze_flows", wraps=svc.analyze_flows) as spy_missing:
@@ -1180,8 +1135,8 @@ def test_f02_ood_pre_inference_abstention_matrix(client: TestClient, tmp_path: P
     ),
     reason="Offline verified model artifacts or demo CSV not present in this checkout.",
 )
-def test_f02_real_models_only_receive_198_eligible_demo_rows(client: TestClient):
-    """Verify with spy + REAL RF & IF models that 2 OOD rows never enter service.analyze_flows."""
+def test_f02_real_models_only_receive_200_eligible_demo_rows(client: TestClient):
+    """Verify with spy + REAL RF & IF models that 200 clean demo rows enter service.analyze_flows."""
     svc = client.app.state.service
     for model_key in ("random_forest", "isolation_forest"):
         with patch.object(svc, "analyze_flows", wraps=svc.analyze_flows) as spy_analyze:
@@ -1192,23 +1147,22 @@ def test_f02_real_models_only_receive_198_eligible_demo_rows(client: TestClient)
         assert resp.status_code == 200, resp.text
         data = resp.json()
         sent_events = [e for c in spy_analyze.call_args_list for e in c.args[0]]
-        assert len(sent_events) == 198, f"{model_key} received {len(sent_events)} != 198 rows"
-        assert data["evaluated_rows"] == 198
-        assert data["abstained_rows"] == 2
-        assert data["prediction_coverage"] == 0.99
-        assert data["benign_count"] + data["attack_count"] == 198
+        assert len(sent_events) == 200, f"{model_key} received {len(sent_events)} != 200 rows"
+        assert data["evaluated_rows"] == 200
+        assert data["abstained_rows"] == 0
+        assert data["prediction_coverage"] == 1.0
+        assert data["benign_count"] + data["attack_count"] == 200
 
 
 def test_all_ood_rows_fail_closed_in_analyze_and_evaluate(client: TestClient, tmp_path: Path):
     """P1 regression: When 100% of rows are OOD-abstained, both analyze and evaluate fail closed."""
     df = _make_synthetic_flow_df(2)
-    df["MIN_TTL"] = [0.0, 0.0]
-    df["MAX_TTL"] = [0.0, 0.0]
-    df["Label"] = [1, 0]
+    df["duration_ms"] = [-5.0, -2.0]
+    df["label_binary"] = [1, 0]
     all_ood_csv = tmp_path / "all_ood.csv"
     df.to_csv(all_ood_csv, index=False)
     labels_csv = tmp_path / "all_ood_labels.csv"
-    df[["row_id", "Label"]].to_csv(labels_csv, index=False)
+    df[["row_id", "label_binary"]].to_csv(labels_csv, index=False)
 
     class _IdentityPrep:
         def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
@@ -1290,7 +1244,7 @@ def test_evaluate_handles_float_upcast_row_id_and_all_nan_attack_column(
     """P2 regression: Ground truth with float columns or all-NaN Attack must align integer row_ids."""
     labels_csv = tmp_path / "labels_all_nan_attack_and_float.csv"
     labels_csv.write_text(
-        "row_id,Label,Attack,weight\n" "2393,0,,1.5\n" "2394,1,,0.75\n" "2395,0,,2.25\n",
+        "row_id,Label,Attack,weight\n2393,0,,1.5\n2394,1,,0.75\n2395,0,,2.25\n",
         encoding="utf-8",
     )
     preds = [
@@ -1436,10 +1390,10 @@ def test_evaluate_separates_label_match_rate_from_post_ood_coverage(
     assert b2["confusion_matrix"] == {"tn": 0, "fp": 0, "fn": 0, "tp": 1}
 
 
-def test_ood_report_separates_zero_ttl_from_hard_physical_violations(
+def test_ood_report_separates_protocol_drift_from_hard_physical_violations(
     client: TestClient, tmp_path: Path
 ):
-    """F1 regression: MIN_TTL == 0 must not inflate hard_violation_count while preserving abstention coverage."""
+    """Unseen protocol drift alone must not inflate hard_violation_count."""
     svc = client.app.state.service
 
     class _PassthroughPrep:
@@ -1447,8 +1401,7 @@ def test_ood_report_separates_zero_ttl_from_hard_physical_violations(
             return X.copy()
 
     def _predict_valid(frame: pd.DataFrame) -> pd.DataFrame:
-        assert (frame["MIN_TTL"] != 0.0).all()
-        assert (frame["FLOW_DURATION_MILLISECONDS"] >= 0.0).all()
+        assert (frame["duration_ms"] >= 0.0).all()
         return pd.DataFrame(
             {
                 "prediction": [0] * len(frame),
@@ -1483,47 +1436,30 @@ def test_ood_report_separates_zero_ttl_from_hard_physical_violations(
         True,
     )
 
-    # Case 1: MIN_TTL=0 only (row 1 of 4) -> hard_violation_count == 0, affected == 1, coverage == 0.75
-    df_zero_only = _make_synthetic_flow_df(4)
-    p_zero = tmp_path / "f1_zero_only.csv"
-    df_zero_only.to_csv(p_zero, index=False)
+    # Case 1: Clean baseline with unseen protocol drift only (row 1 protocol_num=99) -> hard_violation_count == 0
+    df_drift_only = _make_synthetic_flow_df(4)
+    df_drift_only["duration_ms"] = [100.0, 100.0, 100.0, 100.0]
+    df_drift_only.loc[1, "protocol_num"] = 99.0
+    p_zero = tmp_path / "f1_drift_only.csv"
+    df_drift_only.to_csv(p_zero, index=False)
 
     ins_zero = client.post(
         "/api/v1/csv/inspect", json={"file_path": str(p_zero), "preview_limit": 10}
     )
     assert ins_zero.status_code == 200, ins_zero.text
     ood_ins_zero = ins_zero.json()["ood_report"]
-    assert ood_ins_zero["zero_ttl_count"] == 1
-    assert ood_ins_zero["zero_ttl_indices"] == [1]
+    assert ood_ins_zero["has_ood_warning"] is True
     assert ood_ins_zero["hard_violation_count"] == 0
     assert ood_ins_zero["hard_violation_indices"] == []
     assert ood_ins_zero["out_of_range_details"] == {}
-    assert ood_ins_zero["affected_rows_count"] == 1
-    assert ood_ins_zero["abstention_rate"] == 0.25
-    assert ood_ins_zero["prediction_coverage"] == 0.75
+    assert ood_ins_zero["affected_rows_count"] == 0
+    assert ood_ins_zero["prediction_coverage"] == 1.0
 
-    with (
-        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
-        patch("network_anomaly.api.desktop_csv._evaluate_gate", return_value=gate_ok),
-    ):
-        ana_zero = client.post(
-            "/api/v1/csv/analyze",
-            json={"file_path": str(p_zero), "model_name": "random_forest"},
-        )
-    assert ana_zero.status_code == 200, ana_zero.text
-    ana_zero_body = ana_zero.json()
-    assert ana_zero_body["abstained_rows"] == 1
-    assert ana_zero_body["evaluated_rows"] == 3
-    assert ana_zero_body["prediction_coverage"] == 0.75
-    assert ana_zero_body["ood_report"] == ood_ins_zero
-
-    # Case 2: Overlapping + disjoint physical violation and MIN_TTL=0 (5 rows):
-    # row 1: MIN_TTL=0 only; row 2: negative duration only; row 3: BOTH MIN_TTL=0 and negative duration.
+    # Case 2: Physical violations on rows 1, 2, 3 (negative duration_ms + bytes_in < 0) without double counting
     df_mixed = _make_synthetic_flow_df(5)
-    df_mixed.loc[2, "FLOW_DURATION_MILLISECONDS"] = -5.0
-    df_mixed.loc[3, "MIN_TTL"] = 0.0
-    df_mixed.loc[3, "MAX_TTL"] = 0.0
-    df_mixed.loc[3, "FLOW_DURATION_MILLISECONDS"] = -1.0
+    df_mixed.loc[2, "duration_ms"] = -5.0
+    df_mixed.loc[3, "bytes_in"] = -1.0
+    df_mixed.loc[3, "duration_ms"] = -1.0
     p_mixed = tmp_path / "f1_mixed.csv"
     df_mixed.to_csv(p_mixed, index=False)
 
@@ -1532,12 +1468,10 @@ def test_ood_report_separates_zero_ttl_from_hard_physical_violations(
     )
     assert ins_mixed.status_code == 200, ins_mixed.text
     ood_ins_mixed = ins_mixed.json()["ood_report"]
-    assert ood_ins_mixed["zero_ttl_count"] == 2
-    assert ood_ins_mixed["zero_ttl_indices"] == [1, 3]
-    assert ood_ins_mixed["hard_violation_count"] == 2
-    assert ood_ins_mixed["hard_violation_indices"] == [2, 3]
-    assert ood_ins_mixed["out_of_range_details"] == {"FLOW_DURATION_MILLISECONDS_negative": 2}
-    # Union {1, 2, 3} -> 3 unique affected rows out of 5 (not double-counted as 4)
+    assert ood_ins_mixed["hard_violation_count"] == 3
+    assert ood_ins_mixed["hard_violation_indices"] == [1, 2, 3]
+    assert ood_ins_mixed["out_of_range_details"]["duration_ms_negative_or_invalid"] == 3
+    assert ood_ins_mixed["out_of_range_details"]["bytes_in_negative_or_invalid"] == 1
     assert ood_ins_mixed["affected_rows_count"] == 3
     assert ood_ins_mixed["abstention_rate"] == 0.6
     assert ood_ins_mixed["prediction_coverage"] == 0.4
@@ -1808,8 +1742,8 @@ def test_f08_export_verifies_evaluation_summary_or_marks_unverified(
         def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
             return X.copy()
 
-    def _predict_in_bytes(frame: pd.DataFrame) -> pd.DataFrame:
-        preds = [1 if float(v) >= 2.5 else 0 for v in frame["IN_BYTES"].tolist()]
+    def _predict_bytes_in(frame: pd.DataFrame) -> pd.DataFrame:
+        preds = [1 if float(v) >= 2.5 else 0 for v in frame["bytes_in"].tolist()]
         probs = [0.9 if p == 1 else 0.1 for p in preds]
         return pd.DataFrame(
             {
@@ -1829,7 +1763,7 @@ def test_f08_export_verifies_evaluation_summary_or_marks_unverified(
         },
         preprocessor_metadata={"artifact_sha256": "b" * 64},
         preprocessor=_PassthroughPrep(),
-        predict=_predict_in_bytes,
+        predict=_predict_bytes_in,
     )
     gate_ok = (
         CompatibilityGateSummarySchema(
@@ -1846,12 +1780,13 @@ def test_f08_export_verifies_evaluation_summary_or_marks_unverified(
     )
 
     df = _make_synthetic_flow_df(4)
-    df["Label"] = [0, 0, 1, 1]
-    df["Attack"] = ["Benign", "Benign", "Exploits", "Fuzzers"]
+    df["duration_ms"] = [100.0, 100.0, 100.0, 100.0]
+    df["label_binary"] = [0, 0, 1, 1]
+    df["attack_category"] = ["Benign", "Benign", "Reconnaissance", "Exploitation_And_C2"]
     flows_csv = tmp_path / "f08_flows.csv"
     labels_csv = tmp_path / "f08_labels.csv"
-    df.drop(columns=["Label", "Attack"]).to_csv(flows_csv, index=False)
-    df[["row_id", "Label", "Attack"]].to_csv(labels_csv, index=False)
+    df.drop(columns=["label_binary", "attack_category"]).to_csv(flows_csv, index=False)
+    df[["row_id", "label_binary", "attack_category"]].to_csv(labels_csv, index=False)
 
     with (
         patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
@@ -2071,8 +2006,7 @@ def test_f6_float_row_id_with_nan_normalizes_without_dot_zero_suffix(
     )
 
     df = _make_synthetic_flow_df(4)
-    df["MIN_TTL"] = [62.0, 62.0, 62.0, 62.0]
-    df["MAX_TTL"] = [62.0, 62.0, 62.0, 62.0]
+    df["duration_ms"] = [100.0, 100.0, 100.0, 100.0]
     df["row_id"] = [101, 102, np.nan, 104]
     csv_path = tmp_path / "float_row_id.csv"
     df.to_csv(csv_path, index=False)
@@ -2191,3 +2125,78 @@ def test_collect_models_status_does_not_mask_missing_manifest_threshold(
     assert items["random_forest"].decision_threshold is None
     assert items["xgboost"].ready is True
     assert items["xgboost"].decision_threshold == 0.5
+
+
+def test_csv_analyze_extracts_16d_behavioral_vectors(client: TestClient, tmp_path: Path):
+    """#106 AC1: CSV analyze builds 16-D BehavioralVector items per entity session."""
+    df = _make_synthetic_flow_df(4)
+    df["source_ip"] = ["10.0.0.10", "10.0.0.10", "10.0.0.20", "10.0.0.20"]
+    df["dest_ip"] = ["192.168.1.5", "192.168.1.6", "192.168.1.5", "192.168.1.7"]
+    df["source_port"] = [50001, 50002, 51001, 51002]
+    df["dest_port"] = [443, 80, 22, 443]
+    df["timestamp_ms"] = [
+        1_700_000_000_000,
+        1_700_000_005_000,
+        1_700_000_001_000,
+        1_700_000_010_000,
+    ]
+    csv_path = tmp_path / "behavioral_flows.csv"
+    df.to_csv(csv_path, index=False)
+
+    class _IdentityPrep:
+        def transform(self, X: pd.DataFrame, partition_name: str = "inference") -> pd.DataFrame:
+            return X.copy()
+
+    fake_pipe = SimpleNamespace(
+        model_metadata={
+            "model_type": "RandomForest",
+            "model_artifact_sha256": "a" * 64,
+            "run_id": "rf-beh-test",
+            "threshold": 0.5,
+        },
+        preprocessor_metadata={"artifact_sha256": "b" * 64},
+        preprocessor=_IdentityPrep(),
+        predict=lambda frame: pd.DataFrame(
+            {
+                "prediction": [0] * len(frame),
+                "probability_Attack": [0.1] * len(frame),
+                "probability_Benign": [0.9] * len(frame),
+                "run_id": ["rf-beh-test"] * len(frame),
+            }
+        ),
+    )
+
+    svc = client.app.state.service
+    with (
+        patch.object(svc, "_load_inference_pipeline", return_value=fake_pipe),
+        patch(
+            "network_anomaly.api.desktop_csv._evaluate_gate",
+            return_value=(
+                CompatibilityGateSummarySchema(
+                    model_key="random_forest",
+                    model_identifier="rf-beh-test",
+                    eligible=True,
+                    eligibility_status="ELIGIBLE",
+                    compatibility_status="MODEL_VALIDATED",
+                    reasons=[],
+                    warnings=[],
+                    missing_features=[],
+                ),
+                True,
+            ),
+        ),
+    ):
+        resp = client.post(
+            "/api/v1/csv/analyze",
+            json={"file_path": str(csv_path), "model_name": "random_forest"},
+        )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    vectors = payload["behavioral_vectors"]
+    assert len(vectors) == 2
+    assert {v["entity_key"] for v in vectors} == {"host:10.0.0.10", "host:10.0.0.20"}
+    for vec in vectors:
+        assert vec["dimensions"] == 16
+        assert len(vec["features"]) == 16
+        assert len(vec["feature_names"]) == 16
+        assert len(vec["sha256_hash"]) == 64

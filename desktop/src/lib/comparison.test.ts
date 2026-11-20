@@ -197,7 +197,7 @@ function makeFlowPrediction(
     dst_port: 443,
     protocol: 6,
     flow_duration_ms: 1000,
-    min_ttl: 62,
+    min_ttl: null,
     ...overrides,
   };
 }
@@ -209,8 +209,8 @@ function makeInspectResponse(overrides: Partial<CsvInspectResponse> = {}): CsvIn
     file_sha256: SHA_CSV_A,
     file_size_bytes: 20480,
     row_count: 200,
-    column_count: 54,
-    ml_feature_count: 47,
+    column_count: 24,
+    ml_feature_count: 18,
     ml_features_valid: true,
     missing_ml_features: [],
     target_columns_excluded: [],
@@ -264,9 +264,9 @@ function makeAnalyzeResponse(
     risk_score: null,
     risk_level: "ABSTAINED_OOD",
     is_ood_flagged: true,
-    ood_kind: "ZERO_TTL_DRIFT",
-    ood_reason: "MIN_TTL == 0 out-of-distribution abstention",
-    min_ttl: 0,
+    ood_kind: "PHYSICAL_INVARIANT",
+    ood_reason: "Hard physical flow invariant violation",
+    min_ttl: null,
   });
 
   const defaultsByModel: Record<string, { attack: number; benign: number }> = {

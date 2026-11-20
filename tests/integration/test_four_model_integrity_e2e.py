@@ -19,16 +19,15 @@ from fastapi.testclient import TestClient
 from network_anomaly.api import service as service_mod
 from network_anomaly.api.desktop_csv import resolve_csv_source_provenance
 from network_anomaly.api.main import create_app
+from network_anomaly.api.response_policy import _evaluate_containment_authority
 from network_anomaly.config import ARTIFACTS, PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import ML_FEATURE_COLUMNS
+from network_anomaly.data.v2_schema import ML_FEATURE_COLUMNS
 from network_anomaly.inference.predict import InferencePipeline
 
 DEMO_FLOWS = PROJECT_ROOT / "data" / "demo" / "demo_flows.csv"
 DEMO_LABELS = PROJECT_ROOT / "data" / "demo" / "demo_labels.csv"
-PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
-PREP_MANIFEST = (
-    PROJECT_ROOT / "reports" / "preprocessing" / "nf_unsw_nb15_v3_preprocessing_manifest.json"
-)
+PREP_ARTIFACT = ARTIFACTS / "preprocessing" / "v2_flow_preprocessor.joblib"
+PREP_MANIFEST = PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json"
 MODEL_FILES = {
     "random_forest": (
         ARTIFACTS / "models" / "random_forest" / "random_forest_baseline.joblib",
@@ -52,28 +51,23 @@ MODEL_FILES = {
 def _make_sample_csv(csv_path: Path, ood_hard: bool = False) -> None:
     rows: dict[str, list[object]] = {
         "row_id": [101, 102, 103],
-        "FLOW_START_MILLISECONDS": [1735689601000, 1735689602000, 1735689603000],
-        "FLOW_END_MILLISECONDS": [1735689601500, 1735689602500, 1735689603500],
-        "IPV4_SRC_ADDR": ["10.0.0.10", "10.0.0.11", "10.0.0.12"],
-        "IPV4_DST_ADDR": ["192.168.1.20", "192.168.1.21", "192.168.1.22"],
-        "L4_SRC_PORT": [51001, 51002, 51003],
-        "L4_DST_PORT": [443, 80, 22],
+        "timestamp_ms": [1735689601000, 1735689602000, 1735689603000],
+        "source_ip": ["10.0.0.10", "10.0.0.11", "10.0.0.12"],
+        "dest_ip": ["192.168.1.20", "192.168.1.21", "192.168.1.22"],
+        "source_port": [51001, 51002, 51003],
+        "dest_port": [443, 80, 22],
     }
     for col in ML_FEATURE_COLUMNS:
-        if col == "MIN_TTL":
-            rows[col] = [64.0, 0.0, 64.0]
-        elif col == "MAX_TTL":
-            rows[col] = [64.0, 0.0, 64.0]
-        elif col == "LONGEST_FLOW_PKT":
-            rows[col] = [512.0, 512.0, 128.0 if ood_hard else 512.0]
-        elif col == "SHORTEST_FLOW_PKT":
-            rows[col] = [64.0, 64.0, 256.0 if ood_hard else 64.0]
-        elif col == "MAX_IP_PKT_LEN":
-            rows[col] = [512.0, 512.0, 512.0]
-        elif col == "MIN_IP_PKT_LEN":
-            rows[col] = [64.0, 64.0, 64.0]
+        if col == "duration_ms":
+            rows[col] = [100.0, 200.0, -50.0 if ood_hard else 300.0]
+        elif col == "protocol_num":
+            rows[col] = [6.0, 6.0, 17.0]
+        elif col in ("bytes_in_ratio", "pkts_in_ratio"):
+            rows[col] = [0.33, 0.4, 1.5 if ood_hard else 0.5]
+        elif col in ("has_response", "is_tcp", "is_udp"):
+            rows[col] = [1.0, 1.0, 0.0]
         else:
-            rows[col] = [1.0, 2.0, 3.0]
+            rows[col] = [100.0, 200.0, 300.0]
     pd.DataFrame(rows).to_csv(csv_path, index=False)
 
 
@@ -138,8 +132,7 @@ def test_source_spoofing_and_evaluation_tampering_fail_closed(tmp_path: Path):
         ins = client.post("/api/v1/csv/inspect", json={"file_path": str(sample_csv)})
         assert ins.status_code == 200
         ins_body = ins.json()
-        # Hard OOD invariant (SHORTEST_FLOW_PKT > LONGEST_FLOW_PKT) and MIN_TTL=0 must both trip
-        assert ins_body["ood_report"]["zero_ttl_count"] >= 1
+        # Hard OOD invariant (negative duration_ms and ratio > 1.0) must trip
         assert ins_body["ood_report"]["hard_violation_count"] >= 1
 
         out_csv = tmp_path / "spoofed_export.csv"
@@ -202,22 +195,22 @@ def test_threshold_leakage_manifest_invariants_when_present():
     if xgb_manifest_path.is_file():
         xgb_m = json.loads(xgb_manifest_path.read_text(encoding="utf-8"))
         assert xgb_m.get("provenance_complete") is True
-        assert xgb_m.get("preprocessing_provenance", {}).get("fit_partition") == "train_only"
-        assert xgb_m.get("preprocessing_provenance", {}).get("refit_during_training") is False
-        xgb_audit = xgb_m.get("test_lock_audit", {})
-        assert xgb_audit.get("training_partitions") == ["train", "validation"]
-        if xgb_audit.get("test_partition_accessed"):
-            assert xgb_audit.get("test_evaluated_post_fit") is True
-            assert xgb_audit.get("test_accessed_strictly_after_fit_and_reload") is True
+        assert xgb_m.get("preprocessing_contract_id") == "v2-flow-preprocessing-v1"
+        assert len(xgb_m.get("preprocessor_artifact_sha256", "")) == 64
+        tp = xgb_m.get("threshold_provenance", {})
+        assert tp.get("selected_on") == "validation"
+        assert tp.get("test_touched") is False
 
     ae_manifest_path = MODEL_FILES["autoencoder"][1]
     if ae_manifest_path.is_file():
         ae_m = json.loads(ae_manifest_path.read_text(encoding="utf-8"))
-        assert ae_m.get("provenance_complete") is True
-        ae_lock = ae_m.get("test_lock", {})
-        assert ae_lock.get("test_excluded_from_fit_early_stopping_calibration") is True
-        assert ae_lock.get("threshold_frozen_before_test_eval") is True
-        assert ae_m.get("threshold_calibration", {}).get("threshold_frozen") is True
+        assert len(ae_m.get("model_sha256", "")) == 64
+        assert ae_m.get("provenance", {}).get("calibration", {}).get("threshold_frozen") is True
+        ae_cal = ae_m.get("threshold_calibration", {})
+        assert ae_cal.get("threshold_frozen") is True
+        assert ae_cal.get("test_touched") is False
+        assert ae_cal.get("selected_on") == "validation"
+        assert float(ae_cal.get("empirical_val_fpr", 1.0)) <= 0.05
         norm = ae_m.get("score_normalization", {})
         if norm:
             assert "test" not in str(norm.get("calibration_partition", "")).lower()
@@ -330,15 +323,15 @@ def test_all_four_verified_models_real_demo_csv_parity_and_eval(tmp_path: Path):
             az = az_resp.json()
             assert az["inference_mode"] == "verified_model"
             assert az["total_rows"] == 200
-            assert az["evaluated_rows"] == 198
-            assert az["abstained_rows"] == 2
-            assert az["prediction_coverage"] == 0.99
+            assert az["evaluated_rows"] == 200
+            assert az["abstained_rows"] == 0
+            assert az["prediction_coverage"] == 1.0
             assert [r["row_id"] for r in az["results"]] == expected_row_ids
 
             non_ood = [r for r in az["results"] if not r["is_ood_flagged"]]
             ood_rows = [r for r in az["results"] if r["is_ood_flagged"]]
-            assert len(non_ood) == 198
-            assert len(ood_rows) == 2
+            assert len(non_ood) == 200
+            assert len(ood_rows) == 0
             assert all(
                 r["predicted_label"] is None
                 and r["predicted_class"] == "ABSTAINED_OOD"
@@ -396,9 +389,9 @@ def test_all_four_verified_models_real_demo_csv_parity_and_eval(tmp_path: Path):
             assert ev_resp.status_code == 200, ev_resp.text
             ev = ev_resp.json()
             cm = ev["confusion_matrix"]
-            assert cm["tp"] + cm["fp"] + cm["tn"] + cm["fn"] == 198
-            assert ev["abstained_rows"] == 2
-            assert ev["prediction_coverage"] == 0.99
+            assert cm["tp"] + cm["fp"] + cm["tn"] + cm["fn"] == 200
+            assert ev["abstained_rows"] == 0
+            assert ev["prediction_coverage"] == 1.0
 
             sim_resp = client.post(
                 "/api/v1/security/simulate-response",
@@ -425,3 +418,25 @@ def test_all_four_verified_models_real_demo_csv_parity_and_eval(tmp_path: Path):
                 assert sim_body["action_counts"]["ISOLATE_RECOMMENDED"] == 0
                 assert sim_body["key_rotation_simulation"]["decision"] == "HOLD_RESEARCH_ONLY_MODEL"
                 assert sim_body["key_rotation_simulation"]["recommended"] is False
+
+        status_resp = client.get("/api/v1/models")
+        assert status_resp.status_code == 200, status_resp.text
+        models_payload = {m["model_key"]: m for m in status_resp.json()}
+        for k in ("random_forest", "xgboost", "isolation_forest", "autoencoder"):
+            assert models_payload[k]["artifact_verified"] is True
+            assert models_payload[k]["in_domain_evaluated"] is True
+            assert models_payload[k]["cross_source_validated"] is False
+            assert models_payload[k]["deployment_tier"] == "RESEARCH_ONLY"
+
+        # Even if compatibility gate were spoofed, xgboost never clears containment authority.
+        xgb_ok, xgb_code, _ = _evaluate_containment_authority(
+            provenance_verification="server_verified_analysis",
+            analysis_id="analysis-spoof-check",
+            inference_mode="verified_model",
+            eligible=True,
+            compatibility_status="MODEL_VALIDATED",
+            eligibility_status="PREDICTION_AVAILABLE",
+            model_key="xgboost",
+        )
+        assert xgb_ok is False
+        assert xgb_code == "HOLD_RESEARCH_ONLY_MODEL"

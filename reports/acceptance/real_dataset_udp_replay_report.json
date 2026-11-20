@@ -1,0 +1,52 @@
+{
+  "report_title": "Real-Dataset NetFlow v9 UDP Loopback Replay Verification",
+  "executed_at_utc": "2026-11-18T18:02:06.853149+00:00",
+  "real_hardware_switch": false,
+  "synthetic_handcrafted_flows": false,
+  "dataset_source": "data/processed/v2/ait_test.csv.gz",
+  "category_distribution_replayed": {
+    "Benign": 12,
+    "Credential_Attack": 12,
+    "Data_Exfiltration": 12,
+    "Post_Exploitation_Discovery": 12,
+    "Reconnaissance": 12,
+    "Exploitation_And_C2": 5
+  },
+  "runtime_policy": {
+    "runtime_mode": "deployment",
+    "expected_ood_gate_sha256_supplied": true,
+    "ood_gate_trust_anchor": "explicit_expected_sha256",
+    "ood_gate_status": "FITTED",
+    "inference_mode": "REAL_MODELS",
+    "ready_count": 4
+  },
+  "replay_metrics": {
+    "flows_sent": 65,
+    "flows_decoded": 65,
+    "events_processed": 65,
+    "ml_ready_events": 65,
+    "avg_inference_latency_us": 117056.326,
+    "elapsed_seconds": 8.9661,
+    "encrypted_behavioral_vectors": 65,
+    "alerts_generated": 3,
+    "campaigns_reconstructed": 1,
+    "multi_stage_campaigns": 1
+  },
+  "sample_timelines": [
+    {
+      "campaign_id": "tl-real-dataset-udp-replay",
+      "stage_count": 52,
+      "phases": [
+        "EXFILTRATION_IMPACT",
+        "INITIAL_ACCESS",
+        "RECONNAISSANCE"
+      ],
+      "observed_stages": 52,
+      "inferred_stages": 0
+    }
+  ],
+  "limitations": [
+    "Real flow features from published datasets were encoded into NetFlow v9 UDP datagrams over localhost (127.0.0.1); real_hardware_switch=false.",
+    "Does NOT replace physical Cisco/MikroTik/softflowd router switch telemetry required for full #137 hardware lab signoff."
+  ]
+}

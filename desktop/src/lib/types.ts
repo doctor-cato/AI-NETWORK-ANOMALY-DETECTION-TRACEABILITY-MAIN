@@ -84,6 +84,10 @@ export interface ModelStatusItem {
   decision_threshold: number | null;
   score_semantics: string | null;
   reason: string | null;
+  artifact_verified?: boolean;
+  in_domain_evaluated?: boolean;
+  cross_source_validated?: boolean;
+  deployment_tier?: string;
 }
 
 export interface OodSummary {
@@ -229,6 +233,19 @@ export interface CsvAnalyzeResponse {
   compatibility_gate: CompatibilityGateSummary;
   ood_report: OodSummary;
   behavioral_summary: BehavioralSummary;
+  behavioral_vectors?: Array<{
+    vector_id: string;
+    entity_key: string;
+    window_start: string;
+    window_end: string;
+    dimensions: number;
+    version: string;
+    features: number[];
+    feature_names: string[];
+    sha256_hash: string;
+    missing_feature_count: number;
+    missing_feature_names: string[];
+  }>;
   security_notice: string;
   results: CsvFlowPredictionItem[];
   timeline: CsvTimelineItem[];
@@ -398,4 +415,344 @@ export interface SecuritySimulationExportResponse {
   json_sha256: string;
   metadata_sha256: string;
   exported_at_utc: string;
+}
+
+export interface TimelineStageItem {
+  stage_id: string;
+  phase: string;
+  timestamp: string;
+  source_entity: string;
+  target_entity: string;
+  title: string;
+  description: string;
+  confidence: number;
+  is_observed: boolean;
+  evidence_ids: string[];
+  indicators: string[];
+}
+
+export type PanelDataState =
+  | "LOADING"
+  | "CONNECTED"
+  | "DISCONNECTED"
+  | "EMPTY"
+  | "ERROR"
+  | "DEMO";
+
+export interface TraceTimelineResponse {
+  timeline_id: string;
+  campaign_name: string;
+  overall_confidence: number;
+  start_time: string;
+  end_time: string;
+  entities_involved: string[];
+  total_stages: number;
+  stages: TimelineStageItem[];
+  available_campaigns?: string[];
+  data_status?: string;
+  provenance?: Record<string, unknown>;
+}
+
+export interface InvestigationReportResponse {
+  report_id: string;
+  incident_id: string;
+  title: string;
+  generated_at: string;
+  severity: string;
+  root_cause_summary: string;
+  artifact_hash: string;
+  timeline: TraceTimelineResponse;
+  evidence_provenance: Array<Record<string, unknown>>;
+  recommended_actions: string[];
+  markdown_content: string;
+  artifact_version?: string;
+}
+
+export interface StorageProtectionStatus {
+  platform?: string;
+  keystore_dir?: string;
+  master_key_protection?: string;
+  dpapi_required?: boolean;
+  dpapi_available?: boolean;
+  acl_hardening?: string;
+  dek_wrapping?: Record<string, unknown>;
+  nonce_registry_entries?: number;
+  load_error_count?: number;
+  load_errors?: string[];
+  limitations?: string[];
+  error?: string;
+  fail_closed?: boolean;
+}
+
+export interface CryptoStatusResponse {
+  active_key_id: string;
+  algorithm: string;
+  rotation_interval_minutes: number;
+  adaptive_risk_threshold: number;
+  cooldown_seconds: number;
+  max_rotations_per_hour?: number;
+  rotations_this_hour?: number;
+  total_rotations: number;
+  total_records_encrypted: number;
+  master_key_fingerprint?: string | null;
+  recent_rotations: Array<{
+    rotation_id: string;
+    trigger: string;
+    decision: string;
+    old_key_id?: string | null;
+    new_key_id?: string | null;
+    risk_score?: number | null;
+    timestamp: string;
+    reason?: string;
+  }>;
+  storage_protection_status?: StorageProtectionStatus;
+  data_status?: string;
+}
+
+export interface IncidentItem {
+  incident_id: string;
+  title: string;
+  severity: string;
+  status: string;
+  anomaly_score: number;
+  attack_type: string | null;
+  created_at: string;
+  updated_at: string;
+  source_ip?: string;
+  dest_ip?: string;
+}
+
+export interface PaginatedIncidentsResponse {
+  items: IncidentItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface EntityGraphNodeItem {
+  node_id: string;
+  kind: string;
+  label: string;
+  properties: Record<string, unknown>;
+}
+
+export interface EntityGraphEdgeItem {
+  edge_id: string;
+  source_id: string;
+  target_id: string;
+  relation_type: string;
+  confidence: number;
+  is_observed: boolean;
+  evidence_id: string | null;
+}
+
+export interface TraceGraphResponse {
+  node_count: number;
+  edge_count: number;
+  nodes: EntityGraphNodeItem[];
+  edges: EntityGraphEdgeItem[];
+  data_status?: string;
+  provenance?: Record<string, unknown>;
+  truncated?: boolean;
+}
+
+export interface LiveCollectorStats {
+  datagrams_received?: number;
+  datagrams_rejected?: number;
+  flows_decoded?: number;
+  events_dropped?: number;
+  queue_depth?: number;
+  queue_capacity?: number;
+  last_datagram_at_utc?: string | null;
+  last_error?: string | null;
+  running?: boolean;
+  bound_port?: number | null;
+  decoder?: {
+    malformed_packet_count?: number;
+    unresolved_template_count?: number;
+    unsupported_template_count?: number;
+    total_flows_decoded?: number;
+    templates_cached?: number;
+  };
+}
+
+export interface LivePipelineStats {
+  total_enqueued?: number;
+  total_processed?: number;
+  total_dropped?: number;
+  queue_utilization_pct?: number;
+  avg_batch_size?: number;
+  throughput_events_per_sec?: number;
+  avg_latency_ms?: number;
+}
+
+export interface LiveServiceMetrics {
+  events_received?: number;
+  events_processed?: number;
+  ml_ready_events?: number;
+  inference_errors?: number;
+  alerts_raised?: number;
+  avg_inference_latency_us?: number;
+  max_inference_latency_us?: number;
+  last_event_at_utc?: string | null;
+}
+
+export interface LiveInferenceSummary {
+  inference_mode?: string;
+  ai_ready?: boolean;
+  ai_ready_semantics?: string;
+  production_ready?: boolean;
+  ready_count?: number;
+  validated_count?: number;
+  cross_source_validated_count?: number;
+  models?: Array<Record<string, unknown>>;
+  ood_gate_status?: string;
+}
+
+export interface LiveStatusResponse {
+  mode: string;
+  running: boolean;
+  data_status: string;
+  bound_port: number | null;
+  started_at_utc: string | null;
+  collector: LiveCollectorStats;
+  pipeline: LivePipelineStats;
+  metrics: LiveServiceMetrics;
+  inference: LiveInferenceSummary;
+  alerts_buffered?: number;
+  demo_mode?: boolean;
+  persistence_enabled?: boolean;
+  last_error?: string | null;
+}
+
+export interface LiveAlertsResponse {
+  data_status: string;
+  total: number;
+  items: Array<Record<string, unknown>>;
+}
+
+export interface LiveEventResult {
+  predicted_attack_category?: string | null;
+  attack_category_confidence?: number | null;
+  attack_type?: string | null;
+  [key: string]: unknown;
+}
+
+export interface LiveResultsResponse {
+  data_status: string;
+  total: number;
+  items: LiveEventResult[];
+}
+
+export interface BehavioralVectorListItem {
+  vector_id: string;
+  entity_id: string;
+  window_start: string;
+  window_end: string;
+  dimensions: number;
+  is_encrypted: boolean;
+  key_id: string | null;
+  created_at: string;
+}
+
+export interface BehavioralVectorListResponse {
+  data_status: string;
+  total: number;
+  items: BehavioralVectorListItem[];
+  reason?: string | null;
+}
+
+export interface EntityBaselineProfile {
+  entity_key: string;
+  has_baseline: boolean;
+  deviation_score: number;
+  cosine_similarity: number;
+  sample_count: number;
+  window_size?: number;
+}
+
+export interface BehavioralVectorDetailResponse {
+  vector_id: string;
+  entity_id: string;
+  window_start: string;
+  window_end: string;
+  dimensions: number;
+  features: number[];
+  feature_names: string[] | null;
+  feature_name_status: string;
+  sha256_hash?: string | null;
+  is_encrypted_at_rest: boolean;
+  key_id: string | null;
+  created_at: string;
+  data_status: string;
+  baseline_profile?: EntityBaselineProfile | null;
+}
+
+export interface BehavioralSimilarityResponse {
+  vector_a: string;
+  vector_b: string;
+  dimensions?: number | null;
+  cosine_similarity?: number | null;
+  euclidean_distance?: number | null;
+  manhattan_distance?: number | null;
+  interpretation?: string | null;
+  interpretation_semantics?: string | null;
+  comparable: boolean;
+  reason?: string | null;
+  data_status: string;
+}
+
+export interface BehavioralCorrelationClusterItem {
+  cluster_id: string;
+  member_vector_ids: string[];
+  average_similarity: number;
+  ip_addresses_observed: string[];
+}
+
+export interface BehavioralCorrelationResponse {
+  data_status: string;
+  match_threshold: number;
+  total_vectors_evaluated: number;
+  clusters: BehavioralCorrelationClusterItem[];
+  reason?: string | null;
+}
+
+export interface BenchmarkSplitMetricsItem {
+  dataset: string;
+  f1?: number | null;
+  precision?: number | null;
+  recall?: number | null;
+  fpr?: number | null;
+  roc_auc?: number | null;
+  pr_auc?: number | null;
+  sample_count?: number | null;
+}
+
+export interface BenchmarkTopFeatureItem {
+  feature: string;
+  importance: number;
+  method?: string;
+}
+
+export interface ModelBenchmarkEntry {
+  model_key: string;
+  display_name: string;
+  model_type: string;
+  deployment_tier: string;
+  decision_threshold?: number | null;
+  threshold_source?: string | null;
+  in_domain?: BenchmarkSplitMetricsItem | null;
+  cross_source: BenchmarkSplitMetricsItem[];
+  top_features: BenchmarkTopFeatureItem[];
+}
+
+export interface ModelBenchmarkReportResponse {
+  data_status: string;
+  generated_at_utc?: string | null;
+  dataset_provenance?: string | null;
+  evaluation_partition?: string | null;
+  models: ModelBenchmarkEntry[];
+  limitations: string[];
+  sources_loaded: string[];
 }

@@ -79,8 +79,8 @@ def _copy_attestation_workspace(tmp_path: Path) -> Path:
     rel_files = [
         "scripts/verify_companion_artifacts.py",
         "desktop/package.json",
-        "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json",
-        "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+        "data/V2_SPLIT_MANIFEST.json",
+        "reports/preprocessing/v2_flow_preprocessing_manifest.json",
         "reports/models/random_forest_manifest.json",
         "reports/models/xgboost_manifest.json",
         "reports/models/isolation_forest_manifest.json",
@@ -97,10 +97,12 @@ def _copy_attestation_workspace(tmp_path: Path) -> Path:
     flows_path = demo_dir / "demo_flows.csv"
     labels_path = demo_dir / "demo_labels.csv"
     flows_path.write_text(
-        "L4_SRC_PORT,L4_DST_PORT\n80,443\n443,51234\n", encoding="utf-8", newline="\n"
+        "duration_ms,bytes_in,bytes_out\n10.0,100,200\n20.0,300,400\n",
+        encoding="utf-8",
+        newline="\n",
     )
-    labels_path.write_text("row_index,Label\n0,0\n1,1\n", encoding="utf-8", newline="\n")
-    split_sha = _sha256_path(ws / "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+    labels_path.write_text("row_index,label_binary\n0,0\n1,1\n", encoding="utf-8", newline="\n")
+    split_sha = _sha256_path(ws / "data/V2_SPLIT_MANIFEST.json")
     demo_manifest_payload = {
         "split_manifest_sha256": split_sha,
         "sampling": {
@@ -125,9 +127,9 @@ def _build_valid_attestation_payload(
     include_nsis: bool = True,
     commit: str | None = None,
 ) -> Dict[str, Any]:
-    split_sha = _sha256_path(root / "data/NF_UNSW_NB15_V3_SPLIT_MANIFEST.json")
+    split_sha = _sha256_path(root / "data/V2_SPLIT_MANIFEST.json")
     prep_manifest = json.loads(
-        (root / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+        (root / "reports/preprocessing/v2_flow_preprocessing_manifest.json").read_text(
             encoding="utf-8"
         )
     )
@@ -141,12 +143,12 @@ def _build_valid_attestation_payload(
     if all((root / rel).is_file() for rel in demo_rels):
         demo_sha256 = {rel: _sha256_path(root / rel) for rel in demo_rels}
     else:
-        # Demo CSV files are .gitignored on clean CI checkouts; reuse historical demo_sha256 only
-        tracked_att_path = root / "reports/releases/v0.6.0_e2e_verification.json"
-        if not tracked_att_path.is_file():
-            tracked_att_path = REPO_ROOT / "reports/releases/v0.6.0_e2e_verification.json"
-        tracked_att = json.loads(tracked_att_path.read_text(encoding="utf-8"))
-        demo_sha256 = dict(tracked_att["demo_sha256"])
+        # Demo CSV files are .gitignored on clean CI checkouts; use deterministic test digests
+        demo_sha256 = {
+            "data/demo/demo_flows.csv": "1" * 64,
+            "data/demo/demo_labels.csv": "2" * 64,
+            "data/demo/demo_manifest.json": "3" * 64,
+        }
 
     cm_specs = {
         "random_forest": (98, 0, 0, 100),
@@ -675,7 +677,21 @@ def _install_mocked_windows_desktop_env(
             state["backend_alive"] = False
         return "wm_close"
 
+    real_time = vca.time
+    clock = [0.0]
+
+    class _FakeTimeModule:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real_time, name)
+
+        def monotonic(self) -> float:
+            return clock[0]
+
+        def sleep(self, seconds: float) -> None:
+            clock[0] += max(0.0, float(seconds))
+
     monkeypatch.setattr(vca, "os", SimpleNamespace(name="nt", environ={}))
+    monkeypatch.setattr(vca, "time", _FakeTimeModule())
     monkeypatch.setattr(vca.subprocess, "run", _fake_run)
     monkeypatch.setattr(vca.subprocess, "Popen", _fake_popen)
     monkeypatch.setattr(vca, "_http_json", _fake_http_json)
@@ -1072,7 +1088,7 @@ def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_de
     # Partial data/demo/* on disk must always fail closed
     partial_dir = ws / "data/demo"
     partial_dir.mkdir(parents=True, exist_ok=True)
-    (partial_dir / "demo_flows.csv").write_text("L4_SRC_PORT\n80\n", encoding="utf-8")
+    (partial_dir / "demo_flows.csv").write_text("duration_ms\n10.0\n", encoding="utf-8")
     with pytest.raises(RuntimeError, match="Incomplete tracked demo files"):
         verify_e2e_attestation(att, root=ws)
 
@@ -1080,7 +1096,7 @@ def test_verify_e2e_attestation_clean_checkout_without_demo_files_and_require_de
 def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     ws = _copy_attestation_workspace(tmp_path / "src_ws")
     prep_manifest = json.loads(
-        (ws / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+        (ws / "reports/preprocessing/v2_flow_preprocessing_manifest.json").read_text(
             encoding="utf-8"
         )
     )
@@ -1100,11 +1116,14 @@ def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.Monkey
         model_runs[key] = str(md["run_id"])
 
     fake_files = {
-        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
+        "artifacts/preprocessing/v2_flow_preprocessor.joblib": b"prep",
         "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
         "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
         "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
         "artifacts/models/autoencoder/autoencoder_model.joblib": b"ae",
+        "artifacts/ml/ood_reference_gate.json": json.dumps(
+            {"preprocessor_artifact_sha256": prep_sha, "fit_rows": 100}
+        ).encode("utf-8"),
     }
     for rel, content in fake_files.items():
         p = ws / rel
@@ -1117,7 +1136,7 @@ def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.Monkey
             "data/demo/demo_flows.csv",
             "data/demo/demo_labels.csv",
             "data/demo/demo_manifest.json",
-            "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+            "reports/preprocessing/v2_flow_preprocessing_manifest.json",
             "reports/models/random_forest_manifest.json",
             "reports/models/xgboost_manifest.json",
             "reports/models/isolation_forest_manifest.json",
@@ -1148,6 +1167,16 @@ def _setup_companion_source_workspace(tmp_path: Path, monkeypatch: pytest.Monkey
             "preprocessor": {
                 "ready": all_present,
                 "sha256": prep_sha if all_present else None,
+            },
+            "ood_gate": {
+                "status": "FITTED" if all_present else "MISSING",
+                "sha256": (
+                    _sha256_path(root / "artifacts/ml/ood_reference_gate.json")
+                    if (root / "artifacts/ml/ood_reference_gate.json").is_file()
+                    else None
+                ),
+                "fit_rows": 100 if all_present else None,
+                "preprocessor_artifact_sha256": prep_sha if all_present else None,
             },
             "models": {
                 key: {
@@ -1483,6 +1512,26 @@ def test_github_actions_artifact_zip_wrapper_and_provenance_f06(
             expected_bundle_sha256=_sha256_path(tampered_inner),
         )
 
+    # (d) Tampered OOD gate SHA-256 inside COMPANION_BUNDLE_MANIFEST.json rejected fail-closed
+    tampered_ood_manifest = tmp_path / "tampered_ood_manifest.zip"
+    with (
+        zipfile.ZipFile(bundle_zip, "r") as zin,
+        zipfile.ZipFile(tampered_ood_manifest, "w") as zout,
+    ):
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "COMPANION_BUNDLE_MANIFEST.json":
+                m = json.loads(data.decode("utf-8"))
+                m["ood_gate"]["sha256"] = "0" * 64
+                data = json.dumps(m).encode("utf-8")
+            zout.writestr(item, data)
+    with pytest.raises(RuntimeError, match="COMPANION_BUNDLE_MANIFEST ood_gate sha256 mismatch"):
+        install_companion_bundle(
+            root=target_ws,
+            bundle_archive=tampered_ood_manifest,
+            expected_bundle_sha256=_sha256_path(tampered_ood_manifest),
+        )
+
 
 def test_verify_e2e_attestation_requires_all_four_frontend_ready_models(tmp_path: Path):
     ws = _copy_attestation_workspace(tmp_path)
@@ -1518,7 +1567,7 @@ def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
 
     # Populate synthetic companion files in src_ws with a STALE XGBoost sidecar manifest
     companion_files = {
-        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib": b"prep",
+        "artifacts/preprocessing/v2_flow_preprocessor.joblib": b"prep",
         "artifacts/models/random_forest/random_forest_baseline.joblib": b"rf",
         "artifacts/models/xgboost/xgboost_baseline.joblib": b"xgb",
         "artifacts/models/isolation_forest/isolation_forest.joblib": b"if",
@@ -1535,7 +1584,7 @@ def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
     def _ready_summary(root: Path, runtime_dir: Path | None = None) -> dict[str, Any]:
         eff_rt = (runtime_dir or root).resolve()
         prep_sha = json.loads(
-            (root / "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json").read_text(
+            (root / "reports/preprocessing/v2_flow_preprocessing_manifest.json").read_text(
                 encoding="utf-8"
             )
         )["artifact_sha256"]
@@ -1571,7 +1620,7 @@ def test_stage_and_install_sync_xgboost_sidecar_and_support_runtime_dir(
             "companion_files": sorted(
                 list(companion_files.keys())
                 + [
-                    "reports/preprocessing/nf_unsw_nb15_v3_preprocessing_manifest.json",
+                    "reports/preprocessing/v2_flow_preprocessing_manifest.json",
                     "reports/models/random_forest_manifest.json",
                     "reports/models/xgboost_manifest.json",
                     "reports/models/isolation_forest_manifest.json",
@@ -1671,11 +1720,11 @@ def test_verify_e2e_attestation_require_bundled_resources_enforces_production_mo
 
 def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: Path):
     (tmp_path / "NOTICE").write_text(
-        "Dataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | UQ License ID 454104\n",
+        "AIT NetFlow Data Set v2 | DOI: 10.5281/zenodo.13168643 | CTU-SME-11 | 10.5281/zenodo.7958258\n",
         encoding="utf-8",
     )
     (tmp_path / "THIRD_PARTY_NOTICES.md").write_text(
-        "# Notices\nDataset: NF-UNSW-NB15-v3 | DOI: 10.48610/6E0EDA1 | License ID 454104\n",
+        "# Notices\nAIT NetFlow Data Set v2 | DOI: 10.5281/zenodo.13168643 | CTU-SME-11 | 10.5281/zenodo.7958258\n",
         encoding="utf-8",
     )
     (tmp_path / "LICENSE").write_text("Apache License 2.0\n", encoding="utf-8")
@@ -1804,7 +1853,7 @@ def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: 
     assert res_public["public_release_allowed"] is True
     assert res_public["upload_allowed"] is True
     assert res_public["evidence_verified"] is True
-    assert res_public["citation_doi"] == "10.48610/6E0EDA1"
+    assert res_public["citation_doi"] == "10.5281/zenodo.13168643"
 
     # Attribution notices remain mandatory even when authorization exists
     (tmp_path / "NOTICE").unlink()
@@ -1832,19 +1881,19 @@ def test_tauri_standalone_config_covers_all_required_embedded_resources():
     destinations = set(standalone_res.values())
     # Must explicitly include sidecar-supporting artifacts for all 4 models, preprocessor, demo, and manifests
     required_standalone_dests = {
-        "artifacts/preprocessing/nf_unsw_nb15_v3_preprocessor.joblib",
+        "artifacts/preprocessing/v2_flow_preprocessor.joblib",
         "artifacts/models/random_forest/random_forest_baseline.joblib",
         "artifacts/models/random_forest/random_forest_manifest.json",
         "artifacts/models/xgboost/xgboost_baseline.joblib",
         "artifacts/models/xgboost/xgboost_manifest.json",
         "artifacts/models/isolation_forest/isolation_forest.joblib",
-        "artifacts/models/isolation_forest/model_config.json",
-        "artifacts/models/isolation_forest/threshold.json",
-        "artifacts/models/isolation_forest/training_metadata.json",
+        "artifacts/models/isolation_forest/isolation_forest_manifest.json",
         "artifacts/models/autoencoder/autoencoder_model.joblib",
         "artifacts/models/autoencoder/autoencoder_manifest.json",
         "artifacts/models/autoencoder/model_config.json",
         "artifacts/models/autoencoder/threshold.json",
+        "artifacts/models/autoencoder/score_normalization.json",
+        "artifacts/ml/ood_reference_gate.json",
         "data/demo/demo_flows.csv",
         "data/demo/demo_labels.csv",
         "data/demo/demo_manifest.json",
@@ -1891,6 +1940,71 @@ def test_stage_embedded_bundle_and_installed_standalone_layout(tmp_path: Path):
     )
     assert layout["status"] == "READY"
     assert layout["sidecar_sha256"] == expected_sidecar_sha
+    assert layout["ood_gate"]["status"] == "FITTED"
+    assert layout["ood_gate"]["ready"] is True
+
+    # Corrupted OOD gate in installed standalone dir must fail closed
+    ood_installed = install_dir / "artifacts/ml/ood_reference_gate.json"
+    saved_ood = ood_installed.read_bytes()
+    ood_installed.write_bytes(b"{corrupted_ood")
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        vca.verify_installed_standalone_layout(
+            install_dir, expected_sidecar_sha256=expected_sidecar_sha
+        )
+    ood_installed.write_bytes(saved_ood)
+
+    # Corrupted OR missing score_normalization.json in runtime dir must fail Autoencoder & overall verification
+    bad_runtime = tmp_path / "bad_runtime"
+    shutil.copytree(stage_dir, bad_runtime)
+    (bad_runtime / "artifacts/models/autoencoder/score_normalization.json").write_text(
+        "{corrupted_norm", encoding="utf-8"
+    )
+    bad_summary = vca.verify_companion_artifacts(root=REPO_ROOT, runtime_dir=bad_runtime)
+    assert bad_summary["overall_status"] == "BLOCKED / NOT READY"
+    assert bad_summary["models"]["autoencoder"]["ready"] is False
+
+    missing_norm_runtime = tmp_path / "missing_norm_runtime"
+    shutil.copytree(stage_dir, missing_norm_runtime)
+    (missing_norm_runtime / "artifacts/models/autoencoder/score_normalization.json").unlink()
+    missing_norm_summary = vca.verify_companion_artifacts(
+        root=REPO_ROOT, runtime_dir=missing_norm_runtime
+    )
+    assert missing_norm_summary["overall_status"] == "BLOCKED / NOT READY"
+    assert missing_norm_summary["models"]["autoencoder"]["ready"] is False
+    from network_anomaly.inference.predict import load_verified_model
+
+    ae_man_payload = json.loads(
+        (missing_norm_runtime / "artifacts/models/autoencoder/autoencoder_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    with pytest.raises(ValueError, match="score_normalization.json"):
+        load_verified_model(
+            missing_norm_runtime / "artifacts/models/autoencoder/autoencoder_model.joblib",
+            manifest_path=missing_norm_runtime
+            / "artifacts/models/autoencoder/autoencoder_manifest.json",
+            expected_preprocessor_sha256=ae_man_payload["preprocessor_artifact_sha256"],
+        )
+
+    # Missing OOD gate in runtime dir must fail overall readiness fail-closed
+    no_ood_runtime = tmp_path / "no_ood_runtime"
+    shutil.copytree(stage_dir, no_ood_runtime)
+    (no_ood_runtime / "artifacts/ml/ood_reference_gate.json").unlink()
+    no_ood_summary = vca.verify_companion_artifacts(root=REPO_ROOT, runtime_dir=no_ood_runtime)
+    assert no_ood_summary["overall_status"] == "BLOCKED / NOT READY"
+    assert no_ood_summary["ood_gate"]["status"] == "NOT_FITTED"
+
+    # Tamper EMBEDDED_ARTIFACTS_MANIFEST.json ood_gate.sha256 must fail closed
+    emb_man_path = install_dir / "EMBEDDED_ARTIFACTS_MANIFEST.json"
+    saved_emb_man = emb_man_path.read_text(encoding="utf-8")
+    tampered_emb = json.loads(saved_emb_man)
+    tampered_emb["ood_gate"]["sha256"] = "0" * 64
+    emb_man_path.write_text(json.dumps(tampered_emb), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="EMBEDDED_ARTIFACTS_MANIFEST.json"):
+        vca.verify_installed_standalone_layout(
+            install_dir, expected_sidecar_sha256=expected_sidecar_sha
+        )
+    emb_man_path.write_text(saved_emb_man, encoding="utf-8")
 
     # Tamper sidecar or embedded file must fail closed
     with pytest.raises(RuntimeError, match="sidecar SHA-256 mismatch"):
@@ -2298,3 +2412,86 @@ def test_f04_clean_machine_e2e_rejects_local_and_spoofed_env_and_verifies_api_pr
             token_env_var=None,
             independent_vm_evidence=tmp_path / "vm_evidence.json",
         )
+
+
+def test_verify_companion_artifacts_distinguishes_unanchored_vs_trusted_ood_sha(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import hashlib
+
+    import scripts.verify_companion_artifacts as vca
+
+    ood_path = REPO_ROOT / "artifacts/ml/ood_reference_gate.json"
+    if not (
+        (REPO_ROOT / "artifacts/models/random_forest/random_forest_baseline.joblib").is_file()
+        and ood_path.is_file()
+    ):
+        pytest.skip("Local ML model binaries absent on runner")
+
+    monkeypatch.delenv("NETFLOW_OOD_GATE_SHA256", raising=False)
+    monkeypatch.delenv("NETFLOW_EMBEDDED_OOD_GATE_SHA256", raising=False)
+
+    unanchored = vca.verify_companion_artifacts(root=REPO_ROOT)
+    ood_un = unanchored["ood_gate"]
+    assert ood_un["ready"] is True
+    assert ood_un["structural_schema_verified"] is True
+    assert ood_un["preprocessor_linkage_verified"] is True
+    assert ood_un["repo_manifest_verified"] is True
+    assert ood_un["repo_manifest_cross_check"] == "verified"
+    assert ood_un["trusted_digest_verified"] is False
+    assert ood_un["integrity_verification_status"] == "PARTIAL_UNANCHORED"
+    assert ood_un["trust_anchor_source"] == "none"
+
+    real_sha = hashlib.sha256(ood_path.read_bytes()).hexdigest()
+    anchored = vca.verify_companion_artifacts(
+        root=REPO_ROOT,
+        expected_ood_gate_sha256=real_sha,
+    )
+    ood_ok = anchored["ood_gate"]
+    assert ood_ok["ready"] is True
+    assert ood_ok["repo_manifest_verified"] is True
+    assert ood_ok["trusted_digest_verified"] is True
+    assert ood_ok["integrity_verification_status"] == "PASS"
+    assert ood_ok["trust_anchor_source"] == "explicit_expected_sha256"
+    assert ood_ok["expected_sha256"] == real_sha
+
+    wrong = vca.verify_companion_artifacts(
+        root=REPO_ROOT,
+        expected_ood_gate_sha256="0" * 64,
+    )
+    assert wrong["overall_status"] == "BLOCKED / NOT READY"
+    assert wrong["ood_gate"]["ready"] is False
+    assert wrong["ood_gate"]["status"] == "ERROR"
+    assert wrong["ood_gate"]["trusted_digest_verified"] is False
+    assert wrong["ood_gate"]["integrity_verification_status"] == "FAIL"
+
+
+def test_verify_repo_ood_gate_manifest_matches_and_fails_closed_on_tamper(
+    tmp_path: Path,
+):
+    import json
+
+    import scripts.verify_companion_artifacts as vca
+
+    tracked_manifest = REPO_ROOT / vca.OOD_REFERENCE_GATE_MANIFEST_REL
+    assert tracked_manifest.is_file()
+    payload = json.loads(tracked_manifest.read_text(encoding="utf-8"))
+    ood_meta = {
+        "sha256": payload["sha256"],
+        "preprocessor_artifact_sha256": payload["preprocessor_artifact_sha256"],
+        "fit_rows": payload["fit_rows"],
+        "feature_count": payload["feature_count"],
+    }
+
+    assert vca._verify_repo_ood_gate_manifest(REPO_ROOT, ood_meta) == "verified"
+    assert vca._verify_repo_ood_gate_manifest(tmp_path, ood_meta) == "absent"
+
+    tampered_dir = tmp_path / "tampered"
+    tampered_manifest = tampered_dir / vca.OOD_REFERENCE_GATE_MANIFEST_REL
+    tampered_manifest.parent.mkdir(parents=True, exist_ok=True)
+    bad_payload = dict(payload)
+    bad_payload["sha256"] = "0" * 64
+    tampered_manifest.write_text(json.dumps(bad_payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="SHA-256 mismatch with repo manifest"):
+        vca._verify_repo_ood_gate_manifest(tampered_dir, ood_meta)

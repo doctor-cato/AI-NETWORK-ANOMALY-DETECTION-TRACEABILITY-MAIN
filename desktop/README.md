@@ -1,16 +1,16 @@
-# NetFlow Sentinel Desktop App (`v1.0.0` Stable — Rust / Tauri 2 + Svelte 5)
+# NetFlow Sentinel Desktop App (`v2.0` — Rust / Tauri 2 + Svelte 5)
 
-Ứng dụng Desktop Windows x64 cho bài toán phát hiện xâm nhập/bất thường mạng (`NF-UNSW-NB15-v3`) với **4 mô hình thật đóng gói sẵn**:
-- **Random Forest** (`MODEL_VALIDATED`)
-- **XGBoost** (`RESEARCH_ONLY`)
-- **Isolation Forest** (`RESEARCH_ONLY`)
-- **Autoencoder** (`RESEARCH_ONLY`)
+Ứng dụng Desktop Windows x64 cho bài toán phát hiện xâm nhập/bất thường mạng trên **NetFlow Sentinel v2 (`canonical-flow-v2-18` — `AIT-NDS-v2` & `CTU-SME-11`)** với **4 mô hình v2 được huấn luyện mới từ đầu (`AI Ready 4/4`)**:
+- **Random Forest** (`MODEL_VALIDATED` — in-domain `AIT-Test`, `F1 = 0.8997`)
+- **XGBoost** (`RESEARCH_ONLY` — in-domain `AIT-Test`, `F1 = 0.8910`)
+- **Isolation Forest** (`RESEARCH_ONLY` — benign-only, `AIT-Test F1 = 0.5766`, `CTU-Echo F1 = 0.8527`)
+- **Autoencoder** (`RESEARCH_ONLY` — benign-only `MLPRegressor 18-16-8-16-18`, `AIT-Test F1 = 0.5788`)
 
 ---
 
 ## 1. Dành cho người dùng cuối (Standalone Installer)
 
-Bộ cài dự kiến cho GitHub Release `v1.0.0` là `NetFlow-Sentinel-v1.0.0-windows-x64-setup.exe`. Việc phát hành đang chờ nghiệm thu Windows sạch và xác nhận quyền phân phối.
+Bộ cài dự kiến cho GitHub Release `v2.0.0` là `NetFlow-Sentinel-v2.0.0-windows-x64-setup.exe`. Việc phát hành đang chờ nghiệm thu Windows sạch và xác nhận quyền phân phối.
 - **Không cần cài Python, Rust, Node.js, Git hay tải Companion Bundle.**
 - Nhúng sẵn ứng dụng Tauri 2 + Svelte 5, PyInstaller sidecar backend (`netflow-sentinel-backend.exe`), **cả 4 mô hình ML thật**, preprocessor, manifests, demo CSV, **WebView2 Offline Installer** và `NOTICE` / `THIRD_PARTY_NOTICES.md`.
 - Tự động khởi chạy/health-check/restart/shutdown sidecar trên `127.0.0.1` với token phiên `X-Sentinel-Session-Token` và lưu DB cục bộ tại `%LOCALAPPDATA%\NetFlowSentinel\`.

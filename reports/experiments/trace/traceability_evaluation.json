@@ -1,0 +1,39 @@
+{
+  "evaluation_id": "EVAL-TRACEABILITY-M64",
+  "timestamp": "2026-11-19T14:16:39.140407+00:00",
+  "total_ground_truth_events": 10,
+  "stage_attribution_accuracy": 0.9,
+  "trace_path_completeness": 1.0,
+  "baseline_comparison": {
+    "unstructured_log_grep": {
+      "stage_attribution_accuracy": 0.3,
+      "context_reconstruction_completeness": 0.4
+    },
+    "trace_engine_v2": {
+      "stage_attribution_accuracy": 0.9,
+      "context_reconstruction_completeness": 1.0
+    },
+    "delta_percentage_points": {
+      "stage_attribution": 60.0,
+      "context_reconstruction": 60.0
+    }
+  },
+  "conclusion": "Trace Engine v2 achieved 90.0% stage attribution accuracy and 100.0% path completeness across the 10-event 4-phase synthetic attack progression (TESTED on synthetic scenario, not production telemetry).",
+  "qualitative_error_analysis": {
+    "misclassified_events": [
+      {
+        "event_id": "ev-7",
+        "attack_type": "winrm",
+        "dest_port": 5985,
+        "source_ip": "10.0.0.2",
+        "dest_ip": "10.0.0.4",
+        "expected_phase": "LATERAL_MOVEMENT",
+        "predicted_phase": "INITIAL_ACCESS",
+        "root_cause": "AttackTimelineReconstructor (src/network_anomaly/trace/timeline.py:121-123) matches lateral movement only on keywords ['lateral', 'internal', 'worm', 'smb'] or internal ports (445, 139, 3389, 22), missing WinRM ports (5985/5986) and falling through to the default INITIAL_ACCESS branch (timeline.py:135)."
+      }
+    ],
+    "missed_link_example": "If an attacker pivots across hosts (e.g., 198.51.100.1 -> 10.0.0.1 followed by 10.0.0.2 -> 10.0.0.4) without an explicit EntityRelationshipGraph CONNECTS_TO edge, single-IP log grep stops at the perimeter host and misses lateral hops ev-5..ev-8.",
+    "false_link_example": "On shared NAT gateways or admin bastions (e.g., 10.0.0.2), purely IP-based CONNECTS_TO edges can falsely merge benign administrative WinRM/RDP traffic into an active incident cluster if behavioral or temporal window constraints are not enforced.",
+    "sample_size_caveat": "Benchmark uses N=10 synthetic events across 4 ATT&CK phases; each single event represents 10.0 percentage points of accuracy, so results are illustrative functional verification rather than production telemetry statistics."
+  }
+}

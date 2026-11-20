@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "dataset": "CTU-SME-11",
+  "synthetic": false,
+  "local_raw_status": "PRESENT",
+  "official_source": {
+    "publisher": "Stratosphere Laboratory, Czech Technical University in Prague",
+    "concept_doi": "10.5281/zenodo.7958258",
+    "version_doi": "10.5281/zenodo.7958259",
+    "landing_page": "https://zenodo.org/records/7958259",
+    "zenodo_api": "https://zenodo.org/api/records/7958259",
+    "license_title": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "scope_note": "11 real devices/VMs across 7 days in a controlled SME experimental environment; NOT a live production enterprise capture."
+  },
+  "selected_devices": [
+    "Honeypot-Assistant-Amazon-Echo1stGen-1",
+    "Experiment-VM-Microsoft-Windows7AD-1"
+  ],
+  "selection_rationale": "Smallest self-contained IoT (743 MB) and Enterprise Windows AD VM (1.58 GB) archives yielding 260,613 real captured flows across 7 days while avoiding 4-26 GB redundant PCAP archives.",
+  "generated_at_utc": "2026-11-17T20:32:33.326167+00:00",
+  "files": [
+    {
+      "file": "CTU-SME-11_Experiment-VM-Microsoft-Windows7AD-1_v1.0.0.tar.bz2",
+      "size_bytes": 1581328775,
+      "md5": "c97f72da16c46c5176bac52ad2101f0f",
+      "sha256": "1654712980ae8cb27e4417359ffe1483156c582d674d2dcf031112b141652a63"
+    },
+    {
+      "file": "CTU-SME-11_Honeypot-Assistant-Amazon-Echo1stGen-1_v1.0.0.tar.bz2",
+      "size_bytes": 742890363,
+      "md5": "311cbd100eeddf76c8056919fe35b0cb",
+      "sha256": "eb0ac427cab9a346cd2aa446c59290f50b43d162f5ba4da02a8a12a0211dbb84"
+    },
+    {
+      "file": "CTU-SME-11_summary_table.csv",
+      "size_bytes": 1953,
+      "md5": "2ff3da15a7b58eb65482eeeaadcbd917",
+      "sha256": "c052dbe5795cecfd3be96e125fbcf1ad5f77c1f7da32959a73a6acd829181432"
+    },
+    {
+      "file": "README.md",
+      "size_bytes": 2566,
+      "md5": "fb3c306850050470f013bac87f0d2403",
+      "sha256": "4bde3c65f31836881f518fa5f648d56e67f625c8a494ad07ca68e970912c1059"
+    }
+  ]
+}

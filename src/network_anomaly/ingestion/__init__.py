@@ -3,7 +3,7 @@
 from network_anomaly.ingestion.adapters import (
     AWSVPCFlowAdapter,
     BaseSourceAdapter,
-    NetFlowV3Adapter,
+    CanonicalFlowV2Adapter,
     NetFlowV5Adapter,
     SuricataEveAdapter,
     UnsupportedSourceAdapter,
@@ -69,7 +69,7 @@ __all__ = [
     "SourceRegistry",
     # Adapters
     "BaseSourceAdapter",
-    "NetFlowV3Adapter",
+    "CanonicalFlowV2Adapter",
     "ZeekConnAdapter",
     "NetFlowV5Adapter",
     "AWSVPCFlowAdapter",

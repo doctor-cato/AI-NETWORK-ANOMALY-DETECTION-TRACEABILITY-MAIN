@@ -86,7 +86,7 @@
           <Icons name="chart" size={17} />
           Thống kê Hành vi NetFlow Metadata (#28)
         </h2>
-        <span class="badge badge-benign">Ngoài 47 ML Features</span>
+        <span class="badge badge-benign">Ngoài 18 ML Features</span>
       </div>
 
       <div class="grid-2" style="margin-bottom: 12px; gap: 8px;">

@@ -1,6 +1,6 @@
-# Quy trình Đóng gói & Phát hành Windows Standalone (`v1.0.0`)
+# Quy trình Đóng gói & Phát hành Windows Standalone (`v2.0.0`)
 
-Tài liệu này mô tả quy trình build, kiểm chứng fail-closed và phát hành **NetFlow Sentinel (`v1.0.0` Stable)** cho **Windows 10/11 x64** theo kiến trúc **Fully Embedded Standalone Installer** (Issue #71).
+Tài liệu này mô tả quy trình build, kiểm chứng fail-closed và phát hành **NetFlow Sentinel (`v2.0.0`)** cho **Windows 10/11 x64** theo kiến trúc **Fully Embedded Standalone Installer** (Issue #71).
 
 ---
 
@@ -26,8 +26,7 @@ Tài liệu này mô tả quy trình build, kiểm chứng fail-closed và phát
 
 ## 2. Cổng Kiểm soát Bản quyền & Bằng chứng Phân phối (Evidence-Based Distribution Gate)
 
-Dữ liệu huấn luyện **NF-UNSW-NB15-v3** tuân theo **UQ License ID `454104`** (*Permitted Re-Use with Commercial Use Restriction*, DOI: [`10.48610/6E0EDA1`](https://doi.org/10.48610/6E0EDA1)):
-- Giấy phép dataset cho phép sử dụng nghiên cứu/học thuật phi thương mại kèm trích dẫn đầy đủ, nhưng **không mặc định chứng minh quyền phân phối công khai tự do** cho mọi tệp mô hình `.joblib` dẫn xuất và tập con `demo_*.csv` trên GitHub Release công khai.
+Dữ liệu v2 hiện hành (**AIT-NDS-v2**, **AIT-ADS**, **CTU-SME-11** áp dụng **CC BY 4.0**; **AIT-LDS-v2.1** áp dụng **CC BY-NC-SA 4.0** chỉ dùng cho nghiên cứu/correlation cục bộ và không nhúng vào trọng số ML hay bộ demo phát hành) yêu cầu ghi nhận nguồn/attribution đầy đủ trong `NOTICE` và `THIRD_PARTY_NOTICES.md`. Nguồn `NF-UNSW-NB15-v3` (UQ License ID `454104`) đã ngừng sử dụng trong active pipeline và chuyển vào lưu trữ lịch sử `historical/nf_unsw_nb15_v3/`.
 - Hệ thống phân tách rạch ròi 4 mức quyền tại [`reports/governance/DISTRIBUTION_AUTHORIZATION.json`](../reports/governance/DISTRIBUTION_AUTHORIZATION.json) và hàm `verify_distribution_permission()` trong `scripts/verify_companion_artifacts.py`:
   1. `research-only`: nghiên cứu và đánh giá cục bộ (`target_channel=local_offline`). Cấm upload CI artifact và cấm phát hành.
   2. `private-build-only`: đóng gói và kiểm thử nội bộ **chỉ trên máy cục bộ (`local_offline`) hoặc private repository / private runner có quyền truy cập hạn chế (`repo_is_private=true`, `target_channel=private_ci_artifact`)**. Tuyệt đối **FAIL-CLOSED** trên public repository, không tin vào tên workflow `dryrun`.
@@ -48,7 +47,7 @@ Kiểm tra trước khi cắt tag hoặc dispatch workflow:
 
 ```powershell
 python scripts/check_desktop_version.py --check
-python scripts/check_desktop_version.py --check --expect-tag v1.0.0
+python scripts/check_desktop_version.py --check --expect-tag v2.0.0
 ```
 
 - Năm tệp desktop bắt buộc khớp 1-1:
@@ -88,3 +87,6 @@ Workflow `.github/workflows/release.yml` thực hiện fail-closed theo trình t
    - Upload bộ cài ứng viên từ lần chạy `workflow_dispatch` khi gate phân phối trả về `upload_allowed == 'true'`. Tên asset giữ nguyên phiên bản desktop. `tag_label` đặt tên cho artifact của lần chạy.
    - Sau khi nghiệm thu, cung cấp run ID qua `VERIFIED_WINDOWS_CANDIDATE_RUN_ID`, báo cáo Controller đã ký qua `VERIFIED_WINDOWS_VM_ATTESTATION` và khóa xác minh qua `NETFLOW_VM_ATTESTATION_HMAC_KEY`. Tag job tải lại đúng ứng viên cùng commit. Bước publish kiểm tra lại quyền phân phối, SHA-256 installer/sidecar và `--require-stable-windows-e2e` trước khi gọi `gh release create`. Bộ cài ứng viên có thời hạn lưu 7 ngày.
 7. **Always Cleanup:** dọn các tệp build, staging, ứng viên và release assets khỏi workspace của runner ở cuối job.
+8. **Database & Artifact Migration for v2.0 (Issue #80):**
+   - Khi cài đặt đè hoặc nâng cấp từ v1.0.0 lên v2.0.0, bộ cài tự động gọi `scripts/migrate_v1_to_v2.py --db-path <db_path>` để cập nhật schema SQLite idempotent và tạo backup.
+   - Bản v2.0.0 thực hiện **hard cutover** (`canonical-flow-v2-18`, `AIT-NDS-v2` CC BY 4.0): **không** tái sử dụng artifact/mô hình/preprocessor v1 (`NF-UNSW-NB15-v3`, UQ `454104`); mọi model và preprocessor v2 phải khớp SHA-256 trên `staged_bundle/EMBEDDED_SHA256SUMS.txt` và bị từ chối fail-closed nếu phát hiện artifact v1.

@@ -1,12 +1,12 @@
-"""CSV Inference Pipeline for NF-UNSW-NB15-v3 network flow anomaly detection.
+"""CSV Inference Pipeline for NetFlow Sentinel v2 flow anomaly detection.
 
 Provides end-to-end, reproducible, and verifiable inference on new network flows:
-1. Validates input CSV existence, non-emptiness, and NF-UNSW-NB15-v3 schema contract.
-2. Enforces the ordered 47 baseline ML features while strictly rejecting targets
+1. Validates input CSV existence, non-emptiness, and `canonical-flow-v2-18` schema contract.
+2. Enforces the ordered 18 canonical v2 ML features while strictly rejecting targets
    and trace-only metadata from feature input.
-3. Loads and verifies train-only preprocessing artifact (from Issue #8) with strict SHA-256
+3. Loads and verifies train-only preprocessing artifact with strict SHA-256
    and companion manifest integrity checks (fail-closed).
-4. Loads and verifies trained model artifact (Issue #10/#11) with SHA-256 and companion
+4. Loads and verifies trained model artifact with SHA-256 and companion
    manifest provenance verification.
 5. Transforms data using frozen preprocessor state (zero refitting / zero leakage).
 6. Generates row-aligned predictions and prediction probabilities/scores.
@@ -34,8 +34,9 @@ import pandas as pd
 import sklearn
 
 from network_anomaly.config import PROJECT_ROOT
-from network_anomaly.data.nf_unsw_nb15_v3 import (
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
+    PROVENANCE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
@@ -83,14 +84,14 @@ def _get_git_commit() -> str:
 def validate_inference_input(
     df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
-    """Validate and prepare inference input according to NF-UNSW-NB15-v3 contract.
+    """Validate and prepare inference input according to the `canonical-flow-v2-18` contract.
 
     Enforces:
     - Input must be a non-empty pandas DataFrame.
-    - All 47 required baseline ML features must be present in the CSV.
+    - All 18 required canonical v2 ML features must be present in the CSV.
     - Column ordering is reordered to exact canonical contract order (ML_FEATURE_COLUMNS).
-    - Targets (Label, Attack) and trace metadata (IPs, Ports, Timestamps) are strictly
-      excluded from the feature matrix X.
+    - Targets (label_binary, attack_category, raw_label, label_status) and trace metadata
+      (IPs, Ports, Timestamps, provenance) are strictly excluded from the feature matrix X.
     - Non-numeric / invalid tokens are detected via token auditing; unparseable strings
       raise a clear ValueError with sample offending tokens.
     - Preserves input row identity (row_id).
@@ -103,7 +104,7 @@ def validate_inference_input(
     Returns
     -------
     X_ordered : pd.DataFrame
-        Cleaned feature matrix containing the 47 baseline ML features in contract order.
+        Cleaned feature matrix containing the 18 canonical v2 ML features in contract order.
     summary : Dict[str, Any]
         Audit summary including row count, extra columns excluded, and row IDs.
 
@@ -120,11 +121,11 @@ def validate_inference_input(
     if len(df) == 0:
         raise ValueError("Input DataFrame is empty (contains 0 rows)")
 
-    # 1. Enforce presence of all 47 baseline ML features
+    # 1. Enforce presence of all 18 canonical v2 ML features
     missing_features = [col for col in ML_FEATURE_COLUMNS if col not in df.columns]
     if missing_features:
         raise ValueError(
-            f"Input data is missing {len(missing_features)} required baseline ML feature(s): "
+            f"Input data is missing {len(missing_features)} required v2 ML feature(s): "
             f"{missing_features}"
         )
 
@@ -135,11 +136,10 @@ def validate_inference_input(
     input_columns = list(df.columns)
     extra_columns = [col for col in input_columns if col not in ML_FEATURE_COLUMNS]
     target_columns_present = [col for col in input_columns if col in TARGET_COLUMNS]
-    trace_metadata_present = [col for col in input_columns if col in TRACE_METADATA_COLUMNS]
+    excluded_trace_cols = set(TRACE_METADATA_COLUMNS) | set(PROVENANCE_COLUMNS)
+    trace_metadata_present = [col for col in input_columns if col in excluded_trace_cols]
     other_extra_columns = [
-        col
-        for col in extra_columns
-        if col not in TARGET_COLUMNS and col not in TRACE_METADATA_COLUMNS
+        col for col in extra_columns if col not in TARGET_COLUMNS and col not in excluded_trace_cols
     ]
 
     # 4. Audit each feature column for invalid / unparseable numeric tokens
@@ -210,11 +210,8 @@ def load_verified_preprocessor(
             artifact_path.with_suffix(".json"),
             artifact_path.parent / f"{artifact_path.stem}_manifest.json",
             artifact_path.parent / "manifest.json",
-            artifact_path.parent / "nf_unsw_nb15_v3_preprocessing_manifest.json",
-            PROJECT_ROOT
-            / "reports"
-            / "preprocessing"
-            / "nf_unsw_nb15_v3_preprocessing_manifest.json",
+            artifact_path.parent / "v2_flow_preprocessing_manifest.json",
+            PROJECT_ROOT / "reports" / "preprocessing" / "v2_flow_preprocessing_manifest.json",
         ]
         for c in candidates:
             if c.is_file():
@@ -514,7 +511,7 @@ class InferenceResult:
 
 
 class InferencePipeline:
-    """End-to-end inference pipeline for NF-UNSW-NB15-v3 network flow anomaly detection."""
+    """End-to-end inference pipeline for NetFlow Sentinel v2 flow anomaly detection."""
 
     def __init__(
         self,
@@ -544,11 +541,11 @@ class InferencePipeline:
         model_path = Path(model_artifact_path)
         if preprocessor_artifact_path is None:
             default_prep = (
-                PROJECT_ROOT / "artifacts" / "preprocessing" / "nf_unsw_nb15_v3_preprocessor.joblib"
+                PROJECT_ROOT / "artifacts" / "preprocessing" / "v2_flow_preprocessor.joblib"
             )
             candidate_preprocessors = [
                 default_prep,
-                model_path.parent / "nf_unsw_nb15_v3_preprocessor.joblib",
+                model_path.parent / "v2_flow_preprocessor.joblib",
                 model_path.parent / "test_preprocessor.joblib",
                 model_path.parent / "preprocessor.joblib",
             ]
@@ -588,7 +585,7 @@ class InferencePipeline:
 
         Guarantees:
         - Neither preprocessor nor model is ever refitted.
-        - Exact 47 baseline ML features are selected in canonical order.
+        - Exact 18 canonical v2 ML features are selected in canonical order.
         - Output DataFrame has exact same row count and alignment as input.
         - Traceability identifiers (run_id, model SHA-256, preprocessor SHA-256) included.
         - Output probabilities included if model supports predict_proba.

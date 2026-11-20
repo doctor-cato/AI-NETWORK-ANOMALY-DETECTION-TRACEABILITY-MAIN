@@ -170,8 +170,7 @@ def validate_file(target, expected_sha256=None, expected_size=None, expected_row
             if blank_lines > len(blank_positions):
                 shown += ", ..."
             raise ValueError(
-                f"{blank_lines} blank CSV line(s) with no delimiter and no value "
-                f"at line(s) {shown}"
+                f"{blank_lines} blank CSV line(s) with no delimiter and no value at line(s) {shown}"
             )
         if not rows:
             raise ValueError("no data rows")

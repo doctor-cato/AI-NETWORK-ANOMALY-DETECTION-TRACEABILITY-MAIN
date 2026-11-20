@@ -1,0 +1,420 @@
+{
+  "schema_version": "v2-feature-compatibility-v2-post-remediation",
+  "generated_at_utc": "2026-11-17T22:38:23.103593+00:00",
+  "remediation_flags": {
+    "DATA-A01_chunk_index_drop_fixed": true,
+    "DATA-A02_ait_udp_seconds_to_ms_fixed": true,
+    "DATA-A03_ctu_l4_payload_bytes_aligned": true,
+    "DATA-A04_bounded_scale_floor_0_25_applied": true
+  },
+  "single_feature_discrimination": {
+    "ait_train": {
+      "duration_ms": {
+        "roc_auc": 0.203124,
+        "abs_auc": 0.796876
+      },
+      "bytes_in": {
+        "roc_auc": 0.199197,
+        "abs_auc": 0.800803
+      },
+      "bytes_out": {
+        "roc_auc": 0.211143,
+        "abs_auc": 0.788857
+      },
+      "pkts_in": {
+        "roc_auc": 0.239354,
+        "abs_auc": 0.760646
+      },
+      "pkts_out": {
+        "roc_auc": 0.191427,
+        "abs_auc": 0.808573
+      },
+      "protocol_num": {
+        "roc_auc": 0.490128,
+        "abs_auc": 0.509872
+      },
+      "total_bytes": {
+        "roc_auc": 0.200691,
+        "abs_auc": 0.799309
+      },
+      "total_pkts": {
+        "roc_auc": 0.185754,
+        "abs_auc": 0.814246
+      },
+      "bytes_in_ratio": {
+        "roc_auc": 0.282928,
+        "abs_auc": 0.717072
+      },
+      "pkts_in_ratio": {
+        "roc_auc": 0.658562,
+        "abs_auc": 0.658562
+      },
+      "bytes_per_pkt_in": {
+        "roc_auc": 0.351688,
+        "abs_auc": 0.648312
+      },
+      "bytes_per_pkt_out": {
+        "roc_auc": 0.234337,
+        "abs_auc": 0.765663
+      },
+      "bytes_per_sec_in": {
+        "roc_auc": 0.395057,
+        "abs_auc": 0.604943
+      },
+      "bytes_per_sec_out": {
+        "roc_auc": 0.404063,
+        "abs_auc": 0.595937
+      },
+      "pkts_per_sec": {
+        "roc_auc": 0.758716,
+        "abs_auc": 0.758716
+      },
+      "has_response": {
+        "roc_auc": 0.301404,
+        "abs_auc": 0.698596
+      },
+      "is_tcp": {
+        "roc_auc": 0.509872,
+        "abs_auc": 0.509872
+      },
+      "is_udp": {
+        "roc_auc": 0.490128,
+        "abs_auc": 0.509872
+      }
+    },
+    "ait_val": {
+      "duration_ms": {
+        "roc_auc": 0.208335,
+        "abs_auc": 0.791665
+      },
+      "bytes_in": {
+        "roc_auc": 0.034552,
+        "abs_auc": 0.965448
+      },
+      "bytes_out": {
+        "roc_auc": 0.055749,
+        "abs_auc": 0.944251
+      },
+      "pkts_in": {
+        "roc_auc": 0.175731,
+        "abs_auc": 0.824269
+      },
+      "pkts_out": {
+        "roc_auc": 0.060441,
+        "abs_auc": 0.939559
+      },
+      "protocol_num": {
+        "roc_auc": 0.343595,
+        "abs_auc": 0.656405
+      },
+      "total_bytes": {
+        "roc_auc": 0.038309,
+        "abs_auc": 0.961691
+      },
+      "total_pkts": {
+        "roc_auc": 0.053853,
+        "abs_auc": 0.946147
+      },
+      "bytes_in_ratio": {
+        "roc_auc": 0.065824,
+        "abs_auc": 0.934176
+      },
+      "pkts_in_ratio": {
+        "roc_auc": 0.859243,
+        "abs_auc": 0.859243
+      },
+      "bytes_per_pkt_in": {
+        "roc_auc": 0.082284,
+        "abs_auc": 0.917716
+      },
+      "bytes_per_pkt_out": {
+        "roc_auc": 0.066697,
+        "abs_auc": 0.933303
+      },
+      "bytes_per_sec_in": {
+        "roc_auc": 0.08816,
+        "abs_auc": 0.91184
+      },
+      "bytes_per_sec_out": {
+        "roc_auc": 0.108436,
+        "abs_auc": 0.891564
+      },
+      "pkts_per_sec": {
+        "roc_auc": 0.671105,
+        "abs_auc": 0.671105
+      },
+      "has_response": {
+        "roc_auc": 0.131959,
+        "abs_auc": 0.868041
+      },
+      "is_tcp": {
+        "roc_auc": 0.656405,
+        "abs_auc": 0.656405
+      },
+      "is_udp": {
+        "roc_auc": 0.343595,
+        "abs_auc": 0.656405
+      }
+    },
+    "ait_test": {
+      "duration_ms": {
+        "roc_auc": 0.182742,
+        "abs_auc": 0.817258
+      },
+      "bytes_in": {
+        "roc_auc": 0.242829,
+        "abs_auc": 0.757171
+      },
+      "bytes_out": {
+        "roc_auc": 0.25129,
+        "abs_auc": 0.74871
+      },
+      "pkts_in": {
+        "roc_auc": 0.214617,
+        "abs_auc": 0.785383
+      },
+      "pkts_out": {
+        "roc_auc": 0.175432,
+        "abs_auc": 0.824568
+      },
+      "protocol_num": {
+        "roc_auc": 0.567042,
+        "abs_auc": 0.567042
+      },
+      "total_bytes": {
+        "roc_auc": 0.24255,
+        "abs_auc": 0.75745
+      },
+      "total_pkts": {
+        "roc_auc": 0.169153,
+        "abs_auc": 0.830847
+      },
+      "bytes_in_ratio": {
+        "roc_auc": 0.373389,
+        "abs_auc": 0.626611
+      },
+      "pkts_in_ratio": {
+        "roc_auc": 0.633472,
+        "abs_auc": 0.633472
+      },
+      "bytes_per_pkt_in": {
+        "roc_auc": 0.479586,
+        "abs_auc": 0.520414
+      },
+      "bytes_per_pkt_out": {
+        "roc_auc": 0.296329,
+        "abs_auc": 0.703671
+      },
+      "bytes_per_sec_in": {
+        "roc_auc": 0.52271,
+        "abs_auc": 0.52271
+      },
+      "bytes_per_sec_out": {
+        "roc_auc": 0.527937,
+        "abs_auc": 0.527937
+      },
+      "pkts_per_sec": {
+        "roc_auc": 0.780636,
+        "abs_auc": 0.780636
+      },
+      "has_response": {
+        "roc_auc": 0.323482,
+        "abs_auc": 0.676518
+      },
+      "is_tcp": {
+        "roc_auc": 0.432958,
+        "abs_auc": 0.567042
+      },
+      "is_udp": {
+        "roc_auc": 0.567042,
+        "abs_auc": 0.567042
+      }
+    },
+    "ctu_echo": {
+      "duration_ms": {
+        "roc_auc": 0.092666,
+        "abs_auc": 0.907334
+      },
+      "bytes_in": {
+        "roc_auc": 0.093071,
+        "abs_auc": 0.906929
+      },
+      "bytes_out": {
+        "roc_auc": 0.115726,
+        "abs_auc": 0.884274
+      },
+      "pkts_in": {
+        "roc_auc": 0.237888,
+        "abs_auc": 0.762112
+      },
+      "pkts_out": {
+        "roc_auc": 0.13103,
+        "abs_auc": 0.86897
+      },
+      "protocol_num": {
+        "roc_auc": 0.409026,
+        "abs_auc": 0.590974
+      },
+      "total_bytes": {
+        "roc_auc": 0.086213,
+        "abs_auc": 0.913787
+      },
+      "total_pkts": {
+        "roc_auc": 0.070133,
+        "abs_auc": 0.929867
+      },
+      "bytes_in_ratio": {
+        "roc_auc": 0.112017,
+        "abs_auc": 0.887983
+      },
+      "pkts_in_ratio": {
+        "roc_auc": 0.853293,
+        "abs_auc": 0.853293
+      },
+      "bytes_per_pkt_in": {
+        "roc_auc": 0.10017,
+        "abs_auc": 0.89983
+      },
+      "bytes_per_pkt_out": {
+        "roc_auc": 0.115202,
+        "abs_auc": 0.884798
+      },
+      "bytes_per_sec_in": {
+        "roc_auc": 0.103323,
+        "abs_auc": 0.896677
+      },
+      "bytes_per_sec_out": {
+        "roc_auc": 0.115069,
+        "abs_auc": 0.884931
+      },
+      "pkts_per_sec": {
+        "roc_auc": 0.700552,
+        "abs_auc": 0.700552
+      },
+      "has_response": {
+        "roc_auc": 0.144537,
+        "abs_auc": 0.855463
+      },
+      "is_tcp": {
+        "roc_auc": 0.732195,
+        "abs_auc": 0.732195
+      },
+      "is_udp": {
+        "roc_auc": 0.341348,
+        "abs_auc": 0.658652
+      }
+    },
+    "ctu_windows7ad": {
+      "duration_ms": {
+        "roc_auc": 0.482679,
+        "abs_auc": 0.517321
+      },
+      "bytes_in": {
+        "roc_auc": 0.430139,
+        "abs_auc": 0.569861
+      },
+      "bytes_out": {
+        "roc_auc": 0.271584,
+        "abs_auc": 0.728416
+      },
+      "pkts_in": {
+        "roc_auc": 0.48736,
+        "abs_auc": 0.51264
+      },
+      "pkts_out": {
+        "roc_auc": 0.695816,
+        "abs_auc": 0.695816
+      },
+      "protocol_num": {
+        "roc_auc": 0.05695,
+        "abs_auc": 0.94305
+      },
+      "total_bytes": {
+        "roc_auc": 0.38489,
+        "abs_auc": 0.61511
+      },
+      "total_pkts": {
+        "roc_auc": 0.588839,
+        "abs_auc": 0.588839
+      },
+      "bytes_in_ratio": {
+        "roc_auc": 0.469668,
+        "abs_auc": 0.530332
+      },
+      "pkts_in_ratio": {
+        "roc_auc": 0.383673,
+        "abs_auc": 0.616327
+      },
+      "bytes_per_pkt_in": {
+        "roc_auc": 0.371048,
+        "abs_auc": 0.628952
+      },
+      "bytes_per_pkt_out": {
+        "roc_auc": 0.26961,
+        "abs_auc": 0.73039
+      },
+      "bytes_per_sec_in": {
+        "roc_auc": 0.38475,
+        "abs_auc": 0.61525
+      },
+      "bytes_per_sec_out": {
+        "roc_auc": 0.267914,
+        "abs_auc": 0.732086
+      },
+      "pkts_per_sec": {
+        "roc_auc": 0.584366,
+        "abs_auc": 0.584366
+      },
+      "has_response": {
+        "roc_auc": 0.727736,
+        "abs_auc": 0.727736
+      },
+      "is_tcp": {
+        "roc_auc": 0.970189,
+        "abs_auc": 0.970189
+      },
+      "is_udp": {
+        "roc_auc": 0.04338,
+        "abs_auc": 0.95662
+      }
+    }
+  },
+  "protocol_coverage_audit": {
+    "ait_train": {
+      "TCP": 1388821,
+      "UDP": 709070
+    },
+    "ait_val": {
+      "TCP": 278209,
+      "UDP": 99495
+    },
+    "ait_test": {
+      "TCP": 647487,
+      "UDP": 341318
+    },
+    "ctu_echo": {
+      "TCP": 49892,
+      "UDP": 19810,
+      "ICMP": 6371
+    },
+    "ctu_windows7ad": {
+      "UDP": 158089,
+      "TCP": 12359,
+      "ICMP": 4698
+    }
+  },
+  "duration_udp_lt_1ms_audit": {
+    "ait_train": 0.922718,
+    "ait_val": 0.923825,
+    "ait_test": 0.957386,
+    "ctu_echo": 0.299344,
+    "ctu_windows7ad": 0.350695
+  },
+  "bytes_semantics_zero_in_attack_audit": {
+    "ait_train": 0.568308,
+    "ait_val": 0.904864,
+    "ait_test": 0.467186,
+    "ctu_echo": 0.924896,
+    "ctu_windows7ad": 0.498528
+  }
+}

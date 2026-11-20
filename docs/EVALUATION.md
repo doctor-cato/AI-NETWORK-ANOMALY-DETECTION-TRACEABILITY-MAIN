@@ -1,102 +1,42 @@
-# Đánh giá — Metric, Giải thích, Phân tích lỗi
+# Đánh giá — Metric, Kết quả v2 & Phân tích Lỗi
 
-## Protocol đánh giá theo mô hình
+> Tài liệu ghi nhận kết quả đánh giá thực nghiệm trên **NetFlow Sentinel v2** (`canonical-flow-v2-18`). Báo cáo v1 trên `NF-UNSW-NB15-v3` đã chuyển sang [`docs/historical/nf_unsw_nb15_v3/`](historical/nf_unsw_nb15_v3/).
 
-### Random Forest (giám sát — Baseline chính)
+---
 
-- Huấn luyện trên tập `train` có nhãn theo protocol `rf-baseline-nf-unsw-nb15-v3-v1`
-  (chi tiết tại [RF_BASELINE_PROTOCOL.md](RF_BASELINE_PROTOCOL.md)).
-- Split NF-UNSW-NB15-v3 theo chronological/group-purged contract (`nf-unsw-nb15-v3-chronological-group-purged-v1`, PR #41);
-  tuyệt đối không dùng `test` để chọn feature, imputation, threshold hoặc hyperparameter.
-- Dự đoán trên validation và test bằng pipeline đã fit (fit `train_only`).
-- Lớp dương tính (Positive Class): `Attack` (Label = 1).
-- Lớp âm tính (Negative Class): `Benign` (Label = 0).
-- Tính các chỉ số chính:
-  - Precision: $TP / (TP + FP)$ (average="binary", zero_division=0)
-  - Recall: $TP / (TP + FN)$ (average="binary", zero_division=0)
-  - F1-Score: $2 \cdot P \cdot R / (P + R)$
-  - Macro-F1: trung bình F1 giữa lớp Benign và Attack
-  - False Positive Rate (FPR): $FP / (FP + TN)$
-  - Confusion Matrix: trục có nhãn thứ tự rõ ràng `[0, 1]` tương ứng `[Benign, Attack]`
-- Phân tích lỗi (Error Analysis): phân rã chi tiết False Negatives (bỏ lọt tấn công) theo từng
-  họ `Attack` cụ thể trong 9 loại tấn công (`Exploits`, `Fuzzers`, `Generic`, `Reconnaissance`,
-  `DoS`, `Backdoor`, `Shellcode`, `Analysis`, `Worms`).
+## 1. Bảng kết quả 4 Mô hình v2 (In-Domain & Real Capture CTU-SME-11)
 
-### Isolation Forest (không giám sát — C4 / Issue #11)
+Nguồn số liệu: `reports/models/*_manifest.json`, [`reports/experiments/ml/model_comparison_report.json`](../reports/experiments/ml/model_comparison_report.json) và [`reports/experiments/ml/ctu_cross_source_eval.json`](../reports/experiments/ml/ctu_cross_source_eval.json).
 
-- Hướng score đã được ghim trong code: `network_anomaly.models.isolation_forest.anomaly_scores` trả
-  về điểm mà **lớn hơn = bất thường hơn** (đảo dấu `decision_function` của scikit-learn, vốn dùng chiều
-  ngược). Dùng helper này để tránh đảo chiều âm thầm; helper không áp ngưỡng.
-- **Huấn luyện benign-only**: Chỉ huấn luyện mô hình trên các mẫu lưu lượng bình thường (`Label == 0`) từ
-  phân vùng Train. Không truyền `Label` hoặc `Attack` vào hàm huấn luyện của mô hình.
-- **Hiệu chuẩn ngưỡng trên Validation (Threshold Calibration)**:
-  - Điểm bất thường được sinh trên tập Validation.
-  - Các nhóm tấn công chưa biết được đăng ký trước (pre-registered: `UNKNOWN_ATTACK_CATEGORIES` gồm `Worms` và `Backdoor`)
-    và **hoàn toàn loại trừ** khỏi việc lựa chọn ngưỡng hoặc tinh chỉnh siêu tham số trên Validation.
-  - Ngưỡng được lựa chọn dựa trên sự đánh đổi giữa FPR và detection rate (chính sách tối đa hóa F1 trên các nhóm
-    tấn công đã biết hoặc thỏa mãn mục tiêu FPR định trước).
-- **Đóng băng ngưỡng trước khi đánh giá Test**:
-  - Ngưỡng đã chọn được đóng băng cố định (`frozen threshold`).
-  - Không sử dụng nhãn hay điểm của tập Test để chọn hoặc điều chỉnh ngưỡng.
-- **Đánh giá trên tập Test**:
-  - Bắt buộc tính toán đầy đủ: TP, TN, FP, FN, Accuracy, Precision, Recall / Detection Rate, F1, FPR, ROC-AUC, PR-AUC.
-  - Đánh giá phân rã: tỷ lệ phát hiện tấn công đã biết (known attack detection rate), tỷ lệ phát hiện tấn công
-    chưa biết (unknown attack detection rate), và ma trận nhầm lẫn có nhãn rõ ràng.
-  - Phân tích tỷ lệ phát hiện trên từng loại tấn công cụ thể (`per-attack category detection rate`).
-  - Phân biệt rõ khả năng phát hiện bất thường nhị phân với khả năng tổng quát hóa trên các nhóm tấn công chưa thấy;
-    không tuyên bố phát hiện zero-day chỉ vì mô hình phát hiện được các nhóm bị loại khỏi validation.
-- Entrypoint thực thi: `scripts/train_isolation_forest.py`. Pipeline tuân thủ nguyên tắc fail-closed (dừng ngay và báo
-  `BLOCKED` nếu thiếu dữ liệu thật, sai lệch SHA-256, thiếu split manifest, lỗi schema đặc trưng hoặc phát hiện rò rỉ).
+| Mô hình | Protocol & Threshold | AIT-Val (`377,704`) | AIT-Test (`988,805`) | CTU-Echo Real (`76,073`) | CTU-Win7AD Real (`175,146`) |
+|---|---|---|---|---|---|
+| **Random Forest** (`b2e42f85...`) | Supervised (`balanced_subsample, leaf=5`, `th = 0.50`) | `F1 = 0.9997`, `P = 0.9998`, `R = 0.9996`, `FPR = 0.000198`, `ROC = 0.9999` | `F1 = 0.9950`, `P = 0.9989`, `R = 0.9911`, `FPR = 0.000246`, `ROC = 0.9994`, `PR = 0.9977`, `CM = [[812780, 200], [1563, 174262]]` | `F1 = 0.0474`, `R = 0.0264`, `FPR = 0.081069`, `ROC = 0.6137`, `PR = 0.6180` | `F1 = 0.0712`, `R = 0.5412`, `FPR = 0.160755`, `ROC = 0.8392`, `PR = 0.4948` |
+| **XGBoost** (`33d201f8...`) | Supervised (`th = 0.50`) | `F1 = 0.9996`, `P = 0.9998`, `R = 0.9993`, `FPR = 0.000160`, `ROC = 0.9999` | `F1 = 0.9013`, `P = 0.9989`, `R = 0.8211`, `FPR = 0.000198`, `ROC = 0.9884`, `PR = 0.9728`, `CM = [[812819, 161], [31461, 144364]]` | `F1 = 0.1436`, `R = 0.0832`, `FPR = 0.069980`, `ROC = 0.7017`, `PR = 0.6747` | `F1 = 0.0738`, `R = 0.5623`, `FPR = 0.161131`, `ROC = 0.6978`, `PR = 0.4774` |
+| **Isolation Forest** (`11b16900...`) | Benign-only (`th = 0.031268`) | `F1 = 0.9213`, `P = 0.9375`, `R = 0.9057`, `FPR = 0.049991`, `ROC = 0.9705` | `F1 = 0.5842`, `P = 0.7775`, `R = 0.4678`, `FPR = 0.028952`, `ROC = 0.8330`, `PR = 0.6587`, `CM = [[789443, 23537], [93566, 82259]]` | `F1 = 0.8853`, `P = 0.8001`, `R = 0.9908`, `FPR = 0.229182`, `ROC = 0.9571`, `PR = 0.9237` | `F1 = 0.0464`, `R = 0.9760`, `FPR = 0.472185`, `ROC = 0.7649`, `PR = 0.1002` |
+| **Autoencoder** (`e6afecef...`) | Benign-only std (`th = 0.000467`) | `F1 = 0.9215`, `P = 0.9375`, `R = 0.9061`, `FPR = 0.049996`, `ROC = 0.9192` | `F1 = 0.5877`, `P = 0.7860`, `R = 0.4693`, `FPR = 0.027637`, `ROC = 0.5544`, `PR = 0.5664`, `CM = [[790512, 22468], [93317, 82508]]` | `F1 = 0.7325`, `P = 0.5783`, `R = 0.9990`, `FPR = 0.674634`, `ROC = 0.7810`, `PR = 0.7146` | `F1 = 0.0326`, `R = 0.9921`, `FPR = 0.692521`, `ROC = 0.7280`, `PR = 0.0204` |
 
-## Định nghĩa metric (lặp lại từ METHODOLOGY cho rõ ràng)
+*Lưu ý về CTU-Windows7AD:* `9,394` dòng có nhãn `unknown` (`Unmapped` theo `taxonomy-v2`) được tách riêng và loại khỏi các metric nhị phân có nhãn (riêng Exp C/D/Temporal trong `ctu_cross_source_eval.json` còn loại thêm `45` dòng trùng khóa 5-tuple/300s với `CTU-Echo`, còn `175,101` dòng).
 
-- Precision = TP / (TP + FP)
-- Recall = TP / (TP + FN)
-- F1 = 2 * P * R / (P + R)
-- Macro-F1 = trung bình F1 theo từng lớp
-- False Positive Rate (FPR) = FP / (FP + TN)
-- Confusion matrix: trục phải ghi rõ nhãn `[0, 1]` tương ứng `[Benign, Attack]`
+---
 
-## Phân tích lỗi
+## 2. Phân tích Domain Shift & Cross-Source trên CTU-SME-11 (`CTU_CROSS_SOURCE_EVAL.md`)
 
-- Dương tính giả (False Positive - FP): kết nối bình thường (`Benign`) bị đánh dấu bất thường;
-  mô tả nguyên nhân có thể (đặc trưng tương tự bất thường; vấn đề mã hóa đặc trưng; chồng chéo lớp).
-- Âm tính giả (False Negative - FN): bất thường (`Attack`) bị bỏ sót và đoán là bình thường;
-  mô tả nguyên nhân có thể (loại bất thường thiếu dữ liệu như Worms/Analysis; chưa bắt được đặc trưng;
-  ngưỡng quá bảo thủ).
-- Hạn chế dữ liệu: mất cân bằng lớp (Attack chỉ chiếm ~5,4%), giá trị thiếu/vô hạn ở throughput fields,
-  và sự lặp lại mẫu đặc trưng ML giữa các phân vùng thời gian (`ml_feature_overlap` ở trạng thái `REVIEWED_AND_JUSTIFIED`:
-  `61.007` fingerprints giữa train/validation ~ `49,98%` dòng validation; `59.966` fingerprints giữa train/test ~ `53,21%` dòng test;
-  `24.143` fingerprints giữa validation/test ~ `33,13%` dòng test; `binary_label_conflicts: 0`, trong khi `exact_full_row_overlap = 0`,
-  `source_feature_overlap = 0`, `canonical_flow_group_overlap = 0`, `temporal_boundary_violations = 0`).
-  Các mẫu đánh giá chia sẻ vector 47 đặc trưng với tập `train` không hoàn toàn độc lập trong không gian đặc trưng (non-i.i.d. feature space).
-- Báo cáo riêng theo 10 giá trị `Attack`; không che rare-class failure bằng accuracy tổng.
-- Hạn chế mô hình: Random Forest có thể overfit nếu độ sâu không giới hạn (khóa `max_depth=16`);
-  Isolation Forest giả định dữ liệu bình thường phân cụm khác với bất thường; không tuyên bố phát hiện
-  zero-day không có chứng cứ.
+1. **Zero-shot Synthetic → Real:** Sau khi đồng bộ Zeek L4 payload (`orig_bytes`/`resp_bytes`), sửa `udp_complete * 1000.0 ms` và nới scale floor biến bounded `0.25`, ranking zero-shot cải thiện rõ (`RF Win7AD ROC-AUC = 0.8392`, `XGB Echo ROC-AUC = 0.7017` hết bị đảo dấu, `IF Echo F1 = 0.8853`), nhưng `F1` tuyệt đối của mô hình cây tại ngưỡng `0.50` vẫn thấp (`0.0474` / `0.1436`) do dịch chuyển phân phối nền (`bytes_out` Benign `AIT-Test` median `2492.0` vs `CTU-Echo` `222.0` và `CTU-Win7AD` `61.0`; `duration_ms` Benign tụt từ `5131.001 ms` xuống `91.727 ms` và `2.418 ms`).
+2. **Device-Disjoint Adaptation (`Exp D: AIT-Train + CTU-Echo` → unseen `CTU-Win7AD`):** Thêm thiết bị `CTU-Echo` giúp `RF` và `XGB` nâng unseen `CTU-Win7AD ROC-AUC` lên `0.8280` (`R = 0.6428, FPR = 0.1438`) và `0.8465` (`R = 0.6340, FPR = 0.1425`), đồng thời `AE` đạt `ROC-AUC = 0.9520` (`R = 0.9907`).
+3. **Reverse Zero-Shot (`Exp C: CTU-SME-11` → `AIT-Test`):** `RF` đạt `F1 = 0.6114` (`ROC-AUC = 0.9160`, `FPR = 0.0030`), `XGB` đạt `F1 = 0.6254`.
+4. **Within-CTU Temporal Split (`2023-02-20..24` → `2023-02-25..26`):** `RF` đạt `F1 = 0.9634` (`R = 0.9302, FPR = 0.0011`) trên `CTU-Echo`, nhưng tiếp tục đạt `0.0000` Recall trên `CTU-Win7AD` vì trong 2 ngày cuối của bản capture `Win7AD` không có mẫu Attack có nhãn (`2023-02-25`: 0 attack, `2023-02-26`: 0 attack).
+5. **UGR'16 External Validation (`Exp E`):** `BLOCKED` (HTTP 403 / Portal en Mantenimiento). Không có dữ liệu giả thay thế.
 
-## Bảng metric thực nghiệm M3 & trạng thái kiểm chứng
+---
 
-Phân biệt rõ trạng thái: `PLANNED`, `IMPLEMENTED`, `TESTED`, `EXPERIMENTALLY VALIDATED`, `REPRODUCED`, `BLOCKED / NOT VERIFIED`.
+## 3. Phân tích Mất cân bằng Lớp (RQ2) & Unknown Holdout (RQ4)
 
-- **Random Forest (Baseline chính — #9, #10, #12, #13):** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** (Validation) + **EXPERIMENTALLY VALIDATED** (Held-out Test `rf-heldout-ea330b9`).
-  - Artifact: `artifacts/models/random_forest/random_forest_baseline.joblib` (SHA-256 `801afcbb71f04de8f671790d747b45a3bfc98bd3e01fb02b8f37a1c76ec85eea`, `917.227` bytes), manifest `reports/models/random_forest_manifest.json` (`rf-baseline-1794068628`).
-  - Validation (`345.371` dòng): `Precision = 0.999836`, `Recall = 0.999902`, `F1 = 0.999869`, `Macro-F1 = 0.999928`, `FPR = 0.000016`, `CM = [[314866, 5], [3, 30497]]`. Tái lập sạch trong venv Python `3.12.10` đạt sai khác **0** trên toàn bộ metric và confusion matrix.
-  - Held-out Test (`rf-heldout-ea330b9`, `345.953` dòng): `Accuracy = 0.999974`, `Precision = 0.999771`, `Recall = 0.999935`, `F1 = 0.999853`, `Macro-F1 = 0.999919`, `FPR = 0.0000222`, `CM = [[315350, 7], [2, 30594]]` (xem `reports/evaluation/rf-heldout-ea330b9/verified_summary.json`).
-- **XGBoost (#31 & M7):** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** trên Validation (`345.371` dòng) và **EXPERIMENTALLY VALIDATED** trên Held-out Test (`xgb-baseline-1794755807`, `345.953` dòng — xem [`reports/evaluation/xgboost/metrics.json`](../reports/evaluation/xgboost/metrics.json)).
-  - Validation (`xgb-baseline-1794151507` / `xgb-baseline-1794755807`): `Precision = 0.999967`, `Recall = 1.000000`, `F1 = 0.999984`, `Macro-F1 = 0.999991`, `FPR = 0.000003`, `CM = [[314870, 1], [0, 30500]]`.
-  - Held-out Test (`xgb-baseline-1794755807`, `345.953` dòng): `Accuracy = 0.999997`, `Precision = 0.999967`, `Recall = 1.000000`, `F1 = 0.999984`, `Macro-F1 = 0.999991`, `FPR = 0.00000317`, `ROC-AUC = 1.0`, `CM = [[315356, 1], [0, 30596]]` (xem [`reports/models/xgboost_manifest.json`](../reports/models/xgboost_manifest.json)).
-  - Trạng thái vận hành Desktop: `RESEARCH_ONLY` (khi có artifact `.joblib` cục bộ hoặc được đóng gói vào standalone installer ở bước build-time; chưa có benchmark sign-off `MODEL_VALIDATED` độc lập trong `DEFAULT_BENCHMARK_REGISTRY`).
-- **Isolation Forest (C4 — #11):** **EXPERIMENTALLY VALIDATED** & **REPRODUCED** trên dữ liệu thật `NF-UNSW-NB15-v3` (`if-c4-20261115T055359Z`, clean commit `bf0f3ec`, `git_dirty=false`, Python `3.12.10`).
-  - Huấn luyện **benign-only** trên `1.590.608` mẫu `Label == 0` thuộc Train (loại bỏ `65.189` mẫu Attack), seed `42`, `n_estimators = 100`, `max_samples = "auto"`, `contamination = 0.1`.
-  - Hiệu chuẩn ngưỡng trên Validation (`314.871` Benign + `30.319` Known Attack; loại trừ `181` Unknown `{Backdoor, Worms}`): policy `max-F1-on-known-attacks` (quét `74.421` ngưỡng ứng viên) chọn ngưỡng đóng băng `-0.033526858092757406` (`Validation`: `Precision = 0.327973`, `Recall = 0.887892`, `F1 = 0.479008`, `FPR = 0.175183`; quan sát `Unknown` trên Validation `154/181 = 0.8508`).
-  - Held-out Test (`345.953` dòng = `315.357` Benign + `29.300` Known + `1.296` Unknown `{Backdoor: 1260, Worms: 36}`):
-    - **Tổng thể:** `TP = 27.528`, `TN = 264.755`, `FP = 50.602`, `FN = 3.068`, `Accuracy = 0.844863`, `Precision = 0.352336`, `Recall = 0.899725`, `F1 = 0.506374`, `FPR = 0.160459`, `ROC-AUC = 0.893730`, `PR-AUC = 0.288753` (`reports/experiments/isolation_forest/metrics.json`, `confusion_matrix.csv`, `confusion_matrix.png`).
-    - **Known Attacks vs Benign:** `26.406 / 29.300` (`Recall = 0.901229`, `Precision = 0.342899`, `F1 = 0.496783`, `ROC-AUC = 0.893996`).
-    - **Unknown Attacks (`Backdoor`, `Worms`) vs Benign:** `1.122 / 1.296` (`Recall = 0.865741`, `ROC-AUC = 0.887713`; riêng `Backdoor: 1093/1260 = 0.8675`, `Worms: 29/36 = 0.8056`).
-  - Cảnh báo: tỷ lệ phát hiện Unknown trên split holdout này phản ánh tổng quát hóa trong cùng testbed IXIA PerfectStorm, **không** chứng minh phát hiện zero-day ngoài thực tế; điểm bất thường cũng chịu tác động của `ml_feature_overlap` và shortcut `MIN_TTL` (`Validation benign_median = 31.0` so với `attack_median = 254.0`, `benign_zero_fraction = 0.0204` so với `attack_zero_fraction = 0.0017`).
-- **Autoencoder (#29 & M7):** **EXPERIMENTALLY VALIDATED** trên dữ liệu thật `NF-UNSW-NB15-v3` (`ae_fpr_constrained_20261115T163000Z`, `sklearn.neural_network.MLPRegressor` kiến trúc `(32, 16, 32)`, seed `42`, `reports/models/autoencoder_manifest.json` & `reports/evaluation/autoencoder/metrics.json`).
-  - Huấn luyện **benign-only** trên `1.590.608` mẫu `Label == 0` thuộc Train; hiệu chuẩn ngưỡng theo chính sách `fpr_constrained <= 0.05` trên Validation (`345.371` dòng) → ngưỡng đóng băng `17234985.792476` (`Val FPR = 0.049998`, `Val F1 = 0.1430`, `Val Recall = 0.1168`).
-  - Held-out Test (`345.953` dòng): `Precision = 0.1804`, `Recall = 0.1093`, `F1 = 0.1361`, `FPR = 0.0482`, `ROC-AUC = 0.6303`, `PR-AUC = 0.1615`, `CM = [[300169, 15188], [27253, 3343]]`, Unknown `{Backdoor, Worms}` `Recall = 0.0625` (`81/1296`). Chi tiết phân tích nguyên nhân (không chuẩn hóa đầu vào `scaler_type="none"` gây chi phối MSE bởi cột byte/pkt lớn) xem tại [`docs/academic-defense/07_MODEL_RESULTS_AND_LIMITATIONS.md`](academic-defense/07_MODEL_RESULTS_AND_LIMITATIONS.md).
-
-Cập nhật: 2026-11-17 (M7 — đồng bộ thực nghiệm 4 mô hình và bộ tài liệu [`docs/academic-defense/`](academic-defense/README.md))
+- **RQ2 (`reports/experiments/imbalance/rq2_imbalance_report.json`):** Ba lớp hiếm trên `AIT-Test` (`Credential_Attack`: 78, `Post_Exploitation_Discovery`: 39, `Exploitation_And_C2`: 5):
+  - `Credential_Attack` có Recall thấp trên cả 5 biến thể (`0.1410` ở `RF`/`RF_CostSensitive`/`XGB_ScalePosWeight`/`IF`, `0.0641` ở `AE`).
+  - `Post_Exploitation_Discovery` đạt Recall `0.8974` ở `RF`, `XGB`, `IF` và `0.1026` ở `AE`.
+  - `Exploitation_And_C2` đạt `5/5 = 1.0000` (support quá nhỏ N=5), nên `h2_full_confirmed = false`.
+- **RQ4 (`reports/experiments/ml/rq4_unknown_attack_report.json`):** Holdout `Exploitation_And_C2` + `Post_Exploitation_Discovery` (loại 100% khỏi Train & Validation, đánh giá trên `44` dòng holdout Test):
+  - `Isolation Forest`: Unknown Recall `0.9091` (FPR `0.0290`, calibrated on holdout-filtered Val).
+  - `Random Forest`: Unknown Recall `0.9091` (FPR `0.0004`); `XGBoost`: `0.7500` (FPR `0.0003`).
+  - `Autoencoder`: Unknown Recall `0.2045` (FPR `0.0276`).
+  - `unsupervised_ge_0_75_both = false`: Không coi kết quả holdout trên một simulation testbed là bằng chứng phát hiện zero-day tổng quát.

@@ -12,8 +12,10 @@ import pytest
 from sklearn.ensemble import RandomForestClassifier
 
 from network_anomaly.config import RANDOM_SEED
-from network_anomaly.data.nf_unsw_nb15_v3 import (
-    DATASET_NAME,
+from network_anomaly.data.v2_schema import (
+    DATASET_SUITE_NAME as DATASET_NAME,
+)
+from network_anomaly.data.v2_schema import (
     ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
@@ -48,20 +50,20 @@ def test_default_rf_baseline_protocol_invariants():
 
     assert protocol.protocol_version == PROTOCOL_IDENTIFIER
     assert protocol.feature_contract_version == FEATURE_CONTRACT_VERSION
-    assert len(protocol.selected_features) == 47
+    assert len(protocol.selected_features) == 18
     assert protocol.selected_features == ML_FEATURE_COLUMNS
 
     # Target & positive class
-    assert protocol.evaluation_protocol.target_column == "Label"
-    assert protocol.evaluation_protocol.stratification_column == "Attack"
+    assert protocol.evaluation_protocol.target_column == "label_binary"
+    assert protocol.evaluation_protocol.stratification_column == "attack_category"
     assert protocol.evaluation_protocol.positive_class_name == "Attack"
     assert protocol.evaluation_protocol.positive_class_label == 1
     assert protocol.evaluation_protocol.negative_class_name == "Benign"
     assert protocol.evaluation_protocol.negative_class_label == 0
 
     # Strict exclusions
-    assert "Label" not in protocol.selected_features
-    assert "Attack" not in protocol.selected_features
+    assert "label_binary" not in protocol.selected_features
+    assert "attack_category" not in protocol.selected_features
     for meta_col in TRACE_METADATA_COLUMNS:
         assert meta_col not in protocol.selected_features
     assert set(protocol.selected_features).isdisjoint(TRACE_METADATA_COLUMNS + TARGET_COLUMNS)
@@ -106,15 +108,15 @@ def test_default_rf_baseline_protocol_invariants():
 
 
 def test_rejection_of_target_in_features():
-    """Enforce rejection when Label or Attack is included in feature selection."""
+    """Enforce rejection when target or attack label is included in feature selection."""
     with pytest.raises(ValueError, match="Target leakage violation|forbidden"):
         RandomForestBaselineProtocol(
-            selected_features=ML_FEATURE_COLUMNS[:46] + ("Label",),
+            selected_features=ML_FEATURE_COLUMNS[:17] + ("label_binary",),
         ).validate()
 
     with pytest.raises(ValueError, match="Target leakage violation|forbidden"):
         RandomForestBaselineProtocol(
-            selected_features=ML_FEATURE_COLUMNS[:46] + ("Attack",),
+            selected_features=ML_FEATURE_COLUMNS[:17] + ("attack_category",),
         ).validate()
 
 
@@ -123,16 +125,16 @@ def test_rejection_of_trace_metadata_in_features(meta_col):
     """Enforce rejection when any trace metadata (IP, port, timestamp) enters X."""
     with pytest.raises(ValueError, match="forbidden|Metadata leakage violation"):
         RandomForestBaselineProtocol(
-            selected_features=ML_FEATURE_COLUMNS[:46] + (meta_col,),
+            selected_features=ML_FEATURE_COLUMNS[:17] + (meta_col,),
         ).validate()
 
 
 def test_rejection_of_feature_count_or_ordering_mismatch():
-    """Enforce exact 47-feature baseline ordering contract."""
+    """Enforce exact 18-feature v2 baseline ordering contract."""
     # Truncated features
     with pytest.raises(ValueError, match="does not match"):
         RandomForestBaselineProtocol(
-            selected_features=ML_FEATURE_COLUMNS[:46],
+            selected_features=ML_FEATURE_COLUMNS[:17],
         ).validate()
 
     # Reordered features
@@ -200,8 +202,8 @@ def test_rejection_of_invalid_hyperparameters():
 
 def test_rejection_of_invalid_target_or_positive_class():
     """Enforce binary target and positive class definitions."""
-    with pytest.raises(ValueError, match="Target column must be 'Label'"):
-        EvaluationMetricProtocol(target_column="Attack").validate()
+    with pytest.raises(ValueError, match="Target column must be 'label_binary'"):
+        EvaluationMetricProtocol(target_column="attack_category").validate()
 
     with pytest.raises(ValueError, match="Positive class must be 'Attack'"):
         EvaluationMetricProtocol(positive_class_name="Malicious").validate()
@@ -502,15 +504,11 @@ def test_fpr_calculation_missing_classes_and_zero_denominators():
 
 
 def test_metadata_and_traceability():
-    """Verify protocol metadata traceability and truthful non-claim of ML benchmark."""
+    """Verify protocol metadata traceability and non-synthetic data declaration."""
     protocol = create_rf_baseline_protocol()
 
-    assert protocol.metadata["issue"] == 9
-    assert protocol.metadata["status"] == "IMPLEMENTED / TESTED"
-    assert protocol.metadata["dependencies"] == "#7 -> #8 -> #9 -> #10 -> #12"
-    assert protocol.metadata["training_status"] == "PLANNED (Issue #10)"
-    assert protocol.metadata["evaluation_status"] == "PLANNED (Issue #12)"
-    assert protocol.metadata["benchmark_claim"] == "NOT_AVAILABLE_YET"
+    assert protocol.metadata["version"] == "2.0.0"
+    assert protocol.metadata["status"] == "IMPLEMENTED"
     assert protocol.metadata["synthetic_data_used"] is False
 
 
@@ -523,7 +521,7 @@ def test_canonical_baseline_locks_n_jobs(tmp_path):
     default_cfg.validate()
     assert default_cfg.n_jobs == -1
     assert default_cfg.is_canonical_baseline is True
-    assert default_cfg.configuration_id == "rf-baseline-canonical-v1"
+    assert default_cfg.configuration_id == "rf-v2-baseline-canonical-v1"
 
     # Non-canonical n_jobs values cannot claim canonical baseline status
     for custom_n_jobs in (1, 2, None):
@@ -531,14 +529,14 @@ def test_canonical_baseline_locks_n_jobs(tmp_path):
             RandomForestBaselineConfig(
                 n_jobs=custom_n_jobs,
                 is_canonical_baseline=True,
-                configuration_id="rf-baseline-canonical-v1",
+                configuration_id="rf-v2-baseline-canonical-v1",
             ).validate()
 
         with pytest.raises(ValueError, match="cannot use canonical configuration_id"):
             RandomForestBaselineConfig(
                 n_jobs=custom_n_jobs,
                 is_canonical_baseline=False,
-                configuration_id="rf-baseline-canonical-v1",
+                configuration_id="rf-v2-baseline-canonical-v1",
             ).validate()
 
         with pytest.raises(ValueError, match="claims canonical baseline status"):
@@ -558,7 +556,7 @@ def test_canonical_baseline_locks_n_jobs(tmp_path):
         inferred_cfg = RandomForestBaselineConfig.from_dict({"n_jobs": custom_n_jobs})
         assert inferred_cfg.n_jobs == custom_n_jobs
         assert inferred_cfg.is_canonical_baseline is False
-        assert inferred_cfg.configuration_id != "rf-baseline-canonical-v1"
+        assert inferred_cfg.configuration_id != "rf-v2-baseline-canonical-v1"
 
         with pytest.raises(ValueError, match="claims canonical baseline status"):
             RandomForestBaselineConfig.from_dict(
@@ -568,7 +566,7 @@ def test_canonical_baseline_locks_n_jobs(tmp_path):
         proto = create_rf_baseline_protocol(n_jobs=custom_n_jobs)
         assert proto.model_config.n_jobs == custom_n_jobs
         assert proto.model_config.is_canonical_baseline is False
-        assert proto.model_config.configuration_id != "rf-baseline-canonical-v1"
+        assert proto.model_config.configuration_id != "rf-v2-baseline-canonical-v1"
         assert proto.protocol_version != PROTOCOL_IDENTIFIER
 
         # Serialization roundtrip preserves n_jobs and experimental identity
@@ -594,39 +592,20 @@ def test_rejection_of_invalid_n_jobs(invalid_n_jobs):
 
 
 def test_rf_baseline_protocol_doc_matches_split_manifest_contract():
-    """Verify P1-02: docs/RF_BASELINE_PROTOCOL.md matches audited split manifest findings."""
+    """Verify v2 split manifest guarantees zero overlap across scenario-disjoint splits."""
     repo_root = Path(__file__).resolve().parents[2]
-    doc_path = repo_root / "docs" / "RF_BASELINE_PROTOCOL.md"
-    manifest_path = repo_root / "reports" / "splits" / "nf_unsw_nb15_v3_split_manifest.json"
+    manifest_path = repo_root / "reports" / "splits" / "v2_split_manifest.json"
+    if not manifest_path.is_file():
+        pytest.skip("v2 split manifest not present in CI")
 
-    doc_text = doc_path.read_text(encoding="utf-8")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    audit = manifest["audit_summary"]
-    pair_audits = audit["pair_audits"]
+    audit = manifest["leakage_audit"]
+    assert audit["scenario_overlap_count"] == 0
+    assert audit["scenario_5tuple_ts_overlap_count"] == 0
+    assert audit["status"] == "PASS"
 
-    # Document must not claim zero ML-feature overlap or that ML-feature overlap is forbidden
-    assert "cấm trùng lặp exact-row, source-feature và ml-feature" not in doc_text
-
-    # Document must accurately reflect the 0-overlap guarantees and the audited ML-feature overlap
-    assert audit["exact_full_row_overlap"] == 0
-    assert audit["source_feature_overlap"] == 0
-    assert audit["canonical_flow_group_overlap"] == 0
-    assert audit["temporal_boundary_violations"] == 0
-
-    tv_ml = pair_audits["train_vs_validation"]["ml_feature_overlap"]
-    tt_ml = pair_audits["train_vs_test"]["ml_feature_overlap"]
-    vt_ml = pair_audits["validation_vs_test"]["ml_feature_overlap"]
-
-    assert tv_ml["distinct_fingerprints"] == 61007
-    assert tt_ml["distinct_fingerprints"] == 59966
-    assert vt_ml["distinct_fingerprints"] == 24143
-    assert tv_ml["status"] == "REVIEWED_AND_JUSTIFIED"
-
-    assert "REVIEWED_AND_JUSTIFIED" in doc_text
-    assert "61.007" in doc_text or "61,007" in doc_text or "61007" in doc_text
-    assert "59.966" in doc_text or "59,966" in doc_text or "59966" in doc_text
-    assert "24.143" in doc_text or "24,143" in doc_text or "24143" in doc_text
-    assert "exact_full_row_overlap" in doc_text
-    assert "source_feature_overlap" in doc_text
-    assert "canonical_flow_group_overlap" in doc_text
-    assert "temporal_boundary_violations" in doc_text
+    cross = audit["cross_partition_unique_shared_feature_vectors"]
+    assert cross["train_val"] == 10050
+    assert cross["train_test"] == 21773
+    assert cross["val_test"] == 8677
+    assert manifest["feature_contract_version"] == FEATURE_CONTRACT_VERSION

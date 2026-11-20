@@ -344,6 +344,191 @@ fn configure_python_utf8(cmd: &mut Command) {
     cmd.creation_flags(CREATE_NO_WINDOW);
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BackendRuntimePolicy {
+    pub runtime_mode: String,
+    pub require_ood_gate: bool,
+    pub expected_ood_gate_sha256: Option<String>,
+    pub trust_anchor_source: String,
+}
+
+fn parse_optional_bool_flag(raw: Option<&str>, name: &str) -> Result<Option<bool>, String> {
+    let Some(val) = raw else {
+        return Ok(None);
+    };
+    let trimmed = val.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    match trimmed.to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" => Ok(Some(true)),
+        "0" | "false" | "no" => Ok(Some(false)),
+        _ => Err(format!("Invalid boolean value for {name}: {trimmed:?}")),
+    }
+}
+
+pub fn resolve_backend_runtime_policy_from(
+    env_mode: Option<&str>,
+    env_require: Option<&str>,
+    env_sha: Option<&str>,
+    embedded_sha: Option<&str>,
+) -> Result<BackendRuntimePolicy, String> {
+    let runtime_mode = match env_mode.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(raw) => match raw.to_ascii_lowercase().as_str() {
+            "deployment" => "deployment".to_string(),
+            "research" => "research".to_string(),
+            _ => {
+                return Err(format!(
+                    "Unsupported NETFLOW_RUNTIME_MODE {raw:?}; expected 'deployment' or 'research'"
+                ))
+            }
+        },
+        None => "deployment".to_string(),
+    };
+
+    let requested_require = parse_optional_bool_flag(env_require, "NETFLOW_REQUIRE_OOD_GATE")?;
+    if runtime_mode == "deployment" && requested_require == Some(false) {
+        return Err(
+            "NETFLOW_REQUIRE_OOD_GATE cannot be false when NETFLOW_RUNTIME_MODE='deployment'"
+                .to_string(),
+        );
+    }
+    let require_ood_gate = requested_require.unwrap_or(runtime_mode == "deployment");
+
+    let env_sha_clean = env_sha
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_ascii_lowercase());
+    let embedded_sha_clean = embedded_sha
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_ascii_lowercase());
+
+    let (expected_ood_gate_sha256, trust_anchor_source) = if let Some(sha) = env_sha_clean {
+        (Some(sha), "env:NETFLOW_OOD_GATE_SHA256".to_string())
+    } else if let Some(sha) = embedded_sha_clean {
+        (Some(sha), "build_embedded_sha256".to_string())
+    } else if require_ood_gate {
+        (None, "missing_trusted_expected_sha256".to_string())
+    } else {
+        (None, "none".to_string())
+    };
+
+    Ok(BackendRuntimePolicy {
+        runtime_mode,
+        require_ood_gate,
+        expected_ood_gate_sha256,
+        trust_anchor_source,
+    })
+}
+
+pub fn resolve_backend_runtime_policy() -> Result<BackendRuntimePolicy, String> {
+    let env_mode = std::env::var("NETFLOW_RUNTIME_MODE").ok();
+    let env_require = std::env::var("NETFLOW_REQUIRE_OOD_GATE").ok();
+    let env_sha = std::env::var("NETFLOW_OOD_GATE_SHA256").ok();
+    let embedded_sha = option_env!("NETFLOW_OOD_GATE_SHA256");
+    resolve_backend_runtime_policy_from(
+        env_mode.as_deref(),
+        env_require.as_deref(),
+        env_sha.as_deref(),
+        embedded_sha,
+    )
+}
+
+pub fn apply_backend_runtime_policy(cmd: &mut Command, policy: &BackendRuntimePolicy) {
+    cmd.env("NETFLOW_RUNTIME_MODE", &policy.runtime_mode);
+    cmd.env(
+        "NETFLOW_REQUIRE_OOD_GATE",
+        if policy.require_ood_gate { "1" } else { "0" },
+    );
+    if let Some(sha) = &policy.expected_ood_gate_sha256 {
+        if policy.trust_anchor_source == "build_embedded_sha256" {
+            cmd.env_remove("NETFLOW_OOD_GATE_SHA256");
+            cmd.env("NETFLOW_EMBEDDED_OOD_GATE_SHA256", sha);
+        } else {
+            cmd.env("NETFLOW_OOD_GATE_SHA256", sha);
+            cmd.env_remove("NETFLOW_EMBEDDED_OOD_GATE_SHA256");
+        }
+    } else {
+        cmd.env_remove("NETFLOW_OOD_GATE_SHA256");
+        cmd.env_remove("NETFLOW_EMBEDDED_OOD_GATE_SHA256");
+    }
+}
+
+pub struct BackendLaunchPaths<'a> {
+    pub repo_root: &'a Path,
+    pub runtime_dir: &'a Path,
+    pub db_path: &'a Path,
+}
+
+pub fn build_sidecar_command(
+    sidecar_exe: &Path,
+    paths: &BackendLaunchPaths<'_>,
+    port: u16,
+    session_token: &str,
+    policy: &BackendRuntimePolicy,
+) -> Command {
+    let mut c = Command::new(sidecar_exe);
+    c.args([
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port.to_string(),
+        "--db-path",
+        &paths.db_path.to_string_lossy(),
+    ]);
+    c.current_dir(paths.repo_root);
+    c.env("PYTHONUNBUFFERED", "1");
+    c.env("NETWORK_ANOMALY_REPO_ROOT", paths.repo_root);
+    c.env("NETWORK_ANOMALY_RESOURCE_DIR", paths.repo_root);
+    c.env("NETWORK_ANOMALY_RUNTIME_DIR", paths.runtime_dir);
+    c.env("NETWORK_ANOMALY_API_TOKEN", session_token);
+    apply_backend_runtime_policy(&mut c, policy);
+    c.stdin(Stdio::null());
+    c.stdout(Stdio::piped());
+    c.stderr(Stdio::piped());
+    configure_python_utf8(&mut c);
+    c
+}
+
+pub fn build_python_fallback_command(
+    py_exe: &str,
+    py_prefix: &[String],
+    paths: &BackendLaunchPaths<'_>,
+    port: u16,
+    session_token: &str,
+    policy: &BackendRuntimePolicy,
+) -> Command {
+    let script_path = paths.repo_root.join("scripts").join("run_api.py");
+    let mut c = Command::new(py_exe);
+    c.args(py_prefix);
+    c.arg(&script_path);
+    c.args([
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port.to_string(),
+        "--db-path",
+        &paths.db_path.to_string_lossy(),
+    ]);
+    c.current_dir(paths.repo_root);
+    c.env("PYTHONPATH", paths.repo_root.join("src"));
+    c.env("PYTHONUNBUFFERED", "1");
+    if !paths.repo_root.join(".git").exists() {
+        c.env("PYTHONDONTWRITEBYTECODE", "1");
+    }
+    c.env("NETWORK_ANOMALY_REPO_ROOT", paths.repo_root);
+    c.env("NETWORK_ANOMALY_RESOURCE_DIR", paths.repo_root);
+    c.env("NETWORK_ANOMALY_RUNTIME_DIR", paths.runtime_dir);
+    c.env("NETWORK_ANOMALY_API_TOKEN", session_token);
+    apply_backend_runtime_policy(&mut c, policy);
+    c.stdin(Stdio::null());
+    c.stdout(Stdio::piped());
+    c.stderr(Stdio::piped());
+    configure_python_utf8(&mut c);
+    c
+}
+
 fn configure_python_runtime_env(cmd: &mut Command, repo_root: &Path) {
     configure_python_utf8(cmd);
     if !repo_root.join(".git").exists() {
@@ -556,11 +741,11 @@ fn check_embedded_artifacts_files(base: &Path) -> Vec<String> {
     let prep = base
         .join("artifacts")
         .join("preprocessing")
-        .join("nf_unsw_nb15_v3_preprocessor.joblib");
+        .join("v2_flow_preprocessor.joblib");
     let prep_manifest = base
         .join("reports")
         .join("preprocessing")
-        .join("nf_unsw_nb15_v3_preprocessing_manifest.json");
+        .join("v2_flow_preprocessing_manifest.json");
     if !prep.is_file() || !prep_manifest.is_file() {
         return Vec::new();
     }
@@ -958,32 +1143,40 @@ impl BackendManager {
             resolve_sidecar_executable().map(|p| strip_windows_verbatim_prefix(&p))
         };
 
+        let runtime_policy = match resolve_backend_runtime_policy() {
+            Ok(p) => p,
+            Err(err) => {
+                self.append_log(&format!("[tauri][error] {err}"));
+                if let Ok(mut guard) = self.state.lock() {
+                    guard.last_error = Some(err.clone());
+                    guard.starting = false;
+                    guard.startup_stage = "failed_runtime_policy".to_string();
+                    guard.startup_started_at = None;
+                }
+                return Err(err);
+            }
+        };
+
         let session_token = resolve_effective_session_token()?;
         if let Ok(mut log_guard) = self.logs.lock() {
             log_guard.set_redaction(&session_token);
         }
         let port = pick_available_port(preferred_port)?;
 
+        let launch_paths = BackendLaunchPaths {
+            repo_root: &repo_root,
+            runtime_dir: &runtime_dir,
+            db_path: &db_path,
+        };
+
         let (mut cmd, display_cmd, effective_mode) = if let Some(sidecar_exe) = sidecar_opt {
-            let mut c = Command::new(&sidecar_exe);
-            c.args([
-                "--host",
-                "127.0.0.1",
-                "--port",
-                &port.to_string(),
-                "--db-path",
-                &db_path.to_string_lossy(),
-            ]);
-            c.current_dir(&repo_root);
-            c.env("PYTHONUNBUFFERED", "1");
-            c.env("NETWORK_ANOMALY_REPO_ROOT", &repo_root);
-            c.env("NETWORK_ANOMALY_RESOURCE_DIR", &repo_root);
-            c.env("NETWORK_ANOMALY_RUNTIME_DIR", &runtime_dir);
-            c.env("NETWORK_ANOMALY_API_TOKEN", &session_token);
-            c.stdin(Stdio::null());
-            c.stdout(Stdio::piped());
-            c.stderr(Stdio::piped());
-            configure_python_utf8(&mut c);
+            let c = build_sidecar_command(
+                &sidecar_exe,
+                &launch_paths,
+                port,
+                &session_token,
+                &runtime_policy,
+            );
             (
                 c,
                 sidecar_exe.to_string_lossy().to_string(),
@@ -1016,32 +1209,14 @@ impl BackendManager {
                         return Err(err);
                     }
                 };
-            let script_path = repo_root.join("scripts").join("run_api.py");
-            let mut c = Command::new(&py_exe);
-            c.args(&py_prefix);
-            c.arg(&script_path);
-            c.args([
-                "--host",
-                "127.0.0.1",
-                "--port",
-                &port.to_string(),
-                "--db-path",
-                &db_path.to_string_lossy(),
-            ]);
-            c.current_dir(&repo_root);
-            c.env("PYTHONPATH", repo_root.join("src"));
-            c.env("PYTHONUNBUFFERED", "1");
-            if !repo_root.join(".git").exists() {
-                c.env("PYTHONDONTWRITEBYTECODE", "1");
-            }
-            c.env("NETWORK_ANOMALY_REPO_ROOT", &repo_root);
-            c.env("NETWORK_ANOMALY_RESOURCE_DIR", &repo_root);
-            c.env("NETWORK_ANOMALY_RUNTIME_DIR", &runtime_dir);
-            c.env("NETWORK_ANOMALY_API_TOKEN", &session_token);
-            c.stdin(Stdio::null());
-            c.stdout(Stdio::piped());
-            c.stderr(Stdio::piped());
-            configure_python_utf8(&mut c);
+            let c = build_python_fallback_command(
+                &py_exe,
+                &py_prefix,
+                &launch_paths,
+                port,
+                &session_token,
+                &runtime_policy,
+            );
             let disp = if py_prefix.is_empty() {
                 py_exe
             } else {
@@ -1051,6 +1226,12 @@ impl BackendManager {
         };
 
         self.set_stage(true, "spawning_sidecar");
+        self.append_log(&format!(
+            "[tauri] Runtime policy: mode={}, require_ood_gate={}, trust_anchor={}",
+            runtime_policy.runtime_mode,
+            runtime_policy.require_ood_gate,
+            runtime_policy.trust_anchor_source
+        ));
         self.append_log(&format!(
             "[tauri] Spawning {effective_mode} on 127.0.0.1:{port} (timeout={}s): {display_cmd}",
             timeout.as_secs()
@@ -1339,6 +1520,19 @@ mod tests {
         let token = mgr.session_token().unwrap();
         assert!(!token.is_empty());
 
+        let live_resp: serde_json::Value = reqwest::blocking::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!("{}/api/v1/live/status", status.base_url))
+            .header("X-Sentinel-Session-Token", &token)
+            .send()
+            .unwrap()
+            .json()
+            .unwrap();
+        assert_eq!(live_resp["inference"]["runtime_mode"], "deployment");
+        assert_eq!(live_resp["inference"]["require_ood_gate"], true);
+
         mgr.append_log(&format!("[test] secret leakage check token={token}"));
         let snap = mgr.logs_snapshot();
         assert!(!snap.lines.is_empty());
@@ -1357,5 +1551,102 @@ mod tests {
         assert!(after.pid.is_none());
         assert!(mgr.session_token().unwrap().is_empty());
         let _ = std::fs::remove_file(temp_db);
+    }
+
+    fn command_env_map(cmd: &Command) -> std::collections::HashMap<String, Option<String>> {
+        cmd.get_envs()
+            .map(|(k, v)| {
+                (
+                    k.to_string_lossy().to_string(),
+                    v.map(|val| val.to_string_lossy().to_string()),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_runtime_policy_defaults_fail_closed_to_deployment() {
+        let policy = resolve_backend_runtime_policy_from(None, None, None, None).unwrap();
+        assert_eq!(policy.runtime_mode, "deployment");
+        assert!(policy.require_ood_gate);
+        assert_eq!(policy.expected_ood_gate_sha256, None);
+        assert_eq!(
+            policy.trust_anchor_source,
+            "missing_trusted_expected_sha256"
+        );
+
+        let invalid_downgrade =
+            resolve_backend_runtime_policy_from(Some("deployment"), Some("0"), None, None);
+        assert!(invalid_downgrade.is_err());
+
+        let invalid_mode = resolve_backend_runtime_policy_from(Some("staging"), None, None, None);
+        assert!(invalid_mode.is_err());
+
+        let research =
+            resolve_backend_runtime_policy_from(Some("research"), None, None, None).unwrap();
+        assert_eq!(research.runtime_mode, "research");
+        assert!(!research.require_ood_gate);
+    }
+
+    #[test]
+    fn test_sidecar_and_python_fallback_receive_identical_runtime_policy() {
+        let sha = "a".repeat(64);
+        let embedded_policy =
+            resolve_backend_runtime_policy_from(None, None, None, Some(&sha)).unwrap();
+        assert_eq!(embedded_policy.runtime_mode, "deployment");
+        assert!(embedded_policy.require_ood_gate);
+        assert_eq!(embedded_policy.trust_anchor_source, "build_embedded_sha256");
+
+        let root = test_repo_root();
+        let db = root.join("test.db");
+        let launch_paths = BackendLaunchPaths {
+            repo_root: &root,
+            runtime_dir: &root,
+            db_path: &db,
+        };
+        let sidecar_cmd = build_sidecar_command(
+            Path::new("netflow-sentinel-backend.exe"),
+            &launch_paths,
+            9001,
+            "tok",
+            &embedded_policy,
+        );
+        let python_cmd = build_python_fallback_command(
+            "python",
+            &[],
+            &launch_paths,
+            9001,
+            "tok",
+            &embedded_policy,
+        );
+
+        let sc_env = command_env_map(&sidecar_cmd);
+        let py_env = command_env_map(&python_cmd);
+        assert_eq!(
+            sc_env.get("NETFLOW_RUNTIME_MODE"),
+            Some(&Some("deployment".to_string()))
+        );
+        assert_eq!(
+            py_env.get("NETFLOW_RUNTIME_MODE"),
+            Some(&Some("deployment".to_string()))
+        );
+        assert_eq!(
+            sc_env.get("NETFLOW_REQUIRE_OOD_GATE"),
+            Some(&Some("1".to_string()))
+        );
+        assert_eq!(
+            py_env.get("NETFLOW_REQUIRE_OOD_GATE"),
+            Some(&Some("1".to_string()))
+        );
+        assert_eq!(
+            sc_env.get("NETFLOW_EMBEDDED_OOD_GATE_SHA256"),
+            Some(&Some(sha.clone()))
+        );
+        assert_eq!(
+            py_env.get("NETFLOW_EMBEDDED_OOD_GATE_SHA256"),
+            Some(&Some(sha))
+        );
+        assert_eq!(sc_env.get("NETFLOW_OOD_GATE_SHA256"), Some(&None));
+        assert_eq!(py_env.get("NETFLOW_OOD_GATE_SHA256"), Some(&None));
     }
 }

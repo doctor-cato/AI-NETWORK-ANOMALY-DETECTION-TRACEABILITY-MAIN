@@ -1,11 +1,11 @@
-"""Contract tests for CanonicalNetworkEvent and leakage isolation (Issue #46)."""
+"""Contract tests for CanonicalNetworkEvent and leakage isolation."""
 
-from network_anomaly.data.nf_unsw_nb15_v3 import (
-    ALL_COLUMNS,
+from network_anomaly.data.v2_schema import (
+    ML_FEATURE_COLUMNS,
     TARGET_COLUMNS,
     TRACE_METADATA_COLUMNS,
 )
-from network_anomaly.ingestion.adapters import NetFlowV3Adapter
+from network_anomaly.ingestion.adapters import CanonicalFlowV2Adapter
 from network_anomaly.ingestion.schemas import (
     ApplicationContext,
     CanonicalNetworkEvent,
@@ -35,7 +35,7 @@ def test_canonical_event_serialization_contract():
         ),
         telemetry=ExtendedTelemetry(tcp_flags=18, min_ttl=64, max_ttl=64),
         app_context=ApplicationContext(l7_proto=80, service_name="http"),
-        ml_features={"PROTOCOL": 6.0},
+        ml_features={"protocol_num": 6.0},
         trace_metadata={"custom_tag": "test"},
         eligibility=InferenceEligibility.PREDICTION_AVAILABLE,
         validation_status=ValidationStatus.SEMANTICALLY_COMPATIBLE,
@@ -59,29 +59,32 @@ def test_canonical_event_serialization_contract():
 
 
 def test_strict_isolation_targets_never_in_ml_features():
-    """Verify Contract A: Targets (Label, Attack) are NEVER in ml_features."""
-    adapter = NetFlowV3Adapter()
-    raw = {col: 1.0 for col in ALL_COLUMNS}
-    raw["Label"] = 1
-    raw["Attack"] = "Exploits"
+    """Verify Contract A: Targets (label_binary, attack_category) are NEVER in ml_features."""
+    adapter = CanonicalFlowV2Adapter()
+    raw = {col: 1.0 for col in ML_FEATURE_COLUMNS}
+    raw["protocol_num"] = 6
+    raw["label_binary"] = 1
+    raw["attack_category"] = "Exploitation_And_C2"
 
     event = adapter.adapt_record(raw)
 
     assert event.ml_features is not None
     for target in TARGET_COLUMNS:
         assert target not in event.ml_features, f"Target '{target}' leaked into ml_features!"
-    assert event.trace_metadata["Label"] == 1
-    assert event.trace_metadata["Attack"] == "Exploits"
+    assert "label_binary" not in event.ml_features
+    assert "attack_category" not in event.ml_features
 
 
 def test_strict_isolation_trace_identifiers_never_in_ml_features():
     """Verify Contract B: 5-tuple IP/Port/Timestamp identifiers are NEVER in ml_features."""
-    adapter = NetFlowV3Adapter()
-    raw = {col: 1.0 for col in ALL_COLUMNS}
-    raw["IPV4_SRC_ADDR"] = "192.168.1.1"
-    raw["IPV4_DST_ADDR"] = "10.0.0.1"
-    raw["L4_SRC_PORT"] = 55555
-    raw["L4_DST_PORT"] = 443
+    adapter = CanonicalFlowV2Adapter()
+    raw = {col: 1.0 for col in ML_FEATURE_COLUMNS}
+    raw["protocol_num"] = 6
+    raw["source_ip"] = "192.168.1.1"
+    raw["dest_ip"] = "10.0.0.1"
+    raw["source_port"] = 55555
+    raw["dest_port"] = 443
+    raw["timestamp_ms"] = 1700000000000
 
     event = adapter.adapt_record(raw)
 
