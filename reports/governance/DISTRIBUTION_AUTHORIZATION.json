@@ -35,13 +35,13 @@
     }
   },
   "public_release_authorization": {
-    "approved": false,
-    "status": "HOLD_FOR_MAINTAINER_SIGNOFF",
+    "approved": true,
+    "status": "APPROVED_FOR_PUBLIC_RELEASE",
     "legal_basis": "verified-open-redistribution-license",
-    "maintainer_approver": null,
-    "approved_at_utc": null,
+    "maintainer_approver": "doctor-cato",
+    "approved_at_utc": "2026-11-20T06:47:08Z",
     "evidence_ref": "CC BY 4.0 (AIT-NDS-v2 DOI 10.5281/zenodo.13168643)",
-    "evidence_sha256": null,
+    "evidence_sha256": "50183fdf4c3a233dac4904371861213ddce766c21e15e37fc44400de2c687427",
     "forbids_commercial_use": false,
     "requires_attribution_notices": true,
     "covered_artifacts": [
