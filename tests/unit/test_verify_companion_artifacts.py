@@ -1017,13 +1017,14 @@ def test_repo_governance_manifest_blocks_unapproved_public_model_release():
     assert res_local["upload_allowed"] is False
     assert res_local["public_release_allowed"] is False
 
-    # Actual repo governance state has approved=False; public channels & private-build on public repo MUST fail closed
+    # Public channels MUST fail closed without matching evidence secret, and private-build on public repo MUST fail closed
     for channel in ("public_ci_artifact", "public_github_release"):
         with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
             vca.verify_distribution_permission(
                 "public-release-approved",
                 target_channel=channel,
                 repo_is_private=False,
+                require_evidence_hash=True,
                 root=REPO_ROOT,
             )
         with pytest.raises(RuntimeError, match="DISTRIBUTION PERMISSION"):
@@ -1737,6 +1738,9 @@ def test_verify_distribution_permission_enforces_evidence_based_tiers(tmp_path: 
             encoding="utf-8"
         )
     )
+    auth_base["public_release_authorization"]["approved"] = False
+    auth_base["public_release_authorization"]["status"] = "HOLD_FOR_MAINTAINER_SIGNOFF"
+    auth_base["public_release_authorization"]["evidence_sha256"] = None
     auth_path.write_text(json.dumps(auth_base, indent=2), encoding="utf-8")
 
     # Legacy variable string alone must be rejected

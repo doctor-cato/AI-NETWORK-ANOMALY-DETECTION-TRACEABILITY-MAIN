@@ -36,7 +36,7 @@
   },
   "public_release_authorization": {
     "approved": true,
-    "status": "APPROVED_FOR_PUBLIC_RELEASE",
+    "status": "APPROVED",
     "legal_basis": "verified-open-redistribution-license",
     "maintainer_approver": "doctor-cato",
     "approved_at_utc": "2026-11-20T06:47:08Z",
