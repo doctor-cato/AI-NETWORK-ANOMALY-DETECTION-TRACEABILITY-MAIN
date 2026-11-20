@@ -10,7 +10,7 @@ NetFlow Sentinel v2.0 verifies every layer across Python, TypeScript/Svelte and 
 
 - **Python suite (`676 passed`)**: Unit, API, crypto, behavioral, OOD gate, multi-source ingestion and end-to-end integration tests under `tests/`.
 - **Frontend desktop suite (`41 passed` across 7 test files)**: Svelte 5 / Vitest checks (`npm --prefix desktop run test`) plus `svelte-check` (`0 errors, 0 warnings`) and production Vite build (`npm --prefix desktop run build`).
-- **Rust Tauri host (`11 passed`) & pure-Rust NetFlow collector (`6 passed`)**: `cargo test --lib`, `cargo fmt --check` and `cargo clippy -- -D warnings` in both `desktop/src-tauri` and [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs).
+- **Rust Tauri host (`11 passed`) & pure-Rust NetFlow collector (`6 passed`)**: `cargo test --lib`, `cargo fmt --check` and `cargo clippy -- -D warnings` in both `desktop/src-tauri` and [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/telemetry/netflow-rs/src/lib.rs).
 - **Static & contract gates**: `ruff check`, `black --check`, `export_openapi_spec.py --check` (`33` paths / `35` operations), `check_desktop_version.py --check` (`2.0.0`), `parse_dag.py --check` and `verify_companion_artifacts.py`.
 
 ```powershell
@@ -25,7 +25,7 @@ python -m pytest tests -q -rs --tb=short
 
 ## Honest distinction between unit tests, localhost replay and physical labs
 
-The audit reports in [docs/audits/PR156_HEAD_AUDIT_2026-11-19.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md) and [reports/audits/V2_FINAL_AUDIT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md) enforce strict verification semantics:
+The audit reports in [docs/audits/PR156_HEAD_AUDIT_2026-11-19.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md) and [reports/audits/V2_FINAL_AUDIT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/reports/audits/V2_FINAL_AUDIT.md) enforce strict verification semantics:
 
 - Passing constructor tests or synthetic fixtures verifies **code correctness (`TESTED`)**, not real-dataset performance (`EXPERIMENTALLY VALIDATED`).
 - Localhost UDP packet replay verifies the NetFlow v9/IPFIX parser and streaming pipeline, but **does not substitute for physical hardware switch/router export (`real_device_tested = false`)**.

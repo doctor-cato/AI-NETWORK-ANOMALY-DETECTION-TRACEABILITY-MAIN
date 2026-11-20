@@ -10,7 +10,7 @@ order: 1
 
 Phiên bản v2.0 thực hiện chuyển đổi toàn diện (hard cutover) từ bộ dữ liệu đơn nguồn v1 (`NF-UNSW-NB15-v3`, đã lưu trữ tại `historical/`) sang hợp đồng đa nguồn **18 đặc trưng chuẩn `canonical-flow-v2-18`** trên:
 
-- **`AIT-NDS-v2`** (`CC BY 4.0`, `3,464,400` dòng gán nhãn trên 8 kịch bản enterprise testbed, chia tập theo kịch bản không chồng lấn tại [V2_SPLIT_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/data/V2_SPLIT_MANIFEST.json)).
+- **`AIT-NDS-v2`** (`CC BY 4.0`, `3,464,400` dòng gán nhãn trên 8 kịch bản enterprise testbed, chia tập theo kịch bản không chồng lấn tại [V2_SPLIT_MANIFEST.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/data/V2_SPLIT_MANIFEST.json)).
 - **`CTU-SME-11`** (`CC BY 4.0`, `251,219` dòng kiểm định độc lập liên miền và thực nghiệm multi-domain `E1`).
 - **`UWF-ZeekData24`** (`CC BY 4.0`, `95,871` dòng chỉ dùng đánh giá ngoại vi `evaluation_only = true`).
 
@@ -20,7 +20,7 @@ Hệ thống hỗ trợ 3 chế độ vận hành rõ ràng:
 
 1. **Phân tích CSV Ngoại tuyến (Offline CSV Analysis)**: Kiểm định lược đồ `canonical-flow-v2-18`, cổng từ chối OOD hai tầng và suy luận theo lô có kiểm chứng SHA-256.
 2. **Phát lại Tập dữ liệu (Dataset Replay)**: Phát lại có kiểm soát tốc độ từ dữ liệu chuẩn để kiểm thử luồng xử lý và giao diện điều hành (`399.44 flow/s` ở cấu hình benchmark).
-3. **Giám sát Lab Trực tiếp (Live Lab Monitoring)**: Bộ thu thập UDP NetFlow v9 / IPFIX viết bằng Rust thuần ([telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs)) ghép nối với `LiveStreamOrchestrator` xử lý theo lô `process_batch(32)` (`386.37 flow/s`).
+3. **Giám sát Lab Trực tiếp (Live Lab Monitoring)**: Bộ thu thập UDP NetFlow v9 / IPFIX viết bằng Rust thuần ([telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/telemetry/netflow-rs/src/lib.rs)) ghép nối với `LiveStreamOrchestrator` xử lý theo lô `process_batch(32)` (`386.37 flow/s`).
 
 Kiến trúc Hybrid Desktop-Sidecar được chia thành **7 module** độc lập:
 
@@ -39,12 +39,12 @@ Kiến trúc Hybrid Desktop-Sidecar được chia thành **7 module** độc l�
 - **Experimentally Validated**: Có báo cáo thực nghiệm kèm mã băm SHA-256, provenance dữ liệu và metric đầy đủ.
 - **Deferred / Blocked**: Hạng mục chủ đích hoãn hoặc bị chặn bởi điều kiện khách quan — ví dụ: đóng gói bộ cài NSIS và kiểm thử máy ảo Windows 10/11 sạch (`#148` — **DEFERRED**), thu thập từ thiết bị mạng vật lý (`#137` — `real_device_tested = false`), bộ dữ liệu `UGR'16` (**BLOCKED** do máy chủ upstream trả về `HTTP 403`).
 
-Toàn bộ 4 mô hình baseline `E0` hiện giữ phân hạng **`RESEARCH_ONLY`** (`cross_source_validated = false`) do hiện tượng dịch chuyển miền khi đánh giá zero-shot liên nguồn. Tệp [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) khóa ở trạng thái `approved = false`. Bộ log `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) được cách ly hoàn toàn trong thư mục `.gitignored`, không đóng gói và không nạp vào pipeline huấn luyện.
+Toàn bộ 4 mô hình baseline `E0` hiện giữ phân hạng **`RESEARCH_ONLY`** (`cross_source_validated = false`) do hiện tượng dịch chuyển miền khi đánh giá zero-shot liên nguồn. Tệp [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/reports/governance/DISTRIBUTION_AUTHORIZATION.json) khóa ở trạng thái `approved = false`. Bộ log `AIT-LDS-v2.1` (`CC BY-NC-SA 4.0`) được cách ly hoàn toàn trong thư mục `.gitignored`, không đóng gói và không nạp vào pipeline huấn luyện.
 
 ## Điểm bắt đầu
 
-- [README tổng quan dự án](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/README.md)
-- [Kiến trúc hệ thống v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/ARCHITECTURE.md)
-- [Hướng dẫn sử dụng NetFlow Sentinel v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/USER_GUIDE_V2.md)
-- [Báo cáo nghiên cứu tổng hợp v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/thesis/RESEARCH_REPORT_V2.md)
-- [Báo cáo kiểm toán tổng kết v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md)
+- [README tổng quan dự án](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/README.md)
+- [Kiến trúc hệ thống v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/ARCHITECTURE.md)
+- [Hướng dẫn sử dụng NetFlow Sentinel v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/USER_GUIDE_V2.md)
+- [Báo cáo nghiên cứu tổng hợp v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/thesis/RESEARCH_REPORT_V2.md)
+- [Báo cáo kiểm toán tổng kết v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/reports/audits/V2_FINAL_AUDIT.md)

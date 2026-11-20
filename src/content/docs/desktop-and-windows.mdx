@@ -31,10 +31,10 @@ Giao diện điều hành cung cấp **7 bảng điều khiển chuyên biệt**
 Để đảm bảo tính trung thực của báo cáo kỹ thuật, trạng thái đóng gói và phát hành Windows hiện tại được ghi nhận rõ ràng:
 
 - **Bộ cài NSIS Windows & Kiểm thử E2E trên máy ảo Windows 10/11 sạch (`#148`)**: Đang ở trạng thái **DEFERRED** (hoãn sang giai đoạn đóng gói phân phối sau khi hoàn tất phê duyệt phát hành).
-- **Ủy quyền phân phối nhị phân (`#154`)**: Tệp [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/governance/DISTRIBUTION_AUTHORIZATION.json) hiện đặt `approved = false`. Toàn bộ 4 mô hình baseline `E0` giữ phân hạng `RESEARCH_ONLY` và chỉ được phép chạy trên kênh `local_offline` phục vụ nghiên cứu.
+- **Ủy quyền phân phối nhị phân (`#154`)**: Tệp [DISTRIBUTION_AUTHORIZATION.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/reports/governance/DISTRIBUTION_AUTHORIZATION.json) hiện đặt `approved = false`. Toàn bộ 4 mô hình baseline `E0` giữ phân hạng `RESEARCH_ONLY` và chỉ được phép chạy trên kênh `local_offline` phục vụ nghiên cứu.
 
 ```powershell
 python scripts/verify_companion_artifacts.py --verify-distribution-permission research-only --target-channel local_offline
 ```
 
-Xem chi tiết tại [Hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/WINDOWS_INSTALLATION.md), [Đánh giá sẵn sàng phát hành v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/V2_RELEASE_READINESS.md) và [Báo cáo kiểm toán PR #156](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md).
+Xem chi tiết tại [Hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/WINDOWS_INSTALLATION.md), [Đánh giá sẵn sàng phát hành v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/audits/V2_RELEASE_READINESS.md) và [Báo cáo kiểm toán PR #156](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md).

@@ -1,6 +1,6 @@
 # Research portal — NetFlow Sentinel v2.0
 
-Static Astro + MDX website on the dedicated `site-source` branch. It contains no inference runtime, traffic ingestion or backend. The [claim matrix](CLAIMS.md) is pinned to the NetFlow Sentinel `v2.0.0` evidence snapshot `36f63081bf30de98b1dc1058a780ae79ae2cf5b3` (19 November 2026, Issue `#152` / PR `#156`).
+Static Astro + MDX website on the dedicated `site-source` branch. It contains no inference runtime, traffic ingestion or backend. The [claim matrix](CLAIMS.md) is pinned to the NetFlow Sentinel `v2.0.0` evidence snapshot `18db24e637399d077312e60e4911e569b9b099d2` (19 November 2026, Issue `#152` / PR `#156`).
 
 ## Local development
 

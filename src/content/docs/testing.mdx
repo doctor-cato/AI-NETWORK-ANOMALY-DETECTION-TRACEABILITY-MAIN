@@ -6,11 +6,11 @@ order: 12
 
 ## Tháp kiểm thử đa ngôn ngữ (Python, TypeScript/Svelte, Rust)
 
-Hệ thống kiểm thử tự động của NetFlow Sentinel v2.0 bao phủ cả ba tầng công nghệ và đạt trạng thái **PASS 100%** (CI `7/7 SUCCESS`, xem [PR156_HEAD_AUDIT_2026-11-19.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md)):
+Hệ thống kiểm thử tự động của NetFlow Sentinel v2.0 bao phủ cả ba tầng công nghệ và đạt trạng thái **PASS 100%** (CI `7/7 SUCCESS`, xem [PR156_HEAD_AUDIT_2026-11-19.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/audits/PR156_HEAD_AUDIT_2026-11-19.md)):
 
 - **Python Backend & ML Pipeline (`pytest`)**: **`676` kiểm thử đạt (passed)** bao gồm unit test, integration test, kiểm thử bất biến lược đồ `canonical-flow-v2-18`, cổng OOD fail-closed, `BehavioralVector` 16-D, `AES-256-GCM` / `NonceRegistry` / `DPAPI` và `ResponsePolicy` Dry-Run.
 - **Giao diện Desktop Svelte 5 (`Vitest` & `svelte-check`)**: **`41` kiểm thử Vitest đạt** trên 5 bộ test giao diện, kèm `0` lỗi và `0` cảnh báo kiểu dữ liệu.
-- **Nhân Desktop Tauri 2 & Bộ thu thập NetFlow Rust (`cargo test`)**: **`11` kiểm thử Rust** trong `desktop/src-tauri` cộng với **`6` kiểm thử Rust** trong [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/telemetry/netflow-rs/src/lib.rs) (giải mã gói tin NetFlow v9 / IPFIX, cô lập template cache và chống gói tin dị dạng).
+- **Nhân Desktop Tauri 2 & Bộ thu thập NetFlow Rust (`cargo test`)**: **`11` kiểm thử Rust** trong `desktop/src-tauri` cộng với **`6` kiểm thử Rust** trong [telemetry/netflow-rs/src/lib.rs](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/telemetry/netflow-rs/src/lib.rs) (giải mã gói tin NetFlow v9 / IPFIX, cô lập template cache và chống gói tin dị dạng).
 
 ## Tập lệnh kiểm chứng chuẩn trước khi tích hợp
 
@@ -31,4 +31,4 @@ npm --prefix desktop run test
 Dự án áp dụng kỷ luật báo cáo bằng chứng nghiêm ngặt:
 
 - Các bài kiểm thử `pytest`, `Vitest`, `cargo test` và phát lại UDP trên `127.0.0.1` xác minh **tính đúng đắn của logic phần mềm và hợp đồng giao thức**.
-- Chúng **không được phép gọi là thử nghiệm trên thiết bị phần cứng mạng vật lý**. Trong báo cáo benchmark và kiểm toán ([V2_FINAL_AUDIT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/audits/V2_FINAL_AUDIT.md)), cờ `real_device_tested` được ghi nhận trung thực là **`false`** (`#137`), và mọi bước bỏ qua do thiếu tập dữ liệu thô trên máy chạy CI đều phải báo cáo là `SKIPPED`.
+- Chúng **không được phép gọi là thử nghiệm trên thiết bị phần cứng mạng vật lý**. Trong báo cáo benchmark và kiểm toán ([V2_FINAL_AUDIT.md](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/reports/audits/V2_FINAL_AUDIT.md)), cờ `real_device_tested` được ghi nhận trung thực là **`false`** (`#137`), và mọi bước bỏ qua do thiếu tập dữ liệu thô trên máy chạy CI đều phải báo cáo là `SKIPPED`.

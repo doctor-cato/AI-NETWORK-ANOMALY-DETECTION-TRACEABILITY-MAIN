@@ -16,7 +16,7 @@ python -m pip install -e .
 python scripts/check_environment.py
 ```
 
-Xem hướng dẫn chi tiết tại [Hướng dẫn người dùng v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/USER_GUIDE_V2.md) và [Hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/WINDOWS_INSTALLATION.md).
+Xem hướng dẫn chi tiết tại [Hướng dẫn người dùng v2.0](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/USER_GUIDE_V2.md) và [Hướng dẫn cài đặt Windows](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/WINDOWS_INSTALLATION.md).
 
 ## Chế độ fail-closed `"deployment"` và `NETFLOW_OOD_GATE_SHA256`
 
@@ -29,14 +29,14 @@ python scripts/verify_companion_artifacts.py --verify-distribution-permission re
 
 ## Kiểm chứng demo 2 lượt trên trạng thái sạch (2x Clean-State Verification)
 
-Để chứng minh khả năng cài đặt và vận hành lặp lại 100% mà không phụ thuộc trạng thái lưu sẵn, script [scripts/verify_clean_state_demo.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/verify_clean_state_demo.py) khởi tạo thư mục tạm cô lập hoàn toàn, chạy trọn vòng đời nạp dữ liệu, suy luận, phân tích hành vi, mã hóa bằng chứng và đối chiếu kết quả qua 2 lượt chạy độc lập:
+Để chứng minh khả năng cài đặt và vận hành lặp lại 100% mà không phụ thuộc trạng thái lưu sẵn, script [scripts/verify_clean_state_demo.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/scripts/verify_clean_state_demo.py) khởi tạo thư mục tạm cô lập hoàn toàn, chạy trọn vòng đời nạp dữ liệu, suy luận, phân tích hành vi, mã hóa bằng chứng và đối chiếu kết quả qua 2 lượt chạy độc lập:
 
 ```powershell
 python scripts/verify_clean_state_demo.py
 ```
 
-Kết quả đã kiểm chứng tại [clean_state_demo_verification.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/reports/demo/clean_state_demo_verification.json) xác nhận `repeatable_100pct = true` giữa hai lượt chạy độc lập.
+Kết quả đã kiểm chứng tại [clean_state_demo_verification.json](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/reports/demo/clean_state_demo_verification.json) xác nhận `repeatable_100pct = true` giữa hai lượt chạy độc lập.
 
 ## Di trú từ v1 lên v2.0
 
-Nếu nâng cấp từ môi trường v1 (`NF-UNSW-NB15-v3`), sử dụng công cụ [scripts/migrate_v1_to_v2.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/scripts/migrate_v1_to_v2.py) và tham khảo [Tài liệu di trú v1 sang v2](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/36f63081bf30de98b1dc1058a780ae79ae2cf5b3/docs/MIGRATION_V1_TO_V2.md) để lưu trữ cấu hình cũ sang `historical/` mà không làm hỏng lược đồ SQLite v2.
+Nếu nâng cấp từ môi trường v1 (`NF-UNSW-NB15-v3`), sử dụng công cụ [scripts/migrate_v1_to_v2.py](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/scripts/migrate_v1_to_v2.py) và tham khảo [Tài liệu di trú v1 sang v2](https://github.com/doctor-cato/AI-NETWORK-ANOMALY-DETECTION-TRACEABILITY-MAIN/blob/18db24e637399d077312e60e4911e569b9b099d2/docs/MIGRATION_V1_TO_V2.md) để lưu trữ cấu hình cũ sang `historical/` mà không làm hỏng lược đồ SQLite v2.
