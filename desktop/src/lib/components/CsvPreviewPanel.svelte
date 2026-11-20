@@ -9,6 +9,20 @@
 
   let { inspectData }: Props = $props();
   let visibleCols = $derived(inspectData.preview_columns.slice(0, 10));
+
+  function formatPreviewCell(col: string, val: unknown): string {
+    if (val === null || val === undefined) return "null";
+    if (col === "timestamp_ms" || col.endsWith("_timestamp_ms")) {
+      const num = Number(val);
+      if (Number.isFinite(num) && num > 1e11) {
+        const d = new Date(num);
+        if (!Number.isNaN(d.getTime())) {
+          return `${d.toISOString().replace("T", " ").slice(0, 19)} UTC`;
+        }
+      }
+    }
+    return String(val);
+  }
 </script>
 
 <section class="card" aria-labelledby="csv-inspect-heading">
@@ -40,9 +54,11 @@
       <div>
         <strong>Cách ly chống rò rỉ dữ liệu (No Target/PII Leakage):</strong>
         Cột nhãn bị loại khỏi đầu vào ML:
-        <span class="mono">{inspectData.target_columns_excluded.length ? inspectData.target_columns_excluded.join(", ") : "Không có"}</span>
+        <span class:mono={inspectData.target_columns_excluded.length > 0}>
+          {inspectData.target_columns_excluded.length ? inspectData.target_columns_excluded.join(", ") : "Không có"}
+        </span>
         • Trace metadata loại khỏi 18 ML features:
-        <span class="mono">{inspectData.trace_metadata_excluded.length} cột</span>
+        <span>{inspectData.trace_metadata_excluded.length} cột</span>
         • Giá trị non-finite thô được TrainOnlyPreprocessor kiểm soát chặt theo tập Train:
         <strong class="mono">{inspectData.non_finite_feature_cells}</strong> ô.
       </div>
@@ -77,7 +93,9 @@
         {#each inspectData.preview_rows as row, idx (idx)}
           <tr>
             {#each visibleCols as col}
-              <td class="mono">{row[col] ?? "null"}</td>
+              <td class="mono" title={col === "timestamp_ms" || col.endsWith("_timestamp_ms") ? `${row[col] ?? ""} ms` : undefined}>
+                {formatPreviewCell(col, row[col])}
+              </td>
             {/each}
           </tr>
         {/each}

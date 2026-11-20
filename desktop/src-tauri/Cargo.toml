@@ -1,6 +1,6 @@
 [package]
 name = "netflow-sentinel-desktop"
-version = "2.0.0"
+version = "2.1.0"
 description = "Offline Desktop Application for AI Network Anomaly Detection (NetFlow Sentinel v2)"
 authors = ["Network Anomaly Detection Project"]
 edition = "2021"

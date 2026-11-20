@@ -20,6 +20,8 @@
       "staged_bundle/data/demo/demo_flows.csv": "data/demo/demo_flows.csv",
       "staged_bundle/data/demo/demo_labels.csv": "data/demo/demo_labels.csv",
       "staged_bundle/data/demo/demo_manifest.json": "data/demo/demo_manifest.json",
+      "staged_bundle/data/demo/showcase_demo_flows.csv": "data/demo/showcase_demo_flows.csv",
+      "staged_bundle/data/demo/showcase_demo_labels.csv": "data/demo/showcase_demo_labels.csv",
       "staged_bundle/EMBEDDED_ARTIFACTS_MANIFEST.json": "EMBEDDED_ARTIFACTS_MANIFEST.json",
       "staged_bundle/EMBEDDED_SHA256SUMS.txt": "EMBEDDED_SHA256SUMS.txt"
     }

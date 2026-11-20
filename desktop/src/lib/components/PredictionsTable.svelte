@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { CsvAnalyzeResponse, CsvFlowPredictionItem } from "../types";
   import {
     filterAndSortPredictions,
@@ -24,6 +25,34 @@
   let page = $state(1);
   let pageSize = $state(25);
   let selectedItem = $state<CsvFlowPredictionItem | null>(null);
+  let searchInputEl = $state<HTMLInputElement | null>(null);
+
+  onMount(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchInputEl?.focus();
+        searchInputEl?.select();
+        return;
+      }
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (pagedItems.length === 0) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const curIdx = selectedItem
+          ? pagedItems.findIndex((it) => it.row_index === selectedItem?.row_index)
+          : -1;
+        const nextIdx =
+          e.key === "ArrowDown"
+            ? Math.min(pagedItems.length - 1, curIdx + 1)
+            : Math.max(0, curIdx <= 0 ? 0 : curIdx - 1);
+        selectedItem = pagedItems[nextIdx];
+      }
+    };
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  });
 
   let filteredItems = $derived(
     filterAndSortPredictions(analysis.results, {
@@ -101,9 +130,10 @@
 
   <div class="toolbar-row">
     <input
+      bind:this={searchInputEl}
       type="search"
       class="input search-input"
-      placeholder="Tìm row_id, IP nguồn/đích, cổng (vd: 443)..."
+      placeholder="Tìm row_id, IP nguồn/đích, cổng (Ctrl+F)..."
       bind:value={search}
       oninput={() => (page = 1)}
       aria-label="Tìm kiếm luồng mạng"

@@ -75,16 +75,13 @@ describe("Standalone v1.0.0 Onboarding & Model Governance UI", () => {
         hasEvaluation: false,
         hasExport: false,
         readyModelsCount: 4,
-        onLoadDemo: () => {},
-        onBrowseCsv: () => {},
-        busy: false,
       },
     });
     expect(out.body).toContain("4/4 Mô hình AI");
-    expect(out.body).toContain("Nhập dữ liệu CSV");
-    expect(out.body).toContain("Phân tích với 4 AI");
-    expect(out.body).toContain("Xuất báo cáo");
-    expect(out.body).toContain("Mở ngay Dữ liệu Demo Chuẩn");
+    expect(out.body).toContain("Nạp luồng NetFlow CSV");
+    expect(out.body).toContain("Quét bằng 4 Mô hình AI");
+    expect(out.body).toContain("Xuất biên bản kiểm chứng");
+    expect(out.body).not.toContain("NetFlow v3");
     expect(out.body).not.toContain("Companion Bundle");
     expect(out.body).not.toContain("winget install");
     expect(out.body).not.toContain(".venv");

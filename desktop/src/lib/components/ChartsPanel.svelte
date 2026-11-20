@@ -26,10 +26,11 @@
   let benignStroke = $derived((benignPct / 100) * CIRC);
   let oodStroke = $derived((oodPct / 100) * CIRC);
 
-  function barColor(tone: string): string {
+  function barColor(tone: string, label: string): string {
+    if (label.startsWith("ABSTAINED") || tone === "blocked") return "var(--semantic-ood)";
+    if (label.startsWith("HIGH")) return "var(--semantic-high)";
     if (tone === "attack") return "var(--semantic-attack)";
     if (tone === "warning") return "var(--semantic-warning)";
-    if (tone === "blocked") return "var(--semantic-blocked)";
     return "var(--semantic-benign)";
   }
 </script>
@@ -80,7 +81,7 @@
           cy="60"
           r={R}
           fill="none"
-          stroke="var(--semantic-warning)"
+          stroke="var(--semantic-ood)"
           stroke-width="16"
           stroke-dasharray={`${oodStroke} ${CIRC}`}
           stroke-dashoffset={-(benignStroke + attackStroke)}
@@ -106,7 +107,7 @@
           <strong class="mono">{analysis.benign_count} ({benignPct.toFixed(1)}%)</strong>
         </div>
         <div class="legend-row">
-          <span class="dot" style="background: var(--semantic-warning)"></span>
+          <span class="dot" style="background: var(--semantic-ood)"></span>
           <span>OOD Abstained (ABSTAINED_OOD)</span>
           <strong class="mono">{analysis.ood_flagged_count} ({oodPct.toFixed(1)}%)</strong>
         </div>
@@ -126,7 +127,7 @@
     <div class="card-header">
       <h3 class="card-title">
         <Icons name="target" size={16} />
-        Phân tầng Risk Priority (#32 — Không tạo điểm giả khi OOD)
+        Phân tầng Mức độ Rủi ro (Risk Priority)
       </h3>
     </div>
 
@@ -137,7 +138,7 @@
           <div class="bar-track">
             <div
               class="bar-fill"
-              style={`width: ${Math.max(bucket.count > 0 ? 3 : 0, bucket.share * 100).toFixed(1)}%; background: ${barColor(bucket.tone)};`}
+              style={`width: ${Math.max(bucket.count > 0 ? 3 : 0, bucket.share * 100).toFixed(1)}%; background: ${barColor(bucket.tone, bucket.label)};`}
             ></div>
           </div>
           <div class="bar-val mono">

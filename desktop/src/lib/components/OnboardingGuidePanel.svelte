@@ -8,9 +8,7 @@
     hasEvaluation: boolean;
     hasExport: boolean;
     readyModelsCount: number;
-    onLoadDemo: () => void;
-    onBrowseCsv: () => void;
-    busy: boolean;
+    onClose?: () => void;
   }
 
   let {
@@ -20,29 +18,30 @@
     hasEvaluation,
     hasExport,
     readyModelsCount,
-    onLoadDemo,
-    onBrowseCsv,
-    busy,
+    onClose,
   }: Props = $props();
 
   let showGlossary = $state(false);
 </script>
 
 <section class="card onboarding-card" aria-labelledby="guide-heading">
-  <div class="card-header">
+  <div class="card-header" style="margin-bottom: 10px;">
     <div>
       <h2 id="guide-heading" class="card-title">
-        <Icons name="shield" size={17} />
-        Quy trình Phân tích Lưu lượng Mạng (Offline &amp; Tích hợp sẵn {readyModelsCount}/4 Mô hình AI)
+        <Icons name="shield" size={16} />
+        Hướng dẫn Quy trình 4 Bước (Tích hợp sẵn {readyModelsCount}/4 Mô hình AI)
       </h2>
       <p class="guide-sub">
-        Không cần cài Python hay cấu hình thủ công. Chọn dữ liệu NetFlow CSV bên dưới để phân tích, so sánh 4 mô hình AI và xuất báo cáo kiểm chứng.
+        Ứng dụng phát hiện bất thường lưu lượng mạng L4 (18 đặc trưng) &amp; truy vết tấn công — hoàn toàn cục bộ, không gửi dữ liệu ra ngoài.
       </p>
     </div>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
       <button type="button" class="btn btn-sm" onclick={() => (showGlossary = !showGlossary)}>
-        {showGlossary ? "Ẩn giải thích & Bản quyền" : "Hiểu kết quả (Benign / Attack / OOD) & Bản quyền"}
+        {showGlossary ? "Ẩn chú giải thuật ngữ" : "Giải thích Benign / Attack / OOD"}
       </button>
+      {#if onClose}
+        <button type="button" class="btn btn-sm" onclick={onClose}>Đóng</button>
+      {/if}
     </div>
   </div>
 
@@ -50,46 +49,32 @@
     <div class="step-pill" class:step-done={hasFlows}>
       <span class="step-num">1</span>
       <div>
-        <strong>Nhập dữ liệu CSV</strong>
-        <div class="step-hint">Dùng dữ liệu Demo (200 dòng) hoặc chọn tệp NetFlow v3</div>
+        <strong>Nạp luồng NetFlow CSV</strong>
+        <div class="step-hint">Bấm Demo Trình chiếu (465 flows), Demo Chuẩn (200) hoặc chọn tệp NetFlow v2</div>
       </div>
     </div>
     <div class="step-pill" class:step-done={hasAnalysis || hasComparison}>
       <span class="step-num">2</span>
       <div>
-        <strong>Phân tích với 4 AI</strong>
-        <div class="step-hint">Chạy từng mô hình hoặc so sánh cả 4 mô hình cùng lúc</div>
+        <strong>Quét bằng 4 Mô hình AI</strong>
+        <div class="step-hint">Random Forest, XGBoost, Isolation Forest và Autoencoder chạy song song</div>
       </div>
     </div>
     <div class="step-pill" class:step-done={hasEvaluation}>
       <span class="step-num">3</span>
       <div>
-        <strong>Đánh giá &amp; Đối chiếu</strong>
-        <div class="step-hint">Xem Benign/Attack/OOD, độ tin cậy &amp; Confusion Matrix</div>
+        <strong>Đọc kết quả &amp; Truy vết</strong>
+        <div class="step-hint">Xem biểu đồ rủi ro, danh sách luồng nghi ngờ và đối chiếu nhãn thực tế</div>
       </div>
     </div>
     <div class="step-pill" class:step-done={hasExport}>
       <span class="step-num">4</span>
       <div>
-        <strong>Xuất báo cáo</strong>
-        <div class="step-hint">Lưu CSV kết quả kèm biên bản SHA-256 minh bạch</div>
+        <strong>Xuất biên bản kiểm chứng</strong>
+        <div class="step-hint">Lưu CSV kết quả kèm chữ ký toàn vẹn SHA-256 phục vụ báo cáo</div>
       </div>
     </div>
   </div>
-
-  {#if !hasFlows}
-    <div class="quick-start-bar">
-      <span>Bắt đầu nhanh cho người mới:</span>
-      <button type="button" class="btn btn-primary btn-sm" onclick={onLoadDemo} disabled={busy}>
-        <Icons name="play" size={14} />
-        Mở ngay Dữ liệu Demo Chuẩn (200 flows)
-      </button>
-      <button type="button" class="btn btn-sm" onclick={onBrowseCsv} disabled={busy}>
-        <Icons name="folder" size={14} />
-        Chọn tệp CSV từ máy
-      </button>
-    </div>
-  {/if}
 
   {#if showGlossary}
     <div class="glossary-grid">
@@ -106,7 +91,7 @@
         </p>
       </div>
       <div class="glossary-item">
-        <strong style="color: var(--semantic-warning);">OOD (ABSTAINED_OOD — Từ chối dự đoán)</strong>
+        <strong style="color: var(--semantic-ood);">OOD (ABSTAINED_OOD — Từ chối dự đoán)</strong>
         <p>
           Dữ liệu vi phạm bất biến vật lý (âm thời lượng/byte/gói tin hoặc giá trị không hữu hạn). Hệ thống chủ động từ chối gán nhãn và không tính điểm rủi ro để tránh báo nhầm.
         </p>
@@ -127,7 +112,7 @@
         <strong>AIT NetFlow Data Set v2</strong> (DOI: <span class="mono">10.5281/zenodo.13168643</span>,
         giấy phép <span class="mono">CC BY 4.0</span>, sinh từ PCAP AIT-LDS-v2.0) và kiểm chứng mở rộng trên dữ liệu thu thập thực tế
         <strong>CTU-SME-11</strong> (DOI: <span class="mono">10.5281/zenodo.7958258</span>, <span class="mono">CC BY 4.0</span>).
-        Hiệu năng ngoài phân phối (domain shift) giữa dữ liệu mô phỏng và mạng thực tế có thể suy giảm; mọi khuyến nghị phản ứng (#27) chỉ chạy ở chế độ mô phỏng <strong>Dry-Run (executed=false)</strong> và không tự can thiệp tường lửa thật.
+        Hiệu năng ngoài phân phối (domain shift) giữa dữ liệu mô phỏng và mạng thực tế có thể suy giảm; mọi khuyến nghị phản ứng chỉ chạy ở chế độ mô phỏng <strong>Dry-Run (executed=false)</strong> và không tự can thiệp tường lửa thật.
       </div>
     </div>
   {/if}
@@ -135,7 +120,7 @@
 
 <style>
   .onboarding-card {
-    border-color: rgba(59, 130, 246, 0.35);
+    border-color: var(--border-subtle);
   }
 
   .guide-sub {
@@ -203,18 +188,6 @@
     font-size: 11.5px;
     color: var(--text-secondary);
     margin-top: 2px;
-  }
-
-  .quick-start-bar {
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px dashed var(--border-subtle);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    font-size: 12.5px;
-    color: var(--text-secondary);
   }
 
   .glossary-grid {

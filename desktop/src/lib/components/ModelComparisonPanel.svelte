@@ -20,6 +20,8 @@
     batchFileSha256?: string | null;
     batchLabelsSha256?: string | null;
     benchmarkReport?: ModelBenchmarkReportResponse | null;
+    defaultBenchmarkOpen?: boolean;
+    hideRunButton?: boolean;
     canRunComparison: boolean;
     hasLabelsPath: boolean;
     busy: boolean;
@@ -37,6 +39,8 @@
     batchFileSha256 = null,
     batchLabelsSha256 = null,
     benchmarkReport = undefined,
+    defaultBenchmarkOpen = true,
+    hideRunButton = false,
     canRunComparison,
     hasLabelsPath,
     busy,
@@ -44,6 +48,9 @@
     onRunAllComparison,
     onEvaluateAllAnalyzed,
   }: Props = $props();
+
+  let benchmarkExpanded = $state<boolean | null>(null);
+  let isBenchmarkOpen = $derived(benchmarkExpanded ?? defaultBenchmarkOpen);
 
   let readyModelsCount = $derived(models.filter((m) => m.ready).length);
   let analyzedCount = $derived(
@@ -123,15 +130,17 @@
       {/if}
     </div>
     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-      <button
-        type="button"
-        class="btn btn-primary btn-sm"
-        disabled={!canRunComparison || readyModelsCount === 0 || busy}
-        onclick={onRunAllComparison}
-      >
-        <Icons name="play" size={14} />
-        Chạy So sánh {readyModelsCount} Model READY
-      </button>
+      {#if !hideRunButton}
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          disabled={!canRunComparison || readyModelsCount === 0 || busy}
+          onclick={onRunAllComparison}
+        >
+          <Icons name="play" size={14} />
+          Chạy So sánh {readyModelsCount} Model READY
+        </button>
+      {/if}
       <button
         type="button"
         class="btn btn-sm"
@@ -283,17 +292,29 @@
         {/if}
       </div>
     </div>
-    <button
-      type="button"
-      class="btn btn-sm"
-      disabled={benchmarkLoading}
-      onclick={() => void refreshBenchmarkReport()}
-    >
-      <Icons name="refresh" size={14} spin={benchmarkLoading} />
-      {benchmarkLoading ? "Đang tải..." : "Làm mới Benchmark"}
-    </button>
+    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+      <button
+        type="button"
+        class="btn btn-sm"
+        onclick={() => (benchmarkExpanded = !isBenchmarkOpen)}
+      >
+        {isBenchmarkOpen ? "Thu gọn" : "Xem bảng Benchmark"}
+      </button>
+      {#if isBenchmarkOpen}
+        <button
+          type="button"
+          class="btn btn-sm"
+          disabled={benchmarkLoading}
+          onclick={() => void refreshBenchmarkReport()}
+        >
+          <Icons name="refresh" size={14} spin={benchmarkLoading} />
+          {benchmarkLoading ? "Đang tải..." : "Làm mới Benchmark"}
+        </button>
+      {/if}
+    </div>
   </div>
 
+  {#if isBenchmarkOpen}
   {#if benchmarkError}
     <div class="banner banner-warning" role="status" style="margin-bottom: 10px;">
       <Icons name="alert" size={16} />
@@ -401,6 +422,7 @@
         </ul>
       </div>
     {/if}
+  {/if}
   {/if}
 </section>
 

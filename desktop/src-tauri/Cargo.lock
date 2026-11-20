@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "netflow-sentinel-desktop"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "getrandom 0.4.3",
  "reqwest 0.12.28",

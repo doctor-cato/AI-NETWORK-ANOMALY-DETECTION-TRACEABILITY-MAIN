@@ -323,6 +323,13 @@ def verify_companion_artifacts(
             demo_ready = False
             demo_status[rel.as_posix()] = {"present": False, "sha256": None, "size_bytes": 0}
 
+    for opt_rel in (
+        Path("data/demo/showcase_demo_flows.csv"),
+        Path("data/demo/showcase_demo_labels.csv"),
+    ):
+        if (resolved_runtime / opt_rel).is_file():
+            staged_files.append(opt_rel)
+
     if demo_ready:
         try:
             demo_manifest = json.loads(

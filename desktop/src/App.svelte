@@ -28,8 +28,8 @@
   import EvaluationPanel from "./lib/components/EvaluationPanel.svelte";
   import ForensicTimelinePanel from "./lib/components/ForensicTimelinePanel.svelte";
   import Icons from "./lib/components/Icons.svelte";
+  import logoUrl from "./assets/netflow-sentinel-logo.png";
   import ModelComparisonPanel from "./lib/components/ModelComparisonPanel.svelte";
-  import ModelReadinessPanel from "./lib/components/ModelReadinessPanel.svelte";
   import OnboardingGuidePanel from "./lib/components/OnboardingGuidePanel.svelte";
   import PredictionsTable from "./lib/components/PredictionsTable.svelte";
   import LiveMonitoringPanel from "./lib/components/LiveMonitoringPanel.svelte";
@@ -69,6 +69,8 @@
   } from "./lib/types";
   import { formatUserFriendlyError, getDroppedCsvPath, shortDigest } from "./lib/utils";
 
+  import type { IconName } from "./lib/components/Icons.svelte";
+
   type TabId =
     | "overview"
     | "predictions"
@@ -79,8 +81,97 @@
     | "attack_timeline"
     | "crypto";
 
-  let theme = $state<"dark" | "light">("dark");
+  interface NavItemMeta {
+    id: TabId;
+    label: string;
+    subtitle: string;
+    groupLabel: string;
+    icon: IconName;
+  }
+
+  const OFFLINE_TABS: TabId[] = ["overview", "predictions", "evaluation", "forensics"];
+
+  const NAV_SECTIONS: Array<{ title: string; items: NavItemMeta[] }> = [
+    {
+      title: "PHÂN TÍCH TỆP (OFFLINE)",
+      items: [
+        {
+          id: "overview",
+          label: "Tổng quan & Phân tích",
+          subtitle: "Nạp tệp lưu lượng NetFlow L4, chạy song song 4 mô hình AI và xem mức độ rủi ro tức thì.",
+          groupLabel: "Phân tích Tệp (Offline)",
+          icon: "chart",
+        },
+        {
+          id: "predictions",
+          label: "Danh sách Luồng (Flows)",
+          subtitle: "Tra cứu từng luồng mạng, lọc Attack/Benign/OOD và xem giải thích chi tiết (Ctrl+F, ↑/↓).",
+          groupLabel: "Phân tích Tệp (Offline)",
+          icon: "table",
+        },
+        {
+          id: "evaluation",
+          label: "Đối chiếu Nhãn (Metric)",
+          subtitle: "So sánh dự đoán AI với nhãn thực tế (Ground Truth) để tính Precision, Recall, F1 và FPR.",
+          groupLabel: "Phân tích Tệp (Offline)",
+          icon: "target",
+        },
+        {
+          id: "forensics",
+          label: "Mô phỏng Phản ứng",
+          subtitle: "Kiểm thử khuyến nghị cách ly/chặn IP ở chế độ an toàn Dry-Run (không tự sửa tường lửa).",
+          groupLabel: "Phân tích Tệp (Offline)",
+          icon: "clock",
+        },
+      ],
+    },
+    {
+      title: "GIÁM SÁT & TRUY VẾT",
+      items: [
+        {
+          id: "live",
+          label: "Giám sát Trực tiếp",
+          subtitle: "Phát lại hoặc theo dõi luồng mạng theo thời gian thực qua WebSocket cục bộ.",
+          groupLabel: "Giám sát & Truy vết",
+          icon: "refresh",
+        },
+        {
+          id: "behavioral",
+          label: "Hồ sơ Hành vi Host",
+          subtitle: "Phân tích vector hành vi 16 chiều của từng địa chỉ IP nguồn để phát hiện bất thường chuỗi.",
+          groupLabel: "Giám sát & Truy vết",
+          icon: "chart",
+        },
+        {
+          id: "attack_timeline",
+          label: "Chuỗi Tấn công",
+          subtitle: "Truy vết tiến trình tấn công (Recon → Credential → Exfiltration) theo dòng thời gian.",
+          groupLabel: "Giám sát & Truy vết",
+          icon: "shield",
+        },
+      ],
+    },
+    {
+      title: "BẢO MẬT DỮ LIỆU",
+      items: [
+        {
+          id: "crypto",
+          label: "Mã hóa & Quản lý Khóa",
+          subtitle: "Bảo vệ dữ liệu phân tích và nhật ký truy vết bằng AES-256-GCM và xoay khóa an toàn.",
+          groupLabel: "Bảo mật Dữ liệu",
+          icon: "cpu",
+        },
+      ],
+    },
+  ];
+
+  let theme = $state<"dark" | "light">("light");
+  let showGuide = $state(false);
   let activeTab = $state<TabId>("overview");
+  let isOfflineTab = $derived(OFFLINE_TABS.includes(activeTab));
+  let activeNavMeta = $derived(
+    NAV_SECTIONS.flatMap((s) => s.items).find((it) => it.id === activeTab) ?? NAV_SECTIONS[0].items[0],
+  );
 
   let backendStatus = $state<BackendStatus | null>(null);
   let runtimeDiagnostics = $state<RuntimeDiagnostics | null>(null);
@@ -153,14 +244,8 @@
 
   async function refreshDiagnosticsAndDemoPaths(): Promise<void> {
     try {
-      const [diag, demo] = await Promise.all([getRuntimeDiagnostics(), getDemoPaths()]);
+      const [diag] = await Promise.all([getRuntimeDiagnostics(), getDemoPaths()]);
       runtimeDiagnostics = diag;
-      if (demo.flows_exists && !flowsPath.trim()) {
-        handleFlowsPathChange(demo.flows_path);
-      }
-      if (demo.labels_exists && flowsPath === demo.flows_path && !labelsPath.trim()) {
-        handleLabelsPathChange(demo.labels_path);
-      }
     } catch {
       // Ignore secondary diagnostics error
     }
@@ -273,12 +358,6 @@
         await refreshStatus();
         await refreshDevLogs();
         const demo = await getDemoPaths();
-        if (demo.flows_exists && !flowsPath.trim()) {
-          handleFlowsPathChange(demo.flows_path);
-        }
-        if (demo.labels_exists && flowsPath === demo.flows_path && !labelsPath.trim()) {
-          handleLabelsPathChange(demo.labels_path);
-        }
         await reportFrontendReady({
           connected: !errorMessage && Boolean(healthData) && Boolean(backendStatus?.running),
           health_status: healthData?.status ?? null,
@@ -358,6 +437,13 @@
     }
   }
 
+  function deriveSiblingPath(basePath: string, targetFilename: string): string {
+    const normalized = basePath.replace(/\\/g, "/");
+    const lastSlash = normalized.lastIndexOf("/");
+    if (lastSlash < 0) return targetFilename;
+    return basePath.slice(0, lastSlash + 1) + targetFilename;
+  }
+
   async function handleLoadDemoDataset() {
     busyMessage = "Đang nạp bộ dữ liệu Demo chuẩn (200 luồng mạng)...";
     errorMessage = null;
@@ -374,6 +460,45 @@
         handleLabelsPathChange(demo.labels_path);
       }
       await runInspectPath(demo.flows_path);
+    } catch (err) {
+      errorMessage = formatUserFriendlyError(err);
+      busyMessage = null;
+    }
+  }
+
+  async function handleLoadShowcaseDemo() {
+    busyMessage = "Đang nạp kịch bản trình chiếu đa kịch bản & chạy 4 mô hình AI...";
+    errorMessage = null;
+    try {
+      const demo = await getDemoPaths();
+      if (!demo.flows_exists) {
+        errorMessage =
+          "Không tìm thấy thư mục dữ liệu demo tích hợp. Bạn vẫn có thể chọn tệp CSV của riêng mình từ máy.";
+        busyMessage = null;
+        return;
+      }
+      const showcaseFlows = deriveSiblingPath(demo.flows_path, "showcase_demo_flows.csv");
+      const showcaseLabels = demo.labels_path
+        ? deriveSiblingPath(demo.labels_path, "showcase_demo_labels.csv")
+        : "";
+
+      let targetFlows = showcaseFlows;
+      let targetLabels = showcaseLabels;
+      try {
+        await inspectCsv(showcaseFlows, 1);
+      } catch {
+        targetFlows = demo.flows_path;
+        targetLabels = demo.labels_exists ? demo.labels_path : "";
+      }
+
+      handleFlowsPathChange(targetFlows);
+      if (targetLabels) {
+        handleLabelsPathChange(targetLabels);
+      }
+      await runInspectPath(targetFlows);
+      if (!errorMessage && flowsPath.trim()) {
+        await handleRunAllComparison();
+      }
     } catch (err) {
       errorMessage = formatUserFriendlyError(err);
       busyMessage = null;
@@ -622,7 +747,7 @@
       await refreshSimulationHistory();
     } catch (err) {
       if (comparisonState.sessionEpoch !== startEpoch) return;
-      simulationWarning = `Không thể chạy mô phỏng Dry-Run (#27): ${formatUserFriendlyError(err)}`;
+      simulationWarning = `Không thể chạy mô phỏng Dry-Run: ${formatUserFriendlyError(err)}`;
     } finally {
       simulatingFlag = false;
     }
@@ -685,405 +810,473 @@
   }
 </script>
 
-<div class="app-shell">
-  <header class="top-header">
-    <div class="brand-group">
-      <div class="brand-icon">
-        <Icons name="shield" size={20} />
-      </div>
+<div class="soc-layout">
+  <aside class="soc-rail" aria-label="Điều hướng NetFlow Sentinel">
+    <div class="rail-brand">
+      <img src={logoUrl} alt="NetFlow Sentinel" class="rail-brand-logo" />
       <div>
-        <h1 class="brand-title">NetFlow Sentinel v2.0.0 — Hệ thống AI Phát hiện, Phân tích &amp; Truy vết Kết nối Mạng Bất thường</h1>
-        <p class="brand-subtitle">
-          Phiên bản v2.0.0 • 4 Mô hình AI (RF/XGB/IF/AE) • Mã hóa Vector Hành vi &amp; Xoay vòng Khóa Thích ứng (AES-256-GCM)
-        </p>
+        <h1 class="rail-brand-title">NetFlow Sentinel</h1>
+        <p class="rail-brand-sub">v2.1.0 · Đề tài 22</p>
       </div>
     </div>
 
-    <div class="header-controls">
-      {#if healthData?.preprocessor_ready && readyModelsCount === 4}
-        <span class="badge badge-benign">
-          <Icons name="check" size={12} />
-          Hệ thống AI Sẵn sàng (4/4)
-        </span>
-      {:else if healthData?.preprocessor_ready}
-        <span class="badge badge-warning">
-          <Icons name="alert" size={12} />
-          Mô hình sẵn sàng: {readyModelsCount}/4
-        </span>
-      {:else}
-        <span class="badge badge-attack">
-          <Icons name="alert" size={12} />
-          Chờ khởi tạo Mô hình
-        </span>
-      {/if}
-
-      <span
-        class="badge badge-info mono"
-        class:badge-pulsing={!backendStatus?.running}
-        title={runtimeDiagnostics?.sidecar_executable
-          ? `Embedded Sidecar (${backendStatus?.port ?? "..."})`
-          : `Localhost :${backendStatus?.port ?? "..."}`}
-      >
-        {backendStatus?.running ? "Dịch vụ Cục bộ Online" : "Đang khởi động dịch vụ..."}
-      </span>
-
-      <button type="button" class="btn btn-sm" onclick={handleRestartBackend} disabled={Boolean(busyMessage)}>
-        <Icons name="refresh" size={14} />
-        Làm mới Dịch vụ
-      </button>
-
+    <div class="rail-pipeline" aria-label="Chuỗi xử lý 4 tầng">
       <button
         type="button"
-        class="btn btn-sm"
-        onclick={() => {
-          showDevLogs = !showDevLogs;
-          if (showDevLogs) void refreshDevLogs();
-        }}
-        title="Bật/tắt nhật ký kỹ thuật backend (Shift+F9)"
+        class="rail-pipeline-item"
+        class:done={Boolean(inspectData)}
+        onclick={() => (activeTab = "overview")}
       >
-        <Icons name="cpu" size={14} />
-        {showDevLogs ? "Ẩn Logs" : "Dev Logs (Shift+F9)"}
+        <span class="rail-pipeline-dot"></span>
+        <span>01 Nạp NetFlow L4</span>
       </button>
-
       <button
         type="button"
-        class="btn btn-sm"
-        onclick={toggleTheme}
-        aria-label="Chuyển giao diện Sáng / Tối"
+        class="rail-pipeline-item"
+        class:done={Boolean(analysisData)}
+        onclick={() => (activeTab = analysisData ? "predictions" : "overview")}
       >
-        <Icons name={theme === "dark" ? "sun" : "moon"} size={14} />
-        {theme === "dark" ? "Chế độ Sáng" : "Chế độ Tối"}
+        <span class="rail-pipeline-dot"></span>
+        <span>02 Quét 4 Mô hình AI</span>
+      </button>
+      <button
+        type="button"
+        class="rail-pipeline-item"
+        class:done={Boolean(simulationData) || activeTab === "behavioral" || activeTab === "attack_timeline"}
+        onclick={() => (activeTab = "attack_timeline")}
+      >
+        <span class="rail-pipeline-dot"></span>
+        <span>03 Truy vết &amp; Phản ứng</span>
+      </button>
+      <button
+        type="button"
+        class="rail-pipeline-item"
+        class:done={Boolean(healthData?.preprocessor_ready)}
+        onclick={() => (activeTab = "crypto")}
+      >
+        <span class="rail-pipeline-dot"></span>
+        <span>04 Bảo mật &amp; Mật mã</span>
       </button>
     </div>
-  </header>
 
-  <main class="workspace-main">
-    {#if errorMessage && !backendStatus?.starting}
-      <div class="banner banner-error" role="alert">
-        <Icons name="alert" size={18} />
-        <div style="flex: 1;">
-          <strong>Thông báo hệ thống:</strong> {errorMessage}
+    <div class="rail-nav-groups" role="tablist" aria-orientation="vertical" aria-label="Phân vùng hiển thị">
+      {#each NAV_SECTIONS as section (section.title)}
+        <div class="rail-group">
+          <div class="rail-group-label">{section.title}</div>
+          {#each section.items as item (item.id)}
+            <button
+              type="button"
+              role="tab"
+              class="rail-nav-btn"
+              aria-selected={activeTab === item.id}
+              onclick={() => (activeTab = item.id)}
+            >
+              <span class="rail-nav-btn-inner">
+                <Icons name={item.icon} size={14} />
+                <span>{item.label}</span>
+              </span>
+              {#if item.id === "predictions"}
+                <span class="rail-count-pill tabular">{analysisData?.total_rows ?? 0}</span>
+              {/if}
+            </button>
+          {/each}
         </div>
+      {/each}
+    </div>
+  </aside>
+
+  <div class="soc-main-col">
+    <header class="soc-topbar">
+      <div class="topbar-context">
+        <h2 class="topbar-title">{activeNavMeta.label}</h2>
+        <p class="topbar-breadcrumb">{activeNavMeta.subtitle}</p>
+      </div>
+
+      <div class="header-controls">
+        {#if isOfflineTab}
+          <button
+            type="button"
+            class="btn btn-sm"
+            class:btn-primary={showGuide}
+            onclick={() => (showGuide = !showGuide)}
+            title="Xem hướng dẫn 4 bước và giải thích thuật ngữ"
+          >
+            <Icons name="shield" size={14} />
+            {showGuide ? "Ẩn hướng dẫn" : "Hướng dẫn"}
+          </button>
+        {/if}
+
+        <button
+          type="button"
+          class="btn btn-sm"
+          onclick={toggleTheme}
+          aria-label="Chuyển giao diện Sáng / Tối"
+        >
+          <Icons name={theme === "dark" ? "sun" : "moon"} size={14} />
+          {theme === "dark" ? "Sáng" : "Tối"}
+        </button>
+
         <button
           type="button"
           class="btn btn-sm"
           onclick={() => {
-            showDevLogs = true;
-            void refreshDevLogs();
+            showDevLogs = !showDevLogs;
+            if (showDevLogs) void refreshDevLogs();
           }}
+          title="Bật/tắt nhật ký kỹ thuật backend (Shift+F9)"
         >
-          Xem Dev Logs (Shift+F9)
+          <Icons name="cpu" size={14} />
+          Logs
         </button>
-        <button type="button" class="btn btn-sm" onclick={() => (errorMessage = null)}>Đóng</button>
-      </div>
-    {/if}
 
-    {#if simulationWarning}
-      <div class="banner banner-warning" role="status">
-        <Icons name="alert" size={18} />
-        <div style="flex: 1;">
-          <strong>Lưu ý mô phỏng phản ứng (#27):</strong> {simulationWarning}
+        <button
+          type="button"
+          class="btn btn-sm"
+          onclick={handleRestartBackend}
+          disabled={Boolean(busyMessage)}
+          title="Làm mới dịch vụ phân tích cục bộ"
+          aria-label="Làm mới dịch vụ"
+        >
+          <Icons name="refresh" size={14} />
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace-main">
+      {#if errorMessage && !backendStatus?.starting}
+        <div class="banner banner-error" role="alert">
+          <Icons name="alert" size={18} />
+          <div style="flex: 1;">
+            <strong>Thông báo hệ thống:</strong> {errorMessage}
+          </div>
+          <button
+            type="button"
+            class="btn btn-sm"
+            onclick={() => {
+              showDevLogs = true;
+              void refreshDevLogs();
+            }}
+          >
+            Xem Dev Logs (Shift+F9)
+          </button>
+          <button type="button" class="btn btn-sm" onclick={() => (errorMessage = null)}>Đóng</button>
         </div>
-        <button type="button" class="btn btn-sm" onclick={() => (simulationWarning = null)}>Đóng</button>
-      </div>
-    {/if}
-
-    {#if busyMessage || initializing || (backendStatus?.starting && !backendStatus?.running)}
-      <div class="banner banner-info" role="status">
-        <Icons name="refresh" size={16} spin={true} />
-        <div style="flex: 1;">
-          {#if busyMessage}
-            {busyMessage}
-          {:else}
-            Đang khởi tạo máy chủ AI cục bộ (lần đầu trên máy mới có thể mất 30–90 giây để giải nén runtime và Windows kiểm tra an toàn) — <strong>{Math.round((backendStatus?.startup_elapsed_ms ?? 0) / 1000)}s</strong> ({backendStatus?.startup_stage ?? "booting"}). Nhấn <strong>Shift+F9</strong> để xem chi tiết log dev.
-          {/if}
-        </div>
-      </div>
-    {/if}
-
-    {#if showDevLogs}
-      <DevLogsPanel
-        logs={devLogs}
-        {backendStatus}
-        diagnostics={runtimeDiagnostics}
-        onRefresh={() => void refreshDevLogs()}
-        onClose={() => (showDevLogs = false)}
-      />
-    {/if}
-
-    <OnboardingGuidePanel
-      hasFlows={Boolean(inspectData)}
-      hasAnalysis={Boolean(analysisData)}
-      hasComparison={Object.keys(coherentAnalyses).length >= 2}
-      hasEvaluation={Object.keys(coherentEvaluations).length > 0}
-      hasExport={Boolean(exportData)}
-      {readyModelsCount}
-      onLoadDemo={handleLoadDemoDataset}
-      onBrowseCsv={handleBrowseFlowsCsv}
-      busy={Boolean(busyMessage) || initializing}
-    />
-
-    <section class="card" aria-label="Điều khiển Dữ liệu NetFlow CSV">
-      {#if isTauriRuntime() && !dragDropUnavailable}
-        <p class="muted">Kéo thả một tệp NetFlow CSV vào cửa sổ để kiểm tra định dạng.</p>
       {/if}
-      <div class="input-bar">
-        <input
-          type="text"
-          class="input mono"
-          style="flex: 1; min-width: 260px;"
-          placeholder="Đường dẫn tới tệp NetFlow CSV..."
-          value={flowsPath}
-          oninput={(e) => handleFlowsPathChange((e.currentTarget as HTMLInputElement).value)}
-          aria-label="Đường dẫn tệp NetFlow CSV"
-        />
-        <button type="button" class="btn" onclick={handleBrowseFlowsCsv} disabled={Boolean(busyMessage)}>
-          <Icons name="folder" size={15} />
-          {isTauriRuntime() ? "Chọn CSV từ máy" : "Kiểm tra CSV"}
-        </button>
-        <button type="button" class="btn" onclick={handleLoadDemoDataset} disabled={Boolean(busyMessage)}>
-          Mở Demo Validation (200 flows)
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary"
-          onclick={handleRunInference}
-          disabled={!flowsPath.trim() || Boolean(busyMessage)}
-        >
-          <Icons name="play" size={15} />
-          Chạy Phân tích AI ({selectedModel})
-        </button>
-        <button
-          type="button"
-          class="btn"
-          onclick={handleRunAllComparison}
-          disabled={!flowsPath.trim() || Boolean(busyMessage)}
-        >
-          <Icons name="target" size={15} />
-          So sánh 4 Model READY
-        </button>
-        <button
-          type="button"
-          class="btn"
-          onclick={handleExportResults}
-          disabled={!analysisData || Boolean(busyMessage)}
-        >
-          <Icons name="download" size={15} />
-          Xuất CSV + Metadata
-        </button>
-      </div>
 
-      {#if exportData}
-        <div class="banner banner-success" style="margin-top: 10px;">
-          <Icons name="check" size={16} />
-          <div class="mono" style="font-size: 12px;">
-            Đã xuất {exportData.rows_exported} dòng → {exportData.csv_path} (SHA-256: {shortDigest(exportData.csv_sha256)}) &amp; provenance → {exportData.metadata_path}
+      {#if simulationWarning}
+        <div class="banner banner-warning" role="status">
+          <Icons name="alert" size={18} />
+          <div style="flex: 1;">
+            <strong>Lưu ý mô phỏng phản ứng:</strong> {simulationWarning}
+          </div>
+          <button type="button" class="btn btn-sm" onclick={() => (simulationWarning = null)}>Đóng</button>
+        </div>
+      {/if}
+
+      {#if busyMessage || initializing || (backendStatus?.starting && !backendStatus?.running)}
+        <div class="banner banner-info" role="status">
+          <Icons name="refresh" size={16} spin={true} />
+          <div style="flex: 1;">
+            {#if busyMessage}
+              {busyMessage}
+            {:else}
+              Đang khởi tạo máy chủ AI cục bộ (lần đầu trên máy mới có thể mất 30–90 giây để giải nén runtime và Windows kiểm tra an toàn) — <strong>{Math.round((backendStatus?.startup_elapsed_ms ?? 0) / 1000)}s</strong> ({backendStatus?.startup_stage ?? "booting"}). Nhấn <strong>Shift+F9</strong> để xem chi tiết log dev.
+            {/if}
           </div>
         </div>
       {/if}
-    </section>
 
-    <ModelReadinessPanel
-      {models}
-      {selectedModel}
-      busy={Boolean(busyMessage)}
-      onSelect={(k) => (selectedModel = k)}
-    />
+      {#if showDevLogs}
+        <DevLogsPanel
+          logs={devLogs}
+          {backendStatus}
+          diagnostics={runtimeDiagnostics}
+          onRefresh={() => void refreshDevLogs()}
+          onClose={() => (showDevLogs = false)}
+        />
+      {/if}
 
-    <div class="tab-bar" role="tablist" aria-label="Phân vùng hiển thị">
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "overview"}
-        onclick={() => (activeTab = "overview")}
-      >
-        <Icons name="chart" size={15} />
-        1. Tổng quan &amp; Kiểm tra CSV
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "predictions"}
-        onclick={() => (activeTab = "predictions")}
-      >
-        <Icons name="table" size={15} />
-        2. Bảng Dự đoán ({analysisData?.total_rows ?? 0})
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "evaluation"}
-        onclick={() => (activeTab = "evaluation")}
-      >
-        <Icons name="target" size={15} />
-        3. Đối chiếu Nhãn &amp; Độ chính xác
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "forensics"}
-        onclick={() => (activeTab = "forensics")}
-      >
-        <Icons name="clock" size={15} />
-        4. Dòng thời gian &amp; Mô phỏng Phản ứng
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "live"}
-        onclick={() => (activeTab = "live")}
-      >
-        <Icons name="refresh" size={15} />
-        5. Giám sát Trực tiếp (Live)
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "behavioral"}
-        onclick={() => (activeTab = "behavioral")}
-      >
-        <Icons name="chart" size={15} />
-        6. Vector Hành vi (Behavioral)
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "attack_timeline"}
-        onclick={() => (activeTab = "attack_timeline")}
-      >
-        <Icons name="shield" size={15} />
-        7. Truy vết Tấn công (Trace)
-      </button>
-      <button
-        type="button"
-        role="tab"
-        class="tab-btn"
-        aria-selected={activeTab === "crypto"}
-        onclick={() => (activeTab = "crypto")}
-      >
-        <Icons name="cpu" size={15} />
-        8. Mã hóa &amp; Xoay vòng Khóa
-      </button>
-    </div>
-
-    {#key activeTab}
-      <div class="tab-panel">
-        {#if activeTab === "overview"}
-          <ModelComparisonPanel
-            {models}
-            {selectedModel}
-            analysesByModel={coherentAnalyses}
-            evaluationsByModel={coherentEvaluations}
-            errorsByModel={comparisonState.errorsByModel}
-            batchFileSha256={comparisonState.activeFileSha256}
-            batchLabelsSha256={comparisonState.activeLabelsSha256}
-            canRunComparison={Boolean(flowsPath.trim())}
-            hasLabelsPath={Boolean(labelsPath.trim())}
-            busy={Boolean(busyMessage)}
-            onSelectModel={(k) => (selectedModel = k)}
-            onRunAllComparison={handleRunAllComparison}
-            onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
+      {#if isOfflineTab}
+        {#if showGuide}
+          <OnboardingGuidePanel
+            hasFlows={Boolean(inspectData)}
+            hasAnalysis={Boolean(analysisData)}
+            hasComparison={Object.keys(coherentAnalyses).length >= 2}
+            hasEvaluation={Object.keys(coherentEvaluations).length > 0}
+            hasExport={Boolean(exportData)}
+            {readyModelsCount}
+            onClose={() => (showGuide = false)}
           />
-
-          {#if analysisData}
-            <div class="grid-5">
-              <div class="kpi-box">
-                <div class="kpi-label">Tổng số Flow</div>
-                <div class="kpi-value mono">{analysisData.total_rows}</div>
-              </div>
-              <div class="kpi-box">
-                <div class="kpi-label">Dự đoán Attack</div>
-                <div class="kpi-value mono" style="color: var(--semantic-attack)">{analysisData.attack_count}</div>
-              </div>
-              <div class="kpi-box">
-                <div class="kpi-label">Dự đoán Benign</div>
-                <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
-              </div>
-              <div class="kpi-box">
-                <div class="kpi-label">OOD Abstained</div>
-                <div class="kpi-value mono" style="color: var(--semantic-warning)">
-                  {analysisData.abstained_rows ?? analysisData.ood_flagged_count}
-                </div>
-                <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
-                  {analysisData.evaluated_rows ?? analysisData.attack_count + analysisData.benign_count}/{analysisData.total_rows}
-                  ({analysisData.prediction_coverage != null
-                    ? `${(analysisData.prediction_coverage * 100).toFixed(1)}%`
-                    : analysisData.total_rows > 0
-                      ? `${(((analysisData.attack_count + analysisData.benign_count) / analysisData.total_rows) * 100).toFixed(1)}%`
-                      : "0.0%"})
-                </div>
-              </div>
-              <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
-                <div class="kpi-label">Eligibility Gate</div>
-                <div class="kpi-value" style="font-size: 13px;">{analysisData.compatibility_gate.eligibility_status}</div>
-                <div class="mono" style="font-size: 11px; color: var(--text-secondary);">
-                  {analysisData.compatibility_gate.compatibility_status}
-                </div>
-              </div>
-            </div>
-            <ChartsPanel analysis={analysisData} />
-          {/if}
-
-          {#if inspectData}
-            <CsvPreviewPanel {inspectData} />
-          {:else}
-            <div class="empty-state">
-              Nhấn <strong>Mở Demo Validation (200 flows)</strong> hoặc chọn tệp NetFlow CSV từ máy cục bộ để kiểm tra 18 ML features (canonical-flow-v2-18) và bắt đầu phân tích.
-            </div>
-          {/if}
-        {:else if activeTab === "predictions"}
-          {#if analysisData}
-            <ChartsPanel analysis={analysisData} />
-            <PredictionsTable analysis={analysisData} />
-          {:else}
-            <div class="empty-state">
-              Chưa có kết quả dự đoán. Hãy chọn mô hình READY và nhấn <strong>Chạy Phân tích AI</strong>.
-            </div>
-          {/if}
-        {:else if activeTab === "evaluation"}
-          <EvaluationPanel
-            {labelsPath}
-            evaluating={evaluatedFlag}
-            evalResult={evalData}
-            canEvaluate={Boolean(analysisData)}
-            onPickLabels={handlePickLabelsFile}
-            onUseDemoLabels={handleUseDemoLabels}
-            onRunEvaluate={handleRunEvaluate}
-            onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
-          />
-        {:else if activeTab === "forensics"}
-          <ForensicTimelinePanel
-            timeline={analysisData?.timeline ?? []}
-            behavioral={analysisData?.behavioral_summary ?? inspectData?.behavioral_summary ?? null}
-            securityNotice={analysisData?.security_notice ?? "Localhost-only FastAPI (127.0.0.1), fail-closed SHA-256 artifact checks. Issue #27 Adaptive Security Response runs in DRY-RUN SIMULATION / RECOMMENDED mode (executed=false); OS firewall automation & AES-256-GCM keyring remain DEFERRED."}
-            simulation={simulationData}
-            {simulationHistory}
-            simulationExportInfo={simulationExportData}
-            simulating={simulatingFlag}
-            canSimulate={Boolean(analysisData)}
-            onRunSimulation={handleRunSecuritySimulation}
-            onRefreshHistory={refreshSimulationHistory}
-            onExportSimulation={handleExportSecuritySimulation}
-          />
-        {:else if activeTab === "live"}
-          <LiveMonitoringPanel />
-        {:else if activeTab === "behavioral"}
-          <BehavioralAnalysisPanel />
-        {:else if activeTab === "attack_timeline"}
-          <AttackTimelinePanel />
-        {:else if activeTab === "crypto"}
-          <CryptographyDashboardPanel />
         {/if}
+
+        <section class="card action-card" aria-label="Điều khiển Dữ liệu NetFlow CSV">
+          <div class="action-row-head">
+            <span class="action-row-title">
+              <Icons name="folder" size={15} />
+              Nguồn dữ liệu NetFlow CSV (18 đặc trưng L4)
+            </span>
+            {#if isTauriRuntime() && !dragDropUnavailable}
+              <span class="action-row-hint">Mẹo: Kéo thả tệp .csv trực tiếp vào cửa sổ</span>
+            {/if}
+          </div>
+          <div class="input-bar">
+            <input
+              type="text"
+              class="input mono"
+              style="flex: 1; min-width: 220px;"
+              placeholder="Chọn tệp NetFlow CSV từ máy hoặc bấm nút Demo bên phải..."
+              value={flowsPath}
+              oninput={(e) => handleFlowsPathChange((e.currentTarget as HTMLInputElement).value)}
+              aria-label="Đường dẫn tệp NetFlow CSV"
+            />
+            <button type="button" class="btn" onclick={handleBrowseFlowsCsv} disabled={Boolean(busyMessage)}>
+              <Icons name="folder" size={15} />
+              {isTauriRuntime() ? "Chọn CSV" : "Kiểm tra CSV"}
+            </button>
+            <button
+              type="button"
+              class="btn btn-teal"
+              onclick={handleLoadShowcaseDemo}
+              disabled={Boolean(busyMessage)}
+              title="Nạp 465 luồng mạng thật (Benign + 5 nhóm tấn công + OOD) và tự động quét 4 mô hình AI"
+            >
+              <Icons name="play" size={14} />
+              Demo Trình chiếu (465 flows)
+            </button>
+            <button
+              type="button"
+              class="btn"
+              onclick={handleLoadDemoDataset}
+              disabled={Boolean(busyMessage)}
+              title="Nạp bộ dữ liệu kiểm chứng chuẩn 200 luồng (100 Benign / 100 Attack)"
+            >
+              Demo Chuẩn (200)
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              onclick={handleRunAllComparison}
+              disabled={!flowsPath.trim() || Boolean(busyMessage)}
+            >
+              <Icons name="target" size={15} />
+              Phân tích 4 Mô hình AI
+            </button>
+            <button
+              type="button"
+              class="btn"
+              onclick={handleExportResults}
+              disabled={!analysisData || Boolean(busyMessage)}
+              title="Xuất bảng kết quả CSV kèm biên bản toàn vẹn SHA-256"
+            >
+              <Icons name="download" size={15} />
+              Xuất CSV
+            </button>
+          </div>
+
+          {#if exportData}
+            <div class="banner banner-success" style="margin-top: 10px;">
+              <Icons name="check" size={16} />
+              <div class="mono" style="font-size: 12px;">
+                Đã xuất {exportData.rows_exported} dòng → {exportData.csv_path} (SHA-256: {shortDigest(exportData.csv_sha256)}) &amp; provenance → {exportData.metadata_path}
+              </div>
+            </div>
+          {/if}
+        </section>
+      {/if}
+
+      {#key activeTab}
+        <div class="tab-panel">
+          {#if activeTab === "overview"}
+            {#if analysisData}
+              <div class="grid-5">
+                <div class="kpi-box">
+                  <div class="kpi-label">Tổng số Luồng (Flows)</div>
+                  <div class="kpi-value mono">{analysisData.total_rows}</div>
+                  <div class="kpi-sub">Đang xem: <strong>{selectedModel}</strong></div>
+                </div>
+                <div class="kpi-box">
+                  <div class="kpi-label">Nghi ngờ Tấn công</div>
+                  <div class="kpi-value mono" style="color: var(--semantic-attack)">{analysisData.attack_count}</div>
+                  <div class="kpi-sub">Nhãn Attack</div>
+                </div>
+                <div class="kpi-box">
+                  <div class="kpi-label">Lưu lượng An toàn</div>
+                  <div class="kpi-value mono" style="color: var(--semantic-benign)">{analysisData.benign_count}</div>
+                  <div class="kpi-sub">Nhãn Benign</div>
+                </div>
+                <div class="kpi-box">
+                  <div class="kpi-label">Ngoài phân phối (OOD)</div>
+                  <div class="kpi-value mono" style="color: var(--semantic-ood)">
+                    {analysisData.abstained_rows ?? analysisData.ood_flagged_count}
+                  </div>
+                  <div class="kpi-sub mono">
+                    Phủ: {analysisData.evaluated_rows ?? analysisData.attack_count + analysisData.benign_count}/{analysisData.total_rows}
+                    ({analysisData.prediction_coverage != null
+                      ? `${(analysisData.prediction_coverage * 100).toFixed(1)}%`
+                      : analysisData.total_rows > 0
+                        ? `${(((analysisData.attack_count + analysisData.benign_count) / analysisData.total_rows) * 100).toFixed(1)}%`
+                        : "0.0%"})
+                  </div>
+                </div>
+                <div class="kpi-box" title={`Source: ${analysisData.compatibility_gate.source_id ?? "unknown"} | Compatibility: ${analysisData.compatibility_gate.compatibility_status}`}>
+                  <div class="kpi-label">Cổng Kiểm định (Gate)</div>
+                  <div class="kpi-value" style="font-size: 13.5px;">
+                    {analysisData.compatibility_gate.eligibility_status === "PREDICTION_AVAILABLE"
+                      ? "Đủ điều kiện dự đoán"
+                      : analysisData.compatibility_gate.eligibility_status}
+                  </div>
+                  <div class="kpi-sub mono">
+                    {analysisData.compatibility_gate.compatibility_status}
+                  </div>
+                </div>
+              </div>
+              <ChartsPanel analysis={analysisData} />
+            {:else if !inspectData}
+              <section class="card" aria-label="Bắt đầu nhanh">
+                <div class="card-header" style="margin-bottom: 10px;">
+                  <div>
+                    <h3 class="card-title">
+                      <Icons name="shield" size={16} />
+                      Cách hoạt động của NetFlow Sentinel (3 bước)
+                    </h3>
+                    <p style="margin: 3px 0 0; font-size: 12.5px; color: var(--text-secondary);">
+                      Chưa nạp tệp dữ liệu nào. Chọn <strong>Demo Trình chiếu (465 flows)</strong> hoặc <strong>Chọn CSV</strong> ở thanh trên cùng để bắt đầu.
+                    </p>
+                  </div>
+                </div>
+                <div class="welcome-grid">
+                  <div class="welcome-step">
+                    <span class="welcome-num">1</span>
+                    <div>
+                      <strong>Nạp lưu lượng NetFlow L4</strong>
+                      <p>Đọc tệp CSV gồm 18 đặc trưng luồng mạng và tự động loại bỏ nhãn/PII chống rò rỉ dữ liệu.</p>
+                    </div>
+                  </div>
+                  <div class="welcome-step">
+                    <span class="welcome-num">2</span>
+                    <div>
+                      <strong>Quét song song 4 Mô hình AI</strong>
+                      <p>Random Forest, XGBoost, Isolation Forest và Autoencoder chấm điểm rủi ro kèm cổng từ chối ngoài mẫu (OOD).</p>
+                    </div>
+                  </div>
+                  <div class="welcome-step">
+                    <span class="welcome-num">3</span>
+                    <div>
+                      <strong>Phân loại &amp; Truy vết tấn công</strong>
+                      <p>Hiển thị trực quan tỷ lệ An toàn / Tấn công / OOD, lọc từng luồng nghi ngờ và xuất biên bản SHA-256.</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            {/if}
+
+            {#if inspectData || analysisData}
+              <ModelComparisonPanel
+                {models}
+                {selectedModel}
+                analysesByModel={coherentAnalyses}
+                evaluationsByModel={coherentEvaluations}
+                errorsByModel={comparisonState.errorsByModel}
+                batchFileSha256={comparisonState.activeFileSha256}
+                batchLabelsSha256={comparisonState.activeLabelsSha256}
+                defaultBenchmarkOpen={false}
+                hideRunButton={true}
+                canRunComparison={Boolean(flowsPath.trim())}
+                hasLabelsPath={Boolean(labelsPath.trim())}
+                busy={Boolean(busyMessage)}
+                onSelectModel={(k) => (selectedModel = k)}
+                onRunAllComparison={handleRunAllComparison}
+                onEvaluateAllAnalyzed={handleEvaluateAllAnalyzed}
+              />
+            {/if}
+
+            {#if inspectData}
+              <CsvPreviewPanel {inspectData} />
+            {/if}
+          {:else if activeTab === "predictions"}
+            {#if analysisData}
+              <ChartsPanel analysis={analysisData} />
+              <PredictionsTable analysis={analysisData} />
+            {:else}
+              <div class="empty-state">
+                Chưa có kết quả dự đoán. Hãy chọn tệp CSV và nhấn <strong>Phân tích 4 Mô hình AI</strong>.
+              </div>
+            {/if}
+          {:else if activeTab === "evaluation"}
+            <EvaluationPanel
+              {labelsPath}
+              evaluating={evaluatedFlag}
+              evalResult={evalData}
+              canEvaluate={Boolean(analysisData)}
+              onPickLabels={handlePickLabelsFile}
+              onUseDemoLabels={handleUseDemoLabels}
+              onRunEvaluate={handleRunEvaluate}
+              onUpdateLabelsPath={(v) => handleLabelsPathChange(v)}
+            />
+          {:else if activeTab === "forensics"}
+            <ForensicTimelinePanel
+              timeline={analysisData?.timeline ?? []}
+              behavioral={analysisData?.behavioral_summary ?? inspectData?.behavioral_summary ?? null}
+              securityNotice={analysisData?.security_notice ?? "Localhost-only FastAPI (127.0.0.1), AES-256-GCM + DPAPI key protection active. Adaptive Security Response runs in DRY-RUN SIMULATION mode (executed=false); OS firewall automation remains disabled by policy."}
+              simulation={simulationData}
+              {simulationHistory}
+              simulationExportInfo={simulationExportData}
+              simulating={simulatingFlag}
+              canSimulate={Boolean(analysisData)}
+              onRunSimulation={handleRunSecuritySimulation}
+              onRefreshHistory={refreshSimulationHistory}
+              onExportSimulation={handleExportSecuritySimulation}
+            />
+          {:else if activeTab === "live"}
+            <LiveMonitoringPanel />
+          {:else if activeTab === "behavioral"}
+            <BehavioralAnalysisPanel />
+          {:else if activeTab === "attack_timeline"}
+            <AttackTimelinePanel />
+          {:else if activeTab === "crypto"}
+            <CryptographyDashboardPanel />
+          {/if}
+        </div>
+      {/key}
+    </main>
+
+    <footer class="soc-statusbar" aria-label="Trạng thái hệ thống NetFlow Sentinel">
+      <div class="statusbar-group">
+        <span class="statusbar-item">
+          <span
+            class="status-dot"
+            class:status-dot-online={Boolean(backendStatus?.running)}
+            class:status-dot-starting={!backendStatus?.running}
+          ></span>
+          <span>Backend: <strong class="mono">{backendStatus?.running ? "Online" : "Starting..."}</strong></span>
+        </span>
+        <span class="statusbar-sep">|</span>
+        <span class="statusbar-item">
+          <span>Mô hình AI:</span>
+          <strong class="mono" style:color={readyModelsCount === 4 ? "var(--semantic-benign)" : "var(--semantic-warning)"}>
+            {readyModelsCount}/4 READY
+          </strong>
+        </span>
+        <span class="statusbar-sep">|</span>
+        <span class="statusbar-item">
+          <span>Đang xem:</span>
+          <strong class="mono">{selectedModel}</strong>
+        </span>
+        <span class="statusbar-sep">|</span>
+        <span class="statusbar-item">
+          <span>OOD Gate:</span>
+          <strong class="mono">
+            {healthData?.preprocessor_ready ? "ACTIVE (Fail-Closed)" : "INIT"}
+          </strong>
+        </span>
       </div>
-    {/key}
-  </main>
+      <div class="statusbar-group mono">
+        <span>v2.1.0 · Local Offline</span>
+        <span class="statusbar-sep">|</span>
+        <span>Shift+F9: Dev Logs</span>
+      </div>
+    </footer>
+  </div>
 </div>
 
 <style>
