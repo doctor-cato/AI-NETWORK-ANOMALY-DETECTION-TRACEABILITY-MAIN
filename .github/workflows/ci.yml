@@ -181,3 +181,11 @@ jobs:
         run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
       - name: Build Windows desktop executable
         run: cargo build --manifest-path desktop/src-tauri/Cargo.toml --bins
+      - name: NetFlow Rust formatting check
+        run: cargo fmt --manifest-path telemetry/netflow-rs/Cargo.toml --check
+      - name: NetFlow Rust clippy lint
+        run: cargo clippy --manifest-path telemetry/netflow-rs/Cargo.toml --all-targets -- -D warnings
+      - name: NetFlow Rust unit tests
+        run: cargo test --manifest-path telemetry/netflow-rs/Cargo.toml
+      - name: NetFlow Rust self-test
+        run: cargo run --quiet --manifest-path telemetry/netflow-rs/Cargo.toml -- --self-test

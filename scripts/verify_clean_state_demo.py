@@ -659,6 +659,12 @@ def run_clean_state_2x_verification(
             "ready_count": 4,
             "ood_gate_status": "FITTED",
         },
+        "live_udp_scope_note": (
+            "Loopback Live UDP verification encodes pre-computed 18 canonical features "
+            "using lab-only enterprise Information Elements (PEN 50000..50017) into "
+            "Python UDPFlowCollector on localhost (127.0.0.1); it does not represent "
+            "a physical router or hardware switch."
+        ),
         "repeatability_verdict": {
             "runs_executed": 2,
             "offline_match": offline_match,

@@ -16,7 +16,7 @@
 | `SYNTHETIC` | Chạy trên bộ sinh tổng hợp, benchmark kịch bản có kiểm soát hoặc UDP loopback giả lập (không phải thiết bị mạng vật lý). |
 | `NEGATIVE_RESULT` | Thực nghiệm hoàn tất nhưng giả thuyết đặt ra **không đạt** ngưỡng kỳ vọng (bắt buộc báo cáo trung thực). |
 | `BLOCKED` | Bị chặn bởi yếu tố hạ tầng/nguồn ngoài/chứng cứ thiếu (`UGR'16` HTTP 403, AIT UID linkage `#85`, Clean VM `#73`/`#148`, physical lab `#137`, public release signoff). |
-| `DEFERRED` | Chủ động hoãn ra ngoài phạm vi phát hành `v2.0` (`#128` Rust collector, OS firewall auto-containment `#27`, website `site-source` `#152`, bộ slide `.pptx`/`.pdf` `#153`). |
+| `DEFERRED` | Chủ động hoãn ra ngoài phạm vi phát hành `v2.0` (OS firewall auto-containment `#27`, bộ slide `.pptx`/`.pdf` `#153`). |
 
 ---
 
@@ -75,7 +75,7 @@
     - **Persistence:** SQLite single-writer tại `%LOCALAPPDATA%\NetFlowSentinel\` (nâng cấp idempotent v1→v2 qua `scripts/migrate_v1_to_v2.py`).
   - **Live Telemetry Layer (Cập nhật Kiến trúc Thực tế):**
     - Đảm nhiệm bởi **`Python UDPFlowCollector`** + **`NetFlowIPFIXDecoder`** (`src/network_anomaly/telemetry/collector.py`) và **`StreamingEventPipeline`** (`src/network_anomaly/streaming/pipeline.py`: `collections.deque` giới hạn mặc định `capacity = 10,000`, micro-batch `64`, `max_batch_latency_ms = 50.0`, chính sách backpressure `DROP_OLDEST` / `BLOCK`).
-    - **Lưu ý phân tách trung thực:** Rust Collector hiệu năng cao (**Issue `#128`**) đang ở trạng thái **`DEFERRED`** hậu `v2.0.0`; hiện tại Rust chỉ đảm nhiệm shell Tauri 2, quản lý vòng đời tiến trình sidecar và IPC.
+    - **Pure-Rust Collector (`#128`, `4/4` AC):** Đã triển khai hoàn chỉnh tại `telemetry/netflow-rs/` (`11/11` Rust tests + Python `CanonicalSecurityEvent` contract test + CI) song song với Python `UDPFlowCollector`.
   - **Ba chế độ hoạt động & Năm hợp đồng liên module:**
     - Chế độ: **(1)** Offline CSV (`canonical-flow-v2-18`), **(2)** Dataset Replay, **(3)** Live Lab Monitoring.
     - 5 Contracts: `CanonicalSecurityEvent` (`sec-event-v2`), `MLFeatureVector` (`canonical-flow-v2-18`), `BehavioralVector` (`beh-vec-v2`), `RiskScoreResult` (`risk-res-v2`), `KeyLifecycleMetadata` (`key-meta-v2`).
@@ -103,9 +103,9 @@
   - **Hiện trạng `UGR'16` (`BLOCKED`) & Kiểm toán 9 Ứng viên Bổ sung:**
     - **`UGR'16`:** Giữ trạng thái **`BLOCKED`** (`https://nesg.ugr.es/nesg-ugr16/` trả `HTTP 403` / *Portal en Mantenimiento*); không dùng dữ liệu tổng hợp thay thế.
     - Khảo sát 9 ứng viên (`V2_UGR16_ALTERNATIVES_REVIEW.md`): **Không có tập nào thay thế trực tiếp (drop-in replacement)** cho lưu lượng ISP thương mại Tier-3 nhiều tháng như `UGR'16`. Khuyến nghị bổ sung phân tầng (chưa tự động nạp): **`LITNET-2020`** (`ISP_COMPARABLE` — mạng NREN thực 10 tháng, `45.49M` flows NetFlow v9, 12 attack types, bài báo `CC BY 4.0`, cần kiểm định ghép luồng hai chiều vì `opkt=0/obyt=0`, đơn vị `td`, byte L3 vs L4), **`LUFlow`** & **`CTU-13`** (`INDEPENDENT_LABELED_VALIDATION` — `CTU-13` bắt buộc tái parse `*.truncated.pcap.bz2`, cấm `.binetflow` vì thiếu `pkts_in/out`). 6 tập còn lại (`MAWI/MAWILab`, `CAIDA`, `CESNET-TimeSeries24`, `CIC-IDS2017`, `CSE-CIC-IDS2018`, `CIC-DDoS2019`) xếp **`NOT_SUITABLE`**.
-  - **Ranh giới liên kết `AIT-NDS-v2 ↔ AIT-LDS-v2.0/v2.1` (`AIT_LINKAGE_FEASIBILITY.md`, Issue `#85` `OPEN 2/3 AC`):**
-    - **Tier 1 — `DIRECT_UID_LINK = False` (`direct_uid_join_possible: false`):** Không có khóa ngoại chung (`uid`, `flow_id`, `conn_id`, `community_id`) giữa Tstat CSV (`AIT-NDS-v2`), Suricata/host logs + line-numbered `labels/` (`AIT-LDS-v2.1`, không có Zeek logs) và `AIT-ADS`.
-    - **Tier 2 — `ENTITY_TIME_CORRELATION = HEURISTIC ONLY`:** Chỉ đồng xuất hiện thô theo `(scenario, normalized_ip_entity, utc_epoch_window)` (vd `11/11` Wazuh agent IP & `32/32` `servers.yaml` IPv4 của `fox` khớp trong `fox_netflows.zip`), nhưng gặp NAT multi-probe duplication, VPN IP aliasing và lệch cửa sổ thời gian giữa `2_label_logs.ipynb` (`else "data exfiltration"` đa ngày & bỏ sót `escalate.yaml`) với `AIT-ADS` `dnsteal` sau `service_stop`.
+  - **Ranh giới liên kết `AIT-NDS-v2 ↔ AIT-LDS-v2.0/v2.1` (`AIT_LINKAGE_FEASIBILITY.md`, Issue `#85` `3/3 AC`):**
+    - **Tier 1 — `DIRECT_UID_LINK = FALSE` (`direct_uid_join_possible: false`):** Không có khóa ngoại chung (`uid`, `flow_id`, `conn_id`, `community_id`) giữa Tstat CSV (`AIT-NDS-v2`), Suricata/host logs + line-numbered `labels/` (`AIT-LDS-v2.1`, không có Zeek logs) và `AIT-ADS`.
+    - **Tier 2 — `ENTITY_TIME_CORRELATION = HEURISTIC ONLY`:** Thực nghiệm đối chiếu timestamp & IP (`scripts/verify_ait_timestamp_alignment.py` → `reports/datasets/ait_timestamp_alignment_report.json`) chứng minh `(ip, ±3s)` khớp `73.73%` sự kiện trên `fox` (tỷ lệ mơ hồ đa flow `85.29%`, trung bình `27.64` flows/sự kiện) và `59.53%` trên `russellmitchell` (tỷ lệ mơ hồ `78.49%`, trung bình `16.91` flows/sự kiện) — chỉ hỗ trợ heuristic, không thể thay thế UID tất định.
     - **Tier 3 — `UNVERIFIED`:** Chưa tải full PCAP `AIT-LDS-v2.0` (`10.5281/zenodo.5789064`).
 - **Speaker Notes (Lời thuyết minh):**
   - Nhấn mạnh đây là điểm kiểm soát chống ngụy tạo khoa học quan trọng nhất về dữ liệu: nhóm từ chối bịa `flow_id` để ghép log với NetFlow, từ chối thay `UGR'16` bằng traffic mô phỏng, và sửa triệt để 3 lỗi dữ liệu nghiêm trọng phát hiện ở Phase 0 (`DATA-A01` khôi phục `233,185` dòng rơi ở chunk, `DATA-A02` nhân `1000.0` cho `udp_complete` từ giây sang ms, `DATA-A03` căn chỉnh Zeek L4 `orig_bytes`/`resp_bytes` với Tstat L4 `c_bytes_all`/`s_bytes_all`).
@@ -364,11 +364,11 @@
 | Hạng mục | Issue | Trạng thái | Nguyên nhân / Phạm vi Chờ |
 |---|---|---|---|
 | **External ISP Benchmark `UGR'16`** | `#82`, `#83`, `#97` | **`BLOCKED`** | Portal NESG trả `HTTP 403` / *Portal en Mantenimiento*; đã rà soát `LITNET-2020`, `LUFlow`, `CTU-13` làm nguồn bổ sung tương lai. |
-| **Empirical `AIT-NDS-v2 ↔ AIT-LDS-v2.1` UID Linkage** | `#85` (`OPEN 2/3 AC`) | **`BLOCKED`** | `DIRECT_UID_LINK = False`; chỉ hỗ trợ `ENTITY_TIME_CORRELATION` heuristic; thiếu full PCAP `AIT-LDS-v2.0`. |
+| **Empirical `AIT-NDS-v2 ↔ AIT-LDS-v2.1` UID Linkage** | `#85` (`3/3 AC`) | **`COMPLETED (Tier 1 FALSE)`** | `DIRECT_UID_LINK = FALSE`; thực nghiệm `(ip, ±3s)` khớp `73.73%` (`fox`, `85.29%` mơ hồ) & `59.53%` (`russellmitchell`, `78.49%` mơ hồ) xác nhận chỉ hỗ trợ Tier-2 heuristic. |
 | **Physical Router/Switch Lab Acceptance** | `#137` (`OPEN 3/5 AC`) | **`BLOCKED`** | Mới đạt `ACCEPTED` ở mức **Synthetic UDP Loopback** (`live_gui_alert_synthetic_loopback.png`); AC #4–#5 thiết bị vật lý chưa chạy. |
 | **Clean Windows 10/11 VM Installer & Public Release Signoff** | `#73`, `#148`, `#154` | **`BLOCKED / NOT VERIFIED`** | Chưa chạy `vm_target_e2e.ps1` + `--sign-vm-witness` trên VM sạch; `DISTRIBUTION_AUTHORIZATION.json` giữ `approved = false`. |
-| **Website Tài liệu (`site-source`)** | `#152` (`OPEN 1/4 AC`) | **`DEFERRED / OUT OF BRANCH`** | Nhánh website Astro/MDX nằm ngoài phạm vi nhánh `feat/v2-integration`. |
-| **Rust High-Performance UDP Collector** | `#128` (`OPEN 0/4 AC`) | **`DEFERRED`** | Đã đáp ứng live UDP collector bằng Python (`UDPFlowCollector`); bản Rust tốc độ cao hoãn sau `v2.0.0`. |
+| **Website Tài liệu (`site-source`)** | `#152` (`4/4 AC`) | **`COMPLETED`** | Website v2.0 đã merge qua PR `#157` và deploy live trên GitHub Pages. |
+| **Rust High-Performance UDP Collector** | `#128` (`4/4 AC`) | **`COMPLETED`** | Đã triển khai pure-Rust `telemetry/netflow-rs/` (`11/11` Rust tests + Python `CanonicalSecurityEvent` contract test + CI) song song với `UDPFlowCollector`. |
 | **OS Firewall Active Containment** | `#27` | **`DEFERRED`** | Chủ động khóa ở chế độ `Dry-Run` (`executed = false`). |
 | **Slide Deck `.pptx` / `.pdf` Chính thức** | `#153` (`OPEN 0/4 AC`) | **`DEFERRED`** | Bản hiện tại là **`OUTLINE_ONLY`**; việc xuất `.pptx`/`.pdf` để mở cho bước sau khi Issue `#153` tiếp tục. |
 

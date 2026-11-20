@@ -1,7 +1,7 @@
 {
   "verification_title": "Issue #150 AC1 \u2014 Clean-State 2x Repeatability Verification (Offline, Replay, Live UDP Loopback)",
   "issue_ref": "#150",
-  "executed_at_utc": "2026-11-19T17:08:18.037001+00:00",
+  "executed_at_utc": "2026-11-20T05:01:37.896347+00:00",
   "runtime_policy": {
     "runtime_mode": "deployment",
     "require_ood_gate": true,
@@ -10,6 +10,7 @@
     "ready_count": 4,
     "ood_gate_status": "FITTED"
   },
+  "live_udp_scope_note": "Loopback Live UDP verification encodes pre-computed 18 canonical features using lab-only enterprise Information Elements (PEN 50000..50017) into Python UDPFlowCollector on localhost (127.0.0.1); it does not represent a physical router or hardware switch.",
   "repeatability_verdict": {
     "runs_executed": 2,
     "offline_match": true,
@@ -80,7 +81,7 @@
     {
       "run_index": 1,
       "clean_state_isolated_tempdir": true,
-      "total_run_elapsed_seconds": 3.0405,
+      "total_run_elapsed_seconds": 4.5703,
       "offline": {
         "scenario": "offline_csv_200_flows",
         "source_file": "data/demo/demo_flows.csv",
@@ -110,7 +111,7 @@
         "persisted_unified_security_events": 200,
         "persisted_behavioral_vectors": 200,
         "inference_errors": 0,
-        "elapsed_seconds": 0.3363
+        "elapsed_seconds": 0.4164
       },
       "replay": {
         "scenario": "replay_mode_batch_32",
@@ -130,8 +131,8 @@
         "persisted_behavioral_vectors": 65,
         "dropped_events": 0,
         "inference_errors": 0,
-        "elapsed_seconds": 0.486,
-        "throughput_events_per_sec": 133.77
+        "elapsed_seconds": 0.471,
+        "throughput_events_per_sec": 137.96
       },
       "live_udp": {
         "scenario": "live_udp_loopback_netflow_v9",
@@ -154,13 +155,13 @@
         "persisted_behavioral_vectors": 24,
         "dropped_events": 0,
         "inference_errors": 0,
-        "elapsed_seconds": 0.5287
+        "elapsed_seconds": 0.5447
       }
     },
     {
       "run_index": 2,
       "clean_state_isolated_tempdir": true,
-      "total_run_elapsed_seconds": 2.975,
+      "total_run_elapsed_seconds": 2.9761,
       "offline": {
         "scenario": "offline_csv_200_flows",
         "source_file": "data/demo/demo_flows.csv",
@@ -190,7 +191,7 @@
         "persisted_unified_security_events": 200,
         "persisted_behavioral_vectors": 200,
         "inference_errors": 0,
-        "elapsed_seconds": 0.3806
+        "elapsed_seconds": 0.3505
       },
       "replay": {
         "scenario": "replay_mode_batch_32",
@@ -210,8 +211,8 @@
         "persisted_behavioral_vectors": 65,
         "dropped_events": 0,
         "inference_errors": 0,
-        "elapsed_seconds": 0.465,
-        "throughput_events_per_sec": 139.67
+        "elapsed_seconds": 0.508,
+        "throughput_events_per_sec": 127.99
       },
       "live_udp": {
         "scenario": "live_udp_loopback_netflow_v9",
@@ -234,7 +235,7 @@
         "persisted_behavioral_vectors": 24,
         "dropped_events": 0,
         "inference_errors": 0,
-        "elapsed_seconds": 0.5512
+        "elapsed_seconds": 0.5452
       }
     }
   ]

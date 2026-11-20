@@ -11,7 +11,7 @@
 Hệ thống được thiết kế theo mô hình **Hybrid Desktop-Sidecar Architecture**:
 - **Frontend / Client Layer:** Desktop application phát triển bằng **Tauri 2 + Svelte 5 + Tailwind CSS**, giao tiếp bất đồng bộ qua IPC và HTTP loopback.
 - **Backend / Sidecar Layer:** **FastAPI + Python 3.12** chạy dưới dạng tiến trình độc lập (loopback authentication qua `X-Sentinel-Session-Token`), tích hợp SQLite bảo mật cho lưu trữ metadata và encrypted at-rest storage.
-- **Telemetry Layer:** **Python UDP Collector & Decoder** (`NetFlowIPFIXDecoder` + `UDPFlowCollector` trong `src/network_anomaly/telemetry/collector.py`) xử lý NetFlow v9 / IPFIX và đẩy sự kiện vào `StreamingEventPipeline` -> `LiveSystemOrchestrator` qua `LiveTelemetryService` (crate Rust độc lập tại #128 được hoãn sau v2.0.0).
+- **Telemetry Layer:** **Python UDP Collector & Decoder** (`NetFlowIPFIXDecoder` + `UDPFlowCollector` trong `src/network_anomaly/telemetry/collector.py`) xử lý NetFlow v9 / IPFIX và đẩy sự kiện vào `StreamingEventPipeline` -> `LiveSystemOrchestrator` qua `LiveTelemetryService`, song song với **pure-Rust Collector** (`#128`, `4/4` AC) tại `telemetry/netflow-rs/` (`11/11` Rust tests + Python `CanonicalSecurityEvent` contract test + CI).
 
 ```mermaid
 flowchart TB
@@ -212,7 +212,7 @@ Thông tin quản lý vòng đời khóa mã hóa AES-256-GCM:
 | **B (AI & Behavioral)** | 4 Models, Tuning, Behavioral Vector | `src/network_anomaly/models/`, `src/network_anomaly/preprocessing/`, `src/network_anomaly/behavioral/` | Tuân thủ Contract 2 & 3; không chỉnh sửa `train_only` transformer ngoài preprocessor. |
 | **C (Risk & Trace)** | Risk Scoring, Trace Graph, Timeline | `src/network_anomaly/risk/`, `src/network_anomaly/trace/`, `src/network_anomaly/investigation/` | Tuân thủ Contract 4; phân định rõ ràng giữa bằng chứng quan sát và suy luận giả thuyết. |
 | **D (Crypto)** | AES-GCM, Rotation, Key Vault | `src/network_anomaly/crypto/` | Tuân thủ Contract 5; chỉ lưu ciphertext, nonce và tag; cấm log plaintext hoặc secret key. |
-| **E (Live Telemetry)** | Python UDP Collector, Streaming Pipeline | `src/network_anomaly/telemetry/`, `src/network_anomaly/streaming/` | Có buffer chặn và backpressure; từ chối gói tin dị dạng an toàn (`#128` standalone Rust crate deferred post-v2.0.0). |
+| **E (Live Telemetry)** | Python UDP Collector, Rust Collector (`#128`), Streaming Pipeline | `src/network_anomaly/telemetry/`, `telemetry/netflow-rs/`, `src/network_anomaly/streaming/` | Có buffer chặn và backpressure; từ chối gói tin dị dạng an toàn (`#128` pure-Rust `11/11` tests + Python contract test + CI). |
 | **F (Desktop & Release)** | UI Dashboards, Packaging, NSIS | `desktop/`, `.github/workflows/`, `scripts/build_*` | Đảm bảo hoạt động ngoại tuyến (offline attestation) trên Windows x64. |
 | **G (QA & Governance)** | E2E, Research Validation, Docs | `docs/`, `reports/`, `tests/` | Kiểm chứng độc lập trước khi đánh dấu nghiệm thu. |
 

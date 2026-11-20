@@ -70,6 +70,8 @@ Kịch bản tự động `scripts/verify_clean_state_demo.py` khởi tạo **2 
 | **2. Replay (`batch_size=32`)** | `data/processed/v2/ait_test.csv.gz` (`65` flows) | `mode=REPLAY`, `4/4 REAL_MODELS`, `65` processed, `49` anomalies, `26` alerts, `65` encrypted vectors, `0` dropped, `0` errors | `mode=REPLAY`, `4/4 REAL_MODELS`, `65` processed, `49` anomalies, `26` alerts, `65` encrypted vectors, `0` dropped, `0` errors | **`100% MATCH` (`replay_match = true`)** |
 | **3. Live UDP (`127.0.0.1:0`)** | Binary NetFlow v9 UDP (`24` flows / `3` datagrams) | `mode=LIVE -> STOPPED`, `4/4 REAL_MODELS`, `FITTED`, `24/24` decoded & processed, `8` anomalies, `8` alerts, `24` persisted events & encrypted vectors, `0` errors | `mode=LIVE -> STOPPED`, `4/4 REAL_MODELS`, `FITTED`, `24/24` decoded & processed, `8` anomalies, `8` alerts, `24` persisted events & encrypted vectors, `0` errors | **`100% MATCH` (`live_udp_match = true`)** |
 
+> **Phạm vi Live UDP Lab (`live_udp_scope_note`):** Kiểm chứng Live UDP loopback mã hóa 18 đặc trưng `canonical-flow-v2-18` tính sẵn bằng enterprise Information Elements nội bộ phòng lab (`PEN 50000..50017`) gửi qua Python `UDPFlowCollector` trên `127.0.0.1`; không thay thế kiểm định router/switch vật lý (`#137`).
+
 ---
 
 ## 5. Ghi chú Loại trừ Trùng lặp Tài liệu (`#151` Deduplication Note)

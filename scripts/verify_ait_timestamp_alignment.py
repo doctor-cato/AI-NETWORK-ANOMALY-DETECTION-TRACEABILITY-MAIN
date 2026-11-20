@@ -357,14 +357,8 @@ def analyze_lds_and_align(
             fst["files_scanned"] += 1
 
             with zf.open(member) as fh:
-                line_idx = 0
+                eve_in_window_count = 0
                 for raw in fh:
-                    if (
-                        fam == "suricata_eve_sample"
-                        and line_idx >= SURICATA_EVE_SAMPLE_LIMIT_PER_FILE
-                    ):
-                        break
-                    line_idx += 1
                     line = raw.decode("utf-8", errors="replace")
                     ts: Optional[float] = None
                     ev_ip: Optional[str] = host_ip
@@ -385,8 +379,15 @@ def analyze_lds_and_align(
                             ips_in_line = IPV4_RE.findall(line)
                             for lip in ips_in_line:
                                 observed_log_ips.add(lip)
-                            if ips_in_line:
-                                ev_ip = ips_in_line[-1] if fam == "dns" else ips_in_line[0]
+                            if fam == "dns":
+                                m_from = re.search(r"\bfrom\s+(\d+\.\d+\.\d+\.\d+)\b", line)
+                                if m_from:
+                                    ev_ip = m_from.group(1)
+                                    observed_log_ips.add(ev_ip)
+                                else:
+                                    ev_ip = host_ip
+                            elif ips_in_line:
+                                ev_ip = ips_in_line[0]
                     elif fam == "http_access":
                         m = APACHE_RE.match(line)
                         if m:
@@ -426,6 +427,9 @@ def analyze_lds_and_align(
                                 ts_str = ts_str[:-5] + "+00:00"
                             if ts_str:
                                 ts = datetime.fromisoformat(ts_str).timestamp()
+                            if ts is None or ts < nds_min_sec or ts > nds_max_sec:
+                                continue
+                            eve_in_window_count += 1
                             sip = obj.get("src_ip")
                             dip = obj.get("dest_ip")
                             if sip and ":" not in str(sip):
@@ -433,6 +437,8 @@ def analyze_lds_and_align(
                                 observed_log_ips.add(str(sip))
                             if dip and ":" not in str(dip):
                                 observed_log_ips.add(str(dip))
+                            if eve_in_window_count >= SURICATA_EVE_SAMPLE_LIMIT_PER_FILE:
+                                break
                         except Exception:
                             pass
                     elif fam == "openvpn":

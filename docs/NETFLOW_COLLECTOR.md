@@ -94,7 +94,7 @@ Each decoded flow record serializes via `CanonicalFlowEventV2::to_json()` into t
   "dest_ip": "192.168.1.20",
   "source_port": 51514,
   "dest_port": 443,
-  "protocol": 6,
+  "protocol": "TCP",
   "flow_metrics": {
     "duration_ms": 1250,
     "bytes_in": 12800,
@@ -104,6 +104,7 @@ Each decoded flow record serializes via `CanonicalFlowEventV2::to_json()` into t
     "tcp_flags": 24
   },
   "raw_provenance": {
+    "source_file": "udp://127.0.0.1",
     "adapter_name": "RustNetFlowIPFIXCollector",
     "protocol_version": 10,
     "exporter_ip": "127.0.0.1",

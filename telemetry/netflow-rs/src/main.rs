@@ -115,7 +115,9 @@ fn main() -> ExitCode {
         collector.local_addr()
     );
 
+    const MAX_ONCE_DATAGRAMS: usize = 64;
     let mut buf = [0u8; 65_535];
+    let mut once_datagrams = 0usize;
     loop {
         match collector.recv_next(&mut buf) {
             Ok(events) => {
@@ -123,17 +125,20 @@ fn main() -> ExitCode {
                     println!("{}", ev.to_json());
                 }
                 if once {
-                    let m = collector.metrics();
-                    eprintln!(
-                        "collector summary: datagrams_received={} templates_cached={} records_decoded={} missing_template_drops={} decode_errors={} rejected_exporters={}",
-                        m.datagrams_received,
-                        m.templates_cached,
-                        m.records_decoded,
-                        m.missing_template_drops,
-                        m.decode_errors,
-                        m.rejected_exporters,
-                    );
-                    break;
+                    once_datagrams += 1;
+                    if !events.is_empty() || once_datagrams >= MAX_ONCE_DATAGRAMS {
+                        let m = collector.metrics();
+                        eprintln!(
+                            "collector summary: datagrams_received={} templates_cached={} records_decoded={} missing_template_drops={} decode_errors={} rejected_exporters={}",
+                            m.datagrams_received,
+                            m.templates_cached,
+                            m.records_decoded,
+                            m.missing_template_drops,
+                            m.decode_errors,
+                            m.rejected_exporters,
+                        );
+                        break;
+                    }
                 }
             }
             Err(err) => {

@@ -4,11 +4,14 @@
 //! fail-closed handling of missing templates and malformed datagrams, exporter IP allowlist
 //! enforcement, and zero-dependency serialization to the `CanonicalSecurityEvent` v2 JSON contract.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 use std::time::Duration;
+
+/// Maximum number of templates retained in the decoder cache before oldest-entry eviction.
+pub const MAX_TEMPLATES: usize = 1024;
 
 /// NetFlow v9 version number.
 pub const VERSION_NETFLOW_V9: u16 = 9;
@@ -88,6 +91,7 @@ pub struct FlowMetricsV2 {
 /// Provenance metadata linking a canonical event back to its wire packet and template context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawProvenanceV2 {
+    pub source_file: String,
     pub adapter_name: &'static str,
     pub protocol_version: u16,
     pub exporter_ip: String,
@@ -127,8 +131,10 @@ impl CanonicalFlowEventV2 {
         write_json_str_field(&mut out, "dest_ip", &self.dest_ip, false);
         let _ = write!(
             out,
-            ",\"source_port\":{},\"dest_port\":{},\"protocol\":{}",
-            self.source_port, self.dest_port, self.protocol
+            ",\"source_port\":{},\"dest_port\":{},\"protocol\":\"{}\"",
+            self.source_port,
+            self.dest_port,
+            protocol_name(self.protocol)
         );
         let _ = write!(
             out,
@@ -143,9 +149,15 @@ impl CanonicalFlowEventV2 {
         out.push_str(",\"raw_provenance\":{");
         write_json_str_field(
             &mut out,
+            "source_file",
+            &self.raw_provenance.source_file,
+            true,
+        );
+        write_json_str_field(
+            &mut out,
             "adapter_name",
             self.raw_provenance.adapter_name,
-            true,
+            false,
         );
         let _ = write!(
             out,
@@ -167,6 +179,16 @@ impl CanonicalFlowEventV2 {
         );
         out.push('}');
         out
+    }
+}
+
+fn protocol_name(proto: u8) -> String {
+    match proto {
+        1 => String::from("ICMP"),
+        6 => String::from("TCP"),
+        17 => String::from("UDP"),
+        58 => String::from("ICMPv6"),
+        other => other.to_string(),
     }
 }
 
@@ -223,6 +245,7 @@ pub fn format_unix_timestamp_iso8601(unix_secs: u32) -> String {
 #[derive(Debug, Default)]
 pub struct NetFlowIpfixDecoder {
     templates: HashMap<TemplateKey, TemplateRecord>,
+    template_order: VecDeque<TemplateKey>,
     pub metrics: CollectorMetrics,
 }
 
@@ -412,6 +435,12 @@ impl NetFlowIpfixDecoder {
             }
             pos += 4;
 
+            let needed = field_count.saturating_mul(4);
+            if pos.saturating_add(needed) > body.len() {
+                self.metrics.decode_errors += 1;
+                return;
+            }
+
             let mut fields = Vec::with_capacity(field_count);
             let mut record_byte_len = 0usize;
 
@@ -443,7 +472,7 @@ impl NetFlowIpfixDecoder {
                         (raw_type, None)
                     };
 
-                record_byte_len += usize::from(field_length);
+                record_byte_len = record_byte_len.saturating_add(usize::from(field_length));
                 fields.push(TemplateField {
                     field_type,
                     field_length,
@@ -461,14 +490,24 @@ impl NetFlowIpfixDecoder {
                 domain_id,
                 template_id,
             };
-            self.templates.insert(
-                key,
-                TemplateRecord {
-                    template_id,
-                    fields,
-                    record_byte_len,
-                },
-            );
+            let record = TemplateRecord {
+                template_id,
+                fields,
+                record_byte_len,
+            };
+            if self.templates.contains_key(&key) {
+                self.templates.insert(key, record);
+            } else {
+                while self.templates.len() >= MAX_TEMPLATES {
+                    if let Some(oldest_key) = self.template_order.pop_front() {
+                        self.templates.remove(&oldest_key);
+                    } else {
+                        break;
+                    }
+                }
+                self.templates.insert(key, record);
+                self.template_order.push_back(key);
+            }
             self.metrics.templates_cached += 1;
         }
     }
@@ -506,6 +545,10 @@ impl NetFlowIpfixDecoder {
 
         let mut offset = 0usize;
         while offset + rec_len <= body.len() {
+            let remaining = body.len() - offset;
+            if remaining < 4 && body[offset..].iter().all(|&b| b == 0) {
+                break;
+            }
             let record_slice = &body[offset..offset + rec_len];
             let event = decode_single_record(
                 template,
@@ -576,37 +619,53 @@ fn decode_single_record(
                 }
             }
             FIELD_L4_SRC_PORT => {
-                src_port = read_uint_be(slice) as u16;
+                if let Some(v) = read_uint_be(slice) {
+                    src_port = u16::try_from(v).unwrap_or(u16::MAX);
+                }
             }
             FIELD_L4_DST_PORT => {
-                dst_port = read_uint_be(slice) as u16;
+                if let Some(v) = read_uint_be(slice) {
+                    dst_port = u16::try_from(v).unwrap_or(u16::MAX);
+                }
             }
             FIELD_PROTOCOL => {
-                protocol = read_uint_be(slice) as u8;
+                if let Some(v) = read_uint_be(slice) {
+                    protocol = u8::try_from(v).unwrap_or(u8::MAX);
+                }
             }
             FIELD_IN_BYTES => {
-                bytes_in = read_uint_be(slice);
+                if let Some(v) = read_uint_be(slice) {
+                    bytes_in = v;
+                }
             }
             FIELD_OUT_BYTES => {
-                bytes_out = read_uint_be(slice);
+                if let Some(v) = read_uint_be(slice) {
+                    bytes_out = v;
+                }
             }
             FIELD_IN_PKTS => {
-                pkts_in = read_uint_be(slice);
+                if let Some(v) = read_uint_be(slice) {
+                    pkts_in = v;
+                }
             }
             FIELD_OUT_PKTS => {
-                pkts_out = read_uint_be(slice);
+                if let Some(v) = read_uint_be(slice) {
+                    pkts_out = v;
+                }
             }
             FIELD_TCP_FLAGS => {
-                tcp_flags = read_uint_be(slice) as u8;
+                if let Some(v) = read_uint_be(slice) {
+                    tcp_flags = u8::try_from(v).unwrap_or(u8::MAX);
+                }
             }
             FIELD_FIRST_SWITCHED => {
-                first_switched = Some(read_uint_be(slice));
+                first_switched = read_uint_be(slice);
             }
             FIELD_LAST_SWITCHED => {
-                last_switched = Some(read_uint_be(slice));
+                last_switched = read_uint_be(slice);
             }
             FIELD_FLOW_DURATION_MILLISECONDS => {
-                explicit_duration_ms = Some(read_uint_be(slice));
+                explicit_duration_ms = read_uint_be(slice);
             }
             _ => {}
         }
@@ -642,6 +701,7 @@ fn decode_single_record(
             tcp_flags,
         },
         raw_provenance: RawProvenanceV2 {
+            source_file: format!("udp://{exporter_str}"),
             adapter_name: "RustNetFlowIPFIXCollector",
             protocol_version: version,
             exporter_ip: exporter_str.to_string(),
@@ -665,12 +725,15 @@ fn read_u32_be(buf: &[u8], offset: usize) -> u32 {
     ])
 }
 
-fn read_uint_be(slice: &[u8]) -> u64 {
+fn read_uint_be(slice: &[u8]) -> Option<u64> {
+    if slice.is_empty() || slice.len() > 8 {
+        return None;
+    }
     let mut val = 0u64;
-    for &byte in slice.iter().take(8) {
+    for &byte in slice {
         val = (val << 8) | u64::from(byte);
     }
-    val
+    Some(val)
 }
 
 /// UDP socket collector wrapping [`NetFlowIpfixDecoder`] with loopback-default security and
@@ -903,6 +966,8 @@ mod tests {
         assert!(json.contains("\"event_kind\":\"flow\""));
         assert!(json.contains("\"source_id\":\"source:netflow-v9-ipfix\""));
         assert!(json.contains("\"entity_id\":\"host:172.16.10.5\""));
+        assert!(json.contains("\"protocol\":\"TCP\""));
+        assert!(json.contains("\"source_file\":\"udp://127.0.0.1\""));
         assert!(json.contains("\"adapter_name\":\"RustNetFlowIPFIXCollector\""));
     }
 
@@ -1107,5 +1172,167 @@ mod tests {
         assert!(rejected_events.is_empty());
         assert_eq!(strict_collector.metrics().rejected_exporters, 1);
         assert_eq!(strict_collector.metrics().records_decoded, 0);
+    }
+
+    #[test]
+    fn test_protocol_string_mapping() {
+        assert_eq!(protocol_name(1), "ICMP");
+        assert_eq!(protocol_name(6), "TCP");
+        assert_eq!(protocol_name(17), "UDP");
+        assert_eq!(protocol_name(58), "ICMPv6");
+        assert_eq!(protocol_name(47), "47");
+    }
+
+    #[test]
+    fn test_template_cache_eviction_at_max_cap() {
+        let mut decoder = NetFlowIpfixDecoder::new();
+        let exporter: IpAddr = "127.0.0.1".parse().unwrap();
+
+        let make_ipfix_template_pkt = |template_id: u16| -> Vec<u8> {
+            // IPFIX header (16) + Template Set (16: 4 set hdr + 4 tpl hdr + 2*4 fields) = 32 bytes
+            let mut pkt = Vec::with_capacity(32);
+            pkt.extend_from_slice(&VERSION_IPFIX.to_be_bytes());
+            pkt.extend_from_slice(&32u16.to_be_bytes());
+            pkt.extend_from_slice(&1_700_000_000u32.to_be_bytes());
+            pkt.extend_from_slice(&1u32.to_be_bytes());
+            pkt.extend_from_slice(&10u32.to_be_bytes());
+            pkt.extend_from_slice(&IPFIX_TEMPLATE_SET_ID.to_be_bytes());
+            pkt.extend_from_slice(&16u16.to_be_bytes());
+            pkt.extend_from_slice(&template_id.to_be_bytes());
+            pkt.extend_from_slice(&2u16.to_be_bytes());
+            pkt.extend_from_slice(&FIELD_IPV4_SRC_ADDR.to_be_bytes());
+            pkt.extend_from_slice(&4u16.to_be_bytes());
+            pkt.extend_from_slice(&FIELD_IPV4_DST_ADDR.to_be_bytes());
+            pkt.extend_from_slice(&4u16.to_be_bytes());
+            pkt
+        };
+
+        for idx in 0..MAX_TEMPLATES {
+            let tid = MIN_DATA_SET_ID + idx as u16;
+            let pkt = make_ipfix_template_pkt(tid);
+            assert!(decoder.decode_datagram(exporter, &pkt).is_empty());
+        }
+        assert_eq!(decoder.cached_template_count(), MAX_TEMPLATES);
+        assert!(decoder
+            .get_template(exporter, 10, MIN_DATA_SET_ID)
+            .is_some());
+
+        // Overwriting an existing template at cap must not evict the oldest entry.
+        let overwrite_pkt = make_ipfix_template_pkt(MIN_DATA_SET_ID + 1);
+        assert!(decoder.decode_datagram(exporter, &overwrite_pkt).is_empty());
+        assert_eq!(decoder.cached_template_count(), MAX_TEMPLATES);
+        assert!(decoder
+            .get_template(exporter, 10, MIN_DATA_SET_ID)
+            .is_some());
+
+        // Inserting a brand-new template beyond MAX_TEMPLATES evicts the oldest (MIN_DATA_SET_ID).
+        let newest_tid = MIN_DATA_SET_ID + MAX_TEMPLATES as u16;
+        let newest_pkt = make_ipfix_template_pkt(newest_tid);
+        assert!(decoder.decode_datagram(exporter, &newest_pkt).is_empty());
+        assert_eq!(decoder.cached_template_count(), MAX_TEMPLATES);
+        assert!(decoder
+            .get_template(exporter, 10, MIN_DATA_SET_ID)
+            .is_none());
+        assert!(decoder
+            .get_template(exporter, 10, MIN_DATA_SET_ID + 1)
+            .is_some());
+        assert!(decoder.get_template(exporter, 10, newest_tid).is_some());
+    }
+
+    #[test]
+    fn test_crafted_huge_field_count_rejected_without_oom() {
+        let mut decoder = NetFlowIpfixDecoder::new();
+        let exporter: IpAddr = "127.0.0.1".parse().unwrap();
+
+        // IPFIX packet with template claiming field_count = 65535 in a 28-byte packet
+        let mut pkt = Vec::new();
+        pkt.extend_from_slice(&VERSION_IPFIX.to_be_bytes());
+        pkt.extend_from_slice(&28u16.to_be_bytes());
+        pkt.extend_from_slice(&1_700_000_000u32.to_be_bytes());
+        pkt.extend_from_slice(&1u32.to_be_bytes());
+        pkt.extend_from_slice(&1u32.to_be_bytes());
+        pkt.extend_from_slice(&IPFIX_TEMPLATE_SET_ID.to_be_bytes());
+        pkt.extend_from_slice(&12u16.to_be_bytes());
+        pkt.extend_from_slice(&256u16.to_be_bytes());
+        pkt.extend_from_slice(&u16::MAX.to_be_bytes()); // field_count = 65535
+        pkt.extend_from_slice(&FIELD_PROTOCOL.to_be_bytes());
+        pkt.extend_from_slice(&1u16.to_be_bytes());
+
+        let events = decoder.decode_datagram(exporter, &pkt);
+        assert!(events.is_empty());
+        assert_eq!(decoder.cached_template_count(), 0);
+        assert_eq!(decoder.metrics.decode_errors, 1);
+    }
+
+    #[test]
+    fn test_data_set_four_byte_padding_guard() {
+        let mut decoder = NetFlowIpfixDecoder::new();
+        let exporter: IpAddr = "127.0.0.1".parse().unwrap();
+
+        // IPFIX Template 256: PROTOCOL(1) + TCP_FLAGS(1) -> record_byte_len = 2
+        // Template Set = 4 + 4 + 2*4 = 16 bytes
+        // Data Set = 4 + 2 (1 record) + 2 (0x00 padding for 4-byte alignment) = 8 bytes
+        // Total = 16 header + 16 tpl + 8 data = 40 bytes
+        let mut pkt = Vec::new();
+        pkt.extend_from_slice(&VERSION_IPFIX.to_be_bytes());
+        pkt.extend_from_slice(&40u16.to_be_bytes());
+        pkt.extend_from_slice(&1_700_000_000u32.to_be_bytes());
+        pkt.extend_from_slice(&1u32.to_be_bytes());
+        pkt.extend_from_slice(&5u32.to_be_bytes());
+        // Template Set
+        pkt.extend_from_slice(&IPFIX_TEMPLATE_SET_ID.to_be_bytes());
+        pkt.extend_from_slice(&16u16.to_be_bytes());
+        pkt.extend_from_slice(&256u16.to_be_bytes());
+        pkt.extend_from_slice(&2u16.to_be_bytes());
+        pkt.extend_from_slice(&FIELD_PROTOCOL.to_be_bytes());
+        pkt.extend_from_slice(&1u16.to_be_bytes());
+        pkt.extend_from_slice(&FIELD_TCP_FLAGS.to_be_bytes());
+        pkt.extend_from_slice(&1u16.to_be_bytes());
+        // Data Set
+        pkt.extend_from_slice(&256u16.to_be_bytes());
+        pkt.extend_from_slice(&8u16.to_be_bytes());
+        pkt.push(6); // TCP
+        pkt.push(0x18); // PSH+ACK
+        pkt.extend_from_slice(&[0x00, 0x00]); // 2-byte RFC 7011 alignment padding
+
+        let events = decoder.decode_datagram(exporter, &pkt);
+        assert_eq!(events.len(), 1);
+        assert_eq!(decoder.metrics.records_decoded, 1);
+        assert_eq!(decoder.metrics.decode_errors, 0);
+        assert_eq!(events[0].protocol, 6);
+        assert_eq!(events[0].flow_metrics.tcp_flags, 0x18);
+    }
+
+    #[test]
+    fn test_read_uint_be_bounds_and_clamping() {
+        assert_eq!(read_uint_be(&[]), None);
+        assert_eq!(read_uint_be(&[1, 2, 3, 4, 5, 6, 7, 8, 9]), None);
+        assert_eq!(read_uint_be(&[0x01, 0xBB]), Some(443));
+        assert_eq!(read_uint_be(&[0, 0, 0, 0, 0, 0, 0x01, 0x00]), Some(256));
+
+        // Verify oversized u16 port field (4 bytes = 0x0001_0001) clamps to u16::MAX instead of wrapping to 1.
+        let mut decoder = NetFlowIpfixDecoder::new();
+        let exporter: IpAddr = "127.0.0.1".parse().unwrap();
+        let mut pkt = Vec::new();
+        pkt.extend_from_slice(&VERSION_IPFIX.to_be_bytes());
+        pkt.extend_from_slice(&36u16.to_be_bytes()); // 16 + 12 + 8
+        pkt.extend_from_slice(&1_700_000_000u32.to_be_bytes());
+        pkt.extend_from_slice(&1u32.to_be_bytes());
+        pkt.extend_from_slice(&1u32.to_be_bytes());
+        // Template Set (12 bytes)
+        pkt.extend_from_slice(&IPFIX_TEMPLATE_SET_ID.to_be_bytes());
+        pkt.extend_from_slice(&12u16.to_be_bytes());
+        pkt.extend_from_slice(&256u16.to_be_bytes());
+        pkt.extend_from_slice(&1u16.to_be_bytes());
+        pkt.extend_from_slice(&FIELD_L4_SRC_PORT.to_be_bytes());
+        pkt.extend_from_slice(&4u16.to_be_bytes());
+        // Data Set (8 bytes)
+        pkt.extend_from_slice(&256u16.to_be_bytes());
+        pkt.extend_from_slice(&8u16.to_be_bytes());
+        pkt.extend_from_slice(&0x0001_0001u32.to_be_bytes());
+
+        let events = decoder.decode_datagram(exporter, &pkt);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].source_port, u16::MAX);
     }
 }

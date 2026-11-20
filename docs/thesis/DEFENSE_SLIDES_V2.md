@@ -54,7 +54,7 @@ flowchart LR
 ```
 
 - **Hybrid Desktop-Sidecar:** Tauri 2 (`v2.0.0`) + Svelte 5 giao tiếp FastAPI (`0.1.0`) qua loopback `127.0.0.1`, bắt buộc header `X-Sentinel-Session-Token` (`hmac.compare_digest`).
-- **Live Telemetry:** `Python UDPFlowCollector` + `StreamingEventPipeline` (`capacity = 10,000`, micro-batch `64`, `max_batch_latency_ms = 50.0`). *Ghi chú:* Rust Collector (`#128`) giữ trạng thái `DEFERRED`.
+- **Live Telemetry:** `Python UDPFlowCollector` + `StreamingEventPipeline` (`capacity = 10,000`, micro-batch `64`, `max_batch_latency_ms = 50.0`) song song với pure-Rust Collector (`#128`, `telemetry/netflow-rs/`, `11/11` Rust tests + Python `CanonicalSecurityEvent` contract test + CI).
 - **5 Hợp đồng Dữ liệu:** `sec-event-v2`, `canonical-flow-v2-18`, `beh-vec-v2`, `risk-res-v2`, `key-meta-v2`.
 - **Giải trình 6 Độ vênh Đề cương:** Thay `Web/PostgreSQL/Docker` bằng `Tauri 2/Svelte 5/SQLite` (offline-first); `PyTorch AE` → `sklearn MLPRegressor (16,8,16)`; `SHAP` → `tree_feature_importances` / `validation_permutation_importance`; `Multiclass` tách riêng; `Response` khóa *dry-run*.
 
@@ -237,11 +237,12 @@ flowchart LR
 | Hạng mục | Issue | Trạng thái | Nguyên nhân |
 |---|---|---|---|
 | **External ISP `UGR'16`** | `#82`, `#97` | **`BLOCKED`** | Portal NESG trả `HTTP 403`; đã khảo sát `LITNET-2020`, `LUFlow`, `CTU-13`. |
-| **AIT Flow ↔ Log UID Linkage** | `#85` | **`BLOCKED`** | `DIRECT_UID_LINK = False` giữa Tstat và Suricata/host logs. |
+| **AIT Flow ↔ Log UID Linkage** | `#85` | **`COMPLETED (3/3 AC, Tier 1 FALSE)`** | `DIRECT_UID_LINK = False`; thực nghiệm `(ip, ±3s)` trên `fox` (`73.73%` khớp, `85.29%` mơ hồ) & `russellmitchell` (`59.53%` khớp, `78.49%` mơ hồ) xác nhận chỉ hỗ trợ Tier-2 heuristic. |
 | **Physical Switch/Router Lab** | `#137` | **`BLOCKED`** | Mới nghiệm thu trên Synthetic UDP Loopback (`real_device_tested = false`). |
 | **Clean Windows VM & Public Release** | `#73`, `#148`, `#154` | **`DEFERRED / BLOCKED`** | Chưa test NSIS trên VM sạch; `DISTRIBUTION_AUTHORIZATION.json` giữ `approved = false`; `git_dirty = true` (`79ebb678`). |
-| **Rust Collector / OS Firewall / Website** | `#128`, `#27`, `#152` | **`DEFERRED`** | Dùng Python `UDPFlowCollector`; khóa Dry-Run; website ngoài nhánh. |
+| **OS Firewall Enforcement** | `#27` | **`DEFERRED`** | Chủ động khóa chế độ Dry-Run (`executed = false`) để đảm bảo an toàn. |
+| **Rust Collector / Website v2.0** | `#128`, `#152` | **`COMPLETED (4/4 AC)`** | `#128` pure-Rust `telemetry/netflow-rs/` (`11/11` Rust tests + CI); `#152` website v2.0 đã merge qua PR `#157` và deploy live trên GitHub Pages. |
 
-- **Hướng Phát triển:** (1) Đặc trưng cửa sổ nhân quả cho `Credential_Attack`; (2) Tích hợp `LITNET-2020`/`LUFlow`/`CTU-13` & `UGR'16`; (3) Tối ưu `ONNX` / Rust Collector `#128`; (4) Đóng băng commit sạch, nghiệm thu Clean VM `#148` & ký duyệt `#154`.
+- **Hướng Phát triển:** (1) Đặc trưng cửa sổ nhân quả cho `Credential_Attack`; (2) Tích hợp `LITNET-2020`/`LUFlow`/`CTU-13` & `UGR'16`; (3) Tối ưu `ONNX` suy luận đa mô hình; (4) Đóng băng commit sạch, nghiệm thu Clean VM `#148` & ký duyệt `#154`.
 
 > **Speaker Notes:** Em xin kết thúc bài trình bày. Giá trị cốt lõi của NetFlow Sentinel v2.0 không chỉ là con số F1 0.9950 trên tập kiểm thử, mà là hệ thống kiểm toán trung thực, kiến trúc fail-closed và sự minh bạch tuyệt đối về các giới hạn còn mở. Em xin trân trọng lắng nghe câu hỏi của Hội đồng.
